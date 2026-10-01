@@ -142,15 +142,18 @@ def _update_operations(records):
 
 
 def current_map():
-    """The map the user has open, with their selection."""
+    """The map the user has open, with their selection, or None when this
+    request builds a new map instead of editing one."""
     document = state.inputs().get("map")
     if not document:
-        raise RuntimeError("No map is open for editing in this request")
+        return None
     return Map(document, state.inputs().get("selectedPointIds", []))
 
 
 def emit_patch(edited, summary=None):
     """Queues the changes made to `edited` as one revision."""
+    if edited is None:
+        raise RuntimeError("Немає відкритої мапи для редагування; для нової мапи використайте emit_records.")
     operations = edited.operations()
     state.result()["operations"] = operations
     if summary:

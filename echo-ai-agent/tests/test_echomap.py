@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PYTHON_ROOT = ROOT / 'echo-ai-agent/template/python'
 sys.path.insert(0, str(PYTHON_ROOT))
 
-from echomap import Record, current_map, emit_patch, emit_records, parse, sidc, state  # noqa: E402
+from echomap import Record, current_map, emit_patch, emit_records, parse, recipes, sidc, state  # noqa: E402
 
 REPORT = """[25.09.2026 0:54] БПС 3 дшб: Детали полета
 Подразделение: 104 дшд 328 дшп 3 дшб
@@ -96,6 +96,11 @@ class RecordsAndPatchTest(unittest.TestCase):
         self.assertEqual(record['sources'], [source])
         with self.assertRaises(ValueError):
             emit_records([Record(name='bad', x='1', y='2', sidc='123')])
+        aliased = Record(name='Точка', x='1', y='2', coordinateSystem='sk42', observationDatetime='2026-09-24T07:00:00')
+        self.assertEqual((aliased.crs, aliased.when), ('sk42', '2026-09-24T07:00:00'))
+        with self.assertRaisesRegex(TypeError, 'use name, x, y'):
+            Record(name='Точка', x='1', y='2', colour='red')
+        self.assertIsNone(current_map())
 
     def test_patch_groups_symbol_changes_and_keeps_other_edits_separate(self):
         records = [
@@ -118,6 +123,142 @@ class RecordsAndPatchTest(unittest.TestCase):
         self.assertEqual(operations[2]['selector']['ids'], ['id-0', 'id-1'])
         self.assertEqual(operations[3]['fields'], {'name': 'Перейменована'})
         self.assertEqual(state.result()['summary'], 'Оновлено')
+
+
+def flight_report(index, author, unit, coords='5272881, 6679505'):
+    return (f"[25.09.2026 {index % 10}:54] {author}: Детали полета\n"
+            f"Подразделение: {unit}\nПозывной: pilot{index}\nДата: 24.09.2026\n"
+            f"Время: {7 + index % 12:02d}:{index % 60:02d}\nТип БЧ: [\"Провизия\"]\n"
+            + (f"Координаты цели: {coords}\n" if coords else "")
+            + "Комментарий:\n328/24\nвыполнено\n")
+
+
+class RecipeTest(unittest.TestCase):
+    def test_unit_names_run_from_the_smallest_unit_to_the_regiment(self):
+        self.assertEqual(recipes.unit_name('104 дшд 328 дшп 2 дшб'), '2 дшб 328 дшп')
+        self.assertEqual(recipes.unit_name('104 дшд 328 дшп ШР (В)'), 'ШР (В) 328 дшп')
+        self.assertEqual(recipes.unit_name('59 омпбр 1 мпб 2 взвод'), '2 взвод 1 мпб 59 омпбр')
+        self.assertEqual(recipes.unit_name('76 гв. дшд 104 гв. дшп 1 дшб'), '1 дшб 104 гв. дшп')
+        self.assertEqual(recipes.unit_name('2 дшб 328 дшп 104 дшд'), '2 дшб 328 дшп')
+        self.assertEqual(recipes.unit_name('104 дшд 328 дшп 2-й дшб'), '2-й дшб 328 дшп')
+        self.assertEqual(recipes.unit_name('104 дшд, 328 дшп, 2 дшб'), '2 дшб 328 дшп')
+        self.assertEqual(recipes.unit_name('328 дшп 2 мотострелковый батальон'), '2 мотострелковый батальон 328 дшп')
+        self.assertEqual(recipes.unit_name('328 дшп группа БПЛА'), 'группа БПЛА 328 дшп')
+        self.assertEqual(recipes.unit_name('2 мотострелковый батальон 328 дшп'), '2 мотострелковый батальон 328 дшп')
+        self.assertEqual(recipes.unit_name('104 десантно-штурмовая дивизия 328 дшп 2 дшб'), '2 дшб 328 дшп')
+        self.assertEqual(recipes.unit_name('49 армия 328 дшп 3 дшб'), '3 дшб 328 дшп')
+
+    def test_flight_reports_keep_every_report_in_order(self):
+        units = ['104 дшд 328 дшп 3 дшб', '104 дшд 328 дшп 2 дшб', '104 дшд 328 дшп ШР (В)']
+        authors = ['БПС 3 дшб', 'Vladislav', 'Fok$']
+        reports = [flight_report(i, authors[i % 3], units[i % 3],
+                                 None if i == 7 else ('5272881 , 6679505' if i % 5 == 0 else f'{5272881 + i}, {6679505 - i}'))
+                   for i in range(25)]
+        directory = with_inputs({'prompt': 'нанеси на мапу\n' + '\n'.join(reports)})
+        self.addCleanup(directory.cleanup)
+        self.assertEqual(recipes.detect(), {'flight_reports': 25})
+        stats = recipes.run()
+        records = state.result()['records']
+        self.assertEqual((stats['sourceCount'], stats['emittedCount']), (25, 25))
+        self.assertEqual(stats['skipped'], [{'index': 8, 'reason': 'немає координат цілі'}])
+        self.assertEqual([record['name'] for record in records[:3]], ['3 дшб 328 дшп', '2 дшб 328 дшп', 'ШР (В) 328 дшп'])
+        self.assertEqual(records[1]['observationDatetime'], '2026-09-24T08:01:00')
+        self.assertEqual((records[0]['x'], records[0]['y']), ('5272881', '6679505'))
+        self.assertEqual((records[1]['x'], records[1]['y']), ('5272882', '6679504'))
+        self.assertNotIn('Vladislav', records[1]['name'])
+        self.assertIn('Комментарий:\n328/24', records[0]['comments'][0])
+
+    def test_instructions_naming_the_format_are_not_reports_and_header_dates_fill_gaps(self):
+        report = flight_report(1, 'Vladislav', '104 дшд 328 дшп 2 дшб').replace('Дата: 24.09.2026\n', '')
+        directory = with_inputs({'prompt': 'Нанеси на мапу звіти «Детали полета»:\n' + report})
+        self.addCleanup(directory.cleanup)
+        self.assertEqual(recipes.detect(), {'flight_reports': 1})
+        recipes.run()
+        records = state.result()['records']
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]['observationDatetime'], '2026-09-25T08:01:00')
+
+    def test_reports_keep_comments_naming_the_format_and_malformed_coordinates(self):
+        first = flight_report(1, 'Vladislav', '104 дшд 328 дшп 2 дшб', '5272881, abc').replace(
+            'выполнено\n', 'Детали полета уточнены\nвыполнено\n')
+        second = flight_report(2, 'Vladislav', '104 дшд', '527, 6679505')
+        directory = with_inputs({'prompt': first + second})
+        self.addCleanup(directory.cleanup)
+        recipes.run()
+        records = state.result()['records']
+        self.assertEqual(len(records), 2)
+        self.assertIn('Детали полета уточнены', records[0]['comments'][0])
+        self.assertEqual((records[0]['x'], records[0]['y']), ('5272881', 'abc'))
+        self.assertEqual((records[1]['x'], records[1]['y']), ('527', '6679505'))
+        self.assertEqual(records[1]['name'], 'Політ')
+        self.assertEqual(recipes._target_coordinates('5272881abc, 6679505'), ('5272881abc', '6679505'))
+        block = 'Детали полета\nПодразделение: 2 дшб\nДата: 24.09.2026\nКоординаты цели: 5272881, 6681122\nРайон применения Каменское\n'
+        record, problem = recipes._flight_record(block, None)
+        self.assertEqual((record.x, record.y, problem), ('5272881', '6681122', None))
+        self.assertEqual(recipes._target_coordinates('5272881abc 6679505'), ('5272881abc', '6679505'))
+        self.assertEqual(recipes._target_coordinates('5272881abc 6679505 (цель)'), ('5272881abc', '6679505'))
+        self.assertEqual(recipes._target_coordinates('52-15227 65 48669'), ('52-15227', '65 48669'))
+        headed = '[25.09.2026 0:54] Vladislav:\nДетали полета\nПодразделение: 104 дшд 328 дшп 2 дшб\nВремя: 18:03\nКоординаты цели: 5272881, 6679505\n'
+        directory = with_inputs({'prompt': headed + headed})
+        self.addCleanup(directory.cleanup)
+        recipes.run()
+        headed_records = state.result()['records']
+        self.assertEqual([record['observationDatetime'] for record in headed_records], ['2026-09-25T18:03:00'] * 2)
+        self.assertNotIn('Vladislav', headed_records[0]['comments'][0].split('Детали полета')[1])
+        commented = flight_report(4, 'Vladislav', '104 дшд 328 дшп 2 дшб').replace('выполнено\n', 'Детали полета\nуточнено пізніше\n')
+        only_coordinates = 'Детали полета\nПодразделение: 104 дшд 328 дшп 3 дшб\nКоординаты: 5272881, 6679505\n'
+        directory = with_inputs({'prompt': commented + only_coordinates})
+        self.addCleanup(directory.cleanup)
+        recipes.run()
+        records = state.result()['records']
+        self.assertEqual(len(records), 2)
+        self.assertIn('уточнено пізніше', records[0]['comments'][0])
+        self.assertEqual(records[1]['name'], '3 дшб 328 дшп')
+
+    def test_supplied_sidcs_win_and_a_requested_symbol_fills_the_rest(self):
+        own = flight_report(1, 'Vladislav', '104 дшд 328 дшп 2 дшб').replace('Комментарий:', 'SIDC: 10031000001211000000\nКомментарий:')
+        other = flight_report(2, 'Vladislav', '104 дшд 328 дшп 3 дшб')
+        directory = with_inputs({'prompt': own + other})
+        self.addCleanup(directory.cleanup)
+        recipes.run(symbol='дружній БпЛА')
+        self.assertEqual([record['sidc'] for record in state.result()['records']],
+                         ['10031000001211000000', '10030100001103000000'])
+
+    def test_comments_cannot_override_fields_and_posting_dates_carry_over(self):
+        quoted = flight_report(1, 'Vladislav', '104 дшд 328 дшп 2 дшб').replace(
+            'выполнено\n', 'Координаты цели: 1111111, 2222222\nДата: 01.01.2020\n')
+        undated = 'Детали полета\nПодразделение: 104 дшд 328 дшп 3 дшб\nВремя: 19:30\nКоординаты цели: 5272881, 6679505\n'
+        directory = with_inputs({'prompt': quoted + undated})
+        self.addCleanup(directory.cleanup)
+        recipes.run()
+        records = state.result()['records']
+        self.assertEqual((records[0]['x'], records[0]['y']), ('5272881', '6679505'))
+        self.assertEqual(records[0]['observationDatetime'], '2026-09-24T08:01:00')
+        self.assertEqual(records[1]['observationDatetime'], '2026-09-25T19:30:00')
+
+    def test_incomplete_reports_stay_and_scripts_can_customize_recipe_records(self):
+        incomplete = '[25.09.2026 1:00] Vladislav: Детали полета\nПодразделение: 104 дшд 328 дшп 2 дшб\nПозывной: pilot9\nРезультат полета: Не выполнено\n'
+        wrapped = flight_report(2, 'Vladislav', '104 дшд 328 дшп 3 дшб', '(5272881, 6679505)')
+        directory = with_inputs({'prompt': flight_report(1, 'Vladislav', '104 дшд 328 дшп 2 дшб') + incomplete + wrapped})
+        self.addCleanup(directory.cleanup)
+        parsed = recipes.records()
+        self.assertEqual(len(parsed), 3)
+        self.assertEqual((parsed[1].x, parsed[1].y), ('', ''))
+        self.assertEqual((parsed[2].x, parsed[2].y), ('5272881', '6679505'))
+        emit_records([record for record in parsed if '3 дшб' in record.name])
+        self.assertEqual(len(state.result()['records']), 1)
+
+    def test_message_dates_use_kyiv_time(self):
+        self.assertEqual(recipes._kyiv_date('2026-09-24T22:54:00.000Z'), '25.09.2026')
+        self.assertEqual(recipes._kyiv_date('2026-12-24T22:30:00Z'), '25.12.2026')
+        self.assertEqual(recipes._kyiv_date('2026-12-24T21:30:00Z'), '24.12.2026')
+
+    def test_unknown_text_has_no_recipe(self):
+        directory = with_inputs({'prompt': 'просто текст'})
+        self.addCleanup(directory.cleanup)
+        self.assertEqual(recipes.detect(), {})
+        with self.assertRaises(LookupError):
+            recipes.run()
 
 
 class RunEntryTest(unittest.TestCase):

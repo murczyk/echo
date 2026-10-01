@@ -44,11 +44,21 @@ export interface MapScriptInputs {
   selectedPointIds: string[];
 }
 
+export interface RecipeStats {
+  recipe: string;
+  label: string;
+  sourceCount: number;
+  emittedCount: number;
+  skipped: Array<{ index: number; reason: string }>;
+}
+
 export interface MapScriptResult {
   records: any[];
   operations: unknown[];
   summary: string | null;
   logs: string[];
+  stats: RecipeStats | null;
+  detected: Record<string, number>;
 }
 
 export interface MapScriptOutcome {
@@ -121,6 +131,9 @@ function validResult(value: unknown): MapScriptResult {
     operations: result.operations,
     summary: typeof result.summary === "string" ? result.summary : null,
     logs: result.logs.filter((line): line is string => typeof line === "string").slice(0, 200),
+    stats: result.stats && typeof result.stats === "object" ? result.stats : null,
+    detected: Object.fromEntries(Object.entries(result.detected ?? {})
+      .filter((entry): entry is [string, number] => Number.isSafeInteger(entry[1]) && entry[1] > 0)),
   };
 }
 
