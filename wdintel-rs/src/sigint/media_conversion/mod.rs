@@ -181,6 +181,7 @@ pub async fn preview(
     let (media, job) =
         authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
     let (storage_key, file_name) = completed_result(&job).c(h!())?;
+    ensure_preview_source_size(job.converted_size_bytes.c(h!())?)?;
     let bytes = fetch_completed_result_bytes(env.as_ref(), &media, storage_key)
         .await
         .c(h!())?;
@@ -204,6 +205,7 @@ pub async fn source_preview(
             msg: "Attachment is not native KML or KMZ".to_string(),
         });
     }
+    ensure_preview_source_size(media.size_bytes)?;
     let bytes = worker::fetch_source_bytes(env.as_ref(), &media)
         .await
         .c(h!())?;
@@ -212,6 +214,14 @@ pub async fn source_preview(
             .await
             .c(h!())?,
     ))
+}
+
+fn ensure_preview_source_size(size_bytes: i64) -> Result<(), AppError> {
+    attachment_preview::ensure_recorded_source_size(size_bytes).map_err(|_| {
+        AppError::BL {
+            msg: attachment_preview::PREVIEW_SOURCE_LIMIT_ERROR.to_string(),
+        }
+    })
 }
 
 #[post("/api/messenger/media/{media_id}/kmz-conversion/retry")]
@@ -644,9 +654,26 @@ pub(super) fn converted_file_name(source_file_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functest::tests::{cleanup, mk_signal_message};
+    use crate::functest::tests::{
+        cleanup, find_test_signal_group, mk_signal_message,
+        mk_signal_message_group, mk_test_identity,
+    };
+    use actix_identity::{Identity, IdentityMiddleware};
+    use actix_session::{storage::RedisSessionStore, SessionMiddleware};
+    use actix_web::{
+        cookie::Key, http::StatusCode, test as actix_test, web, App,
+        HttpMessage, HttpRequest, HttpResponse,
+    };
     use sea_orm::{ActiveModelTrait, ActiveValue::Set};
     use serial_test::serial;
+
+    async fn sign_in(
+        request: HttpRequest,
+        login: web::Path<String>,
+    ) -> HttpResponse {
+        Identity::login(&request.extensions(), login.into_inner()).unwrap();
+        HttpResponse::NoContent().finish()
+    }
 
     fn media_with_extension(extension: &str) -> signal_message_media::Model {
         signal_message_media::Model {
@@ -687,10 +714,158 @@ mod tests {
             .unwrap();
         let bytes = archive.finish().unwrap().into_inner();
 
-        let preview = converted_preview("route_converted.kmz", &bytes)
+        let converted = converted_preview("route_converted.kmz", &bytes)
             .await
             .unwrap();
-        assert_eq!(preview.points.len(), 1);
+        assert_eq!(converted.points.len(), 1);
+    }
+
+    #[serial]
+    #[actix_web::test]
+    async fn preview_endpoints_reject_oversized_authorized_media_before_storage_fetch(
+    ) {
+        let env = cleanup().await.unwrap();
+        let identity = mk_test_identity().await.unwrap();
+        let login_id =
+            crate::users::login_id_by_name(&env.dbx, &identity.login)
+                .await
+                .unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            crate::entities::signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            crate::entities::signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                signal_message_uuid: Set(message.id_uuid),
+                group_master_key: Set(Some(group.master_key)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let oversized = i64::try_from(
+            crate::config::SIGINT_MEDIA_KML_PREVIEW_MAX_SOURCE_BYTES,
+        )
+        .unwrap()
+            + 1;
+        let native = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set(
+                "application/vnd.google-earth.kml+xml".to_string()
+            ),
+            file_ext: Set(Some("kml".to_string())),
+            file_name: Set(Some("oversized.kml".to_string())),
+            size_bytes: Set(oversized),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            is_encrypted: Set(true),
+            storage_key: Set(Some("unavailable/oversized.kml".to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let converted_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set("application/gpx+xml".to_string()),
+            file_ext: Set(Some("gpx".to_string())),
+            file_name: Set(Some("route.gpx".to_string())),
+            size_bytes: Set(1),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            is_encrypted: Set(true),
+            storage_key: Set(Some("unavailable/route.gpx".to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        signal_message_media_conversion_job::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(message.id),
+            source_media_id: Set(converted_media.id),
+            source_file_md5: Set("00000000000000000000000000000000".to_string()),
+            source_file_name: Set("route.gpx".to_string()),
+            source_content_type: Set(Some("application/gpx+xml".to_string())),
+            status: Set(SIGINT_MEDIA_CONVERSION_STATUS_DONE.to_string()),
+            conversion_receipt: Set(None),
+            converted_storage_key: Set(Some(
+                "unavailable/route_converted.kmz".to_string(),
+            )),
+            converted_file_name: Set(Some("route_converted.kmz".to_string())),
+            converted_size_bytes: Set(Some(oversized)),
+            created_at: NotSet,
+            last_attempt_at: Set(None),
+            attempt_count: Set(1),
+            last_error: Set(None),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let sessions = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::from(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(sessions, Key::generate()))
+                .route("/test/login/{login}", web::post().to(sign_in))
+                .service(source_preview)
+                .service(preview),
+        )
+        .await;
+        let login = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/test/login/{login_id}"))
+                .to_request(),
+        )
+        .await;
+        let cookie = login.response().cookies().next().unwrap().into_owned();
+
+        for uri in [
+            format!("/api/messenger/media/{}/kml-preview", native.id),
+            format!(
+                "/api/messenger/media/{}/kmz-conversion/preview",
+                converted_media.id
+            ),
+        ] {
+            let response = actix_test::call_service(
+                &app,
+                actix_test::TestRequest::get()
+                    .uri(&uri)
+                    .cookie(cookie.clone())
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = String::from_utf8(
+                actix_test::read_body(response).await.to_vec(),
+            )
+            .unwrap();
+            assert!(
+                body.contains(attachment_preview::PREVIEW_SOURCE_LIMIT_ERROR)
+            );
+        }
+
+        assert!(attachment_preview::ensure_recorded_source_size(
+            i64::try_from(
+                crate::config::SIGINT_MEDIA_KML_PREVIEW_MAX_SOURCE_BYTES
+            )
+            .unwrap()
+        )
+        .is_ok());
     }
 
     #[serial]

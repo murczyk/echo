@@ -18,6 +18,9 @@ export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
   markdown: 'e2e-preview.md',
   doc: 'e2e-preview.doc',
   xls: 'e2e-preview.xls',
+  kml: 'e2e-route.kml',
+  kmz: 'e2e-route.kmz',
+  gpx: 'e2e-route.gpx',
 } as const;
 
 const MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX = '/test-assets/message-card-media-preview';
@@ -117,6 +120,7 @@ function buildMessageCardMediaPreviewMessage({
   messageText,
   withCompletedOcrAndSummary = false,
   withLegacyOffice = false,
+  withKmlPreviews = false,
 }: {
   withPolishContent?: boolean;
   withPartialCoordinateError?: boolean;
@@ -127,6 +131,7 @@ function buildMessageCardMediaPreviewMessage({
   messageText?: string;
   withCompletedOcrAndSummary?: boolean;
   withLegacyOffice?: boolean;
+  withKmlPreviews?: boolean;
 } = {}): Record<string, unknown> {
   const image1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`;
   const image2 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2}`;
@@ -137,6 +142,9 @@ function buildMessageCardMediaPreviewMessage({
   const markdown = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown}`;
   const doc = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.doc}`;
   const xls = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.xls}`;
+  const kml = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml}`;
+  const kmz = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz}`;
+  const gpx = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx}`;
 
   return {
     messageUid: 'e2e-message-card-preview',
@@ -232,6 +240,34 @@ function buildMessageCardMediaPreviewMessage({
             },
           ]
         : []),
+      ...(withKmlPreviews
+        ? [
+            {
+              id: 'e2e-kml',
+              content_type: 'application/vnd.google-earth.kml+xml',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml,
+              size_bytes: 256,
+              href: kml,
+              kml_preview_status: 'ready',
+            },
+            {
+              id: 'e2e-kmz',
+              content_type: 'application/vnd.google-earth.kmz',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz,
+              size_bytes: 256,
+              href: kmz,
+              kml_preview_status: 'ready',
+            },
+            {
+              id: 'e2e-gpx',
+              content_type: 'application/gpx+xml',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx,
+              size_bytes: 256,
+              href: gpx,
+              kmz_conversion_status: 'done',
+            },
+          ]
+        : []),
       {
         id: 'e2e-audio',
         content_type: 'audio/wav',
@@ -288,6 +324,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
   messageText,
   withCompletedOcrAndSummary = false,
   withLegacyOffice = false,
+  withKmlPreviews = false,
 }: {
   withPolishContent?: boolean;
   withPartialCoordinateError?: boolean;
@@ -298,6 +335,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
   messageText?: string;
   withCompletedOcrAndSummary?: boolean;
   withLegacyOffice?: boolean;
+  withKmlPreviews?: boolean;
 } = {}): InboxMessagesRspRaw {
   return {
     inbox_items: [
@@ -313,6 +351,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
           messageText,
           withCompletedOcrAndSummary,
           withLegacyOffice,
+          withKmlPreviews,
         }) as never,
       ],
     ],
@@ -397,6 +436,15 @@ export async function installMessageCardMediaPreviewAssetRoutes(
       return;
     }
 
+    if (
+      fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml ||
+      fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz ||
+      fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx
+    ) {
+      await fulfillAsset(route, '<kml />', 'application/vnd.google-earth.kml+xml');
+      return;
+    }
+
     await route.fulfill({ status: 404, body: 'Not found' });
   });
 }
@@ -414,6 +462,7 @@ async function installMessageCardMediaPreviewHostFixture(
   enableAudioTranscription: boolean,
   withCompletedOcrAndSummary: boolean,
   withLegacyOffice: boolean,
+  withKmlPreviews: boolean,
   messageReferenceResponse: unknown | undefined,
   messageReferenceDelayMs: number,
   signalGroups: InboxMessagesRspRaw['signal_groups'] | undefined,
@@ -429,6 +478,7 @@ async function installMessageCardMediaPreviewHostFixture(
       messageText,
       withCompletedOcrAndSummary,
       withLegacyOffice,
+      withKmlPreviews,
     }),
     signal_groups: signalGroups ?? [],
   };
@@ -535,6 +585,39 @@ async function installMessageCardMediaPreviewHostFixture(
       });
     });
   }
+
+  if (withKmlPreviews) {
+    const preview = {
+      points: [
+        {
+          coords: { lat: 50.45, lng: 30.52 },
+          label: 'E2E KML point',
+          color: '#1976d2',
+          opacity: 1,
+        },
+      ],
+      line_strings: [],
+      polygons: [],
+    };
+    for (const mediaId of ['e2e-kml', 'e2e-kmz']) {
+      await page.route(`**/api/messenger/media/${mediaId}/kml-preview`, (route) =>
+        route.fulfill({ contentType: 'application/json', body: JSON.stringify(preview) }),
+      );
+    }
+    await page.route('**/api/messenger/media/e2e-gpx/kmz-conversion/status', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'done',
+          error: null,
+          converted_file_name: 'e2e-route_converted.kmz',
+        }),
+      }),
+    );
+    await page.route('**/api/messenger/media/e2e-gpx/kmz-conversion/preview', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(preview) }),
+    );
+  }
 }
 
 export async function openMessageCardPreviewHost(
@@ -553,6 +636,7 @@ export async function openMessageCardPreviewHost(
     enableAudioTranscription = false,
     withCompletedOcrAndSummary = false,
     withLegacyOffice = false,
+    withKmlPreviews = false,
     deferredImageResponse,
     messageReferenceResponse,
     messageReferenceDelayMs = 0,
@@ -570,6 +654,7 @@ export async function openMessageCardPreviewHost(
     enableAudioTranscription?: boolean;
     withCompletedOcrAndSummary?: boolean;
     withLegacyOffice?: boolean;
+    withKmlPreviews?: boolean;
     deferredImageResponse?: DeferredMediaResponse;
     messageReferenceResponse?: unknown;
     messageReferenceDelayMs?: number;
@@ -590,6 +675,7 @@ export async function openMessageCardPreviewHost(
     enableAudioTranscription,
     withCompletedOcrAndSummary,
     withLegacyOffice,
+    withKmlPreviews,
     messageReferenceResponse,
     messageReferenceDelayMs,
     signalGroups,

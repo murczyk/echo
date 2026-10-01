@@ -70,12 +70,17 @@ function getPreviewKind(item: MessageCardPreviewItem) {
   return item.type === 'coordinate' ? 'coordinate-map' : item.type;
 }
 
-function getPreviewDialogLabel(previewKind: string) {
+function getPreviewDialogLabel(item: MessageCardPreviewItem, previewKind: string) {
   if (previewKind === 'image') return 'Перегляд зображення';
   if (previewKind === 'video') return 'Перегляд відео';
   if (previewKind === 'audio') return 'Перегляд аудіо';
   if (previewKind === 'coordinate-map') return 'Перегляд координат';
-  if (previewKind === 'kmz-map') return 'Попередній перегляд KMZ';
+  if (previewKind === 'kmz-map' && item.type === 'kmz') {
+    if (!item.value.nativePreview) return 'Попередній перегляд KMZ';
+    if (item.value.nativeFormat === 'kml') return 'Попередній перегляд KML';
+    if (item.value.nativeFormat === 'kmz') return 'Попередній перегляд KMZ';
+    return 'Попередній перегляд геоданих';
+  }
   return 'Перегляд документа';
 }
 
@@ -97,7 +102,7 @@ export function MessageCardAttachmentPreviewDialog({
   reportDraft?: AttachmentPreviewReportDraft;
 } & Partial<MessageCardDownloadGuardProps>) {
   const previewKind = getPreviewKind(item);
-  const dialogLabel = getPreviewDialogLabel(previewKind);
+  const dialogLabel = getPreviewDialogLabel(item, previewKind);
   const reportTextPreviewEnabled = reportDraft != null;
   const textPreviewKind = reportDraft?.kind ?? 'report';
   const [isEditing, setIsEditing] = useState(false);

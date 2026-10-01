@@ -317,14 +317,16 @@ export function KmzAttachmentPreviewRenderer({
           </PowerAlert>
         ) : preview ? (
           <PowerAlert severity="info" autoHideDuration={null}>
-            У конвертованому KMZ немає геометрій для попереднього перегляду.
+            {source.nativePreview
+              ? `У ${source.nativeFormat?.toUpperCase() ?? 'файлі геоданих'} немає геометрій для попереднього перегляду.`
+              : 'У конвертованому KMZ немає геометрій для попереднього перегляду.'}
           </PowerAlert>
         ) : (
           <Stack direction="row" spacing={1.5} alignItems="center">
             <CircularProgress size={22} />
             <Typography color="text.secondary">
               {convertedReady || source.nativePreview
-                ? `Завантаження попереднього перегляду ${source.nativeFormat?.toUpperCase() ?? 'KMZ'}…`
+                ? `Завантаження попереднього перегляду ${source.nativeFormat?.toUpperCase() ?? 'геоданих'}…`
                 : status === 'pending'
                   ? 'Очікування початку конвертації…'
                   : 'Конвертація вихідного файлу…'}

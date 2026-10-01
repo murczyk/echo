@@ -20,6 +20,8 @@ const DEFAULT_POINT_COLOR: &str = "#1976d2";
 const DEFAULT_LINE_COLOR: &str = "#455a64";
 const DEFAULT_FILL_COLOR: &str = "#1976d2";
 const MAX_NODE_NESTING: usize = 64;
+pub const PREVIEW_SOURCE_LIMIT_ERROR: &str =
+    "Preview limit exceeded: original file is larger than 25 MiB";
 
 #[derive(Default)]
 struct Styles {
@@ -31,6 +33,7 @@ pub async fn parse_attachment(
     extension: &str,
     bytes: &[u8],
 ) -> anyhow::Result<SignalMediaKmzPreviewRsp> {
+    ensure_source_size(bytes.len()).c(h!())?;
     let extension = extension.to_string();
     let bytes = bytes.to_vec();
     tokio::task::spawn_blocking(move || {
@@ -44,13 +47,10 @@ fn parse_attachment_blocking(
     extension: &str,
     bytes: &[u8],
 ) -> anyhow::Result<SignalMediaKmzPreviewRsp> {
-    anyhow::ensure!(
-        bytes.len() <= SIGINT_MEDIA_KML_PREVIEW_MAX_SOURCE_BYTES,
-        "Preview limit exceeded: original file is larger than 25 MiB"
-    );
+    ensure_source_size(bytes.len()).c(h!())?;
     let extension = extension.trim();
     if extension.eq_ignore_ascii_case("kml") {
-        return parse_kml_bytes(bytes);
+        return parse_kml_bytes(bytes).c(h!());
     }
     anyhow::ensure!(
         extension.eq_ignore_ascii_case("kmz"),
@@ -82,11 +82,12 @@ fn parse_attachment_blocking(
     };
     for path in paths {
         let bytes = std::fs::read(path).c(h!())?;
-        let parsed = parse_kml_bytes(&bytes)?;
+        let parsed = parse_kml_bytes(&bytes).c(h!())?;
         ensure_additional_coordinate_budget(
             &result,
             preview_coordinate_count(&parsed),
-        )?;
+        )
+        .c(h!())?;
         result.points.extend(parsed.points);
         result.line_strings.extend(parsed.line_strings);
         result.polygons.extend(parsed.polygons);
@@ -109,18 +110,18 @@ fn parse_kml_bytes(bytes: &[u8]) -> anyhow::Result<SignalMediaKmzPreviewRsp> {
         .context("Invalid KML document")
         .c(h!())?;
     let mut styles = Styles::default();
-    index_styles(&kml.nodes, &mut styles)?;
+    index_styles(&kml.nodes, &mut styles).c(h!())?;
     let mut result = SignalMediaKmzPreviewRsp {
         points: vec![],
         line_strings: vec![],
         polygons: vec![],
     };
-    parse_nodes(&kml.nodes, &styles, &mut result)?;
+    parse_nodes(&kml.nodes, &styles, &mut result).c(h!())?;
     Ok(result)
 }
 
 fn index_styles(nodes: &[Node], styles: &mut Styles) -> anyhow::Result<()> {
-    index_styles_at_depth(nodes, styles, 0)
+    index_styles_at_depth(nodes, styles, 0).c(h!())
 }
 
 fn index_styles_at_depth(
@@ -136,7 +137,8 @@ fn index_styles_at_depth(
         match node {
             Node::Folder(folder) => {
                 index_style_slices(&folder.styles, &folder.style_maps, styles);
-                index_styles_at_depth(&folder.nodes, styles, depth + 1)?;
+                index_styles_at_depth(&folder.nodes, styles, depth + 1)
+                    .c(h!())?;
             }
             Node::Document(document) => {
                 index_style_slices(
@@ -149,7 +151,8 @@ fn index_styles_at_depth(
                         index_style(style, styles);
                     }
                 }
-                index_styles_at_depth(&document.nodes, styles, depth + 1)?;
+                index_styles_at_depth(&document.nodes, styles, depth + 1)
+                    .c(h!())?;
             }
             Node::Style(style) => index_style(style, styles),
             Node::StyleMap(map) => index_style_map(map, styles),
@@ -281,7 +284,7 @@ fn parse_nodes(
     styles: &Styles,
     result: &mut SignalMediaKmzPreviewRsp,
 ) -> anyhow::Result<()> {
-    parse_nodes_at_depth(nodes, styles, result, 0)
+    parse_nodes_at_depth(nodes, styles, result, 0).c(h!())
 }
 
 fn parse_nodes_at_depth(
@@ -297,16 +300,15 @@ fn parse_nodes_at_depth(
     for node in nodes {
         match node {
             Node::Folder(folder) => {
-                parse_nodes_at_depth(&folder.nodes, styles, result, depth + 1)?
+                parse_nodes_at_depth(&folder.nodes, styles, result, depth + 1)
+                    .c(h!())?
             }
-            Node::Document(document) => parse_nodes_at_depth(
-                &document.nodes,
-                styles,
-                result,
-                depth + 1,
-            )?,
+            Node::Document(document) => {
+                parse_nodes_at_depth(&document.nodes, styles, result, depth + 1)
+                    .c(h!())?
+            }
             Node::Placemark(placemark) => {
-                parse_placemark(placemark, styles, result)?
+                parse_placemark(placemark, styles, result).c(h!())?
             }
             _ => {}
         }
@@ -352,8 +354,9 @@ fn parse_placemark(
         if let Some(coordinates) =
             coordinates.and_then(|point| point.coordinates.as_deref())
         {
-            let points = coords(coordinates)?;
-            ensure_additional_coordinate_budget(result, points.len())?;
+            let points = coords(coordinates).c(h!())?;
+            ensure_additional_coordinate_budget(result, points.len())
+                .c(h!())?;
             for coords in points {
                 result.points.push(SignalMediaKmzPreviewPoint {
                     coords,
@@ -375,9 +378,10 @@ fn parse_placemark(
             .and_then(|line| line.coordinates.as_ref())
             .and_then(|coordinates| coordinates.body.as_deref())
         {
-            let coords = coords(raw)?;
+            let coords = coords(raw).c(h!())?;
             if coords.len() >= 2 {
-                ensure_additional_coordinate_budget(result, coords.len())?;
+                ensure_additional_coordinate_budget(result, coords.len())
+                    .c(h!())?;
                 result.line_strings.push(SignalMediaKmzPreviewLineString {
                     coords,
                     color: line_color.0.clone(),
@@ -387,28 +391,30 @@ fn parse_placemark(
             }
         }
     }
-    for polygon in std::iter::once(placemark.polygon.as_ref()).chain(
-        placemark
-            .multi_geometry
-            .as_ref()
-            .into_iter()
-            .flat_map(|m| m.polygons.iter().map(Some)),
-    ) {
-        if let Some(polygon) = polygon {
-            if let Some(rings) = polygon_rings(polygon)? {
-                ensure_additional_coordinate_budget(
-                    result,
-                    rings.iter().map(Vec::len).sum(),
-                )?;
-                result.polygons.push(SignalMediaKmzPreviewPolygon {
-                    rings,
-                    stroke_color: line_color.0.clone(),
-                    stroke_opacity: line_color.1,
-                    fill_color: fill_color.0.clone(),
-                    fill_opacity: fill_color.1,
-                    label: label.clone(),
-                });
-            }
+    for polygon in std::iter::once(placemark.polygon.as_ref())
+        .chain(
+            placemark
+                .multi_geometry
+                .as_ref()
+                .into_iter()
+                .flat_map(|m| m.polygons.iter().map(Some)),
+        )
+        .flatten()
+    {
+        if let Some(rings) = polygon_rings(polygon).c(h!())? {
+            ensure_additional_coordinate_budget(
+                result,
+                rings.iter().map(Vec::len).sum(),
+            )
+            .c(h!())?;
+            result.polygons.push(SignalMediaKmzPreviewPolygon {
+                rings,
+                stroke_color: line_color.0.clone(),
+                stroke_opacity: line_color.1,
+                fill_color: fill_color.0.clone(),
+                fill_opacity: fill_color.1,
+                label: label.clone(),
+            });
         }
     }
     Ok(())
@@ -426,7 +432,7 @@ fn polygon_rings(
     else {
         return Ok(None);
     };
-    let outer = coords(outer)?;
+    let outer = coords(outer).c(h!())?;
     if outer.len() < 3 {
         return Ok(None);
     }
@@ -440,12 +446,29 @@ fn polygon_rings(
         else {
             continue;
         };
-        let ring = coords(raw)?;
+        let Ok(ring) = coords(raw) else {
+            continue;
+        };
         if ring.len() >= 3 {
             rings.push(ring);
         }
     }
     Ok(Some(rings))
+}
+
+pub fn ensure_recorded_source_size(size_bytes: i64) -> anyhow::Result<()> {
+    let Ok(size_bytes) = usize::try_from(size_bytes) else {
+        anyhow::bail!(PREVIEW_SOURCE_LIMIT_ERROR);
+    };
+    ensure_source_size(size_bytes).c(h!())
+}
+
+pub fn ensure_source_size(size_bytes: usize) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        size_bytes <= SIGINT_MEDIA_KML_PREVIEW_MAX_SOURCE_BYTES,
+        PREVIEW_SOURCE_LIMIT_ERROR
+    );
+    Ok(())
 }
 
 fn coords(raw: &str) -> anyhow::Result<Vec<Coords>> {
@@ -536,10 +559,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn keeps_valid_polygon_holes_when_an_interior_ring_is_invalid() {
+        let kml = br#"<kml><Placemark><Polygon>
+          <outerBoundaryIs><LinearRing><coordinates>30,50 32,50 32,52 30,50</coordinates></LinearRing></outerBoundaryIs>
+          <innerBoundaryIs><LinearRing><coordinates>not-a-coordinate</coordinates></LinearRing></innerBoundaryIs>
+          <innerBoundaryIs><LinearRing><coordinates>30.5,50.5 31,50.5 31,51 30.5,50.5</coordinates></LinearRing></innerBoundaryIs>
+        </Polygon></Placemark></kml>"#;
+
+        let preview = parse_kml_bytes(kml).unwrap();
+        assert_eq!(preview.polygons.len(), 1);
+        assert_eq!(preview.polygons[0].rings.len(), 2);
+    }
+
     #[tokio::test]
     async fn rejects_preview_source_limit() {
         let bytes = vec![b' '; SIGINT_MEDIA_KML_PREVIEW_MAX_SOURCE_BYTES + 1];
         assert!(parse_attachment("kml", &bytes).await.is_err());
+        assert!(ensure_recorded_source_size(
+            i64::try_from(SIGINT_MEDIA_KML_PREVIEW_MAX_SOURCE_BYTES).unwrap()
+        )
+        .is_ok());
+        assert!(ensure_recorded_source_size(
+            i64::try_from(SIGINT_MEDIA_KML_PREVIEW_MAX_SOURCE_BYTES).unwrap()
+                + 1
+        )
+        .is_err());
     }
 
     #[tokio::test]
@@ -559,5 +604,20 @@ mod tests {
         assert_eq!(preview.points.len(), 1);
         assert!(preview.line_strings.is_empty());
         assert!(preview.polygons.is_empty());
+    }
+
+    #[tokio::test]
+    async fn malformed_kmz_members_report_the_archive_parser_context() {
+        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        archive
+            .start_file("doc.kml", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        archive.write_all(&[0xff, 0xfe]).unwrap();
+        let bytes = archive.finish().unwrap().into_inner();
+
+        let error = parse_attachment("kmz", &bytes).await.unwrap_err();
+        let error = format!("{error:#}");
+        assert!(error.contains("Invalid KML encoding"));
+        assert!(error.contains("preview.rs"));
     }
 }

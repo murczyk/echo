@@ -223,6 +223,63 @@ test.describe('@smoke @regression', () => {
     await expect(imageDialog).toHaveCount(0);
   });
 
+  for (const host of ['duty', 'analysis'] as const) {
+    test(`${host} native KML and KMZ previews retain map and carousel behavior`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 375, height: 844 });
+      await openMessageCardPreviewHost(page, host, { withKmlPreviews: true });
+      const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+      if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+
+      await page
+        .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml })
+        .click();
+      await expect(page.getByRole('dialog', { name: 'Попередній перегляд KML' })).toBeVisible();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      await expect(dialog.getByRole('link', { name: 'Скачати' })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Закрити' })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Попереднє' })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Наступне' })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Додаткові завантаження' })).toHaveCount(0);
+
+      const counter = dialog.locator('[data-attachment-preview-counter="true"]:visible');
+      const beforeDrag = await counter.textContent();
+      const map = dialog.locator('[data-kmz-preview-map="true"]');
+      const box = await map.boundingBox();
+      if (box == null) throw new Error('KMZ preview map is not laid out');
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 + 20);
+      await page.mouse.up();
+      await expect(counter).toHaveText(beforeDrag ?? '');
+
+      await dialog.getByRole('button', { name: 'Закрити' }).click();
+      await page
+        .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz })
+        .click();
+      await expect(page.getByRole('dialog', { name: 'Попередній перегляд KMZ' })).toBeVisible();
+      await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Додаткові завантаження' })).toHaveCount(0);
+      await dialog.getByRole('button', { name: 'Закрити' }).click();
+
+      await page
+        .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx })
+        .click();
+      await expect(page.getByRole('dialog', { name: 'Попередній перегляд KMZ' })).toBeVisible();
+      const overflow = dialog.getByRole('button', { name: 'Додаткові завантаження' });
+      await expect(overflow).toBeVisible();
+      await overflow.focus();
+      await page.keyboard.press('Enter');
+      await expect(
+        page.getByRole('menuitem', {
+          name: 'Завантажити e2e-route_converted.kmz',
+        }),
+      ).toBeVisible();
+    });
+  }
+
   test('DOC/XLS malformed input preserves the shared download fallback', async ({ page }) => {
     for (const host of ['duty', 'analysis'] as const) {
       await openMessageCardPreviewHost(page, host, { withLegacyOffice: true });
