@@ -291,12 +291,47 @@ temporary files may disappear. Test databases
 `wd_test_3064_map_summary_review` and `wd_files_test_3064_map_summary_review`
 can be recreated from the standard dump instead of transferred.
 
+## Map editing and scripts
+
+Later on this branch, commit `25d431580` published coordinate lists that omit a
+SIDC and pinned harness `2026.09.29.8`. The follow-up adds editing of published
+maps as a linear revision log, a map-first workspace UI, an APP-6(D) catalog and
+the sandboxed `echo_map_script` tool, pinned as harness `2026.10.01.2` (`.8` and
+the locally deployed `.9` stay compatible). See
+[MAPS.md](../../echo-ai-agent/MAPS.md) for the contract and rollout.
+
+### Migration
+
+`echo-migration/src/m20260929_195200_ai_agent_map_workspace.rs` creates
+`ai_agent_map` (editable map, head revision), `ai_agent_map_revision` (append-only
+documents with parent, origin, summary and idempotency key) and
+`ai_agent_request_map_target` (a request's authorized map). Rows cascade with the
+conversation, request and login. It is registered in `echo-migration/src/lib.rs`,
+listed in `release.json` `requiredMigrations`, and excluded from analytics in
+`deploy/clickhouse/migration-impact.json` and
+`deploy/clickhouse/env/tables-exclude.txt`; the catalog-aware check passed with
+base `main`. The migration is branch-only and was rewritten for the revision
+model; do not edit `m20260929_152018_ai_agent_map_artifacts`. Order: migration,
+backend and frontend, then the harness upgrade. Only the local namespace was
+upgraded; leave `echo-cbr` and `echo-cbr-staging` unchanged.
+
+### Security review
+
+The reviewer flagged an authorized agent map edit as `mutation` because its
+prompt assumed a read-only agent. `wdintel-rs/src/ai_agent/review.rs` now
+describes map tools and sandboxed scripts as expected and adds trusted context
+from `ai_agent_request_map_target` (outside the untrusted audit): edits are
+expected only for the authorized map, and any map edit without authorization
+remains a mutation. Re-reviewing the flagged local request returned safe. No data
+migration is needed; older suspicious reviews can be retried individually.
+
 ## Remaining work and continuation constraints
 
 1. Recheck latest PR CI and review feedback, verify claims against the code,
    address applicable feedback, and resolve addressed review threads.
 2. Merge/release only through the project's normal approved process. Staging and
-   production still need a matching Echo build before runner `.7` rollout.
+   production still need a matching Echo build before a newer runner. Do not
+   upgrade `echo-cbr` or `echo-cbr-staging` to `2026.10.01.2` from this checkout.
 3. Private evaluation cloud upload is pending write-capable credentials. Existing
    credentials named `LFS_RO` permit retrieval, not publication.
 4. GitHub project membership verification could not be completed with the current
