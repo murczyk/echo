@@ -209,6 +209,200 @@ function HeaderText({
   );
 }
 
+function OverflowPanelBackItem({
+  panel,
+  onBack,
+}: {
+  panel: Exclude<OverflowPanel, 'main'>;
+  onBack: () => void;
+}) {
+  return (
+    <MenuItem
+      aria-label="Назад до додаткових дій"
+      onClick={(event) => {
+        event.stopPropagation();
+        onBack();
+      }}
+    >
+      <MenuRow icon={<ArrowBackIcon fontSize="small" />}>
+        {panel === 'copy' ? 'Копіювати' : panel === 'navigate' ? 'Перейти' : 'Виключити'}
+      </MenuRow>
+    </MenuItem>
+  );
+}
+
+type OverflowCopyPanelProps = {
+  hasCopyTextWithNetwork: boolean;
+  hasCopyTextWithNetworkAndNote: boolean;
+  hasFrequencyCopy: boolean;
+  canShowLocationCopy: boolean;
+  hasEtalonCopy: boolean;
+  onCopyText: () => void;
+  onCopyTextWithNetwork?: () => void;
+  onCopyTextWithNetworkAndNote?: () => void;
+  onCopyFreq?: () => void;
+  onCopyMessageLink?: () => void;
+  onCopyLocation?: () => void;
+  onCopyEtalon?: () => void;
+  onClose: () => void;
+};
+
+function OverflowCopyPanel({
+  hasCopyTextWithNetwork,
+  hasCopyTextWithNetworkAndNote,
+  hasFrequencyCopy,
+  canShowLocationCopy,
+  hasEtalonCopy,
+  onCopyText,
+  onCopyTextWithNetwork,
+  onCopyTextWithNetworkAndNote,
+  onCopyFreq,
+  onCopyMessageLink,
+  onCopyLocation,
+  onCopyEtalon,
+  onClose,
+}: OverflowCopyPanelProps) {
+  const runAndClose = (action: () => void) => {
+    action();
+    onClose();
+  };
+
+  return (
+    <>
+      <MenuItem onClick={() => runAndClose(onCopyText)}>
+        <MenuRow icon={<MessageIcon fontSize="small" />}>Копіювати повідомлення</MenuRow>
+      </MenuItem>
+      {hasCopyTextWithNetwork ? (
+        <MenuItem onClick={() => runAndClose(onCopyTextWithNetwork!)}>
+          <MenuRow icon={<PeopleIcon fontSize="small" />}>
+            Копіювати повідомлення з назвою мережі
+          </MenuRow>
+        </MenuItem>
+      ) : null}
+      {hasCopyTextWithNetworkAndNote ? (
+        <MenuItem onClick={() => runAndClose(onCopyTextWithNetworkAndNote!)}>
+          <MenuRow icon={<ChatBubbleOutlineOutlinedIcon fontSize="small" />}>
+            Копіювати повідомлення з мережею та коментарем
+          </MenuRow>
+        </MenuItem>
+      ) : null}
+      {hasFrequencyCopy ? (
+        <MenuItem onClick={() => runAndClose(onCopyFreq!)}>
+          <MenuRow icon={<SettingsInputAntennaIcon fontSize="small" />}>Копіювати частоту</MenuRow>
+        </MenuItem>
+      ) : null}
+      {isPresent(onCopyMessageLink) ? (
+        <MenuItem onClick={() => runAndClose(onCopyMessageLink)}>
+          <MenuRow icon={<LinkIcon fontSize="small" />}>
+            Копіювати посилання на повідомлення
+          </MenuRow>
+        </MenuItem>
+      ) : null}
+      {canShowLocationCopy ? (
+        <MenuItem onClick={() => runAndClose(onCopyLocation!)}>
+          <MenuRow icon={<PlaceIcon fontSize="small" />}>Копіювати локацію</MenuRow>
+        </MenuItem>
+      ) : null}
+      {hasEtalonCopy ? (
+        <MenuItem onClick={() => runAndClose(onCopyEtalon!)}>
+          <MenuRow icon={<PeopleIcon fontSize="small" />}>Копіювати прив&apos;язку</MenuRow>
+        </MenuItem>
+      ) : null}
+    </>
+  );
+}
+
+function OverflowNavigationPanel({
+  items,
+  onClose,
+}: {
+  items: MessageCardNavigationMenuItem[];
+  onClose: () => void;
+}) {
+  return items.map((item) => (
+    <MenuItem
+      key={`${item.kind}:${item.href}`}
+      component="a"
+      href={item.href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={item.kind === 'network' ? item.networkLabel : undefined}
+      onClick={onClose}
+      sx={{ maxWidth: 320, overflow: 'hidden' }}
+    >
+      <MenuRow
+        icon={
+          item.kind === 'network' ? (
+            <PeopleIcon fontSize="small" />
+          ) : item.kind === 'map' ? (
+            <MapIcon fontSize="small" />
+          ) : (
+            <BarChartIcon fontSize="small" />
+          )
+        }
+      >
+        {item.kind === 'network' ? (
+          <>
+            В мережу <strong>{item.networkLabel}</strong>
+            {item.badge ? (
+              <span className="badge badge-no-unit-sm ml-[0.35em] align-middle relative -top-[0.06em]">
+                в дорозвідці
+              </span>
+            ) : null}
+          </>
+        ) : item.kind === 'map' ? (
+          (item.label ?? 'На мапу')
+        ) : (
+          (item.label ?? 'В аналіз')
+        )}
+      </MenuRow>
+    </MenuItem>
+  ));
+}
+
+function OverflowExcludePanel({
+  options,
+  onExclude,
+  onClose,
+}: {
+  options: MessageEntityExcludeMenuOption[];
+  onExclude?: (entity: MessageEntityFilterKind, value: string) => void;
+  onClose: () => void;
+}) {
+  return options.map((option) => (
+    <MenuItem
+      key={`${option.entity}:${option.value}`}
+      onClick={() => {
+        onExclude?.(option.entity, option.value);
+        onClose();
+      }}
+    >
+      <MenuRow
+        icon={
+          option.entity === 'group' ? (
+            <GraphicEqIcon fontSize="small" />
+          ) : option.entity === 'sender' ? (
+            <AccountCircleIcon fontSize="small" />
+          ) : option.entity === 'freq' ? (
+            <SettingsInputAntennaIcon fontSize="small" />
+          ) : (
+            <DeskIcon fontSize="small" />
+          )
+        }
+      >
+        {option.entity === 'group'
+          ? 'Виключити групу'
+          : option.entity === 'sender'
+            ? 'Виключити відправника'
+            : option.entity === 'freq'
+              ? 'Виключити частоту'
+              : 'Виключити пост'}{' '}
+        <strong>{option.label}</strong>
+      </MenuRow>
+    </MenuItem>
+  ));
+}
+
 function ActionIconsRow({
   id,
   msg,
@@ -690,178 +884,34 @@ function ActionIconsRow({
           )
         ) : (
           <>
-            <MenuItem
-              aria-label="Назад до додаткових дій"
-              onClick={(event) => {
-                event.stopPropagation();
-                setOverflowPanel('main');
-              }}
-            >
-              <MenuRow icon={<ArrowBackIcon fontSize="small" />}>
-                {overflowPanel === 'copy'
-                  ? 'Копіювати'
-                  : overflowPanel === 'navigate'
-                    ? 'Перейти'
-                    : 'Виключити'}
-              </MenuRow>
-            </MenuItem>
+            <OverflowPanelBackItem panel={overflowPanel} onBack={() => setOverflowPanel('main')} />
             {overflowPanel === 'copy' ? (
-              <>
-                <MenuItem
-                  onClick={() => {
-                    onCopyText!();
-                    closeOverflowMenu();
-                  }}
-                >
-                  <MenuRow icon={<MessageIcon fontSize="small" />}>Копіювати повідомлення</MenuRow>
-                </MenuItem>
-                {hasCopyTextWithNetwork ? (
-                  <MenuItem
-                    onClick={() => {
-                      onCopyTextWithNetwork!();
-                      closeOverflowMenu();
-                    }}
-                  >
-                    <MenuRow icon={<PeopleIcon fontSize="small" />}>
-                      Копіювати повідомлення з назвою мережі
-                    </MenuRow>
-                  </MenuItem>
-                ) : null}
-                {hasCopyTextWithNetworkAndNote ? (
-                  <MenuItem
-                    onClick={() => {
-                      onCopyTextWithNetworkAndNote!();
-                      closeOverflowMenu();
-                    }}
-                  >
-                    <MenuRow icon={<ChatBubbleOutlineOutlinedIcon fontSize="small" />}>
-                      Копіювати повідомлення з мережею та коментарем
-                    </MenuRow>
-                  </MenuItem>
-                ) : null}
-                {hasFrequencyCopy ? (
-                  <MenuItem
-                    onClick={() => {
-                      onCopyFreq!();
-                      closeOverflowMenu();
-                    }}
-                  >
-                    <MenuRow icon={<SettingsInputAntennaIcon fontSize="small" />}>
-                      Копіювати частоту
-                    </MenuRow>
-                  </MenuItem>
-                ) : null}
-                {isPresent(onCopyMessageLink) ? (
-                  <MenuItem
-                    onClick={() => {
-                      onCopyMessageLink();
-                      closeOverflowMenu();
-                    }}
-                  >
-                    <MenuRow icon={<LinkIcon fontSize="small" />}>
-                      Копіювати посилання на повідомлення
-                    </MenuRow>
-                  </MenuItem>
-                ) : null}
-                {canShowLocationCopy ? (
-                  <MenuItem
-                    onClick={() => {
-                      onCopyLocation!();
-                      closeOverflowMenu();
-                    }}
-                  >
-                    <MenuRow icon={<PlaceIcon fontSize="small" />}>Копіювати локацію</MenuRow>
-                  </MenuItem>
-                ) : null}
-                {hasEtalonCopy ? (
-                  <MenuItem
-                    onClick={() => {
-                      onCopyEtalon!();
-                      closeOverflowMenu();
-                    }}
-                  >
-                    <MenuRow icon={<PeopleIcon fontSize="small" />}>
-                      Копіювати прив&apos;язку
-                    </MenuRow>
-                  </MenuItem>
-                ) : null}
-              </>
+              <OverflowCopyPanel
+                hasCopyTextWithNetwork={hasCopyTextWithNetwork}
+                hasCopyTextWithNetworkAndNote={hasCopyTextWithNetworkAndNote}
+                hasFrequencyCopy={hasFrequencyCopy}
+                canShowLocationCopy={canShowLocationCopy}
+                hasEtalonCopy={hasEtalonCopy}
+                onCopyText={onCopyText!}
+                onCopyTextWithNetwork={onCopyTextWithNetwork}
+                onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
+                onCopyFreq={onCopyFreq}
+                onCopyMessageLink={onCopyMessageLink}
+                onCopyLocation={onCopyLocation}
+                onCopyEtalon={onCopyEtalon}
+                onClose={closeOverflowMenu}
+              />
             ) : null}
-            {overflowPanel === 'navigate'
-              ? navigationMenuItems.map((item) => (
-                  <MenuItem
-                    key={`${item.kind}:${item.href}`}
-                    component="a"
-                    href={item.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={item.kind === 'network' ? item.networkLabel : undefined}
-                    onClick={closeOverflowMenu}
-                    sx={{ maxWidth: 320, overflow: 'hidden' }}
-                  >
-                    <MenuRow
-                      icon={
-                        item.kind === 'network' ? (
-                          <PeopleIcon fontSize="small" />
-                        ) : item.kind === 'map' ? (
-                          <MapIcon fontSize="small" />
-                        ) : (
-                          <BarChartIcon fontSize="small" />
-                        )
-                      }
-                    >
-                      {item.kind === 'network' ? (
-                        <>
-                          В мережу <strong>{item.networkLabel}</strong>
-                          {item.badge ? (
-                            <span className="badge badge-no-unit-sm ml-[0.35em] align-middle relative -top-[0.06em]">
-                              в дорозвідці
-                            </span>
-                          ) : null}
-                        </>
-                      ) : item.kind === 'map' ? (
-                        (item.label ?? 'На мапу')
-                      ) : (
-                        (item.label ?? 'В аналіз')
-                      )}
-                    </MenuRow>
-                  </MenuItem>
-                ))
-              : null}
-            {overflowPanel === 'exclude'
-              ? excludeMenuOptions.map((option) => (
-                  <MenuItem
-                    key={`${option.entity}:${option.value}`}
-                    onClick={() => {
-                      onExcludeMessageEntity?.(option.entity, option.value);
-                      closeOverflowMenu();
-                    }}
-                  >
-                    <MenuRow
-                      icon={
-                        option.entity === 'group' ? (
-                          <GraphicEqIcon fontSize="small" />
-                        ) : option.entity === 'sender' ? (
-                          <AccountCircleIcon fontSize="small" />
-                        ) : option.entity === 'freq' ? (
-                          <SettingsInputAntennaIcon fontSize="small" />
-                        ) : (
-                          <DeskIcon fontSize="small" />
-                        )
-                      }
-                    >
-                      {option.entity === 'group'
-                        ? 'Виключити групу'
-                        : option.entity === 'sender'
-                          ? 'Виключити відправника'
-                          : option.entity === 'freq'
-                            ? 'Виключити частоту'
-                            : 'Виключити пост'}{' '}
-                      <strong>{option.label}</strong>
-                    </MenuRow>
-                  </MenuItem>
-                ))
-              : null}
+            {overflowPanel === 'navigate' ? (
+              <OverflowNavigationPanel items={navigationMenuItems} onClose={closeOverflowMenu} />
+            ) : null}
+            {overflowPanel === 'exclude' ? (
+              <OverflowExcludePanel
+                options={excludeMenuOptions}
+                onExclude={onExcludeMessageEntity}
+                onClose={closeOverflowMenu}
+              />
+            ) : null}
           </>
         )}
       </Menu>
