@@ -63,6 +63,7 @@ const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
 const MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX = 28;
 const MESSAGE_CARD_ACTION_BUTTON_SIZE_PX = 28;
 const MESSAGE_CARD_ACTION_GROUP_BORDER_PX = 2;
+const MESSAGE_CARD_COMPACT_ACTIONS_MAX_WIDTH_PX = 480;
 
 export type MessageCardDisplayMode = 'duty' | 'analysis';
 
@@ -578,7 +579,7 @@ function ActionIconsRow({
         leftHeaderContent.scrollWidth -
         rightHeaderContent.scrollWidth -
         headerColumnGap * 2;
-      setMobileActions(displayMode === 'duty' && headerRow.clientWidth <= 360);
+      setMobileActions(headerRow.clientWidth <= MESSAGE_CARD_COMPACT_ACTIONS_MAX_WIDTH_PX);
       setStackedLayout(availableActionWidth < minInlineWidth);
     };
 
@@ -1354,7 +1355,7 @@ function MessageCardHeaderComponent({
     <div
       className={`message-card-header-timestamps inline-flex ${
         displayMode === 'duty' ? 'flex-nowrap' : 'flex-wrap'
-      } items-center`}
+      } message-card-header-timestamps--mobile-nowrap items-center`}
     >
       {messageTimeBasis === 'creation' ? (
         <div
