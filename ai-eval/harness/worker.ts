@@ -1,4 +1,4 @@
-import { readFile, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { spawnSync, execFileSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -80,6 +80,20 @@ try {
       await writeFile(join(runtimeDirectory, file.split("/").at(-1)!), source);
     }
     runner = join(runtimeDirectory, "runner.ts");
+    // Map scripts run with the echomap library frozen with this runner.
+    if (input.pythonRoot) {
+      process.env.ECHO_MAP_PYTHON_ROOT = input.pythonRoot;
+    } else if (input.runnerRef) {
+      const library = execFileSync("git", ["ls-tree", "-r", "--name-only", input.runnerRef, "echo-ai-agent/template/python/echomap"], { cwd: input.root, encoding: "utf8" }).trim().split("\n").filter(Boolean);
+      if (library.length) {
+        await mkdir(join(runtimeDirectory, "python/echomap"), { recursive: true });
+        for (const file of library) {
+          await writeFile(join(runtimeDirectory, "python/echomap", file.split("/").at(-1)!),
+            execFileSync("git", ["show", `${input.runnerRef}:${file}`], { cwd: input.root }));
+        }
+        process.env.ECHO_MAP_PYTHON_ROOT = join(runtimeDirectory, "python");
+      }
+    }
   }
   const { runAgent, validatePayload, systemPrompt, runnerHello } = await import(pathToFileURL(resolve(runner)).href);
   const history = input.payload.history ?? [];
