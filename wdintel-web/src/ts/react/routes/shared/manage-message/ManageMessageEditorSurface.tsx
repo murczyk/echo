@@ -119,7 +119,7 @@ export function ManageMessageEditorSurface({
             style: { width: '100vw', maxWidth: '100vw' },
             sx: {
               display: 'flex',
-              backgroundColor: 'background.default',
+              backgroundColor: 'var(--background-color)',
               backgroundImage: 'none',
             },
           },
