@@ -23,6 +23,7 @@ pub const PG_POOL_BGWORKER_MAX_CONNECTIONS: u32 = 20;
 pub const PG_WDFILE_POOL_MAX_CONNECTIONS: u32 = 10;
 pub const PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS: u32 = 1;
 pub const MIGRATION_ADVISORY_LOCK_NAME: &str = "echo:migrations";
+pub const MIGRATION_ADVISORY_LOCK_RETRY_MILLIS: u64 = 250;
 pub const FILE_REGISTRY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 60;
 pub(crate) const DEVICE_FILE_CONTENT_REUSE_MAX_BODY_BYTES: usize = 1024;
 pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -171,6 +172,22 @@ pub const AI_AGENT_CREDENTIAL_TTL_SEC: u64 = 6 * 60 * 60;
 pub const AI_AGENT_REQUEST_PROMPT_MAX_CHARS: usize = 100_000;
 pub const AI_AGENT_CONVERSATION_TITLE_MAX_CHARS: usize = 120;
 pub const AI_AGENT_EVENT_PAYLOAD_MAX_BYTES: usize = 256 * 1024;
+pub const AI_AGENT_MAP_BATCH_MAX_RECORDS: usize = 32;
+pub const AI_AGENT_MAP_MAX_RECORDS: usize = 512;
+// Agent scripts submit a whole bulk edit as one revision.
+pub const AI_AGENT_MAP_EDIT_MAX_OPERATIONS: usize = 512;
+pub const AI_AGENT_MAP_EDIT_CHANGE_LIMIT: usize = 32;
+pub const AI_AGENT_MAP_REVISION_LIST_LIMIT: usize = 100;
+pub const AI_AGENT_MAP_KMZ_MAX_ICONS: usize = 512;
+pub const AI_AGENT_MAP_KMZ_ICON_MAX_BYTES: usize = 64 * 1024;
+pub const AI_AGENT_MAP_MAX_DOCUMENTS: usize = 16;
+pub const AI_AGENT_MAP_TEXT_MAX_CHARS: usize = 2_000;
+pub const AI_AGENT_MAP_MAX_COMMENTS: usize = 32;
+pub const AI_AGENT_MAP_MAX_SOURCES: usize = 16;
+pub const AI_AGENT_MAP_PLATFORM_TYPE: &str = "CAPDOC";
+pub const AI_AGENT_MAP_FALLBACK_SIDC: &str = "10061000001211020000";
+pub const AI_AGENT_MAP_UKRAINE_LAT_BOUNDS: (f64, f64) = (43.0, 53.0);
+pub const AI_AGENT_MAP_UKRAINE_LON_BOUNDS: (f64, f64) = (22.0, 42.0);
 pub const AI_AGENT_REQUEST_MAX_RUNNER_EVENTS: usize = 10_000;
 pub const AI_AGENT_REQUEST_MAX_EVENT_BYTES: usize = 16 * 1024 * 1024;
 pub const AI_AGENT_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
@@ -256,7 +273,7 @@ pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
 pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.09.29.3";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.01.2";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -1091,6 +1108,7 @@ DELETE FROM api_integration;
 UPDATE area_of_responsibility SET updated_by_login_id = NULL;
 DELETE FROM sigint_key_share_policy;
 DELETE FROM device;
+DELETE FROM ai_agent_map;
 DELETE FROM ai_agent_request;
 DELETE FROM ai_agent_conversation;
 DELETE FROM ai_agent_user_link;
@@ -1234,6 +1252,7 @@ pub const INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE: usize = 20_000;
 pub const INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE: usize = 5_000;
 pub const INBOX_ITEM_UNIT_REPROCESS_BATCH_SIZE: u64 = 500;
 pub const INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT: usize = 128;
+pub const INBOX_UNIT_STRUCTURAL_PREFILTER_MIN_TRIGRAM_CHARS: usize = 3;
 pub const SIGINT_INBOX_NETWORK_CHECK_SLEEP_SECS: u64 = 2 * 60 * 60;
 pub const SIGINT_INBOX_NETWORK_CHECK_BATCH_SIZE: u64 = 500;
 pub const SIGINT_INBOX_NETWORK_CHECK_MISMATCH_LOG_LIMIT: usize = 10;
@@ -1274,6 +1293,7 @@ pub const UNIT_FORMATION_EQUIVALENT_NOTIONS: &[(&str, &[&str])] = &[
     ("оббпс", &["об бпс", "оббпс"]),
     ("а", &["а", "за", "зва", "оа"]),
     ("в", &["в", "b"]),
+    ("пкс", &["пкс", "рвсп"]),
     ("оптадн", &["оптадн", "оптдн"]),
     ("габат", &["габат", "габатр"]),
     ("шр", &["шр v", "шр", "шр в"]),

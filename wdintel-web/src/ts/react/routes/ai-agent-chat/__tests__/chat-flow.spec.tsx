@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AiAgentEvent } from '../../../services/api/ai-agent';
 
@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   delete: vi.fn(),
   stream: vi.fn(),
   notify: vi.fn(),
+  map: vi.fn(),
 }));
 
 vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
@@ -29,6 +30,18 @@ vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
   submitAiAgentRequest: mocks.submit,
   cancelAiAgentRequest: mocks.cancel,
   deleteAiAgentConversation: mocks.delete,
+  getAiAgentMap: mocks.map,
+  openAiAgentMapWorkspace: async (summary: unknown, signal?: AbortSignal) => {
+    const document = await mocks.map(summary, signal);
+    return {
+      revision: 1,
+      canUndo: false,
+      canRedo: false,
+      document,
+      changes: { addedCount: 0, updatedCount: 0, removedCount: 0, changes: [] },
+      revisions: [],
+    };
+  },
 }));
 vi.mock('../stream', () => ({
   streamAiAgentEventsWithReconnect: mocks.stream,
@@ -36,8 +49,17 @@ vi.mock('../stream', () => ({
 vi.mock('../../../components/PowerSnackbar', () => ({
   usePowerSnackbar: () => ({ notify: mocks.notify }),
 }));
+vi.mock('../MapCanvas', () => ({ default: () => <div>Точки мапи</div> }));
+vi.mock('../app6d-catalog', async (importOriginal) => {
+  const { APP6D_CATALOG } = await import('./app6d-catalog-fixture');
+  return {
+    ...(await importOriginal<typeof import('../app6d-catalog')>()),
+    loadCatalog: () => Promise.resolve(APP6D_CATALOG),
+  };
+});
 
 import { AiAgentChat } from '..';
+import { resetSharedMapDocuments } from '../map-documents';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../conversation-url';
 import { HttpRequestError } from '../../../services/api/client';
 
@@ -147,6 +169,7 @@ beforeEach(async () => {
   mocks.conversation.mockResolvedValue({ ...CONVERSATION, messages: [] });
   mocks.cancel.mockResolvedValue('cancelled');
   mocks.delete.mockResolvedValue(undefined);
+  mocks.map.mockImplementation(async (summary) => ({ ...summary, records: [] }));
   mocks.stream.mockImplementation(
     ({ requestId, signal, onEvent }: { requestId: string } & StreamConnection) =>
       new Promise<void>((resolve, reject) => {
@@ -174,8 +197,100 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.clearAllMocks();
+  resetSharedMapDocuments();
 });
 describe('AiAgentChat request queue', () => {
+  // The map workspace is lazy and pulls in milsymbol; load it once up front so
+  // its first transform does not count against an individual test.
+  beforeAll(async () => {
+    await import('../MapWorkspace');
+  }, 60_000);
+  it('#3064 deduplicates replayed publications, replaces maps, and preserves draft text', async () => {
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-maps',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    setTextarea('Побудуй мапу');
+    submitForm();
+    await flush();
+    const summary = {
+      id: '11111111-1111-4111-8111-111111111111',
+      requestId: 'request-maps',
+      title: 'Головна',
+      isMain: true,
+      totalCount: 1,
+      validCount: 1,
+      invalidCount: 0,
+      warnings: [],
+    };
+    const emitMap = (sequence: number, value = summary) =>
+      connections.get('request-maps')?.onEvent({
+        sequence,
+        requestId: 'request-maps',
+        type: 'map_artifact',
+        createdAt: Date.now(),
+        map: value,
+        text: null,
+        toolCallId: null,
+        toolName: null,
+        sourceTitle: null,
+        sourceUrl: null,
+        method: null,
+        path: null,
+        status: null,
+        isError: null,
+      });
+    await act(async () => emitMap(1, { ...summary, isMain: false, title: 'Підмапа' }));
+    expect(container.querySelectorAll('.ai-map-chip')).toHaveLength(1);
+    expect(container.querySelectorAll('.ai-map-preview')).toHaveLength(0);
+    await act(async () => clickAriaButton('Відкрити мапу: Підмапа'));
+    await flush();
+    await vi.waitFor(
+      () => expect(document.querySelector('section[aria-label="Мапа відповіді"]')).not.toBeNull(),
+      { timeout: 10_000 },
+    );
+    await act(async () => clickAriaButton('Закрити мапу', document.body));
+    const main = { ...summary, id: '44444444-4444-4444-8444-444444444444' };
+    await act(async () => {
+      emitMap(2, main);
+      emitMap(3, main);
+    });
+    expect(container.querySelectorAll('.ai-map-preview')).toHaveLength(1);
+    expect(container.querySelectorAll('.ai-map-chip')).toHaveLength(1);
+    setTextarea('Наступна чернетка');
+    await act(async () => clickAriaButton('Відкрити мапу: Головна'));
+    await flush();
+    await vi.waitFor(
+      () => expect(document.querySelector('section[aria-label="Мапа відповіді"]')).not.toBeNull(),
+      { timeout: 10_000 },
+    );
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'Наступна чернетка',
+    );
+    const next = { ...summary, id: '33333333-3333-4333-8333-333333333333', title: 'Наступна' };
+    await act(async () => emitMap(4, next));
+    await act(async () => clickAriaButton('Відкрити мапу: Наступна'));
+    await flush();
+    await vi.waitFor(
+      () =>
+        expect(
+          document.querySelector<HTMLInputElement>(
+            'section[aria-label="Мапа відповіді"] input[aria-label="Назва мапи"]',
+          )?.value,
+        ).toBe('Наступна'),
+      { timeout: 10_000 },
+    );
+    await act(async () => clickAriaButton('Закрити мапу', document.body));
+    await flush();
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'Наступна чернетка',
+    );
+    await act(async () => clickAriaButton('Відкрити мапу: Наступна'));
+    await act(async () => window.dispatchEvent(new Event(AI_AGENT_NEW_CONVERSATION_EVENT)));
+    await flush();
+    expect(document.querySelector('section[aria-label="Мапа відповіді"]')).toBeNull();
+  });
   it('keeps following new progress when the viewport is at the bottom', async () => {
     const originalScrollIntoView = Object.getOwnPropertyDescriptor(
       HTMLElement.prototype,
@@ -323,6 +438,96 @@ describe('AiAgentChat request queue', () => {
     );
   });
 
+  it('#3064 stops queued and running tasks from the composer, deduplicates clicks and retains published maps and drafts', async () => {
+    mocks.submit
+      .mockResolvedValueOnce({ id: 'request-1', conversationId: CONVERSATION.id, state: 'queued' })
+      .mockResolvedValueOnce({
+        id: 'request-2',
+        conversationId: CONVERSATION.id,
+        state: 'running',
+      });
+    setTextarea('Перший запит');
+    submitForm();
+    await flush();
+    setTextarea('Другий запит');
+    submitForm();
+    await flush();
+    setTextarea('Чернетка наступного запиту');
+    const map = {
+      id: '33333333-3333-4333-8333-333333333333',
+      requestId: 'request-1',
+      title: 'Опублікована мапа',
+      isMain: false,
+      totalCount: 107,
+      validCount: 107,
+      invalidCount: 0,
+      warnings: [],
+    };
+    await act(async () =>
+      connections.get('request-1')!.onEvent({
+        sequence: 1,
+        requestId: 'request-1',
+        type: 'map_artifact',
+        createdAt: Date.now(),
+        text: null,
+        toolCallId: null,
+        toolName: null,
+        sourceTitle: null,
+        sourceUrl: null,
+        method: null,
+        path: null,
+        status: null,
+        isError: null,
+        map,
+      }),
+    );
+    let acceptStop!: () => void;
+    mocks.cancel
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            acceptStop = () => resolve('cancelled');
+          }),
+      )
+      .mockRejectedValueOnce(new Error('Сервіс недоступний'));
+    await act(async () => {
+      clickAriaButton('Зупинити всі запити');
+      clickAriaButton('Зупинити всі запити');
+    });
+    await flush();
+    expect(mocks.cancel.mock.calls).toEqual([['request-1'], ['request-2']]);
+    expect(mocks.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        message: 'Не вдалося скасувати запит: Сервіс недоступний',
+      }),
+    );
+    await act(async () => acceptStop());
+    await flush();
+    const stop = container.querySelector(
+      'button[aria-label="Зупинити запит"]',
+    ) as HTMLButtonElement;
+    expect(stop.disabled).toBe(false);
+    expect(
+      container.querySelector('[data-testid="live-request-request-1"]')?.textContent,
+    ).toContain('Скасовано');
+    expect(container.querySelector('.ai-map-chip')).not.toBeNull();
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'Чернетка наступного запиту',
+    );
+    await act(async () => {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 410));
+      clickAriaButton('Зупинити запит');
+    });
+    await flush();
+    expect(mocks.cancel.mock.calls).toEqual([['request-1'], ['request-2'], ['request-2']]);
+    expect(container.querySelector('button[aria-label="Зупинити запит"]')).toBeNull();
+    expect(container.querySelector('.ai-map-chip')).not.toBeNull();
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'Чернетка наступного запиту',
+    );
+  });
+
   it('keeps a completed request and its answer when cancellation loses the terminal-state race', async () => {
     mocks.submit.mockResolvedValueOnce({
       id: 'request-1',
@@ -359,7 +564,7 @@ describe('AiAgentChat request queue', () => {
     const request = container.querySelector(
       '[data-testid="live-request-request-1"]',
     ) as HTMLElement;
-    await act(async () => clickAriaButton('Скасувати запит', request));
+    await act(async () => clickAriaButton('Зупинити запит'));
     await flush();
 
     expect(request.textContent).not.toContain('Завершено');

@@ -7,7 +7,7 @@ use actix_web::{
     cookie::{Cookie, Key},
     dev::{ServiceFactory, ServiceRequest, ServiceResponse},
     http::StatusCode,
-    test, web, App,
+    test, web, App, HttpMessage, HttpRequest, HttpResponse,
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, IntoActiveModel, TransactionTrait,
@@ -133,8 +133,27 @@ async fn bootstrap_app(
         ))
         .wrap(SessionMiddleware::new(store, Key::generate()))
         .app_data(web::Data::from(env))
+        .route("/test-human-login", web::post().to(test_human_login))
         .service(exchange_bootstrap)
         .service(crate::users::api_user)
+        .service(crate::ai_agent::maps::prepare_map)
+        .service(crate::ai_agent::maps::get_map)
+        .service(crate::ai_agent::maps::download_csv)
+        .service(crate::ai_agent::maps::download_kmz)
+        .service(crate::ai_agent::maps::workspace::open_workspace)
+        .service(crate::ai_agent::maps::workspace::edit_map)
+        .service(crate::ai_agent::maps::workspace::undo_map)
+        .service(crate::ai_agent::maps::workspace::redo_map)
+        .service(crate::ai_agent::cancel_request)
+}
+
+async fn test_human_login(
+    req: HttpRequest,
+    login_id: web::Json<Uuid>,
+) -> HttpResponse {
+    actix_identity::Identity::login(&req.extensions(), login_id.to_string())
+        .unwrap();
+    HttpResponse::NoContent().finish()
 }
 
 fn exchange(token: &str) -> test::TestRequest {
@@ -575,4 +594,576 @@ async fn message_citations_survive_reload_without_cross_request_sources() {
             .unwrap();
     }
     fixture.cleanup(&env).await;
+}
+
+// Regression: https://github.com/echoua/echo/issues/3064
+#[actix_web::test]
+#[serial]
+async fn map_publication_replay_cancellation_and_access_follow_request_ownership(
+) {
+    use crate::ai_agent::maps::types::*;
+    use crate::ai_agent::types::{
+        AiAgentMessageCitation, AiAgentRequestCancelRsp, AiAgentRequestIdReq,
+    };
+    use crate::ai_agent::{events, maps};
+    use crate::entities::{ai_agent_request_event, signal_message};
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    Arc::get_mut(&mut env).unwrap().config.static_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../wdintel-web/static")
+            .to_str()
+            .unwrap()
+            .to_string();
+    let fixture = AgentFixture::new(&env).await;
+    let request = running_request(&env, &fixture).await;
+    let zone =
+        crate::functest::tests::mk_sigint_zone(&env.dbx, Default::default())
+            .await
+            .unwrap();
+    for login in [&fixture.human, &fixture.agent] {
+        let mut login = login.clone().into_active_model();
+        login.sigint_zone_id = Set(Some(zone.id));
+        login.update(&env.dbx).await.unwrap();
+    }
+    let source = crate::functest::tests::mk_signal_message(
+        &env.dbx,
+        signal_message::ActiveModel {
+            id_uuid: Set(Some(Uuid::new_v4())),
+            datasource_group_id: Set(None),
+            login_id: Set(Some(fixture.human.id)),
+            sender: Set(Some(fixture.human.id.to_string())),
+            body: Set(Some("Synthetic map source".to_string())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let input = AiAgentMapRecordInput {
+        sidc: "10062000001209020000".to_string(),
+        name: "Подія".to_string(),
+        observation_datetime: None,
+        coordinate_system: "msk2000".to_string(),
+        x: "5215227".to_string(),
+        y: "6548669".to_string(),
+        comments: vec!["Коментар".to_string()],
+        sources: vec![AiAgentMessageCitation {
+            message_id: source.id,
+            message_identifier: source.id_uuid.unwrap().to_string(),
+        }],
+    };
+    let app = test::init_service(bootstrap_app(env.clone()).await).await;
+    let (token, correlation_id) =
+        issue_bootstrap(&env, fixture.agent.id, Some(request.id), false)
+            .await
+            .unwrap();
+    let mut agent = fixture.agent.clone().into_active_model();
+    agent.deleted = Set(false);
+    agent.update(&env.dbx).await.unwrap();
+    let mut bound = request.clone().into_active_model();
+    bound.correlation_id = Set(Some(correlation_id));
+    bound.update(&env.dbx).await.unwrap();
+    let response =
+        test::call_service(&app, exchange(&token).to_request()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let api = |path: &str| {
+        test::TestRequest::post()
+            .uri(path)
+            .cookie(cookie.clone())
+            .insert_header((
+                crate::config::AI_AGENT_CORRELATION_HEADER,
+                correlation_id.to_string(),
+            ))
+    };
+    let response = test::call_service(
+        &app,
+        api("/api/ai-agent/maps/prepare")
+            .set_json(AiAgentMapPrepareReq {
+                records: vec![input.clone(); 33],
+            })
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    for count in [18, 32] {
+        let response = test::call_service(
+            &app,
+            api("/api/ai-agent/maps/prepare")
+                .set_json(AiAgentMapPrepareReq {
+                    records: vec![input.clone(); count],
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let prepared: AiAgentMapPrepareRsp =
+            test::read_body_json(response).await;
+        assert_eq!(prepared.records.len(), count);
+    }
+    let response = test::call_service(
+        &app,
+        api("/api/ai-agent/maps/prepare")
+            .set_json(AiAgentMapPrepareReq {
+                records: vec![input],
+            })
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let prepared: AiAgentMapPrepareRsp = test::read_body_json(response).await;
+    assert!(maps::load_documents(&env.dbx, &[request.id])
+        .await
+        .unwrap()
+        .is_empty());
+    let mut document = AiAgentMapDocument {
+        id: Uuid::new_v4().to_string(),
+        title: "Головна мапа".to_string(),
+        is_main: true,
+        records: prepared.records,
+        warnings: Vec::new(),
+        total_count: 999,
+        valid_count: 999,
+        invalid_count: 999,
+    };
+    for _ in 0..2 {
+        assert!(events::append_runner(
+            &env.dbx,
+            request.id,
+            "map_artifact",
+            serde_json::json!({ "document": document })
+        )
+        .await
+        .unwrap());
+    }
+    document.title = "Змінена мапа".to_string();
+    assert!(events::append_runner(
+        &env.dbx,
+        request.id,
+        "map_artifact",
+        serde_json::json!({ "document": document })
+    )
+    .await
+    .is_err());
+    let stored = ai_agent_request_event::Entity::find()
+        .filter(ai_agent_request_event::Column::RequestId.eq(request.id))
+        .all(&env.dbx)
+        .await
+        .unwrap();
+    assert_eq!(stored.len(), 1);
+    let stored_summary = stored[0].map_summary.as_ref().unwrap();
+    assert_eq!(stored_summary["totalCount"], 1);
+    assert_eq!(stored_summary["validCount"], 1);
+    assert_eq!(stored_summary["invalidCount"], 0);
+    assert!(stored_summary.get("records").is_none());
+    let published_event = stored[0].clone();
+    let mut state = crate::ai_agent::SseState {
+        dbx: env.dbx.clone(),
+        request_id: request.id,
+        after: 0,
+    };
+    let replay =
+        crate::ai_agent::render_sse_events(&mut state, stored).unwrap();
+    let replay = std::str::from_utf8(&replay).unwrap();
+    assert!(replay.contains("map_artifact"));
+    assert!(!replay.contains("records") && !replay.contains("Коментар"));
+    let req = AiAgentMapGetReq {
+        request_id: request.id.to_string(),
+        map_id: document.id.clone(),
+        revision: None,
+    };
+    let response = test::call_service(
+        &app,
+        api("/api/ai-agent/maps/get").set_json(&req).to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let loaded: AiAgentMapDocument = test::read_body_json(response).await;
+    assert_eq!(
+        (loaded.total_count, loaded.valid_count, loaded.invalid_count),
+        (1, 1, 0)
+    );
+    assert_eq!(loaded.title, "Головна мапа");
+    let outsider = mk_login(&env.dbx, Default::default()).await.unwrap();
+    assert!(maps::document_for_owner(&env, outsider.id, &req)
+        .await
+        .is_err());
+    let denied = test::try_call_service(
+        &app,
+        api("/api/ai-agent/maps/csv").set_json(&req).to_request(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        denied.as_response_error().status_code(),
+        StatusCode::FORBIDDEN
+    );
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/test-human-login")
+            .set_json(fixture.human.id)
+            .to_request(),
+    )
+    .await;
+    let human_cookie =
+        response.response().cookies().next().unwrap().into_owned();
+    let human_api = |path: &str| {
+        test::TestRequest::post()
+            .uri(path)
+            .cookie(human_cookie.clone())
+    };
+    let response = test::call_service(
+        &app,
+        human_api("/api/ai-agent/maps/csv")
+            .set_json(&req)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get("Cache-Control")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "private, no-store"
+    );
+    assert!(std::str::from_utf8(&test::read_body(response).await)
+        .unwrap()
+        .contains("\"CAPDOC\""));
+    let response = test::call_service(
+        &app,
+        human_api("/api/ai-agent/maps/kmz")
+            .set_json(&req)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(
+        test::read_body(response).await,
+    ))
+    .unwrap();
+    assert!(archive.by_name("doc.kml").is_ok());
+    let mut invalid = loaded.clone();
+    invalid.id = Uuid::new_v4().to_string();
+    invalid.is_main = false;
+    invalid.records[0].original_y = "654866".to_string();
+    assert!(events::append_runner(
+        &env.dbx,
+        request.id,
+        "map_artifact",
+        serde_json::json!({ "document": invalid })
+    )
+    .await
+    .unwrap());
+    let invalid_req = AiAgentMapGetReq {
+        map_id: invalid.id,
+        ..req.clone()
+    };
+    let response = test::call_service(
+        &app,
+        human_api("/api/ai-agent/maps/kmz")
+            .set_json(&invalid_req)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let response = test::call_service(
+        &app,
+        human_api("/api/ai-agent/maps/csv")
+            .set_json(&invalid_req)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(std::str::from_utf8(&test::read_body(response).await)
+        .unwrap()
+        .contains("\"INVALID\""));
+    for _ in 0..2 {
+        let response = test::call_service(
+            &app,
+            human_api("/api/ai-agent/requests/cancel")
+                .set_json(AiAgentRequestIdReq {
+                    request_id: request.id.to_string(),
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let cancelled: AiAgentRequestCancelRsp =
+            test::read_body_json(response).await;
+        assert_eq!(cancelled.state, "cancelled");
+    }
+    assert!(!events::append_runner(
+        &env.dbx,
+        request.id,
+        "map_artifact",
+        serde_json::json!({ "document": loaded })
+    )
+    .await
+    .unwrap());
+    let conversation =
+        ai_agent_conversation::Entity::find_by_id(request.conversation_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+    let mut without_payload = published_event.clone().into_active_model();
+    without_payload.payload = Set(serde_json::json!({}));
+    without_payload.update(&env.dbx).await.unwrap();
+    let detail =
+        crate::ai_agent::conversation_detail(&env.dbx, conversation.clone())
+            .await
+            .unwrap();
+    assert!(detail.messages[0].maps.is_empty());
+    assert_eq!(detail.messages[1].maps[0].id, req.map_id);
+    let followup = running_request(&env, &fixture).await;
+    let mut followup = followup.into_active_model();
+    followup.conversation_id = Set(request.conversation_id);
+    let followup = followup.update(&env.dbx).await.unwrap();
+    let history = crate::ai_agent::worker::load_history(&env, &followup)
+        .await
+        .unwrap();
+    assert_eq!(history[1]["maps"][0]["id"], req.map_id);
+    assert!(history[1]["content"]
+        .as_str()
+        .unwrap()
+        .contains("echo-map:"));
+    let mut restored = published_event.clone().into_active_model();
+    restored.payload = Set(published_event.payload);
+    restored.update(&env.dbx).await.unwrap();
+    assert!(maps::document_for_owner(&env, fixture.human.id, &req)
+        .await
+        .is_ok());
+    let mut revoked = source.into_active_model();
+    revoked.login_id = Set(Some(outsider.id));
+    revoked.sender = Set(Some(outsider.id.to_string()));
+    revoked.update(&env.dbx).await.unwrap();
+    assert!(maps::document_for_owner(&env, fixture.human.id, &req)
+        .await
+        .is_err());
+    for path in [
+        "/api/ai-agent/maps/get",
+        "/api/ai-agent/maps/csv",
+        "/api/ai-agent/maps/kmz",
+    ] {
+        let response = test::call_service(
+            &app,
+            human_api(path).set_json(&req).to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
+    }
+    ai_agent_request::Entity::delete_by_id(followup.id)
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    let mut deleted = conversation.into_active_model();
+    deleted.deleted_at = Set(Some(chrono::Utc::now().naive_utc()));
+    deleted.update(&env.dbx).await.unwrap();
+    assert!(maps::document_for_owner(&env, fixture.human.id, &req)
+        .await
+        .is_err());
+    ai_agent_request::Entity::delete_by_id(request.id)
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    ai_agent_conversation::Entity::delete_by_id(request.conversation_id)
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    fixture.cleanup(&env).await;
+}
+
+// Regression: https://github.com/echoua/echo/issues/3064
+#[actix_web::test]
+#[serial]
+async fn map_revisions_edit_undo_redo_and_replay_without_side_effects() {
+    use crate::ai_agent::events;
+    use crate::ai_agent::maps::prepare::prepare_record;
+    use crate::ai_agent::maps::types::*;
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let request = running_request(&env, &fixture).await;
+    let record = prepare_record(AiAgentMapRecordInput {
+        sidc: "10062000001209020000".to_string(),
+        name: "Подія".to_string(),
+        observation_datetime: None,
+        coordinate_system: "msk2000".to_string(),
+        x: "5215227".to_string(),
+        y: "6548669".to_string(),
+        comments: Vec::new(),
+        sources: Vec::new(),
+    })
+    .unwrap();
+    let document = AiAgentMapDocument {
+        id: Uuid::new_v4().to_string(),
+        title: "Мапа".to_string(),
+        is_main: true,
+        records: vec![record],
+        warnings: Vec::new(),
+        total_count: 1,
+        valid_count: 1,
+        invalid_count: 0,
+    };
+    assert!(events::append_runner(
+        &env.dbx,
+        request.id,
+        "map_artifact",
+        serde_json::json!({ "document": document })
+    )
+    .await
+    .unwrap());
+    let app = test::init_service(bootstrap_app(env.clone()).await).await;
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/test-human-login")
+            .set_json(fixture.human.id)
+            .to_request(),
+    )
+    .await;
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let call = |path: &str, body: serde_json::Value| {
+        test::TestRequest::post()
+            .uri(path)
+            .cookie(cookie.clone())
+            .set_json(body)
+            .to_request()
+    };
+    let ids = serde_json::json!({
+        "requestId": request.id.to_string(),
+        "mapId": document.id,
+    });
+    let with = |extra: serde_json::Value| {
+        let mut body = ids.clone();
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        body
+    };
+    let edit = |key: &str, revision: i32, identity: &str| {
+        with(serde_json::json!({
+            "expectedRevision": revision,
+            "idempotencyKey": key,
+            "operations": [{
+                "op": "setComponents",
+                "selector": { "all": true, "expect": "many" },
+                "components": { "identity": identity },
+            }],
+        }))
+    };
+    let response =
+        test::call_service(&app, call("/api/ai-agent/maps/get", ids.clone()))
+            .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    use sea_orm::ConnectionTrait;
+    let row = env
+        .dbx
+        .query_one_raw(sea_orm::Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "select count(*)::int8 as count from ai_agent_map".to_string(),
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.try_get::<i64>("", "count").unwrap(), 0);
+
+    let response = test::call_service(
+        &app,
+        call("/api/ai-agent/maps/workspace", ids.clone()),
+    )
+    .await;
+    let opened: AiAgentMapWorkspaceRsp = test::read_body_json(response).await;
+    assert_eq!(opened.revision, 1);
+    assert!(!opened.can_undo && !opened.can_redo);
+    assert_eq!(opened.document.records[0].id, document.records[0].id);
+
+    let response = test::call_service(
+        &app,
+        call("/api/ai-agent/maps/edit", edit("edit-key-0001", 1, "3")),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let edited: AiAgentMapEditRsp = test::read_body_json(response).await;
+    assert_eq!((edited.revision, edited.updated_count), (2, 1));
+    let response = test::call_service(
+        &app,
+        call("/api/ai-agent/maps/edit", edit("edit-key-0001", 1, "3")),
+    )
+    .await;
+    let replayed: AiAgentMapEditRsp = test::read_body_json(response).await;
+    assert_eq!(replayed, edited);
+    let stale = test::try_call_service(
+        &app,
+        call("/api/ai-agent/maps/edit", edit("edit-key-0002", 1, "5")),
+    )
+    .await;
+    let status = match stale {
+        Ok(response) => response.status(),
+        Err(error) => error.as_response_error().status_code(),
+    };
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let response = test::call_service(
+        &app,
+        call(
+            "/api/ai-agent/maps/undo",
+            with(serde_json::json!({ "expectedRevision": 2 })),
+        ),
+    )
+    .await;
+    let undone: AiAgentMapWorkspaceRsp = test::read_body_json(response).await;
+    assert_eq!(undone.revision, 1);
+    assert!(undone.can_redo && !undone.can_undo);
+    assert_eq!(&undone.document.records[0].sidc[3..4], "6");
+
+    let response = test::call_service(
+        &app,
+        call("/api/ai-agent/maps/edit", edit("edit-key-0003", 1, "4")),
+    )
+    .await;
+    let branched: AiAgentMapEditRsp = test::read_body_json(response).await;
+    assert_eq!(branched.revision, 3);
+    let response = test::call_service(
+        &app,
+        call(
+            "/api/ai-agent/maps/undo",
+            with(serde_json::json!({ "expectedRevision": 3 })),
+        ),
+    )
+    .await;
+    let undone: AiAgentMapWorkspaceRsp = test::read_body_json(response).await;
+    assert_eq!(undone.revision, 1);
+    let response = test::call_service(
+        &app,
+        call(
+            "/api/ai-agent/maps/redo",
+            with(serde_json::json!({ "expectedRevision": 1 })),
+        ),
+    )
+    .await;
+    let redone: AiAgentMapWorkspaceRsp = test::read_body_json(response).await;
+    assert_eq!(redone.revision, 3);
+    assert_eq!(&redone.document.records[0].sidc[3..4], "4");
+    assert_eq!(redone.changes.updated_count, 1);
+    assert_eq!(redone.revisions.len(), 3);
+    assert_eq!(redone.revisions[0].origin, "user");
+
+    let response =
+        test::call_service(&app, call("/api/ai-agent/maps/get", ids.clone()))
+            .await;
+    let head: AiAgentMapDocument = test::read_body_json(response).await;
+    assert_eq!(&head.records[0].sidc[3..4], "4");
+    let response = test::call_service(
+        &app,
+        call(
+            "/api/ai-agent/maps/get",
+            with(serde_json::json!({ "revision": 2 })),
+        ),
+    )
+    .await;
+    let second: AiAgentMapDocument = test::read_body_json(response).await;
+    assert_eq!(&second.records[0].sidc[3..4], "3");
 }

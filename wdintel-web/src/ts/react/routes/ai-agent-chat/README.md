@@ -18,7 +18,47 @@ confirmation and removes the row only after the server accepts deletion. Deletin
 the viewed conversation replaces its URL with `/`; deleting another preserves the
 current view. The backend rejects deletion while a request is queued or running.
 
+## Point-map documents
+
+Registered map links render lazy inline thumbnails. Each answer's latest main
+map has a compact 144 × 96 px preview card with a point-count badge and its most
+frequent symbols. Opening either shows `MapWorkspace`: from the Echo 1024 px
+breakpoint chat docks to a 420 px column and the map fills the rest; below it the
+workspace is a full-height drawer. Opening, replacing and closing a map preserve
+chat scroll and draft text. Conversation changes clear selection, while reload
+restores the published documents. Full records and exports are fetched with
+request ownership and source access checks; failures use existing toasts.
+
+`MapCanvas` draws APP-6(D) symbols with milsymbol (`map-symbol.ts`, loaded only
+with the workspace) and fans out records at identical coordinates. Click,
+Ctrl/Shift-click and Shift-drag select records. `MapInspector` lists records by
+symbol group with filtering and per-group visibility, shows the selected record,
+and hosts `SymbolEditor` (affiliation, type, status, echelon from the generated
+`static/data/app6d-catalog.json`). Every change, from the inspector, the title
+field, Delete, or the agent, is a saved revision; `use-map-workspace.ts` owns
+loading, edits, undo/redo and conflict reloads. While a map is open,
+`MapEditContext` in the composer decides whether a request may edit it and sends
+the selection. KMZ export sends milsymbol-rendered PNG icons. See the
+[map contract and rollout](../../../../../../echo-ai-agent/MAPS.md).
+
+Regression coverage:
+
+- `wdintel-web/src/ts/react/routes/ai-agent-chat/__tests__/maps.spec.tsx`
+- `wdintel-web/src/ts/react/routes/ai-agent-chat/__tests__/map-symbol.spec.ts`
+- `wdintel-web/src/ts/react/routes/ai-agent-chat/__tests__/chat-flow.spec.tsx`
+- `wdintel-web/src/ts/react/services/api/__tests__/ai-agent.spec.ts`
+- `wdintel-web/tests/e2e/ai-agent-maps.spec.ts`
+
 ## Live progress
+
+The composer shows **Зупинити** while this conversation has queued or running
+requests, including after reload or a stream interruption. It cancels all active
+requests in the viewed conversation; each activity row can still cancel its own
+request. Pending cancellations suppress duplicate calls, failures show a toast
+and remain retryable, and a completed request keeps its final answer if it wins
+the cancellation race. Stopping preserves the composer draft, partial response
+and published maps. The backend revokes request credentials and terminates the
+runner; switching conversations only detaches the browser stream.
 
 Each request shows a softly pulsating current-action title beside elapsed time
 and cancel/reconnect controls. An optional second line contains factual dates,
@@ -50,6 +90,7 @@ their separate reconnect action.
 
 Regression coverage (#3064):
 
+- `wdintel-web/src/ts/react/routes/ai-agent-chat/__tests__/map-symbol.spec.ts`
 - `wdintel-web/src/ts/react/routes/ai-agent-chat/__tests__/chat-flow.spec.tsx`
 - `wdintel-web/tests/e2e/ai-agent-chat-navigation.spec.ts`
 - `wdintel-web/tests/e2e/ai-agent-citations.spec.ts`

@@ -106,8 +106,16 @@ ln -sfn "$PI_ROOT/node_modules/.bin/pi" /usr/local/bin/pi
 install -d -m 0755 /usr/local/sbin
 install -m 0644 "$STAGE/runner.ts" "$PI_ROOT/runner.ts"
 install -m 0644 "$STAGE/citations.ts" "$PI_ROOT/citations.ts"
+install -m 0644 "$STAGE/maps.ts" "$PI_ROOT/maps.ts"
+install -m 0644 "$STAGE/map-script.ts" "$PI_ROOT/map-script.ts"
 install -m 0644 "$STAGE/search-guidance.ts" "$PI_ROOT/search-guidance.ts"
 install -m 0755 "$STAGE/echo-ai-agent-runner" /usr/local/bin/echo-ai-agent-runner
+# Map-script library; the runner executes it in user+network namespaces.
+install -d -m 0755 /opt/echo-ai-agent/python/echomap
+install -m 0644 "$STAGE"/python/echomap/*.py "$STAGE/python/echomap/app6d-catalog.json" \
+  /opt/echo-ai-agent/python/echomap/
+runuser -u "$AGENT_USER" -- unshare --user --map-root-user --net -- true \
+  || printf '[echo-ai-agent-template] WARNING: no unprivileged namespaces; map scripts disabled\n' >&2
 install -m 0755 "$STAGE/configure-network.sh" \
   /usr/local/sbin/echo-ai-agent-configure-network
 

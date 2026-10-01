@@ -1061,6 +1061,14 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_agent::create_request)
             .service(crate::ai_agent::cancel_request)
             .service(crate::ai_agent::request_events)
+            .service(crate::ai_agent::maps::prepare_map)
+            .service(crate::ai_agent::maps::get_map)
+            .service(crate::ai_agent::maps::download_csv)
+            .service(crate::ai_agent::maps::download_kmz)
+            .service(crate::ai_agent::maps::workspace::open_workspace)
+            .service(crate::ai_agent::maps::workspace::edit_map)
+            .service(crate::ai_agent::maps::workspace::undo_map)
+            .service(crate::ai_agent::maps::workspace::redo_map)
             .service(crate::ai_agent::auth::exchange_bootstrap)
             .service(
                 crate::ai_agent::provider_gateway::chat_completions,

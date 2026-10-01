@@ -37,6 +37,7 @@ pulldown-cmark = "0.13.0"
 tempfile = "3.27.0"
 walkdir = "^2.5.0"
 zip = "4.6.1"
+proj = { version = "0.31.0", optional = true }
 opendal = { version = "0.54", features = ["services-s3", "services-fs"] }
 arrow-array = "59.1.0"
 arrow-schema = "59.1.0"
@@ -160,7 +161,7 @@ chrono = { workspace = true }
 [features]
 default = ["proj"]
 opencv = ["dep:opencv"]
-proj = ["milgeo-rs/proj"]
+proj = ["milgeo-rs/proj", "dep:proj"]
 
 
 [package.metadata.deb]

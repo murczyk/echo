@@ -98,6 +98,8 @@ pub struct AiAgentMessageItem {
     pub created_at: i64,
     #[serde(default)]
     pub citations: Vec<AiAgentMessageCitation>,
+    #[serde(default)]
+    pub maps: Vec<super::maps::types::AiAgentMapSummary>,
 }
 
 #[derive(
@@ -121,6 +123,8 @@ pub struct AiAgentRequestCreateReq {
     pub conversation_id: Option<String>,
     pub ai_engine_id: Option<String>,
     pub prompt: String,
+    #[serde(default)]
+    pub map_edit: Option<super::maps::types::AiAgentMapEditTarget>,
 }
 
 #[derive(

@@ -8,10 +8,17 @@ import {
   useState,
   type ComponentProps,
 } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import type { AiAgentMessageCitation, InboxMessage, SignalGroupEntry } from '../../../../Bindings';
+import type {
+  AiAgentMapSummary,
+  AiAgentMessageCitation,
+  InboxMessage,
+  SignalGroupEntry,
+} from '../../../../Bindings';
+import { MapPreview } from './MapPreview';
+import { ConversationMapsContext } from './map-documents';
 import { EchoChip } from '../../components/EchoChip';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { fetchMessagesByIdsWithMetadata } from '../../services/api/inbox-messages';
@@ -64,6 +71,7 @@ function resolveMessages(
 
 const CitationContext = createContext<{
   registered: Map<string, AiAgentMessageCitation>;
+  maps: Map<string, AiAgentMapSummary>;
   resolved: Map<number, ResolvedCitation>;
   failed: boolean;
   refresh: (id: number) => Promise<boolean>;
@@ -72,6 +80,15 @@ const CitationContext = createContext<{
 function CitationAnchor({ href, children: label }: ComponentProps<'a'>) {
   const context = useContext(CitationContext)!;
   const { registered, resolved, failed, refresh } = context;
+
+  if (href?.startsWith('echo-map:')) {
+    const summary = context.maps.get(href);
+    return summary ? (
+      <MapPreview key={`${summary.requestId}:${summary.id}`} summary={summary} inline />
+    ) : (
+      <EchoChip label="Мапа недоступна" />
+    );
+  }
 
   const citation = registered.get(href ?? '');
   if (!citation) {
@@ -110,11 +127,14 @@ const MARKDOWN_COMPONENTS = { a: CitationAnchor };
 export function CitationMarkdown({
   children,
   citations = EMPTY_CITATIONS,
+  maps = [],
 }: {
   children: string;
   citations?: AiAgentMessageCitation[];
+  maps?: AiAgentMapSummary[];
 }) {
   const { notify } = usePowerSnackbar();
+  const conversationMaps = useContext(ConversationMapsContext);
   const [resolved, setResolved] = useState(new Map<number, ResolvedCitation>());
   const resolvedRef = useRef(resolved);
   resolvedRef.current = resolved;
@@ -202,12 +222,23 @@ export function CitationMarkdown({
 
   return (
     <>
-      <CitationContext.Provider value={{ registered, resolved, failed, refresh }}>
+      <CitationContext.Provider
+        value={{
+          registered,
+          resolved,
+          failed,
+          refresh,
+          maps: new Map(
+            [...conversationMaps, ...maps].map((summary) => [`echo-map:${summary.id}`, summary]),
+          ),
+        }}
+      >
         <ReactMarkdown
           skipHtml
           disallowedElements={['img']}
           remarkPlugins={[remarkGfm]}
           components={MARKDOWN_COMPONENTS}
+          urlTransform={(url) => (url.startsWith('echo-map:') ? url : defaultUrlTransform(url))}
         >
           {children}
         </ReactMarkdown>

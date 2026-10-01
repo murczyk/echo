@@ -30,7 +30,7 @@ def digest(path):
     return checksum.hexdigest()
 
 
-def load_suite(suite_id):
+def load_suite(suite_id, development_only=False):
     catalog = json.loads((ROOT / 'ai-eval/catalog.json').read_text())
     suite = next((item for item in catalog['suites'] if item['id'] == suite_id), None)
     if not suite or suite['runner'] != 'harness':
@@ -41,12 +41,18 @@ def load_suite(suite_id):
         raise ValueError('Unsupported dataset schema')
     for name, expected in manifest['artifacts'].items():
         path = (directory / name).resolve()
-        if not path.is_relative_to(directory.resolve()) or digest(path) != expected:
+        if not path.is_relative_to(directory.resolve()):
+            raise ValueError(f'Fixture path escapes dataset: {name}')
+        if development_only and Path(name).parts[0] == 'raw':
+            continue
+        if not path.is_file() or digest(path) != expected:
             raise ValueError(f'Fixture checksum/path mismatch: {name}; sync the immutable dataset revision')
     cases = []
     for name in manifest['caseFiles']:
         if name not in manifest['artifacts']:
             raise ValueError('Every case file needs a checksum')
+        if development_only and Path(name).parts[0] == 'raw':
+            continue
         cases.extend(json.loads((directory / name).read_text()))
     seen = set()
     for case in cases:
@@ -195,7 +201,7 @@ def summary(results):
 
 
 def run(args):
-    directory, manifest, cases = load_suite(args.suite)
+    directory, manifest, cases = load_suite(args.suite, development_only=args.split == 'development')
     cases = [case for case in cases if (not args.case or case['id'] in args.case)
              and (args.split == 'all' or case['split'] == args.split)]
     if not cases or (args.case and set(args.case) - {case['id'] for case in cases}):
@@ -275,6 +281,7 @@ def main():
     commands.add_parser('list')
     validate = commands.add_parser('validate')
     validate.add_argument('--suite', default='callsign-search')
+    validate.add_argument('--split', choices=['all', 'development', 'validation'], default='all')
     execute = commands.add_parser('run')
     execute.add_argument('--suite', default='callsign-search')
     execute.add_argument('--engine', type=Path, required=True)
@@ -296,7 +303,8 @@ def main():
         for suite in json.loads((ROOT / 'ai-eval/catalog.json').read_text())['suites']:
             print(f"{suite['id']:24} {suite['category']:24} {suite['runner']:8} {suite['path']}")
     elif args.command == 'validate':
-        _, manifest, cases = load_suite(args.suite)
+        _, manifest, cases = load_suite(args.suite, development_only=args.split == 'development')
+        cases = [case for case in cases if args.split == 'all' or case['split'] == args.split]
         print(f"{manifest['id']} {manifest['revision']}: {len(cases)} verified cases")
     elif args.command == 'compare':
         compare(args)
