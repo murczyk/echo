@@ -220,6 +220,36 @@ afterEach(() => {
 });
 
 describe('MessageCard', () => {
+  it('moves all actions into the menu and keeps the important status separate on narrow Duty cards', async () => {
+    const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(320);
+    const scrollWidth = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);
+
+    const view = await renderCard({ displayMode: 'duty', msg: buildMessage({ important: true }) });
+    const visibleActions = Array.from(
+      view.container.querySelectorAll<HTMLButtonElement>('.message-card-header-actions button'),
+    ).map((action) => action.getAttribute('aria-label'));
+
+    expect(visibleActions).toEqual(['Більше дій']);
+    const importantStatus = view.container.querySelector(
+      '[data-message-card-important-status-position="mobile"]',
+    );
+    const overflowAction = view.container.querySelector('button[aria-label="Більше дій"]');
+
+    expect(importantStatus?.textContent).toContain('Важливе');
+    expect(importantStatus?.nextElementSibling?.contains(overflowAction)).toBe(true);
+
+    await openOverflowMenu(view.container);
+    expect(document.body.textContent).toContain('Створити розвіддонесення');
+    expect(document.body.textContent).toContain('Позначити як не важливе');
+    expect(document.body.textContent).toContain('Додати в закладки');
+    expect(document.body.textContent).toContain('Копіювати');
+    expect(document.body.textContent).toContain('Перейти');
+    expect(document.body.textContent).toContain('Виключити');
+
+    clientWidth.mockRestore();
+    scrollWidth.mockRestore();
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3569
   it('does not expose deletion without independent delete access', async () => {
     const view = await renderCard(

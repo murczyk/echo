@@ -166,6 +166,19 @@ function MenuRow({ icon, children }: { icon: JSX.Element; children: ReactNode })
   );
 }
 
+function ImportantStatus({ position }: { position: 'desktop' | 'mobile' }) {
+  return (
+    <span
+      className={`message-card-important-status message-card-important-status--${position}`}
+      data-message-card-important-status="true"
+      data-message-card-important-status-position={position}
+    >
+      <FlagIcon aria-hidden className="message-card-important-status__icon" />
+      Важливе
+    </span>
+  );
+}
+
 function HeaderText({
   children,
   nowrap = false,
@@ -237,6 +250,7 @@ function ActionIconsRow({
     useState<MenuAnchorPosition | null>(null);
   const overflowMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [stackedLayout, setStackedLayout] = useState(false);
+  const [mobileActions, setMobileActions] = useState(false);
   const canShowPrimaryActions =
     !readOnly && isPresent(onBookmark) && isPresent(onImportant) && isPresent(onCopyText);
   const canShowExcludeMenu =
@@ -254,6 +268,68 @@ function ActionIconsRow({
   const canShowLocationCopy =
     etalonDisplayModel.copyLocationValue != null && isPresent(onCopyLocation);
   const overflowMenuItemCandidates: Array<OverflowMenuItem | null> = [
+    mobileActions && canShowPrimaryActions && isPresent(onCreateReport)
+      ? {
+          key: 'report',
+          title: 'Створити розвіддонесення',
+          icon: <NoteAddIcon fontSize="small" />,
+          selected: false,
+          onClick: (event) => onCreateReport(overflowMenuTriggerRef.current ?? event.currentTarget),
+        }
+      : null,
+    mobileActions && canShowPrimaryActions
+      ? {
+          key: 'important',
+          title: msg.important ? 'Позначити як не важливе' : 'Позначити як важливе',
+          icon: msg.important ? (
+            <FlagIcon fontSize="small" />
+          ) : (
+            <FlagOutlinedIcon fontSize="small" />
+          ),
+          selected: msg.important,
+          onClick: () => onImportant!(),
+        }
+      : null,
+    mobileActions && canShowPrimaryActions
+      ? {
+          key: 'bookmark',
+          title: msg.bookmarked ? 'Прибрати з закладок' : 'Додати в закладки',
+          icon: msg.bookmarked ? (
+            <BookmarkIcon fontSize="small" />
+          ) : (
+            <BookmarkBorderOutlinedIcon fontSize="small" />
+          ),
+          selected: msg.bookmarked,
+          onClick: () => onBookmark!(),
+        }
+      : null,
+    mobileActions && canShowPrimaryActions
+      ? {
+          key: 'copy',
+          title: COPY_TITLE,
+          icon: <ContentCopyOutlinedIcon fontSize="small" />,
+          selected: false,
+          onClick: openCopyMenu,
+        }
+      : null,
+    mobileActions && canShowNavigationMenu
+      ? {
+          key: 'navigate',
+          title: NAVIGATE_TITLE,
+          icon: <LaunchIcon fontSize="small" />,
+          selected: false,
+          onClick: openNavigationMenu,
+        }
+      : null,
+    mobileActions && canShowExcludeMenu
+      ? {
+          key: 'exclude',
+          title: EXCLUDE_TITLE,
+          icon: <RemoveIcon fontSize="small" />,
+          selected: false,
+          onClick: openExcludeMenu,
+        }
+      : null,
     !readOnly && isPresent(onEditDetails)
       ? {
           key: 'edit',
@@ -294,7 +370,7 @@ function ActionIconsRow({
   );
   const canShowOverflowMenu = overflowMenuItems.length > 0;
 
-  function getMenuAnchorPosition(event: MouseEvent<HTMLButtonElement>): MenuAnchorPosition {
+  function getMenuAnchorPosition(event: MouseEvent<HTMLElement>): MenuAnchorPosition {
     const rect = event.currentTarget.getBoundingClientRect();
     return {
       top: rect.bottom,
@@ -302,7 +378,7 @@ function ActionIconsRow({
     };
   }
 
-  function openExcludeMenu(event: MouseEvent<HTMLButtonElement>) {
+  function openExcludeMenu(event: MouseEvent<HTMLElement>) {
     event.stopPropagation();
     setExcludeMenuAnchorPosition(getMenuAnchorPosition(event));
   }
@@ -312,7 +388,7 @@ function ActionIconsRow({
     setExcludeMenuAnchorPosition(null);
   }
 
-  function openCopyMenu(event: MouseEvent<HTMLButtonElement>) {
+  function openCopyMenu(event: MouseEvent<HTMLElement>) {
     event.stopPropagation();
     setCopyMenuAnchorPosition(getMenuAnchorPosition(event));
   }
@@ -333,7 +409,7 @@ function ActionIconsRow({
     setOverflowMenuAnchorPosition(null);
   }
 
-  function openNavigationMenu(event: MouseEvent<HTMLButtonElement>) {
+  function openNavigationMenu(event: MouseEvent<HTMLElement>) {
     event.stopPropagation();
     setNavigationMenuAnchorPosition(getMenuAnchorPosition(event));
   }
@@ -374,7 +450,7 @@ function ActionIconsRow({
   }
 
   const buttons = [
-    canShowPrimaryActions && isPresent(onCreateReport) ? (
+    canShowPrimaryActions && isPresent(onCreateReport) && !mobileActions ? (
       <ActionIconButton
         key="report"
         title="Створити розвіддонесення"
@@ -382,7 +458,7 @@ function ActionIconsRow({
         onClick={(event) => onCreateReport(event.currentTarget)}
       />
     ) : null,
-    canShowPrimaryActions ? (
+    canShowPrimaryActions && !mobileActions ? (
       <ActionIconButton
         key="important"
         title={msg.important ? 'Позначити як не важливе' : 'Позначити як важливе'}
@@ -399,7 +475,7 @@ function ActionIconsRow({
         buttonProps={{ 'aria-pressed': msg.important }}
       />
     ) : null,
-    canShowPrimaryActions ? (
+    canShowPrimaryActions && !mobileActions ? (
       <ActionIconButton
         key="bookmark"
         title={msg.bookmarked ? 'Прибрати з закладок' : 'Додати в закладки'}
@@ -414,7 +490,7 @@ function ActionIconsRow({
         selected={msg.bookmarked}
       />
     ) : null,
-    canShowPrimaryActions ? (
+    canShowPrimaryActions && !mobileActions ? (
       <ActionIconButton
         key="copy"
         title={COPY_TITLE}
@@ -427,7 +503,7 @@ function ActionIconsRow({
         }}
       />
     ) : null,
-    canShowNavigationMenu ? (
+    canShowNavigationMenu && !mobileActions ? (
       <ActionIconButton
         key="navigate"
         title={NAVIGATE_TITLE}
@@ -440,7 +516,7 @@ function ActionIconsRow({
         }}
       />
     ) : null,
-    canShowExcludeMenu ? (
+    canShowExcludeMenu && !mobileActions ? (
       <ActionIconButton
         key="minus"
         title={EXCLUDE_TITLE}
@@ -496,6 +572,7 @@ function ActionIconsRow({
         leftHeaderContent.scrollWidth -
         rightHeaderContent.scrollWidth -
         headerColumnGap * 2;
+      setMobileActions(displayMode === 'duty' && headerRow.clientWidth <= 360);
       setStackedLayout(availableActionWidth < minInlineWidth);
     };
 
@@ -532,7 +609,14 @@ function ActionIconsRow({
         cancelAnimationFrame(rafId);
       }
     };
-  }, [buttons.length, headerColumnGap, headerRowRef, leftHeaderContentRef, rightHeaderContentRef]);
+  }, [
+    buttons.length,
+    displayMode,
+    headerColumnGap,
+    headerRowRef,
+    leftHeaderContentRef,
+    rightHeaderContentRef,
+  ]);
 
   const overflowMenu =
     isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu ? (
@@ -1086,6 +1170,7 @@ function MessageCardHeaderComponent({
       </div>
       {!readOnly || isPresent(attachmentArchiveDownload) ? (
         <div className="message-card-header-actions flex items-center justify-center">
+          {msg.important ? <ImportantStatus position="mobile" /> : null}
           <ActionIconsRow
             id={id}
             msg={msg}
@@ -1126,15 +1211,7 @@ function MessageCardHeaderComponent({
           data-message-card-header-right="true"
           className="inline-flex items-center gap-2"
         >
-          {msg.important ? (
-            <span
-              className="message-card-important-status"
-              data-message-card-important-status="true"
-            >
-              <FlagIcon aria-hidden className="message-card-important-status__icon" />
-              Важливе
-            </span>
-          ) : null}
+          {msg.important ? <ImportantStatus position="desktop" /> : null}
           {topRight ?? <div className="min-h-7" />}
         </div>
       </div>
