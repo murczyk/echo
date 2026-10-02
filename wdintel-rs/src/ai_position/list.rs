@@ -162,7 +162,7 @@ fn push_cursor(
     let Some(after) = after else {
         return Ok(());
     };
-    let after_at = chrono::DateTime::from_timestamp_millis(after.message_at)
+    let after_at = chrono::DateTime::from_timestamp_micros(after.at_micros)
         .c(h!())?
         .naive_utc();
     values.push(after_at.into());
@@ -208,7 +208,7 @@ async fn list(
     )?;
     values.push(allowed_groups.into());
     conditions.push(format!(
-        "(not m.group_is_secret or m.group_master_key = any(${}))",
+        "(not coalesce(sg.is_secret, false) or m.group_master_key = any(${}))",
         values.len()
     ));
     push_cursor(
@@ -226,18 +226,21 @@ async fn list(
     };
     let sql = format!(
         "select m.id, m.sigint_inbox_item_id, m.media_id, media.file_name as media_name,
-                coalesce(m.sigint_inbox_item_id, media.signal_message_id) as message_id,
-                (select id_uuid from signal_message
-                 where id = coalesce(m.sigint_inbox_item_id, media.signal_message_id)) as message_uuid,
-                m.name, m.name_key, m.message_at, m.model_name, m.group_is_secret,
+                message.id as message_id, message.id_uuid as message_uuid,
+                m.name, m.name_key, m.message_at, m.model_name,
+                coalesce(sg.is_secret, false) as group_is_secret,
                 substr(source.text, greatest(m.begin_char - $1, 0) + 1, least(m.begin_char, $1)) as context_before,
                 substr(source.text, m.begin_char + 1, m.end_char - m.begin_char) as context_match,
                 substr(source.text, m.end_char + 1, $1) as context_after
          from ai_position_mention m
          left join signal_message_media media on media.id = m.media_id
+         join signal_message message
+             on message.id = coalesce(m.sigint_inbox_item_id, media.signal_message_id)
+             and not message.deleted
+         left join signal_group sg on sg.master_key = m.group_master_key
          left join lateral (
              select coalesce(
-                 (select body from signal_message where id = m.sigint_inbox_item_id),
+                 case when m.sigint_inbox_item_id is not null then message.body end,
                  (select summary from media_summary where media_id = m.media_id)
              ) as text
          ) source on true
@@ -255,7 +258,7 @@ async fn list(
     let next_cursor = if rows.len() as u64 > limit {
         rows.truncate(limit as usize);
         rows.last().map(|row| AiPositionListCursor {
-            message_at: row.message_at.and_utc().timestamp_millis(),
+            at_micros: row.message_at.and_utc().timestamp_micros(),
             id: row.id,
         })
     } else {
@@ -411,11 +414,13 @@ async fn list_knowledge(
         .map_or(AI_POSITION_LIST_DEFAULT_LIMIT, |limit| limit.max(1) as u64)
         .min(AI_POSITION_LIST_MAX_LIMIT);
     let mut values: Vec<Value> = vec![allowed_groups.into()];
-    // A private group's knowledge only for admins who can read that group.
-    let mut conditions = vec![
-        "(k.scope_kind = 'aor' or not coalesce(sg.is_secret, false) or k.scope_key = any($1))"
-            .to_string(),
-    ];
+    // Knowledge built from a private group only for admins who can read it.
+    let mut conditions = vec!["not exists (
+             select 1 from unnest(k.source_group_keys) source_group
+             join signal_group source_sg on source_sg.master_key = source_group
+             where source_sg.is_secret and not (source_group = any($1))
+         )"
+    .to_string()];
     conditions.extend(knowledge_conditions(
         req.global_filter.as_deref(),
         &req.column_filters,
@@ -455,7 +460,7 @@ async fn list_knowledge(
     let next_cursor = if rows.len() as u64 > limit {
         rows.truncate(limit as usize);
         rows.last().map(|row| AiPositionListCursor {
-            message_at: row.last_fact_at.and_utc().timestamp_millis(),
+            at_micros: row.last_fact_at.and_utc().timestamp_micros(),
             id: row.id,
         })
     } else {

@@ -320,7 +320,22 @@ pub fn highlight_with_positions(
         specials.extend(points.iter().map(|x| Special::Point(x.clone())));
     }
     if highlight_opts.highlight_positions == Some(true) {
-        specials.extend(positions.iter().map(|x| Special::Position(x.clone())));
+        // Callsigns and palitra points win wherever a position overlaps them,
+        // even when the position starts first.
+        let taken: Vec<(usize, usize)> = specials
+            .iter()
+            .map(|special| (special.begin(), special.end()))
+            .collect();
+        specials.extend(
+            positions
+                .iter()
+                .filter(|position| {
+                    !taken.iter().any(|&(begin, end)| {
+                        position.begin < end && begin < position.end
+                    })
+                })
+                .map(|x| Special::Position(x.clone())),
+        );
     }
     if highlight_opts.highlight_keywords == Some(true) {
         specials.extend(keywords.iter().map(|x| Special::Keyword(x.clone())));
@@ -1339,11 +1354,27 @@ mod tests {
             HighlightOpts::all(),
         )
         .unwrap();
-        assert_eq!(res[1], ContentNode::CNCallsignC(callsign));
+        assert_eq!(res[1], ContentNode::CNCallsignC(callsign.clone()));
         assert_eq!(
             res[3],
             ContentNode::CNPositionC(position(13, 21, "Циркон 9"))
         );
+
+        // A position starting before an overlapping callsign yields too.
+        let res = highlight_with_positions(
+            body,
+            None,
+            &vec![callsign.clone()],
+            &vec![],
+            &[position(0, 9, "всл Гудок")],
+            &vec![],
+            &vec![],
+            None,
+            HighlightOpts::all(),
+        )
+        .unwrap();
+        assert_eq!(res[1], ContentNode::CNCallsignC(callsign.clone()));
+        assert_eq!(res.len(), 3);
     }
 }
 

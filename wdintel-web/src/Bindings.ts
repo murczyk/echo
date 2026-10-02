@@ -5751,8 +5751,7 @@ export type EnqueueAiPositionBackfillReq = {
 };
 
 export type EnqueueAiPositionBackfillRsp = {
-  messages: number;
-  documents: number;
+  started: boolean;
 };
 
 export type AiPositionColumnFilter = {
@@ -5761,7 +5760,7 @@ export type AiPositionColumnFilter = {
 };
 
 export type AiPositionListCursor = {
-  messageAt: number;
+  atMicros: number;
   id: number;
 };
 

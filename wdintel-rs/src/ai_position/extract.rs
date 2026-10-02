@@ -15,7 +15,7 @@ use crate::config::{
 use crate::entities::ai_engine;
 use crate::h;
 use crate::types::ShortContext;
-use milgeo_rs::coordinates::{rer_extract_coords, Coords};
+use milgeo_rs::coordinates::{parser_v1, parser_v2, Coords};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -158,7 +158,7 @@ async fn ground_positions(
     text: &str,
     response: ModelResponse,
 ) -> Vec<AiPositionFound> {
-    let source_coords = rer_extract_coords(text).await;
+    let source_coords = all_coords(text).await;
     let mut found: Vec<AiPositionFound> = Vec::new();
     for position in response
         .positions
@@ -218,7 +218,7 @@ async fn ground_coordinate(
     {
         return None;
     }
-    let parsed = rer_extract_coords(&coordinate.value).await;
+    let parsed = all_coords(&coordinate.value).await;
     let parsed = parsed.first()?;
     let source = source_coords.iter().min_by(|a, b| {
         distance_m(a, parsed).total_cmp(&distance_m(b, parsed))
@@ -273,6 +273,25 @@ fn coordinate_system(written: &str) -> &'static str {
     } else {
         "wgs84"
     }
+}
+
+/// Coordinates of every system in the text. milgeo's `rer_extract_coords`
+/// keeps only the preferred system present, which would drop a WGS84 point
+/// written next to an MGRS one.
+async fn all_coords(text: &str) -> Vec<Coords> {
+    let v2 = parser_v2::collect_coords(text).unwrap_or_default();
+    let v1 = parser_v1::collect_coords(text).await.unwrap_or_default();
+    [
+        v2.mgrs_coords,
+        v1.mgrs_coords,
+        v2.usk2000_coords,
+        v1.usk2000_coords,
+        v2.decimal_coords,
+        v1.decimal_coords,
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 fn char_span(text: &str, needle: &str) -> Option<(usize, usize)> {
@@ -362,6 +381,23 @@ mod tests {
         assert!((coordinate.lat - 47.9).abs() < 1.0, "{coordinate:?}");
         assert!((coordinate.lng - 35.6).abs() < 2.0, "{coordinate:?}");
         assert!(coordinate.span.is_some());
+    }
+
+    #[tokio::test]
+    async fn keeps_coordinates_of_every_system() {
+        let text =
+            "Циркон 9 (36T XT 75734 68963), Береза 3 (48.12345, 37.54321)";
+        let found = ground_positions(
+            text,
+            response(r#"{"positions":[
+                {"name":"Циркон 9","coordinates":[{"value":"36T XT 75734 68963","system":"mgrs","certainty":"high","evidence":""}]},
+                {"name":"Береза 3","coordinates":[{"value":"48.12345, 37.54321","system":"wgs84","certainty":"high","evidence":""}]}
+            ]}"#),
+        )
+        .await;
+        assert_eq!(found[1].coordinates.len(), 1, "{found:?}");
+        assert!((found[1].coordinates[0].lat - 48.12345).abs() < 1e-4);
+        assert_eq!(found[1].coordinates[0].system, "wgs84");
     }
 
     #[tokio::test]

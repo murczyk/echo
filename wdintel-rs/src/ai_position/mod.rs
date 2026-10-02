@@ -154,12 +154,19 @@ pub async fn enqueue_ai_position_backfill(
             msg: "Спершу увімкніть воркер".to_string(),
         });
     }
-    let (messages, documents) =
-        worker::enqueue_backfill(&env.dbx, days).await.c(h!())?;
-    Ok(Json(EnqueueAiPositionBackfillRsp {
-        messages,
-        documents,
-    }))
+    // Long histories take a while; the queue size on the page shows progress.
+    let dbx = env.dbx.clone();
+    tokio::spawn(async move {
+        match worker::enqueue_backfill(&dbx, days).await {
+            Ok((messages, documents)) => crate::types::info!(
+                "ai_position backfill of {days} days queued {messages} messages and {documents} documents"
+            ),
+            Err(error) => {
+                crate::types::error!("ai_position backfill of {days} days failed: {error:#?}")
+            }
+        }
+    });
+    Ok(Json(EnqueueAiPositionBackfillRsp { started: true }))
 }
 
 /// Refuses to disable or delete the engine the enabled worker uses.

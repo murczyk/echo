@@ -195,11 +195,11 @@ export function SettingsTab() {
                 disabled={busy || !page.worker.enabled}
                 onClick={() =>
                   void run(async () => {
-                    const result = await enqueueAiPositionBackfill({
+                    await enqueueAiPositionBackfill({
                       days: Number(backfillDays),
                     });
                     await load();
-                    return `У черзі: ${result.messages} повідомлень, ${result.documents} документів`;
+                    return 'Постановку в чергу запущено, лічильник «У черзі» оновлюється';
                   }, 'Не вдалося поставити в чергу')
                 }
               >

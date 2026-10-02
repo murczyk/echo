@@ -26,11 +26,21 @@ drops to `low` certainty.
 ## Knowledge and access
 
 A new or removed coordinate fact queues a recompute (`ai_position_knowledge_job`)
-for every scope its group feeds:
+for every scope its group can feed: the group itself and each of its AORs.
+Every recompute and every read uses the group's privacy and AOR membership as
+they are now, not as they were when the message was parsed. Private groups
+never feed AOR knowledge. Making a group private or public in the zone
+settings queues recomputes for its positions.
 
-- the group itself;
-- each AOR of the group, unless the group is private. Private groups never
-  feed AOR knowledge.
+A recompute also links the position to other messages of the scope within
+the window. Messages that contain the name get a mention without a model call
+(`model_name = knowledge`). The message worker likewise marks names its
+scopes already know, even when the model reads them as callsigns
+(«ЦИРКОН-9 на зв'язку»).
+
+Editing a message's text or deleting the message removes its mentions and
+facts and queues the affected recomputes, whether or not the worker is
+enabled. The edited text is then extracted again.
 
 A recompute considers facts from the 30 days before the position's latest fact.
 Facts within 300 m count as one place, weighted by certainty and recency
@@ -44,8 +54,7 @@ mention's time must fall within the window. The card only uses knowledge built
 entirely from groups the viewer can read. The admin page hides mentions and
 knowledge of private groups the admin cannot read.
 
-Changing a group's AORs does not recompute existing knowledge. Run a backfill
-after such changes.
+Changing a group's AORs takes effect at the next recompute of each position.
 
 ## Operating
 
@@ -55,8 +64,9 @@ after such changes.
    2. Check the prompt on a sample message with «Перевірити з поточним
       промптом».
 3. «Обробити наявні» queues messages and completed document summaries from the
-   last N days (up to 90). New messages and newly completed summaries are
-   queued automatically while the worker is enabled.
+   last N days (up to 90) in the background. Watch progress in «У черзі». New
+   messages and newly completed summaries are queued automatically while the
+   worker is enabled.
 
 The default prompt is
 [`ai-eval/2026-10-02-position-prompt/prompt.txt`](../../../ai-eval/2026-10-02-position-prompt/prompt.txt).

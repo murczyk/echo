@@ -14832,16 +14832,14 @@ enqueueAiPositionBackfillReqEncoder struct =
 
 
 type alias EnqueueAiPositionBackfillRsp =
-    { messages : Int
-    , documents : Int
+    { started : Bool
     }
 
 
 enqueueAiPositionBackfillRspEncoder : EnqueueAiPositionBackfillRsp -> Json.Encode.Value
 enqueueAiPositionBackfillRspEncoder struct =
     Json.Encode.object
-        [ ( "messages", (Json.Encode.int) struct.messages )
-        , ( "documents", (Json.Encode.int) struct.documents )
+        [ ( "started", (Json.Encode.bool) struct.started )
         ]
 
 
@@ -14860,7 +14858,7 @@ aiPositionColumnFilterEncoder struct =
 
 
 type alias AiPositionListCursor =
-    { messageAt : Int
+    { atMicros : Int
     , id : Int
     }
 
@@ -14868,7 +14866,7 @@ type alias AiPositionListCursor =
 aiPositionListCursorEncoder : AiPositionListCursor -> Json.Encode.Value
 aiPositionListCursorEncoder struct =
     Json.Encode.object
-        [ ( "messageAt", (Json.Encode.int) struct.messageAt )
+        [ ( "atMicros", (Json.Encode.int) struct.atMicros )
         , ( "id", (Json.Encode.int) struct.id )
         ]
 
@@ -25147,8 +25145,7 @@ enqueueAiPositionBackfillReqDecoder =
 enqueueAiPositionBackfillRspDecoder : Json.Decode.Decoder EnqueueAiPositionBackfillRsp
 enqueueAiPositionBackfillRspDecoder =
     Json.Decode.succeed EnqueueAiPositionBackfillRsp
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "documents" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "started" (Json.Decode.bool)))
 
 
 aiPositionColumnFilterDecoder : Json.Decode.Decoder AiPositionColumnFilter
@@ -25161,7 +25158,7 @@ aiPositionColumnFilterDecoder =
 aiPositionListCursorDecoder : Json.Decode.Decoder AiPositionListCursor
 aiPositionListCursorDecoder =
     Json.Decode.succeed AiPositionListCursor
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "atMicros" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
 
 

@@ -128,8 +128,8 @@ pub struct EnqueueAiPositionBackfillReq {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct EnqueueAiPositionBackfillRsp {
-    pub messages: i64,
-    pub documents: i64,
+    /// Queueing continues in the background.
+    pub started: bool,
 }
 
 #[derive(
@@ -146,8 +146,8 @@ pub struct AiPositionColumnFilter {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AiPositionListCursor {
-    /// Milliseconds since the epoch.
-    pub message_at: i64,
+    /// Microseconds since the epoch: the full precision rows are ordered by.
+    pub at_micros: i64,
     pub id: i64,
 }
 

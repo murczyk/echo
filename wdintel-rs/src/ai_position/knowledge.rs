@@ -20,7 +20,7 @@ use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
     DatabaseConnection, EntityTrait, FromQueryResult, QueryFilter, QueryOrder,
-    Statement, TransactionTrait,
+    QuerySelect, Statement, TransactionTrait,
 };
 use std::collections::BTreeSet;
 
@@ -54,6 +54,73 @@ pub fn scopes_for(
         }));
     }
     scopes
+}
+
+/// Every scope a fact from this group can feed, whatever its privacy is
+/// now: recomputes check the group's current privacy and AORs.
+pub fn fed_scopes(
+    group_master_key: Option<&str>,
+    aor_ids: &[i64],
+) -> Vec<Scope> {
+    scopes_for(group_master_key, false, aor_ids)
+}
+
+/// Queues recomputes for everything a group's facts feed, e.g. after its
+/// privacy changed.
+pub async fn enqueue_for_group<C>(
+    dbx: &C,
+    master_key: &str,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    #[derive(FromQueryResult)]
+    struct Fed {
+        name_key: String,
+        aor_ids: Vec<i64>,
+    }
+    let fed = Fed::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select distinct m.name_key,
+                array(select sga.aor_id from signal_group_aor sga where sga.master_key = $1) as aor_ids
+         from ai_position_mention m
+         where m.group_master_key = $1
+           and exists (select 1 from ai_position_coordinate c where c.mention_id = m.id)",
+        [master_key.into()],
+    ))
+    .all(dbx)
+    .await
+    .c(h!())?;
+    let jobs: BTreeSet<(Scope, String)> = fed
+        .into_iter()
+        .flat_map(|fed| {
+            let name_key = fed.name_key;
+            // Also the AORs recorded on older mentions.
+            fed_scopes(Some(master_key), &fed.aor_ids)
+                .into_iter()
+                .map(move |scope| (scope, name_key.clone()))
+        })
+        .collect();
+    let recorded: Vec<(String, Vec<i64>)> =
+        crate::entities::ai_position_mention::Entity::find()
+            .filter(
+                crate::entities::ai_position_mention::Column::GroupMasterKey
+                    .eq(master_key),
+            )
+            .select_only()
+            .column(crate::entities::ai_position_mention::Column::NameKey)
+            .column(crate::entities::ai_position_mention::Column::AorIds)
+            .into_tuple()
+            .all(dbx)
+            .await
+            .c(h!())?;
+    let mut jobs = jobs;
+    for (name_key, aor_ids) in recorded {
+        for scope in fed_scopes(Some(master_key), &aor_ids) {
+            jobs.insert((scope, name_key.clone()));
+        }
+    }
+    enqueue(dbx, &jobs).await
 }
 
 pub(crate) async fn enqueue<C>(
@@ -200,6 +267,8 @@ fn distance_m(a: &Fact, b: &Fact) -> f64 {
     2.0 * EARTH_RADIUS_M * h.sqrt().asin()
 }
 
+/// Facts in the scope from the window before the latest one. Privacy and
+/// AOR membership are the groups' current ones; deleted messages are out.
 async fn load_facts<C>(
     dbx: &C,
     scope: &Scope,
@@ -209,7 +278,12 @@ where
     C: ConnectionTrait,
 {
     let scope_condition = if scope.kind == SCOPE_AOR {
-        "$2::bigint = any(m.aor_ids) and not m.group_is_secret"
+        "not coalesce(sg.is_secret, false)
+         and exists (
+             select 1 from signal_group_aor sga
+             join area_of_responsibility aor on aor.id = sga.aor_id and not aor.deleted
+             where sga.master_key = m.group_master_key and sga.aor_id = $2
+         )"
     } else {
         "m.group_master_key = $2"
     };
@@ -221,12 +295,24 @@ where
     Fact::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         format!(
-            "select m.name, c.mgrs, c.lat, c.lng, c.certainty, c.message_at, m.group_master_key
-             from ai_position_coordinate c
-             join ai_position_mention m on m.id = c.mention_id
-             where m.name_key = $1 and {scope_condition}"
+            "with facts as (
+                 select m.name, c.mgrs, c.lat, c.lng, c.certainty, c.message_at, m.group_master_key
+                 from ai_position_coordinate c
+                 join ai_position_mention m on m.id = c.mention_id
+                 left join signal_group sg on sg.master_key = m.group_master_key
+                 left join signal_message_media media on media.id = m.media_id
+                 join signal_message message
+                     on message.id = coalesce(m.sigint_inbox_item_id, media.signal_message_id)
+                 where m.name_key = $1 and not message.deleted and {scope_condition}
+             )
+             select * from facts
+             where message_at >= (select max(message_at) from facts) - make_interval(days => $3)"
         ),
-        [name_key.into(), scope_value],
+        [
+            name_key.into(),
+            scope_value,
+            (AI_POSITION_KNOWLEDGE_WINDOW_DAYS as i32).into(),
+        ],
     ))
     .all(dbx)
     .await

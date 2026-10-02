@@ -7,9 +7,9 @@ use super::normalize::ground;
 use super::types::{AiPositionFound, AiPositionSpan};
 use super::{effective_prompt, settings};
 use crate::config::{
-    AI_POSITION_WORKER_IDLE_SLEEP_MS, AI_POSITION_WORKER_MAX_ATTEMPTS,
-    AI_POSITION_WORKER_MAX_ERROR_CHARS, AI_POSITION_WORKER_RETRY_BASE_SECS,
-    AI_POSITION_WORKER_RETRY_MAX_SECS,
+    AI_POSITION_BACKFILL_BATCH, AI_POSITION_WORKER_IDLE_SLEEP_MS,
+    AI_POSITION_WORKER_MAX_ATTEMPTS, AI_POSITION_WORKER_MAX_ERROR_CHARS,
+    AI_POSITION_WORKER_RETRY_BASE_SECS, AI_POSITION_WORKER_RETRY_MAX_SECS,
 };
 use crate::entities::{
     ai_engine, ai_position_coordinate, ai_position_mention,
@@ -84,28 +84,59 @@ where
 }
 
 /// Enqueues messages and completed document summaries from the last `days`
-/// days; sources that already have a job keep it.
+/// days in seek batches; sources that already have a job keep it.
 pub(crate) async fn enqueue_backfill(
     dbx: &DatabaseConnection,
     days: i64,
-) -> anyhow::Result<(i64, i64)> {
+) -> anyhow::Result<(u64, u64)> {
     let since = Utc::now().naive_utc() - ChronoDuration::days(days);
-    let messages = dbx
-        .execute_raw(Statement::from_sql_and_values(
+    let mut cursor: (NaiveDateTime, i64) = (since, 0);
+    let mut messages = 0;
+    loop {
+        let batch = BackfillBatch::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "insert into ai_position_worker_job (sigint_inbox_item_id)
-             select item.id
-             from sigint_inbox_item item
-             join signal_message message on message.id = item.id
-             where not message.deleted
-               and coalesce(item.datetime, message.timestamp, message.created_at) >= $1
-             on conflict (sigint_inbox_item_id) where sigint_inbox_item_id is not null
-             do nothing",
-            [since.into()],
+            "with batch as (
+                 select message.created_at, message.id
+                 from signal_message message
+                 where message.created_at >= $1 and (message.created_at, message.id) > ($2, $3)
+                 order by message.created_at, message.id
+                 limit $4
+             ), queued as (
+                 insert into ai_position_worker_job (sigint_inbox_item_id)
+                 select item.id
+                 from batch
+                 join sigint_inbox_item item on item.id = batch.id
+                 join signal_message message on message.id = batch.id
+                 where not message.deleted
+                 on conflict (sigint_inbox_item_id) where sigint_inbox_item_id is not null
+                 do nothing
+                 returning 1
+             ), last as (
+                 select created_at, id from batch order by created_at desc, id desc limit 1
+             )
+             select (select count(*) from queued) as queued,
+                    (select created_at from last) as last_created_at,
+                    (select id from last) as last_id",
+            [
+                since.into(),
+                cursor.0.into(),
+                cursor.1.into(),
+                AI_POSITION_BACKFILL_BATCH.into(),
+            ],
         ))
+        .one(dbx)
         .await
         .c(h!())?
-        .rows_affected();
+        .c(h!())?;
+        messages += batch.queued as u64;
+        let (Some(last_created_at), Some(last_id)) =
+            (batch.last_created_at, batch.last_id)
+        else {
+            break;
+        };
+        cursor = (last_created_at, last_id);
+    }
+    // Completed summaries are few: one per document.
     let documents = dbx
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -120,7 +151,45 @@ pub(crate) async fn enqueue_backfill(
         .await
         .c(h!())?
         .rows_affected();
-    Ok((messages as i64, documents as i64))
+    Ok((messages, documents))
+}
+
+#[derive(Debug, FromQueryResult)]
+struct BackfillBatch {
+    queued: i64,
+    last_created_at: Option<NaiveDateTime>,
+    last_id: Option<i64>,
+}
+
+/// Removes a message's position facts (its own and its documents'), so an
+/// edited or deleted message stops showing and feeding them, and queues the
+/// knowledge they fed for a recompute. Runs whether or not the worker is
+/// enabled.
+pub async fn invalidate_message<C>(
+    dbx: &C,
+    message_id: i64,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let media_ids: Vec<Uuid> =
+        crate::entities::signal_message_media::Entity::find()
+            .filter(
+                crate::entities::signal_message_media::Column::SignalMessageId
+                    .eq(message_id),
+            )
+            .select_only()
+            .column(crate::entities::signal_message_media::Column::Id)
+            .into_tuple()
+            .all(dbx)
+            .await
+            .c(h!())?;
+    let filter = sea_orm::Condition::any()
+        .add(ai_position_mention::Column::SigintInboxItemId.eq(message_id))
+        .add(ai_position_mention::Column::MediaId.is_in(media_ids));
+    let stale = delete_mentions(dbx, filter).await.c(h!())?;
+    knowledge::enqueue(dbx, &stale).await.c(h!())?;
+    Ok(())
 }
 
 pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
@@ -375,6 +444,12 @@ where
         source.group_is_secret,
         &source.aor_ids,
     );
+    // Recomputes apply the group's current privacy, so queue every scope a
+    // fact could feed.
+    let fed = knowledge::fed_scopes(
+        source.group_master_key.as_deref(),
+        &source.aor_ids,
+    );
     let positions =
         with_known_names(dbx, &scopes, &source.text, extraction.positions)
             .await
@@ -382,8 +457,7 @@ where
     for position in positions {
         if !position.coordinates.is_empty() {
             knowledge_jobs.extend(
-                scopes
-                    .iter()
+                fed.iter()
                     .map(|scope| (scope.clone(), position.name_key.clone())),
             );
         }
@@ -548,11 +622,23 @@ where
     C: ConnectionTrait,
 {
     let source_filter = match (job.sigint_inbox_item_id, job.media_id) {
-        (Some(item_id), _) => {
-            ai_position_mention::Column::SigintInboxItemId.eq(item_id)
-        }
-        (None, media_id) => ai_position_mention::Column::MediaId.eq(media_id),
+        (Some(item_id), _) => sea_orm::Condition::all()
+            .add(ai_position_mention::Column::SigintInboxItemId.eq(item_id)),
+        (None, media_id) => sea_orm::Condition::all()
+            .add(ai_position_mention::Column::MediaId.eq(media_id)),
     };
+    delete_mentions(dbx, source_filter).await
+}
+
+/// Deletes the matching mentions and returns every scope and position whose
+/// knowledge their coordinates fed.
+async fn delete_mentions<C>(
+    dbx: &C,
+    source_filter: sea_orm::Condition,
+) -> anyhow::Result<BTreeSet<(knowledge::Scope, String)>>
+where
+    C: ConnectionTrait,
+{
     let located = ai_position_mention::Entity::find()
         .filter(source_filter.clone())
         .inner_join(ai_position_coordinate::Entity)
@@ -561,9 +647,8 @@ where
         .c(h!())?;
     let mut stale = BTreeSet::new();
     for mention in located {
-        for scope in knowledge::scopes_for(
+        for scope in knowledge::fed_scopes(
             mention.group_master_key.as_deref(),
-            mention.group_is_secret,
             &mention.aor_ids,
         ) {
             stale.insert((scope, mention.name_key.clone()));
@@ -592,7 +677,15 @@ async fn fail_job(
             "ai_position_worker dropped job={} after {attempts} attempts: {error_text}",
             job.id
         );
-        delete_job(dbx, job.id).await.c(h!())?;
+        // A job re-enqueued meanwhile has a new created_at and stays.
+        ai_position_worker_job::Entity::delete_many()
+            .filter(ai_position_worker_job::Column::Id.eq(job.id))
+            .filter(
+                ai_position_worker_job::Column::CreatedAt.eq(job.created_at),
+            )
+            .exec(dbx)
+            .await
+            .c(h!())?;
         return Ok(());
     }
     // Matching created_at keeps a re-enqueued job's fresh state.
@@ -1099,6 +1192,66 @@ mod tests {
             group.is_secret = Set(false);
             group.update(&env.dbx).await.unwrap();
         }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn retracts_knowledge_when_private_or_deleted_3064() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        crate::entities::ai_position_knowledge::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        enable_worker(&env.dbx).await;
+        let (message_id, master_key, _) =
+            grouped_message(&env.dbx, false).await;
+        let config = load_worker_config(&env.dbx).await.unwrap().unwrap();
+        enqueue_message_if_enabled(&env.dbx, message_id)
+            .await
+            .unwrap();
+        let job = load_next_job(&env.dbx).await.unwrap().unwrap();
+        let source = load_source(&env.dbx, &job).await.unwrap().unwrap();
+        complete_job(&env.dbx, &job, &source, &config, extraction(true))
+            .await
+            .unwrap();
+        let shared = |scopes: Vec<(String, String)>| {
+            scopes.iter().any(|(kind, _)| kind == "aor")
+        };
+        assert!(shared(knowledge_scopes(&env.dbx).await));
+
+        // The group turns private: AOR knowledge stops using its facts.
+        let mut group = crate::entities::signal_group::Entity::find_by_id(
+            master_key.clone(),
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+        group.is_secret = Set(true);
+        group.update(&env.dbx).await.unwrap();
+        crate::ai_position::knowledge::enqueue_for_group(&env.dbx, &master_key)
+            .await
+            .unwrap();
+        let scopes = knowledge_scopes(&env.dbx).await;
+        assert_eq!(scopes, vec![("group".to_string(), master_key.clone())]);
+
+        // The message is deleted: its facts and knowledge go.
+        super::invalidate_message(&env.dbx, message_id)
+            .await
+            .unwrap();
+        assert!(knowledge_scopes(&env.dbx).await.is_empty());
+        assert!(linked_names(&env.dbx, message_id).await.is_empty());
+
+        let mut group =
+            crate::entities::signal_group::Entity::find_by_id(master_key)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .into_active_model();
+        group.is_secret = Set(false);
+        group.update(&env.dbx).await.unwrap();
     }
 
     #[tokio::test]
