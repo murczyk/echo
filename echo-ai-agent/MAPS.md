@@ -84,6 +84,49 @@ The tool is not registered when the library is missing or namespaces are
 unavailable; the template build warns in that case. A failed script returns its
 traceback for the agent to fix.
 
+### Reliability on small models
+
+Small models (Gemma 4 26B on staging) struggled with nested edit operations and
+free-form scripts, so the runner adds simpler paths and checks:
+
+- `echo_map_from_reports {id, symbol?}` fills a draft from a known report format with no
+  model-written code. [`echomap.recipes`](template/python/echomap/recipes.py)
+  currently recognizes «Детали полета» UAV flight reports: one record per
+  report, unit name from the smallest unit to the regiment without divisions,
+  event date/time (the posting header or the message's Kyiv date fills a
+  missing `Дата`), target coordinates as written (malformed components are
+  kept for validation) and the full report as comment. A SIDC in the report is
+  kept; `symbol` (a SIDC or words such as «дружній БпЛА») applies to the rest.
+  Units keep qualifiers («104 гв. дшп»); without a unit field, unit
+  designations from the posting header are used; operator callsigns and
+  poster names are never used as names. A block counts
+  as a report only when it has report fields, not when a sentence merely names
+  the format. Its `sourceCount` becomes the expected record count for that
+  draft. When the prompt contains such reports, the system prompt names their
+  count and the recipe tool, and a failed script repeats that hint.
+- `echo_map_set_symbol {target, sidc | type/identity/status/echelon}` changes
+  symbols in one flat call; `type` is resolved through the APP-6(D) catalog by
+  [`sidc-resolver.ts`](runner/sidc-resolver.ts). A target given as a point name
+  must match exactly one point; otherwise Echo asks to clarify.
+- Tool arguments are normalized before validation (`prepareArguments`):
+  special tokens such as `<|"|>` are stripped and stray `key: value` strings are
+  lifted out of operation arrays. Edit operations infer a missing or misnamed op
+  (`retype`, `setComponents` with only a SIDC) and errors are Ukrainian with a
+  valid example.
+- Every script run reports the known report formats it detected. Publishing a
+  draft whose record count differs from the detected reports is refused until
+  the agent passes `confirmMismatch` with a reason; a draft linked in the answer
+  is not auto-published in that case and the answer says so.
+- After the answer, the runner checks outcomes: failed edit calls are counted
+  from the tool lifecycle (including calls rejected during argument
+  validation); when an editing request saved no change, it asks the model once
+  to restate the answer truthfully, with the usual citation checks, and
+  otherwise appends «⚠️ Зміни до мапи не збережено.»; a published count
+  mismatch is always appended as a notice.
+- Failed map tools show a fixed category in the activity list (invalid
+  parameters, conflict, script error, invalid symbol, unknown point) instead of
+  the generic loading message; the raw error is never shown there.
+
 `echo_map_publish` explicitly seals a nonempty document and emits `map_artifact`.
 The backend recomputes normalization, projection, warnings, and counts from the
 original values before writing the event. Identical replays are idempotent;
@@ -185,18 +228,18 @@ Symbol names come from the generated
 Release `2026.09.29.8` requires migration
 `m20260929_152018_ai_agent_map_artifacts` and the matching backend/frontend.
 That migration extends the request-event constraint and adds the summary column
-and partial index. It remains required. Release `2026.10.01.2` adds map editing
+and partial index. It remains required. Release `2026.10.01.5` adds map editing
 and scripts and also requires `m20260929_195200_ai_agent_map_workspace`
 (`ai_agent_map`, `ai_agent_map_revision`, `ai_agent_request_map_target`). Deploy
 the migrations and Echo build, restart backend/workers, then upgrade the selected
-idle namespace. Do not run the `2026.10.01.2` runner against an older backend.
-Runners `2026.10.01.1`, `.8` and `.9` remain in the compatible set. The map tables are excluded
+idle namespace. Do not run the `2026.10.01.5` runner against an older backend. Until the namespace is upgraded, chat requests fail with «ШІ-агент оновлюється. Повторіть запит за кілька хвилин.»; upgrade the namespace right after restarting the backend.
+Runners `2026.10.01.1`–`.4`, `2026.09.29.8` and `.9` remain in the compatible set. The map tables are excluded
 from analytics replication; the migration impact manifest and
 `deploy/clickhouse/env/tables-exclude.txt` both record that exclusion.
 
 ```sh
-just ai-control-panel upgrade --host local --release 2026.10.01.2 --dry-run
-just ai-control-panel upgrade --host local --release 2026.10.01.2
+just ai-control-panel upgrade --host local --release 2026.10.01.5 --dry-run
+just ai-control-panel upgrade --host local --release 2026.10.01.5
 ```
 
 Replace `local` with each explicitly selected installation. The

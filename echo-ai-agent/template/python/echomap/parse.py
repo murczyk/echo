@@ -31,7 +31,7 @@ class Fields(dict):
 def split(text, marker):
     """Splits text into blocks, each starting at a line that matches the
     `marker` regular expression. Returns [text] when nothing matches."""
-    pattern = re.compile(marker, re.IGNORECASE)
+    pattern = re.compile(marker, re.IGNORECASE | re.MULTILINE)
     lines = text.splitlines(keepends=True)
     starts = [index for index, line in enumerate(lines) if pattern.search(line)]
     if not starts:

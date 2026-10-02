@@ -142,3 +142,26 @@ test("#3064 aborting a script also stops subprocesses it started", { skip: !real
   await assert.rejects(running);
   assert.ok(Date.now() - started < 5_000, "abort waited for the subprocess");
 });
+
+test("#3064 echo_map_from_reports parses known reports without model-written code", { skip: !realRunner && "namespace isolation unavailable" }, async () => {
+  const requests: any[] = [];
+  const reports = Array.from({ length: 25 }, (_, index) => REPORT.split("\n[25.09")[0]
+    .replace("Время: 18:03", `Время: ${String(6 + (index % 12)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}`)
+    .replace("5272881, 6679505", `${5272881 + index}, ${6679505 - index}`)).join("\n");
+  const registry = new MapRegistry();
+  const list = createMapTools(registry, async (path, body: any) => {
+    requests.push({ path, body });
+    return { records: body.records.map(prepared) };
+  }, () => {}, () => {}, () => true, () => {}, undefined, { run: realRunner!, prompt: `нанеси на мапу\n${reports}`, messages: () => [] });
+  const execute = async (name: string, params: any) =>
+    JSON.parse((await list.find((tool) => tool.name === name)!.execute("call", params)).content[0].text as string);
+  const { id } = await execute("echo_map_create", { title: "Польоти", isMain: true });
+  const result = await execute("echo_map_from_reports", { id });
+  assert.deepEqual([result.recipe, result.sourceCount, result.emittedCount], ["flight_reports", 25, 25]);
+  const records = requests.flatMap((request) => request.body.records);
+  assert.equal(records.length, 25);
+  assert.equal(records[0].name, "3 дшб 328 дшп");
+  assert.equal(records[1].observationDatetime, "2026-09-24T07:01:00");
+  assert.deepEqual(registry.outcome.expected.get(id), { count: 25, label: "Деталі польоту (БпЛА)" });
+  assert.equal((await execute("echo_map_publish", { id })).published, true);
+});

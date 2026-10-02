@@ -2,7 +2,8 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createHash, randomUUID } from "node:crypto";
 import { validateCitations, type MessageCitation } from "./citations.ts";
-import type { MapScriptRunner, ScriptMessage } from "./map-script.ts";
+import type { MapScriptRunner, RecipeStats, ScriptMessage } from "./map-script.ts";
+import type { SidcResolver } from "./sidc-resolver.ts";
 
 const BATCH_LIMIT = 32;
 const APPEND_LIMIT = 128;
@@ -86,10 +87,26 @@ function summary(document: Omit<MapDocument, "records">, published: boolean) {
   return { id, title, isMain, totalCount, validCount, invalidCount, warnings, ...(published ? { reference: mapLink(id) } : {}) };
 }
 
+export interface MapOutcome {
+  /** Failed edit tool calls, including ones rejected during argument validation. */
+  editFailures: number;
+  editSuccesses: number;
+  lastEditError: string;
+  /** Source reports detected for a draft, used to verify its record count. */
+  expected: Map<string, { count: number; label: string }>;
+  /** Drafts linked in the answer but left unpublished by the count check. */
+  unpublished: string[];
+}
+
+const EDIT_TOOLS = new Set(["echo_map_edit", "echo_map_set_symbol", "echo_map_script"]);
+
+export class MapCountMismatch extends Error {}
+
 export class MapRegistry {
   private documents = new Map<string, MapDocument>();
   private published = new Set<string>();
   readonly history: MapSummary[];
+  readonly outcome: MapOutcome = { editFailures: 0, editSuccesses: 0, lastEditError: "", expected: new Map(), unpublished: [] };
 
   constructor(history: MapSummary[] = []) {
     this.history = [...new Map(history.map((item) => [item.id, item])).values()];
@@ -119,9 +136,26 @@ export class MapRegistry {
     return { ...summary(document, false), addedCount: records.length };
   }
 
-  publish(id: string): { document: MapDocument; alreadyPublished: boolean } {
+  /** Why a draft must not be published silently, or null. */
+  mismatchWarning(id: string): string | null {
+    const expected = this.outcome.expected.get(id);
+    const document = this.documents.get(id);
+    if (!expected || !document || this.published.has(id) || document.totalCount === expected.count) return null;
+    return `У джерелі ${expected.count} звітів формату «${expected.label}», а на мапі ${document.totalCount} записів. Перевірте пропущені або зайві записи. Якщо різниця навмисна, повторіть з confirmMismatch=true і reason.`;
+  }
+
+  /** Counts failed edit tool calls from the tool lifecycle. */
+  recordToolEnd(toolName: unknown, isError: boolean, text: string) {
+    if (!isError || typeof toolName !== "string" || !EDIT_TOOLS.has(toolName)) return;
+    this.outcome.editFailures += 1;
+    this.outcome.lastEditError = text.slice(0, 300);
+  }
+
+  publish(id: string, confirmedMismatch = false): { document: MapDocument; alreadyPublished: boolean } {
     const document = this.documents.get(id);
     if (!document?.records.length) throw new Error("Cannot publish an empty map");
+    const warning = confirmedMismatch ? null : this.mismatchWarning(id);
+    if (warning) throw new MapCountMismatch(warning);
     if (Buffer.byteLength(JSON.stringify({ document })) > EVENT_BYTE_LIMIT)
       throw new Error("Map document is too large; prepare smaller submaps");
     const alreadyPublished = this.published.has(id);
@@ -145,6 +179,20 @@ export class MapRegistry {
       })];
   }
 
+  expect(id: string, count: number, label: string) {
+    if (Number.isSafeInteger(count) && count > 0) this.outcome.expected.set(id, { count, label });
+  }
+
+  /** Published maps whose record count differs from the detected source reports. */
+  countMismatches(): Array<{ title: string; expected: number; actual: number; label: string }> {
+    return [...this.outcome.expected].flatMap(([id, expected]) => {
+      const document = this.documents.get(id);
+      return document && this.published.has(id) && document.totalCount !== expected.count
+        ? [{ title: document.title, expected: expected.count, actual: document.totalCount, label: expected.label }]
+        : [];
+    });
+  }
+
   discardDrafts() {
     for (const id of this.documents.keys()) if (!this.published.has(id)) this.documents.delete(id);
   }
@@ -158,7 +206,14 @@ export function publishReferencedDrafts(answer: string, registry: MapRegistry, e
   for (const match of answer.matchAll(mapLinkPattern())) {
     const document = registry.find(match[1]);
     if (!document?.records.length || registry.isPublished(document.id)) continue;
-    const published = registry.publish(document.id);
+    let published;
+    try {
+      published = registry.publish(document.id);
+    } catch (error) {
+      if (!(error instanceof MapCountMismatch)) throw error;
+      registry.outcome.unpublished.push(document.title);
+      continue;
+    }
     if (!published.alreadyPublished) emit({ type: "map_artifact", document: published.document });
   }
 }
@@ -228,6 +283,59 @@ export function validateMapEdit(value: unknown): MapEditContext {
   return { requestId, mapId, revision: body.revision as number, selectedPointIds };
 }
 
+// Gemma-style special tokens (e.g. <|"|>) sometimes leak into tool-call JSON.
+const SPECIAL_TOKEN = /<\|[^|<>]{0,24}\|>/g;
+
+/** Cleans model-produced tool arguments before schema validation: strips
+ * special tokens and lifts stray "key: value" strings out of object arrays
+ * (e.g. a summary emitted inside `operations`). */
+export function normalizeToolArguments(value: unknown): unknown {
+  if (typeof value === "string") return value.replace(SPECIAL_TOKEN, "").trim();
+  if (Array.isArray(value)) return value.map(normalizeToolArguments);
+  if (!value || typeof value !== "object") return value;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    result[key] = normalizeToolArguments(item);
+  }
+  for (const [key, item] of Object.entries(result)) {
+    if (!Array.isArray(item) || !item.some((entry) => entry && typeof entry === "object")) continue;
+    result[key] = item.filter((entry) => {
+      if (typeof entry !== "string") return true;
+      const match = /^\s*"?([A-Za-z_]\w{0,30})"?\s*:\s*([\s\S]*?)\s*\}?\s*$/.exec(entry);
+      if (!match) return true;
+      if (!(match[1] in result)) result[match[1]] = match[2].replace(/^"|"$/g, "");
+      return false;
+    });
+  }
+  return result;
+}
+
+const EDIT_OPS = ["add", "update", "remove", "setComponents", "setSidc", "setTitle"];
+const OP_ALIASES: Record<string, string> = {
+  retype: "setSidc", settype: "setSidc", changesidc: "setSidc", setsymbol: "setSidc", sidc: "setSidc",
+  delete: "remove", rename: "setTitle", components: "setComponents",
+};
+const EDIT_EXAMPLE = '{"operations":[{"op":"setSidc","selector":{"all":true},"sidc":"10031000001211000000"}],"summary":"Змінено позначки"}';
+
+/** Picks the operation a small model most plausibly meant. */
+function inferOperation(source: Record<string, unknown>): string {
+  const op = typeof source.op === "string" ? source.op.trim() : "";
+  if (EDIT_OPS.includes(op)) {
+    if (op === "setComponents" && !source.components && typeof source.sidc === "string") return "setSidc";
+    return op;
+  }
+  const alias = OP_ALIASES[op.toLowerCase().replace(/[^a-z]/g, "")];
+  if (alias) return alias;
+  if (!op) {
+    if (source.components && typeof source.components === "object") return "setComponents";
+    if (typeof source.sidc === "string" && !source.fields && !source.record) return "setSidc";
+    if (typeof source.title === "string") return "setTitle";
+    if (source.record) return "add";
+    if (source.fields) return "update";
+  }
+  throw new Error(`Невідома операція «${op || "(немає op)"}». Допустимі op: ${EDIT_OPS.join(", ")}. Приклад: ${EDIT_EXAMPLE}`);
+}
+
 function copyStrings(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return value.filter((item): item is string => typeof item === "string");
@@ -235,12 +343,11 @@ function copyStrings(value: unknown): string[] | undefined {
 
 export function sanitizeEditOperations(operations: unknown, selectedPointIds: string[],
   knownCitation: (citation: MessageCitation) => boolean, maxOperations = EDIT_OPERATION_LIMIT): unknown[] {
-  if (!Array.isArray(operations) || !operations.length || operations.length > maxOperations) throw new Error(`Map edit requires 1–${maxOperations} operations`);
+  if (!Array.isArray(operations) || !operations.length || operations.length > maxOperations) throw new Error(`Потрібно від 1 до ${maxOperations} операцій. Приклад: ${EDIT_EXAMPLE}`);
   return operations.map((operation) => {
-    if (!operation || typeof operation !== "object" || Array.isArray(operation)) throw new Error("Map edit operation must be an object");
+    if (!operation || typeof operation !== "object" || Array.isArray(operation)) throw new Error(`Кожна операція має бути об'єктом. Приклад: ${EDIT_EXAMPLE}`);
     const source = operation as Record<string, unknown>;
-    if (!["add", "update", "remove", "setComponents", "setSidc", "setTitle"].includes(String(source.op))) throw new Error("Unknown map edit operation");
-    const next: Record<string, unknown> = { op: source.op };
+    const next: Record<string, unknown> = { op: inferOperation(source) };
     if (source.selector && typeof source.selector === "object") {
       const selector = source.selector as Record<string, unknown>;
       if (selector.selected === true) {
@@ -299,7 +406,9 @@ export function sanitizeEditOperations(operations: unknown, selectedPointIds: st
 
 const editDigits = (width: number) => Type.String({ pattern: `^[0-9]{${width}}$` });
 const editOperationSchema = Type.Object({
-  op: Type.Union([Type.Literal("add"), Type.Literal("update"), Type.Literal("remove"), Type.Literal("setComponents"), Type.Literal("setSidc"), Type.Literal("setTitle")]),
+  // A plain string so near-misses (missing op, "retype") reach the sanitizer,
+  // which infers the intended op or explains the valid ones.
+  op: Type.Optional(Type.String({ description: "add | update | remove | setComponents | setSidc | setTitle" })),
   selector: Type.Optional(Type.Object({
     ids: Type.Optional(Type.Array(Type.String(), { maxItems: RECORD_LIMIT })),
     names: Type.Optional(Type.Array(Type.String({ maxLength: 2_000 }), { maxItems: 32 })),
@@ -339,6 +448,40 @@ export interface MapScriptContext {
   messages: () => ScriptMessage[];
 }
 
+// Keep in sync with FLIGHT_MARKER in template/python/echomap/recipes.py.
+// A report header is followed by report fields; a sentence that merely names
+// the format is not counted.
+const FLIGHT_REPORT_LINE = /^[ \t]*(?:\[[^\]\n]*\][^\n:]*:[ \t]*)?(?:Детали полета|Деталі польоту)[ \t]*:?[ \t]*\n\s*(?:Подразделение|Підрозділ|Позывной|Позивний|Дата|Время|Час)\s*:/gimu;
+
+/** Number of known-format reports, so small models can be routed to the
+ * no-code recipe instead of writing a parser. */
+export function countKnownReports(texts: string[]): number {
+  return texts.reduce((total, text) => total + (text.match(FLIGHT_REPORT_LINE)?.length ?? 0), 0);
+}
+
+export function knownReportsGuidance(count: number): string {
+  return count > 0
+    ? `This request contains ${count} «Детали полета» flight reports. If the user wants all of them on a map, build it with echo_map_create, then echo_map_from_reports with that draft id (no code, no manual records), check that emittedCount equals ${count}, then echo_map_publish. For a subset, custom names or more than 512 reports, use echo_map_script with recipes.records() instead. If they only ask about the reports, answer without creating a map.`
+    : "";
+}
+
+const TARGET_SCHEMA = Type.Union([
+  Type.Literal("all"),
+  Type.Literal("selected"),
+  Type.Array(Type.String(), { minItems: 1, maxItems: RECORD_LIMIT }),
+  Type.String({ minLength: 1, maxLength: 2_000 }),
+]);
+
+/** "all" | "selected" | ids | exact name → an echo_map_edit selector. */
+function targetSelector(target: unknown): Record<string, unknown> {
+  if (target === "all" || target === undefined) return { all: true, expect: "many" };
+  if (target === "selected") return { selected: true, expect: "many" };
+  if (Array.isArray(target)) return { ids: target.map(String), expect: "many" };
+  // A name must match exactly one point; the backend asks to clarify otherwise.
+  if (typeof target === "string") return { names: [target], expect: "one" };
+  throw new Error('target має бути "all", "selected", списком id або точною назвою точки.');
+}
+
 function sanitizeRecordInputs(records: Array<MapRecordInput & { sidc?: string | null }>, knownCitation: (citation: MessageCitation) => boolean) {
   let omittedSourceCount = 0;
   const sanitized = records.map((record) => {
@@ -367,7 +510,7 @@ function tail(text: string, limit = SCRIPT_OUTPUT_LIMIT): string {
 
 export function createMapTools(registry: MapRegistry, request: Request, emit: Emit, countInvocation: () => void,
   knownCitation: (citation: MessageCitation) => boolean, recordSources: (citations: MessageCitation[]) => void = () => {},
-  editing?: MapEditContext, script?: MapScriptContext) {
+  editing?: MapEditContext, script?: MapScriptContext, resolver?: SidcResolver) {
   const idSchema = Type.String({ pattern: UUID.source });
   const cursor = editing ? { ...editing, selectedPointIds: [...editing.selectedPointIds] } : undefined;
   // Retries within this request reuse a key; a later request repeating the
@@ -375,6 +518,7 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
   const editKeySalt = randomUUID();
   const tool = (name: string, label: string, description: string, parameters: any, execute: (params: any, signal?: AbortSignal) => Promise<unknown> | unknown) => defineTool({
     name, label, description, parameters, executionMode: "sequential",
+    prepareArguments: (args: unknown) => normalizeToolArguments(args) as any,
     execute: async (_id, params, signal) => {
       countInvocation();
       signal?.throwIfAborted();
@@ -407,6 +551,10 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
   }
 
   async function editMap(operations: unknown, revisionSummary: unknown, maxOperations: number, signal?: AbortSignal) {
+    return applyEdit(operations, revisionSummary, maxOperations, signal);
+  }
+
+  async function applyEdit(operations: unknown, revisionSummary: unknown, maxOperations: number, signal?: AbortSignal) {
     if (!cursor) throw new Error("No map is open for editing");
     const sanitized = sanitizeEditOperations(operations, cursor.selectedPointIds, knownCitation, maxOperations);
     const idempotencyKey = createHash("sha256").update(`${editKeySalt}\n${cursor.revision}\n${JSON.stringify(sanitized)}`).digest("hex");
@@ -419,6 +567,9 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
       operations: sanitized,
     }, signal) as Record<string, unknown>;
     if (!Number.isSafeInteger(result?.revision)) throw new Error("Incomplete map edit response");
+    // A new revision is saved (a no-op returns the same one); later
+    // bookkeeping must not make it look unsaved.
+    if (result.revision !== cursor.revision) registry.outcome.editSuccesses += 1;
     cursor.revision = result.revision as number;
     if (Number(result.removedCount) > 0 && cursor.selectedPointIds.length) {
       // `changes` is capped, so reconcile the selection with the live records.
@@ -449,9 +600,17 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
         if (!Array.isArray(records) || records.length > APPEND_LIMIT) throw new Error("Append batch exceeds map limits");
         return appendRecords(id, records, signal);
       }),
-    tool("echo_map_publish", "Публікую мапу відповіді", "Explicitly publish a complete document and register its [мапа](echo-map:<id>) reference. Published maps are immutable and survive request cancellation. Unpublished drafts are discarded.",
-      Type.Object({ id: idSchema }), ({ id }) => {
-        const { document, alreadyPublished } = registry.publish(id);
+    tool("echo_map_publish", "Публікую мапу відповіді", "Explicitly publish a complete document and register its [мапа](echo-map:<id>) reference. Published maps are immutable and survive request cancellation. Unpublished drafts are discarded. If the record count differs from the detected source reports, publishing is refused until you fix the map or pass confirmMismatch=true with a reason (e.g. the user asked for a subset).",
+      Type.Object({ id: idSchema, confirmMismatch: Type.Optional(Type.Boolean()), reason: Type.Optional(Type.String({ maxLength: 500 })) }), ({ id, confirmMismatch, reason }) => {
+        const confirmed = confirmMismatch === true && typeof reason === "string" && reason.trim().length > 0;
+        let publication;
+        try {
+          publication = registry.publish(id, confirmed);
+        } catch (error) {
+          if (error instanceof MapCountMismatch) return { published: false, warning: error.message };
+          throw error;
+        }
+        const { document, alreadyPublished } = publication;
         if (!alreadyPublished) emit({ type: "map_artifact", document });
         return { ...summary(document, true), published: true };
       }),
@@ -475,6 +634,28 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
         summary: Type.Optional(Type.String({ maxLength: 200 })),
       }),
       ({ operations, summary: revisionSummary }, signal) => editMap(operations, revisionSummary, EDIT_OPERATION_LIMIT, signal)));
+    if (resolver) {
+      tools.push(tool("echo_map_set_symbol", "Змінюю позначки мапи",
+        'Change the symbol of points on the open map in one step; prefer this for any symbol, type, affiliation, status or echelon change. target: "all", "selected", a list of point ids, or an exact point name. Give either a full 20-digit sidc, or any of: type (plain words such as "танк", "БпЛА", "піхота", "РЕБ"), identity ("дружній"/"ворожий"/"нейтральний"/"невідомий"), status ("наявний"/"запланований"/"знищений"), echelon ("взвод", "рота", ...). Only the given parts change. summary: short Ukrainian description.',
+        Type.Object({
+          target: TARGET_SCHEMA,
+          sidc: Type.Optional(Type.String()),
+          type: Type.Optional(Type.String({ maxLength: 200 })),
+          identity: Type.Optional(Type.String({ maxLength: 40 })),
+          status: Type.Optional(Type.String({ maxLength: 40 })),
+          echelon: Type.Optional(Type.String({ maxLength: 40 })),
+          summary: Type.Optional(Type.String({ maxLength: 200 })),
+        }),
+        async ({ target, sidc, type, identity, status, echelon, summary: revisionSummary }, signal) => {
+          const patch = resolver.resolve({ sidc, type, identity, status, echelon });
+          const selector = targetSelector(target);
+          const operation = "sidc" in patch
+            ? { op: "setSidc", selector, sidc: patch.sidc }
+            : { op: "setComponents", selector, components: patch.components };
+          const result = await editMap([operation], revisionSummary, EDIT_OPERATION_LIMIT, signal);
+          return "typeLabel" in patch && patch.typeLabel ? { ...result, type: patch.typeLabel } : result;
+        }));
+    }
   }
   if (script) {
     tools.push(tool("echo_map_script", "Обробляю дані мапи скриптом", SCRIPT_DESCRIPTION,
@@ -492,9 +673,15 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
           selectedPointIds: cursor?.selectedPointIds ?? [],
         }, signal);
         if (outcome.status !== 0 || !outcome.result) {
-          throw new Error(`Script failed (exit ${outcome.status}). Fix it and retry.\n${tail(outcome.stderr)}`);
+          const reports = countKnownReports([script.prompt, ...script.messages().map((message) => message.text)]);
+          const hint = reports > 0 ? `\nДля ${reports} звітів «Детали полета» викличте echo_map_from_reports з id чернетки — без коду.` : "";
+          throw new Error(`Script failed (exit ${outcome.status}). Fix it and retry.${hint}\n${tail(outcome.stderr)}`);
         }
-        const { records, operations, summary: revisionSummary, logs } = outcome.result;
+        const { records, operations, summary: revisionSummary, logs, detected } = outcome.result;
+        if (id && records.length) {
+          const [label, count] = Object.entries(detected).sort((a, b) => b[1] - a[1])[0] ?? [];
+          if (label) registry.expect(id, count, label);
+        }
         const output = { stdout: tail(outcome.stdout), logs };
         if (records.length && operations.length) throw new Error("A script must emit either new records or map edits, not both");
         if (records.length) {
@@ -506,12 +693,38 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
         }
         return output;
       }));
+    tools.push(tool("echo_map_from_reports", "Наношу звіти на мапу",
+      "Fill a draft map (id from echo_map_create) from reports in a known format (currently: «Детали полета» UAV flight reports) found in the prompt or retrieved messages, with no code. Each report becomes one record with the correct name, time, coordinates and the full report as comment. Use this first for such reports; use echo_map_script only when it reports that no known format matched. Then check sourceCount/emittedCount and publish.",
+      Type.Object({
+        id: idSchema,
+        recipe: Type.Optional(Type.String({ maxLength: 60 })),
+        symbol: Type.Optional(Type.String({ maxLength: 200, description: "Optional SIDC or words (e.g. «дружній БпЛА») for reports that carry no SIDC, when the user asked for a symbol." })),
+      }),
+      async ({ id, recipe, symbol }, signal) => {
+        registry.draft(id);
+        const name = typeof recipe === "string" && /^[a-z_]{1,60}$/.test(recipe) ? recipe : null;
+        const requested = typeof symbol === "string" && symbol.trim() ? symbol.trim() : null;
+        const outcome = await script.run(`from echomap import recipes\nrecipes.run(${name ? JSON.stringify(name) : "None"}, symbol=${requested ? JSON.stringify(requested) : "None"})\n`, {
+          prompt: script.prompt,
+          messages: script.messages(),
+          map: null,
+          selectedPointIds: [],
+        }, signal);
+        if (outcome.status !== 0 || !outcome.result?.stats) {
+          throw new Error(`Не вдалося застосувати рецепт. ${tail(outcome.stderr.split("\n").filter(Boolean).at(-1) ?? "", 300)}`);
+        }
+        const stats: RecipeStats = outcome.result.stats;
+        registry.expect(id, stats.sourceCount, stats.label);
+        const appended = await appendRecords(id, outcome.result.records, signal);
+        return { ...stats, appended };
+      }));
   }
   return tools;
 }
 
 const SCRIPT_DESCRIPTION = `Run a short Python 3 script with the echomap library, without network or file access, to build or bulk-edit a map from text instead of typing every record. Prefer it for more than about 5 records, repetitive tickets/tables, and bulk symbol or field changes. The script sees the user's prompt and the Echo messages already retrieved in this request.
-Library: from echomap import inputs, parse, sidc, Record, emit_records, current_map, emit_patch, log
+Library: from echomap import inputs, parse, recipes, sidc, Record, emit_records, current_map, emit_patch, log
+- recipes.records(symbol=None) -> Record objects parsed from known report formats («Детали полета»), ready to filter/rename/slice and pass to emit_records.
 - inputs.prompt() -> str; inputs.messages() -> [Message(message_id, message_identifier, text, datetime, author, group)].
 - parse.split(text, marker_regex) -> blocks starting at matching lines; parse.kv(block) -> Fields with .first("Key", "Альтернатива"); parse.pair(text) -> (x, y) copied as written; parse.pairs(text); parse.dt(date, time=None) -> "YYYY-MM-DDTHH:MM:SS" or None; parse.lines(text).
 - sidc.find(text, identity="unknown"|"friend"|"hostile"|"neutral"|"suspect", echelon=None) -> 20-digit SIDC from Ukrainian/English words ("" when unknown); sidc.set(code, identity=, status=, echelon=, hq=, symbol_set=, entity=); sidc.retype(code, "танк"); sidc.describe(code); sidc.search("radar") -> [(set, entity, label)].
@@ -521,6 +734,6 @@ print() and log() output is returned. Follow the same naming, comment, coordinat
 
 export const MAP_GUIDANCE = `When asked for a map or CSV/KMZ from points, build a document with the map tools. Read every input record, preserve order and repeated coordinates, append up to 128 records per call (up to 512 in one document); preparation is automatically split into batches of at most 32. For verbose tickets/tables, process about 16 source rows per call to stay within output limits, including every event/subgroup within those rows, and publish only after all records are included. Use one main map and optional separate submaps. Include the exact published [мапа](echo-map:<id>) references beside relevant passages; the latest main map automatically appears at the end. Never invent an ID, claim a download exists before publishing, or print a download data URL. Do not expose map tool names or IDs in prose. Use echo_map_list to recover documents after compaction and echo_map_get to read full records in batches. Copy the user's supplied SIDCs and explicit naming overrides exactly. When coordinates are present but no APP6D SIDC was supplied, leave sidc empty; Echo assigns the standard symbol and a warning. Never invent a SIDC. For unit reports, derive the name only from the explicit Подразделение/Підрозділ field, or the leading unit designation when that field is absent. Never include the posting author, header username, drone/operator name, or recipient callsign from other fields. Order that supplied unit hierarchy from its smallest unit/team to the regiment; omit divisions and larger units. Preserve a callsign only when it is part of that unit designation or an explicit naming override. Join the unit names with spaces, preserving their spelling and case. Do not add commas, dashes, mission descriptions, cargo, equipment, or invented missing units to the name. Keep that information in comments. When every ticket/table field is requested, copy the complete original ticket or row into comments, preserving all field labels and values. Every record must be self-contained: repeat common values and never refer to a previous row instead of copying its fields. Use one or several comment cells for the complete source text; combine fields if a ticket has more fields than available cells, never stop at a cell limit. Preserve source wording, avoiding translation, paraphrase or shortened summaries. For table group names, follow the user's explicit group-code/callsign/unit naming rule. A group code is distinct from the table's ordinal row number. Keep applicable section headings and every supplied row-column value in comments when requested. In particular, explicitly repeat the original group code, callsign, personnel count and unit in comments even when the code/callsign/unit also appear in the name. Do not omit a requested comment field because its value is already represented by another record property. Preserve unselected position components exactly in comments, including extra or missing digits; never repair or truncate an unused coordinate. Use CAPDOC platform type. Prefer each event's date/time over posting headers; use the header date only when an event date is absent. Apply the supplied date policy: no date/time gives null, date only gives YYYY-MM-DDT00:00:00, date plus time gives YYYY-MM-DDTHH:mm:ss, time without a date gives null. When a posting header supplies the missing date, use that date with the event time. For tables, choose real position, then changed position, then previous position, and preserve unselected positions and other information in comments. In a flattened table, retain the position-column order: a later changed/real position pair takes precedence over the earlier previous position pair. Copy coordinates exactly from the chosen pair. Before publication, verify names, selected positions, input order, and total row count against the original input; use echo_map_get to inspect canonical records if needed. Normalize no coordinates yourself: copy original X/Y including malformed components and missing digits. Supplied MSK-2000 pairs use Echo's СК-42 conversion, not USK-2000. Invalid rows remain in CSV and are omitted from map geometry and KMZ; report their warnings and counts. Copy optional source citations only from retrieved messages. Leave sources empty when the text was pasted and no message was retrieved; citations that were not retrieved are omitted. Do not paste a [мапа](echo-map:<id>) link until echo_map_publish returns it. If echo_map_append fails, correct the arguments and retry instead of claiming that the map exists. Lines, polygons and attachments are not supported.`;
 
-export const SCRIPT_GUIDANCE = `For more than about 5 records from tickets, reports or tables, or for bulk changes to an open map, prefer echo_map_script: write a short Python script that parses the prompt or retrieved messages and emits records/edits, instead of typing records into echo_map_append. Pass parsed source blocks as comments so original text is copied, not retyped. If a script fails, read the error, fix the script and retry. Verify the returned counts against the input before publishing. When the user asks for a symbol type or affiliation (e.g. "ворожі танки", "дружні БпЛА"), choose the SIDC with sidc.find/sidc.set/sidc.retype; otherwise keep the rule about unsupplied SIDCs.`;
+export const SCRIPT_GUIDANCE = `For «Детали полета» UAV flight reports, call echo_map_from_reports on the draft instead of writing code or appending records yourself. When the user wants only some reports, custom names, or more than 512 records split into submaps, use echo_map_script with recipes.records() (the same parsed Record objects) and filter, rename or slice them before emit_records. For more than about 5 records from tickets, reports or tables, or for bulk changes to an open map, prefer echo_map_script: write a short Python script that parses the prompt or retrieved messages and emits records/edits, instead of typing records into echo_map_append. Pass parsed source blocks as comments so original text is copied, not retyped. If a script fails, read the error, fix the script and retry. Verify the returned counts against the input before publishing. When the user asks for a symbol type or affiliation (e.g. "ворожі танки", "дружні БпЛА"), choose the SIDC with sidc.find/sidc.set/sidc.retype; otherwise keep the rule about unsupplied SIDCs.`;
 
-export const EDIT_GUIDANCE = `The user has a map open for editing. When they ask to change it, use echo_map_edit; each call becomes one revision that the user can undo. Questions that do not ask for a change need no edit. Do not rebuild, republish, or resend the map document. Editing that map is the only permitted mutation; messages, settings, and other Echo data stay unchanged. Select points by id, exact name, SIDC, all, or selector.selected=true when the user refers to "these/selected" points. If a name matches more than one point, ask which one; do not guess. A new point needs explicit coordinates or exactly one unambiguous accessible source that already contains the location; otherwise ask where to place it. To change symbols, prefer setComponents (identity, status, echelon, symbolSet+mainIcon); it preserves every component that was not supplied. echo_map_get reads the current revision. Pass a short Ukrainian summary of the change.`;
+export const EDIT_GUIDANCE = `The user has a map open for editing. For any symbol, type, affiliation, status or echelon change use echo_map_set_symbol (target "all", "selected", ids or a name; a full sidc or plain words). For other changes use echo_map_edit; each call becomes one revision that the user can undo. Questions that do not ask for a change need no edit. Do not rebuild, republish, or resend the map document. Editing that map is the only permitted mutation; messages, settings, and other Echo data stay unchanged. Select points by id, exact name, SIDC, all, or selector.selected=true when the user refers to "these/selected" points. If a name matches more than one point, ask which one; do not guess. A new point needs explicit coordinates or exactly one unambiguous accessible source that already contains the location; otherwise ask where to place it. In echo_map_edit, use setSidc for a full SIDC and setComponents only with a components object; both preserve every other field. echo_map_get reads the current revision. Pass a short Ukrainian summary of the change. If an edit tool returns an error, fix the arguments using the error's example; never tell the user a change was made unless a tool call succeeded.`;

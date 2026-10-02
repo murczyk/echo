@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { MapRegistry, createMapTools, preserveMapReferences, publishReferencedDrafts, sanitizeEditOperations, stripUnpublishedMapLinks, validateMapEdit, validateMapSummaries, type MapRecord } from "./maps.ts";
+import { fileURLToPath } from "node:url";
+import { MapRegistry, countKnownReports, createMapTools, knownReportsGuidance, normalizeToolArguments, preserveMapReferences, publishReferencedDrafts, sanitizeEditOperations, stripUnpublishedMapLinks, validateMapEdit, validateMapSummaries, type MapRecord } from "./maps.ts";
 import { citationRepairPrompt, canonicalizeAnswer } from "./citations.ts";
+import { SidcResolver } from "./sidc-resolver.ts";
 
 const source = { messageId: 77, messageIdentifier: "source-77" };
 const record = (index: number): MapRecord => ({
@@ -269,4 +271,95 @@ test("#3064 citation repair preserves registered map references alongside source
   const published = { id: "11111111-1111-4111-8111-111111111111", reference, published: true };
   assert.equal(preserveMapReferences(draft, "Відповідь із джерелом", [published]), `Відповідь із джерелом\n\n${reference}`);
   assert.equal(preserveMapReferences("Питання", "Відповідь", [{ ...published, requestId: "prior-request" }]), "Відповідь");
+});
+
+test("#3064 Gemma tool-call artifacts are cleaned before validation", () => {
+  // Replays the arguments a staging Gemma 4 call produced.
+  const raw = { operations: [{ sidc: "10062000001209020000", selector: { all: true } }, "summary:<|\"|>Зміна SIDC всіх точок<|\"|>}"] };
+  assert.deepEqual(normalizeToolArguments(raw), {
+    operations: [{ sidc: "10062000001209020000", selector: { all: true } }],
+    summary: "Зміна SIDC всіх точок",
+  });
+  assert.deepEqual(normalizeToolArguments({ title: "<|\"|>Мапа<|\"|>", ids: ["a", "b"] }), { title: "Мапа", ids: ["a", "b"] });
+});
+
+test("#3064 edit operations infer the intended op and explain invalid ones", () => {
+  const known = () => true;
+  const infer = (operation: Record<string, unknown>) => (sanitizeEditOperations([operation], [], known)[0] as any).op;
+  assert.equal(infer({ sidc: "10062000001209020000", selector: { all: true } }), "setSidc");
+  assert.equal(infer({ op: "setComponents", sidc: "10062000001209020000", selector: { all: true } }), "setSidc");
+  assert.equal(infer({ op: "retype", sidc: "10062000001209020000", selector: { all: true } }), "setSidc");
+  assert.equal(infer({ components: { identity: "3" }, selector: { all: true } }), "setComponents");
+  assert.throws(() => infer({ op: "explode", selector: { all: true } }), /Невідома операція «explode».*Приклад/s);
+  assert.throws(() => sanitizeEditOperations(["text"], [], known), /об'єктом.*Приклад/s);
+});
+
+test("#3064 echo_map_set_symbol turns plain words or a SIDC into one edit", async () => {
+  const requests: any[] = [];
+  const resolver = SidcResolver.fromPythonRoot(fileURLToPath(new URL("../template/python", import.meta.url)));
+  const editingTarget = { requestId: "11111111-1111-4111-8111-111111111111", mapId: "22222222-2222-4222-8222-222222222222", revision: 1, selectedPointIds: [] };
+  const tools = createMapTools(new MapRegistry(), async (path, body) => {
+    requests.push({ path, body });
+    return { revision: requests.length + 1, removedCount: 0 };
+  }, () => {}, () => {}, () => true, () => {}, editingTarget, undefined, resolver);
+  const setSymbol = tools.find((tool) => tool.name === "echo_map_set_symbol")!;
+  await setSymbol.execute("a", { target: "all", sidc: "10062000001209020000" });
+  assert.deepEqual(requests[0].body.operations, [{ op: "setSidc", selector: { all: true, expect: "many" }, sidc: "10062000001209020000" }]);
+  const typed = JSON.parse((await setSymbol.execute("b", { target: "all", type: "БпЛА", identity: "дружні", status: "заплановані" })).content[0].text as string);
+  assert.deepEqual(requests[1].body.operations[0].components, { symbolSet: "01", mainIcon: "110300", modifier1: "00", modifier2: "00", identity: "3", status: "1" });
+  assert.equal(typed.type, "БпЛА");
+  await assert.rejects(() => setSymbol.execute("c", { target: "all", type: "щось дивне" }), /Не знайдено тип позначки/);
+  for (const [identity, expected] of [["ворожа", "6"], ["вороже", "6"], ["дружня", "3"], ["дружнє", "3"], ["нейтральна", "4"], ["невідома", "1"], ["підозрілі", "5"]]) {
+    assert.equal((resolver.resolve({ identity }) as any).components.identity, expected, identity);
+  }
+  assert.equal((resolver.resolve({ status: "знищена" }) as any).components.status, "4");
+  await assert.rejects(() => setSymbol.execute("d", { target: "all", sidc: "123" }), /20 цифр/);
+});
+
+test("#3064 publishing refuses a record count that differs from detected reports", async () => {
+  const registry = new MapRegistry();
+  const tools = createMapTools(registry, async (_path, body: any) => ({ records: body.records.map((input: any) => ({ ...record(0), ...input })) }),
+    () => {}, () => {}, () => true);
+  const execute = async (name: string, params: any) =>
+    JSON.parse((await tools.find((tool) => tool.name === name)!.execute("call", params)).content[0].text as string);
+  const { id } = await execute("echo_map_create", { title: "Польоти", isMain: true });
+  await execute("echo_map_append", { id, records: [record(1), record(2)] });
+  registry.expect(id, 3, "Деталі польоту (БпЛА)");
+  const refused = await execute("echo_map_publish", { id });
+  assert.equal(refused.published, false);
+  assert.match(refused.warning, /3 звітів.*2 записів/);
+  assert.equal(registry.isPublished(id), false);
+  const confirmed = await execute("echo_map_publish", { id, confirmMismatch: true, reason: "Користувач просив лише два польоти" });
+  assert.equal(confirmed.published, true);
+  assert.deepEqual(registry.countMismatches(), [{ title: "Польоти", expected: 3, actual: 2, label: "Деталі польоту (БпЛА)" }]);
+});
+
+test("#3064 known flight reports route small models to the recipe tool", () => {
+  const report = "[25.09.2026 0:54] Vladislav: Детали полета\nПодразделение: 104 дшд 328 дшп 2 дшб\n";
+  assert.equal(countKnownReports([`нанеси на мапу\n${report}${report}`, report]), 3);
+  assert.equal(countKnownReports(["просто текст"]), 0);
+  assert.equal(countKnownReports([`Нанеси на мапу звіти «Детали полета»:\n${report}`]), 1);
+  assert.match(knownReportsGuidance(3), /If the user wants all of them on a map.*echo_map_from_reports.*emittedCount equals 3.*recipes.records\(\).*answer without creating a map/);
+  assert.equal(knownReportsGuidance(0), "");
+});
+
+test("#3064 a single-name symbol target must match one point and drafts with a count mismatch stay unpublished", async () => {
+  const requests: any[] = [];
+  const resolver = SidcResolver.fromPythonRoot(fileURLToPath(new URL("../template/python", import.meta.url)));
+  const editingTarget = { requestId: "11111111-1111-4111-8111-111111111111", mapId: "22222222-2222-4222-8222-222222222222", revision: 1, selectedPointIds: [] };
+  const tools = createMapTools(new MapRegistry(), async (path, body) => {
+    requests.push({ path, body });
+    return { revision: 2 };
+  }, () => {}, () => {}, () => true, () => {}, editingTarget, undefined, resolver);
+  await tools.find((tool) => tool.name === "echo_map_set_symbol")!.execute("a", { target: "Альфа", identity: "ворожий" });
+  assert.deepEqual(requests[0].body.operations[0].selector, { names: ["Альфа"], expect: "one" });
+
+  const registry = new MapRegistry();
+  const { id } = registry.create("Польоти", true);
+  registry.append(id, [record(1)]);
+  registry.expect(id, 2, "Деталі польоту (БпЛА)");
+  const events: any[] = [];
+  publishReferencedDrafts(`[мапа](echo-map:${id})`, registry, (event) => events.push(event));
+  assert.equal(events.length, 0);
+  assert.deepEqual(registry.outcome.unpublished, ["Польоти"]);
 });

@@ -84,6 +84,7 @@ push_template_files() {
     "$BUNDLE_DIR/runner/citations.ts" \
     "$BUNDLE_DIR/runner/maps.ts" \
     "$BUNDLE_DIR/runner/map-script.ts" \
+    "$BUNDLE_DIR/runner/sidc-resolver.ts" \
     "$BUNDLE_DIR/runner/search-guidance.ts" \
     "$AGENT_TEMPLATE/var/tmp/echo-ai-agent-template/"
   incus exec "$AGENT_TEMPLATE" -- mkdir -p \

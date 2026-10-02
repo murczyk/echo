@@ -108,6 +108,7 @@ install -m 0644 "$STAGE/runner.ts" "$PI_ROOT/runner.ts"
 install -m 0644 "$STAGE/citations.ts" "$PI_ROOT/citations.ts"
 install -m 0644 "$STAGE/maps.ts" "$PI_ROOT/maps.ts"
 install -m 0644 "$STAGE/map-script.ts" "$PI_ROOT/map-script.ts"
+install -m 0644 "$STAGE/sidc-resolver.ts" "$PI_ROOT/sidc-resolver.ts"
 install -m 0644 "$STAGE/search-guidance.ts" "$PI_ROOT/search-guidance.ts"
 install -m 0755 "$STAGE/echo-ai-agent-runner" /usr/local/bin/echo-ai-agent-runner
 # Map-script library; the runner executes it in user+network namespaces.

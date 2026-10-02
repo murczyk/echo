@@ -118,6 +118,12 @@ fn apply_operation(
         "add" => add_record(document, operation),
         "update" => update_records(document, operation),
         "remove" => remove_records(document, operation),
+        // A full SIDC sent as setComponents is what the caller meant by setSidc.
+        "setComponents"
+            if operation.components.is_none() && operation.sidc.is_some() =>
+        {
+            set_sidc(document, operation)
+        }
         "setComponents" => set_components(document, operation),
         "setSidc" => set_sidc(document, operation),
         "setTitle" => set_title(document, operation),
@@ -917,6 +923,33 @@ mod tests {
         );
         assert!(error.is_err());
         assert_eq!(document.records[0].sidc, "10062000001209020000");
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/3064
+    #[test]
+    fn set_components_with_only_a_sidc_sets_the_sidc() {
+        let document = sample(3);
+        let outcome = apply_patch(
+            &document,
+            &[AiAgentMapPatchOp {
+                op: "setComponents".to_string(),
+                selector: Some(AiAgentMapSelector {
+                    all: true,
+                    ..AiAgentMapSelector::default()
+                }),
+                record: None,
+                fields: None,
+                components: None,
+                sidc: Some("10031500001202000000".to_string()),
+                title: None,
+            }],
+        )
+        .unwrap();
+        assert!(outcome
+            .document
+            .records
+            .iter()
+            .all(|record| record.sidc == "10031500001202000000"));
     }
 
     #[test]

@@ -53,6 +53,16 @@ class Record:
     source: object = None
     sources: list = field(default_factory=list)
 
+    # Field names used by the map tools, accepted as aliases.
+    _ALIASES = {
+        "coordinateSystem": "crs",
+        "coordinate_system": "crs",
+        "observationDatetime": "when",
+        "observation_datetime": "when",
+        "datetime": "when",
+        "comment": "comments",
+    }
+
     def to_input(self):
         if not str(self.name).strip():
             raise ValueError("Record name is required")
@@ -69,6 +79,20 @@ class Record:
             "comments": comment_cells(self.comments),
             "sources": [item for index, item in enumerate(citations) if item not in citations[:index]],
         }
+
+
+_dataclass_init = Record.__init__
+
+
+def _init_with_aliases(self, *args, **fields):
+    renamed = {Record._ALIASES.get(key, key): value for key, value in fields.items()}
+    unknown = sorted(set(renamed) - set(Record.__dataclass_fields__))
+    if unknown:
+        raise TypeError(f"Record has no fields {unknown}; use name, x, y, crs, sidc, when, comments, source")
+    _dataclass_init(self, *args, **renamed)
+
+
+Record.__init__ = _init_with_aliases
 
 
 def emit_records(records):

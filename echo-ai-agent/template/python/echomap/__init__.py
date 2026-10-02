@@ -23,7 +23,7 @@ script emits, exactly like records passed to the map tools directly.
     emit_patch(m, summary="Вибрані точки позначено ворожими")
 """
 
-from . import inputs, parse, sidc
+from . import inputs, parse, recipes, sidc
 from .mapdoc import Map, MapRecord, current_map, emit_patch
 from .records import Record, emit_records
 from .state import log
@@ -38,5 +38,6 @@ __all__ = [
     "inputs",
     "log",
     "parse",
+    "recipes",
     "sidc",
 ]
