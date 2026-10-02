@@ -2,11 +2,13 @@ use self::types::*;
 use crate::config::{
     SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME, SIGINT_UNIT_LIST_DEFAULT_LIMIT,
     SIGINT_UNIT_LIST_MAX_LIMIT, SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE,
-    SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS,
-    SIGINT_UNIT_NAME_ARMY_BLACKLIST_TERMS, SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX,
+    SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS, SIGINT_UNIT_NAME_AIRBORNE_OTHER,
+    SIGINT_UNIT_NAME_AIRBORNE_SUFFIX, SIGINT_UNIT_NAME_ARMY_BLACKLIST_TERMS,
+    SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX,
     SIGINT_UNIT_NAME_CORPS_BLACKLIST_TERMS,
     SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX,
     SIGINT_UNIT_NAME_FIRST_INCLUDED_ECHELON_INDEX,
+    SIGINT_UNIT_NAME_PKS_MILITARY_DISTRICT, SIGINT_UNIT_NAME_PKS_SUFFIX,
 };
 use crate::entities::sea_orm_active_enums::ChangelogActionEnum;
 use crate::entities::*;
@@ -24,6 +26,7 @@ use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, OnConflict, SimpleExpr};
 use std::collections::{BTreeSet, HashMap};
 
+pub mod activity;
 pub mod attachment;
 pub mod changelog;
 pub mod labels;
@@ -31,6 +34,7 @@ mod merge_task;
 pub(crate) use merge_task::guard_capacity as unit_merge_guard_capacity;
 pub mod orbit;
 pub mod types;
+pub mod worker;
 
 pub(crate) async fn recover_abandoned_merge_tasks(
     dbx: &DatabaseConnection,
@@ -62,12 +66,22 @@ pub fn unit_name(unit: &Unit) -> String {
     }
 }
 
-fn unit_name_is_derived(unit: &sigint_unit::Model) -> bool {
-    unit.name.trim().is_empty() || unit.name == generated_unit_name(unit)
+pub(crate) fn unit_name_is_derived(unit: &sigint_unit::Model) -> bool {
+    unit.name.trim().is_empty()
+        || unit.name == generated_unit_name(unit)
+        || unit.name
+            == unit_name_from_hierarchy_without_suffixes(unit_hierarchy(unit))
 }
 
 pub(crate) fn generated_unit_name(unit: &sigint_unit::Model) -> String {
-    unit_name_from_hierarchy(unit_hierarchy(unit))
+    generated_unit_name_with_airborne(unit, false)
+}
+
+pub(crate) fn generated_unit_name_with_airborne(
+    unit: &sigint_unit::Model,
+    is_airborne: bool,
+) -> String {
+    unit_name_from_hierarchy_with_airborne(unit_hierarchy(unit), is_airborne)
 }
 
 pub fn unit_name_req(req: &CreateUnitReq) -> String {
@@ -82,8 +96,11 @@ pub fn unit_name_req(req: &CreateUnitReq) -> String {
     required_unit_name_from_hierarchy(unit_req_hierarchy(req))
 }
 
-pub(crate) fn generated_unit_name_req(req: &CreateUnitReq) -> String {
-    unit_name_from_hierarchy(unit_req_hierarchy(req))
+pub(crate) fn generated_unit_name_req_with_airborne(
+    req: &CreateUnitReq,
+    is_airborne: bool,
+) -> String {
+    unit_name_from_hierarchy_with_airborne(unit_req_hierarchy(req), is_airborne)
 }
 
 fn unit_req_hierarchy(req: &CreateUnitReq) -> [&str; 14] {
@@ -106,9 +123,40 @@ fn unit_req_hierarchy(req: &CreateUnitReq) -> [&str; 14] {
 }
 
 fn unit_name_from_hierarchy(hierarchy: [&str; 14]) -> String {
+    unit_name_from_hierarchy_with_airborne(hierarchy, false)
+}
+
+fn unit_name_from_hierarchy_with_airborne(
+    hierarchy: [&str; 14],
+    is_airborne: bool,
+) -> String {
     if !hierarchy_has_name_echelon_below_corps(&hierarchy) {
         return String::new();
     }
+    let append_airborne = is_airborne
+        || hierarchy[crate::orbit::EchoEchelon::Other.index()].trim()
+            == SIGINT_UNIT_NAME_AIRBORNE_OTHER;
+    let append_pks =
+        hierarchy[crate::orbit::EchoEchelon::MilitaryDistrict.index()].trim()
+            == SIGINT_UNIT_NAME_PKS_MILITARY_DISTRICT;
+    let mut name_parts = unit_name_parts(hierarchy);
+    if append_airborne {
+        name_parts.push(SIGINT_UNIT_NAME_AIRBORNE_SUFFIX);
+    }
+    if append_pks {
+        name_parts.push(SIGINT_UNIT_NAME_PKS_SUFFIX);
+    }
+    name_parts.join(" ")
+}
+
+fn unit_name_from_hierarchy_without_suffixes(hierarchy: [&str; 14]) -> String {
+    if !hierarchy_has_name_echelon_below_corps(&hierarchy) {
+        return String::new();
+    }
+    unit_name_parts(hierarchy).join(" ")
+}
+
+fn unit_name_parts(hierarchy: [&str; 14]) -> Vec<&str> {
     hierarchy
         .into_iter()
         .enumerate()
@@ -122,8 +170,7 @@ fn unit_name_from_hierarchy(hierarchy: [&str; 14]) -> String {
             !part.is_empty() && !unit_name_part_is_blacklisted(*echelon, part)
         })
         .map(|(_, part)| part)
-        .collect::<Vec<_>>()
-        .join(" ")
+        .collect()
 }
 
 fn hierarchy_has_name_echelon_below_corps(hierarchy: &[&str; 14]) -> bool {
@@ -460,13 +507,13 @@ async fn read_units_with_orbit_visibility(
             }
             ListUnitsSortBy::UnitOrbitLinkedAsc => {
                 units = units
-                    .order_by_asc(Expr::cust(unit_has_orbit_sql()))
+                    .order_by_asc(Expr::cust(unit_orbit_status_rank_sql()))
                     .order_by_asc(sigint_unit::Column::Name)
                     .order_by_asc(sigint_unit::Column::Id);
             }
             ListUnitsSortBy::UnitOrbitLinkedDesc => {
                 units = units
-                    .order_by_desc(Expr::cust(unit_has_orbit_sql()))
+                    .order_by_desc(Expr::cust(unit_orbit_status_rank_sql()))
                     .order_by_asc(sigint_unit::Column::Name)
                     .order_by_asc(sigint_unit::Column::Id);
             }
@@ -593,6 +640,21 @@ fn unit_has_orbit_sql() -> &'static str {
             AND link.is_suppressed = false
             AND orbit_unit.deleted = false
     )"#
+}
+
+fn unit_orbit_status_rank_sql() -> &'static str {
+    r#"case
+        when EXISTS (
+            SELECT 1
+            FROM orbit_unit_sigint_unit link
+            INNER JOIN orbit_unit ON orbit_unit.unit_id = link.orbit_unit_id
+            WHERE link.sigint_unit_id = "sigint_unit"."id"
+                AND link.is_suppressed = false
+                AND orbit_unit.deleted = false
+        ) then 0
+        when "sigint_unit"."present_in_orbit" is false then 2
+        else 1
+    end"#
 }
 
 fn apply_unit_presence_filters(
@@ -1658,6 +1720,10 @@ async fn update_unit_for_login(
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
+    let is_airborne = orbit::airborne_sigint_unit_ids(&transaction, &[unit.id])
+        .await
+        .c(h!())?
+        .contains(&unit.id);
     let other = req.other.clone().unwrap_or_else(|| unit.other.clone());
     let team_or_crew = req
         .team_or_crew
@@ -1714,22 +1780,25 @@ async fn update_unit_for_login(
     unit.active = Set(req.active);
     unit.updated_at = Set(chrono::Utc::now().naive_utc());
     unit.name = Set(if req.name.trim().is_empty() {
-        let generated_name = unit_name_from_hierarchy([
-            &other,
-            &team_or_crew,
-            &section,
-            &squad,
-            &platoon,
-            &req.company,
-            &req.battalion,
-            &req.regiment,
-            &brigade,
-            &req.division,
-            &corps,
-            &req.army,
-            &military_district,
-            &army_region,
-        ]);
+        let generated_name = unit_name_from_hierarchy_with_airborne(
+            [
+                &other,
+                &team_or_crew,
+                &section,
+                &squad,
+                &platoon,
+                &req.company,
+                &req.battalion,
+                &req.regiment,
+                &brigade,
+                &req.division,
+                &corps,
+                &req.army,
+                &military_district,
+                &army_region,
+            ],
+            is_airborne,
+        );
         if generated_name.is_empty() {
             previous_unit.name.clone()
         } else {
@@ -1745,6 +1814,9 @@ async fn update_unit_for_login(
         }
         if let Some(present_in_orbit) = req.present_in_orbit {
             unit.present_in_orbit = Set(present_in_orbit);
+        }
+        if let Some(is_deduplicate_candidate) = req.is_deduplicate_candidate {
+            unit.is_deduplicate_candidate = Set(is_deduplicate_candidate);
         }
     }
     let unit = unit.update(&transaction).await.context(h!())?;
@@ -2001,19 +2073,37 @@ async fn delete_unit_for_login(
     let transaction = begin_unit_merge_transaction(dbx, &[unit_id])
         .await
         .c(h!())?;
-    merge_task::ensure_no_conflicting_merge(&transaction, unit_id, unit_id)
+    let unit = delete_unit_in_transaction(&transaction, login, unit_id, true)
+        .await
+        .c(h!())?;
+    transaction.commit().await.context(h!())?;
+    Ok(unit)
+}
+
+pub(crate) async fn delete_unit_in_transaction<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    unit_id: i64,
+    reconcile_deduplicate_candidates: bool,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    merge_task::ensure_no_conflicting_merge(dbx, unit_id, unit_id)
         .await
         .context(h!())?;
-    changelog::set_author(&transaction, login).await.c(h!())?;
+    changelog::set_author(dbx, login).await.c(h!())?;
     let unit = sigint_unit::Entity::find_by_id(unit_id)
-        .one(&transaction)
+        .lock_exclusive()
+        .one(dbx)
         .await
         .context(h!())?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
     let previous_unit = unit.clone();
-    let unit_json_old = unit_json(&transaction, unit.id).await?;
+    let unit_json_old = unit_json(dbx, unit.id).await.context(h!())?;
     crate::stats::enqueue_group_stats_recalculation_for_linked_unit(
-        &transaction,
+        dbx,
         unit.id,
         format!("deleted unit {}", unit.id),
     )
@@ -2021,8 +2111,8 @@ async fn delete_unit_for_login(
     .context(h!())?;
     let mut unit = unit.into_active_model();
     unit.deleted = Set(true);
-    let unit = unit.update(&transaction).await.context(h!())?;
-    let unit_json_new = unit_json(&transaction, unit.id).await?;
+    let unit = unit.update(dbx).await.context(h!())?;
+    let unit_json_new = unit_json(dbx, unit.id).await.context(h!())?;
     sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(unit.id),
@@ -2033,20 +2123,23 @@ async fn delete_unit_for_login(
         old_value: Set(Some(unit_json_old)),
         req: Set(None),
     }
-    .insert(&transaction)
+    .insert(dbx)
     .await
     .context(h!())?;
     if previous_unit.active {
         reconcile_parent_unit_activity(
-            &transaction,
+            dbx,
             login,
             std::slice::from_ref(&previous_unit),
         )
-        .await?;
+        .await
+        .context(h!())?;
     }
-    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
-        .await?;
-    transaction.commit().await.context(h!())?;
+    if reconcile_deduplicate_candidates {
+        crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx)
+            .await
+            .context(h!())?;
+    }
     Ok(unit)
 }
 
@@ -3202,31 +3295,42 @@ fn merged_unit_name(
     unit_original: &sigint_unit::Model,
     unit_to_merge: &sigint_unit::Model,
 ) -> String {
-    unit_name_from_hierarchy([
-        merged_unit_value(&unit_original.other, &unit_to_merge.other),
-        merged_unit_value(
-            &unit_original.team_or_crew,
-            &unit_to_merge.team_or_crew,
-        ),
-        merged_unit_value(&unit_original.section, &unit_to_merge.section),
-        merged_unit_value(&unit_original.squad, &unit_to_merge.squad),
-        merged_unit_value(&unit_original.platoon, &unit_to_merge.platoon),
-        merged_unit_value(&unit_original.company, &unit_to_merge.company),
-        merged_unit_value(&unit_original.battalion, &unit_to_merge.battalion),
-        merged_unit_value(&unit_original.regiment, &unit_to_merge.regiment),
-        merged_unit_value(&unit_original.brigade, &unit_to_merge.brigade),
-        merged_unit_value(&unit_original.division, &unit_to_merge.division),
-        merged_unit_value(&unit_original.corps, &unit_to_merge.corps),
-        merged_unit_value(&unit_original.army, &unit_to_merge.army),
-        merged_unit_value(
-            &unit_original.military_district,
-            &unit_to_merge.military_district,
-        ),
-        merged_unit_value(
-            &unit_original.army_region,
-            &unit_to_merge.army_region,
-        ),
-    ])
+    let is_airborne = [unit_original, unit_to_merge].into_iter().any(|unit| {
+        let generated_name = generated_unit_name(unit);
+        let airborne_name = generated_unit_name_with_airborne(unit, true);
+        generated_name != airborne_name && unit.name == airborne_name
+    });
+    unit_name_from_hierarchy_with_airborne(
+        [
+            merged_unit_value(&unit_original.other, &unit_to_merge.other),
+            merged_unit_value(
+                &unit_original.team_or_crew,
+                &unit_to_merge.team_or_crew,
+            ),
+            merged_unit_value(&unit_original.section, &unit_to_merge.section),
+            merged_unit_value(&unit_original.squad, &unit_to_merge.squad),
+            merged_unit_value(&unit_original.platoon, &unit_to_merge.platoon),
+            merged_unit_value(&unit_original.company, &unit_to_merge.company),
+            merged_unit_value(
+                &unit_original.battalion,
+                &unit_to_merge.battalion,
+            ),
+            merged_unit_value(&unit_original.regiment, &unit_to_merge.regiment),
+            merged_unit_value(&unit_original.brigade, &unit_to_merge.brigade),
+            merged_unit_value(&unit_original.division, &unit_to_merge.division),
+            merged_unit_value(&unit_original.corps, &unit_to_merge.corps),
+            merged_unit_value(&unit_original.army, &unit_to_merge.army),
+            merged_unit_value(
+                &unit_original.military_district,
+                &unit_to_merge.military_district,
+            ),
+            merged_unit_value(
+                &unit_original.army_region,
+                &unit_to_merge.army_region,
+            ),
+        ],
+        is_airborne,
+    )
 }
 
 fn merged_unit_value<'a>(original: &'a str, to_merge: &'a str) -> &'a str {
@@ -3380,6 +3484,33 @@ mod tests {
         hierarchy[SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX + 2] = "ЗС РФ";
 
         assert_eq!(unit_name_from_hierarchy(hierarchy), "2 бат 20 ЗВА");
+    }
+
+    #[test]
+    fn generated_unit_names_append_airborne_suffix_once() {
+        let mut hierarchy = [""; 14];
+        hierarchy[crate::orbit::EchoEchelon::Battalion.index()] = "2 бат";
+
+        assert_eq!(
+            unit_name_from_hierarchy_with_airborne(hierarchy, true),
+            "2 бат ПДВ"
+        );
+
+        hierarchy[crate::orbit::EchoEchelon::Other.index()] = "ПДВ";
+        assert_eq!(unit_name_from_hierarchy(hierarchy), "2 бат ПДВ");
+        assert_eq!(
+            unit_name_from_hierarchy_with_airborne(hierarchy, true),
+            "2 бат ПДВ"
+        );
+    }
+
+    #[test]
+    fn generated_unit_names_append_pks_suffix() {
+        let mut hierarchy = [""; 14];
+        hierarchy[crate::orbit::EchoEchelon::Battalion.index()] = "2 бат";
+        hierarchy[crate::orbit::EchoEchelon::MilitaryDistrict.index()] = "ПКС";
+
+        assert_eq!(unit_name_from_hierarchy(hierarchy), "2 бат ПКС");
     }
 
     #[test]
@@ -3651,6 +3782,7 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
+            exclude_orbit_other_units: Set(None),
         }
         .insert(dbx)
         .await
@@ -4368,6 +4500,7 @@ mod tests {
                 name: Set("B regular".to_string()),
                 active: Set(true),
                 is_deduplicate_candidate: Set(Some(false)),
+                present_in_orbit: Set(Some(false)),
                 ..Default::default()
             },
         )
@@ -4450,7 +4583,7 @@ mod tests {
                 sort_by: Some(ListUnitsSortBy::UnitOrbitLinkedDesc),
                 ..Default::default()
             },
-            &[linked_candidate.id, regular.id, unreviewed.id],
+            &[regular.id, unreviewed.id, linked_candidate.id],
         )
         .await;
         assert_listed_unit_ids(
@@ -4459,7 +4592,7 @@ mod tests {
                 sort_by: Some(ListUnitsSortBy::UnitOrbitLinkedAsc),
                 ..Default::default()
             },
-            &[regular.id, unreviewed.id, linked_candidate.id],
+            &[linked_candidate.id, unreviewed.id, regular.id],
         )
         .await;
     }
@@ -6199,7 +6332,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn unit_update_preserves_server_derived_deduplicate_candidate() {
+    async fn unit_update_changes_and_audits_deduplicate_candidate() {
         let env = cleanup().await.unwrap();
         let login_id = test_login_id(&env).await;
         let unit = crate::functest::tests::mk_sigint_unit(
@@ -6221,7 +6354,23 @@ mod tests {
             .unwrap();
 
         assert_eq!(unit.comment, "updated");
-        assert_eq!(unit.is_deduplicate_candidate, Some(true));
+        assert_eq!(unit.is_deduplicate_candidate, Some(false));
+        let changelog = sigint_unit_changelog::Entity::find()
+            .filter(sigint_unit_changelog::Column::SigintUnitId.eq(unit.id))
+            .filter(sigint_unit_changelog::Column::Action.eq("update"))
+            .order_by_desc(sigint_unit_changelog::Column::Id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            changelog.old_value.unwrap()["is_deduplicate_candidate"],
+            true
+        );
+        assert_eq!(
+            changelog.new_value.unwrap()["is_deduplicate_candidate"],
+            false
+        );
     }
 
     #[tokio::test]
@@ -6295,6 +6444,7 @@ mod tests {
                 army_region: Set("ЗС РФ".to_string()),
                 orbit_note: Set(Some("Orbit note".to_string())),
                 present_in_orbit: Set(Some(false)),
+                is_deduplicate_candidate: Set(Some(true)),
                 ..Default::default()
             },
         )
@@ -6320,6 +6470,7 @@ mod tests {
         assert_eq!(unit.army_region, "ЗС РФ");
         assert_eq!(unit.orbit_note.as_deref(), Some("Orbit note"));
         assert_eq!(unit.present_in_orbit, Some(false));
+        assert_eq!(unit.is_deduplicate_candidate, Some(true));
         assert_eq!(unit.comment, "updated");
     }
 
@@ -6351,6 +6502,58 @@ mod tests {
             .unwrap();
 
         assert_eq!(unit.name, "Повна назва підрозділу");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn update_generated_name_appends_airborne_and_pks_suffixes() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                battalion: Set("2 бат".to_string()),
+                military_district: Set("ПКС".to_string()),
+                name: Set("2 бат".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let combat_unit_type = orbit_combat_unit_type::Entity::find()
+            .filter(orbit_combat_unit_type::Column::Key.eq(
+                crate::config::SIGINT_UNIT_NAME_AIRBORNE_COMBAT_UNIT_TYPE_KEY,
+            ))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            combat_unit_type_id: Set(Some(combat_unit_type.id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(unit.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let mut req = UpdateUnitReq::from(render_unit(&unit).unwrap());
+        req.name.clear();
+
+        let unit = update_unit_for_login(&env.dbx, &login_id, &req, true)
+            .await
+            .unwrap();
+
+        assert_eq!(unit.name, "2 бат ПДВ ПКС");
     }
 
     #[test]

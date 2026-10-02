@@ -1,5 +1,5 @@
 export type SystemSettingsTab =
-  'main' | 'duty' | 'analysis' | 'control' | 'pelengs' | 'notifications' | 'cache';
+  'main' | 'duty' | 'analysis' | 'control' | 'pelengs' | 'notifications' | 'cache' | 'integrations';
 
 export type AiEngineUrlScreen =
   { kind: 'list' } | { kind: 'details'; aiEngineId: string } | { kind: 'edit'; aiEngineId: string };
@@ -12,6 +12,7 @@ const SYSTEM_SETTINGS_TABS = new Set<SystemSettingsTab>([
   'pelengs',
   'notifications',
   'cache',
+  'integrations',
 ]);
 const AI_ENGINE_HISTORY_ENTRY = 'systemSettingsAiEngineHistoryEntry';
 const AI_ENGINE_EDIT_RETURN_TO_DETAILS = 'systemSettingsAiEngineEditReturnToDetails';

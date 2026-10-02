@@ -23,6 +23,8 @@ import type {
   UnitAttachment,
   UnitDuplicate,
   UnitAttachmentUnitIdsRsp,
+  UnitActivityPeriod,
+  UnitActivityRsp,
   UnitDetailsRsp,
   UnitStatusCountsRsp,
   UpdateUnitAttachmentReq,
@@ -240,6 +242,19 @@ export async function getUnitIdsWithVisibleAttachments(
 export async function getUnitDetails(unitId: number): Promise<UnitDetailsRsp> {
   const raw = await postJson<unknown>('/api/sigint/unit/details', { unit_id: unitId });
   return transformSnakeToCamel<UnitDetailsRsp>(raw);
+}
+
+export async function getUnitActivity(
+  unitId: number,
+  period: UnitActivityPeriod,
+  options?: RequestOptions,
+): Promise<UnitActivityRsp> {
+  const raw = await postJson<unknown>(
+    '/api/admin/sigint/unit/activity',
+    transformCamelToSnake({ unitId, period }),
+    options,
+  );
+  return transformSnakeToCamel<UnitActivityRsp>(raw);
 }
 
 export async function getOrbitUnitLinkCandidates(

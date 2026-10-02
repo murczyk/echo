@@ -5,7 +5,13 @@ import {
   Card,
   CardContent,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   FormControlLabel,
+  Link,
   Stack,
   Switch,
   Tab,
@@ -25,6 +31,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import {
+  cleanupOrbitOtherUnits,
   createSystemSettings,
   getRerDutyTestReplayStatus,
   listSystemSettings,
@@ -32,6 +39,7 @@ import {
   type SystemSettingsItem,
 } from '../../services/api/system-settings';
 import { APP_TIME_ZONE } from '../../utils/misc';
+import { handleNavigateWithinSpaClick } from '../../utils/browser';
 import { AdminControlPanelNeoSection } from '../admin-control-panel-neo';
 import { CacheBackfillSection } from './CacheBackfillSection';
 import {
@@ -51,6 +59,7 @@ type SystemSettingsForm = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
+  excludeOrbitOtherUnits: boolean;
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
@@ -86,6 +95,7 @@ type SystemSettingsPayload = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
+  excludeOrbitOtherUnits: boolean;
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
@@ -121,6 +131,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   dutyExcludeMenuEnabled: true,
   analysisAorFilterEnabled: true,
   twoFactorAuthEnabled: true,
+  excludeOrbitOtherUnits: true,
   dutyTestEnabled: false,
   dutyTestSinceMs: 0,
   dutyTestLimit: 1,
@@ -206,6 +217,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
     twoFactorAuthEnabled: item?.twoFactorAuthEnabled ?? true,
+    excludeOrbitOtherUnits: item?.excludeOrbitOtherUnits ?? true,
     dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
     dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
     dutyTestLimit: item?.rerDutyTestLimit ?? 1,
@@ -244,6 +256,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
     a.twoFactorAuthEnabled === b.twoFactorAuthEnabled &&
+    a.excludeOrbitOtherUnits === b.excludeOrbitOtherUnits &&
     a.dutyTestEnabled === b.dutyTestEnabled &&
     a.dutyTestSinceMs === b.dutyTestSinceMs &&
     a.dutyTestLimit === b.dutyTestLimit &&
@@ -338,6 +351,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
     twoFactorAuthEnabled: form.twoFactorAuthEnabled,
+    excludeOrbitOtherUnits: form.excludeOrbitOtherUnits,
     dutyTestEnabled: form.dutyTestEnabled,
     dutyTestSinceMs: form.dutyTestSinceMs,
     dutyTestLimit: form.dutyTestLimit,
@@ -932,6 +946,166 @@ function NotificationsSettingsSection({
   );
 }
 
+type OrbitCleanupDialogStep = 'first-confirmation' | 'final-confirmation' | 'roadblocks' | null;
+
+function OrbitIntegrationsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
+  const [dialogStep, setDialogStep] = useState<OrbitCleanupDialogStep>(null);
+  const [cleanupInProgress, setCleanupInProgress] = useState(false);
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
+  const [roadblocks, setRoadblocks] = useState<Array<{ id: number; name: string }>>([]);
+  const { notify } = usePowerSnackbar();
+
+  const closeDialog = () => {
+    if (cleanupInProgress) return;
+    setDialogStep(null);
+    setCleanupError(null);
+    setRoadblocks([]);
+  };
+
+  const runCleanup = async (ignoreActive: boolean) => {
+    setCleanupInProgress(true);
+    setCleanupError(null);
+    try {
+      const response = await cleanupOrbitOtherUnits(ignoreActive);
+      if (!ignoreActive && response.activeUnits.length > 0) {
+        setRoadblocks(response.activeUnits);
+        setDialogStep('roadblocks');
+        return;
+      }
+      notify({
+        severity: 'success',
+        message: `Видалено підрозділів: ${response.deletedCount}.`,
+      });
+      setDialogStep(null);
+      setRoadblocks([]);
+    } catch (error) {
+      setCleanupError(`Помилка видалення: ${formatErrorMessage(error)}`);
+    } finally {
+      setCleanupInProgress(false);
+    }
+  };
+
+  return (
+    <Stack spacing={2}>
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Orbit
+      </Typography>
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.excludeOrbitOtherUnits}
+            onChange={(event) => {
+              patchForm({ excludeOrbitOtherUnits: event.target.checked });
+            }}
+          />
+        }
+        label="Не імпортувати підрозділи управління, штаби, полігони"
+      />
+      <Box>
+        <PowerButton
+          type="button"
+          color="error"
+          variant="contained"
+          onClick={() => {
+            setCleanupError(null);
+            setDialogStep('first-confirmation');
+          }}
+        >
+          Видалити підрозділи управління
+        </PowerButton>
+      </Box>
+
+      <Dialog open={dialogStep !== null} onClose={closeDialog} fullWidth maxWidth="sm">
+        <DialogTitle>
+          {dialogStep === 'roadblocks' ? 'Операцію заблоковано' : 'Видалити підрозділи управління?'}
+        </DialogTitle>
+        <DialogContent>
+          {cleanupError ? <PowerAlert severity="error">{cleanupError}</PowerAlert> : null}
+          {dialogStep === 'first-confirmation' ? (
+            <DialogContentText>
+              Будуть видалені всі неактивні SIGINT-підрозділи, прив’язані до підрозділів Orbit типу
+              «Інше». Записи Orbit залишаться.
+            </DialogContentText>
+          ) : null}
+          {dialogStep === 'final-confirmation' ? (
+            <DialogContentText>
+              Ви впевнені? Цю операцію неможливо скасувати через інтерфейс.
+            </DialogContentText>
+          ) : null}
+          {dialogStep === 'roadblocks' ? (
+            <Stack spacing={1.5}>
+              <PowerAlert severity="warning" autoHideDuration={null}>
+                Спочатку видаліть ці активні підрозділи вручну або відв’яжіть їх від Orbit і
+                виправте дані. Можна також проігнорувати їх і видалити лише неактивні підрозділи.
+              </PowerAlert>
+              <Stack component="ul" spacing={0.5} sx={{ my: 0, pl: 3 }}>
+                {roadblocks.map((unit) => {
+                  const href = `/rer-units/${unit.id}`;
+                  return (
+                    <Box component="li" key={unit.id}>
+                      <Link
+                        href={href}
+                        onClick={(event) => handleNavigateWithinSpaClick(event, href)}
+                      >
+                        {unit.name}
+                      </Link>
+                    </Box>
+                  );
+                })}
+              </Stack>
+            </Stack>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <PowerButton type="button" onClick={closeDialog} disabled={cleanupInProgress}>
+            Скасувати
+          </PowerButton>
+          {dialogStep === 'first-confirmation' ? (
+            <PowerButton
+              type="button"
+              color="error"
+              variant="outlined"
+              onClick={() => setDialogStep('final-confirmation')}
+            >
+              Продовжити
+            </PowerButton>
+          ) : null}
+          {dialogStep === 'final-confirmation' ? (
+            <PowerButton
+              type="button"
+              color="error"
+              variant="contained"
+              disabled={cleanupInProgress}
+              startIcon={cleanupInProgress ? <CircularProgress size={18} /> : undefined}
+              onClick={() => void runCleanup(false)}
+            >
+              Так, видалити
+            </PowerButton>
+          ) : null}
+          {dialogStep === 'roadblocks' ? (
+            <PowerButton
+              type="button"
+              color="error"
+              variant="contained"
+              disabled={cleanupInProgress}
+              startIcon={cleanupInProgress ? <CircularProgress size={18} /> : undefined}
+              onClick={() => void runCleanup(true)}
+            >
+              Ігнорувати та продовжити
+            </PowerButton>
+          ) : null}
+        </DialogActions>
+      </Dialog>
+    </Stack>
+  );
+}
+
 export function AdminSystemSettingsNeoPage() {
   const [activeTab, setActiveTab] = useState<SystemSettingsTab>(readSystemSettingsTab);
   const [saved, setSaved] = useState<SystemSettingsForm>(EMPTY_FORM);
@@ -1036,6 +1210,7 @@ export function AdminSystemSettingsNeoPage() {
       dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
       analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
       twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
+      excludeOrbitOtherUnits: payload.excludeOrbitOtherUnits,
       autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
       devicesSectionEnabled: payload.devicesSectionEnabled,
       sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
@@ -1180,6 +1355,12 @@ export function AdminSystemSettingsNeoPage() {
                 id="system-settings-neo-tab-cache"
                 aria-controls="system-settings-neo-panel-cache"
               />
+              <Tab
+                value="integrations"
+                label="Інтеграції"
+                id="system-settings-neo-tab-integrations"
+                aria-controls="system-settings-neo-panel-integrations"
+              />
             </Tabs>
 
             <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
@@ -1283,6 +1464,17 @@ export function AdminSystemSettingsNeoPage() {
                       <Stack spacing={3}>
                         <NotificationsSettingsSection form={form} patchForm={patchForm} />
                       </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-integrations"
+                    role="tabpanel"
+                    hidden={activeTab !== 'integrations'}
+                    aria-labelledby="system-settings-neo-tab-integrations"
+                  >
+                    {activeTab === 'integrations' ? (
+                      <OrbitIntegrationsSection form={form} patchForm={patchForm} />
                     ) : null}
                   </Box>
                 </Box>

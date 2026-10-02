@@ -3243,6 +3243,41 @@ export type UnitChangelogRsp = {
   entries: Array<UnitChangelogEntry>;
 };
 
+export type UnitActivityPeriod =
+  | 'Day'
+  | 'Week'
+  | 'Month'
+  | 'ThreeMonths'
+;
+
+export type UnitActivityReq = {
+  unitId: number;
+  period: UnitActivityPeriod;
+};
+
+export type UnitActivityBucket = {
+  startedAt: number;
+  interceptionCount: number;
+};
+
+export type UnitActivityRsp = {
+  buckets: Array<UnitActivityBucket>;
+};
+
+export type CleanupOrbitOtherUnitsReq = {
+  ignoreActive: boolean;
+};
+
+export type CleanupOrbitOtherUnitRoadblock = {
+  id: number;
+  name: string;
+};
+
+export type CleanupOrbitOtherUnitsRsp = {
+  deletedCount: number;
+  activeUnits: Array<CleanupOrbitOtherUnitRoadblock>;
+};
+
 export type UnitAttachmentAor = {
   id: number;
   name: string;
@@ -3355,9 +3390,9 @@ export type OrbitParentUnit = {
 };
 
 export type OrbitChildUnit = {
-  sigintUnitId: number;
+  sigintUnitId: number | null;
   name: string;
-  active: boolean;
+  active: boolean | null;
   orbitUnitIds: Array<string>;
   isGenerative: boolean;
   isOperational: boolean;
@@ -4722,6 +4757,7 @@ export type SystemSettingsCurrentRsp = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
+  excludeOrbitOtherUnits: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -4761,6 +4797,7 @@ export type SystemSettingsItem = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
+  excludeOrbitOtherUnits: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -4799,6 +4836,7 @@ export type CreateSystemSettingsReq = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
+  excludeOrbitOtherUnits: boolean;
 };
 
 export type ActivateSystemSettingsReq = {

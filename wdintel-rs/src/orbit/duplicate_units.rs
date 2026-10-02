@@ -784,8 +784,7 @@ fn option_is_preserved<T: Copy + PartialEq>(
 }
 
 fn unit_name_is_derived(unit: &sigint_unit::Model) -> bool {
-    unit.name.trim().is_empty()
-        || unit.name == crate::sigint::unit::generated_unit_name(unit)
+    crate::sigint::unit::unit_name_is_derived(unit)
 }
 
 fn selection(
@@ -1198,6 +1197,17 @@ mod tests {
     }
 
     #[test]
+    fn legacy_generated_names_remain_derived_after_suffix_changes() {
+        let mut pks = unit(1, "4 мсб", true, Uuid::new_v4(), "4 мсб", "");
+        pks.military_district = "ПКС".to_string();
+        let mut airborne = unit(2, "4 мсб", true, Uuid::new_v4(), "4 мсб", "");
+        airborne.other = "ПДВ".to_string();
+
+        assert!(unit_name_is_derived(&pks));
+        assert!(unit_name_is_derived(&airborne));
+    }
+
+    #[test]
     fn automatic_merge_rejects_a_custom_name_that_the_survivor_would_lose() {
         let system_login_id = Uuid::new_v4();
         let active = unit(1, "4 мсб", true, Uuid::new_v4(), "4 мсб", "");
@@ -1210,6 +1220,16 @@ mod tests {
             "60 омсбр",
         );
         let candidates = vec![candidate(active), candidate(inactive)];
+
+        assert_eq!(automatic_merge(&candidates, system_login_id), None);
+    }
+
+    #[test]
+    fn automatic_merge_preserves_a_custom_airborne_suffix() {
+        let system_login_id = Uuid::new_v4();
+        let active = unit(1, "2 бат", true, Uuid::new_v4(), "2 бат", "");
+        let custom = unit(2, "2 бат ПДВ", false, system_login_id, "2 бат", "");
+        let candidates = vec![candidate(active), candidate(custom)];
 
         assert_eq!(automatic_merge(&candidates, system_login_id), None);
     }

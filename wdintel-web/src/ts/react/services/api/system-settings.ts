@@ -24,6 +24,7 @@ type SystemSettingsItemRaw = {
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   two_factor_auth_enabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'] | null;
+  exclude_orbit_other_units?: boolean | null;
   autofix_echoim_missing_messages?: boolean;
   devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
@@ -60,6 +61,7 @@ type SystemSettingsCurrentRspRaw = {
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   two_factor_auth_enabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'] | null;
+  exclude_orbit_other_units?: boolean | null;
   autofix_echoim_missing_messages?: boolean;
   devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
@@ -97,6 +99,7 @@ type CreateSystemSettingsReqRaw = {
   duty_exclude_menu_enabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysis_aor_filter_enabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   two_factor_auth_enabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
+  exclude_orbit_other_units: boolean;
   autofix_echoim_missing_messages: boolean;
   devices_section_enabled: boolean;
   sigint_comment_parsing_enabled: boolean;
@@ -140,6 +143,7 @@ export type SystemSettingsItem = {
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   twoFactorAuthEnabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
+  excludeOrbitOtherUnits: boolean;
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -176,6 +180,7 @@ export type SystemSettingsCurrent = {
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   twoFactorAuthEnabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
+  excludeOrbitOtherUnits: boolean;
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -209,6 +214,7 @@ export type CreateSystemSettingsInput = {
   dutyExcludeMenuEnabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   twoFactorAuthEnabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
+  excludeOrbitOtherUnits?: boolean;
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -249,6 +255,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
+    excludeOrbitOtherUnits: raw.exclude_orbit_other_units ?? true,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
@@ -287,6 +294,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
+    excludeOrbitOtherUnits: raw.exclude_orbit_other_units ?? true,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
@@ -329,6 +337,7 @@ export async function createSystemSettings(
     duty_exclude_menu_enabled: input.dutyExcludeMenuEnabled ?? true,
     analysis_aor_filter_enabled: input.analysisAorFilterEnabled ?? true,
     two_factor_auth_enabled: input.twoFactorAuthEnabled ?? true,
+    exclude_orbit_other_units: input.excludeOrbitOtherUnits ?? true,
     autofix_echoim_missing_messages: input.autofixEchoimMissingMessages,
     devices_section_enabled: input.devicesSectionEnabled,
     sigint_comment_parsing_enabled: input.sigintCommentParsingEnabled,
@@ -357,6 +366,29 @@ export async function activateSystemSettings(id: number): Promise<SystemSettings
   const req: ActivateSystemSettingsReqRaw = { id };
   const data = await postJson<SystemSettingsItemRaw>('/api/admin/system-settings/activate', req);
   return normalizeItem(data);
+}
+
+type CleanupOrbitOtherUnitsRspRaw = {
+  deleted_count: number;
+  active_units: Array<{ id: number; name: string }>;
+};
+
+export type CleanupOrbitOtherUnitsRsp = {
+  deletedCount: number;
+  activeUnits: Array<{ id: number; name: string }>;
+};
+
+export async function cleanupOrbitOtherUnits(
+  ignoreActive: boolean,
+): Promise<CleanupOrbitOtherUnitsRsp> {
+  const response = await postJson<CleanupOrbitOtherUnitsRspRaw>(
+    '/api/admin/system-settings/orbit/cleanup-other-units',
+    { ignore_active: ignoreActive },
+  );
+  return {
+    deletedCount: response.deleted_count,
+    activeUnits: response.active_units,
+  };
 }
 
 type RerDutyTestReplayStatusRaw = {
