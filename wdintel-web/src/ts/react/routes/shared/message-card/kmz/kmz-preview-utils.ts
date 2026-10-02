@@ -2,6 +2,9 @@ export const MAX_KMZ_PREVIEW_SOURCE_BYTES = 25 * 1024 * 1024;
 export const MAX_KMZ_PREVIEW_ENTRIES = 100;
 export const MAX_KMZ_PREVIEW_EXPANDED_BYTES = 50 * 1024 * 1024;
 export const MAX_KMZ_PREVIEW_COORDINATES = 100_000;
+export const MAX_KMZ_PREVIEW_INFERRED_AREA_GROUPS = 500;
+export const MAX_KMZ_PREVIEW_INFERRED_AREA_VERTICES = 512;
+export const MIN_KMZ_PREVIEW_INFERRED_AREA_POINTS = 30;
 
 export function isNativeKmlOrKmz(
   fileName: string,

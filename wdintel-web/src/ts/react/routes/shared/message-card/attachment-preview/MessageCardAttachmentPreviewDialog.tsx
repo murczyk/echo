@@ -307,7 +307,13 @@ export function MessageCardAttachmentPreviewDialog({
             {...rendererProps}
           />
         ) : item.type === 'kmz' ? (
-          <KmzAttachmentPreviewRenderer source={item.value} {...rendererProps} />
+          <KmzAttachmentPreviewRenderer
+            key={item.value.mediaId}
+            source={item.value}
+            onChildOverlayChange={onChildOverlayChange}
+            dismissChildOverlay={dismissChildOverlay}
+            {...rendererProps}
+          />
         ) : (
           <CoordinateAttachmentPreviewRenderer
             points={item.points}

@@ -129,6 +129,51 @@ describe('parseKmzPreview', () => {
     ]);
   });
 
+  it('builds separate approximate areas for point-only folders', () => {
+    const folderPoints = (longitude: number) =>
+      Array.from({ length: 30 }, (_, index) => {
+        const coordinates = [`${longitude},50`, `${longitude + 1},50`, `${longitude},51`][
+          index % 3
+        ];
+        return `<Placemark><styleUrl>#red</styleUrl><Point><coordinates>${coordinates}</coordinates></Point></Placemark>`;
+      }).join('');
+    const preview = parseKmzPreview(
+      buffer(`<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+        <Style id="red"><IconStyle><color>ff0000ff</color></IconStyle></Style>
+        <Folder><name>First</name>${folderPoints(30)}</Folder>
+        <Folder><name>Second</name>${folderPoints(40)}</Folder>
+      </Document></kml>`),
+      'kml',
+    );
+
+    expect(preview.points).toHaveLength(60);
+    expect(preview.polygons).toHaveLength(2);
+    expect(preview.polygons.every((polygon) => polygon.inferredFromPoints === true)).toBe(true);
+    expect(preview.polygons.map((polygon) => polygon.rings[0]?.map((point) => point.lng))).toEqual([
+      [30, 31, 30],
+      [40, 41, 40],
+    ]);
+  });
+
+  it('does not invent an area around a few distant points', () => {
+    const preview = parseKmzPreview(
+      kmz({
+        'doc.kml': `<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+          <Style id="yellow"><IconStyle><color>ff00ffff</color></IconStyle></Style>
+          ${Array.from(
+            { length: 7 },
+            (_, index) =>
+              `<Placemark><styleUrl>#yellow</styleUrl><Point><coordinates>${37.6 + index * 0.001},${index === 6 ? 49.77 : 49.71 + index * 0.002}</coordinates></Point></Placemark>`,
+          ).join('')}
+        </Document></kml>`,
+      }),
+      'kmz',
+    );
+
+    expect(preview.points).toHaveLength(7);
+    expect(preview.polygons).toHaveLength(0);
+  });
+
   it('reports malformed KML and KMZ input', () => {
     expect(() => parseKmzPreview(buffer('<kml><Placemark>'), 'kml')).toThrow('KML_MALFORMED');
     expect(() => parseKmzPreview(buffer('not a zip'), 'kmz')).toThrow('KMZ_MALFORMED');

@@ -7,7 +7,10 @@ import {
   MAX_KMZ_PREVIEW_COORDINATES,
   MAX_KMZ_PREVIEW_ENTRIES,
   MAX_KMZ_PREVIEW_EXPANDED_BYTES,
+  MAX_KMZ_PREVIEW_INFERRED_AREA_GROUPS,
+  MAX_KMZ_PREVIEW_INFERRED_AREA_VERTICES,
   MAX_KMZ_PREVIEW_SOURCE_BYTES,
+  MIN_KMZ_PREVIEW_INFERRED_AREA_POINTS,
 } from './kmz-preview-utils';
 import type { KmzPreview, KmzPreviewCoords } from './kmz-preview-types';
 
@@ -51,10 +54,64 @@ function appendCoords(values: Position[], coordinates: KmzPreviewCoords[]): KmzP
   coordinates.push(...result);
   return result;
 }
+type PointGroup = { color: string | null; coords: KmzPreviewCoords[] };
+
+function placemarkGroups(document: Document, member: number): Map<string, string> {
+  const folders = new WeakMap<Element, string>();
+  Array.from(document.getElementsByTagNameNS('*', 'Folder')).forEach((folder, index) => {
+    folders.set(folder, `${member}:${index}`);
+  });
+  const groups = new Map<string, string>();
+  Array.from(document.getElementsByTagNameNS('*', 'Placemark')).forEach((placemark, index) => {
+    const id = `preview-placemark-${index}`;
+    placemark.setAttribute('id', id);
+    let parent = placemark.parentNode;
+    while (parent != null && parent.nodeType === 1 && !folders.has(parent as Element))
+      parent = parent.parentNode;
+    groups.set(
+      id,
+      parent != null && folders.has(parent as Element)
+        ? folders.get(parent as Element)!
+        : `${member}:root`,
+    );
+  });
+  return groups;
+}
+
+function convexHull(points: KmzPreviewCoords[]): KmzPreviewCoords[] {
+  const sorted = [...points]
+    .sort((a, b) => a.lng - b.lng || a.lat - b.lat)
+    .filter(
+      (point, index, values) =>
+        index === 0 || point.lng !== values[index - 1].lng || point.lat !== values[index - 1].lat,
+    );
+  if (sorted.length < 3) return [];
+  const cross = (a: KmzPreviewCoords, b: KmzPreviewCoords, c: KmzPreviewCoords) =>
+    (b.lng - a.lng) * (c.lat - a.lat) - (b.lat - a.lat) * (c.lng - a.lng);
+  const half = (values: KmzPreviewCoords[]) => {
+    const hull: KmzPreviewCoords[] = [];
+    for (const point of values) {
+      while (hull.length > 1 && cross(hull[hull.length - 2], hull[hull.length - 1], point) <= 0)
+        hull.pop();
+      hull.push(point);
+    }
+    return hull;
+  };
+  const ring = [...half(sorted).slice(0, -1), ...half(sorted.reverse()).slice(0, -1)];
+  if (ring.length < 3) return [];
+  if (ring.length <= MAX_KMZ_PREVIEW_INFERRED_AREA_VERTICES) return ring;
+  return Array.from(
+    { length: MAX_KMZ_PREVIEW_INFERRED_AREA_VERTICES },
+    (_, index) => ring[Math.floor((index * ring.length) / MAX_KMZ_PREVIEW_INFERRED_AREA_VERTICES)],
+  );
+}
+
 function addFeature(
   preview: KmzPreview,
   feature: Feature<Geometry | null>,
   coordinates: KmzPreviewCoords[],
+  group: string,
+  pointGroups: Map<string, PointGroup>,
 ) {
   if (feature.geometry == null) return;
   const properties = feature.properties ?? {};
@@ -76,6 +133,10 @@ function addFeature(
         color: pointColor,
         opacity: number(properties['icon-opacity'] ?? properties['marker-opacity'], 1),
       });
+      const key = `${group}:${pointColor ?? ''}`;
+      const points = pointGroups.get(key) ?? { color: pointColor, coords: [] };
+      points.coords.push(value);
+      pointGroups.set(key, points);
     } else if (geometry.type === 'LineString') {
       const values = appendCoords(geometry.coordinates, coordinates);
       if (values.length >= 2)
@@ -121,7 +182,13 @@ function addFeature(
   };
   addGeometry(feature.geometry);
 }
-function parseKml(text: string, preview: KmzPreview, coordinates: KmzPreviewCoords[]) {
+function parseKml(
+  text: string,
+  preview: KmzPreview,
+  coordinates: KmzPreviewCoords[],
+  pointGroups: Map<string, PointGroup>,
+  member: number,
+) {
   let document: Document;
   try {
     document = new DOMParser().parseFromString(text, 'application/xml');
@@ -129,8 +196,15 @@ function parseKml(text: string, preview: KmzPreview, coordinates: KmzPreviewCoor
     fail('KML_MALFORMED');
   }
   if (document.getElementsByTagName('parsererror').length > 0) fail('KML_MALFORMED');
+  const groups = placemarkGroups(document, member);
   for (const feature of kml(document, { skipNullGeometry: true }).features)
-    addFeature(preview, feature, coordinates);
+    addFeature(
+      preview,
+      feature,
+      coordinates,
+      groups.get(String(feature.id)) ?? `${member}:root`,
+      pointGroups,
+    );
 }
 function concat(chunks: Uint8Array[]): Uint8Array {
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
@@ -216,7 +290,27 @@ export function parseKmzPreview(buffer: ArrayBuffer, format: 'kml' | 'kmz'): Kmz
   if (buffer.byteLength > MAX_KMZ_PREVIEW_SOURCE_BYTES) fail('KMZ_SOURCE_TOO_LARGE');
   const preview: KmzPreview = { points: [], lineStrings: [], polygons: [] };
   const coordinates: KmzPreviewCoords[] = [];
+  const pointGroups = new Map<string, PointGroup>();
   const texts = format === 'kml' ? [decoder.decode(buffer)] : kmzKmlTexts(new Uint8Array(buffer));
-  texts.forEach((text) => parseKml(text, preview, coordinates));
+  texts.forEach((text, member) => parseKml(text, preview, coordinates, pointGroups, member));
+  if (
+    preview.polygons.length === 0 &&
+    preview.lineStrings.length === 0 &&
+    pointGroups.size <= MAX_KMZ_PREVIEW_INFERRED_AREA_GROUPS
+  )
+    for (const group of pointGroups.values()) {
+      if (group.coords.length < MIN_KMZ_PREVIEW_INFERRED_AREA_POINTS) continue;
+      const ring = convexHull(group.coords);
+      if (ring.length < 3) continue;
+      preview.polygons.push({
+        rings: [ring],
+        label: null,
+        strokeColor: group.color,
+        strokeOpacity: 1,
+        fillColor: group.color,
+        fillOpacity: 0.14,
+        inferredFromPoints: true,
+      });
+    }
   return preview;
 }

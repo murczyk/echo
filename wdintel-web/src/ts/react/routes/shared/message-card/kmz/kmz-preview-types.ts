@@ -20,5 +20,6 @@ export type KmzPreview = {
     strokeOpacity: number;
     fillColor: string | null;
     fillOpacity: number;
+    inferredFromPoints?: boolean;
   }>;
 };

@@ -4,20 +4,42 @@ import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
 import InfoIcon from '@mui/icons-material/Info';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import { Box, CircularProgress, IconButton, Stack, Tooltip, Typography } from '@mui/material';
-import type { MouseEvent, ReactNode } from 'react';
+import {
+  Box,
+  CircularProgress,
+  IconButton,
+  MenuItem,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 
 import type {
   AttachmentPreviewDownload,
+  AttachmentPreviewDownloadItem,
   MessageCardPreviewNavigation,
 } from './message-card-preview.types';
 import { MessageCardDisabledControlCursorWrapper } from '../MessageCardDisabledControlCursorWrapper';
+import { PowerMenu } from '../../../../components/PowerMenu';
+
+export const attachmentPreviewHeaderIconButtonSx = {
+  color: 'text.secondary',
+  '&:hover': {
+    color: 'text.primary',
+    backgroundColor: 'action.hover',
+  },
+  '&.Mui-disabled': {
+    color: 'action.disabled',
+  },
+};
 
 export function MessageCardAttachmentPreviewHeader({
   fileName,
   openHref,
   download,
   downloadKey,
+  downloadItems,
   navigation,
   additionalActions,
   overflowAction,
@@ -27,11 +49,14 @@ export function MessageCardAttachmentPreviewHeader({
   onClose,
   isDownloadStarting,
   onDownloadStart,
+  onChildOverlayChange,
+  dismissChildOverlay,
 }: {
   fileName?: string | null;
   openHref?: string | null;
   download?: AttachmentPreviewDownload;
   downloadKey?: string;
+  downloadItems?: AttachmentPreviewDownloadItem[];
   navigation: MessageCardPreviewNavigation;
   additionalActions?: ReactNode;
   overflowAction?: ReactNode;
@@ -41,18 +66,37 @@ export function MessageCardAttachmentPreviewHeader({
   onClose: () => void;
   isDownloadStarting?: (downloadKey: string) => boolean;
   onDownloadStart?: (downloadKey: string) => boolean;
+  onChildOverlayChange?: (open: boolean) => void;
+  dismissChildOverlay?: number;
 }) {
+  const [downloadMenuAnchor, setDownloadMenuAnchor] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    onChildOverlayChange?.(downloadMenuAnchor != null);
+    return () => onChildOverlayChange?.(false);
+  }, [downloadMenuAnchor, onChildOverlayChange]);
+  useEffect(() => {
+    if (dismissChildOverlay) setDownloadMenuAnchor(null);
+  }, [dismissChildOverlay]);
+  const choices =
+    downloadItems ??
+    (download == null || downloadKey == null
+      ? []
+      : [{ label: 'Завантажити', download, downloadKey }]);
+  const hasDownloadChoices = downloadItems != null && choices.length > 0;
   const downloading =
-    downloadKey != null && isDownloadStarting != null && isDownloadStarting(downloadKey);
+    !hasDownloadChoices &&
+    downloadKey != null &&
+    isDownloadStarting != null &&
+    isDownloadStarting(downloadKey);
   const hasCarousel = navigation.count > 1;
 
-  const startDownload = (event: MouseEvent<HTMLButtonElement | HTMLAnchorElement>) => {
+  const startDownload = (event: MouseEvent<HTMLElement>, key = downloadKey) => {
     if (
-      downloadKey == null ||
+      key == null ||
       isDownloadStarting == null ||
       onDownloadStart == null ||
-      isDownloadStarting(downloadKey) ||
-      !onDownloadStart(downloadKey)
+      isDownloadStarting(key) ||
+      !onDownloadStart(key)
     ) {
       event.preventDefault();
       return false;
@@ -60,54 +104,55 @@ export function MessageCardAttachmentPreviewHeader({
     return true;
   };
 
-  const iconButtonSx = {
-    color: 'text.secondary',
-    '&:hover': {
-      color: 'text.primary',
-      backgroundColor: 'action.hover',
-    },
-    '&.Mui-disabled': {
-      color: 'action.disabled',
-    },
-  };
+  const iconButtonSx = attachmentPreviewHeaderIconButtonSx;
 
-  const downloadButton =
-    download == null ? null : 'href' in download && typeof download.href === 'string' ? (
-      <IconButton
-        component="a"
-        href={download.href}
-        download={download.fileName}
-        aria-label={downloading ? 'Завантаження…' : 'Скачати'}
-        aria-busy={downloading}
-        disabled={downloading}
-        onClick={startDownload}
-        size="small"
-        sx={iconButtonSx}
-      >
-        {downloading ? (
-          <CircularProgress size={16} color="inherit" aria-label="Завантаження…" />
-        ) : (
-          <DownloadIcon fontSize="small" />
-        )}
-      </IconButton>
-    ) : (
-      <IconButton
-        aria-label={downloading ? 'Завантаження…' : 'Скачати'}
-        aria-busy={downloading}
-        disabled={downloading}
-        onClick={(event) => {
-          if (startDownload(event)) download.onDownload();
-        }}
-        size="small"
-        sx={iconButtonSx}
-      >
-        {downloading ? (
-          <CircularProgress size={16} color="inherit" aria-label="Завантаження…" />
-        ) : (
-          <DownloadIcon fontSize="small" />
-        )}
-      </IconButton>
-    );
+  const downloadButton = hasDownloadChoices ? (
+    <IconButton
+      aria-label="Скачати"
+      aria-expanded={downloadMenuAnchor != null}
+      aria-haspopup="menu"
+      onClick={(event) => setDownloadMenuAnchor(event.currentTarget)}
+      size="small"
+      sx={iconButtonSx}
+    >
+      <DownloadIcon fontSize="small" />
+    </IconButton>
+  ) : download == null ? null : 'href' in download && typeof download.href === 'string' ? (
+    <IconButton
+      component="a"
+      href={download.href}
+      download={download.fileName}
+      aria-label={downloading ? 'Завантаження…' : 'Скачати'}
+      aria-busy={downloading}
+      disabled={downloading}
+      onClick={startDownload}
+      size="small"
+      sx={iconButtonSx}
+    >
+      {downloading ? (
+        <CircularProgress size={16} color="inherit" aria-label="Завантаження…" />
+      ) : (
+        <DownloadIcon fontSize="small" />
+      )}
+    </IconButton>
+  ) : (
+    <IconButton
+      aria-label={downloading ? 'Завантаження…' : 'Скачати'}
+      aria-busy={downloading}
+      disabled={downloading}
+      onClick={(event) => {
+        if (startDownload(event)) download.onDownload();
+      }}
+      size="small"
+      sx={iconButtonSx}
+    >
+      {downloading ? (
+        <CircularProgress size={16} color="inherit" aria-label="Завантаження…" />
+      ) : (
+        <DownloadIcon fontSize="small" />
+      )}
+    </IconButton>
+  );
 
   return (
     <Box
@@ -246,6 +291,50 @@ export function MessageCardAttachmentPreviewHeader({
             </MessageCardDisabledControlCursorWrapper>
           </Tooltip>
         )}
+        {hasDownloadChoices ? (
+          <PowerMenu
+            id="attachment-preview-download-menu"
+            anchorEl={downloadMenuAnchor}
+            open={downloadMenuAnchor != null}
+            onClose={() => setDownloadMenuAnchor(null)}
+            anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            slotProps={{ root: { sx: { zIndex: 1501 } } }}
+          >
+            {choices.map((item) => {
+              const itemDownload = item.download;
+              const key = `${item.label}:${item.downloadKey ?? ''}`;
+              const itemDownloading =
+                item.downloadKey != null && isDownloadStarting?.(item.downloadKey) === true;
+              return 'href' in itemDownload && typeof itemDownload.href === 'string' ? (
+                <MenuItem
+                  key={key}
+                  component="a"
+                  href={itemDownload.href}
+                  download={itemDownload.fileName}
+                  disabled={itemDownloading}
+                  onClick={(event) => {
+                    startDownload(event, item.downloadKey);
+                    setDownloadMenuAnchor(null);
+                  }}
+                >
+                  {itemDownloading ? 'Завантаження…' : item.label}
+                </MenuItem>
+              ) : (
+                <MenuItem
+                  key={key}
+                  disabled={itemDownloading}
+                  onClick={(event) => {
+                    if (startDownload(event, item.downloadKey)) itemDownload.onDownload();
+                    setDownloadMenuAnchor(null);
+                  }}
+                >
+                  {itemDownloading ? 'Завантаження…' : item.label}
+                </MenuItem>
+              );
+            })}
+          </PowerMenu>
+        ) : null}
         {typeof openHref === 'string' && openHref.trim() !== '' ? (
           <Tooltip title="Відкрити в новій вкладці" enterDelay={300}>
             <IconButton

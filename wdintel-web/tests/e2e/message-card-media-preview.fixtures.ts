@@ -21,6 +21,7 @@ export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
   doc: 'e2e-preview.doc',
   xls: 'e2e-preview.xls',
   kml: 'e2e-route.kml',
+  denseKml: 'e2e-dense-points.kml',
   kmz: 'e2e-route.kmz',
   gpx: 'e2e-route.gpx',
 } as const;
@@ -78,6 +79,11 @@ const TRANSPARENT_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP7bq8W2QAAAABJRU5ErkJggg==';
 const KML_PREVIEW_FIXTURE = `<?xml version="1.0"?><kml><Document><Placemark><name>Preview point</name><Style><IconStyle><color>ff0000ff</color></IconStyle></Style><Point><coordinates>30.52,50.45</coordinates></Point></Placemark><Placemark><Style><LineStyle><color>ff00ff00</color></LineStyle></Style><LineString><coordinates>30.5,50.4 30.6,50.5</coordinates></LineString></Placemark><Placemark><Style><LineStyle><color>ffff0000</color></LineStyle><PolyStyle><color>ffff0000</color></PolyStyle></Style><Polygon><outerBoundaryIs><LinearRing><coordinates>30.45,50.4 30.6,50.4 30.6,50.55 30.45,50.4</coordinates></LinearRing></outerBoundaryIs><innerBoundaryIs><LinearRing><coordinates>30.5,50.45 30.55,50.45 30.5,50.5 30.5,50.45</coordinates></LinearRing></innerBoundaryIs></Polygon></Placemark></Document></kml>`;
 const KMZ_PREVIEW_FIXTURE = Buffer.from(zipSync({ 'doc.kml': strToU8(KML_PREVIEW_FIXTURE) }));
+const DENSE_POINT_KML_FIXTURE = `<?xml version="1.0"?><kml><Document><Style id="dense"><IconStyle><color>ff00ffff</color></IconStyle></Style>${Array.from(
+  { length: 9482 },
+  (_, index) =>
+    `<Placemark><styleUrl>#dense</styleUrl><Point><coordinates>${30.45 + (index % 97) / 1000},${50.4 + Math.floor(index / 97) / 1000}</coordinates></Point></Placemark>`,
+).join('')}</Document></kml>`;
 
 export type DeferredMediaResponse = {
   waitForRequest: () => Promise<void>;
@@ -308,6 +314,14 @@ function buildMessageCardMediaPreviewMessage({
               size_bytes: 256,
               href: kmz,
               kmz_conversion_status: 'done',
+            },
+            {
+              id: 'e2e-dense-kml',
+              content_type: 'application/vnd.google-earth.kml+xml',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.denseKml,
+              size_bytes: DENSE_POINT_KML_FIXTURE.length,
+              href: `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.denseKml}`,
+              kmz_conversion_status: 'pending',
             },
             {
               id: 'e2e-gpx',
@@ -568,6 +582,14 @@ export async function installMessageCardMediaPreviewAssetRoutes(
       return;
     }
 
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.denseKml) {
+      await route.fulfill({
+        contentType: 'application/vnd.google-earth.kml+xml',
+        body: DENSE_POINT_KML_FIXTURE,
+      });
+      return;
+    }
+
     if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx) {
       await route.fulfill({
         contentType: 'application/gpx+xml',
@@ -758,6 +780,12 @@ async function installMessageCardMediaPreviewHostFixture(
         contentType: 'application/vnd.google-earth.kmz',
         headers: { 'content-disposition': 'attachment; filename="e2e-route_converted.kmz"' },
         body: KMZ_PREVIEW_FIXTURE,
+      }),
+    );
+    await page.route('**/api/messenger/media/e2e-dense-kml/kmz-conversion/status', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'pending', error: null, converted_file_name: null }),
       }),
     );
   }
