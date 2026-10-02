@@ -8,7 +8,7 @@ RESULT_FILE = "result.json"
 MAX_LOG_LINES = 200
 
 _inputs = {}
-_result = {"records": [], "operations": [], "summary": None, "logs": []}
+_result = {"records": [], "operations": [], "summary": None, "logs": [], "stats": None}
 
 
 def load(directory):
@@ -19,7 +19,7 @@ def load(directory):
 
 
 def reset():
-    _result.update(records=[], operations=[], summary=None, logs=[])
+    _result.update(records=[], operations=[], summary=None, logs=[], stats=None)
 
 
 def inputs():

@@ -312,6 +312,43 @@ describe('#3064 map documents', () => {
       }),
     );
   });
+  it('keeps rare identities and the echelon out of the way and selects all filtered records', async () => {
+    mocks.edit.mockResolvedValue({ revision: 2 });
+    const document = mapDocument();
+    document.records.push({
+      ...document.records[0],
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      name: 'Інша точка',
+    });
+    mocks.get.mockResolvedValue(document);
+    await render(<MapWorkspace summary={summary} onClose={() => {}} />);
+    await click('Вибрати всі (2)');
+    const editor = () => container.querySelector('[data-testid="ai-map-symbol-editor"]')!;
+    expect(editor().textContent).toContain('2 точок');
+    expect(editor().textContent).not.toContain('Нейтральний');
+    expect(editor().textContent).not.toContain('Ешелон');
+    expect(
+      (editor().querySelector('input[role="combobox"]') as HTMLInputElement | null)?.value,
+    ).toBeTruthy();
+    await click('Інша приналежність');
+    await click('Нейтральний');
+    expect(editor().textContent).toContain('Нейтральний');
+    await click('Більше');
+    expect(editor().textContent).toContain('Ешелон');
+    await click('Застосувати до 2');
+    expect(mocks.edit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operations: [
+          expect.objectContaining({
+            selector: expect.objectContaining({
+              ids: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'],
+            }),
+            components: expect.objectContaining({ identity: '4' }),
+          }),
+        ],
+      }),
+    );
+  });
   it('renames the map and undoes with the keyboard on a narrow viewport', async () => {
     vi.stubGlobal('matchMedia', () => ({
       matches: false,

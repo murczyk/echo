@@ -122,6 +122,7 @@ function RecordList({
       ),
     [records, catalog, needle],
   );
+  const visibleIds = groups.flatMap((group) => group.records.map((record) => record.id));
   return (
     <div className="ai-map-record-list">
       <TextField
@@ -145,6 +146,15 @@ function RecordList({
           },
         }}
       />
+      {visibleIds.length ? (
+        <div className="ai-map-list-actions">
+          <button type="button" onClick={() => onSelectMany(visibleIds)}>
+            {needle
+              ? `Вибрати знайдені (${visibleIds.length})`
+              : `Вибрати всі (${visibleIds.length})`}
+          </button>
+        </div>
+      ) : null}
       {groups.map((group) => {
         const hidden = hiddenSidcs.has(group.sidc);
         return (

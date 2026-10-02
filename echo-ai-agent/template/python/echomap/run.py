@@ -62,6 +62,11 @@ def main():
     except BaseException:
         traceback.print_exc(limit=-3)
         return 1
+    from echomap import recipes
+
+    # Known report formats in the sources, so the runner can check the
+    # published record count against them.
+    state.result()["detected"] = recipes.detect()
     state.write(work)
     return 0
 

@@ -692,9 +692,11 @@ fn validate_harness_release(value: &serde_json::Value) -> Result<(), AppError> {
         .and_then(|release| release.as_str())
         != Some(AI_AGENT_HARNESS_RELEASE)
     {
+        // Seen by chat users while a rollout has updated Echo but not yet
+        // the namespace; the release keeps it actionable for admins.
         return Err(AppError::BL {
             msg: format!(
-                "AI agent harness release is incompatible; expected {AI_AGENT_HARNESS_RELEASE}"
+                "ШІ-агент оновлюється. Повторіть запит за кілька хвилин. (Очікується harness {AI_AGENT_HARNESS_RELEASE}; оновіть простір імен через ai-control-panel.)"
             ),
         });
     }

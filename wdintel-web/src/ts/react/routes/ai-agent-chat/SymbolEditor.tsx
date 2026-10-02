@@ -1,5 +1,8 @@
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import {
   Autocomplete,
+  IconButton,
+  Menu,
   MenuItem,
   TextField,
   ToggleButton,
@@ -20,9 +23,12 @@ import {
 } from './app6d-catalog';
 import { symbolImage } from './map-symbol';
 
-const IDENTITIES = [
+// Friend and hostile cover almost every map; the rest sit in an overflow menu.
+const MAIN_IDENTITIES = [
   { code: '3', label: 'Дружній' },
   { code: '6', label: 'Ворожий' },
+];
+const EXTRA_IDENTITIES = [
   { code: '4', label: 'Нейтральний' },
   { code: '1', label: 'Невідомий' },
   { code: '5', label: 'Підозрілий' },
@@ -118,6 +124,9 @@ export function SymbolEditor({
 }) {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [query, setQuery] = useState('');
+  const [inputValue, setInputValue] = useState('');
+  const [identityMenu, setIdentityMenu] = useState<HTMLElement | null>(null);
+  const [showMore, setShowMore] = useState(false);
   const selectionKey = records.map((record) => `${record.id}:${record.sidc}`).join('|');
   useEffect(() => setDraft(EMPTY_DRAFT), [selectionKey]);
   const parts = records.map((record) => sidcParts(record.sidc));
@@ -133,7 +142,12 @@ export function SymbolEditor({
     () => (catalog ? searchSymbolTypes(catalog, query, 40) : []),
     [catalog, query],
   );
-  const currentType = catalog && records[0] ? symbolTypeOf(catalog, records[0].sidc) : null;
+  const firstSidc = records[0]?.sidc ?? '';
+  // Stable identity: a new object each render would make the field reset.
+  const currentType = useMemo(
+    () => (catalog && firstSidc ? symbolTypeOf(catalog, firstSidc) : null),
+    [catalog, firstSidc],
+  );
   const echelons = catalog ? [...catalog.echelons, ...catalog.mobility] : [];
 
   async function apply() {
@@ -149,26 +163,17 @@ export function SymbolEditor({
           {records.length > 1 ? ` · ${records.length} точок` : ''}
         </Typography>
       </div>
-      <ToggleButtonGroup
-        exclusive
-        size="small"
-        aria-label="Приналежність"
+      <IdentityPicker
         value={draft.identity || current.identity}
-        onChange={(_event, value: string | null) =>
-          setDraft((state) => ({ ...state, identity: value ?? KEEP }))
-        }
-        className="flex-wrap"
-      >
-        {IDENTITIES.map((identity) => (
-          <ToggleButton key={identity.code} value={identity.code}>
-            {identity.label}
-          </ToggleButton>
-        ))}
-      </ToggleButtonGroup>
+        anchor={identityMenu}
+        onAnchor={setIdentityMenu}
+        onChange={(identity) => setDraft((state) => ({ ...state, identity }))}
+      />
       <Autocomplete<SymbolType>
         size="small"
         options={options}
-        value={draft.type}
+        // Shows the current type until another is picked.
+        value={draft.type ?? currentType}
         filterOptions={(items) => items}
         isOptionEqualToValue={(option, value) =>
           option.symbolSet === value.symbolSet &&
@@ -176,10 +181,19 @@ export function SymbolEditor({
           option.modifier1 === value.modifier1
         }
         getOptionLabel={(option) => option.label}
-        onInputChange={(_event, value) => setQuery(value)}
+        inputValue={inputValue}
+        onInputChange={(_event, value, reason) => {
+          setInputValue(value);
+          // A reset shows the selected label; only typing changes the search.
+          if (reason === 'input') setQuery(value);
+          if (reason === 'clear') setQuery('');
+        }}
         onChange={(_event, value) => setDraft((state) => ({ ...state, type: value }))}
+        noOptionsText={catalog ? 'Нічого не знайдено' : 'Завантаження каталогу…'}
         renderOption={(props, option) => {
-          const { key, ...rest } = props as typeof props & { key: string };
+          // Labels repeat across symbol sets, so key by the code, not the label.
+          const { key: _labelKey, ...rest } = props as typeof props & { key: string };
+          const key = `${option.symbolSet}:${option.entity}:${option.modifier1}:${option.modifier2}`;
           const sample = records[0]
             ? previewSidc(records[0], {
                 symbolSet: option.symbolSet,
@@ -199,14 +213,10 @@ export function SymbolEditor({
           );
         }}
         renderInput={(params) => (
-          <TextField
-            {...params}
-            label="Тип позначки"
-            placeholder={currentType?.label ?? 'Танк, БпЛА, РЕБ…'}
-          />
+          <TextField {...params} label="Тип позначки" placeholder="Танк, БпЛА, РЕБ…" />
         )}
       />
-      <div className="grid grid-cols-2 gap-echo-sm">
+      <div className="grid grid-cols-2 items-center gap-echo-sm">
         <TextField
           select
           size="small"
@@ -223,20 +233,30 @@ export function SymbolEditor({
               </MenuItem>
             ))}
         </TextField>
-        <TextField
-          select
-          size="small"
-          label="Ешелон"
-          value={draft.echelon || current.echelon}
-          onChange={(event) => setDraft((state) => ({ ...state, echelon: event.target.value }))}
+        <button
+          type="button"
+          className="ai-map-more-toggle"
+          aria-expanded={showMore}
+          onClick={() => setShowMore((open) => !open)}
         >
-          {current.echelon === KEEP ? <MenuItem value={KEEP}>Різний</MenuItem> : null}
-          {echelons.map((echelon) => (
-            <MenuItem key={echelon.code} value={echelon.code}>
-              {echelon.uk}
-            </MenuItem>
-          ))}
-        </TextField>
+          {showMore ? 'Менше' : 'Більше'}
+        </button>
+        {showMore || draft.echelon ? (
+          <TextField
+            select
+            size="small"
+            label="Ешелон"
+            value={draft.echelon || current.echelon}
+            onChange={(event) => setDraft((state) => ({ ...state, echelon: event.target.value }))}
+          >
+            {current.echelon === KEEP ? <MenuItem value={KEEP}>Різний</MenuItem> : null}
+            {echelons.map((echelon) => (
+              <MenuItem key={echelon.code} value={echelon.code}>
+                {echelon.uk}
+              </MenuItem>
+            ))}
+          </TextField>
+        ) : null}
       </div>
       <div className="flex justify-end gap-echo-sm">
         <PowerButton
@@ -256,6 +276,60 @@ export function SymbolEditor({
           Застосувати до {records.length}
         </PowerButton>
       </div>
+    </div>
+  );
+}
+
+function IdentityPicker({
+  value,
+  anchor,
+  onAnchor,
+  onChange,
+}: {
+  value: string;
+  anchor: HTMLElement | null;
+  onAnchor: (anchor: HTMLElement | null) => void;
+  onChange: (identity: string) => void;
+}) {
+  const extra = EXTRA_IDENTITIES.find((identity) => identity.code === value);
+  const shown = extra ? [...MAIN_IDENTITIES, extra] : MAIN_IDENTITIES;
+  return (
+    <div className="flex items-center gap-echo-xs">
+      <ToggleButtonGroup
+        exclusive
+        size="small"
+        aria-label="Приналежність"
+        value={value}
+        onChange={(_event, next: string | null) => onChange(next ?? KEEP)}
+      >
+        {shown.map((identity) => (
+          <ToggleButton key={identity.code} value={identity.code}>
+            {identity.label}
+          </ToggleButton>
+        ))}
+      </ToggleButtonGroup>
+      <IconButton
+        size="small"
+        aria-label="Інша приналежність"
+        aria-haspopup="menu"
+        onClick={(event) => onAnchor(event.currentTarget)}
+      >
+        <MoreHorizIcon fontSize="small" />
+      </IconButton>
+      <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => onAnchor(null)}>
+        {EXTRA_IDENTITIES.map((identity) => (
+          <MenuItem
+            key={identity.code}
+            selected={identity.code === value}
+            onClick={() => {
+              onChange(identity.code);
+              onAnchor(null);
+            }}
+          >
+            {identity.label}
+          </MenuItem>
+        ))}
+      </Menu>
     </div>
   );
 }

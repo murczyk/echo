@@ -16,6 +16,23 @@ The two copies must stay identical (checked by
 milsymbol author; the tarball is checksum-verified. Control measures keep only
 point symbols.
 
+Ukrainian names and paths come from Delta's object-type dictionary,
+[`delta-object-types.json`](delta-object-types.json) (1,328 entries, each with an
+unknown-identity SIDC and `|`-separated Ukrainian/English paths). It is an
+export of oblik-os's `delta_object_type`, which oblik-os syncs from Delta's
+dictionary API. Every entity Delta knows gets `uk`/`ukPath`; Delta-only entities
+are added. To refresh, replace the file with a new export (same fields) and
+rerun the generator.
+
+The generator runs [`drawable.mjs`](drawable.mjs) with wdintel-web's milsymbol and
+marks entities it cannot draw (`drawable: false`, mostly Delta's own extensions
+such as «Мотоцикл»). Delta's icons for those codes (from oblik-os
+`front/public/sidc-symbols`, unknown and hostile identities) live in
+`wdintel-web/static/img/google_earth_icons`; such entities get `deltaIcon: true`,
+and the generated `wdintel-web/src/ts/react/routes/ai-agent-chat/delta-icons.ts`
+lets the map draw them. Entities with neither are left out of the picker. KMZ
+export finds the same PNGs by SIDC.
+
 ## Updating
 
 Edit `app6d-aliases.uk.json` to add or correct Ukrainian names. Each alias

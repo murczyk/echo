@@ -70,10 +70,19 @@ def load_suite(suite_id, development_only=False):
     return directory, manifest, cases
 
 
+PYTHON_LIBRARY = ROOT / 'echo-ai-agent/template/python/echomap'
+
+
+def python_library_files():
+    """The echomap library and catalog that map scripts run with."""
+    return sorted(path for path in PYTHON_LIBRARY.glob('*') if path.suffix in ('.py', '.json'))
+
+
 def runner_fingerprint(ref):
     if ref:
         return subprocess.check_output(['git', 'rev-parse', f'{ref}^{{commit}}'], cwd=ROOT, text=True).strip()
     paths = sorted(path for path in (ROOT / 'echo-ai-agent/runner').glob('*.ts') if not path.name.endswith('.test.ts'))
+    paths += python_library_files()
     return hashlib.sha256(b''.join(path.name.encode() + path.read_bytes() for path in paths)).hexdigest()
 
 
@@ -157,7 +166,8 @@ def fixture_run(case, repeat, args, engine, skills, run_dir):
                         payload=make_payload(case, engine, skills), runnerRef=args.runner_ref)
     if not args.runner_ref:
         worker_input.update(runnerDirectory=str(run_dir / 'runner'),
-                            runnerFiles=[path.name for path in (run_dir / 'runner').glob('*.ts')])
+                            runnerFiles=[path.name for path in (run_dir / 'runner').glob('*.ts')],
+                            pythonRoot=str(run_dir / 'python'))
     started = time.monotonic()
     with tempfile.NamedTemporaryFile(mode='w', prefix='echo-ai-eval-', suffix='.json') as private:
         json.dump(worker_input, private, ensure_ascii=False)
@@ -218,6 +228,9 @@ def run(args):
         for path in (ROOT / 'echo-ai-agent/runner').glob('*.ts'):
             if not path.name.endswith('.test.ts'):
                 shutil.copyfile(path, run_dir / 'runner' / path.name)
+        (run_dir / 'python/echomap').mkdir(parents=True)
+        for path in python_library_files():
+            shutil.copyfile(path, run_dir / 'python/echomap' / path.name)
     (run_dir / 'cases.json').write_text(json.dumps(cases, ensure_ascii=False) + '\n')
     shutil.copyfile(directory / 'dataset.json', run_dir / 'dataset.json')
     metadata = {'schemaVersion': 1, 'suite': manifest['id'], 'datasetRevision': manifest['revision'],

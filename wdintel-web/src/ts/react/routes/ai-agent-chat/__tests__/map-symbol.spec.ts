@@ -7,7 +7,7 @@ import {
   sidcParts,
   symbolTypeOf,
 } from '../app6d-catalog';
-import { identityColor, isDrawableSidc, symbolImage } from '../map-symbol';
+import { deltaIconUrl, identityColor, isDrawableSidc, symbolImage } from '../map-symbol';
 import { draftComponents } from '../SymbolEditor';
 import { APP6D_CATALOG } from './app6d-catalog-fixture';
 
@@ -45,6 +45,39 @@ describe('#3064 map symbols', () => {
     expect(joinSidc(sidcParts(sidc))).toBe(sidc);
     expect(describeSidc(APP6D_CATALOG, sidc)).toBe('Ворожий · Механізована піхота · Взвод');
     expect(symbolTypeOf(APP6D_CATALOG, '10061500001202000000').label).toBe('Танк');
+  });
+
+  it('draws Delta-only types with Delta icons and offers them in search', () => {
+    expect(deltaIconUrl('10061500001413000000')).toBe(
+      '/img/google_earth_icons/10061500001413000000.png',
+    );
+    expect(deltaIconUrl('10051500001413000000')).toBe(
+      '/img/google_earth_icons/10061500001413000000.png',
+    );
+    expect(deltaIconUrl('10031500001413000000')).toBeNull();
+    expect(symbolImage('10061500001413000000').url).toBe(
+      '/img/google_earth_icons/10061500001413000000.png',
+    );
+    expect(isDrawableSidc('10061500001413000000')).toBe(true);
+    expect(searchSymbolTypes(APP6D_CATALOG, 'мотоцикл')[0]).toMatchObject({ entity: '141300' });
+    expect(
+      searchSymbolTypes(APP6D_CATALOG, 'кібер', 200).some(
+        (type) => type.symbolSet === '66' && type.entity === '910000',
+      ),
+    ).toBe(false);
+  });
+
+  it('names symbols with Delta Ukrainian object types', () => {
+    expect(describeSidc(APP6D_CATALOG, '10062000001209020000')).toBe('Ворожий · Пошта');
+    expect(symbolTypeOf(APP6D_CATALOG, '10062000001209020000')).toMatchObject({
+      label: 'Пошта',
+      entity: '120902',
+    });
+    expect(searchSymbolTypes(APP6D_CATALOG, 'пошта')[0]).toMatchObject({
+      symbolSet: '20',
+      entity: '120902',
+    });
+    expect(searchSymbolTypes(APP6D_CATALOG, 'важкий танк')[0]).toMatchObject({ entity: '120203' });
   });
 
   it('finds symbol types by Ukrainian alias and by English catalog path', () => {
