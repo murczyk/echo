@@ -5,6 +5,10 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  mapOutcomeNotices,
+  mapOutcomeRepairPrompt,
+  observeMapOutcome,
+  toolErrorSummary,
   analysisPeriodRequestBody,
   callsignFrequencyMatchesRequestBody,
   compactHistoryIfNeeded,
@@ -27,10 +31,12 @@ import {
   testConnection,
   completedRepairText,
   validateFinalAssistantMessage,
+  formatEchoHttpError,
   validatePayload,
   validateSkill,
   writeModelsFile,
 } from "./runner.ts";
+import { EDIT_GUIDANCE, MAP_GUIDANCE, MapRegistry } from "./maps.ts";
 
 test("accepts a non-empty final assistant response", () => {
   assert.doesNotThrow(() =>
@@ -934,11 +940,51 @@ test("states the exact 90-day callsign windows for a fixed Kyiv instant", () => 
   assert.match(prompt, /Explicit user periods still take precedence/);
 });
 
+test("accepts a map edit target and keeps ordinary prompts unchanged", () => {
+  const plain = systemPrompt(validatePayload(normalPayload, false));
+  assert.match(plain, /Never attempt mutation/);
+  assert.equal(plain.includes(EDIT_GUIDANCE), false);
+  assert.match(plain, /When asked for a map or CSV\/KMZ from points/);
+  const mapEdit = {
+    requestId: "11111111-1111-4111-8111-111111111111",
+    mapId: "22222222-2222-4222-8222-222222222222",
+    revision: 1,
+    selectedPointIds: ["33333333-3333-5333-8333-333333333333"],
+  };
+  const editing = systemPrompt(validatePayload({ ...normalPayload, mapEdit }, false));
+  assert.ok(editing.includes(MAP_GUIDANCE));
+  assert.ok(editing.includes(EDIT_GUIDANCE));
+  assert.equal(
+    validateSkill({
+      method: "POST",
+      path: "/api/ai-agent/maps/edit",
+      skill: "map_edit",
+      label: "Оновлюю перегляд мапи",
+      requestKind: "mapEdit",
+    }).requestKind,
+    "mapEdit",
+  );
+  assert.throws(() =>
+    validateSkill({
+      method: "POST",
+      path: "/api/ai-agent/maps/get",
+      skill: "map_edit",
+      label: "Оновлюю перегляд мапи",
+      requestKind: "mapEdit",
+    }),
+  );
+  assert.equal(
+    formatEchoHttpError(409, "plain", { message: "  Мапа змінилася.\nОновіть перегляд  " }),
+    "Echo returned HTTP 409: Мапа змінилася. Оновіть перегляд",
+  );
+  assert.equal(formatEchoHttpError(500, "   ", null), "Echo returned HTTP 500");
+});
+
 test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.09.29.3",
+    harnessRelease: "2026.10.01.6",
   });
 });
 
@@ -1548,4 +1594,43 @@ test("discards a truncated or empty citation repair", () => {
   assert.equal(completedRepairText([assistant("Cut", "length")]), null);
   assert.equal(completedRepairText([assistant("   ")]), null);
   assert.equal(completedRepairText([]), null);
+});
+
+test("#3064 map tool errors get specific labels while route errors stay generic", () => {
+  const result = (text: string) => ({ content: [{ type: "text", text }] });
+  assert.equal(toolErrorSummary("echo_inbox_messages", result("anything")), "Не вдалося завантажити дані за вказаними параметрами.");
+  assert.equal(toolErrorSummary("echo_map_edit", result('Невідома операція «retype». Допустимі op: add, setSidc. Приклад: {"sidc":"10031000001211000000"}')), "Некоректні параметри зміни мапи");
+  assert.equal(toolErrorSummary("echo_map_edit", result("Echo returned HTTP 409: Мапа змінилася.")), "Мапа змінилася; потрібно перечитати її");
+  assert.equal(toolErrorSummary("echo_map_script", result("Script failed (exit 1). Traceback ...")), "Скрипт обробки завершився помилкою");
+  assert.equal(toolErrorSummary("echo_map_set_symbol", result("SIDC має містити рівно 20 цифр")), "Некоректна позначка");
+  assert.equal(toolErrorSummary("echo_map_edit", result("secret payload")), "Не вдалося змінити мапу");
+});
+
+test("#3064 failed map edits and count mismatches are stated in the answer", () => {
+  const registry = new MapRegistry();
+  assert.deepEqual(mapOutcomeNotices(registry, true), { failedEdit: null, notices: [] });
+  observeMapOutcome(registry, () => {})({
+    type: "tool_execution_end",
+    toolName: "echo_map_set_symbol",
+    isError: true,
+    result: { content: [{ type: "text", text: "Validation failed: target is required" }] },
+  });
+  assert.equal(registry.outcome.editFailures, 1);
+  const observe = observeMapOutcome(registry, () => {});
+  const draft = registry.create("Чернетка", true);
+  observe({ type: "tool_execution_start", toolCallId: "draft", toolName: "echo_map_script", args: { id: draft.id, code: "" } });
+  observe({ type: "tool_execution_end", toolCallId: "draft", toolName: "echo_map_script", isError: true, result: { content: [] } });
+  assert.equal(registry.outcome.editFailures, 1);
+  observe({ type: "tool_execution_start", toolCallId: "open", toolName: "echo_map_script", args: { id: "22222222-2222-4222-8222-222222222222", code: "" } });
+  observe({ type: "tool_execution_end", toolCallId: "open", toolName: "echo_map_script", isError: true, result: { content: [] } });
+  assert.equal(registry.outcome.editFailures, 2);
+  registry.outcome.editFailures = 3;
+  registry.outcome.lastEditError = "Невідома операція «retype»";
+  const failed = mapOutcomeNotices(registry, true);
+  assert.equal(failed.failedEdit, "Невідома операція «retype»");
+  assert.deepEqual(failed.notices, ["⚠️ Зміни до мапи не збережено."]);
+  assert.match(mapOutcomeRepairPrompt(failed.failedEdit!), /не стверджуй, що мапу змінено/);
+  assert.equal(mapOutcomeNotices(registry, false).failedEdit, null);
+  registry.outcome.editSuccesses = 1;
+  assert.equal(mapOutcomeNotices(registry, true).failedEdit, null);
 });

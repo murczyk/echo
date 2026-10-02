@@ -30,6 +30,9 @@ def covers(periods, start, end):
 
 
 def grade(case, events, failed=False):
+    if case['category'] == 'map-documents':
+        from maps import grade_maps
+        return grade_maps(case, events, failed)
     retrieved, cited, inaccessible = set(), set(), set()
     text_calls = tag_calls = 0
     searches = []

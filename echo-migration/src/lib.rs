@@ -430,8 +430,8 @@ mod m20260916_130029_activate_sigint_network_units;
 mod m20260917_123830_unresolved_unit_message_order;
 mod m20260917_150626_signal_message_media_conversion_job;
 mod m20260918_092309_sigint_inbox_item_is_time_null;
-mod m20260919_131822_add_message_auto_parse_enabled_to_user_settings;
 mod m20260919_112759_callsign_match_key_indexes;
+mod m20260919_131822_add_message_auto_parse_enabled_to_user_settings;
 mod m20260919_132912_sigint_unit_changelog_index;
 mod m20260922_092044_api_integration_iggy_events;
 mod m20260922_142506_login_display_name;
@@ -440,9 +440,13 @@ mod m20260923_091303_sigint_inbox_callsign_iggy_index;
 mod m20260923_130904_two_factor_auth_enabled;
 mod m20260924_124644_api_integration_iggy_aors;
 mod m20260924_131933_analysis_aor_filter_enabled;
+mod m20260924_162856_exclude_orbit_other_units;
+mod m20260924_162857_sigint_unit_activity_index;
 mod m20260927_112500_ai_agent_citation_events;
 
 mod m20260928_145311_enable_message_auto_parse;
+mod m20260929_152018_ai_agent_map_artifacts;
+mod m20260929_195200_ai_agent_map_workspace;
 
 pub struct Migrator;
 
@@ -1056,8 +1060,12 @@ impl MigratorTrait for Migrator {
             Box::new(m20260923_130904_two_factor_auth_enabled::Migration),
             Box::new(m20260924_124644_api_integration_iggy_aors::Migration),
             Box::new(m20260924_131933_analysis_aor_filter_enabled::Migration),
+            Box::new(m20260924_162856_exclude_orbit_other_units::Migration),
+            Box::new(m20260924_162857_sigint_unit_activity_index::Migration),
             Box::new(m20260927_112500_ai_agent_citation_events::Migration),
             Box::new(m20260928_145311_enable_message_auto_parse::Migration),
+            Box::new(m20260929_152018_ai_agent_map_artifacts::Migration),
+            Box::new(m20260929_195200_ai_agent_map_workspace::Migration),
         ]
     }
 }

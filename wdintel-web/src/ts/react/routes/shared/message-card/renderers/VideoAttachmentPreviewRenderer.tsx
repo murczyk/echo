@@ -863,6 +863,7 @@ export function VideoAttachmentPreviewRenderer({
       additionalActions={
         reportDraft != null ? (
           <ReportTextPreviewAction
+            kind={reportDraft.kind}
             active={reportVisible}
             onClick={() => onReportVisibleChange(!reportVisible)}
           />

@@ -10,10 +10,12 @@ import {
   deriveDocumentFileName,
   isMarkdownAttachment,
   isDocxAttachment,
+  isDocAttachment,
   isDocumentPreviewAttachment,
   isPdfAttachment,
   isTxtAttachment,
   isXlsxAttachment,
+  isXlsAttachment,
   isCsvAttachment,
 } from '../message-card-document-utils';
 
@@ -55,6 +57,18 @@ describe('message-card document utils', () => {
         contentType: 'application/vnd.ms-excel',
       } as MessageMediaInfo),
     ).toBe(false);
+    expect(
+      isDocAttachment({
+        href: 'https://example.test/report.doc',
+        contentType: 'application/octet-stream',
+      } as MessageMediaInfo),
+    ).toBe(true);
+    expect(
+      isXlsAttachment({
+        href: 'https://example.test/report.xls',
+        contentType: 'application/vnd.ms-excel',
+      } as MessageMediaInfo),
+    ).toBe(true);
     expect(
       isDocumentPreviewAttachment({
         href: 'https://example.test/report.txt',
@@ -141,14 +155,14 @@ describe('message-card document utils', () => {
     expect(documents).toHaveLength(6);
     expect(deriveDocumentFileName(documents[0]!, 0)).toBe('report.pdf');
     expect(deriveDocumentDownloadName(documents[1]!, 1)).toBe('sheet.xlsx');
-    expect(documents[2]?.kind).toBe('unsupported');
+    expect(documents[2]?.kind).toBe('xls');
     expect(documents[3]?.kind).toBe('txt');
     expect(documents[4]?.kind).toBe('md');
     expect(documents[5]?.kind).toBe('csv');
     expect(documents.map((document) => document.kind)).toEqual([
       'pdf',
       'xlsx',
-      'unsupported',
+      'xls',
       'txt',
       'md',
       'csv',

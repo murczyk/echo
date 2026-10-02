@@ -40,6 +40,7 @@ import {
 import { MarkdownDocumentPreview, TxtDocumentPreview } from '../text-document-preview';
 import { CsvDocumentPreview } from './CsvDocumentPreview';
 import { DocxDocumentPreview } from './DocxDocumentPreview';
+import { LegacyOfficeDocumentPreview } from './LegacyOfficeDocumentPreview';
 import { PdfDocumentPreview } from './PdfDocumentPreview';
 import { UnsupportedDocumentPreview } from './UnsupportedDocumentPreview';
 import { XlsxDocumentPreview } from './XlsxDocumentPreview';
@@ -52,6 +53,14 @@ function DocumentPreview({ document, zoom }: { document: MessageCardDocument; zo
           href={document.href}
           zoom={zoom}
           sizeBytes={document.sizeBytes ?? null}
+        />
+      ) : document.kind === 'doc' || document.kind === 'xls' ? (
+        <LegacyOfficeDocumentPreview
+          key={`${document.kind}:${document.href}`}
+          href={document.href}
+          zoom={zoom}
+          sizeBytes={document.sizeBytes ?? null}
+          kind={document.kind}
         />
       ) : document.kind === 'docx' ? (
         <DocxDocumentPreview
@@ -339,6 +348,7 @@ export function DocumentAttachmentPreviewRenderer({
           />
           {reportDraft != null ? (
             <ReportTextPreviewAction
+              kind={reportDraft.kind}
               active={reportVisible}
               onClick={() => {
                 const next = !reportVisible;

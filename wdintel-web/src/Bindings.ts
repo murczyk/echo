@@ -3253,6 +3253,41 @@ export type UnitChangelogRsp = {
   entries: Array<UnitChangelogEntry>;
 };
 
+export type UnitActivityPeriod =
+  | 'Day'
+  | 'Week'
+  | 'Month'
+  | 'ThreeMonths'
+;
+
+export type UnitActivityReq = {
+  unitId: number;
+  period: UnitActivityPeriod;
+};
+
+export type UnitActivityBucket = {
+  startedAt: number;
+  interceptionCount: number;
+};
+
+export type UnitActivityRsp = {
+  buckets: Array<UnitActivityBucket>;
+};
+
+export type CleanupOrbitOtherUnitsReq = {
+  ignoreActive: boolean;
+};
+
+export type CleanupOrbitOtherUnitRoadblock = {
+  id: number;
+  name: string;
+};
+
+export type CleanupOrbitOtherUnitsRsp = {
+  deletedCount: number;
+  activeUnits: Array<CleanupOrbitOtherUnitRoadblock>;
+};
+
 export type UnitAttachmentAor = {
   id: number;
   name: string;
@@ -3365,9 +3400,9 @@ export type OrbitParentUnit = {
 };
 
 export type OrbitChildUnit = {
-  sigintUnitId: number;
+  sigintUnitId: number | null;
   name: string;
-  active: boolean;
+  active: boolean | null;
   orbitUnitIds: Array<string>;
   isGenerative: boolean;
   isOperational: boolean;
@@ -4732,6 +4767,7 @@ export type SystemSettingsCurrentRsp = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
+  excludeOrbitOtherUnits: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -4771,6 +4807,7 @@ export type SystemSettingsItem = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
+  excludeOrbitOtherUnits: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -4809,6 +4846,7 @@ export type CreateSystemSettingsReq = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
+  excludeOrbitOtherUnits: boolean;
 };
 
 export type ActivateSystemSettingsReq = {
@@ -4997,6 +5035,203 @@ export type AiAgentMessageCitation = {
   messageIdentifier: string;
 };
 
+export type AiAgentMapRecordInput = {
+  sidc: string;
+  name: string;
+  observationDatetime: string | null;
+  coordinateSystem: string;
+  x: string;
+  y: string;
+  comments: Array<string>;
+  sources: Array<AiAgentMessageCitation>;
+};
+
+export type AiAgentMapRecord = {
+  id: string;
+  sidc: string;
+  name: string;
+  observationDatetime: string | null;
+  platformType: string;
+  coordinateSystem: string;
+  originalX: string;
+  originalY: string;
+  x: string;
+  y: string;
+  latitude: number | null;
+  longitude: number | null;
+  comments: Array<string>;
+  sources: Array<AiAgentMessageCitation>;
+  warnings: Array<string>;
+};
+
+export type AiAgentMapDocument = {
+  id: string;
+  title: string;
+  isMain: boolean;
+  records: Array<AiAgentMapRecord>;
+  warnings: Array<string>;
+  totalCount: number;
+  validCount: number;
+  invalidCount: number;
+};
+
+export type AiAgentMapSummary = {
+  id: string;
+  requestId: string;
+  title: string;
+  isMain: boolean;
+  warnings: Array<string>;
+  totalCount: number;
+  validCount: number;
+  invalidCount: number;
+};
+
+export type AiAgentMapPrepareReq = {
+  records: Array<AiAgentMapRecordInput>;
+};
+
+export type AiAgentMapPrepareRsp = {
+  records: Array<AiAgentMapRecord>;
+};
+
+export type AiAgentMapGetReq = {
+  requestId: string;
+  mapId: string;
+  revision: number | null;
+};
+
+export type AiAgentMapIcon = {
+  sidc: string;
+  pngBase64: string;
+};
+
+export type AiAgentMapKmzReq = {
+  requestId: string;
+  mapId: string;
+  revision: number | null;
+  icons: Array<AiAgentMapIcon>;
+};
+
+export type AiAgentMapEditTarget = {
+  requestId: string;
+  mapId: string;
+  revision: number;
+  selectedPointIds: Array<string>;
+};
+
+export type AiAgentMapSelector = {
+  ids: Array<string>;
+  names: Array<string>;
+  sidc: string | null;
+  all: boolean;
+  expect: string | null;
+};
+
+export type AiAgentMapFieldPatch = {
+  name: string | null;
+  observationDatetime: string | null;
+  clearObservationDatetime: boolean;
+  comments: Array<string> | null;
+  coordinateSystem: string | null;
+  x: string | null;
+  y: string | null;
+};
+
+export type AiAgentMapSidcComponents = {
+  group1: string | null;
+  context: string | null;
+  identity: string | null;
+  symbolSet: string | null;
+  status: string | null;
+  headquartersOrTaskForce: string | null;
+  echelon: string | null;
+  mainIcon: string | null;
+  modifier1: string | null;
+  modifier2: string | null;
+};
+
+export type AiAgentMapPatchOp = {
+  op: string;
+  selector: AiAgentMapSelector | null;
+  record: AiAgentMapRecordInput | null;
+  fields: AiAgentMapFieldPatch | null;
+  components: AiAgentMapSidcComponents | null;
+  sidc: string | null;
+  title: string | null;
+};
+
+export type AiAgentMapEditReq = {
+  requestId: string;
+  mapId: string;
+  expectedRevision: number;
+  idempotencyKey: string;
+  summary: string | null;
+  operations: Array<AiAgentMapPatchOp>;
+};
+
+export type AiAgentMapRevisionReq = {
+  requestId: string;
+  mapId: string;
+  expectedRevision: number;
+};
+
+export type AiAgentMapRevisionInfo = {
+  revision: number;
+  parentRevision: number | null;
+  origin: string;
+  summary: string;
+  createdAt: string;
+};
+
+export type AiAgentMapWorkspaceReq = {
+  requestId: string;
+  mapId: string;
+};
+
+export type AiAgentMapFieldChange = {
+  field: string;
+  before: string;
+  after: string;
+};
+
+export type AiAgentMapEditChange = {
+  id: string;
+  name: string;
+  kind: string;
+  latitude: number | null;
+  longitude: number | null;
+  fields: Array<AiAgentMapFieldChange>;
+};
+
+export type AiAgentMapEditDiff = {
+  addedCount: number;
+  updatedCount: number;
+  removedCount: number;
+  changes: Array<AiAgentMapEditChange>;
+};
+
+export type AiAgentMapWorkspaceRsp = {
+  revision: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  document: AiAgentMapDocument;
+  changes: AiAgentMapEditDiff;
+  revisions: Array<AiAgentMapRevisionInfo>;
+};
+
+export type AiAgentMapEditRsp = {
+  revision: number;
+  matchedIds: Array<string>;
+  addedCount: number;
+  updatedCount: number;
+  removedCount: number;
+  totalCount: number;
+  truncated: boolean;
+  changes: Array<AiAgentMapEditChange>;
+  canUndo: boolean;
+  canRedo: boolean;
+};
+
 export type AiAgentMessageItem = {
   requestId: string;
   requestState: string;
@@ -5004,6 +5239,7 @@ export type AiAgentMessageItem = {
   content: string;
   createdAt: number;
   citations: Array<AiAgentMessageCitation>;
+  maps: Array<AiAgentMapSummary>;
 };
 
 export type AiAgentConversationDetail = {
@@ -5019,6 +5255,7 @@ export type AiAgentRequestCreateReq = {
   conversationId: string | null;
   aiEngineId: string | null;
   prompt: string;
+  mapEdit: AiAgentMapEditTarget | null;
 };
 
 export type AiAgentRequestCreateRsp = {

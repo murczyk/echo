@@ -221,9 +221,7 @@ return value
             "Agent request call limit exceeded",
         ));
     }
-    if path.starts_with("/api/ai-agent")
-        || !super::route_registry::is_allowed(req.method(), path)
-    {
+    if !super::route_registry::is_allowed(req.method(), path) {
         let payload = serde_json::json!({
             "tool": "echo_api",
             "method": req.method().as_str(),

@@ -397,19 +397,17 @@ function OrbitCell({ unit }: { unit: Unit }) {
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ width: '100%', minWidth: 0 }}>
       {unit.hasOrbit ? (
-        <CheckCircleIcon
-          className="text-green-600"
-          fontSize="small"
-          titleAccess="Прив’язано до Orbit"
-          sx={{ flexShrink: 0 }}
-        />
+        <Tooltip title="Прив’язано до Orbit">
+          <CheckCircleIcon className="text-green-600" fontSize="small" sx={{ flexShrink: 0 }} />
+        </Tooltip>
+      ) : unit.presentInOrbit === false ? (
+        <Tooltip title="Підрозділ відсутній в Orbit">
+          <CancelIcon className="text-red-600" fontSize="small" sx={{ flexShrink: 0 }} />
+        </Tooltip>
       ) : (
-        <CancelIcon
-          className="text-red-600"
-          fontSize="small"
-          titleAccess="Не прив’язано до Orbit"
-          sx={{ flexShrink: 0 }}
-        />
+        <Tooltip title="Не вдалося встановити прив’язку підрозділу до запису в Orbit">
+          <WarningAmberIcon color="warning" fontSize="small" sx={{ flexShrink: 0 }} />
+        </Tooltip>
       )}
       {unit.orbitUnitIds.map((orbitUnitId) => (
         <Tooltip key={orbitUnitId} title="Відкрити підрозділ в Orbit">

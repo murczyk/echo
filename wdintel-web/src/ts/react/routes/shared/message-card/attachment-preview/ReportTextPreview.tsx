@@ -3,6 +3,8 @@ import { Box, IconButton, TextField, Tooltip } from '@mui/material';
 import type { ReactNode } from 'react';
 
 export type AttachmentPreviewReportDraft = {
+  kind?: 'message' | 'report';
+  label?: string;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
@@ -14,13 +16,16 @@ export type AttachmentPreviewReportVisibility = {
 };
 
 export function ReportTextPreviewAction({
+  kind = 'report',
   active,
   onClick,
 }: {
+  kind?: 'message' | 'report';
   active: boolean;
   onClick: () => void;
 }) {
-  const title = active ? 'Сховати розвіддонесення' : 'Писати розвіддонесення';
+  const subject = kind === 'message' ? 'повідомлення' : 'розвіддонесення';
+  const title = active ? `Сховати ${subject}` : `Писати ${subject}`;
 
   return (
     <Tooltip title={title} enterDelay={300}>
@@ -42,15 +47,18 @@ export function ReportTextPreviewAction({
 }
 
 export function ReportTextPreviewPane({ draft }: { draft: AttachmentPreviewReportDraft }) {
+  const label =
+    draft.label ?? (draft.kind === 'message' ? 'Текст повідомлення' : 'Текст розвіддонесення');
+
   return (
     <div
       role="region"
-      aria-label="Текст розвіддонесення"
+      aria-label={label}
       data-attachment-preview-report-pane
       className="flex-1 min-h-0 overflow-visible pr-1 max-w-6xl mx-auto w-full"
     >
       <TextField
-        label="Текст розвіддонесення"
+        label={label}
         value={draft.value}
         onChange={(event) => draft.onChange(event.target.value)}
         disabled={draft.disabled}

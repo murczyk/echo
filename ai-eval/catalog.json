@@ -8,6 +8,12 @@
       "runner": "harness"
     },
     {
+      "id": "ai-maps",
+      "category": "map-documents",
+      "path": "ai-eval/2026-09-29-ai-maps",
+      "runner": "harness"
+    },
+    {
       "id": "callsign-extraction",
       "category": "callsign-extraction",
       "path": "ai-eval/2026-08-10-callsign-prompt",

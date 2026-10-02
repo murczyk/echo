@@ -360,7 +360,7 @@ function ReportSourceHeader({
           color: 'inherit',
         },
         '& .report-source-metadata > div > div': {
-          flexWrap: 'nowrap',
+          flexWrap: 'wrap',
         },
       }}
     >
@@ -382,13 +382,17 @@ function ReportSourceHeader({
           </div>
         ) : null}
       </div>
-      <div className="report-source-metadata shrink-0 whitespace-nowrap">
+      <div
+        className="report-source-metadata min-w-0 flex-1 whitespace-normal"
+        style={{ flex: '1 1 100%', minWidth: 0, whiteSpace: 'normal' }}
+      >
         <MessageDeviceAccessProvider allowed={deviceAccess}>
           <MessageCardMetadata
             msg={message}
             groupName={groupName}
             senderName={senderName}
             etalonDisplayModel={sourceEtalonDisplayModel}
+            wrapText
           />
         </MessageDeviceAccessProvider>
       </div>
@@ -913,7 +917,7 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                               busy={busy}
                               existingMedia={existingMedia}
                               errorMsg={drawerState.attachmentErrorMsg}
-                              reportTextPreviewEnabled={isReportMode}
+                              textPreviewMode={isReportMode ? 'report' : 'message'}
                             />
                           </Stack>
                         </Box>

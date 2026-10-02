@@ -2,6 +2,7 @@ import AddCommentOutlinedIcon from '@mui/icons-material/AddCommentOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
+import StopOutlinedIcon from '@mui/icons-material/StopOutlined';
 import {
   Box,
   CircularProgress,
@@ -17,9 +18,25 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { AiAgentActivityPresentation, AiAgentMessageCitation } from '../../../../Bindings';
+import { FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  AiAgentActivityPresentation,
+  AiAgentMapEditTarget,
+  AiAgentMapSummary,
+  AiAgentMessageCitation,
+} from '../../../../Bindings';
 import { CitationMarkdown } from './CitationMarkdown';
+import { MapEditContext } from './MapEditContext';
+import { MapPreview } from './MapPreview';
+import {
+  ConversationMapsContext,
+  invalidateMapDocument,
+  MapSelectionContext,
+} from './map-documents';
+
+const MapWorkspace = lazy(() =>
+  import('./MapWorkspace').then((module) => ({ default: module.MapWorkspace })),
+);
 import { ConversationHistoryItem } from './ConversationHistoryItem';
 import {
   RequestActivity,
@@ -72,6 +89,7 @@ export type LiveRequest = {
   activity?: RequestActivityItem[];
   sources: Source[];
   citations?: AiAgentMessageCitation[];
+  maps?: AiAgentMapSummary[];
   lastSequence: number;
   streamError: string | null;
 };
@@ -89,6 +107,7 @@ const GENERIC_STREAM_FAILURE = 'Не вдалося відновити з’єд
 const ACTIVE_CONVERSATION_STORAGE_KEY = 'echo.ai-agent.active-conversation-id';
 
 export const AI_AGENT_CHAT_CARD_HEIGHT = '100%';
+const AI_AGENT_CHAT_MAP_DOCK_WIDTH = '420px';
 export type AiAgentAvailabilityState = 'enabled' | 'disabled' | 'unavailable';
 
 export const AI_AGENT_CHAT_INITIAL_LOADING_SX = {
@@ -211,6 +230,7 @@ export function activeRequestsFromConversation(
       state: message.requestState,
       assistantText: assistantByRequestId.get(message.requestId)?.content ?? '',
       citations: assistantByRequestId.get(message.requestId)?.citations ?? [],
+      maps: assistantByRequestId.get(message.requestId)?.maps ?? [],
       progress: [],
       tools: [],
       sources: [],
@@ -324,6 +344,13 @@ export function applyAiAgentEvent(request: LiveRequest, event: AiAgentEvent): Li
         citations.set(citation.messageIdentifier, citation);
       return { ...next, citations: [...citations.values()] };
     }
+    case 'map_artifact': {
+      if (!event.map || event.map.requestId !== request.id) return next;
+      const maps = request.maps ?? [];
+      return maps.some((summary) => summary.id === event.map!.id)
+        ? next
+        : { ...next, maps: [...maps, event.map] };
+    }
     case 'source': {
       const source = {
         title: event.sourceUrl ? (event.sourceTitle ?? 'Джерело') : 'Дані Echo',
@@ -357,9 +384,11 @@ export function shouldIgnoreStreamError(
 function MarkdownContent({
   children,
   citations,
+  maps,
 }: {
   children: string;
   citations: AiAgentMessageCitation[];
+  maps: AiAgentMapSummary[];
 }) {
   return (
     <Box
@@ -386,7 +415,9 @@ function MarkdownContent({
         '& th, & td': { border: 1, borderColor: 'divider', px: 1, py: 0.75, textAlign: 'left' },
       }}
     >
-      <CitationMarkdown citations={citations}>{children}</CitationMarkdown>
+      <CitationMarkdown citations={citations} maps={maps}>
+        {children}
+      </CitationMarkdown>
     </Box>
   );
 }
@@ -394,10 +425,16 @@ function MarkdownContent({
 function AssistantMessage({
   content,
   citations = [],
+  maps = [],
 }: {
   content: string;
   citations?: AiAgentMessageCitation[];
+  maps?: AiAgentMapSummary[];
 }) {
+  const mainMap = [...maps].reverse().find((summary) => summary.isMain);
+  const unreferencedMaps = maps.filter(
+    (summary) => summary.id !== mainMap?.id && !content.includes(`](echo-map:${summary.id})`),
+  );
   return (
     <Box
       sx={{
@@ -415,7 +452,17 @@ function AssistantMessage({
       <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
         ЕХО Агент
       </Typography>
-      <MarkdownContent citations={citations}>{content}</MarkdownContent>
+      <MarkdownContent citations={citations} maps={maps}>
+        {content}
+      </MarkdownContent>
+      {unreferencedMaps.length ? (
+        <p className="flex flex-wrap gap-echo-xs">
+          {unreferencedMaps.map((summary) => (
+            <MapPreview key={`${summary.requestId}:${summary.id}`} summary={summary} inline />
+          ))}
+        </p>
+      ) : null}
+      {mainMap ? <MapPreview key={`${mainMap.requestId}:${mainMap.id}`} summary={mainMap} /> : null}
     </Box>
   );
 }
@@ -430,7 +477,13 @@ function ConversationMessage({
   retryDisabled?: boolean;
 }) {
   if (message.role === 'assistant') {
-    return <AssistantMessage content={message.content} citations={message.citations} />;
+    return (
+      <AssistantMessage
+        content={message.content}
+        citations={message.citations}
+        maps={message.maps}
+      />
+    );
   }
 
   const stateMessage =
@@ -489,8 +542,12 @@ function ConversationMessage({
 function LiveResponse({ request }: { request: LiveRequest }) {
   return (
     <Stack spacing={1.5} alignItems="flex-start">
-      {request.assistantText ? (
-        <AssistantMessage content={request.assistantText} citations={request.citations} />
+      {request.assistantText || request.maps?.length ? (
+        <AssistantMessage
+          content={request.assistantText}
+          citations={request.citations}
+          maps={request.maps}
+        />
       ) : null}
 
       {request.state === 'failed' ? (
@@ -591,6 +648,7 @@ function LiveRequestView({
     requestState: request.state,
     role: 'user',
     citations: [],
+    maps: [],
     content: request.prompt,
     createdAt: request.createdAt,
   };
@@ -649,6 +707,13 @@ export function AiAgentChat({
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [conversationLoadFailed, setConversationLoadFailed] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [selectedMap, setSelectedMap] = useState<AiAgentMapSummary | null>(null);
+  const [mapRefreshToken, setMapRefreshToken] = useState(0);
+  const mapTargetRef = useRef<AiAgentMapEditTarget | null>(null);
+  const editedMapsRef = useRef(new Map<string, AiAgentMapEditTarget>());
+  const [mapEditEnabled, setMapEditEnabled] = useState(true);
+  const [mapSelectionCount, setMapSelectionCount] = useState(0);
+  const mapOpenerRef = useRef<HTMLElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const liveRequestsRef = useRef<LiveRequest[]>([]);
@@ -900,6 +965,7 @@ export function AiAgentChat({
           state: userMessage.requestState,
           assistantText: assistantMessage?.content ?? request.assistantText,
           citations: assistantMessage?.citations ?? request.citations,
+          maps: assistantMessage?.maps ?? request.maps,
         };
       }),
     );
@@ -913,6 +979,8 @@ export function AiAgentChat({
     setActiveConversationId(null);
     setProviderId(defaultProviderIdRef.current);
     setMessages([]);
+    setSelectedMap(null);
+    mapOpenerRef.current = null;
     clearLiveRequests();
     setDraft('');
     setPendingSubmission(null);
@@ -990,6 +1058,13 @@ export function AiAgentChat({
 
     const current = liveRequestsRef.current.find((request) => request.id === requestId);
     if (!controller.signal.aborted && current && TERMINAL_STATES.has(current.state)) {
+      setMapRefreshToken((token) => token + 1);
+      const edited = editedMapsRef.current.get(requestId);
+      if (edited) {
+        editedMapsRef.current.delete(requestId);
+        // Refresh previews of the edited map even when its workspace is closed.
+        invalidateMapDocument({ requestId: edited.requestId, id: edited.mapId });
+      }
       await refreshConversation(conversationId);
     }
   }
@@ -1044,11 +1119,22 @@ export function AiAgentChat({
     setError(null);
 
     try {
+      const mapTarget = mapTargetRef.current;
+      const mapEdit =
+        selectedMap &&
+        mapEditEnabled &&
+        mapTarget &&
+        mapTarget.requestId === selectedMap.requestId &&
+        mapTarget.mapId === selectedMap.id
+          ? mapTarget
+          : null;
       const created = await submitAiAgentRequest({
         conversationId: activeConversationIdRef.current,
         providerId,
         message: prompt,
+        ...(mapEdit ? { mapEdit } : {}),
       });
+      if (mapEdit) editedMapsRef.current.set(created.id, mapEdit);
       if (!mountedRef.current) return;
       void refreshConversationList();
       if (viewSequence !== viewSequenceRef.current) return;
@@ -1123,11 +1209,37 @@ export function AiAgentChat({
     }
   }
 
+  function selectMap(summary: AiAgentMapSummary, opener: HTMLElement) {
+    mapOpenerRef.current = opener;
+    setSelectedMap(summary);
+    setMapEditEnabled(true);
+  }
+
+  function closeMap() {
+    setSelectedMap(null);
+    window.requestAnimationFrame(() => {
+      if (mapOpenerRef.current?.isConnected) mapOpenerRef.current.focus({ preventScroll: true });
+    });
+  }
+
+  const conversationMaps = useMemo(
+    () => [
+      ...new Map(
+        [
+          ...messages.flatMap((message) => message.maps ?? []),
+          ...liveRequests.flatMap((request) => request.maps ?? []),
+        ].map((summary) => [summary.id, summary]),
+      ).values(),
+    ],
+    [messages, liveRequests],
+  );
+
   const selectedProvider = useMemo(
     () => configuration?.providers.find((provider) => provider.id === providerId) ?? null,
     [configuration, providerId],
   );
-  const activeRequestExists = liveRequests.some((request) => !TERMINAL_STATES.has(request.state));
+  const activeRequests = liveRequests.filter((request) => !TERMINAL_STATES.has(request.state));
+  const activeRequestExists = activeRequests.length > 0;
   const liveRequestIds = useMemo(
     () => new Set(liveRequests.map((request) => request.id)),
     [liveRequests],
@@ -1143,7 +1255,7 @@ export function AiAgentChat({
   if (!configuration || loading) return <AiAgentChatInitialLoading />;
   if (!configuration.enabled) return null;
 
-  return (
+  const view = (
     <Box
       sx={{
         width: '100%',
@@ -1204,7 +1316,15 @@ export function AiAgentChat({
           ))}
         </List>
       </Box>
-      <Stack sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
+      <Stack
+        data-testid="ai-agent-chat-pane"
+        sx={{
+          flex: selectedMap ? { xs: 1, lg: `0 0 ${AI_AGENT_CHAT_MAP_DOCK_WIDTH}` } : 1,
+          minWidth: 0,
+          minHeight: 0,
+          position: 'relative',
+        }}
+      >
         {!historyOpen ? (
           <Stack
             spacing={0.5}
@@ -1256,7 +1376,11 @@ export function AiAgentChat({
               </PowerButton>
             ) : null}
 
-            <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}>
+            <Stack
+              data-testid="ai-agent-chat-messages"
+              spacing={1.5}
+              sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}
+            >
               {loadingConversation ? (
                 <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center', py: 5 }}>
                   <CircularProgress />
@@ -1301,6 +1425,7 @@ export function AiAgentChat({
                       requestState: 'queued',
                       role: 'user',
                       citations: [],
+                      maps: [],
                       content: pendingSubmission.prompt,
                       createdAt: pendingSubmission.createdAt,
                     }}
@@ -1328,6 +1453,17 @@ export function AiAgentChat({
                 py: 1,
               }}
             >
+              {selectedMap ? (
+                <MapEditContext
+                  title={selectedMap.title}
+                  enabled={mapEditEnabled}
+                  selectionCount={mapSelectionCount}
+                  onToggle={() => setMapEditEnabled((enabled) => !enabled)}
+                  onPrompt={(text) =>
+                    setDraft((current) => (current ? `${current} ${text}` : text))
+                  }
+                />
+              ) : null}
               <TextField
                 fullWidth
                 multiline
@@ -1362,6 +1498,7 @@ export function AiAgentChat({
                   inputProps={{ 'aria-label': 'Провайдер ШІ' }}
                   sx={{
                     maxWidth: '70%',
+                    minWidth: 0,
                     color: 'text.secondary',
                     fontSize: '0.75rem',
                     opacity: 0.65,
@@ -1383,34 +1520,77 @@ export function AiAgentChat({
                     </MenuItem>
                   ))}
                 </Select>
-                <IconButton
-                  type="submit"
-                  aria-label="Надіслати"
-                  disabled={
-                    submitting ||
-                    loadingConversation ||
-                    conversationLoadFailed ||
-                    !draft.trim() ||
-                    !selectedProvider
-                  }
-                  size="small"
-                  sx={{
-                    bgcolor: 'text.primary',
-                    color: 'background.paper',
-                    '&:hover': { bgcolor: 'text.secondary' },
-                  }}
-                >
-                  {submitting ? (
-                    <CircularProgress size={16} color="inherit" />
-                  ) : (
-                    <SendOutlinedIcon fontSize="small" />
-                  )}
-                </IconButton>
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  {activeRequestExists ? (
+                    <PowerButton
+                      type="button"
+                      size="small"
+                      aria-label={
+                        activeRequests.length === 1 ? 'Зупинити запит' : 'Зупинити всі запити'
+                      }
+                      disabled={activeRequests.every((request) => cancellingIds.has(request.id))}
+                      startIcon={
+                        activeRequests.some((request) => cancellingIds.has(request.id)) ? (
+                          <CircularProgress size={14} color="inherit" />
+                        ) : (
+                          <StopOutlinedIcon />
+                        )
+                      }
+                      onClick={() =>
+                        void Promise.all(activeRequests.map((request) => cancelRequest(request.id)))
+                      }
+                    >
+                      Зупинити
+                    </PowerButton>
+                  ) : null}
+                  <IconButton
+                    type="submit"
+                    aria-label="Надіслати"
+                    disabled={
+                      submitting ||
+                      loadingConversation ||
+                      conversationLoadFailed ||
+                      !draft.trim() ||
+                      !selectedProvider
+                    }
+                    size="small"
+                    sx={{
+                      bgcolor: 'text.primary',
+                      color: 'background.paper',
+                      '&:hover': { bgcolor: 'text.secondary' },
+                    }}
+                  >
+                    {submitting ? (
+                      <CircularProgress size={16} color="inherit" />
+                    ) : (
+                      <SendOutlinedIcon fontSize="small" />
+                    )}
+                  </IconButton>
+                </Stack>
               </Stack>
             </Box>
           </Stack>
         </Box>
       </Stack>
+      {selectedMap ? (
+        <Suspense fallback={null}>
+          <MapWorkspace
+            key={`${selectedMap.requestId}:${selectedMap.id}`}
+            summary={selectedMap}
+            refreshToken={mapRefreshToken}
+            onTargetChange={(target) => {
+              mapTargetRef.current = target;
+              setMapSelectionCount(target?.selectedPointIds.length ?? 0);
+            }}
+            onClose={closeMap}
+          />
+        </Suspense>
+      ) : null}
     </Box>
+  );
+  return (
+    <ConversationMapsContext.Provider value={conversationMaps}>
+      <MapSelectionContext.Provider value={selectMap}>{view}</MapSelectionContext.Provider>
+    </ConversationMapsContext.Provider>
   );
 }

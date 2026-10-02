@@ -13,28 +13,17 @@ import {
   MenuItem,
   Stack,
   Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   TextField,
   Typography,
 } from '@mui/material';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { CreateUnitReq, OrbitUnitDetails, Unit } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerIconButton } from '../../../components/PowerIconButton';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
-import {
-  DEFAULT_LIST_UNITS_REQ,
-  getCreateUnitDuplicateCandidates,
-  getUnitsPage,
-} from '../../../services/api/units';
-import { handleNavigateWithinSpaClick } from '../../../utils/browser';
+import { getCreateUnitDuplicateCandidates } from '../../../services/api/units';
 import {
   defaultUnitMasks,
   EMPTY_UNIT_FORM,
@@ -123,168 +112,6 @@ const HIERARCHY_FIELDS: Array<{
   },
 ];
 
-function DuplicateHint({ form, unitId }: { form: UnitForm; unitId?: number }) {
-  const [duplicates, setDuplicates] = useState<Unit[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const hierarchyFilters = useMemo(
-    () => ({
-      filterOther: form.other.trim() || null,
-      filterTeamOrCrew: form.teamOrCrew.trim() || null,
-      filterSection: form.section.trim() || null,
-      filterSquad: form.squad.trim() || null,
-      filterPlatoon: form.platoon.trim() || null,
-      filterCompany: form.company.trim() || null,
-      filterBattalion: form.battalion.trim() || null,
-      filterRegiment: form.regiment.trim() || null,
-      filterBrigade: form.brigade.trim() || null,
-      filterDivision: form.division.trim() || null,
-      filterCorps: form.corps.trim() || null,
-      filterArmy: form.army.trim() || null,
-      filterMilitaryDistrict: form.militaryDistrict.trim() || null,
-      filterArmyRegion: form.armyRegion.trim() || null,
-    }),
-    [
-      form.army,
-      form.armyRegion,
-      form.battalion,
-      form.brigade,
-      form.company,
-      form.corps,
-      form.division,
-      form.militaryDistrict,
-      form.other,
-      form.platoon,
-      form.regiment,
-      form.section,
-      form.squad,
-      form.teamOrCrew,
-    ],
-  );
-
-  useEffect(() => {
-    if (Object.values(hierarchyFilters).every((value) => value === null)) {
-      setDuplicates([]);
-      setTotalCount(0);
-      setError(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => {
-      setLoading(true);
-      setError(null);
-      void getUnitsPage(
-        {
-          ...DEFAULT_LIST_UNITS_REQ,
-          ...hierarchyFilters,
-          sortBy: 'UnitNameAsc',
-          includeInactive: true,
-          searchMode: 'Strict',
-          limit: 6,
-          offset: 0,
-        },
-        { signal: controller.signal },
-      )
-        .then((response) => {
-          if (controller.signal.aborted) return;
-          const selfIncluded = response.units.some((unit) => unit.id === unitId);
-          setDuplicates(response.units.filter((unit) => unit.id !== unitId));
-          setTotalCount(Math.max(0, response.totalCount - Number(selfIncluded)));
-        })
-        .catch((requestError) => {
-          if (!controller.signal.aborted) setError(formatUnitError(requestError));
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setLoading(false);
-        });
-    }, 300);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [hierarchyFilters, unitId]);
-
-  const visible = duplicates.slice(0, 5);
-  if (loading && visible.length === 0) return <CircularProgress size={20} />;
-  if (error !== null) {
-    return <PowerAlert severity="error">Не вдалося перевірити дублікати: {error}</PowerAlert>;
-  }
-  if (visible.length === 0) return null;
-
-  return (
-    <PowerAlert severity="warning" autoHideDuration={null}>
-      <Stack spacing={1.5}>
-        <Typography fontWeight={600}>Можливо, такий підрозділ уже існує</Typography>
-        <TableContainer sx={{ maxWidth: '100%' }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Назва</TableCell>
-                <TableCell>Інше</TableCell>
-                <TableCell>Команда/Екіпаж</TableCell>
-                <TableCell>Секція</TableCell>
-                <TableCell>Відділення</TableCell>
-                <TableCell>Взвод</TableCell>
-                <TableCell>Рота</TableCell>
-                <TableCell>Батальйон</TableCell>
-                <TableCell>Полк</TableCell>
-                <TableCell>Бригада</TableCell>
-                <TableCell>Дивізія</TableCell>
-                <TableCell>Корпус</TableCell>
-                <TableCell>Армія</TableCell>
-                <TableCell>Група армій/Фронт/Види та роди ЗС</TableCell>
-                <TableCell>Регіон/ТВД/Збройні Сили</TableCell>
-                <TableCell>Статус</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {visible.map((unit) => {
-                const href = `/rer-units/${unit.id}`;
-                return (
-                  <TableRow key={unit.id}>
-                    <TableCell>
-                      <Link
-                        href={href}
-                        onClick={(event) => handleNavigateWithinSpaClick(event, href)}
-                      >
-                        {unit.name}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{unit.other}</TableCell>
-                    <TableCell>{unit.teamOrCrew}</TableCell>
-                    <TableCell>{unit.section}</TableCell>
-                    <TableCell>{unit.squad}</TableCell>
-                    <TableCell>{unit.platoon}</TableCell>
-                    <TableCell>{unit.company}</TableCell>
-                    <TableCell>{unit.battalion}</TableCell>
-                    <TableCell>{unit.regiment}</TableCell>
-                    <TableCell>{unit.brigade}</TableCell>
-                    <TableCell>{unit.division}</TableCell>
-                    <TableCell>{unit.corps}</TableCell>
-                    <TableCell>{unit.army}</TableCell>
-                    <TableCell>{unit.militaryDistrict}</TableCell>
-                    <TableCell>{unit.armyRegion}</TableCell>
-                    <TableCell>{unit.active ? 'Активний' : 'Неактивний'}</TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        {totalCount > visible.length ? (
-          <Typography variant="caption">
-            Показано перші {visible.length} з {totalCount} збігів. Уточніть поля, щоб звузити
-            список.
-          </Typography>
-        ) : null}
-      </Stack>
-    </PowerAlert>
-  );
-}
-
 function UnitDetailsFields({
   form,
   editing,
@@ -318,10 +145,7 @@ function UnitDetailsFields({
 
   return (
     <>
-      <Typography color="text.secondary">
-        Заповніть відомі рівні підпорядкування. Під час введення нижче з’являться можливі збіги з
-        уже наявними підрозділами.
-      </Typography>
+      <Typography color="text.secondary">Заповніть відомі рівні підпорядкування.</Typography>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {editing ? (
           <TextField
@@ -381,7 +205,7 @@ function UnitDetailsFields({
             />
           </>
         ) : null}
-        {editing && editSection === 'all' ? (
+        {editing && (editSection === 'all' || editSection === 'unit') ? (
           <>
             <PresentInOrbitField form={form} disabled={disabled} onChange={onChange} />
             <TextField
@@ -814,9 +638,7 @@ export function UnitFormDrawer({
                   onLink={onLinkOrbitUnit}
                   onUnlink={onUnlinkOrbitUnit}
                 />
-              ) : (
-                <DuplicateHint form={form} unitId={unit?.id} />
-              )}
+              ) : null}
             </>
           )}
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}

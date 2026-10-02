@@ -9,6 +9,7 @@ type MessageMediaInfoRaw = MessageMediaInfo & {
 };
 
 const DOCUMENT_DOWNLOAD_EXTENSION_RE = /\.(pdf|docx?|xlsx?|csv)(\?|#|$)/i;
+const LEGACY_WORD_CONTENT_TYPES = new Set(['application/msword']);
 const LEGACY_SPREADSHEET_CONTENT_TYPES = new Set(['application/vnd.ms-excel']);
 const TEXT_CONTENT_TYPES = new Set(['text/plain']);
 const CSV_CONTENT_TYPES = new Set(['text/csv']);
@@ -42,11 +43,25 @@ export function getDocumentKind(m: MessageMediaInfo): MessageCardDocumentKind {
     return 'docx';
   }
   if (
+    LEGACY_WORD_CONTENT_TYPES.has(contentType) ||
+    fileName.endsWith('.doc') ||
+    /\.doc(\?|#|$)/i.test(href)
+  ) {
+    return 'doc';
+  }
+  if (
     contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
     fileName.endsWith('.xlsx') ||
     /\.xlsx(\?|#|$)/i.test(href)
   ) {
     return 'xlsx';
+  }
+  if (
+    LEGACY_SPREADSHEET_CONTENT_TYPES.has(contentType) ||
+    fileName.endsWith('.xls') ||
+    /\.xls(\?|#|$)/i.test(href)
+  ) {
+    return 'xls';
   }
   if (
     CSV_CONTENT_TYPES.has(contentType) ||
@@ -81,8 +96,16 @@ export function isDocxAttachment(m: MessageMediaInfo): boolean {
   return getDocumentKind(m) === 'docx';
 }
 
+export function isDocAttachment(m: MessageMediaInfo): boolean {
+  return getDocumentKind(m) === 'doc';
+}
+
 export function isXlsxAttachment(m: MessageMediaInfo): boolean {
   return getDocumentKind(m) === 'xlsx';
+}
+
+export function isXlsAttachment(m: MessageMediaInfo): boolean {
+  return getDocumentKind(m) === 'xls';
 }
 
 export function isCsvAttachment(m: MessageMediaInfo): boolean {
@@ -137,7 +160,20 @@ export function collectMessageDocuments(msg: InboxMessage): MessageCardDocument[
 function isRecognizedDocumentAttachment(m: MessageMediaInfo): boolean {
   return (
     DOCUMENT_DOWNLOAD_EXTENSION_RE.test(String(m.href ?? '').toLowerCase()) ||
+    isLegacyWordAttachment(m) ||
     isLegacySpreadsheetAttachment(m)
+  );
+}
+
+function isLegacyWordAttachment(m: MessageMediaInfo): boolean {
+  const fileName = mediaAttachmentDisplayName(m).toLowerCase();
+  const href = String(m.href ?? '').toLowerCase();
+  const contentType = mediaAttachmentContentType(m);
+
+  return (
+    LEGACY_WORD_CONTENT_TYPES.has(contentType) ||
+    fileName.endsWith('.doc') ||
+    /\.doc(\?|#|$)/i.test(href)
   );
 }
 

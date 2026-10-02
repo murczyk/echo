@@ -8,6 +8,7 @@ pub(crate) mod dispatcher;
 pub mod evaluation;
 mod events;
 pub(crate) mod lifecycle;
+pub mod maps;
 pub mod middleware;
 pub mod profile;
 pub mod provider_gateway;
@@ -396,6 +397,17 @@ pub async fn create_request(
         settings.mattermost_chat_enabled,
     )
     .await?;
+    if let Some(target) = &req.map_edit {
+        maps::workspace::store_request_target(
+            &txn,
+            human.id,
+            conversation.id,
+            request_id,
+            target,
+        )
+        .await
+        .c(h!())?;
+    }
     let conversation_id = conversation.id;
     let mut conversation = conversation.into_active_model();
     conversation.updated_at = Set(now);
@@ -611,7 +623,14 @@ fn render_sse_events(
         let item = AiAgentRequestEventItem {
             sequence: event.sequence,
             event_type: event.event_type.clone(),
-            payload_json: event.payload.to_string(),
+            payload_json: if event.event_type == "map_artifact" {
+                maps::parse(&event.payload)
+                    .map(|document| serde_json::json!({ "document": document.summary(event.request_id) }))
+                    .unwrap_or_default()
+                    .to_string()
+            } else {
+                event.payload.to_string()
+            },
             created_at: event.created_at.and_utc().timestamp_millis(),
             activity_presentation: event
                 .payload
@@ -733,10 +752,10 @@ pub(super) async fn conversation_detail(
         .c(h!())?;
     let request_ids = requests
         .iter()
-        .filter(|request| request.response.is_some())
         .map(|request| request.id)
         .collect::<Vec<_>>();
     let mut citations = citations::load(dbx, &request_ids).await.c(h!())?;
+    let mut maps = maps::load_summaries(dbx, &request_ids).await.c(h!())?;
     let mut messages = Vec::new();
     for request in requests {
         let request_state = request.state;
@@ -746,9 +765,12 @@ pub(super) async fn conversation_detail(
             role: "user".to_string(),
             content: request.prompt,
             citations: Vec::new(),
+            maps: Vec::new(),
             created_at: request.queued_at.and_utc().timestamp_millis(),
         });
-        if let Some(response) = request.response {
+        let request_maps = maps.remove(&request.id).unwrap_or_default();
+        if request.response.is_some() || !request_maps.is_empty() {
+            let response = request.response.unwrap_or_default();
             messages.push(AiAgentMessageItem {
                 request_id: request.id.to_string(),
                 request_state,
@@ -758,6 +780,7 @@ pub(super) async fn conversation_detail(
                     &response,
                 ),
                 content: response,
+                maps: request_maps,
                 created_at: request
                     .completed_at
                     .unwrap_or(request.updated_at)

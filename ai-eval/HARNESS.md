@@ -32,7 +32,9 @@ just ai-eval compare \
 ```
 
 Use `--case <id>` repeatedly or `--split development|validation` for a narrower
-run. The defaults are three repetitions, two concurrent workers, and a 300-second
+run. Development runs and `validate --split development` verify tracked fixtures
+without requiring private `raw/` artifacts. Full/validation runs require every
+declared checksum. The defaults are three repetitions, two concurrent workers, and a 300-second
 deadline per case. Runs are immutable: choose a new `--run` name for every attempt.
 Exit codes are 0 for all hard checks passing, 1 for observed case failures, and 2
 for invalid configuration or infrastructure errors. Partial traces remain on
@@ -54,6 +56,12 @@ Unsupported fixture routes fail visibly. The initial suite deliberately supplies
 the current-user, inbox, message-ID and context tools; local integration uses the
 installed harness's complete tool inventory. Fixture authorization is synthetic;
 it does not replace backend authorization tests or authenticated integration.
+
+The [point-map suite](2026-09-29-ai-maps/README.md) uses the same runner with
+pure production Rust preparation/export endpoints. Its private supplied inputs
+are independently audited; grading checks ordered records, map references,
+coordinate warnings, and parsed CSV/KMZ. Its scores use fixture mode, with
+ownership and revoked-source checks covered separately by backend regressions.
 
 Reports include category and per-case results, latency, provider token usage when
 available, prompt hashes, runner identity, dataset checksums, tool errors and

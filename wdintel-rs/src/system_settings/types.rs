@@ -39,6 +39,8 @@ pub struct SystemSettingsCurrentRsp {
     pub analysis_aor_filter_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
+    #[serde(default = "default_true")]
+    pub exclude_orbit_other_units: bool,
 }
 
 #[derive(
@@ -83,6 +85,8 @@ pub struct SystemSettingsItem {
     pub analysis_aor_filter_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
+    #[serde(default = "default_true")]
+    pub exclude_orbit_other_units: bool,
 }
 
 #[derive(
@@ -147,6 +151,8 @@ pub struct CreateSystemSettingsReq {
     pub analysis_aor_filter_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
+    #[serde(default = "default_true")]
+    pub exclude_orbit_other_units: bool,
 }
 
 fn default_analysis_aor_filter_enabled() -> bool {
@@ -214,5 +220,6 @@ mod tests {
         assert!(!req.disable_bot_tags);
         assert!(req.analysis_aor_filter_enabled);
         assert_eq!(req.rer_duty_test_replay_interval_sec, 1);
+        assert!(req.exclude_orbit_other_units);
     }
 }
