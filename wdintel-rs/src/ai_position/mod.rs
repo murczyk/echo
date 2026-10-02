@@ -20,11 +20,12 @@ use crate::types::{Env, ShortContext};
 use crate::users::ensure_admin;
 use actix_identity::Identity;
 use actix_web::{post, web::Json};
+use anyhow::Context;
 use chrono::Utc;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder,
+    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 use types::{
     AiPositionEngineItem, AiPositionPageRsp, AiPositionPromptState,
@@ -82,20 +83,26 @@ pub async fn save_ai_position_worker_settings(
         .map(Uuid::parse_str)
         .transpose()
         .c(h!())?;
-    if req.enabled {
-        let Some(ai_engine_id) = ai_engine_id else {
-            return Err(AppError::BL {
-                msg: "Оберіть ШІ движок для воркера".to_string(),
-            });
-        };
-        load_engine(&env.dbx, ai_engine_id).await?;
+    if req.enabled && ai_engine_id.is_none() {
+        return Err(AppError::BL {
+            msg: "Оберіть ШІ движок для воркера".to_string(),
+        });
+    }
+    // The engine stays locked until the settings are saved, so it cannot be
+    // disabled in between (the engine update checks these settings).
+    let transaction = env.dbx.begin().await.c(h!())?;
+    if let (true, Some(ai_engine_id)) = (req.enabled, ai_engine_id) {
+        load_engine(&transaction, ai_engine_id, true)
+            .await
+            .context(h!())?;
     }
     upsert_settings(
-        &env.dbx,
+        &transaction,
         SettingsChange::Worker(req.enabled, ai_engine_id),
     )
     .await
     .c(h!())?;
+    transaction.commit().await.c(h!())?;
     Ok(Json(AiPositionWorkerSettingsItem {
         enabled: req.enabled,
         ai_engine_id: ai_engine_id.map(|id| id.to_string()),
@@ -117,9 +124,13 @@ pub async fn test_ai_positions(
             msg: "Введіть текст повідомлення (до 20 000 символів)".to_string(),
         });
     }
-    let engine =
-        load_engine(&env.dbx, Uuid::parse_str(&req.ai_engine_id).c(h!())?)
-            .await?;
+    let engine = load_engine(
+        &env.dbx,
+        Uuid::parse_str(&req.ai_engine_id).c(h!())?,
+        false,
+    )
+    .await
+    .context(h!())?;
     let extraction = extract::extract(
         &engine,
         effective_prompt(req.prompt.trim()),
@@ -223,18 +234,19 @@ fn usable_engines() -> sea_orm::Select<ai_engine::Entity> {
         .filter(ai_engine::Column::CallsignEnabled.eq(true))
 }
 
-async fn load_engine(
-    dbx: &DatabaseConnection,
+async fn load_engine<C>(
+    dbx: &C,
     id: Uuid,
-) -> Result<ai_engine::Model, AppError> {
-    usable_engines()
-        .filter(ai_engine::Column::Id.eq(id))
-        .one(dbx)
-        .await
-        .c(h!())?
-        .ok_or_else(|| AppError::BL {
-            msg: "Вибраний ШІ движок вимкнено або видалено".to_string(),
-        })
+    lock: bool,
+) -> Result<ai_engine::Model, AppError>
+where
+    C: sea_orm::ConnectionTrait,
+{
+    let query = usable_engines().filter(ai_engine::Column::Id.eq(id));
+    let query = if lock { query.lock_shared() } else { query };
+    query.one(dbx).await.c(h!())?.ok_or_else(|| AppError::BL {
+        msg: "Вибраний ШІ движок вимкнено або видалено".to_string(),
+    })
 }
 
 async fn load_page(
@@ -278,10 +290,13 @@ enum SettingsChange {
     Worker(bool, Option<Uuid>),
 }
 
-async fn upsert_settings(
-    dbx: &DatabaseConnection,
+async fn upsert_settings<C>(
+    dbx: &C,
     change: SettingsChange,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: sea_orm::ConnectionTrait,
+{
     let mut settings = ai_position_settings::ActiveModel {
         id: Set(AI_POSITION_SETTINGS_ID),
         prompt: Set(String::new()),

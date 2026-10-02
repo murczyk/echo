@@ -161,37 +161,6 @@ struct BackfillBatch {
     last_id: Option<i64>,
 }
 
-/// Removes a message's position facts (its own and its documents'), so an
-/// edited or deleted message stops showing and feeding them, and queues the
-/// knowledge they fed for a recompute. Runs whether or not the worker is
-/// enabled.
-pub async fn invalidate_message<C>(
-    dbx: &C,
-    message_id: i64,
-) -> anyhow::Result<()>
-where
-    C: ConnectionTrait,
-{
-    let media_ids: Vec<Uuid> =
-        crate::entities::signal_message_media::Entity::find()
-            .filter(
-                crate::entities::signal_message_media::Column::SignalMessageId
-                    .eq(message_id),
-            )
-            .select_only()
-            .column(crate::entities::signal_message_media::Column::Id)
-            .into_tuple()
-            .all(dbx)
-            .await
-            .c(h!())?;
-    let filter = sea_orm::Condition::any()
-        .add(ai_position_mention::Column::SigintInboxItemId.eq(message_id))
-        .add(ai_position_mention::Column::MediaId.is_in(media_ids));
-    let stale = delete_mentions(dbx, filter).await.c(h!())?;
-    knowledge::enqueue(dbx, &stale).await.c(h!())?;
-    Ok(())
-}
-
 pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
     let mut redis = env.redis.clone();
     info!("ai_position_worker started");
@@ -279,8 +248,7 @@ async fn process_next(
     let Some(source) = load_source(dbx, &job).await.c(h!())? else {
         // The message was deleted or the summary is gone: so are its facts.
         let transaction = dbx.begin().await.c(h!())?;
-        let stale = delete_source_mentions(&transaction, &job).await.c(h!())?;
-        knowledge::enqueue(&transaction, &stale).await.c(h!())?;
+        delete_source_mentions(&transaction, &job).await.c(h!())?;
         delete_job(&transaction, job.id).await.c(h!())?;
         transaction.commit().await.c(h!())?;
         return Ok(true);
@@ -438,7 +406,8 @@ async fn replace_mentions<C>(
 where
     C: ConnectionTrait,
 {
-    let mut knowledge_jobs = delete_source_mentions(dbx, job).await.c(h!())?;
+    delete_source_mentions(dbx, job).await.c(h!())?;
+    let mut knowledge_jobs = BTreeSet::new();
     let scopes = knowledge::scopes_for(
         source.group_master_key.as_deref(),
         source.group_is_secret,
@@ -549,7 +518,9 @@ where
         {
             continue;
         }
-        let spans = ground(text, &name);
+        // The canonical key also matches inflected or differently written
+        // occurrences.
+        let spans = ground(text, &name_key);
         if spans.is_empty() {
             continue;
         }
@@ -612,54 +583,25 @@ where
 /// `model_name` of mentions linked from knowledge rather than extracted.
 pub(super) const LINKED_MODEL_NAME: &str = "knowledge";
 
-/// Deletes a source's mentions and returns the knowledge their coordinate
-/// facts fed, which now needs a recompute.
+/// Deletes a source's mentions. The delete trigger queues the knowledge
+/// they may have fed for a recompute.
 async fn delete_source_mentions<C>(
     dbx: &C,
     job: &ai_position_worker_job::Model,
-) -> anyhow::Result<BTreeSet<(knowledge::Scope, String)>>
+) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
-    let source_filter = match (job.sigint_inbox_item_id, job.media_id) {
-        (Some(item_id), _) => sea_orm::Condition::all()
-            .add(ai_position_mention::Column::SigintInboxItemId.eq(item_id)),
-        (None, media_id) => sea_orm::Condition::all()
-            .add(ai_position_mention::Column::MediaId.eq(media_id)),
-    };
-    delete_mentions(dbx, source_filter).await
-}
-
-/// Deletes the matching mentions and returns every scope and position whose
-/// knowledge their coordinates fed.
-async fn delete_mentions<C>(
-    dbx: &C,
-    source_filter: sea_orm::Condition,
-) -> anyhow::Result<BTreeSet<(knowledge::Scope, String)>>
-where
-    C: ConnectionTrait,
-{
-    let located = ai_position_mention::Entity::find()
-        .filter(source_filter.clone())
-        .inner_join(ai_position_coordinate::Entity)
-        .all(dbx)
-        .await
-        .c(h!())?;
-    let mut stale = BTreeSet::new();
-    for mention in located {
-        for scope in knowledge::fed_scopes(
-            mention.group_master_key.as_deref(),
-            &mention.aor_ids,
-        ) {
-            stale.insert((scope, mention.name_key.clone()));
+    let delete = ai_position_mention::Entity::delete_many();
+    let delete = match (job.sigint_inbox_item_id, job.media_id) {
+        (Some(item_id), _) => delete
+            .filter(ai_position_mention::Column::SigintInboxItemId.eq(item_id)),
+        (None, media_id) => {
+            delete.filter(ai_position_mention::Column::MediaId.eq(media_id))
         }
-    }
-    ai_position_mention::Entity::delete_many()
-        .filter(source_filter)
-        .exec(dbx)
-        .await
-        .c(h!())?;
-    Ok(stale)
+    };
+    delete.exec(dbx).await.c(h!())?;
+    Ok(())
 }
 
 async fn fail_job(
@@ -1237,9 +1179,14 @@ mod tests {
         assert_eq!(scopes, vec![("group".to_string(), master_key.clone())]);
 
         // The message is deleted: its facts and knowledge go.
-        super::invalidate_message(&env.dbx, message_id)
+        let mut message = signal_message::Entity::find_by_id(message_id)
+            .one(&env.dbx)
             .await
-            .unwrap();
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        message.deleted = Set(true);
+        message.update(&env.dbx).await.unwrap();
         assert!(knowledge_scopes(&env.dbx).await.is_empty());
         assert!(linked_names(&env.dbx, message_id).await.is_empty());
 
@@ -1252,6 +1199,36 @@ mod tests {
                 .into_active_model();
         group.is_secret = Set(false);
         group.update(&env.dbx).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn drops_mentions_when_the_body_changes_3064() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        enable_worker(&env.dbx).await;
+        let (message_id, _, _) = grouped_message(&env.dbx, false).await;
+        let config = load_worker_config(&env.dbx).await.unwrap().unwrap();
+        enqueue_message_if_enabled(&env.dbx, message_id)
+            .await
+            .unwrap();
+        let job = load_next_job(&env.dbx).await.unwrap().unwrap();
+        let source = load_source(&env.dbx, &job).await.unwrap().unwrap();
+        complete_job(&env.dbx, &job, &source, &config, extraction(true))
+            .await
+            .unwrap();
+        assert_eq!(linked_names(&env.dbx, message_id).await, vec!["Циркон 9"]);
+
+        let mut message = signal_message::Entity::find_by_id(message_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        message.body = Set(Some("Переміщення до Береза 4".to_string()));
+        message.update(&env.dbx).await.unwrap();
+
+        assert!(linked_names(&env.dbx, message_id).await.is_empty());
+        assert!(knowledge_scopes(&env.dbx).await.is_empty());
     }
 
     #[tokio::test]

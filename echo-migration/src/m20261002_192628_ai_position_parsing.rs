@@ -152,6 +152,54 @@ create table ai_position_knowledge_job (
 
 create index ai_position_knowledge_job_next_attempt_idx
     on ai_position_knowledge_job (next_attempt_at, created_at);
+
+-- Every removed mention (reparse, edit, deletion, a cascade from a removed
+-- attachment or inbox item) queues the knowledge it may have fed. A fresh
+-- created_at keeps a running recompute from consuming the job.
+create function ai_position_mention_queue_knowledge()
+returns trigger language plpgsql as $$
+begin
+    insert into ai_position_knowledge_job (scope_kind, scope_key, name_key)
+    select scope.kind, scope.key, old.name_key
+    from (
+        select 'group' as kind, old.group_master_key as key
+        where old.group_master_key is not null
+        union all
+        select 'aor', aor_id::text from unnest(old.aor_ids) aor_id
+    ) scope
+    on conflict (scope_kind, scope_key, name_key) do update
+        set attempts = 0,
+            last_error = null,
+            next_attempt_at = now() at time zone 'utc',
+            created_at = now() at time zone 'utc';
+    return old;
+end;
+$$;
+
+create trigger ai_position_mention_queue_knowledge
+after delete on ai_position_mention
+for each row execute function ai_position_mention_queue_knowledge();
+
+-- Mentions point into the text by offset: a changed body drops them, and a
+-- deleted message also drops its documents' mentions, on every write path.
+create function ai_position_signal_message_invalidate()
+returns trigger language plpgsql as $$
+begin
+    delete from ai_position_mention where sigint_inbox_item_id = new.id;
+    if new.deleted then
+        delete from ai_position_mention mention
+        using signal_message_media media
+        where media.signal_message_id = new.id and mention.media_id = media.id;
+    end if;
+    return new;
+end;
+$$;
+
+create trigger ai_position_signal_message_invalidate
+after update of body, deleted on signal_message
+for each row
+when (old.body is distinct from new.body or (new.deleted and not old.deleted))
+execute function ai_position_signal_message_invalidate();
                 "#,
             )
             .await
@@ -164,10 +212,13 @@ create index ai_position_knowledge_job_next_attempt_idx
             .get_connection()
             .execute_unprepared(
                 r#"
+drop trigger if exists ai_position_signal_message_invalidate on signal_message;
+drop function if exists ai_position_signal_message_invalidate();
 drop table if exists ai_position_knowledge_job;
 drop table if exists ai_position_knowledge;
 drop table if exists ai_position_coordinate;
 drop table if exists ai_position_mention;
+drop function if exists ai_position_mention_queue_knowledge();
 drop table if exists ai_position_worker_job;
 drop table if exists ai_position_settings;
                 "#,

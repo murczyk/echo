@@ -153,8 +153,9 @@ pub const AI_POSITION_LIST_FILTER_MAX_CHARS: usize = 200;
 /// Facts older than this before a position's latest fact do not decide where
 /// it is now (positions move and code names are reused).
 pub const AI_POSITION_KNOWLEDGE_WINDOW_DAYS: i64 = 30;
-/// Most messages a knowledge recompute links to a position without the model.
-pub const AI_POSITION_KNOWLEDGE_LINK_MAX_MESSAGES: i64 = 500;
+/// Messages per page when a knowledge recompute links a position to the
+/// scope's other messages.
+pub const AI_POSITION_KNOWLEDGE_LINK_BATCH: i64 = 500;
 /// Facts within this distance describe the same place.
 pub const AI_POSITION_KNOWLEDGE_CLUSTER_METERS: f64 = 300.0;
 /// A fact's weight halves every this many days before the latest fact.

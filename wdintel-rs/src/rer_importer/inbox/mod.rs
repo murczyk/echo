@@ -2049,9 +2049,6 @@ where
     let mut signal_message = signal_message.into_active_model();
     signal_message.deleted = Set(true);
     signal_message.update(txn).await.context(h!())?;
-    crate::ai_position::worker::invalidate_message(txn, message_id)
-        .await
-        .c(h!())?;
     Ok(())
 }
 

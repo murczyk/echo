@@ -7,10 +7,10 @@
 
 use crate::config::{
     AI_POSITION_KNOWLEDGE_CLUSTER_METERS, AI_POSITION_KNOWLEDGE_CONFLICT_RATIO,
-    AI_POSITION_KNOWLEDGE_HALF_LIFE_DAYS,
-    AI_POSITION_KNOWLEDGE_LINK_MAX_MESSAGES, AI_POSITION_KNOWLEDGE_WINDOW_DAYS,
-    AI_POSITION_WORKER_MAX_ATTEMPTS, AI_POSITION_WORKER_MAX_ERROR_CHARS,
-    AI_POSITION_WORKER_RETRY_BASE_SECS, AI_POSITION_WORKER_RETRY_MAX_SECS,
+    AI_POSITION_KNOWLEDGE_HALF_LIFE_DAYS, AI_POSITION_KNOWLEDGE_LINK_BATCH,
+    AI_POSITION_KNOWLEDGE_WINDOW_DAYS, AI_POSITION_WORKER_MAX_ATTEMPTS,
+    AI_POSITION_WORKER_MAX_ERROR_CHARS, AI_POSITION_WORKER_RETRY_BASE_SECS,
+    AI_POSITION_WORKER_RETRY_MAX_SECS,
 };
 use crate::entities::{ai_position_knowledge, ai_position_knowledge_job};
 use crate::h;
@@ -121,6 +121,53 @@ where
         }
     }
     enqueue(dbx, &jobs).await
+}
+
+/// Each group's scopes with its privacy and AOR membership as they are now.
+pub(crate) async fn current_scopes<C>(
+    dbx: &C,
+    group_keys: BTreeSet<String>,
+) -> anyhow::Result<std::collections::HashMap<String, Vec<Scope>>>
+where
+    C: ConnectionTrait,
+{
+    #[derive(FromQueryResult)]
+    struct Group {
+        master_key: String,
+        is_secret: bool,
+        aor_ids: Vec<i64>,
+    }
+    if group_keys.is_empty() {
+        return Ok(Default::default());
+    }
+    let groups = Group::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select sg.master_key, sg.is_secret,
+                coalesce(array(
+                    select sga.aor_id
+                    from signal_group_aor sga
+                    join area_of_responsibility aor on aor.id = sga.aor_id
+                    where sga.master_key = sg.master_key and not aor.deleted
+                    order by sga.aor_id
+                ), '{}') as aor_ids
+         from signal_group sg
+         where sg.master_key = any($1)",
+        [group_keys.into_iter().collect::<Vec<_>>().into()],
+    ))
+    .all(dbx)
+    .await
+    .c(h!())?;
+    Ok(groups
+        .into_iter()
+        .map(|group| {
+            let scopes = scopes_for(
+                Some(&group.master_key),
+                group.is_secret,
+                &group.aor_ids,
+            );
+            (group.master_key, scopes)
+        })
+        .collect())
 }
 
 pub(crate) async fn enqueue<C>(
@@ -427,7 +474,7 @@ where
     C: ConnectionTrait,
 {
     use super::worker::{
-        insert_linked_mentions, Source, SOURCE_GROUP_COLUMNS, SOURCE_GROUP_SQL,
+        insert_linked_mentions, SOURCE_GROUP_COLUMNS, SOURCE_GROUP_SQL,
     };
     let known = ai_position_knowledge::Entity::find()
         .filter(ai_position_knowledge::Column::ScopeKind.eq(scope.kind))
@@ -458,52 +505,92 @@ where
     } else {
         scope.key.clone().into()
     };
-    let candidates = Source::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        format!(
-            "select s.text, s.message_id, s.message_at, s.group_master_key,
-                    s.group_is_secret, s.aor_ids
-             from (
-                 select coalesce(message.body, '') as text, message.id as message_id,
-                        coalesce(item.datetime, message.timestamp, message.created_at) as message_at,
-                        {SOURCE_GROUP_COLUMNS}
-                 from signal_message message
-                 join sigint_inbox_item item on item.id = message.id
-                 {SOURCE_GROUP_SQL}
-                 where not message.deleted
-                   and message.created_at >= $2 - interval '1 day'
-                   and lower(message.body) like $4
-             ) s
-             where {scope_condition}
-               and s.message_at between $2 and $3
-               and not exists (
-                   select 1 from ai_position_mention m
-                   where m.sigint_inbox_item_id = s.message_id and m.name_key = $5
-               )
-             order by s.message_at desc
-             limit $6"
-        ),
-        [
-            scope_value,
-            (known.first_fact_at - window).into(),
-            (known.last_fact_at + window).into(),
-            format!("%{stem}%").into(),
-            name_key.into(),
-            AI_POSITION_KNOWLEDGE_LINK_MAX_MESSAGES.into(),
-        ],
-    ))
-    .all(dbx)
-    .await
-    .c(h!())?;
-    for source in candidates {
-        let spans = super::normalize::ground(&source.text, &known.name);
-        if !spans.is_empty() {
-            insert_linked_mentions(dbx, &source, name_key, &spans)
-                .await
-                .c(h!())?;
+    // Keyset pages over the window: the body prefilter may match many
+    // messages the full name does not («Циркон 91»).
+    let since = known.first_fact_at - window;
+    let mut cursor: (NaiveDateTime, i64) = (since - ChronoDuration::days(1), 0);
+    loop {
+        let candidates = LinkCandidate::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                "select s.text, s.message_id, s.message_at, s.group_master_key,
+                        s.group_is_secret, s.aor_ids, s.created_at
+                 from (
+                     select coalesce(message.body, '') as text, message.id as message_id,
+                            coalesce(item.datetime, message.timestamp, message.created_at) as message_at,
+                            message.created_at,
+                            {SOURCE_GROUP_COLUMNS}
+                     from signal_message message
+                     join sigint_inbox_item item on item.id = message.id
+                     {SOURCE_GROUP_SQL}
+                     where not message.deleted
+                       and (message.created_at, message.id) > ($6, $7)
+                       and lower(message.body) like $4
+                 ) s
+                 where {scope_condition}
+                   and s.message_at between $2 and $3
+                   and not exists (
+                       select 1 from ai_position_mention m
+                       where m.sigint_inbox_item_id = s.message_id and m.name_key = $5
+                   )
+                 order by s.created_at, s.message_id
+                 limit $8"
+            ),
+            [
+                scope_value.clone(),
+                since.into(),
+                (known.last_fact_at + window).into(),
+                format!("%{stem}%").into(),
+                name_key.into(),
+                cursor.0.into(),
+                cursor.1.into(),
+                AI_POSITION_KNOWLEDGE_LINK_BATCH.into(),
+            ],
+        ))
+        .all(dbx)
+        .await
+        .c(h!())?;
+        let Some(last) = candidates.last() else {
+            break;
+        };
+        cursor = (last.created_at, last.message_id);
+        for candidate in candidates {
+            let source = candidate.into_source();
+            // The canonical key also matches inflected or differently
+            // written occurrences.
+            let spans = super::normalize::ground(&source.text, name_key);
+            if !spans.is_empty() {
+                insert_linked_mentions(dbx, &source, name_key, &spans)
+                    .await
+                    .c(h!())?;
+            }
         }
     }
     Ok(())
+}
+
+#[derive(FromQueryResult)]
+struct LinkCandidate {
+    text: String,
+    message_id: i64,
+    message_at: NaiveDateTime,
+    group_master_key: Option<String>,
+    group_is_secret: bool,
+    aor_ids: Vec<i64>,
+    created_at: NaiveDateTime,
+}
+
+impl LinkCandidate {
+    fn into_source(self) -> super::worker::Source {
+        super::worker::Source {
+            text: self.text,
+            message_id: self.message_id,
+            message_at: self.message_at,
+            group_master_key: self.group_master_key,
+            group_is_secret: self.group_is_secret,
+            aor_ids: self.aor_ids,
+        }
+    }
 }
 
 /// Processes one due knowledge job; false when none is due.

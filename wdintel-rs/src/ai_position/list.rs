@@ -20,6 +20,7 @@ use crate::types::{Env, ShortContext};
 use crate::users::ensure_admin;
 use actix_identity::Identity;
 use actix_web::{post, web::Json};
+use anyhow::Context;
 use chrono::NaiveDateTime;
 use sea_orm::{
     ColumnTrait, DatabaseBackend, DatabaseConnection, EntityTrait,
@@ -38,8 +39,12 @@ pub async fn list_ai_position_mentions(
     req: Json<AiPositionMentionListReq>,
 ) -> Result<Json<AiPositionMentionListRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let allowed = admin_groups(&env, &user).await?;
-    Ok(Json(list(&env.dbx, req.into_inner(), allowed).await?))
+    let allowed = admin_groups(&env, &user).await.context(h!())?;
+    Ok(Json(
+        list(&env.dbx, req.into_inner(), allowed)
+            .await
+            .context(h!())?,
+    ))
 }
 
 #[post("/api/admin/ai-positions/knowledge/list")]
@@ -49,9 +54,11 @@ pub async fn list_ai_position_knowledge(
     req: Json<AiPositionKnowledgeListReq>,
 ) -> Result<Json<AiPositionKnowledgeListRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let allowed = admin_groups(&env, &user).await?;
+    let allowed = admin_groups(&env, &user).await.context(h!())?;
     Ok(Json(
-        list_knowledge(&env.dbx, req.into_inner(), allowed).await?,
+        list_knowledge(&env.dbx, req.into_inner(), allowed)
+            .await
+            .context(h!())?,
     ))
 }
 
@@ -61,7 +68,7 @@ async fn admin_groups(
     env: &Env,
     user: &Identity,
 ) -> Result<Vec<String>, AppError> {
-    let login = crate::users::login_id_from_identity(user)?;
+    let login = crate::users::login_id_from_identity(user).context(h!())?;
     Ok(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -118,7 +125,7 @@ pub(crate) fn filter_conditions(
         conditions.push(name_condition(&bounded(global)?, values));
     }
     for filter in filters {
-        let value = bounded(filter.value.trim())?;
+        let value = bounded(filter.value.trim()).context(h!())?;
         if value.is_empty() {
             continue;
         }
@@ -205,7 +212,8 @@ async fn list(
         req.global_filter.as_deref(),
         &req.column_filters,
         &mut values,
-    )?;
+    )
+    .context(h!())?;
     values.push(allowed_groups.into());
     conditions.push(format!(
         "(not coalesce(sg.is_secret, false) or m.group_master_key = any(${}))",
@@ -217,7 +225,8 @@ async fn list(
         req.after.as_ref(),
         "m.message_at",
         "m.id",
-    )?;
+    )
+    .context(h!())?;
     values.push(((limit + 1) as i64).into());
     let where_sql = if conditions.is_empty() {
         String::new()
@@ -372,7 +381,7 @@ fn knowledge_conditions(
                 .map(|filter| (filter.id.as_str(), filter.value.as_str())),
         );
     for (id, value) in pairs {
-        let value = bounded(value.trim())?;
+        let value = bounded(value.trim()).context(h!())?;
         if value.is_empty() {
             continue;
         }
@@ -432,7 +441,8 @@ async fn list_knowledge(
         req.after.as_ref(),
         "k.last_fact_at",
         "k.id",
-    )?;
+    )
+    .context(h!())?;
     values.push(((limit + 1) as i64).into());
     let sql = format!(
         "select k.id, k.scope_kind,
@@ -518,10 +528,24 @@ pub(crate) async fn positions_by_message(
     )
     .await
     .c(h!())?;
-    let known =
-        load_knowledge_for(dbx, &mentions, &coordinates, allowed_groups)
-            .await
-            .c(h!())?;
+    let scopes = knowledge::current_scopes(
+        dbx,
+        mentions
+            .iter()
+            .filter_map(|mention| mention.group_master_key.clone())
+            .collect(),
+    )
+    .await
+    .c(h!())?;
+    let known = load_knowledge_for(
+        dbx,
+        &mentions,
+        &coordinates,
+        &scopes,
+        allowed_groups,
+    )
+    .await
+    .c(h!())?;
     for mention in mentions {
         let Some(message_id) = mention.sigint_inbox_item_id else {
             continue;
@@ -533,7 +557,7 @@ pub(crate) async fn positions_by_message(
             .map(|coordinate| coordinate.mgrs)
             .collect();
         let knowledge = if own.is_empty() {
-            best_knowledge(&known, &mention)
+            best_knowledge(&known, &scopes, &mention)
         } else {
             None
         };
@@ -561,6 +585,7 @@ async fn load_knowledge_for(
     dbx: &DatabaseConnection,
     mentions: &[crate::entities::ai_position_mention::Model],
     coordinates: &HashMap<i64, Vec<AiPositionCoordinateItem>>,
+    scopes: &HashMap<String, Vec<knowledge::Scope>>,
     allowed_groups: &HashSet<String>,
 ) -> anyhow::Result<Vec<ai_position_knowledge::Model>> {
     let mut wanted = sea_orm::Condition::any();
@@ -569,18 +594,17 @@ async fn load_knowledge_for(
         .iter()
         .filter(|mention| !coordinates.contains_key(&mention.id))
     {
-        for scope in knowledge::scopes_for(
-            mention.group_master_key.as_deref(),
-            mention.group_is_secret,
-            &mention.aor_ids,
-        ) {
+        for scope in mention_scopes(scopes, mention) {
             any = true;
             wanted = wanted.add(
                 sea_orm::Condition::all()
                     .add(
                         ai_position_knowledge::Column::ScopeKind.eq(scope.kind),
                     )
-                    .add(ai_position_knowledge::Column::ScopeKey.eq(scope.key))
+                    .add(
+                        ai_position_knowledge::Column::ScopeKey
+                            .eq(scope.key.clone()),
+                    )
                     .add(
                         ai_position_knowledge::Column::NameKey
                             .eq(mention.name_key.clone()),
@@ -607,14 +631,11 @@ async fn load_knowledge_for(
 /// single group, then the most recent.
 fn best_knowledge<'a>(
     known: &'a [ai_position_knowledge::Model],
+    scopes: &HashMap<String, Vec<knowledge::Scope>>,
     mention: &crate::entities::ai_position_mention::Model,
 ) -> Option<&'a ai_position_knowledge::Model> {
     let window = chrono::Duration::days(AI_POSITION_KNOWLEDGE_WINDOW_DAYS);
-    let scopes = knowledge::scopes_for(
-        mention.group_master_key.as_deref(),
-        mention.group_is_secret,
-        &mention.aor_ids,
-    );
+    let scopes = mention_scopes(scopes, mention);
     known
         .iter()
         .filter(|row| {
@@ -626,6 +647,19 @@ fn best_knowledge<'a>(
                 && mention.message_at <= row.last_fact_at + window
         })
         .max_by_key(|row| (row.scope_kind == SCOPE_AOR, row.last_fact_at))
+}
+
+/// The scopes a mention's group belongs to now (privacy and AORs as they
+/// are, not as they were at parse time).
+fn mention_scopes<'a>(
+    scopes: &'a HashMap<String, Vec<knowledge::Scope>>,
+    mention: &crate::entities::ai_position_mention::Model,
+) -> &'a [knowledge::Scope] {
+    mention
+        .group_master_key
+        .as_ref()
+        .and_then(|group| scopes.get(group))
+        .map_or(&[], Vec::as_slice)
 }
 
 #[cfg(test)]

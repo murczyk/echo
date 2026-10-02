@@ -30,6 +30,8 @@ import {
 
 const DEFAULT_TEST_TEXT = 'Переміщення всл "Гудок" до "Циркон 9" (36T XT 75734 68963)';
 
+const PENDING_REFRESH_MS = 5000;
+
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : String(error);
 }
@@ -121,6 +123,20 @@ export function SettingsTab() {
 
   useEffect(() => {
     void load();
+  }, []);
+
+  // The queue fills in the background after «Обробити наявні» and drains as
+  // the worker runs; refresh only the count so unsaved edits stay.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void getAiPositionPage()
+        .then((next) =>
+          setPage((current) => (current ? { ...current, pendingJobs: next.pendingJobs } : current)),
+        )
+        // A failed refresh is retried on the next tick; load() reports errors.
+        .catch(() => undefined);
+    }, PENDING_REFRESH_MS);
+    return () => window.clearInterval(timer);
   }, []);
 
   async function run(action: () => Promise<string | null>, failure: string) {

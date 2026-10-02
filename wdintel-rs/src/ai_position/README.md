@@ -38,9 +38,14 @@ the window. Messages that contain the name get a mention without a model call
 scopes already know, even when the model reads them as callsigns
 («ЦИРКОН-9 на зв'язку»).
 
-Editing a message's text or deleting the message removes its mentions and
-facts and queues the affected recomputes, whether or not the worker is
-enabled. The edited text is then extracted again.
+Database triggers keep facts in step with their sources on every write
+path, whether or not the worker is enabled:
+
+- a changed message body drops the message's mentions, since their offsets
+  point into the old text; the edited text is then extracted again;
+- a deleted message also drops its documents' mentions;
+- any removed mention, including cascades from removed attachments, queues
+  the knowledge it may have fed for a recompute.
 
 A recompute considers facts from the 30 days before the position's latest fact.
 Facts within 300 m count as one place, weighted by certainty and recency

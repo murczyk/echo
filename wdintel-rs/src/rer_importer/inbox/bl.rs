@@ -2372,10 +2372,6 @@ async fn clear_body_derived_fields(
     crate::ai_settlement::worker::enqueue_if_enabled(txn, inbox_id)
         .await
         .c(h!())?;
-    // Old offsets would highlight text the edit replaced.
-    crate::ai_position::worker::invalidate_message(txn, inbox_id)
-        .await
-        .c(h!())?;
     crate::ai_position::worker::enqueue_message_if_enabled(txn, inbox_id)
         .await
         .c(h!())?;
