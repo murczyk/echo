@@ -391,7 +391,7 @@ pub const API_INTEGRATION_IGGY_PUBLISH_RETRY_2_MS: u64 = 100;
 pub const API_INTEGRATION_IGGY_PUBLISH_RETRY_3_MS: u64 = 1_000;
 pub const API_INTEGRATION_IGGY_ANALYTICS_WINDOW_SEC: u64 = 60;
 pub const API_INTEGRATION_IGGY_ENRICHMENT_ID_BATCH_SIZE: usize = 20_000;
-pub const API_INTEGRATION_IGGY_EVENT_BATCH_SIZE: u64 = 500;
+pub const API_INTEGRATION_IGGY_EVENT_BATCH_SIZE: u64 = 5_000;
 pub const API_INTEGRATION_IGGY_VISIBILITY_ID_BATCH_SIZE: u64 = 5_000;
 pub const API_INTEGRATION_IGGY_LOCK_NAMESPACE: &str = "iggy-integration:";
 pub const RQ_TIMEOUT_ALPINE_CONVERTER: u64 = 600;
@@ -1398,6 +1398,7 @@ pub struct Config {
     pub static_path: String,
     pub executable_path: String,
     pub fill_comp_freq_worker: bool,
+    pub api_integration_iggy_event_batch_size: Option<u64>,
     pub summary_table_callsign_threshold: Option<i64>,
     pub disable_cleanup_networks_worker: Option<bool>,
     pub disable_unit_location_v2_worker: Option<bool>,
@@ -1780,6 +1781,11 @@ impl AnalyticsConfig {
 }
 
 impl Config {
+    pub fn api_integration_iggy_event_batch_size(&self) -> u64 {
+        self.api_integration_iggy_event_batch_size
+            .unwrap_or(API_INTEGRATION_IGGY_EVENT_BATCH_SIZE)
+    }
+
     pub fn summary_table_callsign_threshold(&self) -> i64 {
         self.summary_table_callsign_threshold
             .unwrap_or(RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS)
