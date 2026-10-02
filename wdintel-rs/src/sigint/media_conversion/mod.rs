@@ -33,7 +33,10 @@ use zip::write::SimpleFileOptions;
 pub mod types;
 pub mod worker;
 
-use types::SignalMediaKmzConversionStatusRsp;
+use types::{
+    SignalMediaKmzConversionStatusRsp, SignalMediaKmzPreviewLineString,
+    SignalMediaKmzPreviewRsp,
+};
 
 pub async fn schedule_uploaded_media<C>(
     dbx: &C,
@@ -49,7 +52,7 @@ where
         "stored media count does not match upload count"
     );
     for (media, upload) in media.iter().zip(uploads) {
-        if !is_supported_source(media) || source_is_ready_kmz(media) {
+        if !is_supported_source(media) {
             continue;
         }
         if usize::try_from(media.size_bytes).c(h!())?
@@ -112,7 +115,7 @@ where
         .map(|job| (job.source_media_id, job.status))
         .collect::<HashMap<_, _>>();
     for media in media {
-        if is_eligible_source(media) && !source_is_ready_kmz(media) {
+        if is_eligible_source(media) {
             statuses.entry(media.id).or_insert_with(|| {
                 SIGINT_MEDIA_CONVERSION_STATUS_PENDING.to_string()
             });
@@ -167,6 +170,35 @@ pub async fn status(
         status: job.status,
         error: job.last_error,
         converted_file_name: job.converted_file_name,
+    }))
+}
+
+#[get("/api/messenger/media/{media_id}/kmz-conversion/preview")]
+pub async fn preview(
+    user: actix_identity::Identity,
+    env: web::Data<Env>,
+    path: web::Path<(Uuid,)>,
+) -> Result<web::Json<SignalMediaKmzPreviewRsp>, AppError> {
+    let (media, job) =
+        authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
+    let (storage_key, file_name) = completed_result(&job).c(h!())?;
+    let bytes = fetch_completed_result_bytes(env.as_ref(), &media, storage_key)
+        .await
+        .c(h!())?;
+    let parsed =
+        crate::palitra::kmz::parse_coordinates_from_file(file_name, &bytes)
+            .await
+            .c(h!())?;
+    Ok(web::Json(SignalMediaKmzPreviewRsp {
+        points: parsed.points,
+        line_strings: parsed
+            .line_strings
+            .into_iter()
+            .map(|line| SignalMediaKmzPreviewLineString {
+                coords: line.coords,
+                color: line.color,
+            })
+            .collect(),
     }))
 }
 
@@ -434,7 +466,7 @@ async fn authorized_job(
         .c(h!())?;
     let job = match job {
         Some(job) => job,
-        None if is_eligible_source(&media) && !source_is_ready_kmz(&media) => {
+        None if is_eligible_source(&media) => {
             schedule_stored_media(env, &media).await.c(h!())?
         }
         None => return Err(AppError::NotFound),
@@ -602,8 +634,10 @@ mod tests {
         cookie::Key, http::StatusCode, test as actix_test, web, App,
         HttpMessage, HttpRequest, HttpResponse,
     };
+    use opendal::{services::Memory, Operator};
     use sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
     use serial_test::serial;
+    use std::io::Cursor;
 
     async fn sign_in(
         request: HttpRequest,
@@ -626,6 +660,35 @@ mod tests {
             is_encrypted: true,
             storage_key: Some("test/route".to_string()),
         }
+    }
+
+    fn preview_kmz() -> Vec<u8> {
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        archive
+            .start_file("doc.kml", SimpleFileOptions::default())
+            .unwrap();
+        archive
+            .write_all(
+                br#"<kml><Document><Placemark><Point><coordinates>30,50</coordinates></Point></Placemark><Placemark><LineString><coordinates>30,50 31,51</coordinates></LineString></Placemark></Document></kml>"#,
+            )
+            .unwrap();
+        archive.finish().unwrap().into_inner()
+    }
+
+    fn with_memory_storage(env: &Env) -> Env {
+        let mut env = env.clone();
+        let config = crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "media-conversion-test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        };
+        env.s3_config = Some(crate::storage::S3Config::from(&config));
+        env.config.s3_config = Some(config);
+        env.s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        env
     }
 
     #[test]
@@ -813,7 +876,10 @@ mod tests {
             statuses.get(&native_media_id).map(String::as_str),
             Some(SIGINT_MEDIA_CONVERSION_STATUS_PENDING)
         );
-        assert!(!statuses.contains_key(&passthrough_media_id));
+        assert_eq!(
+            statuses.get(&passthrough_media_id).map(String::as_str),
+            Some(SIGINT_MEDIA_CONVERSION_STATUS_PENDING)
+        );
         assert!(!statuses.contains_key(&oversized_media_id));
 
         schedule_uploaded_media(&env.dbx, message.id, &media, &uploads)
@@ -824,7 +890,7 @@ mod tests {
             .all(&env.dbx)
             .await
             .unwrap();
-        assert_eq!(jobs.len(), 2);
+        assert_eq!(jobs.len(), 3);
         let job = jobs
             .iter()
             .find(|job| job.source_media_id == supported_media.id)
@@ -836,6 +902,12 @@ mod tests {
             .find(|job| job.source_media_id == native_media_id)
             .unwrap();
         assert_eq!(kml_job.source_file_name, "route.kml");
+        let kmz_job = jobs
+            .iter()
+            .find(|job| job.source_media_id == passthrough_media_id)
+            .unwrap();
+        assert_eq!(kmz_job.source_file_name, "route.kmz");
+        assert_eq!(kmz_job.status, SIGINT_MEDIA_CONVERSION_STATUS_PENDING);
         let statuses =
             load_statuses(&env.dbx, &[supported_media]).await.unwrap();
         assert_eq!(
@@ -847,6 +919,214 @@ mod tests {
             format!("{:x}", Md5::digest(supported_bytes))
         );
         assert_eq!(job.status, SIGINT_MEDIA_CONVERSION_STATUS_PENDING);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn legacy_preview_authorizes_completed_conversions_and_native_kmz_jobs(
+    ) {
+        let env = with_memory_storage(&cleanup().await.unwrap());
+        let identity = mk_test_identity().await.unwrap();
+        let login_id =
+            crate::users::login_id_by_name(&env.dbx, &identity.login)
+                .await
+                .unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            crate::entities::signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        crate::entities::signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(datasource_group.group_master_key)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let kmz = preview_kmz();
+        let converted_key = crate::messenger::media::store_asset(
+            &env,
+            web::Bytes::from(kmz.clone()),
+            Some("route_converted.kmz"),
+            Some(KMZ_CONTENT_TYPE),
+        )
+        .await
+        .unwrap();
+        let native_key = crate::messenger::media::store_asset(
+            &env,
+            web::Bytes::from(kmz.clone()),
+            Some("route.kmz"),
+            Some(KMZ_CONTENT_TYPE),
+        )
+        .await
+        .unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        let converted_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set("application/gpx+xml".to_string()),
+            file_ext: Set(Some("gpx".to_string())),
+            file_name: Set(Some("route.gpx".to_string())),
+            size_bytes: Set(3),
+            created_at: Set(now),
+            is_encrypted: Set(true),
+            storage_key: Set(Some("test/route.gpx".to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let native_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set(KMZ_CONTENT_TYPE.to_string()),
+            file_ext: Set(Some("kmz".to_string())),
+            file_name: Set(Some("route.kmz".to_string())),
+            size_bytes: Set(i64::try_from(kmz.len()).unwrap()),
+            created_at: Set(now),
+            is_encrypted: Set(true),
+            storage_key: Set(Some(native_key)),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let lazy_native_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set(KMZ_CONTENT_TYPE.to_string()),
+            file_ext: Set(Some("kmz".to_string())),
+            file_name: Set(Some("lazy.kmz".to_string())),
+            size_bytes: Set(i64::try_from(kmz.len()).unwrap()),
+            created_at: Set(now),
+            is_encrypted: Set(true),
+            storage_key: Set(Some(
+                crate::messenger::media::store_asset(
+                    &env,
+                    web::Bytes::from(kmz.clone()),
+                    Some("lazy.kmz"),
+                    Some(KMZ_CONTENT_TYPE),
+                )
+                .await
+                .unwrap(),
+            )),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        for (media, storage_key) in [
+            (&converted_media, Some(converted_key)),
+            (&native_media, None),
+        ] {
+            signal_message_media_conversion_job::ActiveModel {
+                id: NotSet,
+                signal_message_id: Set(message.id),
+                source_media_id: Set(media.id),
+                source_file_md5: Set(format!("{:x}", Md5::digest(b"source"))),
+                source_file_name: Set(media.file_name.clone().unwrap()),
+                source_content_type: Set(Some(media.content_type.clone())),
+                status: Set(SIGINT_MEDIA_CONVERSION_STATUS_DONE.to_string()),
+                conversion_receipt: Set(None),
+                converted_storage_key: Set(storage_key),
+                converted_file_name: Set(Some(
+                    "route_converted.kmz".to_string(),
+                )),
+                converted_size_bytes: Set(Some(
+                    i64::try_from(kmz.len()).unwrap(),
+                )),
+                created_at: NotSet,
+                last_attempt_at: Set(None),
+                attempt_count: Set(1),
+                last_error: Set(None),
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
+        let sessions = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::new(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(sessions, Key::generate()))
+                .route("/test/login/{login}", web::post().to(sign_in))
+                .service(status)
+                .service(preview),
+        )
+        .await;
+        let unauthorized = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri(&format!(
+                    "/api/messenger/media/{}/kmz-conversion/preview",
+                    native_media.id
+                ))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+        let login = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/test/login/{login_id}"))
+                .to_request(),
+        )
+        .await;
+        let cookie = login.response().cookies().next().unwrap().into_owned();
+        for media_id in [converted_media.id, native_media.id] {
+            let response: serde_json::Value =
+                actix_test::call_and_read_body_json(
+                    &app,
+                    actix_test::TestRequest::get()
+                        .uri(&format!(
+                        "/api/messenger/media/{media_id}/kmz-conversion/preview"
+                    ))
+                        .cookie(cookie.clone())
+                        .to_request(),
+                )
+                .await;
+            assert_eq!(response["points"].as_array().map(Vec::len), Some(1));
+            assert_eq!(
+                response["line_strings"].as_array().map(Vec::len),
+                Some(1)
+            );
+            assert!(response.get("polygons").is_none());
+        }
+        let lazy_status: SignalMediaKmzConversionStatusRsp =
+            actix_test::call_and_read_body_json(
+                &app,
+                actix_test::TestRequest::get()
+                    .uri(&format!(
+                        "/api/messenger/media/{}/kmz-conversion/status",
+                        lazy_native_media.id
+                    ))
+                    .cookie(cookie)
+                    .to_request(),
+            )
+            .await;
+        assert_eq!(lazy_status.status, SIGINT_MEDIA_CONVERSION_STATUS_PENDING);
+        assert!(signal_message_media_conversion_job::Entity::find()
+            .filter(
+                signal_message_media_conversion_job::Column::SourceMediaId
+                    .eq(lazy_native_media.id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
     }
 
     #[serial]

@@ -2731,6 +2731,16 @@ export type SignalMediaKmzConversionStatusRsp = {
   convertedFileName: string | null;
 };
 
+export type SignalMediaKmzPreviewLineString = {
+  coords: Array<Coords>;
+  color: string | null;
+};
+
+export type SignalMediaKmzPreviewRsp = {
+  points: Array<PalitraPoint>;
+  lineStrings: Array<SignalMediaKmzPreviewLineString>;
+};
+
 export type SigintZone = {
   name: string;
   createdAt: number;
