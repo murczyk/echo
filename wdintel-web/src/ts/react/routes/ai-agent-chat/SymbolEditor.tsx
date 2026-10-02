@@ -124,6 +124,7 @@ export function SymbolEditor({
 }) {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [query, setQuery] = useState('');
+  const [inputValue, setInputValue] = useState('');
   const [identityMenu, setIdentityMenu] = useState<HTMLElement | null>(null);
   const [showMore, setShowMore] = useState(false);
   const selectionKey = records.map((record) => `${record.id}:${record.sidc}`).join('|');
@@ -141,7 +142,12 @@ export function SymbolEditor({
     () => (catalog ? searchSymbolTypes(catalog, query, 40) : []),
     [catalog, query],
   );
-  const currentType = catalog && records[0] ? symbolTypeOf(catalog, records[0].sidc) : null;
+  const firstSidc = records[0]?.sidc ?? '';
+  // Stable identity: a new object each render would make the field reset.
+  const currentType = useMemo(
+    () => (catalog && firstSidc ? symbolTypeOf(catalog, firstSidc) : null),
+    [catalog, firstSidc],
+  );
   const echelons = catalog ? [...catalog.echelons, ...catalog.mobility] : [];
 
   async function apply() {
@@ -175,11 +181,19 @@ export function SymbolEditor({
           option.modifier1 === value.modifier1
         }
         getOptionLabel={(option) => option.label}
-        onInputChange={(_event, value) => setQuery(value)}
+        inputValue={inputValue}
+        onInputChange={(_event, value, reason) => {
+          setInputValue(value);
+          // A reset shows the selected label; only typing changes the search.
+          if (reason === 'input') setQuery(value);
+          if (reason === 'clear') setQuery('');
+        }}
         onChange={(_event, value) => setDraft((state) => ({ ...state, type: value }))}
         noOptionsText={catalog ? 'Нічого не знайдено' : 'Завантаження каталогу…'}
         renderOption={(props, option) => {
-          const { key, ...rest } = props as typeof props & { key: string };
+          // Labels repeat across symbol sets, so key by the code, not the label.
+          const { key: _labelKey, ...rest } = props as typeof props & { key: string };
+          const key = `${option.symbolSet}:${option.entity}:${option.modifier1}:${option.modifier2}`;
           const sample = records[0]
             ? previewSidc(records[0], {
                 symbolSet: option.symbolSet,

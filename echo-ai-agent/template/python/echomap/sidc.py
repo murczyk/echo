@@ -182,9 +182,16 @@ def _english_entity(text):
         return None
     for symbol_set in catalog()["symbolSets"]:
         for entity in symbol_set["entities"]:
-            if query == _normalize(entity["name"]):
+            if not _usable(entity):
+                continue
+            if query in (_normalize(entity["name"]), _normalize(entity.get("uk", ""))):
                 return symbol_set["code"], entity["code"]
     return None
+
+
+def _usable(entity):
+    """Something can draw it: milsymbol, or Delta's exported icon."""
+    return entity.get("drawable", True) or entity.get("deltaIcon", False)
 
 
 def search(query, limit=10):
@@ -196,10 +203,18 @@ def search(query, limit=10):
         haystack = _normalize(" ".join([alias["label"], alias["english"], *alias["terms"]]))
         if needle and needle in haystack:
             results.append((alias["symbolSet"], alias["entity"], f'{alias["label"]} ({alias["english"]})'))
+    # Entities named like the query come before ones that only match a parent.
+    ranked = []
     for symbol_set in catalog()["symbolSets"]:
         for entity in symbol_set["entities"]:
-            if needle and needle in _normalize(" ".join(entity["path"])):
-                results.append((symbol_set["code"], entity["code"], f'{symbol_set["name"]}: {" / ".join(entity["path"])}'))
+            if not needle or not _usable(entity):
+                continue
+            own = _normalize(" ".join([entity.get("uk", ""), entity["name"]]))
+            names = _normalize(" ".join([*entity.get("ukPath", []), *entity["path"]]))
+            if needle in own or needle in names:
+                path = " / ".join(entity.get("ukPath") or entity["path"])
+                ranked.append((0 if needle in own else 1, (symbol_set["code"], entity["code"], f'{symbol_set["uk"]}: {path}')))
+    results.extend(item for _, item in sorted(ranked, key=lambda pair: pair[0]))
     unique = []
     for item in results:
         if item[:2] not in [seen[:2] for seen in unique]:
@@ -217,7 +232,7 @@ def describe(code):
     if symbol_set:
         entity = next((item for item in symbol_set["entities"] if item["code"] == value["entity"]), None)
     pieces = [identity, symbol_set["uk"] if symbol_set else f"набір {value['symbolSet']}",
-              " / ".join(entity["path"]) if entity else f"сутність {value['entity']}"]
+              " / ".join(entity.get("ukPath") or entity["path"]) if entity else f"сутність {value['entity']}"]
     if value["status"] != "0":
         pieces.append(_label(data["statuses"], value["status"]))
     if value["hq"] != "0":

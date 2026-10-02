@@ -1,4 +1,5 @@
 import * as milsymbol from 'milsymbol';
+import { DELTA_ICON_SIDCS } from './delta-icons';
 
 // Imported only from lazily loaded map chunks: milsymbol is large.
 // The package is CommonJS without a typed default export.
@@ -43,8 +44,18 @@ function identitySymbol(sidc: string, size: number): SymbolImage {
   };
 }
 
-/** Draws any APP-6(D) SIDC; codes milsymbol rejects get an identity-colored
- * frame so a typo stays visible instead of looking like a valid symbol. */
+/** Delta's own icon for a code milsymbol cannot draw: exported for the unknown
+ * and hostile identities only (suspect uses hostile, pending uses unknown). */
+export function deltaIconUrl(sidc: string): string | null {
+  if (!/^\d{20}$/.test(sidc)) return null;
+  const identity = { '0': '1', '1': '1', '5': '6', '6': '6' }[sidc[3]];
+  if (!identity) return null;
+  const base = `100${identity}${sidc.slice(4, 6)}0000${sidc.slice(10, 16)}0000`;
+  return DELTA_ICON_SIDCS.has(base) ? `/img/google_earth_icons/${base}.png` : null;
+}
+
+/** Draws any APP-6(D) SIDC; codes milsymbol rejects use Delta's icon when one
+ * exists, otherwise an identity-colored frame so a typo stays visible. */
 export function symbolImage(sidc: string, size = 24): SymbolImage {
   const key = `${sidc}:${size}`;
   const cached = cache.get(key);
@@ -62,16 +73,37 @@ export function symbolImage(sidc: string, size = 24): SymbolImage {
           anchorY: anchor.y,
         };
       })()
-    : identitySymbol(sidc, size);
+    : (deltaSymbol(sidc, size) ?? identitySymbol(sidc, size));
   cache.set(key, image);
   return image;
 }
 
+function deltaSymbol(sidc: string, size: number): SymbolImage | null {
+  const url = deltaIconUrl(sidc);
+  // The exported icons are square with the frame centred.
+  const side = Math.round(size * 1.4);
+  return url ? { url, width: side, height: side, anchorX: side / 2, anchorY: side / 2 } : null;
+}
+
 export function isDrawableSidc(sidc: string): boolean {
-  return /^\d{20}$/.test(sidc) && Boolean(new ms.Symbol(sidc).isValid());
+  return (
+    /^\d{20}$/.test(sidc) && (Boolean(new ms.Symbol(sidc).isValid()) || deltaIconUrl(sidc) !== null)
+  );
 }
 
 /** PNG bytes (base64) for KMZ export; Google Earth does not read SVG icons. */
+/** Delta's PNG for a code milsymbol cannot draw, so KMZ export matches the map. */
+export async function deltaPngBase64(sidc: string): Promise<string | null> {
+  const url = deltaIconUrl(sidc);
+  if (!url) return null;
+  const response = await fetch(url);
+  if (!response.ok) return null;
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
 export function symbolPngBase64(sidc: string, size = 40): string | null {
   const symbol = new ms.Symbol(sidc, { size });
   if (!symbol.isValid()) return null;

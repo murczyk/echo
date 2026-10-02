@@ -16,7 +16,10 @@ interface CatalogAlias {
 
 interface Catalog {
   aliases: CatalogAlias[];
-  symbolSets: Array<{ code: string; entities: Array<{ code: string; name: string }> }>;
+  symbolSets: Array<{
+    code: string;
+    entities: Array<{ code: string; name: string; uk?: string; drawable?: boolean; deltaIcon?: boolean }>;
+  }>;
 }
 
 export interface SymbolRequest {
@@ -109,9 +112,15 @@ export class SidcResolver {
     }
     if (best) return best.alias;
     const english = haystack.trim();
+    // Punctuation-only text must not match entries that lack a name.
+    if (!english) return null;
     for (const set of this.load().symbolSets) {
-      const entity = set.entities.find((item) => normalize(item.name).trim() === english);
-      if (entity) return { label: entity.name, terms: [], symbolSet: set.code, entity: entity.code, modifier1: "00", modifier2: "00", hq: "0" };
+      // Delta's Ukrainian object-type names, then the APP-6D English names.
+      // Only types something can draw: milsymbol, or Delta's exported icon.
+      const usable = set.entities.filter((item) => item.drawable !== false || item.deltaIcon);
+      const entity = usable.find((item) => item.uk && normalize(item.uk).trim() === english)
+        ?? usable.find((item) => normalize(item.name).trim() === english);
+      if (entity) return { label: entity.uk ?? entity.name, terms: [], symbolSet: set.code, entity: entity.code, modifier1: "00", modifier2: "00", hq: "0" };
     }
     return null;
   }

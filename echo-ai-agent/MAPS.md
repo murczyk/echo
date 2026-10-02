@@ -220,26 +220,26 @@ markdown link. A successful answer that links a nonempty draft publishes that
 draft; links to empty or unknown drafts are removed.
 
 Symbol names come from the generated
-[APP-6(D) catalog](../scripts/symbology/README.md), shared by the map UI and the
-`echomap` library. Lines, polygons and attachment generation are follow-up work.attachment generation are follow-up work.
+[APP-6(D) catalog](../scripts/symbology/README.md), with Delta's Ukrainian
+object-type names, shared by the map UI and the `echomap` library. Lines, polygons and attachment generation are follow-up work.attachment generation are follow-up work.
 
 ## Rollout
 
 Release `2026.09.29.8` requires migration
 `m20260929_152018_ai_agent_map_artifacts` and the matching backend/frontend.
 That migration extends the request-event constraint and adds the summary column
-and partial index. It remains required. Release `2026.10.01.5` adds map editing
+and partial index. It remains required. Release `2026.10.01.6` adds map editing
 and scripts and also requires `m20260929_195200_ai_agent_map_workspace`
 (`ai_agent_map`, `ai_agent_map_revision`, `ai_agent_request_map_target`). Deploy
 the migrations and Echo build, restart backend/workers, then upgrade the selected
-idle namespace. Do not run the `2026.10.01.5` runner against an older backend. Until the namespace is upgraded, chat requests fail with «ШІ-агент оновлюється. Повторіть запит за кілька хвилин.»; upgrade the namespace right after restarting the backend.
-Runners `2026.10.01.1`–`.4`, `2026.09.29.8` and `.9` remain in the compatible set. The map tables are excluded
+idle namespace. Do not run the `2026.10.01.6` runner against an older backend. Until the namespace is upgraded, chat requests fail with «ШІ-агент оновлюється. Повторіть запит за кілька хвилин.»; upgrade the namespace right after restarting the backend.
+Runners `2026.10.01.1`–`.5`, `2026.09.29.8` and `.9` remain in the compatible set. The map tables are excluded
 from analytics replication; the migration impact manifest and
 `deploy/clickhouse/env/tables-exclude.txt` both record that exclusion.
 
 ```sh
-just ai-control-panel upgrade --host local --release 2026.10.01.5 --dry-run
-just ai-control-panel upgrade --host local --release 2026.10.01.5
+just ai-control-panel upgrade --host local --release 2026.10.01.6 --dry-run
+just ai-control-panel upgrade --host local --release 2026.10.01.6
 ```
 
 Replace `local` with each explicitly selected installation. The
