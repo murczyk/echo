@@ -1169,6 +1169,9 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 nativePreview =
                     String.endsWith ".kml" (String.toLower displayFileName)
                         || String.endsWith ".kmz" (String.toLower displayFileName)
+                        || String.contains "kml" (String.toLower attachment.contentType)
+                        || String.contains "kmz" (String.toLower attachment.contentType)
+                        || String.contains "google-earth" (String.toLower attachment.contentType)
 
                 transcriptionBesidePlayer =
                     Config.featureAudioTranscriptionBesidePlayer

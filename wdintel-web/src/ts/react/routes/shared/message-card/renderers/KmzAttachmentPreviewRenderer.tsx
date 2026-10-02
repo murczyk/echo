@@ -263,13 +263,12 @@ export function KmzAttachmentPreviewRenderer({
   }, [conversionReloadKey, mediaId, nativeFormat, reportConversionError, reportError]);
 
   const convertedReady = status === 'done';
+  const originalFileName = mediaDownloadAttr(source.fileName, 'attachment');
+  const originalDownload = { href: source.originalHref, fileName: originalFileName };
   const downloadItems: AttachmentPreviewDownloadItem[] = [
     {
       label: 'Завантажити оригінал',
-      download: {
-        href: source.originalHref,
-        fileName: mediaDownloadAttr(source.fileName, 'attachment'),
-      },
+      download: originalDownload,
       downloadKey: `media:${source.mediaId}`,
     },
   ];
@@ -354,10 +353,7 @@ export function KmzAttachmentPreviewRenderer({
       header={
         <MessageCardAttachmentPreviewHeader
           fileName={source.fileName}
-          download={{
-            href: source.originalHref,
-            fileName: mediaDownloadAttr(source.fileName, 'attachment'),
-          }}
+          download={originalDownload}
           downloadKey={`media:${source.mediaId}`}
           downloadItems={downloadItems}
           isDownloadStarting={isDownloadStarting}

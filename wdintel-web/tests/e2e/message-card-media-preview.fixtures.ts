@@ -50,6 +50,39 @@ const LEGACY_KML_PREVIEW_MEDIA = [
     kmz_conversion_status: null,
   },
   {
+    id: 'legacy-kml-without-extension',
+    content_type: 'application/vnd.google-earth.kml+xml',
+    file_name: 'legacy-route',
+    size_bytes: 256,
+    href: '/test-assets/message-card-media-preview/legacy-kml-without-extension',
+    transcription: null,
+    ocr: null,
+    summary: null,
+    kmz_conversion_status: null,
+  },
+  {
+    id: 'legacy-renamed-kmz',
+    content_type: 'application/vnd.google-earth.kmz',
+    file_name: 'legacy-route.bin',
+    size_bytes: 256,
+    href: '/test-assets/message-card-media-preview/legacy-renamed-kmz',
+    transcription: null,
+    ocr: null,
+    summary: null,
+    kmz_conversion_status: null,
+  },
+  {
+    id: 'legacy-not-geodata',
+    content_type: 'application/json',
+    file_name: 'legacy-not-geodata.bin',
+    size_bytes: 256,
+    href: '/test-assets/message-card-media-preview/e2e-route.kml',
+    transcription: null,
+    ocr: null,
+    summary: null,
+    kmz_conversion_status: null,
+  },
+  {
     id: 'legacy-kml-limit',
     content_type: 'application/vnd.google-earth.kml+xml',
     file_name: 'legacy-oversized.kml',
@@ -77,7 +110,7 @@ const MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX = '/test-assets/message-card-media
 
 const TRANSPARENT_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP7bq8W2QAAAABJRU5ErkJggg==';
-const KML_PREVIEW_FIXTURE = `<?xml version="1.0"?><kml><Document><Placemark><name>Preview point</name><Style><IconStyle><color>ff0000ff</color></IconStyle></Style><Point><coordinates>30.52,50.45</coordinates></Point></Placemark><Placemark><Style><LineStyle><color>ff00ff00</color></LineStyle></Style><LineString><coordinates>30.5,50.4 30.6,50.5</coordinates></LineString></Placemark><Placemark><Style><LineStyle><color>ffff0000</color></LineStyle><PolyStyle><color>ffff0000</color></PolyStyle></Style><Polygon><outerBoundaryIs><LinearRing><coordinates>30.45,50.4 30.6,50.4 30.6,50.55 30.45,50.4</coordinates></LinearRing></outerBoundaryIs><innerBoundaryIs><LinearRing><coordinates>30.5,50.45 30.55,50.45 30.5,50.5 30.5,50.45</coordinates></LinearRing></innerBoundaryIs></Polygon></Placemark></Document></kml>`;
+export const KML_PREVIEW_FIXTURE = `<?xml version="1.0"?><kml><Document><Placemark><name>Preview point</name><Style><IconStyle><color>ff0000ff</color></IconStyle></Style><Point><coordinates>30.52,50.45</coordinates></Point></Placemark><Placemark><Style><LineStyle><color>ff00ff00</color></LineStyle></Style><LineString><coordinates>30.5,50.4 30.6,50.5</coordinates></LineString></Placemark><Placemark><Style><LineStyle><color>ffff0000</color></LineStyle><PolyStyle><color>ffff0000</color></PolyStyle></Style><Polygon><outerBoundaryIs><LinearRing><coordinates>30.45,50.4 30.6,50.4 30.6,50.55 30.45,50.4</coordinates></LinearRing></outerBoundaryIs><innerBoundaryIs><LinearRing><coordinates>30.5,50.45 30.55,50.45 30.5,50.5 30.5,50.45</coordinates></LinearRing></innerBoundaryIs></Polygon></Placemark></Document></kml>`;
 const KMZ_PREVIEW_FIXTURE = Buffer.from(zipSync({ 'doc.kml': strToU8(KML_PREVIEW_FIXTURE) }));
 const DENSE_POINT_KML_FIXTURE = `<?xml version="1.0"?><kml><Document><Style id="dense"><IconStyle><color>ff00ffff</color></IconStyle></Style>${Array.from(
   { length: 9482 },
@@ -511,6 +544,24 @@ export async function installMessageCardMediaPreviewAssetRoutes(
     const pathname = new URL(route.request().url()).pathname;
     const fileName = pathname.split('/').pop() ?? '';
 
+    if (fileName === 'legacy-kml-without-extension') {
+      await route.fulfill({
+        contentType: 'application/vnd.google-earth.kml+xml',
+        headers: { 'content-disposition': "inline; filename*=UTF-8''legacy-route" },
+        body: KML_PREVIEW_FIXTURE,
+      });
+      return;
+    }
+
+    if (fileName === 'legacy-renamed-kmz') {
+      await route.fulfill({
+        contentType: 'application/vnd.google-earth.kmz',
+        headers: { 'content-disposition': "inline; filename*=UTF-8''legacy-route.bin" },
+        body: KMZ_PREVIEW_FIXTURE,
+      });
+      return;
+    }
+
     if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1) {
       if (image1Override) {
         await fulfillAsset(route, image1Override.body, image1Override.contentType);
@@ -908,6 +959,10 @@ export async function openLegacyKmlPreviewHost(
         converted_file_name: 'legacy-route_converted.kmz',
       }),
     }),
+  );
+  await page.route(
+    '**/api/messenger/media/legacy-kml-without-extension/kmz-conversion/status',
+    (route) => route.fulfill({ status: 404, body: 'Conversion job not found' }),
   );
   await page.route('**/api/messenger/media/legacy-kml/kmz-conversion/download', (route) =>
     route.fulfill({

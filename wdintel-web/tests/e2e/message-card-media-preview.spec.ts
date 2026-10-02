@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 
 import {
   createDeferredMediaResponse,
+  KML_PREVIEW_FIXTURE,
   MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES,
   openLegacyKmlPreviewHost,
   openMessageCardPreviewHost,
@@ -21,13 +22,27 @@ async function expectDownloadFile(locator: Locator, fileName: string) {
   expect(download.suggestedFilename()).toBe(fileName);
 }
 
-async function expectKmzDownloadChoice(dialog: Locator, label: string, fileName: string) {
+async function expectKmzDownloadChoice(
+  dialog: Locator,
+  label: string,
+  fileName?: string,
+  contents?: string,
+) {
   const button = dialog.getByRole('button', { name: 'Скачати' });
   await button.focus();
   await button.press('Enter');
   const item = dialog.page().getByRole('menuitem', { name: label });
   await expect(item).toBeVisible();
-  await expectDownloadFile(item, fileName);
+  const [download] = await Promise.all([
+    item.page().waitForEvent('download'),
+    item.click({ force: true, noWaitAfter: true }),
+  ]);
+  if (fileName != null) expect(download.suggestedFilename()).toBe(fileName);
+  if (contents != null) {
+    const path = await download.path();
+    if (path == null) throw new Error('Download has no local file');
+    expect(await readFile(path, 'utf8')).toBe(contents);
+  }
 }
 
 async function createPlayableVideoFixture(page: Page): Promise<Buffer> {
@@ -328,7 +343,7 @@ test.describe('@smoke @regression', () => {
         ['legacy-route.kmz', 'Попередній перегляд KMZ', 'e2e-route.kmz'],
       ] as const) {
         const beforeRequests = requests.length;
-        await page.getByRole('button', { name: fileName }).click();
+        await page.getByRole('button', { name: fileName, exact: true }).click();
         const dialog = page.getByRole('dialog', { name: label });
         await expect(dialog).toBeVisible();
         await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
@@ -354,6 +369,70 @@ test.describe('@smoke @regression', () => {
         await expect.poll(() => downloads).toBe(downloadsBefore + 1);
         await dialog.getByRole('button', { name: 'Закрити' }).click();
       }
+
+      const beforeMimeOnlyKmlRequests = requests.length;
+      const mimeOnlyKmlSource = page.waitForResponse(
+        (response) =>
+          response
+            .url()
+            .includes('/test-assets/message-card-media-preview/legacy-kml-without-extension') &&
+          response.request().method() === 'GET',
+      );
+      const mimeOnlyKmlStatus = page.waitForResponse(
+        (response) =>
+          response
+            .url()
+            .includes('/api/messenger/media/legacy-kml-without-extension/kmz-conversion/status') &&
+          response.request().method() === 'GET',
+      );
+      await page.getByRole('button', { name: 'legacy-route', exact: true }).click();
+      const mimeOnlyKmlDialog = page.getByRole('dialog', { name: 'Попередній перегляд KML' });
+      await expect(mimeOnlyKmlDialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      expect((await mimeOnlyKmlSource).headers()['content-disposition']).toBe(
+        "inline; filename*=UTF-8''legacy-route",
+      );
+      expect((await mimeOnlyKmlStatus).status()).toBe(404);
+      await expect
+        .poll(() => requests.slice(beforeMimeOnlyKmlRequests))
+        .toContainEqual(
+          expect.stringContaining(
+            '/api/messenger/media/legacy-kml-without-extension/kmz-conversion/status',
+          ),
+        );
+      await expect(
+        mimeOnlyKmlDialog.getByRole('button', { name: 'Повторити конвертацію KMZ' }),
+      ).toHaveCount(0);
+      await mimeOnlyKmlDialog.getByRole('button', { name: 'Скачати' }).click();
+      await expect(page.getByRole('menuitem', { name: 'Завантажити оригінал' })).toBeVisible();
+      await expect(
+        page.getByRole('menuitem', { name: 'Завантажити конвертований KMZ' }),
+      ).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expectKmzDownloadChoice(
+        mimeOnlyKmlDialog,
+        'Завантажити оригінал',
+        undefined,
+        `${KML_PREVIEW_FIXTURE}\n`,
+      );
+      await mimeOnlyKmlDialog.getByRole('button', { name: 'Закрити' }).click();
+
+      const beforeMimeOnlyKmzRequests = requests.length;
+      await page.getByRole('button', { name: 'legacy-route.bin', exact: true }).click();
+      const mimeOnlyKmzDialog = page.getByRole('dialog', { name: 'Попередній перегляд KMZ' });
+      await expect(mimeOnlyKmzDialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      expect(requests.slice(beforeMimeOnlyKmzRequests)).not.toContainEqual(
+        expect.stringContaining('/kmz-conversion/status'),
+      );
+      await mimeOnlyKmzDialog.getByRole('button', { name: 'Скачати' }).click();
+      await expect(page.getByRole('menuitem', { name: 'Завантажити оригінал' })).toBeVisible();
+      await expect(
+        page.getByRole('menuitem', { name: 'Завантажити конвертований KMZ' }),
+      ).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expectKmzDownloadChoice(mimeOnlyKmzDialog, 'Завантажити оригінал', 'legacy-route.bin');
+      await mimeOnlyKmzDialog.getByRole('button', { name: 'Закрити' }).click();
+
+      await expect(page.getByRole('link', { name: 'legacy-not-geodata.bin' })).toBeVisible();
 
       const beforeLimitRequests = requests.length;
       await page.getByRole('button', { name: 'legacy-oversized.kml' }).click();
