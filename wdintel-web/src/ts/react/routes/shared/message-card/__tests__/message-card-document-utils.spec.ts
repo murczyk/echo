@@ -17,6 +17,7 @@ import {
   isXlsxAttachment,
   isXlsAttachment,
   isCsvAttachment,
+  getDocumentKind,
 } from '../message-card-document-utils';
 
 describe('message-card document utils', () => {
@@ -209,5 +210,33 @@ describe('message-card document utils', () => {
     const documents = collectMessageDocuments(msg);
 
     expect(documents.map((document) => document.kind)).toEqual(['txt', 'md', 'pdf']);
+  });
+
+  it('recognizes ZIPs while retaining specific ZIP-based formats', () => {
+    expect(getDocumentKind({ href: 'https://example.test/a.zip' } as MessageMediaInfo)).toBe('zip');
+    expect(
+      getDocumentKind({
+        href: 'https://example.test/a',
+        contentType: 'application/x-zip-compressed; charset=binary',
+      } as MessageMediaInfo),
+    ).toBe('zip');
+    expect(
+      getDocumentKind({
+        href: 'https://example.test/a.docx',
+        contentType: 'application/zip',
+      } as MessageMediaInfo),
+    ).toBe('docx');
+    expect(
+      getDocumentKind({
+        href: 'https://example.test/a.xlsx',
+        contentType: 'application/zip',
+      } as MessageMediaInfo),
+    ).toBe('xlsx');
+    expect(
+      getDocumentKind({
+        href: 'https://example.test/a.kmz',
+        contentType: 'application/zip',
+      } as MessageMediaInfo),
+    ).toBe('unsupported');
   });
 });

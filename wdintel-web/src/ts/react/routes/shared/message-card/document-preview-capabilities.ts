@@ -17,6 +17,7 @@ const DOCUMENT_PREVIEW_CAPABILITIES: Record<
   csv: { zoomable: true, carouselSwipeable: false },
   txt: { zoomable: false, carouselSwipeable: true },
   md: { zoomable: false, carouselSwipeable: true },
+  zip: { zoomable: false, carouselSwipeable: false },
   unsupported: { zoomable: false, carouselSwipeable: true },
 };
 

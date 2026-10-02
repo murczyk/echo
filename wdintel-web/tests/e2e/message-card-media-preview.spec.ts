@@ -77,6 +77,13 @@ async function openMarkdownPreview(page: Page) {
   return page.getByRole('dialog', { name: 'Перегляд документа' });
 }
 
+async function openZipPreview(page: Page) {
+  const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+  if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+  await page.getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip }).click();
+  return page.getByRole('dialog', { name: 'Перегляд документа' });
+}
+
 async function openLegacyOfficePreview(page: Page, name: string) {
   const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
   if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
@@ -117,6 +124,23 @@ async function verifyEscapeClose(page: Page, dialog: Locator, reopen: () => Prom
 
 // Regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke @regression', () => {
+  for (const host of ['duty', 'analysis'] as const) {
+    test(`${host} ZIP previews download a member and navigate to an adjacent document`, async ({
+      page,
+    }) => {
+      await openMessageCardPreviewHost(page, host, { withZip: true });
+      const dialog = await openZipPreview(page);
+      await expect(dialog.getByText('nested/member.txt')).toBeVisible();
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        dialog.getByRole('button', { name: 'Скачати nested/member.txt' }).click(),
+      ]);
+      expect(download.suggestedFilename()).toBe('member.txt');
+      await dialog.getByRole('button', { name: 'Попереднє' }).click();
+      await expect(dialog.getByText('E2E Markdown preview')).toBeVisible();
+    });
+  }
+
   for (const host of ['duty', 'analysis'] as const) {
     // Regression: https://github.com/echoua/echo/issues/3405
     test(`${host} message card preview smoke covers the shared contract`, async ({ page }) => {

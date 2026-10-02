@@ -1,6 +1,7 @@
 import { expect, type Page, type Route } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { zipSync, strToU8 } from 'fflate';
 
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
@@ -18,6 +19,7 @@ export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
   markdown: 'e2e-preview.md',
   doc: 'e2e-preview.doc',
   xls: 'e2e-preview.xls',
+  zip: 'e2e-preview.zip',
 } as const;
 
 const MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX = '/test-assets/message-card-media-preview';
@@ -101,6 +103,9 @@ const MARKDOWN_PREVIEW_TEXT = [
   '',
   '[Safe link](https://example.test/safe-link)',
 ].join('\n');
+const ZIP_PREVIEW_FIXTURE = Buffer.from(
+  zipSync({ 'nested/member.txt': strToU8('ZIP E2E member') }),
+);
 const LEGACY_OFFICE_FIXTURES_DIRECTORY = resolve(process.cwd(), 'tests/fixtures/legacy-office');
 const [DOC_PREVIEW_FIXTURE, XLS_PREVIEW_FIXTURE] = await Promise.all([
   readFile(resolve(LEGACY_OFFICE_FIXTURES_DIRECTORY, 'structured-document.doc')),
@@ -117,6 +122,7 @@ function buildMessageCardMediaPreviewMessage({
   messageText,
   withCompletedOcrAndSummary = false,
   withLegacyOffice = false,
+  withZip = false,
 }: {
   withPolishContent?: boolean;
   withPartialCoordinateError?: boolean;
@@ -127,6 +133,7 @@ function buildMessageCardMediaPreviewMessage({
   messageText?: string;
   withCompletedOcrAndSummary?: boolean;
   withLegacyOffice?: boolean;
+  withZip?: boolean;
 } = {}): Record<string, unknown> {
   const image1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`;
   const image2 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2}`;
@@ -137,6 +144,7 @@ function buildMessageCardMediaPreviewMessage({
   const markdown = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown}`;
   const doc = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.doc}`;
   const xls = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.xls}`;
+  const zip = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip}`;
 
   return {
     messageUid: 'e2e-message-card-preview',
@@ -232,6 +240,17 @@ function buildMessageCardMediaPreviewMessage({
             },
           ]
         : []),
+      ...(withZip
+        ? [
+            {
+              id: 'e2e-zip',
+              content_type: 'application/zip',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip,
+              size_bytes: ZIP_PREVIEW_FIXTURE.byteLength,
+              href: zip,
+            },
+          ]
+        : []),
       {
         id: 'e2e-audio',
         content_type: 'audio/wav',
@@ -288,6 +307,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
   messageText,
   withCompletedOcrAndSummary = false,
   withLegacyOffice = false,
+  withZip = false,
 }: {
   withPolishContent?: boolean;
   withPartialCoordinateError?: boolean;
@@ -298,6 +318,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
   messageText?: string;
   withCompletedOcrAndSummary?: boolean;
   withLegacyOffice?: boolean;
+  withZip?: boolean;
 } = {}): InboxMessagesRspRaw {
   return {
     inbox_items: [
@@ -313,6 +334,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
           messageText,
           withCompletedOcrAndSummary,
           withLegacyOffice,
+          withZip,
         }) as never,
       ],
     ],
@@ -396,6 +418,10 @@ export async function installMessageCardMediaPreviewAssetRoutes(
       await fulfillAsset(route, XLS_PREVIEW_FIXTURE, 'application/vnd.ms-excel');
       return;
     }
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip) {
+      await fulfillAsset(route, ZIP_PREVIEW_FIXTURE, 'application/zip');
+      return;
+    }
 
     await route.fulfill({ status: 404, body: 'Not found' });
   });
@@ -414,6 +440,7 @@ async function installMessageCardMediaPreviewHostFixture(
   enableAudioTranscription: boolean,
   withCompletedOcrAndSummary: boolean,
   withLegacyOffice: boolean,
+  withZip: boolean,
   messageReferenceResponse: unknown | undefined,
   messageReferenceDelayMs: number,
   signalGroups: InboxMessagesRspRaw['signal_groups'] | undefined,
@@ -429,6 +456,7 @@ async function installMessageCardMediaPreviewHostFixture(
       messageText,
       withCompletedOcrAndSummary,
       withLegacyOffice,
+      withZip,
     }),
     signal_groups: signalGroups ?? [],
   };
@@ -553,6 +581,7 @@ export async function openMessageCardPreviewHost(
     enableAudioTranscription = false,
     withCompletedOcrAndSummary = false,
     withLegacyOffice = false,
+    withZip = false,
     deferredImageResponse,
     messageReferenceResponse,
     messageReferenceDelayMs = 0,
@@ -570,6 +599,7 @@ export async function openMessageCardPreviewHost(
     enableAudioTranscription?: boolean;
     withCompletedOcrAndSummary?: boolean;
     withLegacyOffice?: boolean;
+    withZip?: boolean;
     deferredImageResponse?: DeferredMediaResponse;
     messageReferenceResponse?: unknown;
     messageReferenceDelayMs?: number;
@@ -590,6 +620,7 @@ export async function openMessageCardPreviewHost(
     enableAudioTranscription,
     withCompletedOcrAndSummary,
     withLegacyOffice,
+    withZip,
     messageReferenceResponse,
     messageReferenceDelayMs,
     signalGroups,

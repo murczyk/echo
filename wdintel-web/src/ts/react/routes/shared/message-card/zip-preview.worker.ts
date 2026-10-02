@@ -1,0 +1,236 @@
+import { Inflate } from 'fflate';
+import type { ZipEntry, ZipListing } from './zip-preview.types';
+
+const MAX_ENTRIES = 1000;
+const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
+const MAX_MEMBER_BYTES = 50 * 1024 * 1024;
+const MAX_PATH_LENGTH = 1024;
+const MAX_PATH_DEPTH = 32;
+export const ZIP_INFLATE_INPUT_CHUNK_BYTES = 16 * 1024;
+const decoder = new TextDecoder('utf-8', { fatal: true });
+
+function fail(message: string): never {
+  throw new Error(message);
+}
+function u16(bytes: Uint8Array, offset: number) {
+  return bytes[offset]! | (bytes[offset + 1]! << 8);
+}
+function u32(bytes: Uint8Array, offset: number) {
+  return (u16(bytes, offset) | (u16(bytes, offset + 2) << 16)) >>> 0;
+}
+function has(bytes: Uint8Array, offset: number, size: number) {
+  return offset >= 0 && size >= 0 && offset + size <= bytes.length;
+}
+function crc32(bytes: Uint8Array) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+function decodePath(bytes: Uint8Array): string {
+  let path: string;
+  try {
+    path = decoder.decode(bytes);
+  } catch {
+    fail('Архів містить некоректне ім’я файлу.');
+  }
+  if (
+    !path ||
+    path.length > MAX_PATH_LENGTH ||
+    path.includes('\\') ||
+    path.startsWith('/') ||
+    /^[a-z]:/i.test(path) ||
+    path.split('/').some((part) => part === '..') ||
+    path.split('/').length > MAX_PATH_DEPTH
+  )
+    fail('Архів містить небезпечний або надто вкладений шлях.');
+  return path;
+}
+function eocdOffset(bytes: Uint8Array) {
+  for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 0x10016); offset -= 1)
+    if (u32(bytes, offset) === 0x06054b50) return offset;
+  fail('Архів пошкоджений або обрізаний: не знайдено центральний каталог.');
+}
+export function parseZipListing(buffer: ArrayBuffer): ZipListing {
+  const bytes = new Uint8Array(buffer);
+  const end = eocdOffset(bytes);
+  if (!has(bytes, end, 22)) fail('Архів обрізаний.');
+  const entriesCount = u16(bytes, end + 10);
+  const directorySize = u32(bytes, end + 12);
+  let offset = u32(bytes, end + 16);
+  if (entriesCount === 0xffff || directorySize === 0xffffffff || offset === 0xffffffff)
+    fail('ZIP64 ще не підтримується.');
+  if (entriesCount > MAX_ENTRIES || !has(bytes, offset, directorySize))
+    fail(
+      entriesCount > MAX_ENTRIES
+        ? 'В архіві забагато файлів для попереднього перегляду.'
+        : 'Архів пошкоджений або обрізаний.',
+    );
+  const entries: ZipEntry[] = [];
+  let totalUncompressedSize = 0;
+  for (let index = 0; index < entriesCount; index += 1) {
+    if (!has(bytes, offset, 46) || u32(bytes, offset) !== 0x02014b50)
+      fail('Архів має некоректний центральний каталог.');
+    const flags = u16(bytes, offset + 8);
+    const compressionMethod = u16(bytes, offset + 10);
+    const crc = u32(bytes, offset + 16);
+    const compressedSize = u32(bytes, offset + 20);
+    const uncompressedSize = u32(bytes, offset + 24);
+    const nameLength = u16(bytes, offset + 28);
+    const extraLength = u16(bytes, offset + 30);
+    const commentLength = u16(bytes, offset + 32);
+    const localHeaderOffset = u32(bytes, offset + 42);
+    const recordSize = 46 + nameLength + extraLength + commentLength;
+    if (
+      compressedSize === 0xffffffff ||
+      uncompressedSize === 0xffffffff ||
+      localHeaderOffset === 0xffffffff
+    )
+      fail('ZIP64 ще не підтримується.');
+    if (!has(bytes, offset, recordSize)) fail('Архів обрізаний.');
+    const path = decodePath(bytes.subarray(offset + 46, offset + 46 + nameLength));
+    const directory = path.endsWith('/');
+    totalUncompressedSize += uncompressedSize;
+    if (totalUncompressedSize > MAX_TOTAL_BYTES)
+      fail('Розпакований розмір архіву перевищує ліміт попереднього перегляду.');
+    entries.push({
+      index,
+      path,
+      compressedSize,
+      uncompressedSize,
+      compressionMethod,
+      localHeaderOffset,
+      crc32: crc,
+      directory,
+      unavailableReason:
+        !directory &&
+        (flags & 1
+          ? 'Зашифрований файл недоступний.'
+          : compressionMethod !== 0 && compressionMethod !== 8
+            ? 'Цей метод стиснення не підтримується.'
+            : uncompressedSize > MAX_MEMBER_BYTES
+              ? 'Файл перевищує ліміт розпакування.'
+              : undefined),
+    });
+    offset += recordSize;
+  }
+  const knownPaths = new Set(entries.map((entry) => entry.path));
+  const folders: ZipEntry[] = [];
+  for (const entry of entries) {
+    const segments = entry.path.split('/').filter(Boolean);
+    for (let depth = 1; depth < segments.length; depth += 1) {
+      const path = `${segments.slice(0, depth).join('/')}/`;
+      if (!knownPaths.has(path)) {
+        knownPaths.add(path);
+        folders.push({
+          index: -(folders.length + 1),
+          path,
+          compressedSize: 0,
+          uncompressedSize: 0,
+          compressionMethod: 0,
+          localHeaderOffset: 0,
+          crc32: 0,
+          directory: true,
+        });
+      }
+    }
+  }
+  entries.push(...folders);
+  entries.sort((left, right) => left.path.localeCompare(right.path) || left.index - right.index);
+  return { entries, totalUncompressedSize };
+}
+export function extractZipEntry(
+  buffer: ArrayBuffer,
+  entry: ZipEntry,
+  onInflateInputChunk?: (processedBytes: number) => void,
+): ArrayBuffer {
+  if (entry.directory) fail('Папку неможливо завантажити.');
+  if (entry.unavailableReason) fail(entry.unavailableReason);
+  const bytes = new Uint8Array(buffer);
+  const offset = entry.localHeaderOffset;
+  if (!has(bytes, offset, 30) || u32(bytes, offset) !== 0x04034b50)
+    fail('Архів має некоректне зміщення файлу.');
+  const flags = u16(bytes, offset + 6);
+  const method = u16(bytes, offset + 8);
+  const nameLength = u16(bytes, offset + 26);
+  const extraLength = u16(bytes, offset + 28);
+  const dataOffset = offset + 30 + nameLength + extraLength;
+  if (
+    flags & 1 ||
+    method !== entry.compressionMethod ||
+    !has(bytes, dataOffset, entry.compressedSize)
+  )
+    fail('Архів пошкоджений або файл недоступний.');
+  const compressed = bytes.subarray(dataOffset, dataOffset + entry.compressedSize);
+  if (entry.uncompressedSize > MAX_MEMBER_BYTES) fail('Файл перевищує ліміт розпакування.');
+  const output =
+    method === 0
+      ? copyStoredBounded(compressed, entry.uncompressedSize)
+      : inflateBounded(compressed, entry.uncompressedSize, onInflateInputChunk);
+  if (
+    output.byteLength !== entry.uncompressedSize ||
+    output.byteLength > MAX_MEMBER_BYTES ||
+    crc32(output) !== entry.crc32
+  )
+    fail('Перевірка цілісності файлу не пройшла.');
+  return output.buffer;
+}
+
+function copyStoredBounded(compressed: Uint8Array, expectedSize: number): Uint8Array {
+  if (compressed.byteLength > expectedSize || compressed.byteLength > MAX_MEMBER_BYTES)
+    fail('Файл перевищує ліміт розпакування.');
+  return compressed.slice();
+}
+
+function inflateBounded(
+  compressed: Uint8Array,
+  expectedSize: number,
+  onInflateInputChunk?: (processedBytes: number) => void,
+): Uint8Array {
+  const output = new Uint8Array(expectedSize);
+  let outputSize = 0;
+  const inflater = new Inflate((chunk) => {
+    const nextSize = outputSize + chunk.byteLength;
+    if (nextSize > expectedSize || nextSize > MAX_MEMBER_BYTES)
+      fail('Файл перевищує ліміт розпакування.');
+    output.set(chunk, outputSize);
+    outputSize = nextSize;
+  });
+  for (let offset = 0; offset < compressed.byteLength; offset += ZIP_INFLATE_INPUT_CHUNK_BYTES) {
+    onInflateInputChunk?.(offset);
+    inflater.push(
+      compressed.subarray(
+        offset,
+        Math.min(offset + ZIP_INFLATE_INPUT_CHUNK_BYTES, compressed.byteLength),
+      ),
+      offset + ZIP_INFLATE_INPUT_CHUNK_BYTES >= compressed.byteLength,
+    );
+  }
+  return output.subarray(0, outputSize);
+}
+if (typeof self !== 'undefined')
+  self.onmessage = (
+    event: MessageEvent<{
+      requestId: string;
+      request:
+        | { type: 'list'; buffer: ArrayBuffer }
+        | { type: 'extract'; buffer: ArrayBuffer; entry: ZipEntry };
+    }>,
+  ) => {
+    try {
+      const { requestId, request } = event.data;
+      const value =
+        request.type === 'list'
+          ? parseZipListing(request.buffer)
+          : extractZipEntry(request.buffer, request.entry);
+      self.postMessage({ requestId, ok: true, value }, request.type === 'extract' ? [value] : []);
+    } catch (error) {
+      self.postMessage({
+        requestId: event.data.requestId,
+        ok: false,
+        error: error instanceof Error ? error.message : 'Не вдалося прочитати ZIP.',
+      });
+    }
+  };
