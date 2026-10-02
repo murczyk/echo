@@ -62,6 +62,10 @@ const listing = {
   ],
   totalUncompressedSize: 1,
 };
+const legacyListing = {
+  entries: [{ ...listing.entries[0], path: 'α' }],
+  totalUncompressedSize: 1,
+};
 
 describe('ZipDocumentPreview', () => {
   afterEach(() => {
@@ -245,6 +249,43 @@ describe('ZipDocumentPreview', () => {
       await Promise.resolve();
     });
     expect(revoke).toHaveBeenCalledWith('blob:failed-download');
+    root.unmount();
+  });
+
+  it('uses a decoded legacy filename as the member download basename', async () => {
+    const archive = new ArrayBuffer(8);
+    vi.mocked(fetchCachedDocumentResponse).mockResolvedValue({
+      buffer: archive,
+      contentType: null,
+      contentLength: 8,
+    });
+    vi.mocked(runWorkerTask).mockImplementation((_factory, request) =>
+      Promise.resolve(request.type === 'list' ? legacyListing : new ArrayBuffer(1)),
+    );
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:legacy-name');
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.append(container);
+    await act(async () => {
+      root.render(
+        <ZipDocumentPreview
+          document={documentAttachment}
+          navigation={navigation}
+          onClose={vi.fn()}
+          isDownloadStarting={() => false}
+          onDownloadStart={() => true}
+        />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Скачати α"]')!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(click.mock.instances[0]?.download).toBe('α');
     root.unmount();
   });
 });

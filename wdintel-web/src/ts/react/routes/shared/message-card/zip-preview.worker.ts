@@ -2,12 +2,15 @@ import { Inflate } from 'fflate';
 import type { ZipEntry, ZipListing } from './zip-preview.types';
 
 const MAX_ENTRIES = 1000;
+const MAX_LISTING_ROWS = 1000;
 const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 const MAX_MEMBER_BYTES = 50 * 1024 * 1024;
 const MAX_PATH_LENGTH = 1024;
 const MAX_PATH_DEPTH = 32;
 export const ZIP_INFLATE_INPUT_CHUNK_BYTES = 16 * 1024;
 const decoder = new TextDecoder('utf-8', { fatal: true });
+const CP437_EXTENDED =
+  'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ';
 
 function fail(message: string): never {
   throw new Error(message);
@@ -29,13 +32,44 @@ function crc32(bytes: Uint8Array) {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
-function decodePath(bytes: Uint8Array): string {
+function decodeUtf8(bytes: Uint8Array): string | null {
   let path: string;
   try {
     path = decoder.decode(bytes);
   } catch {
-    fail('Архів містить некоректне ім’я файлу.');
+    return null;
   }
+  return path;
+}
+
+function decodeCp437(bytes: Uint8Array): string {
+  let path = '';
+  for (const byte of bytes)
+    path += byte < 0x80 ? String.fromCharCode(byte) : CP437_EXTENDED[byte - 0x80]!;
+  return path;
+}
+
+function unicodePathFromExtra(rawName: Uint8Array, extra: Uint8Array): string | null {
+  for (let offset = 0; offset < extra.byteLength;) {
+    if (!has(extra, offset, 4)) return null;
+    const id = u16(extra, offset);
+    const size = u16(extra, offset + 2);
+    const dataOffset = offset + 4;
+    if (!has(extra, dataOffset, size)) return null;
+    if (id === 0x7075 && size >= 5) {
+      const data = extra.subarray(dataOffset, dataOffset + size);
+      if (data[0] === 1 && u32(data, 1) === crc32(rawName)) return decodeUtf8(data.subarray(5));
+    }
+    offset = dataOffset + size;
+  }
+  return null;
+}
+
+export function decodeZipEntryPath(rawName: Uint8Array, flags: number, extra: Uint8Array): string {
+  const path =
+    flags & (1 << 11)
+      ? (decodeUtf8(rawName) ?? fail('Архів містить некоректне UTF-8 ім’я файлу.'))
+      : (unicodePathFromExtra(rawName, extra) ?? decodeCp437(rawName));
   if (
     !path ||
     path.length > MAX_PATH_LENGTH ||
@@ -90,7 +124,9 @@ export function parseZipListing(buffer: ArrayBuffer): ZipListing {
     )
       fail('ZIP64 ще не підтримується.');
     if (!has(bytes, offset, recordSize)) fail('Архів обрізаний.');
-    const path = decodePath(bytes.subarray(offset + 46, offset + 46 + nameLength));
+    const rawName = bytes.subarray(offset + 46, offset + 46 + nameLength);
+    const extra = bytes.subarray(offset + 46 + nameLength, offset + 46 + nameLength + extraLength);
+    const path = decodeZipEntryPath(rawName, flags, extra);
     const directory = path.endsWith('/');
     totalUncompressedSize += uncompressedSize;
     if (totalUncompressedSize > MAX_TOTAL_BYTES)
@@ -123,6 +159,8 @@ export function parseZipListing(buffer: ArrayBuffer): ZipListing {
     for (let depth = 1; depth < segments.length; depth += 1) {
       const path = `${segments.slice(0, depth).join('/')}/`;
       if (!knownPaths.has(path)) {
+        if (entries.length + folders.length >= MAX_LISTING_ROWS)
+          fail('Забагато папок для попереднього перегляду ZIP.');
         knownPaths.add(path);
         folders.push({
           index: -(folders.length + 1),
