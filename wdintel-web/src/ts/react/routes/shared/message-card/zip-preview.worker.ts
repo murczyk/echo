@@ -82,9 +82,41 @@ export function decodeZipEntryPath(rawName: Uint8Array, flags: number, extra: Ui
     fail('Архів містить небезпечний або надто вкладений шлях.');
   return path;
 }
+function hasCentralDirectoryChain(
+  bytes: Uint8Array,
+  directoryOffset: number,
+  directorySize: number,
+  entriesCount: number,
+): boolean {
+  if (entriesCount > MAX_ENTRIES || !has(bytes, directoryOffset, directorySize)) return false;
+  let offset = directoryOffset;
+  const end = directoryOffset + directorySize;
+  for (let index = 0; index < entriesCount; index += 1) {
+    if (!has(bytes, offset, 46) || u32(bytes, offset) !== 0x02014b50) return false;
+    const nameLength = u16(bytes, offset + 28);
+    const extraLength = u16(bytes, offset + 30);
+    const commentLength = u16(bytes, offset + 32);
+    const recordSize = 46 + nameLength + extraLength + commentLength;
+    if (!has(bytes, offset, recordSize) || offset + recordSize > end) return false;
+    offset += recordSize;
+  }
+  return offset === end;
+}
+
 function eocdOffset(bytes: Uint8Array) {
-  for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 0x10016); offset -= 1)
-    if (u32(bytes, offset) === 0x06054b50) return offset;
+  for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 0x10016); offset -= 1) {
+    if (u32(bytes, offset) !== 0x06054b50 || !has(bytes, offset, 22)) continue;
+    const commentLength = u16(bytes, offset + 20);
+    if (offset + 22 + commentLength !== bytes.length) continue;
+    const directorySize = u32(bytes, offset + 12);
+    const directoryOffset = u32(bytes, offset + 16);
+    const entriesCount = u16(bytes, offset + 10);
+    if (directorySize === 0xffffffff || directoryOffset === 0xffffffff) continue;
+    if (directoryOffset + directorySize !== offset || !has(bytes, directoryOffset, directorySize))
+      continue;
+    if (!hasCentralDirectoryChain(bytes, directoryOffset, directorySize, entriesCount)) continue;
+    return offset;
+  }
   fail('Архів пошкоджений або обрізаний: не знайдено центральний каталог.');
 }
 export function parseZipListing(buffer: ArrayBuffer): ZipListing {
@@ -93,8 +125,9 @@ export function parseZipListing(buffer: ArrayBuffer): ZipListing {
   if (!has(bytes, end, 22)) fail('Архів обрізаний.');
   const entriesCount = u16(bytes, end + 10);
   const directorySize = u32(bytes, end + 12);
-  let offset = u32(bytes, end + 16);
-  if (entriesCount === 0xffff || directorySize === 0xffffffff || offset === 0xffffffff)
+  const directoryOffset = u32(bytes, end + 16);
+  let offset = directoryOffset;
+  if (entriesCount === 0xffff || directorySize === 0xffffffff || directoryOffset === 0xffffffff)
     fail('ZIP64 ще не підтримується.');
   if (entriesCount > MAX_ENTRIES || !has(bytes, offset, directorySize))
     fail(
@@ -152,6 +185,8 @@ export function parseZipListing(buffer: ArrayBuffer): ZipListing {
     });
     offset += recordSize;
   }
+  if (offset !== directoryOffset + directorySize)
+    fail('Архів має некоректний центральний каталог.');
   const knownPaths = new Set(entries.map((entry) => entry.path));
   const folders: ZipEntry[] = [];
   for (const entry of entries) {

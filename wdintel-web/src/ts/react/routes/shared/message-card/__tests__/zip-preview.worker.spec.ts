@@ -47,6 +47,44 @@ function legacyCp437ZipFixture(): ArrayBuffer {
   return archive.buffer as ArrayBuffer;
 }
 
+function eocdOffset(archive: Uint8Array): number {
+  for (let index = archive.length - 22; index >= 0; index -= 1) {
+    if (
+      archive[index] === 0x50 &&
+      archive[index + 1] === 0x4b &&
+      archive[index + 2] === 0x05 &&
+      archive[index + 3] === 0x06
+    )
+      return index;
+  }
+  throw new Error('EOCD not found');
+}
+
+function zipWithComment(comment: Uint8Array): ArrayBuffer {
+  const archive = zipSync({ 'entry.txt': strToU8('comment fixture') });
+  const end = eocdOffset(archive);
+  const result = new Uint8Array(archive.byteLength + comment.byteLength);
+  result.set(archive);
+  new DataView(result.buffer).setUint16(end + 20, comment.byteLength, true);
+  result.set(comment, archive.byteLength);
+  return result.buffer;
+}
+
+function zipWithCraftedEocdTrailer(): ArrayBuffer {
+  const archive = zipSync({ 'entry.txt': strToU8('comment fixture') });
+  const realEocd = eocdOffset(archive);
+  const centralDirectoryOffset = new DataView(archive.buffer).getUint32(realEocd + 16, true);
+  const trailer = new Uint8Array(22);
+  const trailerView = new DataView(trailer.buffer);
+  trailerView.setUint32(0, 0x06054b50, true);
+  trailerView.setUint16(8, 1, true);
+  trailerView.setUint16(10, 1, true);
+  trailerView.setUint32(12, archive.byteLength - centralDirectoryOffset, true);
+  trailerView.setUint32(16, centralDirectoryOffset, true);
+  trailerView.setUint16(20, 0, true);
+  return zipWithComment(trailer);
+}
+
 describe('ZIP preview worker', () => {
   it('lists metadata without inflating members and extracts only the selected member', () => {
     const archive = zipSync({
@@ -67,6 +105,33 @@ describe('ZIP preview worker', () => {
     expect(() => parseZipListing(new Uint8Array([1, 2, 3]).buffer)).toThrow(
       /пошкоджений|обрізаний/i,
     );
+  });
+
+  it('uses the real EOCD after normal and EOCD-shaped comments', () => {
+    const normal = zipWithComment(strToU8('normal archive comment'));
+    expect(parseZipListing(normal).entries[0]?.path).toBe('entry.txt');
+
+    const falseCandidate = new Uint8Array(22);
+    const view = new DataView(falseCandidate.buffer);
+    view.setUint32(0, 0x06054b50, true);
+    view.setUint16(20, 0, true);
+    const crafted = zipWithComment(falseCandidate);
+    const entry = parseZipListing(crafted).entries[0]!;
+    expect(entry.path).toBe('entry.txt');
+    expect(new TextDecoder().decode(extractZipEntry(crafted, entry))).toBe('comment fixture');
+
+    const craftedTrailer = zipWithCraftedEocdTrailer();
+    const trailerEntry = parseZipListing(craftedTrailer).entries[0]!;
+    expect(trailerEntry.path).toBe('entry.txt');
+    expect(new TextDecoder().decode(extractZipEntry(craftedTrailer, trailerEntry))).toBe(
+      'comment fixture',
+    );
+  });
+
+  it('rejects a truncated archive comment', () => {
+    const archive = new Uint8Array(zipWithComment(strToU8('short')));
+    new DataView(archive.buffer).setUint16(eocdOffset(archive) + 20, 10, true);
+    expect(() => parseZipListing(archive.buffer)).toThrow(/пошкоджений|обрізаний/i);
   });
 
   it('decodes UTF-8, CP437, and validated Unicode Path entry names', () => {
