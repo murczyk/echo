@@ -328,3 +328,25 @@
     filter: drop-shadow(0 0 4px #f59e0b);
   }
 }
+
+.ai-map-more-toggle {
+  justify-self: start;
+  color: var(--echo-color-text-muted);
+  font-size: var(--echo-typography-font-size-sm);
+  text-decoration: underline dotted;
+  opacity: 0.75;
+}
+
+.ai-map-more-toggle:hover {
+  opacity: 1;
+}
+
+.ai-map-list-actions {
+  display: flex;
+  justify-content: flex-end;
+  font-size: var(--echo-typography-font-size-sm);
+}
+
+.ai-map-list-actions button {
+  color: var(--echo-color-primary);
+}

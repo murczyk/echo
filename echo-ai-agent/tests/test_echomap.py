@@ -76,7 +76,12 @@ class SidcTest(unittest.TestCase):
 
     def test_describe_and_search_use_the_generated_catalog(self):
         self.assertIn('Ворожий', sidc.describe('10061000141211020000'))
-        self.assertIn('Infantry', sidc.describe('10061000141211020000'))
+        self.assertIn('Піхотний підрозділ', sidc.describe('10061000141211020000'))
+        self.assertIn('Пошта', sidc.describe('10062000001209020000'))
+        self.assertEqual(sidc.find('пошта', identity='hostile'), '10062000001209020000')
+        self.assertEqual(sidc.find('ворожий мотоцикл'), '10061500001413000000')
+        self.assertEqual(sidc.search('мотоцикл')[0][:2], ('15', '141300'))
+        self.assertEqual(sidc.find('Довільний текст'), '')
         self.assertIn('Взвод', sidc.describe('10061000141211020000'))
         self.assertTrue(any(entity == '120200' for _, entity, _ in sidc.search('tank')))
 

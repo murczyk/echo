@@ -39,7 +39,7 @@ import {
   removeOperation,
   titleOperation,
 } from './map-edit';
-import { symbolPngBase64 } from './map-symbol';
+import { deltaPngBase64, symbolPngBase64 } from './map-symbol';
 import { useMapWorkspace, type MapWorkspaceState } from './use-map-workspace';
 import './maps.css';
 
@@ -122,13 +122,16 @@ function useSelection(records: AiAgentMapRecord[] | undefined) {
 }
 
 async function saveDownload(summary: AiAgentMapSummary, format: 'csv' | 'kmz', sidcs: string[]) {
-  const icons =
+  const rendered =
     format === 'kmz'
-      ? sidcs.flatMap((sidc) => {
-          const pngBase64 = symbolPngBase64(sidc);
-          return pngBase64 ? [{ sidc, pngBase64 }] : [];
-        })
+      ? await Promise.all(
+          sidcs.map(async (sidc) => ({
+            sidc,
+            pngBase64: symbolPngBase64(sidc) ?? (await deltaPngBase64(sidc)),
+          })),
+        )
       : [];
+  const icons = rendered.flatMap(({ sidc, pngBase64 }) => (pngBase64 ? [{ sidc, pngBase64 }] : []));
   const blob = await downloadAiAgentMap(summary, format, icons);
   const url = URL.createObjectURL(blob);
   const link = window.document.createElement('a');
