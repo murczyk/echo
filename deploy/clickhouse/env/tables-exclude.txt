@@ -112,3 +112,11 @@ public.ai_callsign_action
 public.ai_callsign_reparse_run
 public.ai_callsign_reparse_target
 public.ai_callsign_reparse_job
+
+# AI positions: worker state, and points that may come from private groups.
+public.ai_position_settings
+public.ai_position_worker_job
+public.ai_position_mention
+public.ai_position_coordinate
+public.ai_position_knowledge
+public.ai_position_knowledge_job

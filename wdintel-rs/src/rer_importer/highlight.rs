@@ -18,6 +18,27 @@ pub enum ContentNode {
     CNHighlightC(CNHighlight),
     CNSignalC(CNSignal),
     CNPointC(CNPoint),
+    CNPositionC(CNPosition),
+}
+
+/// A named position found by the AI position worker.
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CNPosition {
+    pub begin: usize,
+    pub end: usize,
+    /// variant-insensitive position key («циркон 9»)
+    pub etalon: String,
+    pub text: String,
+    /// coordinates the text ties to this position, as MGRS
+    pub mgrs: Vec<String>,
+    /// where the position is known to be from other messages, when this
+    /// one gives no coordinates
+    pub known_mgrs: Option<String>,
+    /// latest fact behind `known_mgrs`, milliseconds since the epoch
+    pub known_at: Option<i64>,
+    pub known_conflicting: bool,
 }
 
 #[derive(
@@ -192,6 +213,7 @@ pub struct HighlightOpts {
     pub highlight_signals: Option<bool>,
     pub highlight_searchres: Option<bool>,
     pub highlight_points: Option<bool>,
+    pub highlight_positions: Option<bool>,
 }
 
 impl HighlightOpts {
@@ -202,6 +224,7 @@ impl HighlightOpts {
             highlight_keywords: Some(true),
             highlight_searchres: Some(true),
             highlight_points: Some(true),
+            highlight_positions: Some(true),
         }
     }
 }
@@ -218,6 +241,33 @@ pub fn highlight(
     ts_headline: Option<String>,
     highlight_opts: HighlightOpts,
 ) -> Result<Vec<ContentNode>, AppError> {
+    highlight_with_positions(
+        input,
+        input_no_header,
+        callsigns,
+        points,
+        &[],
+        keywords,
+        signals,
+        ts_headline,
+        highlight_opts,
+    )
+}
+
+/// As `highlight`, plus AI positions; callsign and point spans win where
+/// they overlap a position.
+#[allow(clippy::too_many_arguments)]
+pub fn highlight_with_positions(
+    input: &str,
+    input_no_header: Option<&NoHeadersBody>,
+    callsigns: &Vec<CNCallsign>,
+    points: &Vec<CNPoint>,
+    positions: &[CNPosition],
+    keywords: &Vec<CNHighlight>,
+    signals: &Vec<CNSignal>,
+    ts_headline: Option<String>,
+    highlight_opts: HighlightOpts,
+) -> Result<Vec<ContentNode>, AppError> {
     // println!("> input: {input}");
     // println!("> ts_headline: {}", ts_headline.clone().unwrap_or("".to_string()));
 
@@ -227,6 +277,7 @@ pub fn highlight(
         Callsign(CNCallsign),
         Keyword(CNHighlight),
         Point(CNPoint),
+        Position(CNPosition),
     }
     impl Special {
         pub fn begin(&self) -> usize {
@@ -235,6 +286,7 @@ pub fn highlight(
                 Special::Callsign(x) => x.begin,
                 Special::Keyword(x) => x.begin,
                 Special::Point(x) => x.begin,
+                Special::Position(x) => x.begin,
             }
         }
         pub fn end(&self) -> usize {
@@ -243,6 +295,7 @@ pub fn highlight(
                 Special::Callsign(x) => x.end,
                 Special::Keyword(x) => x.end,
                 Special::Point(x) => x.end,
+                Special::Position(x) => x.end,
             }
         }
         pub fn text(&self) -> String {
@@ -251,6 +304,7 @@ pub fn highlight(
                 Special::Callsign(x) => x.text.clone(),
                 Special::Keyword(x) => x.text.clone(),
                 Special::Point(x) => x.text.clone(),
+                Special::Position(x) => x.text.clone(),
             }
         }
     }
@@ -264,6 +318,9 @@ pub fn highlight(
     }
     if highlight_opts.highlight_points == Some(true) {
         specials.extend(points.iter().map(|x| Special::Point(x.clone())));
+    }
+    if highlight_opts.highlight_positions == Some(true) {
+        specials.extend(positions.iter().map(|x| Special::Position(x.clone())));
     }
     if highlight_opts.highlight_keywords == Some(true) {
         specials.extend(keywords.iter().map(|x| Special::Keyword(x.clone())));
@@ -335,6 +392,7 @@ pub fn highlight(
                 Special::Signal(ref x) => ContentNode::CNSignalC(x.clone()),
                 Special::Keyword(ref x) => ContentNode::CNHighlightC(x.clone()),
                 Special::Point(ref x) => ContentNode::CNPointC(x.clone()),
+                Special::Position(ref x) => ContentNode::CNPositionC(x.clone()),
             });
             line_pos += cline_len(&special.text());
             // line_pos = callsign.end - msg_pos;
@@ -1226,6 +1284,7 @@ mod tests {
                 highlight_keywords: Some(false),
                 highlight_searchres: Some(false),
                 highlight_points: Some(true),
+                highlight_positions: Some(false),
             },
         )
         .unwrap();
@@ -1246,6 +1305,44 @@ mod tests {
                     text: " Альфа".to_string(),
                 }),
             ]
+        );
+    }
+
+    #[test]
+    fn test_highlight_positions_yield_to_callsigns() {
+        let body = "всл Гудок до Циркон 9 (36T)";
+        let callsign = CNCallsign {
+            begin: 4,
+            end: 9,
+            etalon: "гудок".to_string(),
+            text: "Гудок".to_string(),
+        };
+        let position = |begin: usize, end: usize, text: &str| CNPosition {
+            begin,
+            end,
+            etalon: text.to_lowercase(),
+            text: text.to_string(),
+            mgrs: vec![],
+            known_mgrs: None,
+            known_at: None,
+            known_conflicting: false,
+        };
+        let res = highlight_with_positions(
+            body,
+            None,
+            &vec![callsign.clone()],
+            &vec![],
+            &[position(4, 9, "Гудок"), position(13, 21, "Циркон 9")],
+            &vec![],
+            &vec![],
+            None,
+            HighlightOpts::all(),
+        )
+        .unwrap();
+        assert_eq!(res[1], ContentNode::CNCallsignC(callsign));
+        assert_eq!(
+            res[3],
+            ContentNode::CNPositionC(position(13, 21, "Циркон 9"))
         );
     }
 }

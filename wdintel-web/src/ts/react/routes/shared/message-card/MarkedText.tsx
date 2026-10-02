@@ -584,6 +584,22 @@ function CallsignWithHint({
   );
 }
 
+function positionTitle(
+  name: string,
+  mgrs: string[],
+  knownMgrs: string | null,
+  knownAt: number | null,
+  knownConflicting: boolean,
+): string {
+  if (mgrs.length > 0) return `Позиція «${name}»: ${mgrs.join(', ')}`;
+  if (knownMgrs) {
+    const when = knownAt ? `, станом на ${new Date(knownAt).toLocaleDateString('uk-UA')}` : '';
+    const doubt = knownConflicting ? ' (є розбіжності)' : '';
+    return `Позиція «${name}»: відомо з інших повідомлень ${knownMgrs}${when}${doubt}`;
+  }
+  return `Позиція «${name}» (ШІ)`;
+}
+
 export function renderMarkedText(
   nodes: ContentNode[],
   _bodyText: string,
@@ -672,6 +688,24 @@ export function renderMarkedText(
       if (text.trim() === '') continue;
       renderedNodes.push(
         <span key={i} className="content-token--ADV">
+          {text}
+        </span>,
+      );
+      continue;
+    }
+
+    if ('CNPositionC' in node) {
+      const { text, mgrs, knownMgrs, knownAt, knownConflicting } = node.CNPositionC;
+      renderedNodes.push(
+        <span
+          key={i}
+          className={
+            mgrs.length > 0 || knownMgrs
+              ? 'content-token--position content-token--position-located'
+              : 'content-token--position'
+          }
+          title={positionTitle(text, mgrs, knownMgrs, knownAt, knownConflicting)}
+        >
           {text}
         </span>,
       );

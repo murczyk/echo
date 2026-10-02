@@ -123,6 +123,46 @@ pub const AI_SETTLEMENT_WORKER_MAX_ATTEMPTS: i32 = 8;
 pub const AI_SETTLEMENT_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_SETTLEMENT_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-28-settlement-prompt/prompt.txt");
+pub const AI_POSITION_SETTINGS_ID: i16 = 1;
+pub const AI_POSITION_PROMPT_MAX_CHARS: usize = 100_000;
+pub const AI_POSITION_TEST_MESSAGE_MAX_CHARS: usize = 20_000;
+pub const AI_POSITION_SOURCE_MAX_CHARS: usize = 20_000;
+pub const AI_POSITION_MAX_POSITIONS: usize = 50;
+pub const AI_POSITION_MAX_COORDINATES: usize = 10;
+pub const AI_POSITION_NAME_MAX_CHARS: usize = 120;
+pub const AI_POSITION_COORDINATE_MAX_CHARS: usize = 120;
+pub const AI_POSITION_EVIDENCE_MAX_CHARS: usize = 300;
+pub const AI_POSITION_OUTPUT_TOKENS: u32 = 2_048;
+pub const AI_POSITION_TEMPERATURE: f32 = 0.0;
+/// A coordinate farther than this from the position name (in chars) or on a
+/// different line block is at most `low` certainty.
+pub const AI_POSITION_COORDINATE_NEAR_CHARS: usize = 200;
+/// Model and source coordinates closer than this are the same point.
+pub const AI_POSITION_COORDINATE_MATCH_METERS: f64 = 50.0;
+pub const AI_POSITION_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+pub const AI_POSITION_WORKER_RETRY_BASE_SECS: i64 = 5;
+pub const AI_POSITION_WORKER_RETRY_MAX_SECS: i64 = 300;
+pub const AI_POSITION_WORKER_MAX_ATTEMPTS: i32 = 8;
+pub const AI_POSITION_WORKER_MAX_ERROR_CHARS: usize = 2_000;
+pub const AI_POSITION_BACKFILL_MAX_DAYS: i64 = 90;
+pub const AI_POSITION_LIST_MAX_LIMIT: u64 = 200;
+pub const AI_POSITION_LIST_DEFAULT_LIMIT: u64 = 50;
+pub const AI_POSITION_LIST_MAX_FILTERS: usize = 10;
+pub const AI_POSITION_LIST_FILTER_MAX_CHARS: usize = 200;
+/// Facts older than this before a position's latest fact do not decide where
+/// it is now (positions move and code names are reused).
+pub const AI_POSITION_KNOWLEDGE_WINDOW_DAYS: i64 = 30;
+/// Most messages a knowledge recompute links to a position without the model.
+pub const AI_POSITION_KNOWLEDGE_LINK_MAX_MESSAGES: i64 = 500;
+/// Facts within this distance describe the same place.
+pub const AI_POSITION_KNOWLEDGE_CLUSTER_METERS: f64 = 300.0;
+/// A fact's weight halves every this many days before the latest fact.
+pub const AI_POSITION_KNOWLEDGE_HALF_LIFE_DAYS: f64 = 7.0;
+/// A second place with at least this share of the best place's weight makes
+/// the knowledge conflicting.
+pub const AI_POSITION_KNOWLEDGE_CONFLICT_RATIO: f64 = 0.5;
+pub const AI_POSITION_DEFAULT_PROMPT: &str =
+    include_str!("../../ai-eval/2026-10-02-position-prompt/prompt.txt");
 pub const AI_INTEL_REPORT_SETTINGS_ID: i16 = 1;
 pub const AI_INTEL_REPORT_HISTORY_DAYS: i64 = 3;
 pub const AI_INTEL_REPORT_BUCKET_CANDIDATE_LIMIT: u64 = 12;

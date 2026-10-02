@@ -551,6 +551,15 @@
   filter: brightness(0.88);
 }
 
+.text-marked .content-token--position {
+  border-bottom: 2px dashed #7b5ea7;
+  cursor: help;
+}
+
+.text-marked .content-token--position-located {
+  border-bottom-style: solid;
+}
+
 .text-marked .content-token--metadata {
   border-bottom: 3px solid #1b8057;
   transition: border-bottom-color 1s ease;

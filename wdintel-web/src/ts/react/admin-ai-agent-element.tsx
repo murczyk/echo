@@ -12,6 +12,7 @@ const SECTIONS = new Set<AiAgentAdminSection>([
   'echo-proxies',
   'callsigns',
   'settlements',
+  'positions',
   'intelligence-reports',
   'ocr',
   'settings',

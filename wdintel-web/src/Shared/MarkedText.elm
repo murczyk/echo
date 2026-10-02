@@ -142,6 +142,13 @@ viewWithResults renderCallsign signals networks mFreq bodyText pointTokenClickUr
                                     currentMetadataLinks
                                     rest
 
+                        B.CnPositionC obj ->
+                            renderContentNode cn
+                                :: renderContentNodes
+                                    obj.end
+                                    currentMetadataLinks
+                                    rest
+
         renderContentNode cn =
             case cn of
                 B.CnTextC obj ->
@@ -212,6 +219,19 @@ viewWithResults renderCallsign signals networks mFreq bodyText pointTokenClickUr
 
                         Nothing ->
                             text sliceText
+
+                B.CnPositionC obj ->
+                    span
+                        [ class "content-token--position"
+                        , title
+                            (if List.isEmpty obj.mgrs then
+                                "Позиція «" ++ obj.text ++ "» (ШІ)"
+
+                             else
+                                "Позиція «" ++ obj.text ++ "»: " ++ String.join ", " obj.mgrs
+                            )
+                        ]
+                        [ text obj.text ]
     in
     [ div [ class "text-marked" ] <|
         renderContentNodes 0 sortedMetadataLinks config.contentNodes

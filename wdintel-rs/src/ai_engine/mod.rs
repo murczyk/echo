@@ -219,6 +219,9 @@ pub async fn update_ai_engine(
         )
         .await
         .context(h!())?;
+        crate::ai_position::ensure_engine_not_used(&transaction, ai_engine_id)
+            .await
+            .context(h!())?;
         crate::ai_intel_report::ensure_engine_not_used(
             &transaction,
             ai_engine_id,
@@ -269,6 +272,9 @@ pub async fn delete_ai_engine(
         .await
         .context(h!())?;
     ensure_not_used_by_enabled_settlement_worker(&transaction, ai_engine_id)
+        .await
+        .context(h!())?;
+    crate::ai_position::ensure_engine_not_used(&transaction, ai_engine_id)
         .await
         .context(h!())?;
     crate::ai_intel_report::ensure_engine_not_used(&transaction, ai_engine_id)

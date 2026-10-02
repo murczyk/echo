@@ -775,6 +775,16 @@ fn spawn_background_workers(
         .await;
     });
 
+    let ai_position_env = env.clone();
+    let ai_position_cancellation_token = cancel_token.clone();
+    spawn_named_worker("ai_position_worker", bg_set, async move {
+        crate::ai_position::worker::run_nofail(
+            ai_position_env,
+            ai_position_cancellation_token,
+        )
+        .await;
+    });
+
     let ocr_env = env.clone();
     let ocr_cancellation_token = cancel_token.clone();
     spawn_named_worker("ocr_worker", bg_set, async move {
@@ -1122,6 +1132,13 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_settlement::save_ai_settlement_parsing)
             .service(crate::ai_settlement::recalculate_ai_settlement_parsing)
             .service(crate::ai_settlement::save_ai_settlement_worker_settings)
+            .service(crate::ai_position::get_ai_position_page)
+            .service(crate::ai_position::save_ai_position_prompt)
+            .service(crate::ai_position::save_ai_position_worker_settings)
+            .service(crate::ai_position::test_ai_positions)
+            .service(crate::ai_position::enqueue_ai_position_backfill)
+            .service(crate::ai_position::list::list_ai_position_mentions)
+            .service(crate::ai_position::list::list_ai_position_knowledge)
             .service(crate::ocr::get_ocr_page)
             .service(crate::ocr::save_ocr_settings)
             .service(crate::ocr::reprocess_media_ocr)
