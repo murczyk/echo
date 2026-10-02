@@ -200,6 +200,22 @@ after update of body, deleted on signal_message
 for each row
 when (old.body is distinct from new.body or (new.deleted and not old.deleted))
 execute function ai_position_signal_message_invalidate();
+
+-- A document's mentions point into its summary: a cleared (reprocessed) or
+-- replaced summary drops them.
+create function ai_position_media_summary_invalidate()
+returns trigger language plpgsql as $$
+begin
+    delete from ai_position_mention where media_id = new.media_id;
+    return new;
+end;
+$$;
+
+create trigger ai_position_media_summary_invalidate
+after update of summary on media_summary
+for each row
+when (old.summary is distinct from new.summary)
+execute function ai_position_media_summary_invalidate();
                 "#,
             )
             .await
@@ -212,6 +228,8 @@ execute function ai_position_signal_message_invalidate();
             .get_connection()
             .execute_unprepared(
                 r#"
+drop trigger if exists ai_position_media_summary_invalidate on media_summary;
+drop function if exists ai_position_media_summary_invalidate();
 drop trigger if exists ai_position_signal_message_invalidate on signal_message;
 drop function if exists ai_position_signal_message_invalidate();
 drop table if exists ai_position_knowledge_job;

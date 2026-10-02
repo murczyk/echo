@@ -209,7 +209,7 @@ async fn ground_positions(
 /// in the text are dropped.
 async fn ground_coordinate(
     text: &str,
-    source_coords: &[Coords],
+    source_coords: &[(Coords, &'static str)],
     spans: &[(usize, usize)],
     coordinate: ModelCoordinate,
 ) -> Option<AiPositionCoordinateItem> {
@@ -219,9 +219,9 @@ async fn ground_coordinate(
         return None;
     }
     let parsed = all_coords(&coordinate.value).await;
-    let parsed = parsed.first()?;
-    let source = source_coords.iter().min_by(|a, b| {
-        distance_m(a, parsed).total_cmp(&distance_m(b, parsed))
+    let (parsed, _) = parsed.first()?;
+    let (source, system) = source_coords.iter().min_by(|a, b| {
+        distance_m(&a.0, parsed).total_cmp(&distance_m(&b.0, parsed))
     })?;
     if distance_m(source, parsed) > AI_POSITION_COORDINATE_MATCH_METERS {
         return None;
@@ -234,11 +234,11 @@ async fn ground_coordinate(
             matches!(c, '(' | ')' | '[' | ']' | ',' | ';' | ':')
         })
         .trim();
-    let span = char_span(text, written);
+    let span = nearest_span(text, written, spans);
     let certainty = capped_certainty(text, spans, span, &coordinate.certainty);
     Some(AiPositionCoordinateItem {
         text: written.to_string(),
-        system: coordinate_system(written).to_string(),
+        system: system.to_string(),
         mgrs: source.mgrs.clone(),
         lat: source.lat,
         lng: source.lng,
@@ -255,53 +255,59 @@ async fn ground_coordinate(
     })
 }
 
-/// The system of coordinates as written; small models mislabel it.
-fn coordinate_system(written: &str) -> &'static str {
-    let compact: String = written
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect::<String>()
-        .to_uppercase();
-    let mgrs = regex::Regex::new(r"^\d{1,2}[C-X][A-Z]{2}\d{2,10}$").c(h!());
-    if mgrs.is_ok_and(|mgrs| mgrs.is_match(&compact)) {
-        return "mgrs";
-    }
-    let digits = compact.chars().filter(char::is_ascii_digit).count();
-    // Grid pairs are two 7-digit numbers, possibly split as «53-24567».
-    if !compact.contains('.') && digits >= 12 {
-        "sk42"
-    } else {
-        "wgs84"
-    }
-}
-
 /// Coordinates of every system in the text. milgeo's `rer_extract_coords`
 /// keeps only the preferred system present, which would drop a WGS84 point
 /// written next to an MGRS one.
-async fn all_coords(text: &str) -> Vec<Coords> {
+/// The system comes from the parser that recognised the coordinate: small
+/// models mislabel it, and «48,12345; 37,54321» is not a grid pair.
+async fn all_coords(text: &str) -> Vec<(Coords, &'static str)> {
     let v2 = parser_v2::collect_coords(text).unwrap_or_default();
     let v1 = parser_v1::collect_coords(text).await.unwrap_or_default();
     [
-        v2.mgrs_coords,
-        v1.mgrs_coords,
-        v2.usk2000_coords,
-        v1.usk2000_coords,
-        v2.decimal_coords,
-        v1.decimal_coords,
+        (v2.mgrs_coords, "mgrs"),
+        (v1.mgrs_coords, "mgrs"),
+        (v2.usk2000_coords, "sk42"),
+        (v1.usk2000_coords, "sk42"),
+        (v2.decimal_coords, "wgs84"),
+        (v1.decimal_coords, "wgs84"),
     ]
     .into_iter()
-    .flatten()
+    .flat_map(|(coords, system)| {
+        coords.into_iter().map(move |coords| (coords, system))
+    })
     .collect()
 }
 
-fn char_span(text: &str, needle: &str) -> Option<(usize, usize)> {
+/// The occurrence of `needle` closest to the position's name: the same
+/// coordinate may also appear beside an unrelated target.
+fn nearest_span(
+    text: &str,
+    needle: &str,
+    spans: &[(usize, usize)],
+) -> Option<(usize, usize)> {
     let needle = needle.trim();
     if needle.is_empty() {
         return None;
     }
-    let byte = text.find(needle)?;
-    let begin = text[..byte].chars().count();
-    Some((begin, begin + needle.chars().count()))
+    let length = needle.chars().count();
+    text.match_indices(needle)
+        .map(|(byte, _)| {
+            let begin = text[..byte].chars().count();
+            (begin, begin + length)
+        })
+        .min_by_key(|&(begin, end)| {
+            spans
+                .iter()
+                .map(|&(name_begin, name_end)| {
+                    if begin >= name_end {
+                        begin - name_end
+                    } else {
+                        name_begin.saturating_sub(end)
+                    }
+                })
+                .min()
+                .unwrap_or(usize::MAX)
+        })
 }
 
 /// The model's certainty, lowered to `low` when the coordinate is far from
@@ -411,14 +417,25 @@ mod tests {
         assert!(found[0].coordinates.is_empty());
     }
 
+    #[tokio::test]
+    async fn takes_the_system_from_the_parser() {
+        let systems = |text: &'static str| async move {
+            super::all_coords(text)
+                .await
+                .into_iter()
+                .map(|(_, system)| system)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(systems("36T XT 75734 68963").await.first(), Some(&"mgrs"));
+        assert_eq!(systems("48.12345, 37.54321").await.first(), Some(&"wgs84"));
+    }
+
     #[test]
-    fn classifies_written_coordinates() {
-        use super::coordinate_system;
-        assert_eq!(coordinate_system("36T XT 75734 68963"), "mgrs");
-        assert_eq!(coordinate_system("X=5324567 Y=7412345"), "sk42");
-        assert_eq!(coordinate_system("53-24567 74-12345"), "sk42");
-        assert_eq!(coordinate_system("5324567, 7412345"), "sk42");
-        assert_eq!(coordinate_system("48.12345, 37.54321"), "wgs84");
+    fn picks_the_coordinate_occurrence_near_the_name() {
+        let text = "Ціль 36T XT 1 2.\n\nЦиркон 9 (36T XT 1 2)";
+        let span =
+            super::nearest_span(text, "36T XT 1 2", &[(18, 26)]).unwrap();
+        assert_eq!(span.0, 28);
     }
 
     #[test]

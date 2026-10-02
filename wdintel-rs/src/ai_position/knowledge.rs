@@ -7,12 +7,15 @@
 
 use crate::config::{
     AI_POSITION_KNOWLEDGE_CLUSTER_METERS, AI_POSITION_KNOWLEDGE_CONFLICT_RATIO,
+    AI_POSITION_KNOWLEDGE_EVENT_MAX_MESSAGES,
     AI_POSITION_KNOWLEDGE_HALF_LIFE_DAYS, AI_POSITION_KNOWLEDGE_LINK_BATCH,
     AI_POSITION_KNOWLEDGE_WINDOW_DAYS, AI_POSITION_WORKER_MAX_ATTEMPTS,
     AI_POSITION_WORKER_MAX_ERROR_CHARS, AI_POSITION_WORKER_RETRY_BASE_SECS,
     AI_POSITION_WORKER_RETRY_MAX_SECS,
 };
 use crate::entities::{ai_position_knowledge, ai_position_knowledge_job};
+use crate::event_stream::fanout_mult;
+use crate::event_stream::types::{EventMsg, EventType};
 use crate::h;
 use crate::types::{error, ShortContext};
 use chrono::{Duration as ChronoDuration, NaiveDateTime, Utc};
@@ -463,110 +466,211 @@ where
         .collect())
 }
 
-/// Marks the now-known position in the scope's other messages within the
-/// knowledge window that mention it but were not linked to it.
+/// Latin look-alike letters folded to Cyrillic, as `position_key` does, so
+/// the body prefilter does not reject «Циpкoн-9».
+const FOLD_FROM: &str = "aceiopxykmthbё";
+const FOLD_TO: &str = "асеіорхукмтнве";
+
+/// Time ranges the knowledge window covers now but did not before; only
+/// messages there still lack a link (messages extracted while the knowledge
+/// existed got its name from the worker).
+fn new_ranges(
+    before: Option<&ai_position_knowledge::Model>,
+    after: &ai_position_knowledge::Model,
+) -> Vec<(NaiveDateTime, NaiveDateTime)> {
+    let window = ChronoDuration::days(AI_POSITION_KNOWLEDGE_WINDOW_DAYS);
+    let (from, to) =
+        (after.first_fact_at - window, after.last_fact_at + window);
+    let Some(before) = before else {
+        return vec![(from, to)];
+    };
+    let (old_from, old_to) =
+        (before.first_fact_at - window, before.last_fact_at + window);
+    let mut ranges = Vec::new();
+    if from < old_from {
+        ranges.push((from, old_from.min(to)));
+    }
+    if to > old_to {
+        ranges.push((old_to.max(from), to));
+    }
+    ranges
+}
+
+/// Groups whose messages make up the scope now.
+async fn scope_groups<C>(dbx: &C, scope: &Scope) -> anyhow::Result<Vec<String>>
+where
+    C: ConnectionTrait,
+{
+    if scope.kind != SCOPE_AOR {
+        return Ok(vec![scope.key.clone()]);
+    }
+    #[derive(FromQueryResult)]
+    struct Group {
+        master_key: String,
+    }
+    let groups = Group::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select sga.master_key
+         from signal_group_aor sga
+         join area_of_responsibility aor on aor.id = sga.aor_id and not aor.deleted
+         join signal_group sg on sg.master_key = sga.master_key
+         where sga.aor_id = $1 and not sg.is_secret and not sg.deleted",
+        [scope.key.parse::<i64>().c(h!())?.into()],
+    ))
+    .all(dbx)
+    .await
+    .c(h!())?;
+    Ok(groups.into_iter().map(|group| group.master_key).collect())
+}
+
+/// Links the known position to the scope's messages in the given ranges that
+/// mention it but have no mention of it yet; returns the linked message ids.
+/// Candidates are sought by group and message id
+/// (`signal_message_group (group_master_key, signal_message_id)`), starting
+/// at the first message created in the range.
 async fn link_window_mentions<C>(
     dbx: &C,
     scope: &Scope,
-    name_key: &str,
-) -> anyhow::Result<()>
+    known: &ai_position_knowledge::Model,
+    ranges: &[(NaiveDateTime, NaiveDateTime)],
+) -> anyhow::Result<Vec<i64>>
 where
     C: ConnectionTrait,
 {
     use super::worker::{
         insert_linked_mentions, SOURCE_GROUP_COLUMNS, SOURCE_GROUP_SQL,
     };
-    let known = ai_position_knowledge::Entity::find()
-        .filter(ai_position_knowledge::Column::ScopeKind.eq(scope.kind))
-        .filter(ai_position_knowledge::Column::ScopeKey.eq(scope.key.clone()))
-        .filter(ai_position_knowledge::Column::NameKey.eq(name_key))
-        .one(dbx)
-        .await
-        .c(h!())?;
-    let Some(known) = known else {
-        return Ok(());
-    };
+    let name_key = known.name_key.as_str();
     // The longest word is a cheap, selective prefilter for the body.
     let Some(stem) = name_key
         .split(' ')
         .filter(|word| !word.chars().all(|c| c.is_ascii_digit()))
         .max_by_key(|word| word.chars().count())
     else {
-        return Ok(());
+        return Ok(Vec::new());
     };
-    let window = ChronoDuration::days(AI_POSITION_KNOWLEDGE_WINDOW_DAYS);
-    let scope_condition = if scope.kind == SCOPE_AOR {
-        "$1::bigint = any(s.aor_ids) and not s.group_is_secret"
-    } else {
-        "s.group_master_key = $1"
-    };
-    let scope_value: sea_orm::Value = if scope.kind == SCOPE_AOR {
-        scope.key.parse::<i64>().c(h!())?.into()
-    } else {
-        scope.key.clone().into()
-    };
-    // Keyset pages over the window: the body prefilter may match many
-    // messages the full name does not («Циркон 91»).
-    let since = known.first_fact_at - window;
-    let mut cursor: (NaiveDateTime, i64) = (since - ChronoDuration::days(1), 0);
-    loop {
-        let candidates = LinkCandidate::find_by_statement(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            format!(
-                "select s.text, s.message_id, s.message_at, s.group_master_key,
-                        s.group_is_secret, s.aor_ids, s.created_at
-                 from (
-                     select coalesce(message.body, '') as text, message.id as message_id,
+    let groups = scope_groups(dbx, scope).await.c(h!())?;
+    let mut linked = Vec::new();
+    if groups.is_empty() {
+        return Ok(linked);
+    }
+    for &(from, to) in ranges {
+        let mut cursor = first_message_id_since(dbx, from).await.c(h!())? - 1;
+        loop {
+            let candidates = LinkCandidate::find_by_statement(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                format!(
+                    "select coalesce(message.body, '') as text, message.id as message_id,
                             coalesce(item.datetime, message.timestamp, message.created_at) as message_at,
-                            message.created_at,
                             {SOURCE_GROUP_COLUMNS}
-                     from signal_message message
+                     from signal_message_group smg
+                     join signal_message message on message.id = smg.signal_message_id
                      join sigint_inbox_item item on item.id = message.id
                      {SOURCE_GROUP_SQL}
-                     where not message.deleted
-                       and (message.created_at, message.id) > ($6, $7)
-                       and lower(message.body) like $4
-                 ) s
-                 where {scope_condition}
-                   and s.message_at between $2 and $3
-                   and not exists (
-                       select 1 from ai_position_mention m
-                       where m.sigint_inbox_item_id = s.message_id and m.name_key = $5
-                   )
-                 order by s.created_at, s.message_id
-                 limit $8"
-            ),
-            [
-                scope_value.clone(),
-                since.into(),
-                (known.last_fact_at + window).into(),
-                format!("%{stem}%").into(),
-                name_key.into(),
-                cursor.0.into(),
-                cursor.1.into(),
-                AI_POSITION_KNOWLEDGE_LINK_BATCH.into(),
-            ],
-        ))
-        .all(dbx)
-        .await
-        .c(h!())?;
-        let Some(last) = candidates.last() else {
-            break;
-        };
-        cursor = (last.created_at, last.message_id);
-        for candidate in candidates {
-            let source = candidate.into_source();
-            // The canonical key also matches inflected or differently
-            // written occurrences.
-            let spans = super::normalize::ground(&source.text, name_key);
-            if !spans.is_empty() {
+                     where smg.group_master_key = any($1)
+                       and smg.signal_message_id > $2
+                       and grp.group_master_key = smg.group_master_key
+                       and not message.deleted
+                       and translate(lower(message.body), $3, $4) like $5
+                       and coalesce(item.datetime, message.timestamp, message.created_at)
+                           between $6 and $7
+                       and not exists (
+                           select 1 from ai_position_mention m
+                           where m.sigint_inbox_item_id = message.id and m.name_key = $8
+                       )
+                     order by smg.signal_message_id
+                     limit $9"
+                ),
+                [
+                    groups.clone().into(),
+                    cursor.into(),
+                    FOLD_FROM.into(),
+                    FOLD_TO.into(),
+                    format!("%{stem}%").into(),
+                    from.into(),
+                    to.into(),
+                    name_key.into(),
+                    AI_POSITION_KNOWLEDGE_LINK_BATCH.into(),
+                ],
+            ))
+            .all(dbx)
+            .await
+            .c(h!())?;
+            let Some(last) = candidates.last() else {
+                break;
+            };
+            cursor = last.message_id;
+            for candidate in candidates {
+                let source = candidate.into_source();
+                // The canonical key also matches inflected or differently
+                // written occurrences.
+                let spans = super::normalize::ground(&source.text, name_key);
+                if spans.is_empty()
+                    || !body_unchanged(dbx, &source).await.c(h!())?
+                {
+                    continue;
+                }
                 insert_linked_mentions(dbx, &source, name_key, &spans)
                     .await
                     .c(h!())?;
+                linked.push(source.message_id);
             }
         }
     }
-    Ok(())
+    Ok(linked)
+}
+
+/// The first message id created at or after `since` (or past the last one).
+async fn first_message_id_since<C>(
+    dbx: &C,
+    since: NaiveDateTime,
+) -> anyhow::Result<i64>
+where
+    C: ConnectionTrait,
+{
+    #[derive(FromQueryResult)]
+    struct First {
+        id: i64,
+    }
+    let first = First::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select coalesce(
+             (select id from signal_message where created_at >= $1 order by created_at, id limit 1),
+             (select coalesce(max(id), 0) + 1 from signal_message)
+         ) as id",
+        [since.into()],
+    ))
+    .one(dbx)
+    .await
+    .c(h!())?
+    .c(h!())?;
+    Ok(first.id)
+}
+
+/// Locks the message and checks its body is the one grounded, so an edit
+/// racing the link cannot leave offsets into the old text.
+async fn body_unchanged<C>(
+    dbx: &C,
+    source: &super::worker::Source,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    #[derive(FromQueryResult)]
+    struct Body {
+        body: String,
+    }
+    let current = Body::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select coalesce(body, '') as body from signal_message
+         where id = $1 and not deleted
+         for share",
+        [source.message_id.into()],
+    ))
+    .one(dbx)
+    .await
+    .c(h!())?;
+    Ok(current.is_some_and(|current| current.body == source.text))
 }
 
 #[derive(FromQueryResult)]
@@ -577,7 +681,6 @@ struct LinkCandidate {
     group_master_key: Option<String>,
     group_is_secret: bool,
     aor_ids: Vec<i64>,
-    created_at: NaiveDateTime,
 }
 
 impl LinkCandidate {
@@ -593,9 +696,89 @@ impl LinkCandidate {
     }
 }
 
-/// Processes one due knowledge job; false when none is due.
+async fn load_knowledge<C>(
+    dbx: &C,
+    scope: &Scope,
+    name_key: &str,
+) -> anyhow::Result<Option<ai_position_knowledge::Model>>
+where
+    C: ConnectionTrait,
+{
+    ai_position_knowledge::Entity::find()
+        .filter(ai_position_knowledge::Column::ScopeKind.eq(scope.kind))
+        .filter(ai_position_knowledge::Column::ScopeKey.eq(scope.key.clone()))
+        .filter(ai_position_knowledge::Column::NameKey.eq(name_key))
+        .one(dbx)
+        .await
+        .c(h!())
+}
+
+/// What a message card shows from this knowledge changed.
+fn display_changed(
+    before: Option<&ai_position_knowledge::Model>,
+    after: Option<&ai_position_knowledge::Model>,
+) -> bool {
+    match (before, after) {
+        (None, None) => false,
+        (Some(before), Some(after)) => {
+            before.mgrs != after.mgrs
+                || before.conflicting != after.conflicting
+                || before.first_fact_at != after.first_fact_at
+                || before.last_fact_at != after.last_fact_at
+                || before.source_group_keys != after.source_group_keys
+        }
+        _ => true,
+    }
+}
+
+/// Messages of the scope that mention the position: their cards show the
+/// knowledge.
+async fn mentioning_messages<C>(
+    dbx: &C,
+    scope: &Scope,
+    name_key: &str,
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait,
+{
+    let groups = scope_groups(dbx, scope).await.c(h!())?;
+    if groups.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids: Vec<Option<i64>> =
+        crate::entities::ai_position_mention::Entity::find()
+            .filter(
+                crate::entities::ai_position_mention::Column::NameKey
+                    .eq(name_key),
+            )
+            .filter(
+                crate::entities::ai_position_mention::Column::GroupMasterKey
+                    .is_in(groups),
+            )
+            .filter(
+                crate::entities::ai_position_mention::Column::SigintInboxItemId
+                    .is_not_null(),
+            )
+            .order_by_desc(
+                crate::entities::ai_position_mention::Column::MessageAt,
+            )
+            .limit(AI_POSITION_KNOWLEDGE_EVENT_MAX_MESSAGES)
+            .select_only()
+            .column(
+                crate::entities::ai_position_mention::Column::SigintInboxItemId,
+            )
+            .into_tuple()
+            .all(dbx)
+            .await
+            .c(h!())?;
+    Ok(ids.into_iter().flatten().collect())
+}
+
+/// Processes one due knowledge job; false when none is due. Afterwards it
+/// announces the messages whose cards changed.
 pub(crate) async fn process_next(
     dbx: &DatabaseConnection,
+    redis: &mut redis::aio::ConnectionManager,
 ) -> anyhow::Result<bool> {
     let job = ai_position_knowledge_job::Entity::find()
         .filter(
@@ -620,20 +803,61 @@ pub(crate) async fn process_next(
     };
     let result = async {
         let transaction = dbx.begin().await.c(h!())?;
+        let before = load_knowledge(&transaction, &scope, &job.name_key)
+            .await
+            .c(h!())?;
         recompute(&transaction, &scope, &job.name_key)
             .await
             .c(h!())?;
-        link_window_mentions(&transaction, &scope, &job.name_key)
+        let after = load_knowledge(&transaction, &scope, &job.name_key)
             .await
             .c(h!())?;
+        let mut changed = match &after {
+            Some(after) => {
+                let ranges = new_ranges(before.as_ref(), after);
+                link_window_mentions(&transaction, &scope, after, &ranges)
+                    .await
+                    .c(h!())?
+            }
+            None => Vec::new(),
+        };
+        if display_changed(before.as_ref(), after.as_ref()) {
+            changed.extend(
+                mentioning_messages(&transaction, &scope, &job.name_key)
+                    .await
+                    .c(h!())?,
+            );
+        }
         finish_job(&transaction, &job).await.c(h!())?;
-        transaction.commit().await.c(h!())
+        transaction.commit().await.c(h!())?;
+        anyhow::Ok(changed)
     }
     .await;
-    if let Err(error) = result {
-        fail_job(dbx, &job, format!("{error:#}")).await.c(h!())?;
+    match result {
+        Ok(changed) => publish_changes(redis, changed).await,
+        Err(error) => {
+            fail_job(dbx, &job, format!("{error:#}")).await.c(h!())?
+        }
     }
     Ok(true)
+}
+
+async fn publish_changes(
+    redis: &mut redis::aio::ConnectionManager,
+    mut message_ids: Vec<i64>,
+) {
+    message_ids.sort_unstable();
+    message_ids.dedup();
+    if message_ids.is_empty() {
+        return;
+    }
+    let events = message_ids
+        .into_iter()
+        .map(|id| EventMsg::new(EventType::ETInboxChanged(id)))
+        .collect();
+    if let Err(error) = fanout_mult(redis, events).await {
+        error!("ai_position knowledge failed to publish message changes: {error:#?}");
+    }
 }
 
 /// Deletes the job unless it was re-enqueued while recomputing.
@@ -734,6 +958,40 @@ mod tests {
             message_at: at(day),
             group_master_key: Some(group.to_string()),
         }
+    }
+
+    #[test]
+    fn links_only_newly_covered_ranges() {
+        use super::new_ranges;
+        let row = |first: i64, last: i64| {
+            crate::entities::ai_position_knowledge::Model {
+                id: 1,
+                scope_kind: "group".to_string(),
+                scope_key: "g".to_string(),
+                name_key: "циркон 9".to_string(),
+                name: "Циркон 9".to_string(),
+                mgrs: String::new(),
+                lat: 0.0,
+                lng: 0.0,
+                certainty: "high".to_string(),
+                fact_count: 1,
+                conflicting: false,
+                first_fact_at: at(first),
+                last_fact_at: at(last),
+                source_group_keys: vec![],
+                updated_at: at(0),
+            }
+        };
+        assert_eq!(new_ranges(None, &row(0, 0)), vec![(at(-30), at(30))]);
+        assert!(new_ranges(Some(&row(0, 5)), &row(0, 5)).is_empty());
+        assert_eq!(
+            new_ranges(Some(&row(0, 5)), &row(0, 7)),
+            vec![(at(35), at(37))]
+        );
+        assert_eq!(
+            new_ranges(Some(&row(0, 5)), &row(-2, 5)),
+            vec![(at(-32), at(-30))]
+        );
     }
 
     #[test]

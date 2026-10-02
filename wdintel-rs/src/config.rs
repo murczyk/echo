@@ -156,6 +156,8 @@ pub const AI_POSITION_KNOWLEDGE_WINDOW_DAYS: i64 = 30;
 /// Messages per page when a knowledge recompute links a position to the
 /// scope's other messages.
 pub const AI_POSITION_KNOWLEDGE_LINK_BATCH: i64 = 500;
+/// Most message cards a knowledge change announces for refresh.
+pub const AI_POSITION_KNOWLEDGE_EVENT_MAX_MESSAGES: u64 = 1_000;
 /// Facts within this distance describe the same place.
 pub const AI_POSITION_KNOWLEDGE_CLUSTER_METERS: f64 = 300.0;
 /// A fact's weight halves every this many days before the latest fact.

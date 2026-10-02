@@ -177,13 +177,14 @@ pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
                 false
             }
         };
-        let recomputed = match knowledge::process_next(&env.dbx).await {
-            Ok(recomputed) => recomputed,
-            Err(error) => {
-                error!("ai_position_worker knowledge failed: {error:#?}");
-                false
-            }
-        };
+        let recomputed =
+            match knowledge::process_next(&env.dbx, &mut redis).await {
+                Ok(recomputed) => recomputed,
+                Err(error) => {
+                    error!("ai_position_worker knowledge failed: {error:#?}");
+                    false
+                }
+            };
         let processed = processed || recomputed;
         if processed {
             continue;
@@ -247,10 +248,7 @@ async fn process_next(
     };
     let Some(source) = load_source(dbx, &job).await.c(h!())? else {
         // The message was deleted or the summary is gone: so are its facts.
-        let transaction = dbx.begin().await.c(h!())?;
-        delete_source_mentions(&transaction, &job).await.c(h!())?;
-        delete_job(&transaction, job.id).await.c(h!())?;
-        transaction.commit().await.c(h!())?;
+        drop_unavailable_source(dbx, &job).await.c(h!())?;
         return Ok(true);
     };
     let extraction =
@@ -362,6 +360,28 @@ where
         (None, None) => return Ok(None),
     };
     Source::find_by_statement(statement).one(dbx).await.c(h!())
+}
+
+/// Deletes the job and its source's mentions unless the job was re-enqueued
+/// or the source came back meanwhile (e.g. a summary completed).
+async fn drop_unavailable_source(
+    dbx: &DatabaseConnection,
+    job: &ai_position_worker_job::Model,
+) -> anyhow::Result<()> {
+    let transaction = dbx.begin().await.c(h!())?;
+    let current = ai_position_worker_job::Entity::find_by_id(job.id)
+        .lock_exclusive()
+        .one(&transaction)
+        .await
+        .c(h!())?;
+    let unchanged =
+        current.is_some_and(|current| current.created_at == job.created_at);
+    if unchanged && load_source(&transaction, job).await.c(h!())?.is_none() {
+        delete_source_mentions(&transaction, job).await.c(h!())?;
+        delete_job(&transaction, job.id).await.c(h!())?;
+    }
+    transaction.commit().await.c(h!())?;
+    Ok(())
 }
 
 async fn complete_job(
@@ -904,10 +924,12 @@ mod tests {
     }
 
     async fn knowledge_scopes(
-        dbx: &sea_orm::DatabaseConnection,
+        env: &crate::types::Env,
     ) -> Vec<(String, String)> {
         use crate::entities::ai_position_knowledge;
-        while crate::ai_position::knowledge::process_next(dbx)
+        let dbx = &env.dbx;
+        let mut redis = env.redis.clone();
+        while crate::ai_position::knowledge::process_next(dbx, &mut redis)
             .await
             .unwrap()
         {}
@@ -964,7 +986,7 @@ mod tests {
                 );
             }
             expected.sort();
-            assert_eq!(knowledge_scopes(&env.dbx).await, expected);
+            assert_eq!(knowledge_scopes(&env).await, expected);
 
             // Losing the fact removes the knowledge.
             enqueue_message_if_enabled(&env.dbx, message_id)
@@ -974,7 +996,7 @@ mod tests {
             complete_job(&env.dbx, &job, &source, &config, extraction(false))
                 .await
                 .unwrap();
-            assert!(knowledge_scopes(&env.dbx).await.is_empty());
+            assert!(knowledge_scopes(&env).await.is_empty());
 
             let mut group =
                 crate::entities::signal_group::Entity::find_by_id(master_key)
@@ -1057,6 +1079,9 @@ mod tests {
                 "ЦИРКОН-9 на зв'язку, без змін",
             )
             .await;
+            // Latin look-alikes: «Циpкoн» with Latin p and o.
+            let latin =
+                message_in_group(&env.dbx, &master_key, "Циpкoн 9 тихо").await;
             let config = load_worker_config(&env.dbx).await.unwrap().unwrap();
             enqueue_message_if_enabled(&env.dbx, message_id)
                 .await
@@ -1066,10 +1091,11 @@ mod tests {
             complete_job(&env.dbx, &job, &source, &config, extraction(true))
                 .await
                 .unwrap();
-            knowledge_scopes(&env.dbx).await;
+            knowledge_scopes(&env).await;
 
             // The group's own later message gets the name either way.
             assert_eq!(linked_names(&env.dbx, later).await, vec!["ЦИРКОН-9"]);
+            assert_eq!(linked_names(&env.dbx, latin).await, vec!["Циpкoн 9"]);
 
             // Another group in the same AOR only when the source is public.
             let other_group = crate::entities::signal_group::Entity::find()
@@ -1159,7 +1185,7 @@ mod tests {
         let shared = |scopes: Vec<(String, String)>| {
             scopes.iter().any(|(kind, _)| kind == "aor")
         };
-        assert!(shared(knowledge_scopes(&env.dbx).await));
+        assert!(shared(knowledge_scopes(&env).await));
 
         // The group turns private: AOR knowledge stops using its facts.
         let mut group = crate::entities::signal_group::Entity::find_by_id(
@@ -1175,7 +1201,7 @@ mod tests {
         crate::ai_position::knowledge::enqueue_for_group(&env.dbx, &master_key)
             .await
             .unwrap();
-        let scopes = knowledge_scopes(&env.dbx).await;
+        let scopes = knowledge_scopes(&env).await;
         assert_eq!(scopes, vec![("group".to_string(), master_key.clone())]);
 
         // The message is deleted: its facts and knowledge go.
@@ -1187,7 +1213,7 @@ mod tests {
             .into_active_model();
         message.deleted = Set(true);
         message.update(&env.dbx).await.unwrap();
-        assert!(knowledge_scopes(&env.dbx).await.is_empty());
+        assert!(knowledge_scopes(&env).await.is_empty());
         assert!(linked_names(&env.dbx, message_id).await.is_empty());
 
         let mut group =
@@ -1228,7 +1254,7 @@ mod tests {
         message.update(&env.dbx).await.unwrap();
 
         assert!(linked_names(&env.dbx, message_id).await.is_empty());
-        assert!(knowledge_scopes(&env.dbx).await.is_empty());
+        assert!(knowledge_scopes(&env).await.is_empty());
     }
 
     #[tokio::test]

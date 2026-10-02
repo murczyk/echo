@@ -122,7 +122,8 @@ pub(crate) fn filter_conditions(
     };
     if let Some(global) = global_filter.map(str::trim).filter(|v| !v.is_empty())
     {
-        conditions.push(name_condition(&bounded(global)?, values));
+        conditions
+            .push(name_condition(&bounded(global).context(h!())?, values));
     }
     for filter in filters {
         let value = bounded(filter.value.trim()).context(h!())?;
@@ -430,11 +431,14 @@ async fn list_knowledge(
              where source_sg.is_secret and not (source_group = any($1))
          )"
     .to_string()];
-    conditions.extend(knowledge_conditions(
-        req.global_filter.as_deref(),
-        &req.column_filters,
-        &mut values,
-    )?);
+    conditions.extend(
+        knowledge_conditions(
+            req.global_filter.as_deref(),
+            &req.column_filters,
+            &mut values,
+        )
+        .context(h!())?,
+    );
     push_cursor(
         &mut conditions,
         &mut values,
