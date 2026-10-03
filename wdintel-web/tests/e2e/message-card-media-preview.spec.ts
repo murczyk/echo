@@ -290,7 +290,28 @@ test.describe('@smoke @regression', () => {
       const dialog = page.getByRole('dialog', { name: 'Перегляд документа' });
       await expect(dialog.getByText('Файлів: 5;', { exact: false })).toBeVisible();
       for (const name of MACOS_ZIP_MEMBER_NAMES)
-        await expect(dialog.getByText(`📄 ${name}`)).toBeVisible();
+        await expect(dialog.getByText(name, { exact: true })).toBeVisible();
+      const rows = dialog.locator('[data-zip-entry-index]');
+      await expect(
+        rows.filter({ hasText: 'Фото.png' }).locator('svg[data-testid="ImageIcon"]'),
+      ).toBeVisible();
+      await expect(
+        rows.filter({ hasText: 'Мапа.kml' }).locator('svg[data-testid="MapOutlinedIcon"]'),
+      ).toBeVisible();
+      await expect(
+        rows.filter({ hasText: 'Наказ.pdf' }).locator('svg[data-testid="DescriptionOutlinedIcon"]'),
+      ).toBeVisible();
+      const row = rows.filter({ hasText: 'Звіт.txt' });
+      const nameBox = await row.locator('[data-zip-entry-name="true"]').boundingBox();
+      const sizeBox = await row.locator('[data-zip-entry-size="true"]').boundingBox();
+      const downloadBox = await row.getByRole('button', { name: 'Скачати Звіт.txt' }).boundingBox();
+      if (nameBox == null || sizeBox == null || downloadBox == null)
+        throw new Error('ZIP member row is not laid out');
+      expect(nameBox.x + nameBox.width).toBeLessThanOrEqual(sizeBox.x + 1);
+      expect(sizeBox.x + sizeBox.width).toBeLessThanOrEqual(downloadBox.x + 1);
+      expect(
+        Math.abs(nameBox.y + nameBox.height / 2 - sizeBox.y - sizeBox.height / 2),
+      ).toBeLessThan(2);
       await expect(dialog.getByText('__MACOSX', { exact: false })).toHaveCount(0);
       await expect(dialog.getByText('._', { exact: false })).toHaveCount(0);
       await expectDownloadFile(

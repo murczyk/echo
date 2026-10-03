@@ -1,4 +1,13 @@
+import AudioFileIcon from '@mui/icons-material/AudioFile';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
+import FolderZipOutlinedIcon from '@mui/icons-material/FolderZipOutlined';
+import ImageIcon from '@mui/icons-material/Image';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
+import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
+import VideocamIcon from '@mui/icons-material/Videocam';
 import { CircularProgress, IconButton, Typography } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -19,6 +28,26 @@ const ZIP_TOO_LARGE_ERROR = 'ZIP перевищує ліміт 25 МіБ для 
 const ZIP_FETCH_TIMEOUT_ERROR = 'Час очікування завантаження ZIP вичерпано.';
 const ZIP_DOWNLOAD_URL_CLEANUP_DELAY_MS = 1_000;
 const activeDownloadUrls = new Map<string, number>();
+const IMAGE_EXTENSIONS = new Set([
+  'avif',
+  'bmp',
+  'gif',
+  'heic',
+  'heif',
+  'jpeg',
+  'jpg',
+  'png',
+  'svg',
+  'tif',
+  'tiff',
+  'webp',
+]);
+const VIDEO_EXTENSIONS = new Set(['avi', 'm4v', 'mkv', 'mov', 'mp4', 'webm']);
+const AUDIO_EXTENSIONS = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav']);
+const MAP_EXTENSIONS = new Set(['geojson', 'gpx', 'kml', 'kmz']);
+const SPREADSHEET_EXTENSIONS = new Set(['csv', 'xls', 'xlsx']);
+const DOCUMENT_EXTENSIONS = new Set(['doc', 'docx', 'md', 'pdf', 'txt']);
+const ARCHIVE_EXTENSIONS = new Set(['7z', 'gz', 'rar', 'tar', 'tgz', 'zip']);
 
 function revokeDownloadUrl(url: string): void {
   const timer = activeDownloadUrls.get(url);
@@ -44,36 +73,60 @@ function safeBasename(path: string, fallback: string): string {
     .trim();
   return name && name !== '.' && name !== '..' ? name.slice(0, 240) : fallback;
 }
+
+function zipEntryIcon(entry: ZipEntry) {
+  if (entry.directory) return <FolderOutlinedIcon fontSize="small" />;
+  const extension = /\.([^./]+)$/.exec(entry.path)?.[1]?.toLowerCase();
+  if (extension && IMAGE_EXTENSIONS.has(extension)) return <ImageIcon fontSize="small" />;
+  if (extension && VIDEO_EXTENSIONS.has(extension)) return <VideocamIcon fontSize="small" />;
+  if (extension && AUDIO_EXTENSIONS.has(extension)) return <AudioFileIcon fontSize="small" />;
+  if (extension && MAP_EXTENSIONS.has(extension)) return <MapOutlinedIcon fontSize="small" />;
+  if (extension && SPREADSHEET_EXTENSIONS.has(extension))
+    return <TableChartOutlinedIcon fontSize="small" />;
+  if (extension && DOCUMENT_EXTENSIONS.has(extension))
+    return <DescriptionOutlinedIcon fontSize="small" />;
+  if (extension && ARCHIVE_EXTENSIONS.has(extension))
+    return <FolderZipOutlinedIcon fontSize="small" />;
+  return <InsertDriveFileOutlinedIcon fontSize="small" />;
+}
+
 function ZipRow({
   entry,
   onDownload,
   busy,
-  error,
 }: {
   entry: ZipEntry;
   onDownload: (entry: ZipEntry) => void;
   busy: boolean;
-  error: string | null;
 }) {
   return (
     <li
-      className="flex items-center gap-2 border-b border-divider px-3 py-2 last:border-b-0"
+      className="flex min-w-0 items-center gap-2 border-b border-divider px-3 py-2 last:border-b-0"
       data-zip-entry-index={entry.index}
     >
-      <div className="min-w-0 flex-1">
-        <Typography noWrap title={entry.path}>
-          {entry.directory ? `📁 ${entry.path}` : `📄 ${entry.path}`}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {entry.directory ? 'Папка' : `${formatSizeBytes(entry.uncompressedSize)} розпаковано`}
-          {entry.unavailableReason ? ` · ${entry.unavailableReason}` : ''}
-        </Typography>
-        {error ? (
-          <Typography variant="caption" color="error.main" display="block">
-            {error}
-          </Typography>
-        ) : null}
-      </div>
+      <span className="inline-flex shrink-0 text-echo-text-muted" aria-hidden>
+        {zipEntryIcon(entry)}
+      </span>
+      <Typography
+        component="span"
+        noWrap
+        title={entry.path}
+        className="min-w-0 flex-1"
+        data-zip-entry-name="true"
+      >
+        {entry.path}
+      </Typography>
+      <Typography
+        component="span"
+        variant="caption"
+        color="text.secondary"
+        className="max-w-[40%] shrink-0 truncate text-right"
+        title={entry.unavailableReason ?? (entry.directory ? undefined : 'Розпакований розмір')}
+        data-zip-entry-size="true"
+      >
+        {entry.directory ? 'Папка' : formatSizeBytes(entry.uncompressedSize)}
+        {entry.unavailableReason ? ` · ${entry.unavailableReason}` : ''}
+      </Typography>
       {!entry.directory ? (
         <IconButton
           aria-label={`Скачати ${entry.path}`}
@@ -83,6 +136,7 @@ function ZipRow({
             onDownload(entry);
           }}
           size="small"
+          className="shrink-0"
         >
           {busy ? <CircularProgress size={16} /> : <DownloadIcon fontSize="small" />}
         </IconButton>
@@ -277,7 +331,6 @@ export function ZipDocumentPreview({
                   key={entry.index}
                   entry={entry}
                   busy={busyIndex === entry.index}
-                  error={null}
                   onDownload={downloadMember}
                 />
               ))}
