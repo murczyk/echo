@@ -260,7 +260,7 @@ async fn ground_coordinate(
 /// written next to an MGRS one.
 /// The system comes from the parser that recognised the coordinate: small
 /// models mislabel it, and «48,12345; 37,54321» is not a grid pair.
-async fn all_coords(text: &str) -> Vec<(Coords, &'static str)> {
+pub(crate) async fn all_coords(text: &str) -> Vec<(Coords, &'static str)> {
     let v2 = parser_v2::collect_coords(text).unwrap_or_default();
     let v1 = parser_v1::collect_coords(text).await.unwrap_or_default();
     [

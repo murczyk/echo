@@ -145,6 +145,15 @@ pub const AI_POSITION_WORKER_RETRY_MAX_SECS: i64 = 300;
 pub const AI_POSITION_WORKER_MAX_ATTEMPTS: i32 = 8;
 pub const AI_POSITION_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_POSITION_BACKFILL_MAX_DAYS: i64 = 90;
+pub const AI_POSITION_FEEDBACK_TEXT_MAX_CHARS: usize = 2_000;
+pub const AI_POSITION_FEEDBACK_VERDICTS: [&str; 6] = [
+    "correct",
+    "not_position",
+    "wrong_name",
+    "wrong_coordinates",
+    "missed",
+    "other",
+];
 pub const AI_POSITION_BACKFILL_BATCH: i64 = 1_000;
 pub const AI_POSITION_LIST_MAX_LIMIT: u64 = 200;
 pub const AI_POSITION_LIST_DEFAULT_LIMIT: u64 = 50;

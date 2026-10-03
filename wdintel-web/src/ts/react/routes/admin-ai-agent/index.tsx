@@ -83,7 +83,7 @@ import {
 } from '../../services/api/ai-agent';
 import { listAiEngines } from '../../services/api/ai-engines';
 import { AdminAiCallsignsPage } from '../admin-ai-callsigns';
-import { AdminAiPositionsPage } from '../admin-ai-positions';
+import { AdminAiPositionPage, AdminAiPositionsPage } from '../admin-ai-positions';
 import { AdminAiSettlementsPage } from '../admin-ai-settlements';
 import { AdminAiIntelReportsPage } from '../admin-ai-intel-reports';
 import { AdminOcrPage } from '../admin-ocr';
@@ -105,6 +105,7 @@ export type AiAgentAdminSection =
   | 'callsigns'
   | 'settlements'
   | 'positions'
+  | 'position'
   | 'intelligence-reports'
   | 'ocr'
   | 'settings';
@@ -1954,7 +1955,13 @@ function SettingsPage() {
   );
 }
 
-export function AdminAiAgentPage({ section }: { section: AiAgentAdminSection }) {
+export function AdminAiAgentPage({
+  section,
+  itemId = null,
+}: {
+  section: AiAgentAdminSection;
+  itemId?: string | null;
+}) {
   switch (section) {
     case 'providers':
       return <ProvidersPage />;
@@ -1972,6 +1979,8 @@ export function AdminAiAgentPage({ section }: { section: AiAgentAdminSection }) 
       return <AdminAiSettlementsPage />;
     case 'positions':
       return <AdminAiPositionsPage />;
+    case 'position':
+      return <AdminAiPositionPage id={Number(itemId)} />;
     case 'intelligence-reports':
       return <AdminAiIntelReportsPage />;
     case 'ocr':

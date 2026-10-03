@@ -448,6 +448,7 @@ mod m20260928_145311_enable_message_auto_parse;
 mod m20260929_152018_ai_agent_map_artifacts;
 mod m20260929_195200_ai_agent_map_workspace;
 mod m20261002_192628_ai_position_parsing;
+mod m20261003_041306_ai_position_feedback;
 
 pub struct Migrator;
 
@@ -1068,6 +1069,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260929_152018_ai_agent_map_artifacts::Migration),
             Box::new(m20260929_195200_ai_agent_map_workspace::Migration),
             Box::new(m20261002_192628_ai_position_parsing::Migration),
+            Box::new(m20261003_041306_ai_position_feedback::Migration),
         ]
     }
 }

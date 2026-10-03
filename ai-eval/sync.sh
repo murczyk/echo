@@ -56,8 +56,21 @@ fi
 if [[ -z "${AWS_SECRET_ACCESS_KEY:-}" && -n "${ECHOUASTORAGE_LFS_AWS_SECRET_ACCESS_KEY:-}" ]]; then
   export AWS_SECRET_ACCESS_KEY="$ECHOUASTORAGE_LFS_AWS_SECRET_ACCESS_KEY"
 fi
+# Read-only keys are enough to download.
+if [[ "$direction" == "from-cloud" ]]; then
+  if [[ -z "${AWS_ACCESS_KEY_ID:-}" && -n "${ECHOUASTORAGE_LFS_RO_AWS_ACCESS_KEY_ID:-}" ]]; then
+    export AWS_ACCESS_KEY_ID="$ECHOUASTORAGE_LFS_RO_AWS_ACCESS_KEY_ID"
+  fi
+  if [[ -z "${AWS_SECRET_ACCESS_KEY:-}" && -n "${ECHOUASTORAGE_LFS_RO_AWS_SECRET_ACCESS_KEY:-}" ]]; then
+    export AWS_SECRET_ACCESS_KEY="$ECHOUASTORAGE_LFS_RO_AWS_SECRET_ACCESS_KEY"
+  fi
+fi
 if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
-  echo "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required" >&2
+  if [[ "$direction" == "to-cloud" ]]; then
+    echo "Uploading needs write keys: AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or ECHOUASTORAGE_LFS_AWS_ACCESS_KEY_ID/ECHOUASTORAGE_LFS_AWS_SECRET_ACCESS_KEY" >&2
+  else
+    echo "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (or ECHOUASTORAGE_LFS_RO_* read-only keys) are required" >&2
+  fi
   exit 1
 fi
 

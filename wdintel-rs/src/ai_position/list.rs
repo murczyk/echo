@@ -8,7 +8,9 @@ use super::types::{
     AiPositionListCursor, AiPositionMentionItem, AiPositionMentionListReq,
     AiPositionMentionListRsp, AiPositionSpan,
 };
-use crate::config::AI_POSITION_KNOWLEDGE_WINDOW_DAYS;
+use crate::config::{
+    AI_POSITION_FEEDBACK_VERDICTS, AI_POSITION_KNOWLEDGE_WINDOW_DAYS,
+};
 use crate::config::{
     AI_POSITION_LIST_DEFAULT_LIMIT, AI_POSITION_LIST_FILTER_MAX_CHARS,
     AI_POSITION_LIST_MAX_FILTERS, AI_POSITION_LIST_MAX_LIMIT,
@@ -64,7 +66,7 @@ pub async fn list_ai_position_knowledge(
 
 /// Groups the admin can read; private groups outside them stay hidden even
 /// on admin pages. An admin without a zone sees no private group.
-async fn admin_groups(
+pub(crate) async fn admin_groups(
     env: &Env,
     user: &Identity,
 ) -> Result<Vec<String>, AppError> {
@@ -149,6 +151,28 @@ pub(crate) fn filter_conditions(
                     values.len()
                 )
             }
+            ("feedback", "є") => {
+                "exists (select 1 from ai_position_feedback f where f.mention_id = m.id)".to_string()
+            }
+            ("feedback", "немає") => {
+                "not exists (select 1 from ai_position_feedback f where f.mention_id = m.id)"
+                    .to_string()
+            }
+            ("feedback", value) if AI_POSITION_FEEDBACK_VERDICTS.contains(&value) => {
+                values.push(value.to_string().into());
+                format!(
+                    "exists (select 1 from ai_position_feedback f where f.mention_id = m.id and f.verdict = ${})",
+                    values.len()
+                )
+            }
+            // A position's interceptions: its exact key within one scope.
+            ("positionKey", value) => {
+                values.push(value.to_string().into());
+                format!("m.name_key = ${}", values.len())
+            }
+            ("positionScope", value) => {
+                scope_condition(value, values).context(h!())?
+            }
             _ => {
                 return Err(AppError::BL {
                     msg: format!("Невідомий фільтр {}", filter.id),
@@ -181,6 +205,36 @@ fn push_cursor(
         values.len()
     ));
     Ok(())
+}
+
+/// `aor:<id>`: the AOR's current non-private groups; `group:<key>`.
+fn scope_condition(
+    value: &str,
+    values: &mut Vec<Value>,
+) -> Result<String, AppError> {
+    match value.split_once(':') {
+        Some(("aor", aor_id)) => {
+            let aor_id: i64 = aor_id.parse().map_err(|_| AppError::BL {
+                msg: "Невідомий район відповідальності".to_string(),
+            })?;
+            values.push(aor_id.into());
+            Ok(format!(
+                "not coalesce(sg.is_secret, false) and exists (
+                     select 1 from signal_group_aor sga
+                     join area_of_responsibility aor on aor.id = sga.aor_id and not aor.deleted
+                     where sga.master_key = m.group_master_key and sga.aor_id = ${}
+                 )",
+                values.len()
+            ))
+        }
+        Some(("group", key)) => {
+            values.push(key.to_string().into());
+            Ok(format!("m.group_master_key = ${}", values.len()))
+        }
+        _ => Err(AppError::BL {
+            msg: "Невідома область позиції".to_string(),
+        }),
+    }
 }
 
 fn bounded(value: &str) -> Result<String, AppError> {
@@ -278,6 +332,12 @@ async fn list(
         load_coordinates(dbx, rows.iter().map(|row| row.id).collect())
             .await
             .c(h!())?;
+    let mut feedback = super::feedback::mention_feedback_items(
+        dbx,
+        rows.iter().map(|row| row.id).collect(),
+    )
+    .await
+    .c(h!())?;
     Ok(AiPositionMentionListRsp {
         items: rows
             .into_iter()
@@ -294,6 +354,7 @@ async fn list(
                 media_id: row.media_id.map(|id| id.to_string()),
                 media_name: row.media_name,
                 coordinates: coordinates.remove(&row.id).unwrap_or_default(),
+                feedback: feedback.remove(&row.id).unwrap_or_default(),
                 name: row.name,
                 name_key: row.name_key,
                 context_before: row.context_before.unwrap_or_default(),
@@ -348,6 +409,7 @@ pub(crate) async fn load_coordinates(
 struct KnowledgeRow {
     id: i64,
     scope_kind: String,
+    scope_key: String,
     scope_name: Option<String>,
     scope_is_secret: bool,
     name: String,
@@ -395,6 +457,25 @@ fn knowledge_conditions(
             }
             ("scope", "aor") => "k.scope_kind = 'aor'".to_string(),
             ("scope", "group") => "k.scope_kind = 'group'".to_string(),
+            ("id", value) => {
+                let id: i64 = value.parse().map_err(|_| AppError::BL {
+                    msg: "Невідома позиція".to_string(),
+                })?;
+                values.push(id.into());
+                format!("k.id = ${}", values.len())
+            }
+            ("feedback", "є") => "exists (
+                 select 1 from ai_position_feedback f
+                 where f.target_kind = 'knowledge' and f.name_key = k.name_key
+                   and f.scope_kind = k.scope_kind and f.scope_key = k.scope_key
+             )"
+            .to_string(),
+            ("feedback", "немає") => "not exists (
+                 select 1 from ai_position_feedback f
+                 where f.target_kind = 'knowledge' and f.name_key = k.name_key
+                   and f.scope_kind = k.scope_kind and f.scope_key = k.scope_key
+             )"
+            .to_string(),
             ("conflicting", "так") => "k.conflicting".to_string(),
             ("conflicting", "ні") => "not k.conflicting".to_string(),
             ("certainty", value)
@@ -449,7 +530,7 @@ async fn list_knowledge(
     .context(h!())?;
     values.push(((limit + 1) as i64).into());
     let sql = format!(
-        "select k.id, k.scope_kind,
+        "select k.id, k.scope_kind, k.scope_key,
                 case when k.scope_kind = 'aor' then aor.name else sg.name end as scope_name,
                 coalesce(sg.is_secret, false) as scope_is_secret,
                 k.name, k.name_key, k.mgrs, k.lat, k.lng, k.certainty, k.fact_count,
@@ -480,12 +561,33 @@ async fn list_knowledge(
     } else {
         None
     };
+    let keys: Vec<(String, String, String)> = rows
+        .iter()
+        .map(|row| {
+            (
+                row.scope_kind.clone(),
+                row.scope_key.clone(),
+                row.name_key.clone(),
+            )
+        })
+        .collect();
+    let mut feedback = super::feedback::knowledge_feedback_items(dbx, &keys)
+        .await
+        .c(h!())?;
     Ok(AiPositionKnowledgeListRsp {
         items: rows
             .into_iter()
             .map(|row| AiPositionKnowledgeItem {
+                feedback: feedback
+                    .remove(&(
+                        row.scope_kind.clone(),
+                        row.scope_key.clone(),
+                        row.name_key.clone(),
+                    ))
+                    .unwrap_or_default(),
                 id: row.id,
                 scope_kind: row.scope_kind,
+                scope_key: row.scope_key,
                 scope_name: row.scope_name.unwrap_or_default(),
                 scope_is_secret: row.scope_is_secret,
                 name: row.name,

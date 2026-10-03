@@ -1,4 +1,4 @@
-import { Box, Chip, Stack, Typography } from '@mui/material';
+import { Box, Chip, Link, Stack, Typography } from '@mui/material';
 import { MaterialReactTable } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -30,9 +30,10 @@ import {
   useTableStateContext,
 } from '../../components/mui-customized/table/table-state-provider';
 import { listAiPositionKnowledge } from '../../services/api/ai-positions';
+import { VERDICT_LABELS } from './feedback';
 
 const PAGE_SIZE = 50;
-const FILTER_COLUMNS = new Set(['name', 'scope', 'conflicting', 'certainty']);
+const FILTER_COLUMNS = new Set(['name', 'scope', 'conflicting', 'certainty', 'feedback']);
 const SCOPE_OPTIONS = withExplicitSelectAllOption([
   { text: 'район відповідальності', value: 'aor' },
   { text: 'група', value: 'group' },
@@ -45,6 +46,10 @@ const CERTAINTY_OPTIONS = withExplicitSelectAllOption([
   { text: 'висока', value: 'high' },
   { text: 'середня', value: 'medium' },
   { text: 'низька', value: 'low' },
+]);
+const FEEDBACK_OPTIONS = withExplicitSelectAllOption([
+  { text: 'є', value: 'є' },
+  { text: 'немає', value: 'немає' },
 ]);
 const CERTAINTY_LABELS: Record<string, string> = {
   high: 'висока',
@@ -59,6 +64,7 @@ const DEFAULT_COLUMN_ORDER = [
   'conflicting',
   'factCount',
   'lastFactAt',
+  'feedback',
 ];
 
 type QueryState = { globalFilter: string; columnFilters: AiPositionColumnFilter[] };
@@ -82,7 +88,16 @@ function selectFilter(options: typeof SCOPE_OPTIONS) {
 
 function buildColumns(): AppMrtColumnDef<AiPositionKnowledgeItem>[] {
   return [
-    { id: 'name', accessorKey: 'name', header: 'Позиція', size: 180 },
+    {
+      id: 'name',
+      accessorKey: 'name',
+      header: 'Позиція',
+      size: 180,
+      meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+      Cell: mrtCustomCell(({ row }) => (
+        <Link href={`/admin/ai/positions/${row.original.id}`}>{row.original.name}</Link>
+      )),
+    },
     {
       id: 'scope',
       accessorFn: (row) => row.scopeKind,
@@ -137,6 +152,30 @@ function buildColumns(): AppMrtColumnDef<AiPositionKnowledgeItem>[] {
       header: 'Підтверджень',
       size: 120,
       enableColumnFilter: false,
+    },
+    {
+      id: 'feedback',
+      accessorFn: (row) => (row.feedback.length > 0 ? 'є' : 'немає'),
+      header: 'Відгук',
+      size: 180,
+      ...selectFilter(FEEDBACK_OPTIONS),
+      meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+      Cell: mrtCustomCell(({ row }) => (
+        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+          {row.original.feedback.length === 0 ? (
+            <Typography color="text.secondary">—</Typography>
+          ) : (
+            row.original.feedback.map((item) => (
+              <Chip
+                key={item.id}
+                size="small"
+                color={item.verdict === 'correct' ? 'success' : 'warning'}
+                label={VERDICT_LABELS[item.verdict] ?? item.verdict}
+              />
+            ))
+          )}
+        </Stack>
+      )),
     },
     {
       id: 'lastFactAt',

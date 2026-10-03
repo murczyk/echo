@@ -2,6 +2,7 @@ import { Box, Stack, Tab, Tabs } from '@mui/material';
 import { useState } from 'react';
 
 import { KnowledgeTab } from './KnowledgeTab';
+export { AdminAiPositionPage } from './PositionPage';
 import { MentionsTab } from './MentionsTab';
 import { SettingsTab } from './SettingsTab';
 

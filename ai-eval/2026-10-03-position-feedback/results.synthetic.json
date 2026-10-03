@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-03",
+  "engine": "google/gemma-4-26B-A4B-it (vLLM router)",
+  "prompt": "ai-eval/2026-10-02-position-prompt/prompt.txt",
+  "cases": "cases.synthetic.jsonl",
+  "results": [
+    {
+      "id": 1,
+      "verdict": "correct",
+      "passed": true,
+      "found": [
+        "циркон 9"
+      ],
+      "note": "expected the position and its coordinates"
+    },
+    {
+      "id": 2,
+      "verdict": "not_position",
+      "passed": true,
+      "found": [
+        "циркон 9"
+      ],
+      "note": "«Гудок» is not a position"
+    },
+    {
+      "id": 3,
+      "verdict": "wrong_coordinates",
+      "passed": false,
+      "found": [
+        "сокіл 4"
+      ],
+      "note": "wrong coordinates [\"37UCQ1234567890\"], expected «»"
+    },
+    {
+      "id": 4,
+      "verdict": "missed",
+      "passed": false,
+      "found": [
+        "лиман 2"
+      ],
+      "note": "missed [\"береза 3\", \"оп лиман 2\"]"
+    },
+    {
+      "id": 5,
+      "verdict": "not_position",
+      "passed": true,
+      "found": [],
+      "note": "«Буран» is not a position"
+    },
+    {
+      "id": 6,
+      "verdict": "wrong_name",
+      "passed": false,
+      "found": [],
+      "note": "extraction failed: malformed JSON from the model"
+    }
+  ]
+}

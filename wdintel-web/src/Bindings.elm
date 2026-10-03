@@ -14677,6 +14677,7 @@ type alias AiPositionPageRsp =
     , engines : List (AiPositionEngineItem)
     , worker : AiPositionWorkerSettingsItem
     , pendingJobs : Int
+    , openFeedback : Int
     }
 
 
@@ -14688,6 +14689,7 @@ aiPositionPageRspEncoder struct =
         , ( "engines", (Json.Encode.list (aiPositionEngineItemEncoder)) struct.engines )
         , ( "worker", (aiPositionWorkerSettingsItemEncoder) struct.worker )
         , ( "pendingJobs", (Json.Encode.int) struct.pendingJobs )
+        , ( "openFeedback", (Json.Encode.int) struct.openFeedback )
         ]
 
 
@@ -14905,6 +14907,7 @@ type alias AiPositionMentionItem =
     , modelName : String
     , groupIsSecret : Bool
     , coordinates : List (AiPositionCoordinateItem)
+    , feedback : List (AiPositionFeedbackItem)
     }
 
 
@@ -14926,6 +14929,7 @@ aiPositionMentionItemEncoder struct =
         , ( "modelName", (Json.Encode.string) struct.modelName )
         , ( "groupIsSecret", (Json.Encode.bool) struct.groupIsSecret )
         , ( "coordinates", (Json.Encode.list (aiPositionCoordinateItemEncoder)) struct.coordinates )
+        , ( "feedback", (Json.Encode.list (aiPositionFeedbackItemEncoder)) struct.feedback )
         ]
 
 
@@ -14964,6 +14968,7 @@ aiPositionKnowledgeListReqEncoder struct =
 type alias AiPositionKnowledgeItem =
     { id : Int
     , scopeKind : String
+    , scopeKey : String
     , scopeName : String
     , scopeIsSecret : Bool
     , name : String
@@ -14976,6 +14981,7 @@ type alias AiPositionKnowledgeItem =
     , conflicting : Bool
     , firstFactAt : Int
     , lastFactAt : Int
+    , feedback : List (AiPositionFeedbackItem)
     }
 
 
@@ -14984,6 +14990,7 @@ aiPositionKnowledgeItemEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "scopeKind", (Json.Encode.string) struct.scopeKind )
+        , ( "scopeKey", (Json.Encode.string) struct.scopeKey )
         , ( "scopeName", (Json.Encode.string) struct.scopeName )
         , ( "scopeIsSecret", (Json.Encode.bool) struct.scopeIsSecret )
         , ( "name", (Json.Encode.string) struct.name )
@@ -14996,6 +15003,7 @@ aiPositionKnowledgeItemEncoder struct =
         , ( "conflicting", (Json.Encode.bool) struct.conflicting )
         , ( "firstFactAt", (Json.Encode.int) struct.firstFactAt )
         , ( "lastFactAt", (Json.Encode.int) struct.lastFactAt )
+        , ( "feedback", (Json.Encode.list (aiPositionFeedbackItemEncoder)) struct.feedback )
         ]
 
 
@@ -15010,6 +15018,88 @@ aiPositionKnowledgeListRspEncoder struct =
     Json.Encode.object
         [ ( "items", (Json.Encode.list (aiPositionKnowledgeItemEncoder)) struct.items )
         , ( "nextCursor", (Maybe.withDefault Json.Encode.null << Maybe.map (aiPositionListCursorEncoder)) struct.nextCursor )
+        ]
+
+
+type alias AiPositionFeedbackItem =
+    { id : Int
+    , targetKind : String
+    , verdict : String
+    , expected : String
+    , comment : String
+    , createdBy : Maybe (String)
+    , createdAt : Int
+    , reparsedAt : Maybe (Int)
+    }
+
+
+aiPositionFeedbackItemEncoder : AiPositionFeedbackItem -> Json.Encode.Value
+aiPositionFeedbackItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "targetKind", (Json.Encode.string) struct.targetKind )
+        , ( "verdict", (Json.Encode.string) struct.verdict )
+        , ( "expected", (Json.Encode.string) struct.expected )
+        , ( "comment", (Json.Encode.string) struct.comment )
+        , ( "createdBy", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.createdBy )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "reparsedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.reparsedAt )
+        ]
+
+
+type alias SaveAiPositionFeedbackReq =
+    { mentionId : Maybe (Int)
+    , knowledgeId : Maybe (Int)
+    , verdict : String
+    , expected : String
+    , comment : String
+    }
+
+
+saveAiPositionFeedbackReqEncoder : SaveAiPositionFeedbackReq -> Json.Encode.Value
+saveAiPositionFeedbackReqEncoder struct =
+    Json.Encode.object
+        [ ( "mentionId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.mentionId )
+        , ( "knowledgeId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.knowledgeId )
+        , ( "verdict", (Json.Encode.string) struct.verdict )
+        , ( "expected", (Json.Encode.string) struct.expected )
+        , ( "comment", (Json.Encode.string) struct.comment )
+        ]
+
+
+type alias AiPositionIdReq =
+    { id : Int
+    }
+
+
+aiPositionIdReqEncoder : AiPositionIdReq -> Json.Encode.Value
+aiPositionIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        ]
+
+
+type alias AiPositionReparseReq =
+    { mentionId : Maybe (Int)
+    }
+
+
+aiPositionReparseReqEncoder : AiPositionReparseReq -> Json.Encode.Value
+aiPositionReparseReqEncoder struct =
+    Json.Encode.object
+        [ ( "mentionId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.mentionId )
+        ]
+
+
+type alias AiPositionReparseRsp =
+    { queued : Int
+    }
+
+
+aiPositionReparseRspEncoder : AiPositionReparseRsp -> Json.Encode.Value
+aiPositionReparseRspEncoder struct =
+    Json.Encode.object
+        [ ( "queued", (Json.Encode.int) struct.queued )
         ]
 
 
@@ -25070,6 +25160,7 @@ aiPositionPageRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engines" (Json.Decode.list (aiPositionEngineItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "worker" (aiPositionWorkerSettingsItemDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pendingJobs" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "openFeedback" (Json.Decode.int)))
 
 
 saveAiPositionPromptReqDecoder : Json.Decode.Decoder SaveAiPositionPromptReq
@@ -25189,6 +25280,7 @@ aiPositionMentionItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groupIsSecret" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinates" (Json.Decode.list (aiPositionCoordinateItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feedback" (Json.Decode.list (aiPositionFeedbackItemDecoder))))
 
 
 aiPositionMentionListRspDecoder : Json.Decode.Decoder AiPositionMentionListRsp
@@ -25212,6 +25304,7 @@ aiPositionKnowledgeItemDecoder =
     Json.Decode.succeed AiPositionKnowledgeItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scopeKind" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scopeKey" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scopeName" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scopeIsSecret" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
@@ -25224,6 +25317,7 @@ aiPositionKnowledgeItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conflicting" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "firstFactAt" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastFactAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feedback" (Json.Decode.list (aiPositionFeedbackItemDecoder))))
 
 
 aiPositionKnowledgeListRspDecoder : Json.Decode.Decoder AiPositionKnowledgeListRsp
@@ -25231,6 +25325,47 @@ aiPositionKnowledgeListRspDecoder =
     Json.Decode.succeed AiPositionKnowledgeListRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiPositionKnowledgeItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nextCursor" (Json.Decode.nullable (aiPositionListCursorDecoder))))
+
+
+aiPositionFeedbackItemDecoder : Json.Decode.Decoder AiPositionFeedbackItem
+aiPositionFeedbackItemDecoder =
+    Json.Decode.succeed AiPositionFeedbackItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "targetKind" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "verdict" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdBy" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reparsedAt" (Json.Decode.nullable (Json.Decode.int))))
+
+
+saveAiPositionFeedbackReqDecoder : Json.Decode.Decoder SaveAiPositionFeedbackReq
+saveAiPositionFeedbackReqDecoder =
+    Json.Decode.succeed SaveAiPositionFeedbackReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mentionId" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "knowledgeId" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "verdict" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
+
+
+aiPositionIdReqDecoder : Json.Decode.Decoder AiPositionIdReq
+aiPositionIdReqDecoder =
+    Json.Decode.succeed AiPositionIdReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+
+
+aiPositionReparseReqDecoder : Json.Decode.Decoder AiPositionReparseReq
+aiPositionReparseReqDecoder =
+    Json.Decode.succeed AiPositionReparseReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mentionId" (Json.Decode.nullable (Json.Decode.int))))
+
+
+aiPositionReparseRspDecoder : Json.Decode.Decoder AiPositionReparseRsp
+aiPositionReparseRspDecoder =
+    Json.Decode.succeed AiPositionReparseRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "queued" (Json.Decode.int)))
 
 
 ocrStatusLogItemDecoder : Json.Decode.Decoder OcrStatusLogItem

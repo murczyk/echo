@@ -121,3 +121,4 @@ public.ai_position_coordinate
 public.ai_position_knowledge
 public.ai_position_knowledge_job
 public.ai_position_link_job
+public.ai_position_feedback

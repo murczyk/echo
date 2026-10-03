@@ -1,7 +1,9 @@
 //! AI position extraction: named positions in messages and document
 //! summaries, and the coordinates the text ties to them. See README.md.
 
+pub mod eval;
 mod extract;
+pub mod feedback;
 pub mod knowledge;
 pub mod list;
 pub mod normalize;
@@ -282,6 +284,7 @@ async fn load_page(
                 .map(|id| id.to_string()),
         },
         pending_jobs: worker::pending_jobs(dbx).await.c(h!())?,
+        open_feedback: feedback::open_feedback_count(dbx).await.c(h!())?,
     })
 }
 

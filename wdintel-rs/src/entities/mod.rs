@@ -31,6 +31,7 @@ pub mod ai_engine;
 pub mod ai_intel_report_attempt;
 pub mod ai_intel_report_settings;
 pub mod ai_position_coordinate;
+pub mod ai_position_feedback;
 pub mod ai_position_knowledge;
 pub mod ai_position_knowledge_job;
 pub mod ai_position_mention;

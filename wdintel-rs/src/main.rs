@@ -462,6 +462,38 @@ pub struct OneoffRadioPerDayPerAbonentPs {
 }
 
 #[derive(clap::Parser, Debug)]
+#[command(
+    after_help = "Example:\n  wdintel-rs --mode=live ai-position-feedback-export --output /tmp/position-feedback.jsonl"
+)]
+pub struct AiPositionFeedbackExportPs {
+    /// JSONL file to write the reviewed cases to.
+    #[arg(long)]
+    pub output: String,
+    /// Only feedback created on or after this date (`YYYY-MM-DD`).
+    #[arg(long)]
+    pub since: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
+#[command(
+    after_help = "Example:\n  wdintel-rs --mode=debug ai-position-eval --cases ai-eval/2026-10-03-position-feedback/raw/cases.jsonl --engine /path/to/private-engine.json"
+)]
+pub struct AiPositionEvalPs {
+    /// JSONL cases from `ai-position-feedback-export`.
+    #[arg(long)]
+    pub cases: String,
+    /// Private JSON with `url`, `model_name` and optional `token`.
+    #[arg(long)]
+    pub engine: String,
+    /// Prompt file; defaults to the built-in prompt.
+    #[arg(long)]
+    pub prompt: Option<String>,
+    /// Where to write per-case results (JSON).
+    #[arg(long)]
+    pub output: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffExportSigintCommentsPs {
     #[arg(long)]
     pub organisms: Vec<String>,
@@ -1083,6 +1115,10 @@ enum Cmd {
     OneoffCleanBattleLineKmz(OneoffCleanBattleLineKmzPs),
     OneoffDeltaCsvToKmz(OneoffDeltaCsvToKmzPs),
     OneoffReprocessCallsigns(OneoffReprocessCallsignsPs),
+    /// Export AI position feedback as evaluation cases (JSONL).
+    AiPositionFeedbackExport(AiPositionFeedbackExportPs),
+    /// Replay AI position evaluation cases through extraction and score them.
+    AiPositionEval(AiPositionEvalPs),
     /// Reprocess inbox callsigns in a table TUI with before/after columns.
     OneoffReprocessCallsignsTui(OneoffReprocessCallsignsPs),
     OneoffReprocessCallsignTokens(OneoffReprocessCallsignTokensPs),
@@ -1749,6 +1785,14 @@ async fn async_main(
             rer_importer::callsigns::oneoff_reprocess_callsign_tokens(mode, &ps)
                 .await
         }
+        Cmd::AiPositionFeedbackExport(ps) => {
+            ai_position::eval::export_feedback(mode, &ps)
+                .await
+                .map_err(AppError::from)
+        }
+        Cmd::AiPositionEval(ps) => ai_position::eval::evaluate(mode, &ps)
+            .await
+            .map_err(AppError::from),
         Cmd::OneoffReprocessCallsigns(ps) => {
             rer_importer::callsigns::oneoff_reprocess_callsigns(mode, &ps).await
         }

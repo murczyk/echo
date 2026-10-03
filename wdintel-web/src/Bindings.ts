@@ -5696,6 +5696,7 @@ export type AiPositionPageRsp = {
   engines: Array<AiPositionEngineItem>;
   worker: AiPositionWorkerSettingsItem;
   pendingJobs: number;
+  openFeedback: number;
 };
 
 export type SaveAiPositionPromptReq = {
@@ -5787,6 +5788,7 @@ export type AiPositionMentionItem = {
   modelName: string;
   groupIsSecret: boolean;
   coordinates: Array<AiPositionCoordinateItem>;
+  feedback: Array<AiPositionFeedbackItem>;
 };
 
 export type AiPositionMentionListRsp = {
@@ -5804,6 +5806,7 @@ export type AiPositionKnowledgeListReq = {
 export type AiPositionKnowledgeItem = {
   id: number;
   scopeKind: string;
+  scopeKey: string;
   scopeName: string;
   scopeIsSecret: boolean;
   name: string;
@@ -5816,11 +5819,43 @@ export type AiPositionKnowledgeItem = {
   conflicting: boolean;
   firstFactAt: number;
   lastFactAt: number;
+  feedback: Array<AiPositionFeedbackItem>;
 };
 
 export type AiPositionKnowledgeListRsp = {
   items: Array<AiPositionKnowledgeItem>;
   nextCursor: AiPositionListCursor | null;
+};
+
+export type AiPositionFeedbackItem = {
+  id: number;
+  targetKind: string;
+  verdict: string;
+  expected: string;
+  comment: string;
+  createdBy: string | null;
+  createdAt: number;
+  reparsedAt: number | null;
+};
+
+export type SaveAiPositionFeedbackReq = {
+  mentionId: number | null;
+  knowledgeId: number | null;
+  verdict: string;
+  expected: string;
+  comment: string;
+};
+
+export type AiPositionIdReq = {
+  id: number;
+};
+
+export type AiPositionReparseReq = {
+  mentionId: number | null;
+};
+
+export type AiPositionReparseRsp = {
+  queued: number;
 };
 
 export type OcrStatusLogItem = {

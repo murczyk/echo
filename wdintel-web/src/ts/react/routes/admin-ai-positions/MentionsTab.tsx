@@ -1,3 +1,5 @@
+import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined';
+import ReplayIcon from '@mui/icons-material/Replay';
 import { Box, Chip, Link, Stack, Typography } from '@mui/material';
 import { MaterialReactTable } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -5,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AiPositionColumnFilter,
   AiPositionCoordinateItem,
+  AiPositionFeedbackItem,
   AiPositionListCursor,
   AiPositionMentionItem,
 } from '../../../../Bindings';
@@ -30,10 +33,16 @@ import {
   TableStateProvider,
   useTableStateContext,
 } from '../../components/mui-customized/table/table-state-provider';
-import { listAiPositionMentions } from '../../services/api/ai-positions';
+import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
+import {
+  getAiPositionPage,
+  listAiPositionMentions,
+  reparseAiPositionFeedback,
+} from '../../services/api/ai-positions';
+import { FeedbackChips, FeedbackDialog, VERDICT_LABELS } from './feedback';
 
 const PAGE_SIZE = 50;
-const FILTER_COLUMNS = new Set(['name', 'source', 'hasCoordinates', 'certainty']);
+const FILTER_COLUMNS = new Set(['name', 'source', 'hasCoordinates', 'certainty', 'feedback']);
 
 const HAS_COORDINATES_OPTIONS = withExplicitSelectAllOption([
   { text: 'так', value: 'так' },
@@ -48,6 +57,11 @@ const CERTAINTY_OPTIONS = withExplicitSelectAllOption([
   { text: 'середня', value: 'medium' },
   { text: 'низька', value: 'low' },
 ]);
+const FEEDBACK_OPTIONS = withExplicitSelectAllOption([
+  { text: 'є', value: 'є' },
+  { text: 'немає', value: 'немає' },
+  ...Object.entries(VERDICT_LABELS).map(([value, text]) => ({ text, value })),
+]);
 const CERTAINTY_LABELS: Record<string, string> = {
   high: 'висока',
   medium: 'середня',
@@ -61,6 +75,7 @@ const DEFAULT_COLUMN_ORDER = [
   'context',
   'hasCoordinates',
   'certainty',
+  'feedback',
   'modelName',
 ];
 const DEFAULT_COLUMN_VISIBILITY = { modelName: false };
@@ -112,7 +127,9 @@ function bestCertainty(coordinates: AiPositionCoordinateItem[]): string | null {
   );
 }
 
-function buildColumns(): AppMrtColumnDef<AiPositionMentionItem>[] {
+function buildColumns(
+  onFeedbackDeleted: (mentionId: number, feedbackId: number) => void,
+): AppMrtColumnDef<AiPositionMentionItem>[] {
   return [
     {
       id: 'messageAt',
@@ -215,6 +232,20 @@ function buildColumns(): AppMrtColumnDef<AiPositionMentionItem>[] {
       },
     },
     {
+      id: 'feedback',
+      accessorFn: (row) => row.feedback.map((item) => item.verdict).join(' '),
+      header: 'Відгук',
+      size: 200,
+      ...selectFilter(FEEDBACK_OPTIONS),
+      meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+      Cell: mrtCustomCell(({ row }) => (
+        <FeedbackChips
+          feedback={row.original.feedback}
+          onDeleted={(feedbackId) => onFeedbackDeleted(row.original.id, feedbackId)}
+        />
+      )),
+    },
+    {
       id: 'modelName',
       accessorKey: 'modelName',
       header: 'Модель',
@@ -228,13 +259,19 @@ function MentionsTable({
   rows,
   loading,
   onQueryStateChange,
+  onFeedback,
+  onReparse,
+  onFeedbackDeleted,
 }: {
   rows: AiPositionMentionItem[];
   loading: boolean;
   onQueryStateChange: (queryState: QueryState) => void;
+  onFeedback: (row: AiPositionMentionItem) => void;
+  onReparse: (row: AiPositionMentionItem) => void;
+  onFeedbackDeleted: (mentionId: number, feedbackId: number) => void;
 }) {
   const tableStateContext = useTableStateContext();
-  const columns = useMemo(buildColumns, []);
+  const columns = useMemo(() => buildColumns(onFeedbackDeleted), [onFeedbackDeleted]);
   const table = useAppMaterialReactTable({
     ...getDefaultMRTOptions<AiPositionMentionItem>(),
     columns,
@@ -243,6 +280,23 @@ function MentionsTable({
     enableSorting: false,
     enableColumnActions: true,
     enableRowNumbers: true,
+    enableRowActions: true,
+    positionActionsColumn: 'first',
+    renderRowActions: ({ row }) => (
+      <MrtRowActions>
+        <MrtRowActionButton
+          label="Відгук"
+          icon={<RateReviewOutlinedIcon fontSize="small" />}
+          onClick={() => onFeedback(row.original)}
+          opensModal
+        />
+        <MrtRowActionButton
+          label="Перепарсити джерело"
+          icon={<ReplayIcon fontSize="small" />}
+          onClick={() => onReparse(row.original)}
+        />
+      </MrtRowActions>
+    ),
     enableColumnFilters: true,
     enableColumnFilterModes: false,
     enableFacetedValues: false,
@@ -257,7 +311,15 @@ function MentionsTable({
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
     defaultColumn: { size: 200, renderColumnActionsMenuItems },
-    displayColumnDefOptions: CUSTOM_STYLES.displayColumnDefOptions,
+    displayColumnDefOptions: {
+      ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: 96,
+        minSize: 96,
+        maxSize: 96,
+      },
+    },
     muiTablePaperProps: ({ table }) =>
       getDefaultMrtPaperProps({ table, loading, layout: 'workspace' }),
     muiTableContainerProps: ({ table }) =>
@@ -296,8 +358,17 @@ function MentionsTable({
   return <MaterialReactTable table={table} />;
 }
 
-function MentionsBody() {
+type MentionsProps = {
+  /** Always applied, e.g. one position's interceptions. */
+  fixedFilters?: AiPositionColumnFilter[];
+  title?: string;
+};
+
+function MentionsBody({ fixedFilters = [], title = 'Позиції у повідомленнях' }: MentionsProps) {
   const { notify } = usePowerSnackbar();
+  const [feedbackTarget, setFeedbackTarget] = useState<AiPositionMentionItem | null>(null);
+  const [openFeedback, setOpenFeedback] = useState<number | null>(null);
+  const fixedFiltersKey = JSON.stringify(fixedFilters);
   const [rows, setRows] = useState<AiPositionMentionItem[]>([]);
   const [nextCursor, setNextCursor] = useState<AiPositionListCursor | null>(null);
   const [loading, setLoading] = useState(false);
@@ -318,7 +389,7 @@ function MentionsBody() {
             limit: PAGE_SIZE,
             after,
             globalFilter: queryState.globalFilter || null,
-            columnFilters: queryState.columnFilters,
+            columnFilters: [...JSON.parse(fixedFiltersKey), ...queryState.columnFilters],
           },
           abortController.signal,
         );
@@ -337,8 +408,57 @@ function MentionsBody() {
         }
       }
     },
-    [notify, queryState],
+    [notify, queryState, fixedFiltersKey],
   );
+
+  const refreshOpenFeedback = useCallback(() => {
+    void getAiPositionPage()
+      .then((page) => setOpenFeedback(page.openFeedback))
+      .catch((nextError) =>
+        notify({
+          severity: 'error',
+          message: `Не вдалося завантажити відгуки: ${errorMessage(nextError)}`,
+        }),
+      );
+  }, [notify]);
+
+  useEffect(() => {
+    refreshOpenFeedback();
+  }, [refreshOpenFeedback]);
+
+  const updateFeedback = useCallback(
+    (mentionId: number, update: (feedback: AiPositionFeedbackItem[]) => AiPositionFeedbackItem[]) =>
+      setRows((current) =>
+        current.map((row) =>
+          row.id === mentionId ? { ...row, feedback: update(row.feedback) } : row,
+        ),
+      ),
+    [],
+  );
+
+  const handleFeedbackDeleted = useCallback(
+    (mentionId: number, feedbackId: number) => {
+      updateFeedback(mentionId, (feedback) => feedback.filter((item) => item.id !== feedbackId));
+      refreshOpenFeedback();
+    },
+    [updateFeedback, refreshOpenFeedback],
+  );
+
+  async function reparse(mentionId: number | null) {
+    try {
+      const response = await reparseAiPositionFeedback({ mentionId });
+      notify({
+        severity: 'success',
+        message:
+          mentionId === null
+            ? `Поставлено в чергу джерел: ${response.queued}`
+            : 'Джерело поставлено в чергу',
+      });
+      refreshOpenFeedback();
+    } catch (nextError) {
+      notify({ severity: 'error', message: `Не вдалося перепарсити: ${errorMessage(nextError)}` });
+    }
+  }
 
   useEffect(() => {
     void load(null);
@@ -356,17 +476,45 @@ function MentionsBody() {
     <Stack spacing={2} useFlexGap sx={{ height: '100%', minHeight: 0 }}>
       {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
       <TablePageToolbar
-        title="Позиції у повідомленнях"
+        title={title}
         withGlobalTextFilter
         actions={
-          <PowerButton variant="outlined" disabled={loading} onClick={() => void load(null)}>
-            Оновити
-          </PowerButton>
+          <Stack direction="row" spacing={1}>
+            <PowerButton
+              variant="outlined"
+              disabled={!openFeedback}
+              onClick={() => void reparse(null)}
+            >
+              Перепарсити відгуки ({openFeedback ?? 0})
+            </PowerButton>
+            <PowerButton variant="outlined" disabled={loading} onClick={() => void load(null)}>
+              Оновити
+            </PowerButton>
+          </Stack>
         }
       />
       <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
-        <MentionsTable rows={rows} loading={loading} onQueryStateChange={handleQueryStateChange} />
+        <MentionsTable
+          rows={rows}
+          loading={loading}
+          onQueryStateChange={handleQueryStateChange}
+          onFeedback={setFeedbackTarget}
+          onReparse={(row) => void reparse(row.id)}
+          onFeedbackDeleted={handleFeedbackDeleted}
+        />
       </Box>
+      <FeedbackDialog
+        target={
+          feedbackTarget
+            ? { kind: 'mention', id: feedbackTarget.id, title: feedbackTarget.name }
+            : null
+        }
+        onClose={() => setFeedbackTarget(null)}
+        onSaved={(item) => {
+          if (feedbackTarget) updateFeedback(feedbackTarget.id, (feedback) => [item, ...feedback]);
+          refreshOpenFeedback();
+        }}
+      />
       {nextCursor ? (
         <Box>
           <PowerButton variant="outlined" disabled={loading} onClick={() => void load(nextCursor)}>
@@ -378,15 +526,18 @@ function MentionsBody() {
   );
 }
 
-export function MentionsTab() {
+export function MentionsTab({
+  tableId = 'admin-ai-positions',
+  ...props
+}: MentionsProps & { tableId?: string }) {
   return (
     <TableStateProvider
-      tableId="admin-ai-positions"
+      tableId={tableId}
       defaultColumnOrder={DEFAULT_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_COLUMN_VISIBILITY}
       defaultEnableColumnOrdering={false}
     >
-      <MentionsBody />
+      <MentionsBody {...props} />
     </TableStateProvider>
   );
 }

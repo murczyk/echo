@@ -681,6 +681,11 @@
         { "table": "public.ai_position_knowledge_job", "strategy": "excluded" },
         { "table": "public.ai_position_link_job", "strategy": "excluded" }
       ]
+    },
+    "echo:m20261003_041306_ai_position_feedback": {
+      "changes": [
+        { "table": "public.ai_position_feedback", "strategy": "excluded" }
+      ]
     }
   },
   "dependencies": {

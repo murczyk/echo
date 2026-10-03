@@ -1,4 +1,9 @@
 import type {
+  AiPositionFeedbackItem,
+  AiPositionIdReq,
+  AiPositionReparseReq,
+  AiPositionReparseRsp,
+  SaveAiPositionFeedbackReq,
   AiPositionKnowledgeListReq,
   AiPositionKnowledgeListRsp,
   AiPositionMentionListReq,
@@ -55,4 +60,21 @@ export function listAiPositionKnowledge(
   return postJson<AiPositionKnowledgeListRsp>('/api/admin/ai-positions/knowledge/list', req, {
     signal,
   });
+}
+
+export function saveAiPositionFeedback(
+  req: SaveAiPositionFeedbackReq,
+): Promise<AiPositionFeedbackItem> {
+  return postJson<AiPositionFeedbackItem>('/api/admin/ai-positions/feedback/save', req);
+}
+
+export function deleteAiPositionFeedback(id: number): Promise<void> {
+  const req: AiPositionIdReq = { id };
+  return postJson<void>('/api/admin/ai-positions/feedback/delete', req);
+}
+
+export function reparseAiPositionFeedback(
+  req: AiPositionReparseReq,
+): Promise<AiPositionReparseRsp> {
+  return postJson<AiPositionReparseRsp>('/api/admin/ai-positions/feedback/reparse', req);
 }

@@ -76,6 +76,19 @@ knowledge of private groups the admin cannot read.
 Changing a group's AORs, or deleting or restoring an AOR, recomputes the
 affected positions in the old and new AORs.
 
+## Feedback and evaluation
+
+Reviewers mark mentions («Згадки», or a position's page `/admin/ai/positions/<id>`
+listing its interceptions) and locations (on a position's page) as correct, not
+a position, wrong name, wrong coordinates, missed positions, or other. Each
+mark has an expected value and a comment, and is stored in
+`ai_position_feedback` with a snapshot of the case.
+
+The admin page can re-run extraction for one source, or for every source with
+feedback not re-run yet («Перепарсити відгуки»). The evaluation set and the
+improve–replay–reparse loop are in
+[`ai-eval/2026-10-03-position-feedback`](../../../ai-eval/2026-10-03-position-feedback/README.md).
+
 ## Operating
 
 1. Apply migration `m20261002_192628_ai_position_parsing`.

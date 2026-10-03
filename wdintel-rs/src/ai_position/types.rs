@@ -30,6 +30,8 @@ pub struct AiPositionPageRsp {
     pub engines: Vec<AiPositionEngineItem>,
     pub worker: AiPositionWorkerSettingsItem,
     pub pending_jobs: i64,
+    /// Mention feedback whose sources were not re-run since.
+    pub open_feedback: i64,
 }
 
 #[derive(
@@ -184,6 +186,8 @@ pub struct AiPositionMentionItem {
     pub model_name: String,
     pub group_is_secret: bool,
     pub coordinates: Vec<AiPositionCoordinateItem>,
+    /// Newest first.
+    pub feedback: Vec<AiPositionFeedbackItem>,
 }
 
 #[derive(
@@ -206,6 +210,8 @@ pub struct AiPositionKnowledgeItem {
     pub id: i64,
     /// `aor` or `group`.
     pub scope_kind: String,
+    /// AOR id or group master key.
+    pub scope_key: String,
     pub scope_name: String,
     pub scope_is_secret: bool,
     pub name: String,
@@ -218,6 +224,66 @@ pub struct AiPositionKnowledgeItem {
     pub conflicting: bool,
     pub first_fact_at: i64,
     pub last_fact_at: i64,
+    /// Newest first.
+    pub feedback: Vec<AiPositionFeedbackItem>,
+}
+
+/// A reviewer's verdict on a mention or a consolidated location.
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPositionFeedbackItem {
+    pub id: i64,
+    /// `mention` or `knowledge`.
+    pub target_kind: String,
+    /// `correct`, `not_position`, `wrong_name`, `wrong_coordinates`,
+    /// `missed` or `other`.
+    pub verdict: String,
+    pub expected: String,
+    pub comment: String,
+    pub created_by: Option<String>,
+    pub created_at: i64,
+    pub reparsed_at: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAiPositionFeedbackReq {
+    /// Exactly one of `mention_id` and `knowledge_id`.
+    pub mention_id: Option<i64>,
+    pub knowledge_id: Option<i64>,
+    pub verdict: String,
+    pub expected: String,
+    pub comment: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPositionIdReq {
+    pub id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPositionReparseReq {
+    /// One mention's source; `None` re-runs every source with feedback not
+    /// yet re-run.
+    pub mention_id: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPositionReparseRsp {
+    pub queued: i64,
 }
 
 #[derive(
