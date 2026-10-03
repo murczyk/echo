@@ -135,6 +135,7 @@ export function ZipDocumentPreview({
     setListing(null);
     setError(null);
     setMemberError(null);
+    setBusyIndex(null);
     void (async () => {
       try {
         if (document.sizeBytes != null && document.sizeBytes > ZIP_MAX_BYTES)
@@ -240,7 +241,7 @@ export function ZipDocumentPreview({
         if (memberControllerRef.current === controller) memberControllerRef.current = null;
       }
     },
-    [busyIndex],
+    [busyIndex, document.href],
   );
   const stage = (
     <div

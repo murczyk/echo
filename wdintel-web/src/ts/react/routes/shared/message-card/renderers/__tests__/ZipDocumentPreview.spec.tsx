@@ -74,7 +74,67 @@ describe('ZipDocumentPreview', () => {
     vi.restoreAllMocks();
   });
 
-  it('transfers the exact extraction buffer and suppresses a stale member download', async () => {
+  it('downloads from the second ZIP after navigating while the first ZIP is idle', async () => {
+    const secondDocument = { ...documentAttachment, href: 'https://example.test/second.zip' };
+    const secondListing = {
+      ...listing,
+      entries: [{ ...listing.entries[0]!, path: 'second.txt' }],
+    };
+    vi.mocked(fetchCachedDocumentResponse).mockImplementation(async (href) => ({
+      buffer: Uint8Array.of(href === secondDocument.href ? 2 : 1).buffer,
+      contentType: null,
+      contentLength: 1,
+    }));
+    let listCount = 0;
+    vi.mocked(runWorkerTask).mockImplementation((_factory, request) => {
+      if (request.type === 'list') {
+        listCount += 1;
+        return Promise.resolve(listCount === 1 ? listing : secondListing) as never;
+      }
+      return Promise.resolve(new ArrayBuffer(1)) as never;
+    });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:second-zip-member');
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.append(container);
+    const renderPreview = (attachment: typeof documentAttachment) => (
+      <ZipDocumentPreview
+        document={attachment}
+        navigation={navigation}
+        onClose={vi.fn()}
+        isDownloadStarting={() => false}
+        onDownloadStart={() => true}
+      />
+    );
+    await act(async () => {
+      root.render(renderPreview(documentAttachment));
+      await Promise.resolve();
+    });
+    expect(container.querySelector('button[aria-label="Скачати file.txt"]')).not.toBeNull();
+    await act(async () => {
+      root.render(renderPreview(secondDocument));
+      await Promise.resolve();
+    });
+    const secondButton = container.querySelector(
+      'button[aria-label="Скачати second.txt"]',
+    ) as HTMLButtonElement;
+    expect(secondButton.disabled).toBe(false);
+    await act(async () => {
+      secondButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    const extractionRequest = vi
+      .mocked(runWorkerTask)
+      .mock.calls.find(([, request]) => request.type === 'extract')?.[1];
+    expect(extractionRequest?.type).toBe('extract');
+    expect(new Uint8Array(extractionRequest!.buffer)[0]).toBe(2);
+    expect(click.mock.instances[0]?.download).toBe('second.txt');
+    expect(secondButton.disabled).toBe(false);
+    root.unmount();
+  });
+
+  it('keeps ZIP-to-ZIP downloads bound to the active archive', async () => {
     const archive = new ArrayBuffer(8);
     let resolveExtract!: (value: ArrayBuffer) => void;
     vi.mocked(fetchCachedDocumentResponse).mockResolvedValue({
@@ -82,13 +142,15 @@ describe('ZipDocumentPreview', () => {
       contentType: null,
       contentLength: 8,
     });
-    vi.mocked(runWorkerTask).mockImplementation((_factory, request) =>
-      request.type === 'list'
-        ? Promise.resolve(listing)
-        : (new Promise((resolve) => {
-            resolveExtract = resolve as (value: ArrayBuffer) => void;
-          }) as never),
-    );
+    let extractionCount = 0;
+    vi.mocked(runWorkerTask).mockImplementation((_factory, request) => {
+      if (request.type === 'list') return Promise.resolve(listing) as never;
+      extractionCount += 1;
+      if (extractionCount > 1) return Promise.resolve(new ArrayBuffer(1)) as never;
+      return new Promise((resolve) => {
+        resolveExtract = resolve as (value: ArrayBuffer) => void;
+      }) as never;
+    });
     const createObjectURL = vi.spyOn(URL, 'createObjectURL');
     const container = document.createElement('div');
     const root = createRoot(container);
@@ -103,6 +165,7 @@ describe('ZipDocumentPreview', () => {
           onDownloadStart={() => true}
         />,
       );
+      await Promise.resolve();
     });
     await act(async () => {
       await Promise.resolve();
@@ -126,12 +189,24 @@ describe('ZipDocumentPreview', () => {
           onDownloadStart={() => true}
         />,
       );
+      await Promise.resolve();
     });
     await act(async () => {
       resolveExtract(new ArrayBuffer(1));
       await Promise.resolve();
     });
     expect(createObjectURL).not.toHaveBeenCalled();
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Скачати file.txt"]')!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(
+      (container.querySelector('button[aria-label="Скачати file.txt"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
     root.unmount();
   });
 
