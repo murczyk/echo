@@ -216,6 +216,90 @@ after update of summary on media_summary
 for each row
 when (old.summary is distinct from new.summary)
 execute function ai_position_media_summary_invalidate();
+
+-- OCR reprocessing deletes the summary row and keeps the attachment.
+create function ai_position_media_summary_deleted()
+returns trigger language plpgsql as $$
+begin
+    delete from ai_position_mention where media_id = old.media_id;
+    return old;
+end;
+$$;
+
+create trigger ai_position_media_summary_deleted
+after delete on media_summary
+for each row execute function ai_position_media_summary_deleted();
+
+-- Mentions record the message's group (its first group link). When links
+-- change (e.g. a group merge), move the mentions to the current group and
+-- queue the knowledge of both the old and the new scopes: access checks and
+-- knowledge must never follow a group the message left.
+create function ai_position_rescope_message(message_id bigint)
+returns void language plpgsql as $$
+declare
+    current_group text;
+    current_aors bigint[];
+begin
+    select smg.group_master_key into current_group
+    from signal_message_group smg
+    where smg.signal_message_id = message_id and smg.group_master_key is not null
+    order by smg.id
+    limit 1;
+    select coalesce(array_agg(sga.aor_id order by sga.aor_id), '{}') into current_aors
+    from signal_group_aor sga
+    join area_of_responsibility aor on aor.id = sga.aor_id and not aor.deleted
+    where sga.master_key = current_group;
+
+    insert into ai_position_knowledge_job (scope_kind, scope_key, name_key)
+    select distinct scope.kind, scope.key, mention.name_key
+    from ai_position_mention mention
+    left join signal_message_media media on media.id = mention.media_id
+    cross join lateral (
+        select 'group' as kind, mention.group_master_key as key
+        where mention.group_master_key is not null
+        union all
+        select 'aor', aor_id::text from unnest(mention.aor_ids) aor_id
+        union all
+        select 'group', current_group where current_group is not null
+        union all
+        select 'aor', aor_id::text from unnest(current_aors) aor_id
+    ) scope
+    where coalesce(mention.sigint_inbox_item_id, media.signal_message_id) = message_id
+      and mention.group_master_key is distinct from current_group
+    on conflict (scope_kind, scope_key, name_key) do update
+        set attempts = 0,
+            last_error = null,
+            next_attempt_at = now() at time zone 'utc',
+            created_at = now() at time zone 'utc';
+
+    update ai_position_mention mention
+    set group_master_key = current_group, aor_ids = current_aors
+    where mention.group_master_key is distinct from current_group
+      and (mention.sigint_inbox_item_id = message_id
+           or mention.media_id in (
+               select media.id from signal_message_media media
+               where media.signal_message_id = message_id
+           ));
+end;
+$$;
+
+create function ai_position_signal_message_group_changed()
+returns trigger language plpgsql as $$
+begin
+    if tg_op = 'DELETE' or new.signal_message_id is distinct from old.signal_message_id then
+        perform ai_position_rescope_message(old.signal_message_id);
+    end if;
+    if tg_op = 'UPDATE' then
+        perform ai_position_rescope_message(new.signal_message_id);
+    end if;
+    return null;
+end;
+$$;
+
+-- New links get higher ids, so an insert never changes the first group.
+create trigger ai_position_signal_message_group_changed
+after update or delete on signal_message_group
+for each row execute function ai_position_signal_message_group_changed();
                 "#,
             )
             .await
@@ -228,6 +312,11 @@ execute function ai_position_media_summary_invalidate();
             .get_connection()
             .execute_unprepared(
                 r#"
+drop trigger if exists ai_position_signal_message_group_changed on signal_message_group;
+drop function if exists ai_position_signal_message_group_changed();
+drop function if exists ai_position_rescope_message(bigint);
+drop trigger if exists ai_position_media_summary_deleted on media_summary;
+drop function if exists ai_position_media_summary_deleted();
 drop trigger if exists ai_position_media_summary_invalidate on media_summary;
 drop function if exists ai_position_media_summary_invalidate();
 drop trigger if exists ai_position_signal_message_invalidate on signal_message;

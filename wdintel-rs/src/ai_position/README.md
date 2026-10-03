@@ -44,6 +44,10 @@ path, whether or not the worker is enabled:
 - a changed message body drops the message's mentions, since their offsets
   point into the old text; the edited text is then extracted again;
 - a deleted message also drops its documents' mentions;
+- a changed or deleted document summary (OCR reprocessing) drops that
+  document's mentions;
+- a message that moves to another group (e.g. a group merge) moves its
+  mentions too, and both groups' knowledge is recomputed;
 - any removed mention, including cascades from removed attachments, queues
   the knowledge it may have fed for a recompute.
 

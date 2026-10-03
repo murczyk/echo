@@ -321,9 +321,13 @@ async fn load_next_job(
         .c(h!())
 }
 
-async fn load_source<C>(
+/// The job's source. `lock` (inside a transaction) holds the text rows so a
+/// concurrent edit or reprocess waits until the mentions are saved; the
+/// invalidation triggers then remove them.
+async fn load_source_with<C>(
     dbx: &C,
     job: &ai_position_worker_job::Model,
+    lock: bool,
 ) -> anyhow::Result<Option<Source>>
 where
     C: ConnectionTrait,
@@ -338,7 +342,9 @@ where
                  from sigint_inbox_item item
                  join signal_message message on message.id = item.id
                  {SOURCE_GROUP_SQL}
-                 where item.id = $1 and not message.deleted"
+                 where item.id = $1 and not message.deleted
+                 {}",
+                if lock { "for share of message" } else { "" }
             ),
             [item_id.into()],
         ),
@@ -353,13 +359,25 @@ where
                  join signal_message message on message.id = media.signal_message_id
                  {SOURCE_GROUP_SQL}
                  where summary.media_id = $1 and summary.state = 'completed'
-                   and summary.summary is not null and not message.deleted"
+                   and summary.summary is not null and not message.deleted
+                 {}",
+                if lock { "for share of summary, message" } else { "" }
             ),
             [media_id.into()],
         ),
         (None, None) => return Ok(None),
     };
     Source::find_by_statement(statement).one(dbx).await.c(h!())
+}
+
+async fn load_source<C>(
+    dbx: &C,
+    job: &ai_position_worker_job::Model,
+) -> anyhow::Result<Option<Source>>
+where
+    C: ConnectionTrait,
+{
+    load_source_with(dbx, job, false).await
 }
 
 /// Deletes the job and its source's mentions unless the job was re-enqueued
@@ -404,7 +422,21 @@ async fn complete_job(
         transaction.commit().await.c(h!())?;
         return Ok(());
     }
-    if load_source(&transaction, job).await.c(h!())?.as_ref() != Some(source) {
+    // Group links too: a move waits, then its trigger rescopes our mentions.
+    transaction
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select 1 from signal_message_group where signal_message_id = $1 for share",
+            [source.message_id.into()],
+        ))
+        .await
+        .c(h!())?;
+    if load_source_with(&transaction, job, true)
+        .await
+        .c(h!())?
+        .as_ref()
+        != Some(source)
+    {
         transaction.commit().await.c(h!())?;
         return Ok(());
     }
@@ -1255,6 +1287,68 @@ mod tests {
 
         assert!(linked_names(&env.dbx, message_id).await.is_empty());
         assert!(knowledge_scopes(&env).await.is_empty());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn follows_a_message_to_its_new_group_3064() {
+        use crate::entities::{signal_group, signal_message_group};
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        crate::entities::ai_position_knowledge::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        enable_worker(&env.dbx).await;
+        let (message_id, master_key, _) =
+            grouped_message(&env.dbx, false).await;
+        let config = load_worker_config(&env.dbx).await.unwrap().unwrap();
+        enqueue_message_if_enabled(&env.dbx, message_id)
+            .await
+            .unwrap();
+        let job = load_next_job(&env.dbx).await.unwrap().unwrap();
+        let source = load_source(&env.dbx, &job).await.unwrap().unwrap();
+        complete_job(&env.dbx, &job, &source, &config, extraction(true))
+            .await
+            .unwrap();
+        knowledge_scopes(&env).await;
+
+        // A merge moves the message into another group.
+        let target = signal_group::Entity::find()
+            .filter(signal_group::Column::Deleted.eq(false))
+            .filter(signal_group::Column::MasterKey.ne(master_key.clone()))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        signal_message_group::Entity::update_many()
+            .col_expr(
+                signal_message_group::Column::GroupMasterKey,
+                Some(target.master_key.clone()).into(),
+            )
+            .filter(
+                signal_message_group::Column::SignalMessageId.eq(message_id),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+
+        let mention = ai_position_mention::Entity::find()
+            .filter(
+                ai_position_mention::Column::SigintInboxItemId.eq(message_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            mention.group_master_key.as_deref(),
+            Some(target.master_key.as_str())
+        );
+        let scopes = knowledge_scopes(&env).await;
+        assert!(
+            scopes.contains(&("group".to_string(), target.master_key.clone()))
+        );
+        assert!(!scopes.contains(&("group".to_string(), master_key)));
     }
 
     #[tokio::test]

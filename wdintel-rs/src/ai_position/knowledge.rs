@@ -69,7 +69,8 @@ pub fn fed_scopes(
 }
 
 /// Queues recomputes for everything a group's facts feed, e.g. after its
-/// privacy changed.
+/// privacy changed. One set-based statement: a long history stays in the
+/// database.
 pub async fn enqueue_for_group<C>(
     dbx: &C,
     master_key: &str,
@@ -77,53 +78,34 @@ pub async fn enqueue_for_group<C>(
 where
     C: ConnectionTrait,
 {
-    #[derive(FromQueryResult)]
-    struct Fed {
-        name_key: String,
-        aor_ids: Vec<i64>,
-    }
-    let fed = Fed::find_by_statement(Statement::from_sql_and_values(
+    dbx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "select distinct m.name_key,
-                array(select sga.aor_id from signal_group_aor sga where sga.master_key = $1) as aor_ids
-         from ai_position_mention m
-         where m.group_master_key = $1
-           and exists (select 1 from ai_position_coordinate c where c.mention_id = m.id)",
+        "insert into ai_position_knowledge_job (scope_kind, scope_key, name_key)
+         select distinct scope.kind, scope.key, fed.name_key
+         from (
+             select distinct name_key, aor_ids
+             from ai_position_mention
+             where group_master_key = $1
+         ) fed
+         cross join lateral (
+             select 'group' as kind, $1 as key
+             union all
+             select 'aor', aor_id::text from unnest(fed.aor_ids) aor_id
+             union all
+             select 'aor', sga.aor_id::text
+             from signal_group_aor sga
+             where sga.master_key = $1
+         ) scope
+         on conflict (scope_kind, scope_key, name_key) do update
+             set attempts = 0,
+                 last_error = null,
+                 next_attempt_at = now() at time zone 'utc',
+                 created_at = now() at time zone 'utc'",
         [master_key.into()],
     ))
-    .all(dbx)
     .await
     .c(h!())?;
-    let jobs: BTreeSet<(Scope, String)> = fed
-        .into_iter()
-        .flat_map(|fed| {
-            let name_key = fed.name_key;
-            // Also the AORs recorded on older mentions.
-            fed_scopes(Some(master_key), &fed.aor_ids)
-                .into_iter()
-                .map(move |scope| (scope, name_key.clone()))
-        })
-        .collect();
-    let recorded: Vec<(String, Vec<i64>)> =
-        crate::entities::ai_position_mention::Entity::find()
-            .filter(
-                crate::entities::ai_position_mention::Column::GroupMasterKey
-                    .eq(master_key),
-            )
-            .select_only()
-            .column(crate::entities::ai_position_mention::Column::NameKey)
-            .column(crate::entities::ai_position_mention::Column::AorIds)
-            .into_tuple()
-            .all(dbx)
-            .await
-            .c(h!())?;
-    let mut jobs = jobs;
-    for (name_key, aor_ids) in recorded {
-        for scope in fed_scopes(Some(master_key), &aor_ids) {
-            jobs.insert((scope, name_key.clone()));
-        }
-    }
-    enqueue(dbx, &jobs).await
+    Ok(())
 }
 
 /// Each group's scopes with its privacy and AOR membership as they are now.
@@ -537,9 +519,7 @@ async fn link_window_mentions<C>(
 where
     C: ConnectionTrait,
 {
-    use super::worker::{
-        insert_linked_mentions, SOURCE_GROUP_COLUMNS, SOURCE_GROUP_SQL,
-    };
+    use super::worker::insert_linked_mentions;
     let name_key = known.name_key.as_str();
     // The longest word is a cheap, selective prefilter for the body.
     let Some(stem) = name_key
@@ -554,97 +534,127 @@ where
     if groups.is_empty() {
         return Ok(linked);
     }
+    // Two seeks over event time: items with a parsed time by
+    // `sigint_inbox_item.datetime`, the rest (whose time is the message's)
+    // by `signal_message.created_at`, which is never before the send time.
     for &(from, to) in ranges {
-        let mut cursor = first_message_id_since(dbx, from).await.c(h!())? - 1;
-        loop {
-            let candidates = LinkCandidate::find_by_statement(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                format!(
-                    "select coalesce(message.body, '') as text, message.id as message_id,
-                            coalesce(item.datetime, message.timestamp, message.created_at) as message_at,
-                            {SOURCE_GROUP_COLUMNS}
-                     from signal_message_group smg
-                     join signal_message message on message.id = smg.signal_message_id
-                     join sigint_inbox_item item on item.id = message.id
-                     {SOURCE_GROUP_SQL}
-                     where smg.group_master_key = any($1)
-                       and smg.signal_message_id > $2
-                       and grp.group_master_key = smg.group_master_key
-                       and not message.deleted
-                       and translate(lower(message.body), $3, $4) like $5
-                       and coalesce(item.datetime, message.timestamp, message.created_at)
-                           between $6 and $7
-                       and not exists (
-                           select 1 from ai_position_mention m
-                           where m.sigint_inbox_item_id = message.id and m.name_key = $8
-                       )
-                     order by smg.signal_message_id
-                     limit $9"
-                ),
-                [
-                    groups.clone().into(),
-                    cursor.into(),
-                    FOLD_FROM.into(),
-                    FOLD_TO.into(),
-                    format!("%{stem}%").into(),
-                    from.into(),
-                    to.into(),
-                    name_key.into(),
-                    AI_POSITION_KNOWLEDGE_LINK_BATCH.into(),
-                ],
-            ))
-            .all(dbx)
-            .await
-            .c(h!())?;
-            let Some(last) = candidates.last() else {
-                break;
-            };
-            cursor = last.message_id;
-            for candidate in candidates {
-                let source = candidate.into_source();
-                // The canonical key also matches inflected or differently
-                // written occurrences.
-                let spans = super::normalize::ground(&source.text, name_key);
-                if spans.is_empty()
-                    || !body_unchanged(dbx, &source).await.c(h!())?
-                {
-                    continue;
+        for pass in [LinkPass::ParsedTime, LinkPass::MessageTime] {
+            let mut cursor: Option<(NaiveDateTime, i64)> = None;
+            loop {
+                let candidates = link_candidates(
+                    dbx,
+                    pass,
+                    LinkQuery {
+                        groups: &groups,
+                        stem,
+                        name_key,
+                        from,
+                        to,
+                        cursor,
+                    },
+                )
+                .await
+                .c(h!())?;
+                let Some(last) = candidates.last() else {
+                    break;
+                };
+                cursor = Some((last.seek_at, last.message_id));
+                for candidate in candidates {
+                    let source = candidate.into_source();
+                    // The canonical key also matches inflected or differently
+                    // written occurrences.
+                    let spans =
+                        super::normalize::ground(&source.text, name_key);
+                    if spans.is_empty()
+                        || !body_unchanged(dbx, &source).await.c(h!())?
+                    {
+                        continue;
+                    }
+                    insert_linked_mentions(dbx, &source, name_key, &spans)
+                        .await
+                        .c(h!())?;
+                    linked.push(source.message_id);
                 }
-                insert_linked_mentions(dbx, &source, name_key, &spans)
-                    .await
-                    .c(h!())?;
-                linked.push(source.message_id);
             }
         }
     }
     Ok(linked)
 }
 
-/// The first message id created at or after `since` (or past the last one).
-async fn first_message_id_since<C>(
+#[derive(Clone, Copy)]
+enum LinkPass {
+    ParsedTime,
+    MessageTime,
+}
+
+struct LinkQuery<'a> {
+    groups: &'a [String],
+    stem: &'a str,
+    name_key: &'a str,
+    from: NaiveDateTime,
+    to: NaiveDateTime,
+    cursor: Option<(NaiveDateTime, i64)>,
+}
+
+/// One keyset page of scope messages in the event-time range whose folded
+/// body contains the stem and which have no mention of the position yet.
+async fn link_candidates<C>(
     dbx: &C,
-    since: NaiveDateTime,
-) -> anyhow::Result<i64>
+    pass: LinkPass,
+    query: LinkQuery<'_>,
+) -> anyhow::Result<Vec<LinkCandidate>>
 where
     C: ConnectionTrait,
 {
-    #[derive(FromQueryResult)]
-    struct First {
-        id: i64,
-    }
-    let first = First::find_by_statement(Statement::from_sql_and_values(
+    use super::worker::{SOURCE_GROUP_COLUMNS, SOURCE_GROUP_SQL};
+    let (seek, range) = match pass {
+        LinkPass::ParsedTime => ("item.datetime", "item.datetime between $6 and $7"),
+        LinkPass::MessageTime => (
+            "message.created_at",
+            "item.datetime is null
+             and message.created_at >= $6
+             and coalesce(message.timestamp, message.created_at) between $6 and $7",
+        ),
+    };
+    let (cursor_at, cursor_id) = query
+        .cursor
+        .unwrap_or((query.from - ChronoDuration::days(1), 0));
+    LinkCandidate::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "select coalesce(
-             (select id from signal_message where created_at >= $1 order by created_at, id limit 1),
-             (select coalesce(max(id), 0) + 1 from signal_message)
-         ) as id",
-        [since.into()],
+        format!(
+            "select coalesce(message.body, '') as text, message.id as message_id,
+                    coalesce(item.datetime, message.timestamp, message.created_at) as message_at,
+                    {seek} as seek_at,
+                    {SOURCE_GROUP_COLUMNS}
+             from sigint_inbox_item item
+             join signal_message message on message.id = item.id
+             {SOURCE_GROUP_SQL}
+             where {range}
+               and ({seek}, message.id) > ($1, $2)
+               and grp.group_master_key = any($3)
+               and not message.deleted
+               and translate(lower(message.body), '{FOLD_FROM}', '{FOLD_TO}') like $4
+               and not exists (
+                   select 1 from ai_position_mention m
+                   where m.sigint_inbox_item_id = message.id and m.name_key = $5
+               )
+             order by {seek}, message.id
+             limit $8"
+        ),
+        [
+            cursor_at.into(),
+            cursor_id.into(),
+            query.groups.to_vec().into(),
+            format!("%{}%", query.stem).into(),
+            query.name_key.into(),
+            query.from.into(),
+            query.to.into(),
+            AI_POSITION_KNOWLEDGE_LINK_BATCH.into(),
+        ],
     ))
-    .one(dbx)
+    .all(dbx)
     .await
-    .c(h!())?
-    .c(h!())?;
-    Ok(first.id)
+    .c(h!())
 }
 
 /// Locks the message and checks its body is the one grounded, so an edit
@@ -678,6 +688,7 @@ struct LinkCandidate {
     text: String,
     message_id: i64,
     message_at: NaiveDateTime,
+    seek_at: NaiveDateTime,
     group_master_key: Option<String>,
     group_is_secret: bool,
     aor_ids: Vec<i64>,

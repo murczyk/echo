@@ -116,6 +116,22 @@ function isSearchHighlightedCallsign(
   return false;
 }
 
+/** Search terms or headline words inside a position name («Циркон» in
+ * «Циркон 9»). */
+function isSearchHighlightedPosition(
+  positionText: string,
+  searchTerms: Set<string>,
+  highlightedTexts: Set<string>,
+): boolean {
+  const normalizedPosition = normalizeSearchToken(positionText);
+  if (normalizedPosition === '') return false;
+  for (const value of [...highlightedTexts, ...searchTerms]) {
+    const normalized = normalizeSearchToken(value);
+    if (normalized !== '' && normalizedPosition.includes(normalized)) return true;
+  }
+  return false;
+}
+
 function tokenPillBaseStyle(isInteractive: boolean): CSSProperties {
   return {
     display: 'inline-flex',
@@ -696,9 +712,8 @@ export function renderMarkedText(
 
     if ('CNPositionC' in node) {
       const { text, mgrs, knownMgrs, knownAt, knownConflicting } = node.CNPositionC;
-      renderedNodes.push(
+      const position = (
         <span
-          key={i}
           className={
             mgrs.length > 0 || knownMgrs
               ? 'content-token--position content-token--position-located'
@@ -707,7 +722,15 @@ export function renderMarkedText(
           title={positionTitle(text, mgrs, knownMgrs, knownAt, knownConflicting)}
         >
           {text}
-        </span>,
+        </span>
+      );
+      // A search match inside the position keeps its search highlight.
+      renderedNodes.push(
+        isSearchHighlightedPosition(text, searchTerms, highlightedTexts) ? (
+          <SearchHighlightedCallsign key={i}>{position}</SearchHighlightedCallsign>
+        ) : (
+          <span key={i}>{position}</span>
+        ),
       );
       continue;
     }
