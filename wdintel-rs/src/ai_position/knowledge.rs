@@ -190,41 +190,38 @@ pub(crate) fn consolidate(facts: &[Fact]) -> Option<Consolidated> {
         certainty_weight(&fact.certainty)
             * 0.5_f64.powf(age_days / AI_POSITION_KNOWLEDGE_HALF_LIFE_DAYS)
     };
-    // Each fact proposes a place; its score is the weight of facts near it.
-    let scored: Vec<(f64, &Fact)> = facts
+    let places = places(&facts, &weight);
+    let grid = PlaceGrid::new(&places);
+    // Each place proposes itself; its score is the weight of facts near it.
+    let scored: Vec<(f64, &Place)> = places
         .iter()
         .map(|center| {
-            let score = facts
-                .iter()
-                .filter(|fact| {
-                    distance_m(center, fact)
-                        <= AI_POSITION_KNOWLEDGE_CLUSTER_METERS
-                })
-                .map(|fact| weight(fact))
-                .sum::<f64>();
-            (score, *center)
+            let score =
+                grid.near(center).map(|place| place.weight).sum::<f64>();
+            (score, center)
         })
         .collect();
-    let (best_score, best) = scored.iter().copied().max_by(|a, b| {
+    let (best_score, best_place) = scored.iter().copied().max_by(|a, b| {
         a.0.total_cmp(&b.0)
-            .then_with(|| weight(a.1).total_cmp(&weight(b.1)))
-            .then_with(|| a.1.message_at.cmp(&b.1.message_at))
+            .then_with(|| a.1.weight.total_cmp(&b.1.weight))
+            .then_with(|| a.1.fact.message_at.cmp(&b.1.fact.message_at))
     })?;
-    let supporting: Vec<&&Fact> = facts
-        .iter()
-        .filter(|fact| {
-            distance_m(best, fact) <= AI_POSITION_KNOWLEDGE_CLUSTER_METERS
-        })
-        .collect();
-    let conflicting = scored.iter().any(|(score, fact)| {
-        distance_m(best, fact) > AI_POSITION_KNOWLEDGE_CLUSTER_METERS
+    let best = best_place.fact;
+    let supporting: Vec<&Place> = grid.near(best_place).collect();
+    let conflicting = scored.iter().any(|(score, place)| {
+        distance_m(best, place.fact) > AI_POSITION_KNOWLEDGE_CLUSTER_METERS
             && *score >= best_score * AI_POSITION_KNOWLEDGE_CONFLICT_RATIO
     });
+    let supporting_certainty = |level: &str| {
+        supporting
+            .iter()
+            .any(|place| place.certainties.contains(level))
+    };
     let certainty = if conflicting {
         "low"
-    } else if supporting.iter().any(|fact| fact.certainty == "high") {
+    } else if supporting_certainty("high") {
         "high"
-    } else if supporting.iter().any(|fact| fact.certainty == "medium") {
+    } else if supporting_certainty("medium") {
         "medium"
     } else {
         "low"
@@ -241,12 +238,113 @@ pub(crate) fn consolidate(facts: &[Fact]) -> Option<Consolidated> {
         lat: best.lat,
         lng: best.lng,
         certainty,
-        fact_count: supporting.len() as i32,
+        fact_count: supporting.iter().map(|place| place.count).sum::<usize>()
+            as i32,
         conflicting,
         first_fact_at: facts.iter().map(|fact| fact.message_at).min()?,
         last_fact_at: latest,
         source_group_keys,
     })
+}
+
+/// Facts at the same point (repeated reports share the MGRS) merged into
+/// one place carrying their total weight and the heaviest, latest fact.
+struct Place<'a> {
+    fact: &'a Fact,
+    weight: f64,
+    count: usize,
+    certainties: BTreeSet<&'a str>,
+}
+
+fn places<'a>(
+    facts: &[&'a Fact],
+    weight: &dyn Fn(&Fact) -> f64,
+) -> Vec<Place<'a>> {
+    let mut by_point: std::collections::HashMap<&str, Place<'a>> =
+        std::collections::HashMap::new();
+    for &fact in facts {
+        let place = by_point.entry(fact.mgrs.as_str()).or_insert(Place {
+            fact,
+            weight: 0.0,
+            count: 0,
+            certainties: BTreeSet::new(),
+        });
+        let fact_weight = weight(fact);
+        if (fact_weight, fact.message_at)
+            > (weight(place.fact), place.fact.message_at)
+        {
+            place.fact = fact;
+        }
+        place.weight += fact_weight;
+        place.count += 1;
+        place.certainties.insert(fact.certainty.as_str());
+    }
+    let mut places: Vec<Place<'a>> = by_point.into_values().collect();
+    places.sort_by(|a, b| a.fact.mgrs.cmp(&b.fact.mgrs));
+    places
+}
+
+/// Places bucketed in cells at least the cluster distance wide, so finding
+/// the places near one looks at its 3×3 neighbourhood instead of all of them.
+struct PlaceGrid<'p, 'a> {
+    cells: std::collections::HashMap<(i64, i64), Vec<&'p Place<'a>>>,
+    lat_step: f64,
+    lng_step: f64,
+}
+
+impl<'p, 'a> PlaceGrid<'p, 'a> {
+    fn new(places: &'p [Place<'a>]) -> Self {
+        const METERS_PER_DEGREE: f64 = 111_320.0;
+        let lat_step = AI_POSITION_KNOWLEDGE_CLUSTER_METERS / METERS_PER_DEGREE;
+        // The widest longitude step any place needs (cells shrink poleward).
+        let max_lat = places
+            .iter()
+            .map(|place| place.fact.lat.abs())
+            .fold(0.0_f64, f64::max)
+            .min(89.0);
+        let lng_step = lat_step / max_lat.to_radians().cos();
+        let mut cells: std::collections::HashMap<
+            (i64, i64),
+            Vec<&'p Place<'a>>,
+        > = std::collections::HashMap::new();
+        for place in places {
+            cells
+                .entry(Self::cell(place.fact, lat_step, lng_step))
+                .or_default()
+                .push(place);
+        }
+        PlaceGrid {
+            cells,
+            lat_step,
+            lng_step,
+        }
+    }
+
+    fn cell(fact: &Fact, lat_step: f64, lng_step: f64) -> (i64, i64) {
+        (
+            (fact.lat / lat_step).floor() as i64,
+            (fact.lng / lng_step).floor() as i64,
+        )
+    }
+
+    fn near<'s>(
+        &'s self,
+        center: &'s Place<'a>,
+    ) -> impl Iterator<Item = &'p Place<'a>> + 's {
+        let (row, column) =
+            Self::cell(center.fact, self.lat_step, self.lng_step);
+        (-1..=1)
+            .flat_map(move |d_row| {
+                (-1..=1).map(move |d_column| (row + d_row, column + d_column))
+            })
+            .filter_map(|cell| self.cells.get(&cell))
+            .flatten()
+            .copied()
+            .filter(move |place| {
+                distance_m(center.fact, place.fact)
+                    <= AI_POSITION_KNOWLEDGE_CLUSTER_METERS
+            })
+    }
 }
 
 fn distance_m(a: &Fact, b: &Fact) -> f64 {
@@ -1137,6 +1235,21 @@ mod tests {
         .unwrap();
         assert_eq!(known.lat, 47.0);
         assert_eq!(known.source_group_keys, vec!["new"]);
+    }
+
+    #[test]
+    fn consolidates_many_reports_quickly() {
+        // A busy position: thousands of reports at a few points.
+        let mut facts: Vec<Fact> = (0..20_000)
+            .map(|i| fact(47.0 + (i % 50) as f64 * 0.00001, "high", -(i % 20), "a"))
+            .collect();
+        facts.push(fact(48.0, "low", 0, "b"));
+        let started = std::time::Instant::now();
+        let known = consolidate(&facts).unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!((known.lat - 47.0).abs() < 0.001);
+        assert_eq!(known.fact_count, 20_000);
+        assert!(!known.conflicting);
     }
 
     #[test]

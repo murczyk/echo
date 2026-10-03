@@ -352,7 +352,7 @@ where
                  {SOURCE_GROUP_SQL}
                  where item.id = $1 and not message.deleted
                  {}",
-                if lock { "for share of message" } else { "" }
+                if lock { "for share of message, item" } else { "" }
             ),
             [item_id.into()],
         ),
