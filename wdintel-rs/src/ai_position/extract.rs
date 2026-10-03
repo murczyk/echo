@@ -1,7 +1,7 @@
 //! One model call over a text, then deterministic grounding: names must
 //! occur in the text and coordinates must be coordinates the text contains.
 
-use super::normalize::{ground, position_key};
+use super::normalize::{ground, is_generic_object, position_key};
 use super::types::{AiPositionCoordinateItem, AiPositionFound, AiPositionSpan};
 use crate::ai_engine::{request_structured_ai_response, AiEngineMessage};
 use crate::config::{
@@ -219,6 +219,7 @@ async fn ground_positions(
         let name = position.name.trim().trim_matches(['"', '«', '»']).trim();
         let name_key = position_key(name);
         if name_key.is_empty()
+            || is_generic_object(&name_key)
             || found.iter().any(|item| item.name_key == name_key)
         {
             continue;

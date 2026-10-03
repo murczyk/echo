@@ -67,6 +67,42 @@ fn tokens(text: &str) -> Vec<Token> {
 /// Post-type abbreviations written before a position's name («ОП Лиман-2»).
 const TYPE_PREFIXES: [&str; 5] = ["оп", "вп", "сп", "нп", "кп"];
 
+/// Stems of generic objects («дамба», «міст», «посадка») that small models
+/// return as positions; with a number or code («Дамба-3») they are names.
+const GENERIC_OBJECT_STEMS: [&str; 22] = [
+    "дамб",
+    "мост",
+    "міст",
+    "посадк",
+    "лісосмуг",
+    "лесополос",
+    "елеватор",
+    "элеватор",
+    "точк",
+    "позиці",
+    "позици",
+    "бліндаж",
+    "блиндаж",
+    "окоп",
+    "траншея",
+    "траншеї",
+    "перехрест",
+    "перекрест",
+    "висот",
+    "высот",
+    "ферм",
+    "блокпост",
+];
+
+/// A single generic word, not a name.
+pub fn is_generic_object(key: &str) -> bool {
+    !key.contains(' ')
+        && !key.chars().any(|c| c.is_ascii_digit())
+        && GENERIC_OBJECT_STEMS
+            .iter()
+            .any(|stem| key.starts_with(stem))
+}
+
 /// «ОП Лиман-2» and «Лиман-2» are one position.
 pub fn position_key(name: &str) -> String {
     let keys: Vec<String> =
@@ -165,6 +201,16 @@ pub fn ground(text: &str, name: &str) -> Vec<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::{ground, position_key};
+
+    #[test]
+    fn recognises_generic_objects() {
+        use super::is_generic_object;
+        assert!(is_generic_object(&position_key("дамбу")));
+        assert!(is_generic_object(&position_key("Посадка")));
+        assert!(!is_generic_object(&position_key("Дамба-3")));
+        assert!(!is_generic_object(&position_key("Висота 120")));
+        assert!(!is_generic_object(&position_key("Циркон")));
+    }
 
     #[test]
     fn variants_share_a_key() {

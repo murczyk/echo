@@ -8,8 +8,10 @@ coordinates a text ties to a position. Each name has a kind:
 - `crew`: a crew or group tied to a place («розрахунок … ймовірно Рикки»);
 - `callsign`: a callsign, kept only when the text places it.
 
-UAV, munition and equipment names («Молния», «Ланцет») are excluded by the
-prompt. A located crew or callsign that overlaps a callsign token in a
+UAV, munition and equipment names («Молния», «Ланцет») and settlements are
+excluded by the prompt. Settlements Echo already found in a message are passed
+to the model as a hint. Single generic words («дамба», «посадка», «міст») are
+dropped in code; with a number or code («Дамба-3») they count as names. A located crew or callsign that overlaps a callsign token in a
 message card keeps the callsign pill and its hint, and adds a location
 marker.
 
