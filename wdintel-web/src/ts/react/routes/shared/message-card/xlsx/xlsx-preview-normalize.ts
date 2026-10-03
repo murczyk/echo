@@ -36,7 +36,7 @@ export function normalizeXlsxPreviewWorkbook(buffer: ArrayBuffer): XlsxPreviewNo
 
     const zipped = zipSync(normalizedFiles, { level: 0 });
     return {
-      buffer: zipped.buffer.slice(zipped.byteOffset, zipped.byteOffset + zipped.byteLength),
+      buffer: new Uint8Array(zipped).buffer,
       changedWorksheetCount,
       changedCellCount,
     };

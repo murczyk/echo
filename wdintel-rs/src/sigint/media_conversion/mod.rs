@@ -1,6 +1,6 @@
 use crate::config::{
     KMZ_CONTENT_TYPE, RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
-    SIGINT_MEDIA_CONVERSION_STATUS_DONE,
+    SIGINT_MEDIA_CONVERSION_STATUS_DONE, SIGINT_MEDIA_CONVERSION_STATUS_ERROR,
     SIGINT_MEDIA_CONVERSION_STATUS_PENDING,
     SIGINT_MEDIA_KMZ_CONVERSION_EXTENSIONS,
     SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES,
@@ -16,7 +16,7 @@ use crate::messenger::media::MediaUploadInput;
 use crate::types::{Env, ShortContext};
 use crate::users::{ensure_base_role, login_id_from_identity};
 use actix_web::http::header;
-use actix_web::{get, web, HttpResponse};
+use actix_web::{get, post, web, HttpResponse};
 use md5::{Digest, Md5};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction,
@@ -185,13 +185,13 @@ pub async fn preview(
     let bytes = fetch_completed_result_bytes(env.as_ref(), &media, storage_key)
         .await
         .c(h!())?;
-    let preview =
+    let parsed =
         crate::palitra::kmz::parse_coordinates_from_file(file_name, &bytes)
             .await
             .c(h!())?;
     Ok(web::Json(SignalMediaKmzPreviewRsp {
-        points: preview.points,
-        line_strings: preview
+        points: parsed.points,
+        line_strings: parsed
             .line_strings
             .into_iter()
             .map(|line| SignalMediaKmzPreviewLineString {
@@ -200,6 +200,73 @@ pub async fn preview(
             })
             .collect(),
     }))
+}
+
+#[post("/api/messenger/media/{media_id}/kmz-conversion/retry")]
+pub async fn retry(
+    user: actix_identity::Identity,
+    env: web::Data<Env>,
+    path: web::Path<(Uuid,)>,
+) -> Result<web::Json<SignalMediaKmzConversionStatusRsp>, AppError> {
+    let (_, job) = authorized_job(&user, env.as_ref(), path.0).await.c(h!())?;
+    if job.status != SIGINT_MEDIA_CONVERSION_STATUS_ERROR {
+        return Err(AppError::BL {
+            msg: "Conversion is not failed".to_string(),
+        });
+    }
+    let current_job = requeue_failed_job(env.as_ref(), &job).await.c(h!())?;
+    if let Some(job) = current_job {
+        return Ok(web::Json(SignalMediaKmzConversionStatusRsp {
+            status: job.status,
+            error: job.last_error,
+            converted_file_name: job.converted_file_name,
+        }));
+    }
+    Ok(web::Json(SignalMediaKmzConversionStatusRsp {
+        status: SIGINT_MEDIA_CONVERSION_STATUS_PENDING.to_string(),
+        error: None,
+        converted_file_name: None,
+    }))
+}
+
+async fn requeue_failed_job(
+    env: &Env,
+    job: &signal_message_media_conversion_job::Model,
+) -> anyhow::Result<Option<signal_message_media_conversion_job::Model>> {
+    let result = signal_message_media_conversion_job::Entity::update_many()
+        .col_expr(
+            signal_message_media_conversion_job::Column::Status,
+            sea_orm::sea_query::Expr::value(
+                SIGINT_MEDIA_CONVERSION_STATUS_PENDING,
+            ),
+        )
+        .col_expr(
+            signal_message_media_conversion_job::Column::LastError,
+            sea_orm::sea_query::Expr::value(Option::<String>::None),
+        )
+        .filter(signal_message_media_conversion_job::Column::Id.eq(job.id))
+        .filter(
+            signal_message_media_conversion_job::Column::Status
+                .eq(SIGINT_MEDIA_CONVERSION_STATUS_ERROR),
+        )
+        .filter(
+            signal_message_media_conversion_job::Column::AttemptCount
+                .eq(job.attempt_count),
+        )
+        .exec(&env.dbx)
+        .await
+        .c(h!())?;
+    if result.rows_affected != 0 {
+        return Ok(None);
+    }
+    signal_message_media_conversion_job::Entity::find_by_id(job.id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or_else(|| {
+            anyhow::anyhow!("conversion job disappeared during retry")
+        })
+        .map(Some)
 }
 
 #[get("/api/messenger/media/{media_id}/kmz-conversion/download")]
@@ -557,9 +624,28 @@ pub(super) fn converted_file_name(source_file_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functest::tests::{cleanup, mk_signal_message};
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    use crate::functest::tests::{
+        cleanup, find_test_datasource_group, mk_signal_message,
+        mk_test_identity,
+    };
+    use actix_identity::{Identity, IdentityMiddleware};
+    use actix_session::{storage::RedisSessionStore, SessionMiddleware};
+    use actix_web::{
+        cookie::Key, http::StatusCode, test as actix_test, web, App,
+        HttpMessage, HttpRequest, HttpResponse,
+    };
+    use opendal::{services::Memory, Operator};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
     use serial_test::serial;
+    use std::io::Cursor;
+
+    async fn sign_in(
+        request: HttpRequest,
+        login: web::Path<String>,
+    ) -> HttpResponse {
+        Identity::login(&request.extensions(), login.into_inner()).unwrap();
+        HttpResponse::NoContent().finish()
+    }
 
     fn media_with_extension(extension: &str) -> signal_message_media::Model {
         signal_message_media::Model {
@@ -576,9 +662,40 @@ mod tests {
         }
     }
 
+    fn preview_kmz() -> Vec<u8> {
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        archive
+            .start_file("doc.kml", SimpleFileOptions::default())
+            .unwrap();
+        archive
+            .write_all(
+                br#"<kml><Document><Placemark><Point><coordinates>30,50</coordinates></Point></Placemark><Placemark><LineString><coordinates>30,50 31,51</coordinates></LineString></Placemark></Document></kml>"#,
+            )
+            .unwrap();
+        archive.finish().unwrap().into_inner()
+    }
+
+    fn with_memory_storage(env: &Env) -> Env {
+        let mut env = env.clone();
+        let config = crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "media-conversion-test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        };
+        env.s3_config = Some(crate::storage::S3Config::from(&config));
+        env.config.s3_config = Some(config);
+        env.s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        env
+    }
+
     #[test]
-    fn recognizes_kmz_and_geojson_sources_case_insensitively() {
-        for extension in ["kmz", "KMZ", "geojson", "GEOJSON"] {
+    fn recognizes_conversion_sources_case_insensitively() {
+        for extension in [
+            "kml", "KML", "kmz", "KMZ", "gpx", "GPX", "geojson", "GEOJSON",
+        ] {
             assert!(is_eligible_source(&media_with_extension(extension)));
         }
         assert!(!is_eligible_source(&media_with_extension("txt")));
@@ -606,6 +723,12 @@ mod tests {
         tokio::fs::write(&ignored_path, b"not geodata")
             .await
             .unwrap();
+        let kml_bytes = b"<kml><Placemark/></kml>";
+        let kml_path = directory.path().join("route.kml");
+        tokio::fs::write(&kml_path, kml_bytes).await.unwrap();
+        let kmz_bytes = b"native kmz";
+        let kmz_path = directory.path().join("route.kmz");
+        tokio::fs::write(&kmz_path, kmz_bytes).await.unwrap();
 
         let supported_media = signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
@@ -637,6 +760,38 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+        let native_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set(
+                "application/vnd.google-earth.kml+xml".to_string()
+            ),
+            file_ext: Set(Some("kml".to_string())),
+            file_name: Set(Some("route.kml".to_string())),
+            size_bytes: Set(i64::try_from(kml_bytes.len()).unwrap()),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            is_encrypted: Set(true),
+            storage_key: Set(Some("test/route.kml".to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let passthrough_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set("application/vnd.google-earth.kmz".to_string()),
+            file_ext: Set(Some("kmz".to_string())),
+            file_name: Set(Some("route.kmz".to_string())),
+            size_bytes: Set(i64::try_from(kmz_bytes.len()).unwrap()),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            is_encrypted: Set(true),
+            storage_key: Set(Some("test/route.kmz".to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
         let oversized_size =
             i64::try_from(SIGINT_MEDIA_KMZ_CONVERSION_MAX_SOURCE_BYTES)
                 .unwrap()
@@ -656,15 +811,35 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
-        let ignored_media_id = ignored_media.id;
+        let native_media_id = native_media.id;
+        let passthrough_media_id = passthrough_media.id;
         let oversized_media_id = oversized_media.id;
-        let media =
-            vec![supported_media.clone(), ignored_media, oversized_media];
+        let media = vec![
+            supported_media.clone(),
+            native_media.clone(),
+            passthrough_media.clone(),
+            ignored_media,
+            oversized_media.clone(),
+        ];
         let uploads = vec![
             MediaUploadInput {
                 path: supported_path.to_string_lossy().into_owned(),
                 name: Some("route.gpx".to_string()),
                 content_type: Some("application/gpx+xml".to_string()),
+            },
+            MediaUploadInput {
+                path: kml_path.to_string_lossy().into_owned(),
+                name: Some("route.kml".to_string()),
+                content_type: Some(
+                    "application/vnd.google-earth.kml+xml".to_string(),
+                ),
+            },
+            MediaUploadInput {
+                path: kmz_path.to_string_lossy().into_owned(),
+                name: Some("route.kmz".to_string()),
+                content_type: Some(
+                    "application/vnd.google-earth.kmz".to_string(),
+                ),
             },
             MediaUploadInput {
                 path: ignored_path.to_string_lossy().into_owned(),
@@ -682,12 +857,29 @@ mod tests {
             },
         ];
 
-        let statuses = load_statuses(&env.dbx, &media).await.unwrap();
+        let statuses = load_statuses(
+            &env.dbx,
+            &[
+                supported_media.clone(),
+                native_media.clone(),
+                passthrough_media,
+                oversized_media.clone(),
+            ],
+        )
+        .await
+        .unwrap();
         assert_eq!(
             statuses.get(&supported_media.id).map(String::as_str),
             Some(SIGINT_MEDIA_CONVERSION_STATUS_PENDING)
         );
-        assert!(!statuses.contains_key(&ignored_media_id));
+        assert_eq!(
+            statuses.get(&native_media_id).map(String::as_str),
+            Some(SIGINT_MEDIA_CONVERSION_STATUS_PENDING)
+        );
+        assert_eq!(
+            statuses.get(&passthrough_media_id).map(String::as_str),
+            Some(SIGINT_MEDIA_CONVERSION_STATUS_PENDING)
+        );
         assert!(!statuses.contains_key(&oversized_media_id));
 
         schedule_uploaded_media(&env.dbx, message.id, &media, &uploads)
@@ -698,15 +890,368 @@ mod tests {
             .all(&env.dbx)
             .await
             .unwrap();
-        assert_eq!(jobs.len(), 1);
-        let job = &jobs[0];
+        assert_eq!(jobs.len(), 3);
+        let job = jobs
+            .iter()
+            .find(|job| job.source_media_id == supported_media.id)
+            .unwrap();
         assert_eq!(job.signal_message_id, message.id);
-        assert_eq!(job.source_media_id, supported_media.id);
         assert_eq!(job.source_file_name, "route.gpx");
+        let kml_job = jobs
+            .iter()
+            .find(|job| job.source_media_id == native_media_id)
+            .unwrap();
+        assert_eq!(kml_job.source_file_name, "route.kml");
+        let kmz_job = jobs
+            .iter()
+            .find(|job| job.source_media_id == passthrough_media_id)
+            .unwrap();
+        assert_eq!(kmz_job.source_file_name, "route.kmz");
+        assert_eq!(kmz_job.status, SIGINT_MEDIA_CONVERSION_STATUS_PENDING);
+        let statuses =
+            load_statuses(&env.dbx, &[supported_media]).await.unwrap();
+        assert_eq!(
+            statuses.get(&job.source_media_id).map(String::as_str),
+            Some(SIGINT_MEDIA_CONVERSION_STATUS_PENDING)
+        );
         assert_eq!(
             job.source_file_md5,
             format!("{:x}", Md5::digest(supported_bytes))
         );
         assert_eq!(job.status, SIGINT_MEDIA_CONVERSION_STATUS_PENDING);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn legacy_preview_authorizes_completed_conversions_and_native_kmz_jobs(
+    ) {
+        let env = with_memory_storage(&cleanup().await.unwrap());
+        let identity = mk_test_identity().await.unwrap();
+        let login_id =
+            crate::users::login_id_by_name(&env.dbx, &identity.login)
+                .await
+                .unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            crate::entities::signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        crate::entities::signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(datasource_group.group_master_key)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let kmz = preview_kmz();
+        let converted_key = crate::messenger::media::store_asset(
+            &env,
+            web::Bytes::from(kmz.clone()),
+            Some("route_converted.kmz"),
+            Some(KMZ_CONTENT_TYPE),
+        )
+        .await
+        .unwrap();
+        let native_key = crate::messenger::media::store_asset(
+            &env,
+            web::Bytes::from(kmz.clone()),
+            Some("route.kmz"),
+            Some(KMZ_CONTENT_TYPE),
+        )
+        .await
+        .unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        let converted_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set("application/gpx+xml".to_string()),
+            file_ext: Set(Some("gpx".to_string())),
+            file_name: Set(Some("route.gpx".to_string())),
+            size_bytes: Set(3),
+            created_at: Set(now),
+            is_encrypted: Set(true),
+            storage_key: Set(Some("test/route.gpx".to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let native_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set(KMZ_CONTENT_TYPE.to_string()),
+            file_ext: Set(Some("kmz".to_string())),
+            file_name: Set(Some("route.kmz".to_string())),
+            size_bytes: Set(i64::try_from(kmz.len()).unwrap()),
+            created_at: Set(now),
+            is_encrypted: Set(true),
+            storage_key: Set(Some(native_key)),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let lazy_native_media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set(KMZ_CONTENT_TYPE.to_string()),
+            file_ext: Set(Some("kmz".to_string())),
+            file_name: Set(Some("lazy.kmz".to_string())),
+            size_bytes: Set(i64::try_from(kmz.len()).unwrap()),
+            created_at: Set(now),
+            is_encrypted: Set(true),
+            storage_key: Set(Some(
+                crate::messenger::media::store_asset(
+                    &env,
+                    web::Bytes::from(kmz.clone()),
+                    Some("lazy.kmz"),
+                    Some(KMZ_CONTENT_TYPE),
+                )
+                .await
+                .unwrap(),
+            )),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        for (media, storage_key) in [
+            (&converted_media, Some(converted_key)),
+            (&native_media, None),
+        ] {
+            signal_message_media_conversion_job::ActiveModel {
+                id: NotSet,
+                signal_message_id: Set(message.id),
+                source_media_id: Set(media.id),
+                source_file_md5: Set(format!("{:x}", Md5::digest(b"source"))),
+                source_file_name: Set(media.file_name.clone().unwrap()),
+                source_content_type: Set(Some(media.content_type.clone())),
+                status: Set(SIGINT_MEDIA_CONVERSION_STATUS_DONE.to_string()),
+                conversion_receipt: Set(None),
+                converted_storage_key: Set(storage_key),
+                converted_file_name: Set(Some(
+                    "route_converted.kmz".to_string(),
+                )),
+                converted_size_bytes: Set(Some(
+                    i64::try_from(kmz.len()).unwrap(),
+                )),
+                created_at: NotSet,
+                last_attempt_at: Set(None),
+                attempt_count: Set(1),
+                last_error: Set(None),
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
+        let sessions = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::new(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(sessions, Key::generate()))
+                .route("/test/login/{login}", web::post().to(sign_in))
+                .service(status)
+                .service(preview),
+        )
+        .await;
+        let unauthorized = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri(&format!(
+                    "/api/messenger/media/{}/kmz-conversion/preview",
+                    native_media.id
+                ))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+        let login = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/test/login/{login_id}"))
+                .to_request(),
+        )
+        .await;
+        let cookie = login.response().cookies().next().unwrap().into_owned();
+        for media_id in [converted_media.id, native_media.id] {
+            let response: serde_json::Value =
+                actix_test::call_and_read_body_json(
+                    &app,
+                    actix_test::TestRequest::get()
+                        .uri(&format!(
+                        "/api/messenger/media/{media_id}/kmz-conversion/preview"
+                    ))
+                        .cookie(cookie.clone())
+                        .to_request(),
+                )
+                .await;
+            assert_eq!(response["points"].as_array().map(Vec::len), Some(1));
+            assert_eq!(
+                response["line_strings"].as_array().map(Vec::len),
+                Some(1)
+            );
+            assert!(response.get("polygons").is_none());
+        }
+        let lazy_status: SignalMediaKmzConversionStatusRsp =
+            actix_test::call_and_read_body_json(
+                &app,
+                actix_test::TestRequest::get()
+                    .uri(&format!(
+                        "/api/messenger/media/{}/kmz-conversion/status",
+                        lazy_native_media.id
+                    ))
+                    .cookie(cookie)
+                    .to_request(),
+            )
+            .await;
+        assert_eq!(lazy_status.status, SIGINT_MEDIA_CONVERSION_STATUS_PENDING);
+        assert!(signal_message_media_conversion_job::Entity::find()
+            .filter(
+                signal_message_media_conversion_job::Column::SourceMediaId
+                    .eq(lazy_native_media.id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn retry_requeues_observed_failure_and_rejects_stale_or_unauthorized_requests(
+    ) {
+        let env = cleanup().await.unwrap();
+        let identity = mk_test_identity().await.unwrap();
+        let login_id =
+            crate::users::login_id_by_name(&env.dbx, &identity.login)
+                .await
+                .unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            crate::entities::signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        crate::entities::signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(datasource_group.group_master_key)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set("application/gpx+xml".to_string()),
+            file_ext: Set(Some("gpx".to_string())),
+            file_name: Set(Some("route.gpx".to_string())),
+            size_bytes: Set(1),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            is_encrypted: Set(true),
+            storage_key: Set(Some("test/route.gpx".to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let failed_job = signal_message_media_conversion_job::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(message.id),
+            source_media_id: Set(media.id),
+            source_file_md5: Set(format!("{:x}", Md5::digest(b"source"))),
+            source_file_name: Set("route.gpx".to_string()),
+            source_content_type: Set(Some("application/gpx+xml".to_string())),
+            status: Set(SIGINT_MEDIA_CONVERSION_STATUS_ERROR.to_string()),
+            conversion_receipt: Set(None),
+            converted_storage_key: Set(None),
+            converted_file_name: Set(None),
+            converted_size_bytes: Set(None),
+            created_at: NotSet,
+            last_attempt_at: Set(None),
+            attempt_count: Set(1),
+            last_error: Set(Some("first failure".to_string())),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let sessions = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::from(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(sessions, Key::generate()))
+                .route("/test/login/{login}", web::post().to(sign_in))
+                .service(retry),
+        )
+        .await;
+        let unauthorized = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!(
+                    "/api/messenger/media/{}/kmz-conversion/retry",
+                    media.id
+                ))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+        let login = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/test/login/{login_id}"))
+                .to_request(),
+        )
+        .await;
+        let cookie = login.response().cookies().next().unwrap().into_owned();
+        let response: SignalMediaKmzConversionStatusRsp =
+            actix_test::call_and_read_body_json(
+                &app,
+                actix_test::TestRequest::post()
+                    .uri(&format!(
+                        "/api/messenger/media/{}/kmz-conversion/retry",
+                        media.id
+                    ))
+                    .cookie(cookie)
+                    .to_request(),
+            )
+            .await;
+        assert_eq!(response.status, SIGINT_MEDIA_CONVERSION_STATUS_PENDING);
+        let mut newer_failure = failed_job.into_active_model();
+        newer_failure.status =
+            Set(SIGINT_MEDIA_CONVERSION_STATUS_ERROR.to_string());
+        newer_failure.attempt_count = Set(2);
+        newer_failure.last_error = Set(Some("newer failure".to_string()));
+        let newer_failure = newer_failure.update(&env.dbx).await.unwrap();
+        let stale = signal_message_media_conversion_job::Model {
+            attempt_count: 1,
+            ..newer_failure.clone()
+        };
+        let current_job =
+            requeue_failed_job(&env, &stale).await.unwrap().unwrap();
+        assert_eq!(current_job.status, SIGINT_MEDIA_CONVERSION_STATUS_ERROR);
+        assert_eq!(current_job.attempt_count, 2);
+        assert_eq!(current_job.last_error.as_deref(), Some("newer failure"));
     }
 }

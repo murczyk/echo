@@ -800,6 +800,11 @@ describe('MessageCard', () => {
     expect(
       canDownloadAllMessageAttachments([{ ...convertedKmz, kmzConversionStatus: 'done' }]),
     ).toBe(true);
+    expect(
+      canDownloadAllMessageAttachments([
+        { ...convertedKmz, fileName: 'route.KML', kmzConversionStatus: 'done' },
+      ]),
+    ).toBe(true);
     for (const kmzConversionStatus of [null, 'pending', 'processing', 'error']) {
       expect(canDownloadAllMessageAttachments([{ ...convertedKmz, kmzConversionStatus }])).toBe(
         false,

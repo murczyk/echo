@@ -10,6 +10,7 @@ import {
 } from './MessageCardMedia';
 import { MessageCardAttachmentPreviewProvider } from './attachment-preview/MessageCardAttachmentPreviewProvider';
 import type { KmzAttachmentPreviewSource } from './attachment-preview/message-card-preview.types';
+import { isNativeKmlOrKmz } from './kmz/kmz-preview-utils';
 
 type Props = KmzAttachmentPreviewSource & {
   selected?: boolean;
@@ -31,13 +32,24 @@ export function KmzAttachmentPreviewLink({
   originalHref,
   fileName,
   initialStatus,
+  sizeBytes,
+  contentType,
   selected = false,
   onPreview,
   isDownloadStarting,
   onDownloadStart,
 }: Props) {
   const [open, setOpen] = useState(false);
-  const source = { mediaId, originalHref, fileName, initialStatus };
+  const nativeFormat = isNativeKmlOrKmz(fileName, contentType);
+  const source = {
+    mediaId,
+    originalHref,
+    fileName,
+    sizeBytes,
+    contentType,
+    initialStatus,
+    nativeFormat,
+  };
 
   return (
     <>
@@ -63,7 +75,7 @@ export function KmzAttachmentPreviewLink({
               minHeight: 32,
               py: 0.25,
               pl: 0.75,
-              pr: initialStatus === 'done' ? 4 : 0.75,
+              pr: initialStatus === 'done' && nativeFormat !== 'kmz' ? 4 : 0.75,
               fontSize: 11,
               lineHeight: 1.25,
               textTransform: 'none',
@@ -86,7 +98,7 @@ export function KmzAttachmentPreviewLink({
             </Box>
           </Button>
         </Tooltip>
-        {initialStatus === 'done' ? (
+        {initialStatus === 'done' && nativeFormat !== 'kmz' ? (
           <MessageMediaThumbnailDownloadLink
             href={kmzAttachmentConversionArchiveUrl(mediaId)}
             displayName={fileName}
