@@ -391,7 +391,7 @@ const DutyMessageList = memo(
         ref={listRef}
         data-duty-feed-list="true"
         data-duty-idle-offload={mountedItemIds != null ? 'true' : undefined}
-        className="m-0 list-none rer-duty pt-2"
+        className="m-0 list-none rer-duty pt-2 pl-3"
         style={{ boxSizing: 'border-box' }}
       >
         {items.map(([id, msg]) => {
