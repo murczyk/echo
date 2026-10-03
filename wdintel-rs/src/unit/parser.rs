@@ -1,7 +1,6 @@
 use crate::location::SettlementDetails;
 use crate::rer_importer::types::UnitAndLoc;
 use crate::types::*;
-use crate::unit::has_unit;
 use crate::utils::m_cap_s;
 use crate::utils::string::byte_substr;
 use itertools::Itertools;
@@ -660,14 +659,25 @@ fn is_unit_and_loc_line(
     Ok(l.contains("управління")
         || ltrim.starts_with("укх")
         || (l.contains("укх") && !has_date(line)?)
-        || l.contains("мсб")
-        || l.contains("омсбр")
+        || l.contains("підрозділ")
         || l.contains("загін")
         || ltrim.starts_with("dmr")
         || (l.contains("dmr") && !has_date(line)?)
         || l.contains("укх радіомережа")
         || l.contains("укх р/м")
-        || has_unit(line))
+        || has_leading_library_unit(line))
+}
+
+fn has_leading_library_unit(line: &str) -> bool {
+    let Some(first_unit_idx) = super::capture_library_unit(line)
+        .into_iter()
+        .map(|unit| unit.idx)
+        .min()
+    else {
+        return false;
+    };
+    line.get(..first_unit_idx)
+        .is_some_and(|prefix| prefix.split_whitespace().nth(3).is_none())
 }
 
 fn try_process_kharkiv_style_unit_and_locality(
@@ -1156,6 +1166,15 @@ mod tests {
     fn extract_unit_does_not_treat_antenna_name_as_report_125_unit() {
         let body = "Тип: Антена\nНазва: 141.715 МГц\n24.06.2026 17:32\nКоординати: 36U XB 66512 50880";
         let res = extract_unit(test_settlements(), body, vec![]).unwrap();
+        assert_eq!(res.unit, None);
+    }
+
+    #[test]
+    fn extract_unit_ignores_document_description_with_unit_mentions() {
+        let body = "Бойовий наказ командира 1 мсб 555 мсп з планами на жовтень 2026 року. Документ змінений 01.10.2026";
+        let res = extract_unit(test_settlements(), body, vec![]).unwrap();
+
+        assert_eq!(res.locality, None);
         assert_eq!(res.unit, None);
     }
 
