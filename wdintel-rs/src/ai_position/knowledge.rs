@@ -68,46 +68,6 @@ pub fn fed_scopes(
     scopes_for(group_master_key, false, aor_ids)
 }
 
-/// Queues recomputes for everything a group's facts feed, e.g. after its
-/// privacy changed. One set-based statement: a long history stays in the
-/// database.
-pub async fn enqueue_for_group<C>(
-    dbx: &C,
-    master_key: &str,
-) -> anyhow::Result<()>
-where
-    C: ConnectionTrait,
-{
-    dbx.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "insert into ai_position_knowledge_job (scope_kind, scope_key, name_key)
-         select distinct scope.kind, scope.key, fed.name_key
-         from (
-             select distinct name_key, aor_ids
-             from ai_position_mention
-             where group_master_key = $1
-         ) fed
-         cross join lateral (
-             select 'group' as kind, $1 as key
-             union all
-             select 'aor', aor_id::text from unnest(fed.aor_ids) aor_id
-             union all
-             select 'aor', sga.aor_id::text
-             from signal_group_aor sga
-             where sga.master_key = $1
-         ) scope
-         on conflict (scope_kind, scope_key, name_key) do update
-             set attempts = 0,
-                 last_error = null,
-                 next_attempt_at = now() at time zone 'utc',
-                 created_at = now() at time zone 'utc'",
-        [master_key.into()],
-    ))
-    .await
-    .c(h!())?;
-    Ok(())
-}
-
 /// Each group's scopes with its privacy and AOR membership as they are now.
 pub(crate) async fn current_scopes<C>(
     dbx: &C,
@@ -777,9 +737,10 @@ where
     Ok(())
 }
 
-/// Locks the message and its group links and checks the body and group
-/// are still the ones read: an edit or group move racing the link must not
-/// leave offsets into old text or a mention under the old group.
+/// Locks the message, its inbox item and group links and checks body, group
+/// and event time are still the ones read: an edit, time correction or group
+/// move racing the link must not leave offsets into old text, a mention under
+/// the old group or an old time (their triggers ran before it existed).
 async fn source_unchanged<C>(
     dbx: &C,
     source: &super::worker::Source,
@@ -791,6 +752,7 @@ where
     struct Current {
         body: String,
         group_master_key: Option<String>,
+        message_at: NaiveDateTime,
     }
     dbx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
@@ -804,10 +766,12 @@ where
         "select coalesce(message.body, '') as body,
                 (select smg.group_master_key from signal_message_group smg
                  where smg.signal_message_id = message.id and smg.group_master_key is not null
-                 order by smg.id limit 1) as group_master_key
+                 order by smg.id limit 1) as group_master_key,
+                coalesce(item.datetime, message.timestamp, message.created_at) as message_at
          from signal_message message
+         join sigint_inbox_item item on item.id = message.id
          where message.id = $1 and not message.deleted
-         for share of message",
+         for share of message, item",
         [source.message_id.into()],
     ))
     .one(dbx)
@@ -816,6 +780,7 @@ where
     Ok(current.is_some_and(|current| {
         current.body == source.text
             && current.group_master_key == source.group_master_key
+            && current.message_at == source.message_at
     }))
 }
 

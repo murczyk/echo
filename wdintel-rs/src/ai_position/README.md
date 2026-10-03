@@ -29,8 +29,7 @@ A new or removed coordinate fact queues a recompute (`ai_position_knowledge_job`
 for every scope its group can feed: the group itself and each of its AORs.
 Every recompute and every read uses the group's privacy and AOR membership as
 they are now, not as they were when the message was parsed. Private groups
-never feed AOR knowledge. Making a group private or public in the zone
-settings queues recomputes for its positions.
+never feed AOR knowledge.
 
 When a recompute makes a position known, or widens its window, it queues
 `ai_position_link_job` rows for the newly covered event-time ranges. The
@@ -55,6 +54,10 @@ path, whether or not the worker is enabled:
   document's mentions;
 - a message that moves to another group (e.g. a group merge) moves its
   mentions too, and both groups' knowledge is recomputed;
+- an attachment moved to another message takes that message's group and
+  time;
+- a group made private or public on any path (zone settings, importer)
+  recomputes the knowledge its facts feed;
 - any removed mention, including cascades from removed attachments, queues
   the knowledge it may have fed for a recompute.
 

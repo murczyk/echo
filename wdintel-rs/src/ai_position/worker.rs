@@ -1263,9 +1263,6 @@ mod tests {
         .into_active_model();
         group.is_secret = Set(true);
         group.update(&env.dbx).await.unwrap();
-        crate::ai_position::knowledge::enqueue_for_group(&env.dbx, &master_key)
-            .await
-            .unwrap();
         let scopes = knowledge_scopes(&env).await;
         assert_eq!(scopes, vec![("group".to_string(), master_key.clone())]);
 

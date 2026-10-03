@@ -409,16 +409,9 @@ pub async fn update_signal_group_access_and_admins(
         .c(h!())?;
 
     if let Some(group) = group {
-        let privacy_changed = group.is_secret != is_secret;
         let mut group = group.into_active_model();
         group.is_secret = Set(is_secret);
         group.update(txn).await.c(h!())?;
-        if privacy_changed {
-            // Shared position knowledge must stop (or start) using its facts.
-            crate::ai_position::knowledge::enqueue_for_group(txn, master_key)
-                .await
-                .c(h!())?;
-        }
 
         replace_secret_group_access(
             txn,

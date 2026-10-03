@@ -443,6 +443,57 @@ execute function ai_position_signal_message_group_changed();
 create trigger ai_position_signal_message_group_deleted
 after delete on signal_message_group
 for each row execute function ai_position_signal_message_group_changed();
+
+-- An attachment moved to another message (duplicate promotion) takes the
+-- new message's group and time; both scopes are recomputed.
+create function ai_position_media_moved()
+returns trigger language plpgsql as $$
+begin
+    perform ai_position_rescope_message(new.signal_message_id);
+    perform ai_position_refresh_message(new.signal_message_id);
+    return null;
+end;
+$$;
+
+create trigger ai_position_media_moved
+after update of signal_message_id on signal_message_media
+for each row
+when (old.signal_message_id is distinct from new.signal_message_id)
+execute function ai_position_media_moved();
+
+-- A group made private or public on any path (zone settings, importer):
+-- recompute everything its facts feed.
+create function ai_position_group_privacy_changed()
+returns trigger language plpgsql as $$
+begin
+    perform ai_position_enqueue_knowledge(fed.name_key, new.master_key, fed.aor_ids)
+    from (
+        select distinct name_key, aor_ids
+        from ai_position_mention
+        where group_master_key = new.master_key
+    ) fed;
+    perform ai_position_enqueue_knowledge(fed.name_key, new.master_key, array(
+        select sga.aor_id from signal_group_aor sga where sga.master_key = new.master_key
+    ))
+    from (
+        select distinct name_key
+        from ai_position_mention
+        where group_master_key = new.master_key
+    ) fed;
+    return null;
+end;
+$$;
+
+create trigger ai_position_group_privacy_changed
+after update of is_secret on signal_group
+for each row
+when (old.is_secret is distinct from new.is_secret)
+execute function ai_position_group_privacy_changed();
+
+-- Keyset pages of linking seek by event time; minute-precision times tie
+-- often, so the id must be part of the index.
+create index sigint_inbox_item_datetime_id_idx
+    on sigint_inbox_item (datetime, id);
                 "#,
             )
             .await
@@ -455,6 +506,11 @@ for each row execute function ai_position_signal_message_group_changed();
             .get_connection()
             .execute_unprepared(
                 r#"
+drop index if exists sigint_inbox_item_datetime_id_idx;
+drop trigger if exists ai_position_group_privacy_changed on signal_group;
+drop function if exists ai_position_group_privacy_changed();
+drop trigger if exists ai_position_media_moved on signal_message_media;
+drop function if exists ai_position_media_moved();
 drop trigger if exists ai_position_signal_message_group_inserted on signal_message_group;
 drop trigger if exists ai_position_signal_message_group_changed on signal_message_group;
 drop trigger if exists ai_position_signal_message_group_deleted on signal_message_group;
