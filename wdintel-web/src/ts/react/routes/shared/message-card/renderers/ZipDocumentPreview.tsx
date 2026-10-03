@@ -243,37 +243,48 @@ export function ZipDocumentPreview({
     },
     [busyIndex, document.href],
   );
+  const loading = !listing && !error;
   const stage = (
     <div
-      className="min-h-0 flex-1 overflow-auto p-3"
+      className={`min-h-0 flex-1 overflow-auto p-3 ${loading ? 'grid place-items-center' : ''}`}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <Typography variant="body2" color="text.secondary" className="mb-2">
-        {listing
-          ? `Файлів: ${listing.entries.length}; розпаковано: ${formatSizeBytes(listing.totalUncompressedSize)}`
-          : 'Читання структури ZIP…'}
-      </Typography>
-      {error ? <Typography color="error.main">{error}</Typography> : null}
-      {memberError ? (
-        <Typography color="error.main" className="mb-2">
-          {memberError}
-        </Typography>
-      ) : null}
-      {!error && !listing ? <CircularProgress aria-label="Читання ZIP" /> : null}
-      {listing?.entries.length === 0 ? <Typography>Архів порожній.</Typography> : null}
-      {listing ? (
-        <ul className="m-0 list-none overflow-hidden rounded border border-divider p-0">
-          {listing.entries.map((entry) => (
-            <ZipRow
-              key={entry.index}
-              entry={entry}
-              busy={busyIndex === entry.index}
-              error={null}
-              onDownload={downloadMember}
-            />
-          ))}
-        </ul>
-      ) : null}
+      {loading ? (
+        <div role="status" className="flex flex-col items-center gap-3 text-center">
+          <CircularProgress size={22} aria-label="Читання ZIP" />
+          <Typography variant="body2" color="text.secondary">
+            Читання структури ZIP…
+          </Typography>
+        </div>
+      ) : (
+        <>
+          {listing ? (
+            <Typography variant="body2" color="text.secondary" className="mb-2">
+              {`Файлів: ${listing.entries.length}; розпаковано: ${formatSizeBytes(listing.totalUncompressedSize)}`}
+            </Typography>
+          ) : null}
+          {error ? <Typography color="error.main">{error}</Typography> : null}
+          {memberError ? (
+            <Typography color="error.main" className="mb-2">
+              {memberError}
+            </Typography>
+          ) : null}
+          {listing?.entries.length === 0 ? <Typography>Архів порожній.</Typography> : null}
+          {listing ? (
+            <ul className="m-0 list-none overflow-hidden rounded border border-divider p-0">
+              {listing.entries.map((entry) => (
+                <ZipRow
+                  key={entry.index}
+                  entry={entry}
+                  busy={busyIndex === entry.index}
+                  error={null}
+                  onDownload={downloadMember}
+                />
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
     </div>
   );
   return (

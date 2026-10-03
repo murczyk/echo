@@ -69,7 +69,7 @@ export function decodeZipEntryPath(rawName: Uint8Array, flags: number, extra: Ui
   const path =
     flags & (1 << 11)
       ? (decodeUtf8(rawName) ?? fail('Архів містить некоректне UTF-8 ім’я файлу.'))
-      : (unicodePathFromExtra(rawName, extra) ?? decodeCp437(rawName));
+      : (unicodePathFromExtra(rawName, extra) ?? decodeUtf8(rawName) ?? decodeCp437(rawName));
   if (
     !path ||
     path.length > MAX_PATH_LENGTH ||
@@ -81,6 +81,16 @@ export function decodeZipEntryPath(rawName: Uint8Array, flags: number, extra: Ui
   )
     fail('Архів містить небезпечний або надто вкладений шлях.');
   return path;
+}
+
+function isMacMetadataPath(path: string): boolean {
+  const segments = path.split('/').filter(Boolean);
+  const basename = segments.at(-1);
+  return (
+    segments[0]?.toLowerCase() === '__macosx' ||
+    basename?.startsWith('._') === true ||
+    basename === '.DS_Store'
+  );
 }
 function hasCentralDirectoryChain(
   bytes: Uint8Array,
@@ -140,6 +150,7 @@ export function parseZipListing(buffer: ArrayBuffer): ZipListing {
         : 'Архів пошкоджений або обрізаний.',
     );
   const entries: ZipEntry[] = [];
+  let totalArchiveUncompressedSize = 0;
   let totalUncompressedSize = 0;
   for (let index = 0; index < entriesCount; index += 1) {
     if (!has(bytes, offset, 46) || u32(bytes, offset) !== 0x02014b50)
@@ -165,9 +176,14 @@ export function parseZipListing(buffer: ArrayBuffer): ZipListing {
     const extra = bytes.subarray(offset + 46 + nameLength, offset + 46 + nameLength + extraLength);
     const path = decodeZipEntryPath(rawName, flags, extra);
     const directory = path.endsWith('/');
-    totalUncompressedSize += uncompressedSize;
-    if (totalUncompressedSize > MAX_TOTAL_BYTES)
+    totalArchiveUncompressedSize += uncompressedSize;
+    if (totalArchiveUncompressedSize > MAX_TOTAL_BYTES)
       fail('Розпакований розмір архіву перевищує ліміт попереднього перегляду.');
+    if (isMacMetadataPath(path)) {
+      offset += recordSize;
+      continue;
+    }
+    totalUncompressedSize += uncompressedSize;
     entries.push({
       index,
       path,

@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import {
   createDeferredMediaResponse,
   KML_PREVIEW_FIXTURE,
+  MACOS_ZIP_MEMBER_NAMES,
   MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES,
   openLegacyKmlPreviewHost,
   openMessageCardPreviewHost,
@@ -215,7 +216,35 @@ test.describe('@smoke @regression', () => {
       page,
     }) => {
       await openMessageCardPreviewHost(page, host, { withZip: true });
+      let releaseZip!: () => void;
+      const zipReady = new Promise<void>((resolve) => {
+        releaseZip = resolve;
+      });
+      await page.route(
+        '**/test-assets/message-card-media-preview/e2e-preview.zip',
+        async (route) => {
+          await zipReady;
+          await route.fallback();
+        },
+      );
       const dialog = await openZipPreview(page);
+      try {
+        const stage = dialog.locator('[data-attachment-preview-swipe-content]');
+        const loading = dialog.getByRole('status');
+        await expect(loading).toBeVisible();
+        const stageBox = await stage.boundingBox();
+        const loadingBox = await loading.boundingBox();
+        if (stageBox == null || loadingBox == null)
+          throw new Error('ZIP loading stage is not laid out');
+        expect(
+          Math.abs(loadingBox.x + loadingBox.width / 2 - stageBox.x - stageBox.width / 2),
+        ).toBeLessThan(2);
+        expect(
+          Math.abs(loadingBox.y + loadingBox.height / 2 - stageBox.y - stageBox.height / 2),
+        ).toBeLessThan(2);
+      } finally {
+        releaseZip();
+      }
       await expect(dialog.getByText('nested/member.txt')).toBeVisible();
       const [download] = await Promise.all([
         page.waitForEvent('download'),
@@ -224,6 +253,33 @@ test.describe('@smoke @regression', () => {
       expect(download.suggestedFilename()).toBe('member.txt');
       await dialog.getByRole('button', { name: 'Попереднє' }).click();
       await expect(dialog.getByText('E2E Markdown preview')).toBeVisible();
+    });
+  }
+
+  for (const host of ['duty', 'analysis'] as const) {
+    test(`${host} macOS ZIP preview shows Cyrillic files without Finder metadata`, async ({
+      page,
+    }) => {
+      await openMessageCardPreviewHost(page, host, { withZip: true });
+      const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+      if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+      await page
+        .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.macZip })
+        .click();
+      const dialog = page.getByRole('dialog', { name: 'Перегляд документа' });
+      await expect(dialog.getByText('Файлів: 5;', { exact: false })).toBeVisible();
+      for (const name of MACOS_ZIP_MEMBER_NAMES)
+        await expect(dialog.getByText(`📄 ${name}`)).toBeVisible();
+      await expect(dialog.getByText('__MACOSX', { exact: false })).toHaveCount(0);
+      await expect(dialog.getByText('._', { exact: false })).toHaveCount(0);
+      await expectDownloadFile(
+        dialog.getByRole('button', { name: `Скачати ${MACOS_ZIP_MEMBER_NAMES[0]}` }),
+        MACOS_ZIP_MEMBER_NAMES[0],
+      );
+      await expectDownloadFile(
+        dialog.getByRole('link', { name: 'Скачати' }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.macZip,
+      );
     });
   }
 

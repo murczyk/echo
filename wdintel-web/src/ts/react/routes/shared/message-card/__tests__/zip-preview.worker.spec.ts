@@ -47,6 +47,30 @@ function legacyCp437ZipFixture(): ArrayBuffer {
   return archive.buffer as ArrayBuffer;
 }
 
+function macosZipFixture(): ArrayBuffer {
+  const archive = zipSync({
+    '__MACOSX/': new Uint8Array(),
+    '__MACOSX/._Звіт.txt': strToU8('metadata'),
+    '._Звіт.txt': strToU8('metadata'),
+    '.DS_Store': strToU8('metadata'),
+    'Звіт.txt': strToU8('report'),
+    'Папка/Дані.csv': strToU8('data'),
+  });
+  const view = new DataView(archive.buffer);
+  let offset = view.getUint32(eocdOffset(archive) + 16, true);
+  for (let index = 0; index < 6; index += 1) {
+    const localOffset = view.getUint32(offset + 42, true);
+    view.setUint16(localOffset + 6, view.getUint16(localOffset + 6, true) & ~(1 << 11), true);
+    view.setUint16(offset + 8, view.getUint16(offset + 8, true) & ~(1 << 11), true);
+    offset +=
+      46 +
+      view.getUint16(offset + 28, true) +
+      view.getUint16(offset + 30, true) +
+      view.getUint16(offset + 32, true);
+  }
+  return archive.buffer as ArrayBuffer;
+}
+
 function eocdOffset(archive: Uint8Array): number {
   for (let index = archive.length - 22; index >= 0; index -= 1) {
     if (
@@ -186,6 +210,7 @@ describe('ZIP preview worker', () => {
 
   it('decodes UTF-8, CP437, and validated Unicode Path entry names', () => {
     expect(decodeZipEntryPath(strToU8('київ.txt'), 1 << 11, new Uint8Array())).toBe('київ.txt');
+    expect(decodeZipEntryPath(strToU8('київ.txt'), 0, new Uint8Array())).toBe('київ.txt');
     const cp437 = new Uint8Array([0x82, 0x2e, 0x74, 0x78, 0x74]);
     expect(decodeZipEntryPath(cp437, 0, new Uint8Array())).toBe('é.txt');
     expect(decodeZipEntryPath(cp437, 0, unicodePathExtra(cp437, 'київ.txt'))).toBe('київ.txt');
@@ -207,6 +232,28 @@ describe('ZIP preview worker', () => {
     const entry = parseZipListing(archive).entries[0]!;
     expect(entry.path).toBe('α');
     expect(new TextDecoder().decode(extractZipEntry(archive, entry))).toBe('legacy ZIP member');
+  });
+
+  it('lists macOS UTF-8 names without Finder metadata and extracts the chosen file', () => {
+    const archive = macosZipFixture();
+    const listing = parseZipListing(archive);
+    expect(listing.entries.map((entry) => entry.path)).toEqual(
+      expect.arrayContaining(['Звіт.txt', 'Папка/', 'Папка/Дані.csv']),
+    );
+    expect(listing.entries).toHaveLength(3);
+    expect(listing.totalUncompressedSize).toBe(10);
+    const entry = listing.entries.find((candidate) => candidate.path === 'Звіт.txt')!;
+    expect(new TextDecoder().decode(extractZipEntry(archive, entry))).toBe('report');
+  });
+
+  it('still applies the extraction-size limit to hidden Finder metadata', () => {
+    const archive = zipSync({ '__MACOSX/._file.txt': strToU8('metadata') });
+    const view = new DataView(archive.buffer);
+    const directoryOffset = view.getUint32(eocdOffset(archive) + 16, true);
+    view.setUint32(directoryOffset + 24, 200 * 1024 * 1024 + 1, true);
+    expect(() => parseZipListing(archive.buffer as ArrayBuffer)).toThrow(
+      'Розпакований розмір архіву перевищує ліміт',
+    );
   });
 
   it('rejects malformed flagged UTF-8 names', () => {

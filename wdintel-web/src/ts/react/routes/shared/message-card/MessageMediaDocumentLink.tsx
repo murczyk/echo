@@ -1,4 +1,5 @@
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import FolderZipOutlinedIcon from '@mui/icons-material/FolderZipOutlined';
 import { Box, Button, Tooltip } from '@mui/material';
 import type { MouseEvent } from 'react';
 
@@ -68,7 +69,13 @@ export function MessageMediaDocumentLink({
             justifyContent: 'flex-start',
             '& .MuiButton-startIcon': { mr: 0.35, ml: -0.25, '& svg': { fontSize: 14 } },
           }}
-          startIcon={<DescriptionOutlinedIcon aria-hidden />}
+          startIcon={
+            document.kind === 'zip' ? (
+              <FolderZipOutlinedIcon aria-hidden />
+            ) : (
+              <DescriptionOutlinedIcon aria-hidden />
+            )
+          }
         >
           <Box
             component="span"
