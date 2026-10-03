@@ -41,6 +41,7 @@ export function KmzAttachmentPreviewLink({
 }: Props) {
   const [open, setOpen] = useState(false);
   const nativeFormat = isNativeKmlOrKmz(fileName, contentType);
+  const downloadArchive = initialStatus === 'done' && nativeFormat !== 'kmz';
   const source = {
     mediaId,
     originalHref,
@@ -53,7 +54,11 @@ export function KmzAttachmentPreviewLink({
 
   return (
     <>
-      <Box component="span" className="relative inline-flex max-w-full self-start">
+      <Box
+        component="span"
+        className="relative inline-flex max-w-full self-start"
+        data-message-card-attachment-tile="true"
+      >
         <Tooltip title={fileName} enterDelay={400}>
           <Button
             size="small"
@@ -75,7 +80,7 @@ export function KmzAttachmentPreviewLink({
               minHeight: 32,
               py: 0.25,
               pl: 0.75,
-              pr: initialStatus === 'done' && nativeFormat !== 'kmz' ? 4 : 0.75,
+              pr: 4,
               fontSize: 11,
               lineHeight: 1.25,
               textTransform: 'none',
@@ -98,17 +103,21 @@ export function KmzAttachmentPreviewLink({
             </Box>
           </Button>
         </Tooltip>
-        {initialStatus === 'done' && nativeFormat !== 'kmz' ? (
-          <MessageMediaThumbnailDownloadLink
-            href={kmzAttachmentConversionArchiveUrl(mediaId)}
-            displayName={fileName}
-            downloadName={archiveDownloadName(fileName)}
-            downloadKey={`media-conversion-archive:${mediaId}`}
-            downloadLabel={`Завантажити оригінал і конвертований KMZ: ${fileName}`}
-            isDownloadStarting={isDownloadStarting ?? NO_DOWNLOAD_IN_PROGRESS}
-            onDownloadStart={onDownloadStart ?? ALLOW_DOWNLOAD}
-          />
-        ) : null}
+        <MessageMediaThumbnailDownloadLink
+          href={downloadArchive ? kmzAttachmentConversionArchiveUrl(mediaId) : originalHref}
+          displayName={fileName}
+          downloadName={
+            downloadArchive ? archiveDownloadName(fileName) : mediaDownloadAttr(fileName, 'geodata')
+          }
+          downloadKey={downloadArchive ? `media-conversion-archive:${mediaId}` : `media:${mediaId}`}
+          downloadLabel={
+            downloadArchive
+              ? `Завантажити оригінал і конвертований KMZ: ${fileName}`
+              : `Завантажити оригінал: ${fileName}`
+          }
+          isDownloadStarting={isDownloadStarting ?? NO_DOWNLOAD_IN_PROGRESS}
+          onDownloadStart={onDownloadStart ?? ALLOW_DOWNLOAD}
+        />
       </Box>
       {onPreview == null && open ? (
         <MessageCardAttachmentPreviewProvider

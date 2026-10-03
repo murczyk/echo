@@ -22,6 +22,17 @@ async function expectDownloadFile(locator: Locator, fileName: string) {
   expect(download.suggestedFilename()).toBe(fileName);
 }
 
+async function expectDownloadInsideTile(tile: Locator, fileName: string) {
+  const download = tile.locator('[data-message-card-attachment-download="true"]');
+  await expect(download).toBeVisible();
+  const tileBox = await tile.boundingBox();
+  const downloadBox = await download.boundingBox();
+  if (tileBox == null || downloadBox == null) throw new Error('Attachment tile is not laid out');
+  expect(downloadBox.x).toBeGreaterThanOrEqual(tileBox.x);
+  expect(downloadBox.x + downloadBox.width).toBeLessThanOrEqual(tileBox.x + tileBox.width);
+  await expectDownloadFile(download, fileName);
+}
+
 async function expectKmzDownloadChoice(
   dialog: Locator,
   label: string,
@@ -157,6 +168,48 @@ async function verifyEscapeClose(page: Page, dialog: Locator, reopen: () => Prom
 
 // Regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke @regression', () => {
+  for (const host of ['duty', 'analysis'] as const) {
+    test(`${host} document, map, and other attachment tiles download inside their borders`, async ({
+      page,
+    }) => {
+      await openMessageCardPreviewHost(page, host, { withZip: true, withKmlPreviews: true });
+      const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+      if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+      const tiles = page.locator('[data-message-card-attachment-tile="true"]');
+
+      await expectDownloadInsideTile(
+        tiles.filter({
+          has: page.getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text }),
+        }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text,
+      );
+      await expectDownloadInsideTile(
+        tiles.filter({ hasText: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.binary }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.binary,
+      );
+      await expectDownloadInsideTile(
+        tiles.filter({
+          has: page.getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml }),
+        }),
+        'e2e-route_files.zip',
+      );
+      await expectDownloadInsideTile(
+        tiles.filter({
+          has: page.getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz }),
+        }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz,
+      );
+      await expectDownloadInsideTile(
+        tiles.filter({
+          has: page.getByRole('button', {
+            name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.denseKml,
+          }),
+        }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.denseKml,
+      );
+    });
+  }
+
   for (const host of ['duty', 'analysis'] as const) {
     test(`${host} ZIP previews download a member and navigate to an adjacent document`, async ({
       page,

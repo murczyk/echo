@@ -21,6 +21,7 @@ export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
   doc: 'e2e-preview.doc',
   xls: 'e2e-preview.xls',
   zip: 'e2e-preview.zip',
+  binary: 'e2e-attachment.bin',
   kml: 'e2e-route.kml',
   denseKml: 'e2e-dense-points.kml',
   kmz: 'e2e-route.kmz',
@@ -239,6 +240,7 @@ function buildMessageCardMediaPreviewMessage({
   const doc = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.doc}`;
   const xls = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.xls}`;
   const zip = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip}`;
+  const binary = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.binary}`;
   const kml = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml}`;
   const kmz = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz}`;
   const gpx = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx}`;
@@ -345,6 +347,13 @@ function buildMessageCardMediaPreviewMessage({
               file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip,
               size_bytes: ZIP_PREVIEW_FIXTURE.byteLength,
               href: zip,
+            },
+            {
+              id: 'e2e-binary',
+              content_type: 'application/octet-stream',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.binary,
+              size_bytes: 16,
+              href: binary,
             },
           ]
         : []),
@@ -641,6 +650,11 @@ export async function installMessageCardMediaPreviewAssetRoutes(
     }
     if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip) {
       await fulfillAsset(route, ZIP_PREVIEW_FIXTURE, 'application/zip');
+      return;
+    }
+
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.binary) {
+      await fulfillAsset(route, Buffer.from('E2E attachment'), 'application/octet-stream');
       return;
     }
 
