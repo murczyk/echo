@@ -137,6 +137,9 @@ create table ai_position_knowledge (
 create index ai_position_knowledge_last_fact_idx
     on ai_position_knowledge (last_fact_at desc, id desc);
 
+create index ai_position_knowledge_name_key_idx
+    on ai_position_knowledge (name_key);
+
 create table ai_position_knowledge_job (
     scope_kind text not null check (scope_kind in ('aor', 'group')),
     scope_key text not null,
@@ -159,13 +162,20 @@ create index ai_position_knowledge_job_next_attempt_idx
 create function ai_position_mention_queue_knowledge()
 returns trigger language plpgsql as $$
 begin
+    -- Besides the recorded scopes, every knowledge row built from this group:
+    -- its AORs may have changed since the mention was saved.
     insert into ai_position_knowledge_job (scope_kind, scope_key, name_key)
-    select scope.kind, scope.key, old.name_key
+    select distinct scope.kind, scope.key, old.name_key
     from (
         select 'group' as kind, old.group_master_key as key
         where old.group_master_key is not null
         union all
         select 'aor', aor_id::text from unnest(old.aor_ids) aor_id
+        union all
+        select knowledge.scope_kind, knowledge.scope_key
+        from ai_position_knowledge knowledge
+        where knowledge.name_key = old.name_key
+          and old.group_master_key = any(knowledge.source_group_keys)
     ) scope
     on conflict (scope_kind, scope_key, name_key) do update
         set attempts = 0,
@@ -234,15 +244,28 @@ for each row execute function ai_position_media_summary_deleted();
 -- change (e.g. a group merge), move the mentions to the current group and
 -- queue the knowledge of both the old and the new scopes: access checks and
 -- knowledge must never follow a group the message left.
-create function ai_position_rescope_message(message_id bigint)
+create function ai_position_rescope_message(target_message_id bigint)
 returns void language plpgsql as $$
 declare
+    media_ids uuid[];
     current_group text;
     current_aors bigint[];
 begin
+    -- Indexed early exit: most messages have no mentions.
+    select coalesce(array_agg(media.id), '{}') into media_ids
+    from signal_message_media media
+    where media.signal_message_id = target_message_id;
+    if not exists (
+        select 1 from ai_position_mention where sigint_inbox_item_id = target_message_id
+    ) and not exists (
+        select 1 from ai_position_mention where media_id = any(media_ids)
+    ) then
+        return;
+    end if;
+
     select smg.group_master_key into current_group
     from signal_message_group smg
-    where smg.signal_message_id = message_id and smg.group_master_key is not null
+    where smg.signal_message_id = target_message_id and smg.group_master_key is not null
     order by smg.id
     limit 1;
     select coalesce(array_agg(sga.aor_id order by sga.aor_id), '{}') into current_aors
@@ -252,8 +275,13 @@ begin
 
     insert into ai_position_knowledge_job (scope_kind, scope_key, name_key)
     select distinct scope.kind, scope.key, mention.name_key
-    from ai_position_mention mention
-    left join signal_message_media media on media.id = mention.media_id
+    from (
+        select name_key, group_master_key, aor_ids from ai_position_mention
+        where sigint_inbox_item_id = target_message_id
+        union all
+        select name_key, group_master_key, aor_ids from ai_position_mention
+        where media_id = any(media_ids)
+    ) mention
     cross join lateral (
         select 'group' as kind, mention.group_master_key as key
         where mention.group_master_key is not null
@@ -264,41 +292,58 @@ begin
         union all
         select 'aor', aor_id::text from unnest(current_aors) aor_id
     ) scope
-    where coalesce(mention.sigint_inbox_item_id, media.signal_message_id) = message_id
-      and mention.group_master_key is distinct from current_group
+    where mention.group_master_key is distinct from current_group
     on conflict (scope_kind, scope_key, name_key) do update
         set attempts = 0,
             last_error = null,
             next_attempt_at = now() at time zone 'utc',
             created_at = now() at time zone 'utc';
 
-    update ai_position_mention mention
+    update ai_position_mention
     set group_master_key = current_group, aor_ids = current_aors
-    where mention.group_master_key is distinct from current_group
-      and (mention.sigint_inbox_item_id = message_id
-           or mention.media_id in (
-               select media.id from signal_message_media media
-               where media.signal_message_id = message_id
-           ));
+    where sigint_inbox_item_id = target_message_id
+      and group_master_key is distinct from current_group;
+    update ai_position_mention
+    set group_master_key = current_group, aor_ids = current_aors
+    where media_id = any(media_ids)
+      and group_master_key is distinct from current_group;
 end;
 $$;
 
 create function ai_position_signal_message_group_changed()
 returns trigger language plpgsql as $$
 begin
-    if tg_op = 'DELETE' or new.signal_message_id is distinct from old.signal_message_id then
-        perform ai_position_rescope_message(old.signal_message_id);
-    end if;
-    if tg_op = 'UPDATE' then
+    if tg_op = 'INSERT' then
         perform ai_position_rescope_message(new.signal_message_id);
+        return null;
+    end if;
+    perform ai_position_rescope_message(old.signal_message_id);
+    if tg_op = 'UPDATE' then
+        if new.signal_message_id is distinct from old.signal_message_id then
+            perform ai_position_rescope_message(new.signal_message_id);
+        end if;
     end if;
     return null;
 end;
 $$;
 
--- New links get higher ids, so an insert never changes the first group.
+-- Links that can change a message's first group: a new link (e.g. after
+-- its links were replaced), a changed group or message, a removed link.
+create trigger ai_position_signal_message_group_inserted
+after insert on signal_message_group
+for each row
+when (new.group_master_key is not null)
+execute function ai_position_signal_message_group_changed();
+
 create trigger ai_position_signal_message_group_changed
-after update or delete on signal_message_group
+after update on signal_message_group
+for each row
+when (old.group_master_key is distinct from new.group_master_key
+      or old.signal_message_id is distinct from new.signal_message_id)
+execute function ai_position_signal_message_group_changed();
+
+create trigger ai_position_signal_message_group_deleted
+after delete on signal_message_group
 for each row execute function ai_position_signal_message_group_changed();
                 "#,
             )
@@ -312,7 +357,9 @@ for each row execute function ai_position_signal_message_group_changed();
             .get_connection()
             .execute_unprepared(
                 r#"
+drop trigger if exists ai_position_signal_message_group_inserted on signal_message_group;
 drop trigger if exists ai_position_signal_message_group_changed on signal_message_group;
+drop trigger if exists ai_position_signal_message_group_deleted on signal_message_group;
 drop function if exists ai_position_signal_message_group_changed();
 drop function if exists ai_position_rescope_message(bigint);
 drop trigger if exists ai_position_media_summary_deleted on media_summary;

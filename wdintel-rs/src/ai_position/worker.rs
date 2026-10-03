@@ -380,6 +380,30 @@ where
     load_source_with(dbx, job, false).await
 }
 
+/// Locks the source's group links and text rows, then checks the source is
+/// still the one extracted. A concurrent edit or group move waits; its
+/// trigger then fixes the mentions saved here.
+async fn lock_unchanged_source<C>(
+    dbx: &C,
+    job: &ai_position_worker_job::Model,
+    source: &Source,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    dbx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select 1 from signal_message_group where signal_message_id = $1 for share",
+        [source.message_id.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(
+        load_source_with(dbx, job, true).await.c(h!())?.as_ref()
+            == Some(source),
+    )
+}
+
 /// Deletes the job and its source's mentions unless the job was re-enqueued
 /// or the source came back meanwhile (e.g. a summary completed).
 async fn drop_unavailable_source(
@@ -410,6 +434,15 @@ async fn complete_job(
     extraction: Extraction,
 ) -> anyhow::Result<()> {
     let transaction = dbx.begin().await.c(h!())?;
+    // Source rows first, then the job: the same order as an edit, which
+    // holds the message and then re-enqueues the job.
+    if !lock_unchanged_source(&transaction, job, source)
+        .await
+        .c(h!())?
+    {
+        transaction.commit().await.c(h!())?;
+        return Ok(());
+    }
     let current = ai_position_worker_job::Entity::find_by_id(job.id)
         .lock_exclusive()
         .one(&transaction)
@@ -418,24 +451,6 @@ async fn complete_job(
     // A job re-enqueued meanwhile (edited message, new summary) runs again.
     if current.as_ref().map(|current| current.created_at)
         != Some(job.created_at)
-    {
-        transaction.commit().await.c(h!())?;
-        return Ok(());
-    }
-    // Group links too: a move waits, then its trigger rescopes our mentions.
-    transaction
-        .execute_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "select 1 from signal_message_group where signal_message_id = $1 for share",
-            [source.message_id.into()],
-        ))
-        .await
-        .c(h!())?;
-    if load_source_with(&transaction, job, true)
-        .await
-        .c(h!())?
-        .as_ref()
-        != Some(source)
     {
         transaction.commit().await.c(h!())?;
         return Ok(());
@@ -1348,7 +1363,40 @@ mod tests {
         assert!(
             scopes.contains(&("group".to_string(), target.master_key.clone()))
         );
-        assert!(!scopes.contains(&("group".to_string(), master_key)));
+        assert!(!scopes.contains(&("group".to_string(), master_key.clone())));
+
+        // Links replaced (delete, then insert the chosen group) move it back.
+        signal_message_group::Entity::delete_many()
+            .filter(
+                signal_message_group::Column::SignalMessageId.eq(message_id),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message_id),
+            group_master_key: Set(Some(master_key.clone())),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let mention = ai_position_mention::Entity::find()
+            .filter(
+                ai_position_mention::Column::SigintInboxItemId.eq(message_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            mention.group_master_key.as_deref(),
+            Some(master_key.as_str())
+        );
+        let scopes = knowledge_scopes(&env).await;
+        assert!(scopes.contains(&("group".to_string(), master_key)));
+        assert!(!scopes.contains(&("group".to_string(), target.master_key)));
     }
 
     #[tokio::test]

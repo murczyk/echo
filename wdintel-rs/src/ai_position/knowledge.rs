@@ -566,7 +566,7 @@ where
                     let spans =
                         super::normalize::ground(&source.text, name_key);
                     if spans.is_empty()
-                        || !body_unchanged(dbx, &source).await.c(h!())?
+                        || !source_unchanged(dbx, &source).await.c(h!())?
                     {
                         continue;
                     }
@@ -657,9 +657,10 @@ where
     .c(h!())
 }
 
-/// Locks the message and checks its body is the one grounded, so an edit
-/// racing the link cannot leave offsets into the old text.
-async fn body_unchanged<C>(
+/// Locks the message and its group links and checks the body and group
+/// are still the ones read: an edit or group move racing the link must not
+/// leave offsets into old text or a mention under the old group.
+async fn source_unchanged<C>(
     dbx: &C,
     source: &super::worker::Source,
 ) -> anyhow::Result<bool>
@@ -667,20 +668,35 @@ where
     C: ConnectionTrait,
 {
     #[derive(FromQueryResult)]
-    struct Body {
+    struct Current {
         body: String,
+        group_master_key: Option<String>,
     }
-    let current = Body::find_by_statement(Statement::from_sql_and_values(
+    dbx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "select coalesce(body, '') as body from signal_message
-         where id = $1 and not deleted
-         for share",
+        "select 1 from signal_message_group where signal_message_id = $1 for share",
+        [source.message_id.into()],
+    ))
+    .await
+    .c(h!())?;
+    let current = Current::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select coalesce(message.body, '') as body,
+                (select smg.group_master_key from signal_message_group smg
+                 where smg.signal_message_id = message.id and smg.group_master_key is not null
+                 order by smg.id limit 1) as group_master_key
+         from signal_message message
+         where message.id = $1 and not message.deleted
+         for share of message",
         [source.message_id.into()],
     ))
     .one(dbx)
     .await
     .c(h!())?;
-    Ok(current.is_some_and(|current| current.body == source.text))
+    Ok(current.is_some_and(|current| {
+        current.body == source.text
+            && current.group_master_key == source.group_master_key
+    }))
 }
 
 #[derive(FromQueryResult)]
