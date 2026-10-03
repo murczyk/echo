@@ -32,9 +32,14 @@ they are now, not as they were when the message was parsed. Private groups
 never feed AOR knowledge. Making a group private or public in the zone
 settings queues recomputes for its positions.
 
-A recompute also links the position to other messages of the scope within
-the window. Messages that contain the name get a mention without a model call
-(`model_name = knowledge`). The message worker likewise marks names its
+When a recompute makes a position known, or widens its window, it queues
+`ai_position_link_job` rows for the newly covered event-time ranges. The
+worker advances each one batch at a time, each batch in its own transaction:
+
+1. It seeks message ids by event time (`sigint_inbox_item.datetime`; messages
+   without a parsed time by `signal_message.created_at`).
+2. It keeps only messages of the scope whose body contains the name, and adds
+   a mention without a model call (`model_name = knowledge`). The message worker likewise marks names its
 scopes already know, even when the model reads them as callsigns
 («ЦИРКОН-9 на зв'язку»).
 
@@ -43,7 +48,9 @@ path, whether or not the worker is enabled:
 
 - a changed message body drops the message's mentions, since their offsets
   point into the old text; the edited text is then extracted again;
-- a deleted message also drops its documents' mentions;
+- deleting or restoring a message, or changing its event time, moves its
+  facts' times and recomputes their knowledge. Reads leave out deleted
+  messages, so a message restored after restaging keeps its facts;
 - a changed or deleted document summary (OCR reprocessing) drops that
   document's mentions;
 - a message that moves to another group (e.g. a group merge) moves its

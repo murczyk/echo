@@ -156,32 +156,61 @@ create table ai_position_knowledge_job (
 create index ai_position_knowledge_job_next_attempt_idx
     on ai_position_knowledge_job (next_attempt_at, created_at);
 
--- Every removed mention (reparse, edit, deletion, a cascade from a removed
--- attachment or inbox item) queues the knowledge it may have fed. A fresh
--- created_at keeps a running recompute from consuming the job.
-create function ai_position_mention_queue_knowledge()
-returns trigger language plpgsql as $$
-begin
-    -- Besides the recorded scopes, every knowledge row built from this group:
-    -- its AORs may have changed since the mention was saved.
+-- Resumable linking of a known position into the scope's earlier messages:
+-- one event-time range and pass, advanced batch by batch.
+create table ai_position_link_job (
+    id bigserial primary key,
+    scope_kind text not null check (scope_kind in ('aor', 'group')),
+    scope_key text not null,
+    name_key text not null,
+    range_from timestamp without time zone not null,
+    range_to timestamp without time zone not null,
+    pass smallint not null check (pass in (0, 1)),
+    cursor_at timestamp without time zone,
+    cursor_id bigint not null default 0,
+    created_at timestamp without time zone
+        default (now() at time zone 'utc') not null
+);
+
+create index ai_position_link_job_created_idx
+    on ai_position_link_job (created_at, id);
+
+-- Queues recomputes for a position's facts from a group: its group scope,
+-- the recorded AORs, and every knowledge row built from the group (its AORs
+-- may have changed since). A fresh created_at keeps a running recompute
+-- from consuming the job.
+create function ai_position_enqueue_knowledge(
+    position_name_key text,
+    position_group text,
+    position_aors bigint[]
+)
+returns void language sql as $$
     insert into ai_position_knowledge_job (scope_kind, scope_key, name_key)
-    select distinct scope.kind, scope.key, old.name_key
+    select distinct scope.kind, scope.key, position_name_key
     from (
-        select 'group' as kind, old.group_master_key as key
-        where old.group_master_key is not null
+        select 'group' as kind, position_group as key
+        where position_group is not null
         union all
-        select 'aor', aor_id::text from unnest(old.aor_ids) aor_id
+        select 'aor', aor_id::text from unnest(position_aors) aor_id
         union all
         select knowledge.scope_kind, knowledge.scope_key
         from ai_position_knowledge knowledge
-        where knowledge.name_key = old.name_key
-          and old.group_master_key = any(knowledge.source_group_keys)
+        where knowledge.name_key = position_name_key
+          and position_group = any(knowledge.source_group_keys)
     ) scope
     on conflict (scope_kind, scope_key, name_key) do update
         set attempts = 0,
             last_error = null,
             next_attempt_at = now() at time zone 'utc',
             created_at = now() at time zone 'utc';
+$$;
+
+-- Every removed mention (reparse, edit, a cascade from a removed attachment
+-- or inbox item) queues the knowledge it may have fed.
+create function ai_position_mention_queue_knowledge()
+returns trigger language plpgsql as $$
+begin
+    perform ai_position_enqueue_knowledge(old.name_key, old.group_master_key, old.aor_ids);
     return old;
 end;
 $$;
@@ -190,26 +219,95 @@ create trigger ai_position_mention_queue_knowledge
 after delete on ai_position_mention
 for each row execute function ai_position_mention_queue_knowledge();
 
--- Mentions point into the text by offset: a changed body drops them, and a
--- deleted message also drops its documents' mentions, on every write path.
-create function ai_position_signal_message_invalidate()
-returns trigger language plpgsql as $$
+-- Keeps a message's mentions in step with its time and visibility: copies
+-- the event time onto mentions and facts, and queues their knowledge (facts
+-- of deleted messages are left out by every read, so a message restored
+-- after restaging keeps its facts).
+create function ai_position_refresh_message(target_message_id bigint)
+returns void language plpgsql as $$
+declare
+    media_ids uuid[];
+    item_at timestamp;
+    media_at timestamp;
 begin
-    delete from ai_position_mention where sigint_inbox_item_id = new.id;
-    if new.deleted then
-        delete from ai_position_mention mention
-        using signal_message_media media
-        where media.signal_message_id = new.id and mention.media_id = media.id;
+    select coalesce(array_agg(media.id), '{}') into media_ids
+    from signal_message_media media
+    where media.signal_message_id = target_message_id;
+    if not exists (
+        select 1 from ai_position_mention where sigint_inbox_item_id = target_message_id
+    ) and not exists (
+        select 1 from ai_position_mention where media_id = any(media_ids)
+    ) then
+        return;
     end if;
-    return new;
+    select coalesce(item.datetime, message.timestamp, message.created_at),
+           coalesce(message.timestamp, message.created_at)
+    into item_at, media_at
+    from signal_message message
+    left join sigint_inbox_item item on item.id = message.id
+    where message.id = target_message_id;
+
+    update ai_position_mention set message_at = item_at
+    where sigint_inbox_item_id = target_message_id and message_at is distinct from item_at;
+    update ai_position_mention set message_at = media_at
+    where media_id = any(media_ids) and message_at is distinct from media_at;
+    update ai_position_coordinate coordinate set message_at = mention.message_at
+    from ai_position_mention mention
+    where coordinate.mention_id = mention.id
+      and mention.sigint_inbox_item_id = target_message_id
+      and coordinate.message_at is distinct from mention.message_at;
+    update ai_position_coordinate coordinate set message_at = mention.message_at
+    from ai_position_mention mention
+    where coordinate.mention_id = mention.id
+      and mention.media_id = any(media_ids)
+      and coordinate.message_at is distinct from mention.message_at;
+
+    perform ai_position_enqueue_knowledge(fed.name_key, fed.group_master_key, fed.aor_ids)
+    from (
+        select distinct name_key, group_master_key, aor_ids from ai_position_mention
+        where sigint_inbox_item_id = target_message_id
+        union
+        select distinct name_key, group_master_key, aor_ids from ai_position_mention
+        where media_id = any(media_ids)
+    ) fed;
 end;
 $$;
 
-create trigger ai_position_signal_message_invalidate
-after update of body, deleted on signal_message
+-- Body mentions point into the text by offset: a changed body drops them.
+-- A changed send time or deletion flag refreshes the message's facts.
+create function ai_position_signal_message_changed()
+returns trigger language plpgsql as $$
+begin
+    if old.body is distinct from new.body then
+        delete from ai_position_mention where sigint_inbox_item_id = new.id;
+    end if;
+    perform ai_position_refresh_message(new.id);
+    return null;
+end;
+$$;
+
+create trigger ai_position_signal_message_changed
+after update of body, deleted, timestamp on signal_message
 for each row
-when (old.body is distinct from new.body or (new.deleted and not old.deleted))
-execute function ai_position_signal_message_invalidate();
+when (old.body is distinct from new.body
+      or old.deleted is distinct from new.deleted
+      or old.timestamp is distinct from new.timestamp)
+execute function ai_position_signal_message_changed();
+
+-- A corrected event time (date/time edited in Analysis) moves the facts.
+create function ai_position_inbox_item_time_changed()
+returns trigger language plpgsql as $$
+begin
+    perform ai_position_refresh_message(new.id);
+    return null;
+end;
+$$;
+
+create trigger ai_position_inbox_item_time_changed
+after update of datetime on sigint_inbox_item
+for each row
+when (old.datetime is distinct from new.datetime)
+execute function ai_position_inbox_item_time_changed();
 
 -- A document's mentions point into its summary: a cleared (reprocessed) or
 -- replaced summary drops them.
@@ -366,13 +464,18 @@ drop trigger if exists ai_position_media_summary_deleted on media_summary;
 drop function if exists ai_position_media_summary_deleted();
 drop trigger if exists ai_position_media_summary_invalidate on media_summary;
 drop function if exists ai_position_media_summary_invalidate();
-drop trigger if exists ai_position_signal_message_invalidate on signal_message;
-drop function if exists ai_position_signal_message_invalidate();
+drop trigger if exists ai_position_inbox_item_time_changed on sigint_inbox_item;
+drop function if exists ai_position_inbox_item_time_changed();
+drop trigger if exists ai_position_signal_message_changed on signal_message;
+drop function if exists ai_position_signal_message_changed();
+drop function if exists ai_position_refresh_message(bigint);
+drop table if exists ai_position_link_job;
 drop table if exists ai_position_knowledge_job;
 drop table if exists ai_position_knowledge;
 drop table if exists ai_position_coordinate;
 drop table if exists ai_position_mention;
 drop function if exists ai_position_mention_queue_knowledge();
+drop function if exists ai_position_enqueue_knowledge(text, text, bigint[]);
 drop table if exists ai_position_worker_job;
 drop table if exists ai_position_settings;
                 "#,

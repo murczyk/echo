@@ -185,7 +185,15 @@ pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
                     false
                 }
             };
-        let processed = processed || recomputed;
+        let linked =
+            match knowledge::process_next_link(&env.dbx, &mut redis).await {
+                Ok(linked) => linked,
+                Err(error) => {
+                    error!("ai_position_worker linking failed: {error:#?}");
+                    false
+                }
+            };
+        let processed = processed || recomputed || linked;
         if processed {
             continue;
         }
@@ -976,10 +984,20 @@ mod tests {
         use crate::entities::ai_position_knowledge;
         let dbx = &env.dbx;
         let mut redis = env.redis.clone();
-        while crate::ai_position::knowledge::process_next(dbx, &mut redis)
+        loop {
+            let recomputed =
+                crate::ai_position::knowledge::process_next(dbx, &mut redis)
+                    .await
+                    .unwrap();
+            let linked = crate::ai_position::knowledge::process_next_link(
+                dbx, &mut redis,
+            )
             .await
-            .unwrap()
-        {}
+            .unwrap();
+            if !recomputed && !linked {
+                break;
+            }
+        }
         let mut scopes: Vec<(String, String)> =
             ai_position_knowledge::Entity::find()
                 .all(dbx)
@@ -1251,17 +1269,67 @@ mod tests {
         let scopes = knowledge_scopes(&env).await;
         assert_eq!(scopes, vec![("group".to_string(), master_key.clone())]);
 
-        // The message is deleted: its facts and knowledge go.
-        let mut message = signal_message::Entity::find_by_id(message_id)
+        // The message is deleted: its knowledge goes, its facts wait in case
+        // it is restored (restaging deletes and restores a message).
+        let set_deleted = |deleted: bool| {
+            let dbx = env.dbx.clone();
+            async move {
+                let mut message =
+                    signal_message::Entity::find_by_id(message_id)
+                        .one(&dbx)
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .into_active_model();
+                message.deleted = Set(deleted);
+                message.update(&dbx).await.unwrap();
+            }
+        };
+        set_deleted(true).await;
+        assert!(knowledge_scopes(&env).await.is_empty());
+        assert_eq!(linked_names(&env.dbx, message_id).await, vec!["Циркон 9"]);
+        set_deleted(false).await;
+        assert_eq!(
+            knowledge_scopes(&env).await,
+            vec![("group".to_string(), master_key.clone())]
+        );
+
+        // A corrected event time moves the facts.
+        // Microseconds: what the database keeps.
+        let corrected = chrono::DateTime::from_timestamp_micros(
+            (chrono::Utc::now() - chrono::Duration::days(3)).timestamp_micros(),
+        )
+        .unwrap()
+        .naive_utc();
+        let mut item = sigint_inbox_item::Entity::find_by_id(message_id)
             .one(&env.dbx)
             .await
             .unwrap()
             .unwrap()
             .into_active_model();
-        message.deleted = Set(true);
-        message.update(&env.dbx).await.unwrap();
-        assert!(knowledge_scopes(&env).await.is_empty());
-        assert!(linked_names(&env.dbx, message_id).await.is_empty());
+        item.datetime = Set(Some(corrected));
+        item.update(&env.dbx).await.unwrap();
+        let mention = ai_position_mention::Entity::find()
+            .filter(
+                ai_position_mention::Column::SigintInboxItemId.eq(message_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(mention.message_at, corrected);
+        let known = crate::entities::ai_position_knowledge::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        knowledge_scopes(&env).await;
+        let known_after =
+            crate::entities::ai_position_knowledge::Entity::find()
+                .all(&env.dbx)
+                .await
+                .unwrap();
+        assert_ne!(known[0].last_fact_at, corrected);
+        assert_eq!(known_after[0].last_fact_at, corrected);
 
         let mut group =
             crate::entities::signal_group::Entity::find_by_id(master_key)

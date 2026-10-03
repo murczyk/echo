@@ -678,7 +678,8 @@
         { "table": "public.ai_position_mention", "strategy": "excluded" },
         { "table": "public.ai_position_coordinate", "strategy": "excluded" },
         { "table": "public.ai_position_knowledge", "strategy": "excluded" },
-        { "table": "public.ai_position_knowledge_job", "strategy": "excluded" }
+        { "table": "public.ai_position_knowledge_job", "strategy": "excluded" },
+        { "table": "public.ai_position_link_job", "strategy": "excluded" }
       ]
     }
   },

@@ -22,8 +22,8 @@ use chrono::{Duration as ChronoDuration, NaiveDateTime, Utc};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
-    DatabaseConnection, EntityTrait, FromQueryResult, QueryFilter, QueryOrder,
-    QuerySelect, Statement, TransactionTrait,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, FromQueryResult,
+    QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
 };
 use std::collections::BTreeSet;
 
@@ -505,156 +505,276 @@ where
     Ok(groups.into_iter().map(|group| group.master_key).collect())
 }
 
-/// Links the known position to the scope's messages in the given ranges that
-/// mention it but have no mention of it yet; returns the linked message ids.
-/// Candidates are sought by group and message id
-/// (`signal_message_group (group_master_key, signal_message_id)`), starting
-/// at the first message created in the range.
-async fn link_window_mentions<C>(
+/// Queues resumable linking of the known position into the scope's messages
+/// in the given event-time ranges.
+async fn enqueue_links<C>(
     dbx: &C,
     scope: &Scope,
-    known: &ai_position_knowledge::Model,
+    name_key: &str,
     ranges: &[(NaiveDateTime, NaiveDateTime)],
-) -> anyhow::Result<Vec<i64>>
+) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
-    use super::worker::insert_linked_mentions;
-    let name_key = known.name_key.as_str();
-    // The longest word is a cheap, selective prefilter for the body.
-    let Some(stem) = name_key
-        .split(' ')
-        .filter(|word| !word.chars().all(|c| c.is_ascii_digit()))
-        .max_by_key(|word| word.chars().count())
-    else {
-        return Ok(Vec::new());
-    };
-    let groups = scope_groups(dbx, scope).await.c(h!())?;
-    let mut linked = Vec::new();
-    if groups.is_empty() {
-        return Ok(linked);
-    }
-    // Two seeks over event time: items with a parsed time by
-    // `sigint_inbox_item.datetime`, the rest (whose time is the message's)
-    // by `signal_message.created_at`, which is never before the send time.
     for &(from, to) in ranges {
-        for pass in [LinkPass::ParsedTime, LinkPass::MessageTime] {
-            let mut cursor: Option<(NaiveDateTime, i64)> = None;
-            loop {
-                let candidates = link_candidates(
-                    dbx,
-                    pass,
-                    LinkQuery {
-                        groups: &groups,
-                        stem,
-                        name_key,
-                        from,
-                        to,
-                        cursor,
-                    },
-                )
-                .await
-                .c(h!())?;
-                let Some(last) = candidates.last() else {
-                    break;
-                };
-                cursor = Some((last.seek_at, last.message_id));
-                for candidate in candidates {
-                    let source = candidate.into_source();
-                    // The canonical key also matches inflected or differently
-                    // written occurrences.
-                    let spans =
-                        super::normalize::ground(&source.text, name_key);
-                    if spans.is_empty()
-                        || !source_unchanged(dbx, &source).await.c(h!())?
-                    {
-                        continue;
-                    }
-                    insert_linked_mentions(dbx, &source, name_key, &spans)
-                        .await
-                        .c(h!())?;
-                    linked.push(source.message_id);
-                }
-            }
-        }
+        dbx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "insert into ai_position_link_job
+                 (scope_kind, scope_key, name_key, range_from, range_to, pass)
+             values ($1, $2, $3, $4, $5, 0)",
+            [
+                scope.kind.into(),
+                scope.key.clone().into(),
+                name_key.into(),
+                from.into(),
+                to.into(),
+            ],
+        ))
+        .await
+        .c(h!())?;
     }
-    Ok(linked)
+    Ok(())
 }
 
-#[derive(Clone, Copy)]
-enum LinkPass {
-    ParsedTime,
-    MessageTime,
+#[derive(Debug, FromQueryResult)]
+struct LinkJob {
+    id: i64,
+    scope_kind: String,
+    scope_key: String,
+    name_key: String,
+    range_from: NaiveDateTime,
+    range_to: NaiveDateTime,
+    pass: i16,
+    cursor_at: Option<NaiveDateTime>,
+    cursor_id: i64,
 }
 
-struct LinkQuery<'a> {
-    groups: &'a [String],
-    stem: &'a str,
-    name_key: &'a str,
-    from: NaiveDateTime,
-    to: NaiveDateTime,
-    cursor: Option<(NaiveDateTime, i64)>,
+#[derive(Debug, FromQueryResult)]
+struct SeekRow {
+    id: i64,
+    seek_at: NaiveDateTime,
 }
 
-/// One keyset page of scope messages in the event-time range whose folded
-/// body contains the stem and which have no mention of the position yet.
+/// Pass 0 seeks messages with a parsed event time by
+/// `sigint_inbox_item.datetime`; pass 1 the rest, whose time is the message's,
+/// by `signal_message.created_at` (never before the send time).
+const LINK_PASS_PARSED_TIME: i16 = 0;
+const LINK_PASS_MESSAGE_TIME: i16 = 1;
+
+/// One batch of message ids in the job's range and pass, by index only.
+async fn seek_link_batch<C>(
+    dbx: &C,
+    job: &LinkJob,
+) -> anyhow::Result<Vec<SeekRow>>
+where
+    C: ConnectionTrait,
+{
+    let cursor_at = job
+        .cursor_at
+        .unwrap_or(job.range_from - ChronoDuration::days(1));
+    let statement = if job.pass == LINK_PASS_PARSED_TIME {
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select item.id, item.datetime as seek_at
+             from sigint_inbox_item item
+             where item.datetime between $1 and $2
+               and (item.datetime, item.id) > ($3, $4)
+             order by item.datetime, item.id
+             limit $5",
+            [
+                job.range_from.into(),
+                job.range_to.into(),
+                cursor_at.into(),
+                job.cursor_id.into(),
+                AI_POSITION_KNOWLEDGE_LINK_BATCH.into(),
+            ],
+        )
+    } else {
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select message.id, message.created_at as seek_at
+             from signal_message message
+             where message.created_at >= $1
+               and (message.created_at, message.id) > ($2, $3)
+             order by message.created_at, message.id
+             limit $4",
+            [
+                job.range_from.into(),
+                cursor_at.into(),
+                job.cursor_id.into(),
+                AI_POSITION_KNOWLEDGE_LINK_BATCH.into(),
+            ],
+        )
+    };
+    SeekRow::find_by_statement(statement).all(dbx).await.c(h!())
+}
+
+/// The batch's messages that belong to the scope, fall in the range, contain
+/// the stem in the folded body and have no mention of the position yet.
 async fn link_candidates<C>(
     dbx: &C,
-    pass: LinkPass,
-    query: LinkQuery<'_>,
+    job: &LinkJob,
+    ids: Vec<i64>,
+    groups: &[String],
+    stem: &str,
 ) -> anyhow::Result<Vec<LinkCandidate>>
 where
     C: ConnectionTrait,
 {
     use super::worker::{SOURCE_GROUP_COLUMNS, SOURCE_GROUP_SQL};
-    let (seek, range) = match pass {
-        LinkPass::ParsedTime => ("item.datetime", "item.datetime between $6 and $7"),
-        LinkPass::MessageTime => (
-            "message.created_at",
-            "item.datetime is null
-             and message.created_at >= $6
-             and coalesce(message.timestamp, message.created_at) between $6 and $7",
-        ),
+    let time = if job.pass == LINK_PASS_PARSED_TIME {
+        "item.datetime between $3 and $4"
+    } else {
+        "item.datetime is null
+         and coalesce(message.timestamp, message.created_at) between $3 and $4"
     };
-    let (cursor_at, cursor_id) = query
-        .cursor
-        .unwrap_or((query.from - ChronoDuration::days(1), 0));
     LinkCandidate::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         format!(
             "select coalesce(message.body, '') as text, message.id as message_id,
                     coalesce(item.datetime, message.timestamp, message.created_at) as message_at,
-                    {seek} as seek_at,
                     {SOURCE_GROUP_COLUMNS}
-             from sigint_inbox_item item
-             join signal_message message on message.id = item.id
+             from signal_message message
+             join sigint_inbox_item item on item.id = message.id
              {SOURCE_GROUP_SQL}
-             where {range}
-               and ({seek}, message.id) > ($1, $2)
-               and grp.group_master_key = any($3)
+             where message.id = any($1)
+               and grp.group_master_key = any($2)
+               and {time}
                and not message.deleted
-               and translate(lower(message.body), '{FOLD_FROM}', '{FOLD_TO}') like $4
+               and translate(lower(message.body), '{FOLD_FROM}', '{FOLD_TO}') like $5
                and not exists (
                    select 1 from ai_position_mention m
-                   where m.sigint_inbox_item_id = message.id and m.name_key = $5
+                   where m.sigint_inbox_item_id = message.id and m.name_key = $6
                )
-             order by {seek}, message.id
-             limit $8"
+             order by message.id"
         ),
         [
-            cursor_at.into(),
-            cursor_id.into(),
-            query.groups.to_vec().into(),
-            format!("%{}%", query.stem).into(),
-            query.name_key.into(),
-            query.from.into(),
-            query.to.into(),
-            AI_POSITION_KNOWLEDGE_LINK_BATCH.into(),
+            ids.into(),
+            groups.to_vec().into(),
+            job.range_from.into(),
+            job.range_to.into(),
+            format!("%{stem}%").into(),
+            job.name_key.clone().into(),
         ],
     ))
     .all(dbx)
     .await
     .c(h!())
+}
+
+/// Advances one link job by one batch in its own transaction, so locks are
+/// short and the work resumes after a restart. False when none is queued.
+pub(crate) async fn process_next_link(
+    dbx: &DatabaseConnection,
+    redis: &mut redis::aio::ConnectionManager,
+) -> anyhow::Result<bool> {
+    let transaction = dbx.begin().await.c(h!())?;
+    let job = LinkJob::find_by_statement(Statement::from_string(
+        DatabaseBackend::Postgres,
+        "select id, scope_kind, scope_key, name_key, range_from, range_to, pass,
+                cursor_at, cursor_id
+         from ai_position_link_job
+         order by created_at, id
+         limit 1
+         for update skip locked",
+    ))
+    .one(&transaction)
+    .await
+    .c(h!())?;
+    let Some(job) = job else {
+        transaction.commit().await.c(h!())?;
+        return Ok(false);
+    };
+    let linked = link_batch(&transaction, &job).await.c(h!())?;
+    transaction.commit().await.c(h!())?;
+    publish_changes(redis, linked).await;
+    Ok(true)
+}
+
+async fn link_batch(
+    dbx: &DatabaseTransaction,
+    job: &LinkJob,
+) -> anyhow::Result<Vec<i64>> {
+    use super::worker::insert_linked_mentions;
+    let scope = Scope {
+        kind: if job.scope_kind == SCOPE_AOR {
+            SCOPE_AOR
+        } else {
+            SCOPE_GROUP
+        },
+        key: job.scope_key.clone(),
+    };
+    let known = load_knowledge(dbx, &scope, &job.name_key).await.c(h!())?;
+    // The longest word is a cheap, selective prefilter for the body.
+    let stem = job
+        .name_key
+        .split(' ')
+        .filter(|word| !word.chars().all(|c| c.is_ascii_digit()))
+        .max_by_key(|word| word.chars().count())
+        .map(str::to_string);
+    let groups = scope_groups(dbx, &scope).await.c(h!())?;
+    let (Some(_), Some(stem), false) = (known, stem, groups.is_empty()) else {
+        delete_link_job(dbx, job.id).await.c(h!())?;
+        return Ok(Vec::new());
+    };
+    let batch = seek_link_batch(dbx, job).await.c(h!())?;
+    let Some(last) = batch.last() else {
+        if job.pass == LINK_PASS_PARSED_TIME {
+            dbx.execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "update ai_position_link_job
+                 set pass = $2, cursor_at = null, cursor_id = 0
+                 where id = $1",
+                [job.id.into(), LINK_PASS_MESSAGE_TIME.into()],
+            ))
+            .await
+            .c(h!())?;
+        } else {
+            delete_link_job(dbx, job.id).await.c(h!())?;
+        }
+        return Ok(Vec::new());
+    };
+    let cursor = (last.seek_at, last.id);
+    let ids = batch.iter().map(|row| row.id).collect();
+    let mut linked = Vec::new();
+    for candidate in link_candidates(dbx, job, ids, &groups, &stem)
+        .await
+        .c(h!())?
+    {
+        let source = candidate.into_source();
+        // The canonical key also matches inflected or differently written
+        // occurrences.
+        let spans = super::normalize::ground(&source.text, &job.name_key);
+        if spans.is_empty() || !source_unchanged(dbx, &source).await.c(h!())? {
+            continue;
+        }
+        insert_linked_mentions(dbx, &source, &job.name_key, &spans)
+            .await
+            .c(h!())?;
+        linked.push(source.message_id);
+    }
+    dbx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "update ai_position_link_job set cursor_at = $2, cursor_id = $3 where id = $1",
+        [job.id.into(), cursor.0.into(), cursor.1.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(linked)
+}
+
+async fn delete_link_job<C>(dbx: &C, id: i64) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    dbx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "delete from ai_position_link_job where id = $1",
+        [id.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 /// Locks the message and its group links and checks the body and group
@@ -704,7 +824,6 @@ struct LinkCandidate {
     text: String,
     message_id: i64,
     message_at: NaiveDateTime,
-    seek_at: NaiveDateTime,
     group_master_key: Option<String>,
     group_is_secret: bool,
     aor_ids: Vec<i64>,
@@ -839,15 +958,13 @@ pub(crate) async fn process_next(
         let after = load_knowledge(&transaction, &scope, &job.name_key)
             .await
             .c(h!())?;
-        let mut changed = match &after {
-            Some(after) => {
-                let ranges = new_ranges(before.as_ref(), after);
-                link_window_mentions(&transaction, &scope, after, &ranges)
-                    .await
-                    .c(h!())?
-            }
-            None => Vec::new(),
-        };
+        if let Some(after) = &after {
+            let ranges = new_ranges(before.as_ref(), after);
+            enqueue_links(&transaction, &scope, &job.name_key, &ranges)
+                .await
+                .c(h!())?;
+        }
+        let mut changed = Vec::new();
         if display_changed(before.as_ref(), after.as_ref()) {
             changed.extend(
                 mentioning_messages(&transaction, &scope, &job.name_key)
