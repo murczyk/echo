@@ -508,45 +508,94 @@ fn extract_message_datetime(
     ),
     AppError,
 > {
+    let (datetime, meow_format) =
+        extract_message_datetime_with_precision(lnow, body, allow_kraken_audio)
+            .c(h!())?;
+    Ok((
+        datetime
+            .filter(|datetime| datetime.has_time)
+            .map(|datetime| datetime.datetime),
+        meow_format,
+    ))
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ParsedMessageDatetime {
+    pub datetime: DateTime<Tz>,
+    pub has_time: bool,
+}
+
+pub(crate) fn extract_message_datetime_with_precision(
+    lnow: DateTime<Tz>,
+    body: &str,
+    allow_kraken_audio: bool,
+) -> Result<
+    (
+        Option<ParsedMessageDatetime>,
+        Option<crate::rer_importer::meow_format::MeowFormat>,
+    ),
+    AppError,
+> {
     let (datetime, meow_format) = if allow_kraken_audio {
         if let Some(kraken_audio) =
             crate::rer_importer::meow_format::parse_kraken_audio(body)
         {
-            (Some(kraken_audio.datetime), Some(kraken_audio.clone()))
+            (
+                Some(ParsedMessageDatetime {
+                    datetime: kraken_audio.datetime,
+                    has_time: true,
+                }),
+                Some(kraken_audio.clone()),
+            )
         } else {
-            extract_regular_message_datetime(lnow, body)?
+            extract_regular_message_datetime_with_precision(lnow, body)
+                .c(h!())?
         }
     } else if crate::rer_importer::meow_format::parse_kraken_audio(body)
         .is_some()
     {
         (None, None)
     } else {
-        extract_regular_message_datetime(lnow, body)?
+        extract_regular_message_datetime_with_precision(lnow, body).c(h!())?
     };
 
     Ok((
-        datetime
-            .map(|datetime| normalize_future_message_datetime(lnow, datetime)),
+        datetime.map(|datetime| ParsedMessageDatetime {
+            datetime: normalize_future_message_datetime(
+                lnow,
+                datetime.datetime,
+            ),
+            has_time: datetime.has_time,
+        }),
         meow_format,
     ))
 }
 
-fn extract_regular_message_datetime(
+fn extract_regular_message_datetime_with_precision(
     lnow: DateTime<Tz>,
     body: &str,
 ) -> Result<
     (
-        Option<DateTime<Tz>>,
+        Option<ParsedMessageDatetime>,
         Option<crate::rer_importer::meow_format::MeowFormat>,
     ),
     AppError,
 > {
     let meow_format = crate::rer_importer::meow_format::parse(lnow, body);
     if let Some(meow_format) = &meow_format {
-        return Ok((Some(meow_format.datetime), Some(meow_format.clone())));
+        return Ok((
+            Some(ParsedMessageDatetime {
+                datetime: meow_format.datetime,
+                has_time: true,
+            }),
+            Some(meow_format.clone()),
+        ));
     }
 
-    Ok((extract_generic_body_datetime(lnow, body)?, None))
+    Ok((
+        extract_generic_body_datetime_with_precision(lnow, body).c(h!())?,
+        None,
+    ))
 }
 
 fn normalize_future_message_datetime(
@@ -576,28 +625,37 @@ fn normalize_future_message_datetime(
     normalized
 }
 
-fn extract_generic_body_datetime(
+fn extract_generic_body_datetime_with_precision(
     lnow: DateTime<Tz>,
     body: &str,
-) -> Result<Option<DateTime<Tz>>, AppError> {
-    let datetime = crate::rer_importer::datetime::extract_datetime(lnow, body)?;
-    let Some(dt) = datetime
-        .or_else(|| extract_far_future_datetime_with_current_date(lnow, body))
-    else {
+) -> Result<Option<ParsedMessageDatetime>, AppError> {
+    let datetime =
+        crate::rer_importer::datetime::extract_datetime_with_precision(
+            lnow, body,
+        )
+        .c(h!())?;
+    let datetime =
+        datetime.map(|datetime| (datetime.datetime, datetime.has_time));
+    let Some((dt, has_time)) = datetime.or_else(|| {
+        extract_far_future_datetime_with_current_date(lnow, body)
+            .map(|datetime| (datetime, true))
+    }) else {
         return Ok(None);
     };
 
-    Ok(match Kyiv.from_local_datetime(&dt) {
+    Ok(match lnow.timezone().from_local_datetime(&dt) {
         chrono::offset::LocalResult::None => {
             println!(
-                "> warning: couldn't convert datetime to Kyiv timezone: {dt:?}; body: {body}"
+                "> warning: couldn't convert datetime to configured timezone: {dt:?}; body: {body}"
             );
             None
         }
-        chrono::offset::LocalResult::Single(v) => Some(v),
+        chrono::offset::LocalResult::Single(datetime) => {
+            Some(ParsedMessageDatetime { datetime, has_time })
+        }
         chrono::offset::LocalResult::Ambiguous(v1, v2) => {
             println!(
-                "> warning: couldn't convert datetime to Kyiv timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}"
+                "> warning: couldn't convert datetime to configured timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}"
             );
             None
         }
@@ -1094,6 +1152,23 @@ mod tests {
             datetime,
             Some(Kyiv.with_ymd_and_hms(2026, 7, 30, 11, 59, 59).unwrap())
         );
+    }
+
+    #[test]
+    fn extract_message_datetime_precision_preserves_date_only_values() {
+        let now = Kyiv.with_ymd_and_hms(2026, 7, 29, 12, 0, 0).unwrap();
+        let body = "Дата: 2026-07-28;";
+
+        let (datetime, _) =
+            extract_message_datetime_with_precision(now, body, false).unwrap();
+        let datetime = datetime.unwrap();
+
+        assert_eq!(
+            datetime.datetime,
+            Kyiv.with_ymd_and_hms(2026, 7, 28, 0, 0, 0).unwrap()
+        );
+        assert!(!datetime.has_time);
+        assert_eq!(extract_message_datetime(now, body, false).unwrap().0, None);
     }
 
     fn report_125_sample_body(mgrs: &str) -> String {

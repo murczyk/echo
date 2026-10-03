@@ -15,7 +15,7 @@ import Shared.Components.Toast
 import Shared.Msg exposing (ChangelogReleaseMeta, ChangelogReleasePage)
 import Url.Builder
 import Utils.Api.RetryableHttp as RetryableHttp
-import Utils.Api.Temp exposing (jsonPair, leExpectJson, resolve)
+import Utils.Api.Temp exposing (jsonPair, leExpectJson, resolve, resolveWithMetadata)
 
 
 {-| TODO: Refactor error handling to be more flexible and avoid code duplication.
@@ -382,15 +382,87 @@ delta_csv_to_kmz toMsg file =
         }
 
 
-rer_csv_import :
-    (Result ApiError Int -> msg)
+type alias RerCsvPreflightResult =
+    { bytes : Bytes
+    , total : Int
+    , valid : Int
+    , missingTimestamp : Int
+    , invalidMessageSize : Int
+    }
+
+
+rer_csv_preflight :
+    (Result ApiError RerCsvPreflightResult -> msg)
     -> File
     -> Cmd msg
-rer_csv_import toMsg file =
+rer_csv_preflight toMsg file =
     Http.request
         { method = "POST"
         , headers = []
-        , url = "/api/rer/csv-import"
+        , url = "/api/rer/csv-import/preflight"
+        , body =
+            Http.multipartBody
+                [ Http.filePart (File.name file) file
+                ]
+        , expect = Http.expectBytesResponse toMsg (resolveWithMetadata decodeRerCsvPreflight)
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+decodeRerCsvPreflight : Http.Metadata -> Bytes -> Result String RerCsvPreflightResult
+decodeRerCsvPreflight metadata bytes =
+    Result.map4
+        (\total valid missingTimestamp invalidMessageSize ->
+            { bytes = bytes
+            , total = total
+            , valid = valid
+            , missingTimestamp = missingTimestamp
+            , invalidMessageSize = invalidMessageSize
+            }
+        )
+        (decodeIntHeader "x-echo-rer-csv-total" metadata)
+        (decodeIntHeader "x-echo-rer-csv-valid" metadata)
+        (decodeIntHeader "x-echo-rer-csv-missing-timestamp" metadata)
+        (decodeIntHeader "x-echo-rer-csv-invalid-message-size" metadata)
+
+
+decodeIntHeader : String -> Http.Metadata -> Result String Int
+decodeIntHeader name metadata =
+    case Dict.get name metadata.headers of
+        Nothing ->
+            Err ("Missing response header: " ++ name)
+
+        Just value ->
+            case String.toInt value of
+                Nothing ->
+                    Err ("Invalid integer response header: " ++ name)
+
+                Just parsed ->
+                    Ok parsed
+
+
+rer_csv_import :
+    Bool
+    ->
+    (Result ApiError Int -> msg)
+    -> File
+    -> Cmd msg
+rer_csv_import isHistorical toMsg file =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url =
+            Url.Builder.absolute
+                [ "api", "rer", "csv-import" ]
+                [ Url.Builder.string "isHistorical"
+                    (if isHistorical then
+                        "true"
+
+                     else
+                        "false"
+                    )
+                ]
         , body =
             Http.multipartBody
                 [ Http.filePart (File.name file) file

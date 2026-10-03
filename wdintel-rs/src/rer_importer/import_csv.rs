@@ -1,4 +1,9 @@
-use crate::config::{Config, IMPORT_DIRECTION_FINDING_UUID};
+use crate::config::{
+    Config, IMPORT_DIRECTION_FINDING_UUID, RER_CSV_IMPORT_SKIP_PREVIEW_CHARS,
+    RER_CSV_PREFLIGHT_INVALID_MESSAGE_SIZE_HEADER,
+    RER_CSV_PREFLIGHT_MISSING_TIMESTAMP_HEADER, RER_CSV_PREFLIGHT_TOTAL_HEADER,
+    RER_CSV_PREFLIGHT_VALID_HEADER,
+};
 use crate::delta::finish_bgtask;
 use crate::messenger::id;
 use crate::rer_importer::bgtask_log;
@@ -6,13 +11,180 @@ use crate::users::ensure_message_write;
 use crate::utils::*;
 use crate::{entities::*, error::*, types::*};
 use actix_multipart::Multipart;
-use actix_web::{post, web::Json};
+use actix_web::{post, web, web::Json, HttpResponse};
 use chrono::prelude::*;
+use chrono_tz::Tz;
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::ActiveValue::Set;
 use sea_orm::*;
+use serde::Deserialize;
+use std::io::Read;
 use tempfile::TempDir;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RerCsvRecord {
+    source_record: usize,
+    body: String,
+}
+
+#[derive(Debug)]
+struct HistoricalRecordValidation {
+    timestamp: Option<NaiveDateTime>,
+    invalid_message_size: bool,
+}
+
+impl HistoricalRecordValidation {
+    fn missing_timestamp(&self) -> bool {
+        self.timestamp.is_none()
+    }
+
+    fn should_skip(&self) -> bool {
+        self.missing_timestamp() || self.invalid_message_size
+    }
+}
+
+#[derive(Debug)]
+struct HistoricalCsvPreflight {
+    total: usize,
+    valid: usize,
+    missing_timestamp: usize,
+    invalid_message_size: usize,
+    skipped_records: Vec<RerCsvRecord>,
+}
+
+fn read_rer_csv_records(
+    reader: impl Read,
+) -> anyhow::Result<Vec<RerCsvRecord>> {
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(reader);
+    let mut records = Vec::new();
+    for (index, record) in reader.records().enumerate() {
+        let record = record.c(h!())?;
+        anyhow::ensure!(
+            record.len() == 1,
+            "CSV record {} must contain exactly one column",
+            index + 1,
+        );
+        let body = record
+            .get(0)
+            .unwrap_or_default()
+            .trim()
+            .replace("\r\n", "\n");
+        if !body.is_empty() {
+            records.push(RerCsvRecord {
+                source_record: index + 1,
+                body,
+            });
+        }
+    }
+    Ok(records)
+}
+
+fn validate_historical_record(
+    lnow: DateTime<Tz>,
+    record: &RerCsvRecord,
+) -> HistoricalRecordValidation {
+    let timestamp = crate::inbox::extract_message_datetime_with_precision(
+        lnow,
+        &record.body,
+        false,
+    )
+    .ok()
+    .and_then(|(datetime, _)| datetime)
+    .map(|datetime| datetime.datetime.with_timezone(&Utc).naive_utc());
+    let invalid_message_size =
+        crate::rer_importer::multimessage::is_invalid_for_historical_csv_import(
+            lnow,
+            &record.body,
+        );
+    HistoricalRecordValidation {
+        timestamp,
+        invalid_message_size,
+    }
+}
+
+fn preflight_historical_csv(
+    lnow: DateTime<Tz>,
+    records: Vec<RerCsvRecord>,
+) -> HistoricalCsvPreflight {
+    let total = records.len();
+    let mut missing_timestamp = 0;
+    let mut invalid_message_size = 0;
+    let mut skipped_records = Vec::new();
+    for record in records {
+        let validation = validate_historical_record(lnow, &record);
+        missing_timestamp += usize::from(validation.missing_timestamp());
+        invalid_message_size += usize::from(validation.invalid_message_size);
+        if validation.should_skip() {
+            skipped_records.push(record);
+        }
+    }
+    HistoricalCsvPreflight {
+        total,
+        valid: total - skipped_records.len(),
+        missing_timestamp,
+        invalid_message_size,
+        skipped_records,
+    }
+}
+
+fn write_rer_csv_records(records: &[RerCsvRecord]) -> anyhow::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    {
+        let mut writer = csv::WriterBuilder::new()
+            .has_headers(false)
+            .from_writer(&mut bytes);
+        for record in records {
+            writer.serialize((&record.body,)).c(h!())?;
+        }
+        writer.flush().c(h!())?;
+    }
+    Ok(bytes)
+}
+
+fn csv_import_log_preview(body: &str) -> String {
+    let preview = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = preview.chars();
+    let preview = chars
+        .by_ref()
+        .take(RER_CSV_IMPORT_SKIP_PREVIEW_CHARS)
+        .collect::<String>();
+    if chars.next().is_some() {
+        format!("{preview}…")
+    } else {
+        preview
+    }
+}
+
+fn historical_csv_preflight_response(
+    preflight: HistoricalCsvPreflight,
+    filename: String,
+) -> anyhow::Result<HttpResponse> {
+    let body = write_rer_csv_records(&preflight.skipped_records).c(h!())?;
+    Ok(HttpResponse::Ok()
+        .insert_header((
+            RER_CSV_PREFLIGHT_TOTAL_HEADER,
+            preflight.total.to_string(),
+        ))
+        .insert_header((
+            RER_CSV_PREFLIGHT_VALID_HEADER,
+            preflight.valid.to_string(),
+        ))
+        .insert_header((
+            RER_CSV_PREFLIGHT_MISSING_TIMESTAMP_HEADER,
+            preflight.missing_timestamp.to_string(),
+        ))
+        .insert_header((
+            RER_CSV_PREFLIGHT_INVALID_MESSAGE_SIZE_HEADER,
+            preflight.invalid_message_size.to_string(),
+        ))
+        .insert_header(("cache-control", "private, no-store"))
+        .insert_header(multipart::download_content_disposition(filename))
+        .content_type("text/csv; charset=utf-8")
+        .body(body))
+}
 
 pub async fn oneoff_rer_csv_import_go(
     mode: Mode,
@@ -63,20 +235,10 @@ pub async fn oneoff_rer_csv_import_1(
         .build()
         .c(h!())?;
 
-    let mut rdr = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_path(&ps.input)
-        .c(h!())?;
-    let mut bodies: Vec<String> = vec![];
-    for e_rec in rdr.deserialize() {
-        let rec: (String,) = e_rec.c(h!())?;
-        let body = rec.0.trim().to_string();
-        if !body.is_empty() {
-            bodies.push(body);
-        }
-    }
+    let csv_file = std::fs::File::open(&ps.input).c(h!())?;
+    let records = read_rer_csv_records(csv_file).c(h!())?;
 
-    bgtask_log(bgid, &format!("> gathered bodies: {}", bodies.len()), &dbx)
+    bgtask_log(bgid, &format!("> gathered bodies: {}", records.len()), &dbx)
         .await
         .c(h!())?;
 
@@ -125,14 +287,46 @@ pub async fn oneoff_rer_csv_import_1(
         .unwrap_or(None)
         .unwrap_or(crate::config::SIGNAL_DATASOURCE_ID);
 
-    for body in bodies {
-        // Normalize body
-        let body = body.replace("\r\n", "\n");
+    let lnow = Local::now().with_timezone(&crate::config::get_tz());
+    let total = records.len();
+    let mut imported = 0;
+    let mut skipped = 0;
+    let mut missing_timestamp = 0;
+    let mut invalid_message_size = 0;
+    for record in records {
+        let timestamp = if ps.import_as_new {
+            Utc::now().naive_utc()
+        } else {
+            let validation = validate_historical_record(lnow, &record);
+            if validation.should_skip() {
+                skipped += 1;
+                missing_timestamp +=
+                    usize::from(validation.missing_timestamp());
+                invalid_message_size +=
+                    usize::from(validation.invalid_message_size);
+                let mut reasons = Vec::new();
+                if validation.missing_timestamp() {
+                    reasons.push("missing timestamp");
+                }
+                if validation.invalid_message_size {
+                    reasons.push("invalid message size");
+                }
+                let warning = format!(
+                    "> warning: skipped CSV record {} ({}): {}",
+                    record.source_record,
+                    reasons.join(", "),
+                    csv_import_log_preview(&record.body),
+                );
+                warn!("{warning}");
+                bgtask_log(bgid, &warning, &dbx).await.c(h!())?;
+                continue;
+            }
+            validation.timestamp.unwrap()
+        };
+        let body = record.body;
         bgtask_log(bgid, &format!("> body: {body}"), &dbx)
             .await
             .c(h!())?;
-
-        let timestamp = Utc::now().naive_utc();
 
         let master_key = group_id.to_string();
         let datasource_group_id =
@@ -151,7 +345,11 @@ pub async fn oneoff_rer_csv_import_1(
                 timestamp,
             ))),
             body: Set(Some(body.clone())),
-            created_at: NotSet,
+            created_at: if ps.import_as_new {
+                NotSet
+            } else {
+                Set(timestamp)
+            },
             timestamp: Set(Some(timestamp)),
             sender: Set(Some(source_uuid.to_string())),
             login_id: NotSet,
@@ -207,7 +405,17 @@ pub async fn oneoff_rer_csv_import_1(
         )
         .await
         .c(h!())?;
+        imported += 1;
     }
+    bgtask_log(
+        bgid,
+        &format!(
+            "> CSV import finished: total={total}, imported={imported}, skipped={skipped}, missing_timestamp={missing_timestamp}, invalid_message_size={invalid_message_size}"
+        ),
+        &dbx,
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -220,10 +428,33 @@ pub async fn oneoff_rer_csv_import(
     oneoff_rer_csv_import_1(mode, &mut redis, ps, None).await
 }
 
+#[post("/api/rer/csv-import/preflight")]
+pub async fn rer_csv_import_preflight(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    mut payload: Multipart,
+) -> Result<HttpResponse, AppError> {
+    ensure_message_write(&env.dbx, &user).await.c(h!())?;
+    let (field, value) = multipart::extract(&mut payload).await.c(h!())?;
+    let records = read_rer_csv_records(value.as_slice()).c(h!())?;
+    let lnow = Local::now().with_timezone(&crate::config::get_tz());
+    let preflight = preflight_historical_csv(lnow, records);
+    let filename =
+        multipart::download_filename(&field, "-skipped-messages", "csv");
+    Ok(historical_csv_preflight_response(preflight, filename).c(h!())?)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RerCsvImportQuery {
+    is_historical: Option<bool>,
+}
+
 #[post("/api/rer/csv-import")]
 pub async fn rer_csv_import(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
+    query: web::Query<RerCsvImportQuery>,
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
     ensure_message_write(&env.dbx, &user).await.c(h!())?;
@@ -253,6 +484,7 @@ pub async fn rer_csv_import(
     let mode = env.mode;
     let mode2 = Box::new(mode);
     let bgtask_id2 = Box::new(bgtask_id);
+    let import_as_new = Box::new(!query.is_historical.unwrap_or(true));
     tokio::spawn(async {
         let _tmp_dir = tmp_dir;
         let dbx3 = dbx2;
@@ -264,12 +496,14 @@ pub async fn rer_csv_import(
         // crazy hacks due to bug in nightly. remove asap
         // possibly https://github.com/rust-lang/rust/issues/119757
         let bgtask_id3 = bgtask_id2;
+        let import_as_new2 = import_as_new;
         let res = oneoff_rer_csv_import_go(
             *mode3,
             &dbx3,
             &mut redis3,
             &crate::OneoffRerCsvImportPs {
                 input: csv_file2.as_path().to_string_lossy().to_string(),
+                import_as_new: *import_as_new2,
             },
             Some(*bgtask_id3),
         )
@@ -854,7 +1088,416 @@ pub async fn ensure_import_group_exists(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     use std::path::PathBuf;
+
+    fn fixed_now() -> DateTime<Tz> {
+        crate::config::get_tz()
+            .with_ymd_and_hms(2026, 10, 2, 12, 0, 0)
+            .unwrap()
+    }
+
+    #[test]
+    fn rer_csv_records_preserve_multiline_messages_and_ignore_empty_rows() {
+        let csv = "\"29.02.2024_15:50 first, line\r\nsecond line\"\r\n\r\n\"  Дата: 2024-03-02;\r\nЧас: 07:09;  \"\r\n";
+
+        let records = read_rer_csv_records(csv.as_bytes()).unwrap();
+
+        assert_eq!(
+            records,
+            vec![
+                RerCsvRecord {
+                    source_record: 1,
+                    body: "29.02.2024_15:50 first, line\nsecond line"
+                        .to_string(),
+                },
+                RerCsvRecord {
+                    source_record: 2,
+                    body: "Дата: 2024-03-02;\nЧас: 07:09;".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn rer_csv_records_reject_multiple_columns() {
+        assert!(read_rer_csv_records("one,two\n".as_bytes()).is_err());
+    }
+
+    #[test]
+    fn skipped_records_round_trip_as_one_column_csv() {
+        let records = vec![
+            RerCsvRecord {
+                source_record: 2,
+                body: "line one, with comma\nline two".to_string(),
+            },
+            RerCsvRecord {
+                source_record: 4,
+                body: "another message".to_string(),
+            },
+        ];
+
+        let csv = write_rer_csv_records(&records).unwrap();
+        let reparsed = read_rer_csv_records(csv.as_slice()).unwrap();
+
+        assert_eq!(
+            reparsed
+                .iter()
+                .map(|record| &record.body)
+                .collect::<Vec<_>>(),
+            records
+                .iter()
+                .map(|record| &record.body)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn historical_validation_accepts_documented_formats() {
+        let records = vec![
+            RerCsvRecord {
+                source_record: 1,
+                body: "29.02.2024_15:50 F=446.1125(МГц) П54\nтекст".to_string(),
+            },
+            RerCsvRecord {
+                source_record: 2,
+                body: "Дата: 2024-03-02;\nЧас: 07:09;\nТекст:\n- Калуга"
+                    .to_string(),
+            },
+        ];
+
+        let preflight = preflight_historical_csv(fixed_now(), records);
+
+        assert_eq!(preflight.total, 2);
+        assert_eq!(preflight.valid, 2);
+        assert_eq!(preflight.missing_timestamp, 0);
+        assert_eq!(preflight.invalid_message_size, 0);
+    }
+
+    #[test]
+    fn historical_validation_converts_date_only_to_local_midnight() {
+        for (body, expected) in [
+            (
+                "Дата: 2024-01-15;",
+                NaiveDate::from_ymd_opt(2024, 1, 14)
+                    .unwrap()
+                    .and_hms_opt(22, 0, 0)
+                    .unwrap(),
+            ),
+            (
+                "Дата: 2024-07-15;",
+                NaiveDate::from_ymd_opt(2024, 7, 14)
+                    .unwrap()
+                    .and_hms_opt(21, 0, 0)
+                    .unwrap(),
+            ),
+        ] {
+            let validation = validate_historical_record(
+                fixed_now(),
+                &RerCsvRecord {
+                    source_record: 1,
+                    body: body.to_string(),
+                },
+            );
+
+            assert_eq!(validation.timestamp, Some(expected));
+        }
+    }
+
+    #[test]
+    fn historical_preflight_combines_skip_reasons_without_duplicate_rows() {
+        let invalid_body = "x".repeat(20_001);
+        let records = vec![
+            RerCsvRecord {
+                source_record: 1,
+                body: invalid_body,
+            },
+            RerCsvRecord {
+                source_record: 2,
+                body: "Дата: 2024-03-02;\nЧас: 07:09;".to_string(),
+            },
+        ];
+
+        let preflight = preflight_historical_csv(fixed_now(), records);
+
+        assert_eq!(preflight.total, 2);
+        assert_eq!(preflight.valid, 1);
+        assert_eq!(preflight.missing_timestamp, 1);
+        assert_eq!(preflight.invalid_message_size, 1);
+        assert_eq!(preflight.skipped_records.len(), 1);
+        assert_eq!(preflight.skipped_records[0].source_record, 1);
+    }
+
+    #[actix_web::test]
+    async fn historical_preflight_response_contains_counts_and_failed_csv() {
+        let records = vec![
+            RerCsvRecord {
+                source_record: 1,
+                body: "missing, timestamp".to_string(),
+            },
+            RerCsvRecord {
+                source_record: 2,
+                body: "Дата: 2024-03-02;\nЧас: 07:09;".to_string(),
+            },
+        ];
+        let preflight = preflight_historical_csv(fixed_now(), records);
+
+        let response = historical_csv_preflight_response(
+            preflight,
+            "source-skipped-messages.csv".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            response
+                .headers()
+                .get(RER_CSV_PREFLIGHT_TOTAL_HEADER)
+                .unwrap(),
+            "2"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(RER_CSV_PREFLIGHT_VALID_HEADER)
+                .unwrap(),
+            "1"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(RER_CSV_PREFLIGHT_MISSING_TIMESTAMP_HEADER)
+                .unwrap(),
+            "1"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(RER_CSV_PREFLIGHT_INVALID_MESSAGE_SIZE_HEADER)
+                .unwrap(),
+            "0"
+        );
+        assert_eq!(
+            response.headers().get("cache-control").unwrap(),
+            "private, no-store"
+        );
+        assert!(response
+            .headers()
+            .get("content-disposition")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("source-skipped-messages.csv"));
+        let bytes = actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap();
+        let failed = read_rer_csv_records(bytes.as_ref()).unwrap();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].body, "missing, timestamp");
+    }
+
+    #[actix_web::test]
+    async fn historical_preflight_response_is_empty_when_all_rows_are_valid() {
+        let records = vec![RerCsvRecord {
+            source_record: 1,
+            body: "Дата: 2024-03-02;\nЧас: 07:09;".to_string(),
+        }];
+        let preflight = preflight_historical_csv(fixed_now(), records);
+
+        let response = historical_csv_preflight_response(
+            preflight,
+            "source-skipped-messages.csv".to_string(),
+        )
+        .unwrap();
+        let bytes = actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap();
+
+        assert!(bytes.is_empty());
+    }
+
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn historical_import_persists_event_time_and_skips_invalid_rows() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let datasource = crate::functest::tests::find_test_datasource(&env.dbx)
+            .await
+            .unwrap();
+        let group = crate::functest::tests::mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set(Uuid::new_v4().to_string()),
+                name: Set(Some(env.config.signal_import_group_name.clone())),
+                datasource_id: Set(Some(datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::functest::tests::mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                group_master_key: Set(group.master_key),
+                datasource_id: Set(datasource.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        signal_profile::ActiveModel {
+            uuid: Set(Uuid::new_v4().to_string()),
+            given_name: Set(Some(env.config.signal_import_fiven_name.clone())),
+            created_at: Set(Utc::now().naive_utc()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let marker = Uuid::new_v4();
+        let valid_body =
+            format!("02.10.2026 10:15:00\nF=146.5000\nvalid {marker}");
+        let missing_timestamp_body = format!("missing timestamp {marker}");
+        let oversized_body = format!(
+            "02.10.2026 10:16:00\noversized {marker}\n{}",
+            "x".repeat(20_001)
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let historical_path = directory.path().join("historical.csv");
+        {
+            let mut writer = csv::WriterBuilder::new()
+                .has_headers(false)
+                .from_path(&historical_path)
+                .unwrap();
+            for body in [&valid_body, &missing_timestamp_body, &oversized_body]
+            {
+                writer.serialize((body,)).unwrap();
+            }
+            writer.flush().unwrap();
+        }
+        let mut redis = env.redis.clone();
+        let background_task = bgtask::ActiveModel {
+            progress: Set(0),
+            loglines: Set(serde_json::json!([])),
+            running: Set(true),
+            finished_with_error: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        oneoff_rer_csv_import_1(
+            Mode::Test,
+            &mut redis,
+            &crate::OneoffRerCsvImportPs {
+                input: historical_path.to_string_lossy().to_string(),
+                import_as_new: false,
+            },
+            Some(background_task.id),
+        )
+        .await
+        .unwrap();
+
+        let expected = NaiveDate::from_ymd_opt(2026, 10, 2)
+            .unwrap()
+            .and_hms_opt(7, 15, 0)
+            .unwrap();
+        let message = signal_message::Entity::find()
+            .filter(signal_message::Column::Body.eq(valid_body.clone()))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(message.created_at, expected);
+        assert_eq!(message.timestamp, Some(expected));
+        assert_eq!(
+            message.message_uid,
+            Some(
+                id::generate_message_id(
+                    id::MessageMeta {
+                        id: message.id,
+                        datetime: expected,
+                    },
+                    &env.config,
+                )
+                .unwrap()
+            )
+        );
+        let message_group = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId.eq(message.id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(message_group.created_at, expected);
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.datetime, Some(expected));
+        for skipped_body in [&missing_timestamp_body, &oversized_body] {
+            assert!(signal_message::Entity::find()
+                .filter(signal_message::Column::Body.eq(skipped_body.clone()))
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .is_none());
+        }
+        let background_task = bgtask::Entity::find_by_id(background_task.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let loglines: Vec<String> =
+            serde_json::from_value(background_task.loglines).unwrap();
+        assert!(loglines.iter().any(|line| {
+            line.contains("skipped CSV record 2 (missing timestamp)")
+        }));
+        assert!(loglines.iter().any(|line| {
+            line.contains("skipped CSV record 3 (invalid message size)")
+        }));
+        assert!(loglines.iter().any(|line| {
+            line.contains(
+                "total=3, imported=1, skipped=2, missing_timestamp=1, invalid_message_size=1",
+            )
+        }));
+
+        let new_body = format!("import as new {marker}");
+        let new_path = directory.path().join("new.csv");
+        {
+            let mut writer = csv::WriterBuilder::new()
+                .has_headers(false)
+                .from_path(&new_path)
+                .unwrap();
+            writer.serialize((&new_body,)).unwrap();
+            writer.flush().unwrap();
+        }
+        let before = Utc::now().naive_utc();
+        oneoff_rer_csv_import_1(
+            Mode::Test,
+            &mut redis,
+            &crate::OneoffRerCsvImportPs {
+                input: new_path.to_string_lossy().to_string(),
+                import_as_new: true,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+        let after = Utc::now().naive_utc();
+        let message = signal_message::Entity::find()
+            .filter(signal_message::Column::Body.eq(new_body))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(message.created_at >= before && message.created_at <= after);
+        assert!(message.timestamp.unwrap() >= before);
+        assert!(message.timestamp.unwrap() <= after);
+    }
 
     #[test]
     fn parse_delta_csv_01() {

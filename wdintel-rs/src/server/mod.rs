@@ -953,6 +953,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::latest_senders)
             .service(crate::rer_importer::senders)
             .service(crate::rer_importer::list_messages)
+            .service(
+                crate::rer_importer::import_csv::rer_csv_import_preflight,
+            )
             .service(crate::rer_importer::import_csv::rer_csv_import)
             .service(crate::rer_importer::import_csv::rer_delta_csv_import)
             .service(crate::rer_importer::import_kmz::rer_delta_kmz_import)

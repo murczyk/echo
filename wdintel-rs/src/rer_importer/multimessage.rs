@@ -22,6 +22,15 @@ pub fn check_message_length_is_valid(body: &str) -> bool {
     chars <= MAX_MESSAGE_SIZE
 }
 
+pub(crate) fn is_invalid_for_historical_csv_import(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> bool {
+    should_try_split_message(body)
+        && (!check_message_length_is_valid(body)
+            || slice_message(lnow, body).len() > 1)
+}
+
 pub async fn spawn_multiple_messages<'a, 'async_trait, C>(
     txn: &'a C,
     message: &signal_message::Model,
@@ -142,6 +151,7 @@ mod tests {
         let messages = slice_message(lnow, &messages50);
         assert_eq!(messages.len(), 50);
         assert!(should_try_split_message(&messages50));
+        assert!(is_invalid_for_historical_csv_import(lnow, &messages50));
         for m in messages {
             assert!(check_message_length_is_valid(&m));
         }
@@ -154,6 +164,7 @@ mod tests {
         let messages_real =
             std::fs::read_to_string("data/test_multi_message2.txt").unwrap();
         assert!(should_try_split_message(&messages_real));
+        assert!(is_invalid_for_historical_csv_import(lnow, &messages_real));
         let messages = slice_message(lnow, &messages_real);
         assert_eq!(messages.len(), 84);
         for m in messages {
@@ -186,6 +197,22 @@ mod tests {
         assert!(!should_try_split_message(text));
         let messages = slice_message(lnow, text);
         assert_eq!(messages.len(), 2);
+    }
+
+    #[test]
+    fn historical_csv_rejects_an_unsplittable_message_over_the_limit() {
+        let lnow = fixed_now(crate::config::get_tz());
+        let body = "x".repeat(MAX_MESSAGE_SIZE + 1);
+
+        assert!(is_invalid_for_historical_csv_import(lnow, &body));
+    }
+
+    #[test]
+    fn historical_csv_accepts_an_oversized_single_message_under_the_limit() {
+        let lnow = fixed_now(crate::config::get_tz());
+        let body = "x".repeat(SPLITTABLE_MESSAGE_SIZE + 1);
+
+        assert!(!is_invalid_for_historical_csv_import(lnow, &body));
     }
 
     #[serial_test::serial]

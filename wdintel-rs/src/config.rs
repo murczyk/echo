@@ -466,6 +466,13 @@ pub const MULTIPART_MAX_FIELDS: usize = 64;
 pub const MULTIPART_TEXT_MAX_BYTES: usize = 80 * 1024;
 pub const MULTIPART_IDLE_TIMEOUT_SECS: u64 = 30;
 pub const MULTIPART_MAX_CONCURRENT_BUFFERED_REQUESTS: usize = 2;
+pub const RER_CSV_PREFLIGHT_TOTAL_HEADER: &str = "x-echo-rer-csv-total";
+pub const RER_CSV_PREFLIGHT_VALID_HEADER: &str = "x-echo-rer-csv-valid";
+pub const RER_CSV_PREFLIGHT_MISSING_TIMESTAMP_HEADER: &str =
+    "x-echo-rer-csv-missing-timestamp";
+pub const RER_CSV_PREFLIGHT_INVALID_MESSAGE_SIZE_HEADER: &str =
+    "x-echo-rer-csv-invalid-message-size";
+pub const RER_CSV_IMPORT_SKIP_PREVIEW_CHARS: usize = 160;
 pub const STORAGE_UPLOAD_ENCRYPT_MAX_CONCURRENT_OPERATIONS: usize = 2;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this archive-download limit synchronized
 /// with `SIGINT_MESSAGE_MAX_ATTACHMENTS`, frontend
