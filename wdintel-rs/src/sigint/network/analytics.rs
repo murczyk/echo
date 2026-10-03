@@ -385,6 +385,7 @@ struct NetworkFreqCallsignRow {
 struct NetworkFreqCallsignQueryGroup {
     network_freq_ids: Vec<i64>,
     period_bounds: Option<(NaiveDateTime, NaiveDateTime)>,
+    period_end_is_live: bool,
 }
 
 #[derive(Debug, FromRow)]
@@ -1049,6 +1050,7 @@ fn build_network_freq_callsign_query_groups(
         return vec![NetworkFreqCallsignQueryGroup {
             network_freq_ids,
             period_bounds: None,
+            period_end_is_live: false,
         }];
     };
 
@@ -1063,6 +1065,7 @@ fn build_network_freq_callsign_query_groups(
             (since <= till).then_some(NetworkFreqCallsignQueryGroup {
                 network_freq_ids: vec![network_freq.id],
                 period_bounds: Some((since, till)),
+                period_end_is_live: network_freq.active_to.is_none(),
             })
         })
         .collect::<Vec<_>>();
@@ -1104,6 +1107,7 @@ fn merge_overlapping_network_freq_callsign_query_groups(
             std::cmp::min(previous_since, group_since),
             std::cmp::max(previous_till, group_till),
         ));
+        previous.period_end_is_live |= group.period_end_is_live;
     }
     merged
 }
@@ -1135,6 +1139,7 @@ fn merge_nearest_network_freq_callsign_query_groups(
             .expect("limited query group has period bounds");
         left.network_freq_ids.append(&mut right.network_freq_ids);
         left.period_bounds = Some((left_since, right_till));
+        left.period_end_is_live |= right.period_end_is_live;
     }
 }
 
@@ -1152,6 +1157,7 @@ async fn load_network_freq_callsign_group_rows(
             db,
             network_bounds,
             query_group.period_bounds,
+            query_group.period_end_is_live,
         )
         .await
         .context(h!())?
@@ -1176,6 +1182,7 @@ async fn load_network_freq_callsign_group_message_id_bounds(
     db: &DatabaseConnection,
     network_bounds: (i64, i64),
     period_bounds: Option<(NaiveDateTime, NaiveDateTime)>,
+    period_end_is_live: bool,
 ) -> Result<Option<(i64, i64)>, AppError> {
     let Some((since, till)) = period_bounds else {
         return Ok(Some(network_bounds));
@@ -1186,16 +1193,25 @@ async fn load_network_freq_callsign_group_message_id_bounds(
     let period_bounds = load_message_id_bounds_for_period(db, since, till)
         .await
         .context(h!())?;
-    Ok(intersect_message_id_bounds(network_bounds, period_bounds))
+    Ok(intersect_message_id_bounds(
+        network_bounds,
+        period_bounds,
+        period_end_is_live,
+    ))
 }
 
 fn intersect_message_id_bounds(
     network_bounds: (i64, i64),
     period_bounds: Option<(i64, i64)>,
+    period_end_is_live: bool,
 ) -> Option<(i64, i64)> {
     let (period_min_id, period_max_id) = period_bounds?;
     let min_item_id = std::cmp::max(network_bounds.0, period_min_id);
-    let max_item_id = std::cmp::min(network_bounds.1, period_max_id);
+    let max_item_id = if period_end_is_live {
+        i64::MAX
+    } else {
+        std::cmp::min(network_bounds.1, period_max_id)
+    };
     (min_item_id <= max_item_id).then_some((min_item_id, max_item_id))
 }
 
@@ -1313,10 +1329,12 @@ mod tests {
                 NetworkFreqCallsignQueryGroup {
                     network_freq_ids: vec![1],
                     period_bounds: Some((dt(2, 20), dt(2, 28))),
+                    period_end_is_live: false,
                 },
                 NetworkFreqCallsignQueryGroup {
                     network_freq_ids: vec![2, 3, 4],
                     period_bounds: Some((dt(8, 21), current_time)),
+                    period_end_is_live: true,
                 },
             ]
         );
@@ -1338,6 +1356,7 @@ mod tests {
             vec![NetworkFreqCallsignQueryGroup {
                 network_freq_ids: vec![1, 2],
                 period_bounds: None,
+                period_end_is_live: false,
             }]
         );
     }
@@ -1350,6 +1369,7 @@ mod tests {
             .map(|(index, day)| NetworkFreqCallsignQueryGroup {
                 network_freq_ids: vec![index as i64],
                 period_bounds: Some((dt(1, day), dt(1, day))),
+                period_end_is_live: false,
             })
             .collect::<Vec<_>>();
 
@@ -1363,11 +1383,22 @@ mod tests {
     #[test]
     fn frequency_callsign_message_bounds_are_intersected() {
         assert_eq!(
-            intersect_message_id_bounds((10, 50), Some((20, 60))),
+            intersect_message_id_bounds((10, 50), Some((20, 60)), false),
             Some((20, 50))
         );
-        assert_eq!(intersect_message_id_bounds((10, 20), Some((21, 30))), None);
-        assert_eq!(intersect_message_id_bounds((10, 20), None), None);
+        assert_eq!(
+            intersect_message_id_bounds((10, 20), Some((21, 30)), false),
+            None
+        );
+        assert_eq!(intersect_message_id_bounds((10, 20), None, false), None);
+    }
+
+    #[test]
+    fn live_frequency_callsign_message_bounds_keep_the_upper_bound_open() {
+        assert_eq!(
+            intersect_message_id_bounds((10, 50), Some((20, 40)), true),
+            Some((20, i64::MAX))
+        );
     }
 
     #[test]
