@@ -109,6 +109,15 @@ function zipWithCraftedEocdTrailer(): ArrayBuffer {
   return zipWithComment(trailer);
 }
 
+function zipWithTerminalZeroEntryEocd(): ArrayBuffer {
+  const archive = zipSync({ 'entry.txt': strToU8('comment fixture') });
+  const trailer = new Uint8Array(22);
+  const trailerView = new DataView(trailer.buffer);
+  trailerView.setUint32(0, 0x06054b50, true);
+  trailerView.setUint32(16, archive.byteLength, true);
+  return zipWithComment(trailer);
+}
+
 function zipWithCentralDirectorySignature(
   data: Uint8Array,
   declaredLength = data.byteLength,
@@ -177,6 +186,15 @@ describe('ZIP preview worker', () => {
     expect(new TextDecoder().decode(extractZipEntry(craftedTrailer, trailerEntry))).toBe(
       'comment fixture',
     );
+
+    const terminalZeroEntry = zipWithTerminalZeroEntryEocd();
+    const terminalEntry = parseZipListing(terminalZeroEntry).entries[0]!;
+    expect(terminalEntry.path).toBe('entry.txt');
+    expect(new TextDecoder().decode(extractZipEntry(terminalZeroEntry, terminalEntry))).toBe(
+      'comment fixture',
+    );
+
+    expect(parseZipListing(zipSync({}).buffer as ArrayBuffer).entries).toEqual([]);
   });
 
   it('rejects a truncated archive comment', () => {

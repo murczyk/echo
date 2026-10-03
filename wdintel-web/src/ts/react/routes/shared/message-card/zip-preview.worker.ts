@@ -119,6 +119,7 @@ function hasCentralDirectoryChain(
 }
 
 function eocdOffset(bytes: Uint8Array) {
+  let zeroEntryCandidate: number | undefined;
   for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 0x10016); offset -= 1) {
     if (u32(bytes, offset) !== 0x06054b50 || !has(bytes, offset, 22)) continue;
     const commentLength = u16(bytes, offset + 20);
@@ -129,8 +130,13 @@ function eocdOffset(bytes: Uint8Array) {
     if (directorySize === 0xffffffff || directoryOffset === 0xffffffff) continue;
     if (!hasCentralDirectoryChain(bytes, directoryOffset, directorySize, entriesCount, offset))
       continue;
+    if (entriesCount === 0) {
+      zeroEntryCandidate = offset;
+      continue;
+    }
     return offset;
   }
+  if (zeroEntryCandidate !== undefined) return zeroEntryCandidate;
   fail('Архів пошкоджений або обрізаний: не знайдено центральний каталог.');
 }
 export function parseZipListing(buffer: ArrayBuffer): ZipListing {
