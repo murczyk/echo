@@ -466,12 +466,7 @@ pub const MULTIPART_MAX_FIELDS: usize = 64;
 pub const MULTIPART_TEXT_MAX_BYTES: usize = 80 * 1024;
 pub const MULTIPART_IDLE_TIMEOUT_SECS: u64 = 30;
 pub const MULTIPART_MAX_CONCURRENT_BUFFERED_REQUESTS: usize = 2;
-pub const RER_CSV_PREFLIGHT_TOTAL_HEADER: &str = "x-echo-rer-csv-total";
-pub const RER_CSV_PREFLIGHT_VALID_HEADER: &str = "x-echo-rer-csv-valid";
-pub const RER_CSV_PREFLIGHT_MISSING_TIMESTAMP_HEADER: &str =
-    "x-echo-rer-csv-missing-timestamp";
-pub const RER_CSV_PREFLIGHT_INVALID_MESSAGE_SIZE_HEADER: &str =
-    "x-echo-rer-csv-invalid-message-size";
+pub const RER_CSV_PREFLIGHT_METADATA_HEADER: &str = "x-echo-rer-csv-metadata";
 pub const RER_CSV_IMPORT_SKIP_PREVIEW_CHARS: usize = 160;
 pub const STORAGE_UPLOAD_ENCRYPT_MAX_CONCURRENT_OPERATIONS: usize = 2;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this archive-download limit synchronized
@@ -946,6 +941,7 @@ pub const MESSENGER_SYSTEM_SERVICE_NAME_CANDIDATE_LIMIT: usize = 1_000;
 pub const CLIENT_DATA_DIR_NAME: &str = "client_data";
 pub const WHATSAPP_CLIENT_CONFIG: &str = "/etc/echo/config.toml";
 pub const GENERATE_MESSAGE_UID_TILL_MAX_DAYS: i64 = 20;
+pub const SIGNAL_MESSAGE_UID_EPOCH_UNIX_MILLIS: i64 = 1_640_995_200_000;
 pub const UNKNOWN_GROUP_MASTER_KEY: &str = "undefined_group";
 pub const OPERATOR_INBOX_WORKER_LOOKBACK_HOURS: i64 = 3;
 pub const REDIS_MGS_ID_TTL: i32 = 3600;

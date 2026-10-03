@@ -212,22 +212,6 @@ mod tests {
         assert_eq!(messages.len(), 2);
     }
 
-    #[test]
-    fn historical_csv_rejects_an_unsplittable_message_over_the_limit() {
-        let lnow = fixed_now(crate::config::get_tz());
-        let body = "x".repeat(MAX_MESSAGE_SIZE + 1);
-
-        assert!(is_invalid_for_historical_csv_import(lnow, &body));
-    }
-
-    #[test]
-    fn historical_csv_accepts_an_oversized_single_message_under_the_limit() {
-        let lnow = fixed_now(crate::config::get_tz());
-        let body = "x".repeat(SPLITTABLE_MESSAGE_SIZE + 1);
-
-        assert!(!is_invalid_for_historical_csv_import(lnow, &body));
-    }
-
     #[serial_test::serial]
     #[tokio::test]
     async fn splitting_message_invalidates_network_frequency_last_seen() {

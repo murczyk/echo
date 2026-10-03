@@ -1029,6 +1029,24 @@ alpineDownloadResultReqEncoder struct =
         ]
 
 
+type alias RerCsvPreflightMetadata =
+    { total : Int
+    , valid : Int
+    , missingTimestamp : Int
+    , invalidMessageSize : Int
+    }
+
+
+rerCsvPreflightMetadataEncoder : RerCsvPreflightMetadata -> Json.Encode.Value
+rerCsvPreflightMetadataEncoder struct =
+    Json.Encode.object
+        [ ( "total", (Json.Encode.int) struct.total )
+        , ( "valid", (Json.Encode.int) struct.valid )
+        , ( "missingTimestamp", (Json.Encode.int) struct.missingTimestamp )
+        , ( "invalidMessageSize", (Json.Encode.int) struct.invalidMessageSize )
+        ]
+
+
 type alias AreaOfResponsibilityEntry =
     { id : Int
     , name : String
@@ -16310,6 +16328,15 @@ radiosDownloadResultReqDecoder =
     Json.Decode.succeed RadiosDownloadResultReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bgtask_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "csv_page" (Json.Decode.nullable (Json.Decode.int))))
+
+
+rerCsvPreflightMetadataDecoder : Json.Decode.Decoder RerCsvPreflightMetadata
+rerCsvPreflightMetadataDecoder =
+    Json.Decode.succeed RerCsvPreflightMetadata
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "valid" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "missingTimestamp" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "invalidMessageSize" (Json.Decode.int)))
 
 
 areaOfResponsibilityEntryDecoder : Json.Decode.Decoder AreaOfResponsibilityEntry

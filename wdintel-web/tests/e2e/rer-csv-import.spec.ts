@@ -58,10 +58,12 @@ test('@regression #3650 historical CSV import requires preflight', async ({ page
       await route.fulfill({
         contentType: 'text/csv; charset=utf-8',
         headers: {
-          'x-echo-rer-csv-total': hasSkippedRows ? '2' : '1',
-          'x-echo-rer-csv-valid': '1',
-          'x-echo-rer-csv-missing-timestamp': hasSkippedRows ? '1' : '0',
-          'x-echo-rer-csv-invalid-message-size': '0',
+          'x-echo-rer-csv-metadata': JSON.stringify({
+            total: hasSkippedRows ? 2 : 1,
+            valid: 1,
+            missingTimestamp: hasSkippedRows ? 1 : 0,
+            invalidMessageSize: 0,
+          }),
         },
         body: hasSkippedRows ? '"missing, timestamp"\r\n' : '',
       });
@@ -124,7 +126,10 @@ test('@regression #3650 historical CSV import requires preflight', async ({ page
     page.getByText('Перевірку завершено: до імпорту готово 1 із 1 повідомлень.'),
   ).toBeVisible();
   await expect(importButton).toBeEnabled();
-  await importButton.click();
+  await importButton.evaluate((button) => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
   await expect.poll(() => importUrls.length).toBe(1);
   await expect(importButton).toBeDisabled();
   expect(importUrls[0]!.searchParams.get('isHistorical')).toBe('true');

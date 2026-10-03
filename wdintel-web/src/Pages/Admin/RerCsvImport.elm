@@ -3,6 +3,7 @@ module Pages.Admin.RerCsvImport exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
+import Bytes exposing (Bytes)
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import File exposing (File)
@@ -54,8 +55,14 @@ type alias Model =
 type PreflightState
     = PreflightNotRun
     | PreflightRunning
-    | PreflightPassed Api.RerCsvPreflightResult
+    | PreflightPassed PreflightSummary
     | PreflightFailed
+
+
+type alias PreflightSummary =
+    { total : Int
+    , valid : Int
+    }
 
 
 init : () -> ( Model, Effect Msg )
@@ -73,7 +80,7 @@ type Msg
     = ChooseFile
     | FileSelected File
     | PreflightData
-    | PreflightDone (Result ApiError Api.RerCsvPreflightResult)
+    | PreflightDone (Result ApiError ( Bytes, B.RerCsvPreflightMetadata ))
     | ImportData
     | ImportDone (Result ApiError Int)
     | ConsoleMsg (Shared.Components.Console.Msg Msg)
@@ -100,24 +107,33 @@ update msg model =
             )
 
         PreflightData ->
-            case model.selectedFile of
-                Nothing ->
-                    ( model, E.none )
+            if isBusy model then
+                ( model, E.none )
 
-                Just file ->
-                    ( { model | preflight = PreflightRunning }
-                    , E.sendCmd <| Api.rer_csv_preflight PreflightDone file
-                    )
+            else
+                case model.selectedFile of
+                    Nothing ->
+                        ( model, E.none )
+
+                    Just file ->
+                        ( { model | preflight = PreflightRunning }
+                        , E.sendCmd <| Api.rer_csv_preflight PreflightDone file
+                        )
 
         PreflightDone (Err error) ->
             ( { model | preflight = PreflightFailed }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка перевірки CSV" error
             )
 
-        PreflightDone (Ok result) ->
+        PreflightDone (Ok ( bytes, result )) ->
             let
                 skipped =
                     result.total - result.valid
+
+                summary =
+                    { total = result.total
+                    , valid = result.valid
+                    }
 
                 effects =
                     if skipped > 0 then
@@ -127,13 +143,13 @@ update msg model =
                                 |> Maybe.withDefault "skipped-messages.csv"
                             )
                             "text/csv;charset=utf-8"
-                            result.bytes
+                            bytes
                         , E.sendCmd <|
                             Toast.addWarning SharedToastMsg
                                 (String.fromInt skipped
                                     ++ " повідомлень із "
                                     ++ String.fromInt result.total
-                                    ++ " буде пропущено. Без мітки часу: "
+                                    ++ " буде пропущено. Без коректної мітки часу: "
                                     ++ String.fromInt result.missingTimestamp
                                     ++ "; недопустимий розмір: "
                                     ++ String.fromInt result.invalidMessageSize
@@ -144,19 +160,23 @@ update msg model =
                     else
                         []
             in
-            ( { model | preflight = PreflightPassed result }
+            ( { model | preflight = PreflightPassed summary }
             , E.batch effects
             )
 
         ImportData ->
-            case ( model.selectedFile, model.preflight ) of
-                ( Just file, PreflightPassed _ ) ->
-                    ( { model | importSubmitting = True }
-                    , E.sendCmd <| Api.rer_csv_import True ImportDone file
-                    )
+            if isBusy model then
+                ( model, E.none )
 
-                _ ->
-                    ( model, E.none )
+            else
+                case ( model.selectedFile, model.preflight ) of
+                    ( Just file, PreflightPassed _ ) ->
+                        ( { model | importSubmitting = True }
+                        , E.sendCmd <| Api.rer_csv_import True ImportDone file
+                        )
+
+                    _ ->
+                        ( model, E.none )
 
         ImportDone (Err error) ->
             ( { model | importSubmitting = False }
@@ -252,8 +272,8 @@ preflightStatus preflight =
                 [ text "Перевірка не завершилась. Виправте помилку та повторіть." ]
 
 
-contentBlock : Model -> Html Msg
-contentBlock model =
+importControls : Model -> Html Msg
+importControls model =
     let
         busy =
             isBusy model
@@ -269,6 +289,62 @@ contentBlock model =
                 _ ->
                     False
     in
+    div [ class "mt-4 flex flex-wrap justify-center items-center gap-3" ]
+        [ Button.new
+            { label =
+                if hasFile then
+                    "Змінити CSV"
+
+                else
+                    "Вибрати CSV"
+            , onClick = ChooseFile
+            }
+            |> Button.withIcon
+                [ i [ class "bi bi-file-earmark-text" ] [] ]
+            |> Button.withSecondary
+            |> Button.withDisabled busy
+            |> Button.view
+        , Button.new { label = "Перевірити дані", onClick = PreflightData }
+            |> Button.withIcon
+                [ if isPreflightRunning model.preflight then
+                    Shared.Components.Spinner.loadingSpinnerSm
+
+                  else
+                    i [ class "bi bi-check2-circle" ] []
+                ]
+            |> Button.withDisabled (not hasFile || busy)
+            |> Button.view
+        , Button.new { label = "Імпортувати", onClick = ImportData }
+            |> Button.withIcon
+                [ if model.importSubmitting || Shared.Components.Console.isInProgress model.console then
+                    Shared.Components.Spinner.loadingSpinnerSm
+
+                  else
+                    i [ class "bi bi-upload" ] []
+                ]
+            |> Button.withDisabled (not preflightPassed || busy)
+            |> Button.view
+        ]
+
+
+selectedFileStatus : Model -> Html Msg
+selectedFileStatus model =
+    div [ class "mt-3 text-center" ]
+        [ case model.selectedFile of
+            Nothing ->
+                text "Файл не вибрано."
+
+            Just file ->
+                span []
+                    [ text "Вибрано: "
+                    , strong [] [ text (File.name file) ]
+                    ]
+        , preflightStatus model.preflight
+        ]
+
+
+contentBlock : Model -> Html Msg
+contentBlock model =
     div [ class "mt-2" ]
         [ h3 []
             [ text "Історичний імпорт перехоплень із CSV" ]
@@ -288,54 +364,8 @@ contentBlock model =
                 [ text "Дата: 2024-03-02;\nЧас: 07:09;\nЧастота: 460.3250;\nПост: П325;\nЛокація: Авдіївка - Ласточкіне;\nПідрозділ: УКХ р/м 1 мсб 5 омсбр;\nХто: КАЛУГА;\nКому: БРЕСТ;\nТекст:\n- Калуга\n- Брест\n- Это кассеты по нам работают, не надо назад, вперед не останавливайтесь.Какие нахуй соседи по вам ложат, мы стреляем по лесополосе,вперед пошли пока ничего не летеит, быстрее. У нас БКне безгранично, идем пока держым.Вы чо сука охуели, почему вперед не идёте, Быстрее пошли пока нету воздействия, пока идем по всем фронтам, что один раз прилитело и вы обосрались, сейчас вон по 455 ебашут нахуй потому что там пацаны тоже идут. Пошли быстрее\n- СТарший я Брест я не понял в чем дело, мы только ебашим, прикрываем. Идем ребятки. Не по вам давайте быстрее и закрепляйтесь. Заходите закрепляйтесь молодци ребята, Ребята вы где уже в нашей полосе? Всё вы уже в блиндаже?сейчас подойду;\n\n48.1434076, 37.7146826"
                 ]
             ]
-        , div [ class "mt-4 flex flex-wrap justify-center items-center gap-3" ]
-            [ Button.new
-                { label =
-                    if hasFile then
-                        "Змінити CSV"
-
-                    else
-                        "Вибрати CSV"
-                , onClick = ChooseFile
-                }
-                |> Button.withIcon
-                    [ i [ class "bi bi-file-earmark-text" ] [] ]
-                |> Button.withSecondary
-                |> Button.withDisabled busy
-                |> Button.view
-            , Button.new { label = "Перевірити дані", onClick = PreflightData }
-                |> Button.withIcon
-                    [ if isPreflightRunning model.preflight then
-                        Shared.Components.Spinner.loadingSpinnerSm
-
-                      else
-                        i [ class "bi bi-check2-circle" ] []
-                    ]
-                |> Button.withDisabled (not hasFile || busy)
-                |> Button.view
-            , Button.new { label = "Імпортувати", onClick = ImportData }
-                |> Button.withIcon
-                    [ if model.importSubmitting || Shared.Components.Console.isInProgress model.console then
-                        Shared.Components.Spinner.loadingSpinnerSm
-
-                      else
-                        i [ class "bi bi-upload" ] []
-                    ]
-                |> Button.withDisabled (not preflightPassed || busy)
-                |> Button.view
-            ]
-        , div [ class "mt-3 text-center" ]
-            [ case model.selectedFile of
-                Nothing ->
-                    text "Файл не вибрано."
-
-                Just file ->
-                    span []
-                        [ text "Вибрано: "
-                        , strong [] [ text (File.name file) ]
-                        ]
-            , preflightStatus model.preflight
-            ]
+        , importControls model
+        , selectedFileStatus model
         , Shared.Components.Console.view model.console
         , div [ class "mb-4" ] []
         ]

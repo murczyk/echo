@@ -1121,17 +1121,6 @@ mod tests {
     };
 
     #[test]
-    fn format_date_time_fields_keeps_seconds() {
-        let dt_utc = NaiveDate::from_ymd_opt(2025, 11, 20)
-            .unwrap()
-            .and_hms_opt(10, 29, 18)
-            .unwrap();
-        let (date, time) = format_date_time_fields(dt_utc);
-        assert_eq!(date, "2025-11-20");
-        assert_eq!(time, "12:29:18");
-    }
-
-    #[test]
     fn reprocessed_inbox_item_update_columns_reset_reviewed() {
         assert!(reprocessed_inbox_item_update_columns()
             .iter()

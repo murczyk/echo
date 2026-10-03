@@ -382,17 +382,8 @@ delta_csv_to_kmz toMsg file =
         }
 
 
-type alias RerCsvPreflightResult =
-    { bytes : Bytes
-    , total : Int
-    , valid : Int
-    , missingTimestamp : Int
-    , invalidMessageSize : Int
-    }
-
-
 rer_csv_preflight :
-    (Result ApiError RerCsvPreflightResult -> msg)
+    (Result ApiError ( Bytes, RerCsvPreflightMetadata ) -> msg)
     -> File
     -> Cmd msg
 rer_csv_preflight toMsg file =
@@ -410,36 +401,16 @@ rer_csv_preflight toMsg file =
         }
 
 
-decodeRerCsvPreflight : Http.Metadata -> Bytes -> Result String RerCsvPreflightResult
+decodeRerCsvPreflight : Http.Metadata -> Bytes -> Result String ( Bytes, RerCsvPreflightMetadata )
 decodeRerCsvPreflight metadata bytes =
-    Result.map4
-        (\total valid missingTimestamp invalidMessageSize ->
-            { bytes = bytes
-            , total = total
-            , valid = valid
-            , missingTimestamp = missingTimestamp
-            , invalidMessageSize = invalidMessageSize
-            }
-        )
-        (decodeIntHeader "x-echo-rer-csv-total" metadata)
-        (decodeIntHeader "x-echo-rer-csv-valid" metadata)
-        (decodeIntHeader "x-echo-rer-csv-missing-timestamp" metadata)
-        (decodeIntHeader "x-echo-rer-csv-invalid-message-size" metadata)
-
-
-decodeIntHeader : String -> Http.Metadata -> Result String Int
-decodeIntHeader name metadata =
-    case Dict.get name metadata.headers of
+    case Dict.get "x-echo-rer-csv-metadata" metadata.headers of
         Nothing ->
-            Err ("Missing response header: " ++ name)
+            Err "Missing response header: x-echo-rer-csv-metadata"
 
         Just value ->
-            case String.toInt value of
-                Nothing ->
-                    Err ("Invalid integer response header: " ++ name)
-
-                Just parsed ->
-                    Ok parsed
+            Decode.decodeString rerCsvPreflightMetadataDecoder value
+                |> Result.mapError Decode.errorToString
+                |> Result.map (Tuple.pair bytes)
 
 
 rer_csv_import :
