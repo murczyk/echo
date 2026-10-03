@@ -950,7 +950,6 @@ deploy _server_pos="" server silent="false":
       fi
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
-    bash "{{ justfile_directory() }}/deploy/prepare-sigint-inbox-callsign-iggy-index.sh" "$SERVER"
     bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" start "$SERVER"
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=1
     ssh "$SERVER" 'set -euo pipefail
@@ -1255,7 +1254,6 @@ deploy-from-local _server_pos="" server silent="false":
       fi
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
-    bash "{{ justfile_directory() }}/deploy/prepare-sigint-inbox-callsign-iggy-index.sh" "$SERVER"
     bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" start "$SERVER"
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=1
     ssh "$SERVER" 'set -euo pipefail
