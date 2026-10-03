@@ -112,6 +112,7 @@ fn validate_historical_record(
     )
     .ok()
     .and_then(|(datetime, _)| datetime)
+    .filter(|datetime| !datetime.was_future_normalized)
     .map(|datetime| datetime.datetime.with_timezone(&Utc).naive_utc())
     .filter(|timestamp| id::is_message_uid_datetime_supported(*timestamp));
     let invalid_message_size =
@@ -1451,6 +1452,24 @@ mod tests {
 
             assert_eq!(validation.timestamp, Some(expected));
         }
+    }
+
+    #[test]
+    fn historical_validation_rejects_future_timestamp_requiring_normalization()
+    {
+        let lnow = fixed_now();
+        let body = (lnow + chrono::Duration::hours(25))
+            .format("%d.%m.%Y %H:%M:%S")
+            .to_string();
+        let validation = validate_historical_record(
+            lnow,
+            &RerCsvRecord {
+                source_record: 1,
+                body,
+            },
+        );
+
+        assert!(validation.missing_timestamp());
     }
 
     #[actix_web::test]

@@ -592,6 +592,7 @@ fn extract_message_datetime(
 pub(crate) struct ParsedMessageDatetime {
     pub datetime: DateTime<Tz>,
     pub has_time: bool,
+    pub was_future_normalized: bool,
 }
 
 pub(crate) fn extract_message_datetime_with_precision(
@@ -613,6 +614,7 @@ pub(crate) fn extract_message_datetime_with_precision(
                 Some(ParsedMessageDatetime {
                     datetime: kraken_audio.datetime,
                     has_time: true,
+                    was_future_normalized: false,
                 }),
                 Some(kraken_audio.clone()),
             )
@@ -629,12 +631,21 @@ pub(crate) fn extract_message_datetime_with_precision(
     };
 
     Ok((
-        datetime.map(|datetime| ParsedMessageDatetime {
-            datetime: normalize_future_message_datetime(
-                lnow,
-                datetime.datetime,
-            ),
-            has_time: datetime.has_time,
+        datetime.map(|datetime| {
+            let was_future_normalized = datetime.was_future_normalized
+                || datetime.datetime
+                    > lnow
+                        + Duration::hours(
+                            RER_INBOX_PARSED_DATETIME_MAX_FUTURE_HOURS,
+                        );
+            ParsedMessageDatetime {
+                datetime: normalize_future_message_datetime(
+                    lnow,
+                    datetime.datetime,
+                ),
+                has_time: datetime.has_time,
+                was_future_normalized,
+            }
         }),
         meow_format,
     ))
@@ -656,6 +667,7 @@ fn extract_regular_message_datetime_with_precision(
             Some(ParsedMessageDatetime {
                 datetime: meow_format.datetime,
                 has_time: true,
+                was_future_normalized: false,
             }),
             Some(meow_format.clone()),
         ));
@@ -704,10 +716,10 @@ fn extract_generic_body_datetime_with_precision(
         )
         .c(h!())?;
     let datetime =
-        datetime.map(|datetime| (datetime.datetime, datetime.has_time));
-    let Some((dt, has_time)) = datetime.or_else(|| {
+        datetime.map(|datetime| (datetime.datetime, datetime.has_time, false));
+    let Some((dt, has_time, was_future_normalized)) = datetime.or_else(|| {
         extract_far_future_datetime_with_current_date(lnow, body)
-            .map(|datetime| (datetime, true))
+            .map(|datetime| (datetime, true, true))
     }) else {
         return Ok(None);
     };
@@ -720,7 +732,11 @@ fn extract_generic_body_datetime_with_precision(
             None
         }
         chrono::offset::LocalResult::Single(datetime) => {
-            Some(ParsedMessageDatetime { datetime, has_time })
+            Some(ParsedMessageDatetime {
+                datetime,
+                has_time,
+                was_future_normalized,
+            })
         }
         chrono::offset::LocalResult::Ambiguous(v1, v2) => {
             println!(
