@@ -5904,6 +5904,24 @@ export type AiPositionLookupRsp = {
   note: string;
 };
 
+export type AiPositionFeedbackListReq = {
+  verdict: string | null;
+  limit: number | null;
+};
+
+export type AiPositionFeedbackListItem = {
+  feedback: AiPositionFeedbackItem;
+  name: string;
+  nameKey: string;
+  kind: string | null;
+  messageId: number | null;
+  messageUuid: string | null;
+};
+
+export type AiPositionFeedbackListRsp = {
+  items: Array<AiPositionFeedbackListItem>;
+};
+
 export type OcrStatusLogItem = {
   at: number;
   message: string;

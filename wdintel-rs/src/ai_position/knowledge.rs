@@ -790,9 +790,19 @@ async fn link_batch(
         .split(' ')
         .filter(|word| !word.chars().all(|c| c.is_ascii_digit()))
         .max_by_key(|word| word.chars().count())
-        .map(str::to_string);
+        // No stricter than grounding: «береза» also matches «березі».
+        .map(|word| {
+            super::normalize::vowel_stem(word)
+                .unwrap_or(word)
+                .to_string()
+        });
     let groups = scope_groups(dbx, &scope).await.c(h!())?;
-    let (Some(known), Some(stem), false) = (known, stem, groups.is_empty())
+    let rejected = super::feedback::rejected_name_keys(dbx)
+        .await
+        .c(h!())?
+        .contains(&job.name_key);
+    let (Some(known), Some(stem), false, false) =
+        (known, stem, groups.is_empty(), rejected)
     else {
         delete_link_job(dbx, job.id).await.c(h!())?;
         return Ok(Vec::new());

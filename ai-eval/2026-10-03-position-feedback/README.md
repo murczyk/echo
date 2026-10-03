@@ -4,12 +4,14 @@ Cases for the AI position worker ([`wdintel-rs/src/ai_position`](../../wdintel-r
 They come from reviewers marking mentions and locations in Admin → ШІ → Позиції.
 
 - `cases.synthetic.jsonl`: tracked, hand-written cases with no operational data.
-- `results.synthetic.json`: runs on 2026-10-03 with Gemma 4 26B over the 12
-  synthetic cases:
+- `results.synthetic.json`: runs on 2026-10-03 with Gemma 4 26B:
   - old prompt: 6 of 12;
   - revised prompt (kinds, UAV and weapon exclusions, code-name landmarks,
     JSON repair): 11 of 12. The one miss is «ОП Лиман-2», which the model
     returned as «Лиман-2»; keys now ignore the type prefix.
+  - after reparsing real data surfaced settlements written in capitals and
+    crew callsigns as positions: settlement rules and hints, crew callsigns,
+    and dedup of inflected repeats. 16 of 16 on the extended set.
 
   Of the two reviewed real cases in `raw/`, «Молния» (a UAV) and «МАГАТЭ»
   (missed), 1 passed with the old prompt and 2 with the revised one.

@@ -138,6 +138,7 @@ pub async fn test_ai_positions(
         &engine,
         effective_prompt(req.prompt.trim()),
         &req.text,
+        &[],
     )
     .await
     .c(h!())?;

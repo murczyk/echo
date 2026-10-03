@@ -1,4 +1,6 @@
 import type {
+  AiPositionFeedbackListReq,
+  AiPositionFeedbackListRsp,
   AiPositionFeedbackItem,
   AiPositionIdReq,
   AiPositionReparseReq,
@@ -77,4 +79,10 @@ export function reparseAiPositionFeedback(
   req: AiPositionReparseReq,
 ): Promise<AiPositionReparseRsp> {
   return postJson<AiPositionReparseRsp>('/api/admin/ai-positions/feedback/reparse', req);
+}
+
+export function listAiPositionFeedback(
+  req: AiPositionFeedbackListReq,
+): Promise<AiPositionFeedbackListRsp> {
+  return postJson<AiPositionFeedbackListRsp>('/api/admin/ai-positions/feedback/list', req);
 }

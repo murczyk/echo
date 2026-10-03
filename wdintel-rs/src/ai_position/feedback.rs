@@ -3,12 +3,14 @@
 
 use super::list::{admin_groups, knowledge_visible, load_coordinates};
 use super::types::{
-    AiPositionFeedbackItem, AiPositionIdReq, AiPositionReparseReq,
-    AiPositionReparseRsp, SaveAiPositionFeedbackReq,
+    AiPositionFeedbackItem, AiPositionFeedbackListItem,
+    AiPositionFeedbackListReq, AiPositionFeedbackListRsp, AiPositionIdReq,
+    AiPositionReparseReq, AiPositionReparseRsp, SaveAiPositionFeedbackReq,
 };
 use crate::config::{
     AI_POSITION_FEEDBACK_TEXT_MAX_CHARS, AI_POSITION_FEEDBACK_VERDICTS,
-    AI_POSITION_KINDS,
+    AI_POSITION_KINDS, AI_POSITION_LIST_DEFAULT_LIMIT,
+    AI_POSITION_LIST_MAX_LIMIT,
 };
 use crate::entities::{
     ai_position_feedback, ai_position_knowledge, ai_position_mention, login,
@@ -100,6 +102,82 @@ pub async fn delete_ai_position_feedback(
         .await
         .c(h!())?;
     Ok(Json(()))
+}
+
+#[post("/api/admin/ai-positions/feedback/list")]
+pub async fn list_ai_position_feedback(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+    req: Json<AiPositionFeedbackListReq>,
+) -> Result<Json<AiPositionFeedbackListRsp>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let allowed: Vec<String> = admin_groups(&env, &user).await.context(h!())?;
+    let req = req.into_inner();
+    let limit = req
+        .limit
+        .unwrap_or(AI_POSITION_LIST_DEFAULT_LIMIT as i64)
+        .clamp(1, AI_POSITION_LIST_MAX_LIMIT as i64);
+    // Private groups the admin cannot read stay hidden, as on the lists.
+    let rows = ai_position_feedback::Model::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select f.* from ai_position_feedback f
+         left join signal_group sg
+             on sg.master_key = coalesce(f.group_master_key,
+                 case when f.scope_kind = 'group' then f.scope_key end)
+         where (not coalesce(sg.is_secret, false) or sg.master_key = any($1))
+           and ($2::text is null or f.verdict = $2)
+         order by f.created_at desc, f.id desc
+         limit $3",
+            [allowed.into(), req.verdict.into(), limit.into()],
+        ),
+    )
+    .all(&env.dbx)
+    .await
+    .c(h!())?;
+    let uuids: HashMap<i64, uuid::Uuid> =
+        crate::entities::signal_message::Entity::find()
+            .filter(
+                crate::entities::signal_message::Column::Id.is_in(
+                    rows.iter().filter_map(|row| row.sigint_inbox_item_id),
+                ),
+            )
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .filter_map(|message| Some((message.id, message.id_uuid?)))
+            .collect();
+    let details: Vec<(String, String, Option<String>, Option<i64>)> = rows
+        .iter()
+        .map(|row| {
+            (
+                row.name.clone(),
+                row.name_key.clone(),
+                row.kind.clone(),
+                row.sigint_inbox_item_id,
+            )
+        })
+        .collect();
+    let items = feedback_items(&env.dbx, rows).await.c(h!())?;
+    Ok(Json(AiPositionFeedbackListRsp {
+        items: items
+            .into_iter()
+            .zip(details)
+            .map(|(feedback, (name, name_key, kind, message_id))| {
+                AiPositionFeedbackListItem {
+                    feedback,
+                    name,
+                    name_key,
+                    kind,
+                    message_uuid: message_id
+                        .and_then(|id| uuids.get(&id))
+                        .map(ToString::to_string),
+                    message_id,
+                }
+            })
+            .collect(),
+    }))
 }
 
 /// Re-runs extraction for one mention's source, or for every source with

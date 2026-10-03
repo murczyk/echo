@@ -253,6 +253,37 @@ pub struct AiPositionFeedbackItem {
     pub reparsed_at: Option<i64>,
 }
 
+/// All feedback, including rejections whose mentions are gone.
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPositionFeedbackListReq {
+    pub verdict: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPositionFeedbackListItem {
+    pub feedback: AiPositionFeedbackItem,
+    pub name: String,
+    pub name_key: String,
+    pub kind: Option<String>,
+    pub message_id: Option<i64>,
+    pub message_uuid: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPositionFeedbackListRsp {
+    pub items: Vec<AiPositionFeedbackListItem>,
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]

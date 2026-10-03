@@ -15211,6 +15211,54 @@ aiPositionLookupRspEncoder struct =
         ]
 
 
+type alias AiPositionFeedbackListReq =
+    { verdict : Maybe (String)
+    , limit : Maybe (Int)
+    }
+
+
+aiPositionFeedbackListReqEncoder : AiPositionFeedbackListReq -> Json.Encode.Value
+aiPositionFeedbackListReqEncoder struct =
+    Json.Encode.object
+        [ ( "verdict", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.verdict )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        ]
+
+
+type alias AiPositionFeedbackListItem =
+    { feedback : AiPositionFeedbackItem
+    , name : String
+    , nameKey : String
+    , kind : Maybe (String)
+    , messageId : Maybe (Int)
+    , messageUuid : Maybe (String)
+    }
+
+
+aiPositionFeedbackListItemEncoder : AiPositionFeedbackListItem -> Json.Encode.Value
+aiPositionFeedbackListItemEncoder struct =
+    Json.Encode.object
+        [ ( "feedback", (aiPositionFeedbackItemEncoder) struct.feedback )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "nameKey", (Json.Encode.string) struct.nameKey )
+        , ( "kind", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.kind )
+        , ( "messageId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.messageId )
+        , ( "messageUuid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUuid )
+        ]
+
+
+type alias AiPositionFeedbackListRsp =
+    { items : List (AiPositionFeedbackListItem)
+    }
+
+
+aiPositionFeedbackListRspEncoder : AiPositionFeedbackListRsp -> Json.Encode.Value
+aiPositionFeedbackListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (aiPositionFeedbackListItemEncoder)) struct.items )
+        ]
+
+
 type alias OcrStatusLogItem =
     { at : Int
     , message : String
@@ -25528,6 +25576,30 @@ aiPositionLookupRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "located" (Json.Decode.list (aiPositionLookupMentionDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "other" (Json.Decode.list (aiPositionLookupMentionDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "note" (Json.Decode.string)))
+
+
+aiPositionFeedbackListReqDecoder : Json.Decode.Decoder AiPositionFeedbackListReq
+aiPositionFeedbackListReqDecoder =
+    Json.Decode.succeed AiPositionFeedbackListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "verdict" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+
+
+aiPositionFeedbackListItemDecoder : Json.Decode.Decoder AiPositionFeedbackListItem
+aiPositionFeedbackListItemDecoder =
+    Json.Decode.succeed AiPositionFeedbackListItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feedback" (aiPositionFeedbackItemDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nameKey" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageId" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageUuid" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiPositionFeedbackListRspDecoder : Json.Decode.Decoder AiPositionFeedbackListRsp
+aiPositionFeedbackListRspDecoder =
+    Json.Decode.succeed AiPositionFeedbackListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiPositionFeedbackListItemDecoder))))
 
 
 ocrStatusLogItemDecoder : Json.Decode.Decoder OcrStatusLogItem

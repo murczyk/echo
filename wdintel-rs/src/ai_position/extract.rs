@@ -56,10 +56,13 @@ pub(crate) struct Extraction {
     pub model_name: String,
 }
 
+/// `settlements`: places the settlement parsers found in this text; the model
+/// is told they are not positions.
 pub(crate) async fn extract(
     engine: &ai_engine::Model,
     prompt: &str,
     text: &str,
+    settlements: &[String],
 ) -> anyhow::Result<Extraction> {
     let text: String =
         text.chars().take(AI_POSITION_SOURCE_MAX_CHARS).collect();
@@ -71,7 +74,7 @@ pub(crate) async fn extract(
             },
             AiEngineMessage {
                 role: AI_CHAT_ROLE_USER.to_string(),
-                content: text.clone(),
+                content: user_content(&text, settlements),
             },
         ]
     };
@@ -107,6 +110,16 @@ pub(crate) async fn extract(
 }
 
 use anyhow::Context as _;
+
+fn user_content(text: &str, settlements: &[String]) -> String {
+    if settlements.is_empty() {
+        return text.to_string();
+    }
+    format!(
+        "{text}\n\n---\nНаселені пункти в цьому тексті (не позиції): {}",
+        settlements.join(", ")
+    )
+}
 
 async fn request(
     engine: &ai_engine::Model,
@@ -210,8 +223,25 @@ async fn ground_positions(
         {
             continue;
         }
-        let spans = ground(text, name);
-        if spans.is_empty() {
+        // The name as written, plus other spellings of the same key («ОП
+        // Лиман-2» and a bare «Лиман-2») that do not overlap it.
+        let mut spans = ground(text, name);
+        for (begin, end) in ground(text, &name_key) {
+            if !spans.iter().any(|&(b, e)| begin < e && b < end) {
+                spans.push((begin, end));
+            }
+        }
+        spans.sort();
+        // Another form of a name already found («РОЗУМОВКА»/«РОЗУМОВКУ»)
+        // grounds the same occurrences.
+        let repeated = found.iter().any(|item| {
+            item.spans.iter().any(|span| {
+                spans.iter().any(|&(begin, end)| {
+                    (begin as i32) < span.end && (span.begin as usize) < end
+                })
+            })
+        });
+        if spans.is_empty() || repeated {
             continue;
         }
         let mut coordinates = Vec::new();
@@ -448,6 +478,27 @@ mod tests {
         assert_eq!(found[1].coordinates.len(), 1, "{found:?}");
         assert!((found[1].coordinates[0].lat - 48.12345).abs() < 1e-4);
         assert_eq!(found[1].coordinates[0].system, "wgs84");
+    }
+
+    #[tokio::test]
+    async fn grounds_prefixed_and_bare_spellings_together() {
+        let text =
+            "Група з ОП \"Лиман-2\" вийшла; на Лиман-2 тихо, РОЗУМОВКУ пройшли";
+        let found = ground_positions(
+            text,
+            response(
+                r#"{"positions":[
+                {"name":"ОП Лиман-2","kind":"position","coordinates":[]},
+                {"name":"РОЗУМОВКА","kind":"position","coordinates":[]},
+                {"name":"РОЗУМОВКУ","kind":"position","coordinates":[]}
+            ]}"#,
+            ),
+        )
+        .await;
+        assert_eq!(found[0].name_key, "лиман 2");
+        assert_eq!(found[0].spans.len(), 2, "{found:?}");
+        // The inflected repeat grounds the same occurrence and is dropped.
+        assert_eq!(found.len(), 2);
     }
 
     #[tokio::test]

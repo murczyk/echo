@@ -211,7 +211,7 @@ async fn evaluate_case(
     if case.verdict == "other" {
         return skipped("free-form feedback");
     }
-    let extraction = match extract(engine, prompt, text).await {
+    let extraction = match extract(engine, prompt, text, &[]).await {
         Ok(extraction) => extraction,
         Err(error) => {
             return CaseResult {

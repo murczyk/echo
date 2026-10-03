@@ -259,14 +259,20 @@ async fn process_next(
         drop_unavailable_source(dbx, &job).await.c(h!())?;
         return Ok(true);
     };
-    let extraction =
-        match extract(&config.ai_engine, &config.prompt, &source.text).await {
-            Ok(extraction) => extraction,
-            Err(error) => {
-                fail_job(dbx, &job, format!("{error:#}")).await.c(h!())?;
-                return Ok(true);
-            }
-        };
+    let extraction = match extract(
+        &config.ai_engine,
+        &config.prompt,
+        &source.text,
+        &source_settlements(dbx, &job).await.c(h!())?,
+    )
+    .await
+    {
+        Ok(extraction) => extraction,
+        Err(error) => {
+            fail_job(dbx, &job, format!("{error:#}")).await.c(h!())?;
+            return Ok(true);
+        }
+    };
     if let Err(error) =
         complete_job(dbx, &job, &source, &config, extraction).await
     {
@@ -412,6 +418,37 @@ where
     )
 }
 
+/// Settlements Echo's parsers already found in a message, a hint that they
+/// are not positions.
+async fn source_settlements(
+    dbx: &DatabaseConnection,
+    job: &ai_position_worker_job::Model,
+) -> anyhow::Result<Vec<String>> {
+    use crate::entities::{sigint_inbox_item, sigint_inbox_item_settlement};
+    let Some(item_id) = job.sigint_inbox_item_id else {
+        return Ok(Vec::new());
+    };
+    let mut names: Vec<String> = sigint_inbox_item::Entity::find_by_id(item_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .and_then(|item| item.location_v2)
+        .map(|locations| crate::location::utils::to_location_list(&locations))
+        .unwrap_or_default();
+    names.extend(
+        sigint_inbox_item_settlement::Entity::find()
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
+            .all(dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|link| link.settlement_text),
+    );
+    names.sort();
+    names.dedup();
+    Ok(names)
+}
+
 /// Deletes the job and its source's mentions unless the job was re-enqueued
 /// or the source came back meanwhile (e.g. a summary completed).
 async fn drop_unavailable_source(
@@ -501,9 +538,10 @@ where
         .into_iter()
         .filter(|position| !rejected.contains(&position.name_key))
         .collect();
-    let positions = with_known_names(dbx, &scopes, &source.text, extracted)
-        .await
-        .c(h!())?;
+    let positions =
+        with_known_names(dbx, &scopes, &source.text, extracted, &rejected)
+            .await
+            .c(h!())?;
     for position in positions {
         if !position.coordinates.is_empty() {
             knowledge_jobs.extend(
@@ -589,6 +627,7 @@ async fn with_known_names<C>(
     scopes: &[knowledge::Scope],
     text: &str,
     mut positions: Vec<AiPositionFound>,
+    rejected: &std::collections::HashSet<String>,
 ) -> anyhow::Result<Vec<AiPositionFound>>
 where
     C: ConnectionTrait,
@@ -596,6 +635,9 @@ where
     for (name, name_key, kind) in
         knowledge::known_names(dbx, scopes).await.c(h!())?
     {
+        if rejected.contains(&name_key) {
+            continue;
+        }
         if positions
             .iter()
             .any(|position| position.name_key == name_key)

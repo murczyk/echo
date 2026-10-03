@@ -105,7 +105,7 @@ fn token_matches(name: &Token, body: &Token) -> bool {
 }
 
 /// The name without a final vowel or soft sign, which declension replaces.
-fn vowel_stem(key: &str) -> Option<&str> {
+pub(crate) fn vowel_stem(key: &str) -> Option<&str> {
     let last = key.chars().last()?;
     "аяоеєиіїйьу"
         .contains(last)

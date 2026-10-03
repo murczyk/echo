@@ -724,8 +724,12 @@ export function renderMarkedText(
       const located = mgrs.length > 0 || knownMgrs !== null;
       // A located crew or callsign that replaced a callsign token keeps the
       // callsign pill (and its hint) and adds the location marker.
+      // The position may be wider than its callsign («ОП Лиман-2» around
+      // «Лиман-2»): keep the text around the pill.
+      const callsignAt = callsign ? text.indexOf(callsign) : -1;
       const content = callsign ? (
         <span className="content-token--position-callsign" title={title}>
+          {callsignAt > 0 ? text.slice(0, callsignAt) : null}
           <CallsignWithHint
             text={callsign}
             callsignInfoMap={options?.callsignInfoMap}
@@ -734,6 +738,7 @@ export function renderMarkedText(
             freq={options?.freq}
             networkIds={options?.networkIds}
           />
+          {callsignAt >= 0 ? text.slice(callsignAt + (callsign?.length ?? 0)) : null}
           <span className="content-token--position-marker" aria-label="координати">
             ⌖
           </span>

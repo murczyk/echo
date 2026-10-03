@@ -122,5 +122,21 @@ Reviewer feedback on local dev:
 - Synthetic cases: 6/12 with the old prompt, 11/12 with the revised one.
 - Real reviewed cases: 1/2 before, 2/2 after.
 
+**Reparsing real data** surfaced settlements written in capitals
+(«РОЗУМОВКА», «СКЕЛЬКИ») and crew callsigns («Аза», «Миха») returned as
+positions.
+- Fixes: settlement rules in the prompt, a hint listing the settlements Echo's
+  parsers found in the message, crew callsigns as `callsign`, and dedup of
+  inflected repeats.
+- The extended synthetic set now passes 16/16.
+
+**Codex follow-ups** (also done)
+- Keep the text around a retained callsign pill.
+- Check rejected names in the known-name and linking paths.
+- Add a «Відгуки» tab listing all feedback, including rejections.
+- Inflection-tolerant linking prefilter.
+- Ground the canonical key too, so prefixed and bare spellings are both
+  found.
+
 `raw/local-dev-20261003.jsonl` holds the two real cases locally; uploading
 needs B2 write keys.
