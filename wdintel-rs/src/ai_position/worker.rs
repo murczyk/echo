@@ -1466,6 +1466,68 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
+    async fn moves_knowledge_with_aor_reassignment_3064() {
+        use crate::entities::{area_of_responsibility, signal_group_aor};
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        crate::entities::ai_position_knowledge::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        enable_worker(&env.dbx).await;
+        let (message_id, master_key, _) =
+            grouped_message(&env.dbx, false).await;
+        let config = load_worker_config(&env.dbx).await.unwrap().unwrap();
+        enqueue_message_if_enabled(&env.dbx, message_id)
+            .await
+            .unwrap();
+        let job = load_next_job(&env.dbx).await.unwrap().unwrap();
+        let source = load_source(&env.dbx, &job).await.unwrap().unwrap();
+        complete_job(&env.dbx, &job, &source, &config, extraction(true))
+            .await
+            .unwrap();
+        knowledge_scopes(&env).await;
+
+        // The group is reassigned to a new AOR only.
+        let now = chrono::Utc::now().naive_utc();
+        let new_aor = area_of_responsibility::ActiveModel {
+            name: Set(format!("position-test-{}", uuid::Uuid::now_v7())),
+            left_bound: Set(0.0),
+            right_bound: Set(1.0),
+            updated_at: Set(now),
+            created_at: Set(now),
+            deleted: Set(false),
+            is_top_level: Set(false),
+            is_default: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        signal_group_aor::Entity::delete_many()
+            .filter(signal_group_aor::Column::MasterKey.eq(master_key.clone()))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        signal_group_aor::ActiveModel {
+            master_key: Set(master_key.clone()),
+            aor_id: Set(new_aor.id),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let mut expected = vec![
+            ("aor".to_string(), new_aor.id.to_string()),
+            ("group".to_string(), master_key),
+        ];
+        expected.sort();
+        assert_eq!(knowledge_scopes(&env).await, expected);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
     async fn keeps_a_job_reenqueued_during_extraction_3064() {
         let env = crate::functest::tests::cleanup().await.unwrap();
         enable_worker(&env.dbx).await;

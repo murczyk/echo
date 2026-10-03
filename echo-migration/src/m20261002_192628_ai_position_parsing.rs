@@ -490,6 +490,67 @@ for each row
 when (old.is_secret is distinct from new.is_secret)
 execute function ai_position_group_privacy_changed();
 
+-- A group's AOR links changed (reassignment deletes and reinserts them):
+-- recompute its positions in the old and new AOR.
+create function ai_position_group_aor_changed()
+returns trigger language plpgsql as $$
+begin
+    insert into ai_position_knowledge_job (scope_kind, scope_key, name_key)
+    select distinct 'aor', changed.aor_id::text, fed.name_key
+    from (
+        select new.master_key as master_key, new.aor_id as aor_id where tg_op <> 'DELETE'
+        union all
+        select old.master_key, old.aor_id where tg_op <> 'INSERT'
+    ) changed
+    join lateral (
+        select distinct mention.name_key
+        from ai_position_mention mention
+        where mention.group_master_key = changed.master_key
+    ) fed on true
+    on conflict (scope_kind, scope_key, name_key) do update
+        set attempts = 0,
+            last_error = null,
+            next_attempt_at = now() at time zone 'utc',
+            created_at = now() at time zone 'utc';
+    return null;
+end;
+$$;
+
+create trigger ai_position_group_aor_changed
+after insert or update or delete on signal_group_aor
+for each row execute function ai_position_group_aor_changed();
+
+-- An AOR deleted or restored: recompute what it knows or could know.
+create function ai_position_aor_deleted_changed()
+returns trigger language plpgsql as $$
+begin
+    insert into ai_position_knowledge_job (scope_kind, scope_key, name_key)
+    select distinct 'aor', new.id::text, fed.name_key
+    from (
+        select knowledge.name_key
+        from ai_position_knowledge knowledge
+        where knowledge.scope_kind = 'aor' and knowledge.scope_key = new.id::text
+        union
+        select mention.name_key
+        from signal_group_aor sga
+        join ai_position_mention mention on mention.group_master_key = sga.master_key
+        where sga.aor_id = new.id
+    ) fed
+    on conflict (scope_kind, scope_key, name_key) do update
+        set attempts = 0,
+            last_error = null,
+            next_attempt_at = now() at time zone 'utc',
+            created_at = now() at time zone 'utc';
+    return null;
+end;
+$$;
+
+create trigger ai_position_aor_deleted_changed
+after update of deleted on area_of_responsibility
+for each row
+when (old.deleted is distinct from new.deleted)
+execute function ai_position_aor_deleted_changed();
+
 -- Keyset pages of linking seek by event time; minute-precision times tie
 -- often, so the id must be part of the index.
 create index sigint_inbox_item_datetime_id_idx
@@ -507,6 +568,10 @@ create index sigint_inbox_item_datetime_id_idx
             .execute_unprepared(
                 r#"
 drop index if exists sigint_inbox_item_datetime_id_idx;
+drop trigger if exists ai_position_aor_deleted_changed on area_of_responsibility;
+drop function if exists ai_position_aor_deleted_changed();
+drop trigger if exists ai_position_group_aor_changed on signal_group_aor;
+drop function if exists ai_position_group_aor_changed();
 drop trigger if exists ai_position_group_privacy_changed on signal_group;
 drop function if exists ai_position_group_privacy_changed();
 drop trigger if exists ai_position_media_moved on signal_message_media;

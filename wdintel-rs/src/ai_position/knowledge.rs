@@ -1241,7 +1241,9 @@ mod tests {
     fn consolidates_many_reports_quickly() {
         // A busy position: thousands of reports at a few points.
         let mut facts: Vec<Fact> = (0..20_000)
-            .map(|i| fact(47.0 + (i % 50) as f64 * 0.00001, "high", -(i % 20), "a"))
+            .map(|i| {
+                fact(47.0 + (i % 50) as f64 * 0.00001, "high", -(i % 20), "a")
+            })
             .collect();
         facts.push(fact(48.0, "low", 0, "b"));
         let started = std::time::Instant::now();

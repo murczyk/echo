@@ -73,7 +73,8 @@ mention's time must fall within the window. The card only uses knowledge built
 entirely from groups the viewer can read. The admin page hides mentions and
 knowledge of private groups the admin cannot read.
 
-Changing a group's AORs takes effect at the next recompute of each position.
+Changing a group's AORs, or deleting or restoring an AOR, recomputes the
+affected positions in the old and new AORs.
 
 ## Operating
 
