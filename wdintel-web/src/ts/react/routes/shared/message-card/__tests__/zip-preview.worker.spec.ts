@@ -85,6 +85,33 @@ function zipWithCraftedEocdTrailer(): ArrayBuffer {
   return zipWithComment(trailer);
 }
 
+function zipWithCentralDirectorySignature(
+  data: Uint8Array,
+  declaredLength = data.byteLength,
+  includeInDirectorySize = false,
+): ArrayBuffer {
+  const archive = zipSync({ 'signed.txt': strToU8('signed member') });
+  const end = eocdOffset(archive);
+  const signature = new Uint8Array(6 + data.byteLength);
+  const signatureView = new DataView(signature.buffer);
+  signatureView.setUint32(0, 0x05054b50, true);
+  signatureView.setUint16(4, declaredLength, true);
+  signature.set(data, 6);
+  const result = new Uint8Array(archive.byteLength + signature.byteLength);
+  result.set(archive.subarray(0, end));
+  result.set(signature, end);
+  result.set(archive.subarray(end), end + signature.byteLength);
+  if (includeInDirectorySize) {
+    const view = new DataView(result.buffer);
+    view.setUint32(
+      end + signature.byteLength + 12,
+      view.getUint32(end + signature.byteLength + 12, true) + signature.byteLength,
+      true,
+    );
+  }
+  return result.buffer;
+}
+
 describe('ZIP preview worker', () => {
   it('lists metadata without inflating members and extracts only the selected member', () => {
     const archive = zipSync({
@@ -132,6 +159,29 @@ describe('ZIP preview worker', () => {
     const archive = new Uint8Array(zipWithComment(strToU8('short')));
     new DataView(archive.buffer).setUint16(eocdOffset(archive) + 20, 10, true);
     expect(() => parseZipListing(archive.buffer)).toThrow(/пошкоджений|обрізаний/i);
+  });
+
+  it('accepts one complete central-directory digital signature with either size convention', () => {
+    const signatureData = new Uint8Array([0x50, 0x4b, 0x05, 0x06, ...new Uint8Array(18)]);
+    for (const includeInDirectorySize of [false, true]) {
+      const archive = zipWithCentralDirectorySignature(
+        signatureData,
+        signatureData.byteLength,
+        includeInDirectorySize,
+      );
+      const entry = parseZipListing(archive).entries[0]!;
+      expect(entry.path).toBe('signed.txt');
+      expect(new TextDecoder().decode(extractZipEntry(archive, entry))).toBe('signed member');
+    }
+  });
+
+  it('rejects truncated and wrong-length central-directory signature records', () => {
+    expect(() => parseZipListing(zipWithCentralDirectorySignature(strToU8('xx'), 4))).toThrow(
+      /пошкоджений|обрізаний/i,
+    );
+    expect(() => parseZipListing(zipWithCentralDirectorySignature(strToU8('xxx'), 2))).toThrow(
+      /пошкоджений|обрізаний/i,
+    );
   });
 
   it('decodes UTF-8, CP437, and validated Unicode Path entry names', () => {

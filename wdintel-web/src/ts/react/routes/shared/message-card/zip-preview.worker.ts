@@ -87,20 +87,25 @@ function hasCentralDirectoryChain(
   directoryOffset: number,
   directorySize: number,
   entriesCount: number,
+  eocdOffset: number,
 ): boolean {
-  if (entriesCount > MAX_ENTRIES || !has(bytes, directoryOffset, directorySize)) return false;
+  if (entriesCount > MAX_ENTRIES || directoryOffset > eocdOffset) return false;
   let offset = directoryOffset;
-  const end = directoryOffset + directorySize;
   for (let index = 0; index < entriesCount; index += 1) {
     if (!has(bytes, offset, 46) || u32(bytes, offset) !== 0x02014b50) return false;
     const nameLength = u16(bytes, offset + 28);
     const extraLength = u16(bytes, offset + 30);
     const commentLength = u16(bytes, offset + 32);
     const recordSize = 46 + nameLength + extraLength + commentLength;
-    if (!has(bytes, offset, recordSize) || offset + recordSize > end) return false;
+    if (!has(bytes, offset, recordSize) || offset + recordSize > eocdOffset) return false;
     offset += recordSize;
   }
-  return offset === end;
+  const headersSize = offset - directoryOffset;
+  if (offset === eocdOffset) return directorySize === headersSize;
+  if (!has(bytes, offset, 6) || u32(bytes, offset) !== 0x05054b50) return false;
+  const signatureSize = 6 + u16(bytes, offset + 4);
+  if (offset + signatureSize !== eocdOffset) return false;
+  return directorySize === headersSize || directorySize === headersSize + signatureSize;
 }
 
 function eocdOffset(bytes: Uint8Array) {
@@ -112,9 +117,8 @@ function eocdOffset(bytes: Uint8Array) {
     const directoryOffset = u32(bytes, offset + 16);
     const entriesCount = u16(bytes, offset + 10);
     if (directorySize === 0xffffffff || directoryOffset === 0xffffffff) continue;
-    if (directoryOffset + directorySize !== offset || !has(bytes, directoryOffset, directorySize))
+    if (!hasCentralDirectoryChain(bytes, directoryOffset, directorySize, entriesCount, offset))
       continue;
-    if (!hasCentralDirectoryChain(bytes, directoryOffset, directorySize, entriesCount)) continue;
     return offset;
   }
   fail('Архів пошкоджений або обрізаний: не знайдено центральний каталог.');
@@ -185,7 +189,7 @@ export function parseZipListing(buffer: ArrayBuffer): ZipListing {
     });
     offset += recordSize;
   }
-  if (offset !== directoryOffset + directorySize)
+  if (!hasCentralDirectoryChain(bytes, directoryOffset, directorySize, entriesCount, end))
     fail('Архів має некоректний центральний каталог.');
   const knownPaths = new Set(entries.map((entry) => entry.path));
   const folders: ZipEntry[] = [];
