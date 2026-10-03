@@ -257,6 +257,27 @@ test.describe('@smoke @regression', () => {
   }
 
   for (const host of ['duty', 'analysis'] as const) {
+    test(`${host} ZIP MIME opens a misleading PDF-named archive`, async ({ page }) => {
+      await openMessageCardPreviewHost(page, host, { withZip: true });
+      const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+      if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+      await page
+        .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.misleadingZip })
+        .click();
+      const dialog = page.getByRole('dialog', { name: 'Перегляд документа' });
+      await expect(dialog.getByText('nested/member.txt')).toBeVisible();
+      await expectDownloadFile(
+        dialog.getByRole('button', { name: 'Скачати nested/member.txt' }),
+        'member.txt',
+      );
+      await expectDownloadFile(
+        dialog.getByRole('link', { name: 'Скачати' }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.misleadingZip,
+      );
+    });
+  }
+
+  for (const host of ['duty', 'analysis'] as const) {
     test(`${host} macOS ZIP preview shows Cyrillic files without Finder metadata`, async ({
       page,
     }) => {

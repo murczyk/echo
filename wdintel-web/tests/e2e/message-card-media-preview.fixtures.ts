@@ -21,6 +21,7 @@ export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
   doc: 'e2e-preview.doc',
   xls: 'e2e-preview.xls',
   zip: 'e2e-preview.zip',
+  misleadingZip: 'e2e-mislabeled.pdf',
   macZip: 'e2e-macos.zip',
   binary: 'e2e-attachment.bin',
   kml: 'e2e-route.kml',
@@ -276,6 +277,7 @@ function buildMessageCardMediaPreviewMessage({
   const doc = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.doc}`;
   const xls = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.xls}`;
   const zip = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip}`;
+  const misleadingZip = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.misleadingZip}`;
   const macZip = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.macZip}`;
   const binary = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.binary}`;
   const kml = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml}`;
@@ -391,6 +393,13 @@ function buildMessageCardMediaPreviewMessage({
               file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.macZip,
               size_bytes: MACOS_ZIP_PREVIEW_FIXTURE.byteLength,
               href: macZip,
+            },
+            {
+              id: 'e2e-misleading-zip',
+              content_type: 'application/zip',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.misleadingZip,
+              size_bytes: ZIP_PREVIEW_FIXTURE.byteLength,
+              href: misleadingZip,
             },
             {
               id: 'e2e-binary',
@@ -693,6 +702,11 @@ export async function installMessageCardMediaPreviewAssetRoutes(
       return;
     }
     if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip) {
+      await fulfillAsset(route, ZIP_PREVIEW_FIXTURE, 'application/zip');
+      return;
+    }
+
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.misleadingZip) {
       await fulfillAsset(route, ZIP_PREVIEW_FIXTURE, 'application/zip');
       return;
     }

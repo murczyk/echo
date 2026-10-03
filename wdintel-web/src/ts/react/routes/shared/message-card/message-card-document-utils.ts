@@ -40,6 +40,11 @@ export function getDocumentKind(m: MessageMediaInfo): MessageCardDocumentKind {
 
   // Office formats and KMZ are ZIP containers but have more specific preview routes.
   if (fileName.endsWith('.kmz') || /\.kmz(\?|#|$)/i.test(href)) return 'unsupported';
+  if (ZIP_CONTENT_TYPES.has(contentType)) {
+    if (fileName.endsWith('.docx') || /\.docx(\?|#|$)/i.test(href)) return 'docx';
+    if (fileName.endsWith('.xlsx') || /\.xlsx(\?|#|$)/i.test(href)) return 'xlsx';
+    return 'zip';
+  }
 
   if (contentType === 'application/pdf' || fileName.endsWith('.pdf') || /\.pdf(\?|#|$)/i.test(href))
     return 'pdf';
@@ -93,12 +98,7 @@ export function getDocumentKind(m: MessageMediaInfo): MessageCardDocumentKind {
     TEXT_CONTENT_TYPES.has(contentType)
   )
     return 'txt';
-  if (
-    ZIP_CONTENT_TYPES.has(contentType) ||
-    fileName.endsWith('.zip') ||
-    /\.zip(\?|#|$)/i.test(href)
-  )
-    return 'zip';
+  if (fileName.endsWith('.zip') || /\.zip(\?|#|$)/i.test(href)) return 'zip';
   return 'unsupported';
 }
 

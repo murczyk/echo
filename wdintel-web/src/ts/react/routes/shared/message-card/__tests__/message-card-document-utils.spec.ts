@@ -212,6 +212,32 @@ describe('message-card document utils', () => {
     expect(documents.map((document) => document.kind)).toEqual(['txt', 'md', 'pdf']);
   });
 
+  it.each(
+    ['pdf', 'doc', 'xls', 'csv', 'md', 'txt'].flatMap((extension) => [
+      {
+        fileName: `misleading.${extension}`,
+        href: 'https://example.test/archive',
+      },
+      {
+        fileName: 'misleading.bin',
+        href: `https://example.test/archive.${extension}?download=1`,
+      },
+    ]),
+  )('prefers ZIP MIME over misleading filename and URL checks', ({ fileName, href }) => {
+    expect(
+      getDocumentKind({ href, fileName, contentType: 'application/zip' } as MessageMediaInfo),
+    ).toBe('zip');
+  });
+
+  it.each(['docx', 'xlsx'])('keeps PDF MIME ahead of .%s extension routes', (extension) => {
+    expect(
+      getDocumentKind({
+        href: `https://example.test/report.${extension}`,
+        contentType: 'application/pdf',
+      } as MessageMediaInfo),
+    ).toBe('pdf');
+  });
+
   it('recognizes ZIPs while retaining specific ZIP-based formats', () => {
     expect(getDocumentKind({ href: 'https://example.test/a.zip' } as MessageMediaInfo)).toBe('zip');
     expect(
