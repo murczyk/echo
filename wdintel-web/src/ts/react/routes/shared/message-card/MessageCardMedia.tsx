@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
-import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import { Box, Button, CircularProgress, IconButton, Tooltip } from '@mui/material';
 
@@ -440,7 +440,8 @@ export function MessageMediaDownloadLink({
           rel="noopener noreferrer"
           disabled={downloading}
           aria-busy={downloading}
-          aria-label={downloading ? 'Завантаження…' : undefined}
+          aria-label={downloading ? 'Завантаження…' : `Завантажити вкладення: ${displayName}`}
+          data-message-card-attachment-tile="true"
           aria-current={selected ? 'true' : undefined}
           data-summary-selected={selected ? 'true' : undefined}
           onClick={(event) =>
@@ -454,9 +455,10 @@ export function MessageMediaDownloadLink({
             width: 'fit-content',
             minWidth: 0,
             maxWidth: '100%',
-            minHeight: 26,
+            minHeight: 32,
             py: 0.25,
-            px: 0.75,
+            pl: 0.75,
+            pr: 4,
             fontSize: 11,
             lineHeight: 1.25,
             textTransform: 'none',
@@ -471,6 +473,7 @@ export function MessageMediaDownloadLink({
               borderColor: selected ? 'primary.main' : 'text.primary',
             },
             alignSelf: 'flex-start',
+            position: 'relative',
             overflow: 'hidden',
             justifyContent: 'flex-start',
             '& .MuiButton-startIcon': {
@@ -478,13 +481,32 @@ export function MessageMediaDownloadLink({
               ml: -0.25,
               '& svg': { fontSize: 14 },
             },
+            '& .MuiButton-endIcon': { position: 'absolute', top: 5, right: 5, m: 0 },
           }}
-          startIcon={
-            downloading ? (
-              <CircularProgress size={14} aria-label="Завантаження…" />
-            ) : (
-              <DownloadOutlinedIcon aria-hidden />
-            )
+          startIcon={<DescriptionOutlinedIcon aria-hidden />}
+          endIcon={
+            <Box
+              component="span"
+              data-message-card-attachment-download="true"
+              sx={{
+                display: 'inline-flex',
+                width: 22,
+                height: 22,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '50%',
+                color: 'rgba(255, 255, 255, 0.92)',
+                backgroundColor: 'rgba(15, 23, 42, 0.42)',
+                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.28)',
+                opacity: { xs: 0.78, sm: 0.62 },
+              }}
+            >
+              {downloading ? (
+                <CircularProgress size={14} aria-label="Завантаження…" />
+              ) : (
+                <DownloadIcon aria-hidden sx={{ fontSize: 15 }} />
+              )}
+            </Box>
           }
         >
           <Box
@@ -606,6 +628,7 @@ export function MessageMediaThumbnailDownloadLink({
           disabled={downloading}
           aria-busy={downloading}
           aria-label={downloading ? 'Завантаження…' : label}
+          data-message-card-attachment-download="true"
           onClick={(event) => {
             event.stopPropagation();
             guardMessageCardDownloadClick(event, downloadKey, {

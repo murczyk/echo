@@ -1,12 +1,12 @@
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import DownloadIcon from '@mui/icons-material/Download';
-import { Box, Button, CircularProgress, IconButton, Tooltip } from '@mui/material';
+import FolderZipOutlinedIcon from '@mui/icons-material/FolderZipOutlined';
+import { Box, Button, Tooltip } from '@mui/material';
 import type { MouseEvent } from 'react';
 
 import type { MessageCardDocument } from './document-preview.types';
 import { deriveDocumentDownloadName, deriveDocumentFileName } from './message-card-document-utils';
 import { blurActiveElement } from '../../../utils/focus';
-import { MessageCardDisabledControlCursorWrapper } from './MessageCardDisabledControlCursorWrapper';
+import { MessageMediaThumbnailDownloadLink } from './MessageCardMedia';
 
 export function MessageMediaDocumentLink({
   document,
@@ -27,22 +27,15 @@ export function MessageMediaDocumentLink({
   const downloadName = deriveDocumentDownloadName(document, index);
   const canPreview = document.kind !== 'unsupported' && onPreview != null;
   const downloadKey = `media:${String(document.id ?? '')}`;
-  const downloading = isDownloadStarting(downloadKey);
   const handlePreviewClick = (_event: MouseEvent<HTMLButtonElement>) => {
     blurActiveElement();
     onPreview?.();
   };
 
   return (
-    <Box
-      sx={{
-        width: 'fit-content',
-        maxWidth: '100%',
-        minWidth: 0,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 0.5,
-      }}
+    <span
+      className="relative inline-flex max-w-full min-w-0 items-center self-start"
+      data-message-card-attachment-tile="true"
     >
       <Tooltip title={displayName} enterDelay={400}>
         <Button
@@ -56,9 +49,10 @@ export function MessageMediaDocumentLink({
           sx={{
             minWidth: 0,
             maxWidth: '100%',
-            minHeight: 26,
+            minHeight: 32,
             py: 0.25,
-            px: 0.75,
+            pl: 0.75,
+            pr: 4,
             fontSize: 11,
             lineHeight: 1.25,
             textTransform: 'none',
@@ -75,7 +69,13 @@ export function MessageMediaDocumentLink({
             justifyContent: 'flex-start',
             '& .MuiButton-startIcon': { mr: 0.35, ml: -0.25, '& svg': { fontSize: 14 } },
           }}
-          startIcon={<DescriptionOutlinedIcon aria-hidden />}
+          startIcon={
+            document.kind === 'zip' ? (
+              <FolderZipOutlinedIcon aria-hidden />
+            ) : (
+              <DescriptionOutlinedIcon aria-hidden />
+            )
+          }
         >
           <Box
             component="span"
@@ -93,33 +93,14 @@ export function MessageMediaDocumentLink({
           </Box>
         </Button>
       </Tooltip>
-      <Tooltip title={downloading ? 'Завантаження…' : 'Завантажити'} enterDelay={400}>
-        <MessageCardDisabledControlCursorWrapper disabled={downloading}>
-          <IconButton
-            component="a"
-            href={document.href}
-            download={downloadName}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={downloading ? 'Завантаження…' : 'Завантажити'}
-            aria-busy={downloading}
-            disabled={downloading}
-            onClick={(event) => {
-              if (isDownloadStarting(downloadKey) || !onDownloadStart(downloadKey)) {
-                event.preventDefault();
-              }
-            }}
-            size="small"
-            sx={{ color: 'text.secondary' }}
-          >
-            {downloading ? (
-              <CircularProgress size={14} aria-label="Завантаження…" />
-            ) : (
-              <DownloadIcon fontSize="inherit" />
-            )}
-          </IconButton>
-        </MessageCardDisabledControlCursorWrapper>
-      </Tooltip>
-    </Box>
+      <MessageMediaThumbnailDownloadLink
+        href={document.href}
+        displayName={displayName}
+        downloadName={downloadName}
+        downloadKey={downloadKey}
+        isDownloadStarting={isDownloadStarting}
+        onDownloadStart={onDownloadStart}
+      />
+    </span>
   );
 }

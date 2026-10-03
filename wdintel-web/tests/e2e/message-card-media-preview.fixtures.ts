@@ -20,6 +20,10 @@ export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
   markdown: 'e2e-preview.md',
   doc: 'e2e-preview.doc',
   xls: 'e2e-preview.xls',
+  zip: 'e2e-preview.zip',
+  misleadingZip: 'e2e-mislabeled.pdf',
+  macZip: 'e2e-macos.zip',
+  binary: 'e2e-attachment.bin',
   kml: 'e2e-route.kml',
   denseKml: 'e2e-dense-points.kml',
   kmz: 'e2e-route.kmz',
@@ -194,6 +198,44 @@ const MARKDOWN_PREVIEW_TEXT = [
   '',
   '[Safe link](https://example.test/safe-link)',
 ].join('\n');
+const ZIP_PREVIEW_FIXTURE = Buffer.from(
+  zipSync({ 'nested/member.txt': strToU8('ZIP E2E member') }),
+);
+export const MACOS_ZIP_MEMBER_NAMES = [
+  'Звіт.txt',
+  'Дані.csv',
+  'Мапа.kml',
+  'Наказ.pdf',
+  'Фото.png',
+] as const;
+
+function createMacosZipFixture(): Buffer {
+  const files: Record<string, Uint8Array> = { '__MACOSX/': new Uint8Array() };
+  for (const name of MACOS_ZIP_MEMBER_NAMES) {
+    files[name] = strToU8(`Content of ${name}`);
+    files[`__MACOSX/._${name}`] = strToU8('Finder metadata');
+  }
+  const archive = zipSync(files);
+  const view = new DataView(archive.buffer);
+  let end = archive.byteLength - 22;
+  while (end >= 0 && view.getUint32(end, true) !== 0x06054b50) end -= 1;
+  if (end < 0) throw new Error('ZIP fixture has no EOCD');
+  let offset = view.getUint32(end + 16, true);
+  const entryCount = view.getUint16(end + 10, true);
+  for (let index = 0; index < entryCount; index += 1) {
+    const localOffset = view.getUint32(offset + 42, true);
+    view.setUint16(localOffset + 6, view.getUint16(localOffset + 6, true) & ~(1 << 11), true);
+    view.setUint16(offset + 8, view.getUint16(offset + 8, true) & ~(1 << 11), true);
+    offset +=
+      46 +
+      view.getUint16(offset + 28, true) +
+      view.getUint16(offset + 30, true) +
+      view.getUint16(offset + 32, true);
+  }
+  return Buffer.from(archive);
+}
+
+const MACOS_ZIP_PREVIEW_FIXTURE = createMacosZipFixture();
 const LEGACY_OFFICE_FIXTURES_DIRECTORY = resolve(process.cwd(), 'tests/fixtures/legacy-office');
 const [DOC_PREVIEW_FIXTURE, XLS_PREVIEW_FIXTURE] = await Promise.all([
   readFile(resolve(LEGACY_OFFICE_FIXTURES_DIRECTORY, 'structured-document.doc')),
@@ -210,6 +252,7 @@ function buildMessageCardMediaPreviewMessage({
   messageText,
   withCompletedOcrAndSummary = false,
   withLegacyOffice = false,
+  withZip = false,
   withKmlPreviews = false,
 }: {
   withPolishContent?: boolean;
@@ -221,6 +264,7 @@ function buildMessageCardMediaPreviewMessage({
   messageText?: string;
   withCompletedOcrAndSummary?: boolean;
   withLegacyOffice?: boolean;
+  withZip?: boolean;
   withKmlPreviews?: boolean;
 } = {}): Record<string, unknown> {
   const image1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`;
@@ -232,6 +276,10 @@ function buildMessageCardMediaPreviewMessage({
   const markdown = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown}`;
   const doc = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.doc}`;
   const xls = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.xls}`;
+  const zip = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip}`;
+  const misleadingZip = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.misleadingZip}`;
+  const macZip = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.macZip}`;
+  const binary = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.binary}`;
   const kml = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml}`;
   const kmz = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz}`;
   const gpx = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx}`;
@@ -330,6 +378,38 @@ function buildMessageCardMediaPreviewMessage({
             },
           ]
         : []),
+      ...(withZip
+        ? [
+            {
+              id: 'e2e-zip',
+              content_type: 'application/zip',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip,
+              size_bytes: ZIP_PREVIEW_FIXTURE.byteLength,
+              href: zip,
+            },
+            {
+              id: 'e2e-macos-zip',
+              content_type: 'application/zip',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.macZip,
+              size_bytes: MACOS_ZIP_PREVIEW_FIXTURE.byteLength,
+              href: macZip,
+            },
+            {
+              id: 'e2e-misleading-zip',
+              content_type: 'application/zip',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.misleadingZip,
+              size_bytes: ZIP_PREVIEW_FIXTURE.byteLength,
+              href: misleadingZip,
+            },
+            {
+              id: 'e2e-binary',
+              content_type: 'application/octet-stream',
+              file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.binary,
+              size_bytes: 16,
+              href: binary,
+            },
+          ]
+        : []),
       ...(withKmlPreviews
         ? [
             {
@@ -422,6 +502,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
   messageText,
   withCompletedOcrAndSummary = false,
   withLegacyOffice = false,
+  withZip = false,
   withKmlPreviews = false,
 }: {
   withPolishContent?: boolean;
@@ -433,6 +514,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
   messageText?: string;
   withCompletedOcrAndSummary?: boolean;
   withLegacyOffice?: boolean;
+  withZip?: boolean;
   withKmlPreviews?: boolean;
 } = {}): InboxMessagesRspRaw {
   return {
@@ -449,6 +531,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
           messageText,
           withCompletedOcrAndSummary,
           withLegacyOffice,
+          withZip,
           withKmlPreviews,
         }) as never,
       ],
@@ -618,6 +701,25 @@ export async function installMessageCardMediaPreviewAssetRoutes(
       await fulfillAsset(route, XLS_PREVIEW_FIXTURE, 'application/vnd.ms-excel');
       return;
     }
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip) {
+      await fulfillAsset(route, ZIP_PREVIEW_FIXTURE, 'application/zip');
+      return;
+    }
+
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.misleadingZip) {
+      await fulfillAsset(route, ZIP_PREVIEW_FIXTURE, 'application/zip');
+      return;
+    }
+
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.macZip) {
+      await fulfillAsset(route, MACOS_ZIP_PREVIEW_FIXTURE, 'application/zip');
+      return;
+    }
+
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.binary) {
+      await fulfillAsset(route, Buffer.from('E2E attachment'), 'application/octet-stream');
+      return;
+    }
 
     if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml) {
       await route.fulfill({
@@ -667,6 +769,7 @@ async function installMessageCardMediaPreviewHostFixture(
   enableAudioTranscription: boolean,
   withCompletedOcrAndSummary: boolean,
   withLegacyOffice: boolean,
+  withZip: boolean,
   withKmlPreviews: boolean,
   messageReferenceResponse: unknown | undefined,
   messageReferenceDelayMs: number,
@@ -683,6 +786,7 @@ async function installMessageCardMediaPreviewHostFixture(
       messageText,
       withCompletedOcrAndSummary,
       withLegacyOffice,
+      withZip,
       withKmlPreviews,
     }),
     signal_groups: signalGroups ?? [],
@@ -858,6 +962,7 @@ export async function openMessageCardPreviewHost(
     enableAudioTranscription = false,
     withCompletedOcrAndSummary = false,
     withLegacyOffice = false,
+    withZip = false,
     withKmlPreviews = false,
     deferredImageResponse,
     messageReferenceResponse,
@@ -876,6 +981,7 @@ export async function openMessageCardPreviewHost(
     enableAudioTranscription?: boolean;
     withCompletedOcrAndSummary?: boolean;
     withLegacyOffice?: boolean;
+    withZip?: boolean;
     withKmlPreviews?: boolean;
     deferredImageResponse?: DeferredMediaResponse;
     messageReferenceResponse?: unknown;
@@ -897,6 +1003,7 @@ export async function openMessageCardPreviewHost(
     enableAudioTranscription,
     withCompletedOcrAndSummary,
     withLegacyOffice,
+    withZip,
     withKmlPreviews,
     messageReferenceResponse,
     messageReferenceDelayMs,
