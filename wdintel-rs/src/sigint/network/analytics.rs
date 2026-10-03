@@ -7,7 +7,7 @@ use crate::sigint::network::types::{
     NetworkFreqCallsignsPeriod, NetworkGroupsActivitySummaryRsp,
 };
 use crate::types::*;
-use chrono::NaiveDateTime;
+use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::*;
 use sqlx::FromRow;
 use std::collections::{HashMap, HashSet};
@@ -264,6 +264,8 @@ JOIN echo_clickhouse_derived.message_callsign message_callsign
 WHERE inbox_item.id BETWEEN $2 AND $3
   AND signal_message.deleted = false
   AND signal_message.datasource_group_id = ANY($4)
+  AND signal_message.id BETWEEN $2 AND $3
+  AND message_callsign.sigint_inbox_item_id BETWEEN $2 AND $3
   AND (
       network_freq.deleted = false
       OR network_freq.active_to IS NOT NULL
@@ -322,6 +324,8 @@ JOIN echo_clickhouse_derived.message_callsign message_callsign
 WHERE inbox_item.id BETWEEN $2 AND $3
   AND signal_message.deleted = false
   AND signal_message.datasource_group_id = ANY($4)
+  AND signal_message.id BETWEEN $2 AND $3
+  AND message_callsign.sigint_inbox_item_id BETWEEN $2 AND $3
   AND network_freq.deleted = false
   AND network_freq.id = ANY($5)
   AND COALESCE(
@@ -337,7 +341,7 @@ WHERE inbox_item.id BETWEEN $2 AND $3
           signal_message.created_at
       ) >= COALESCE(
           network_freq.active_to,
-          CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+          $7::TIMESTAMP
       ) - ($6 * INTERVAL '1 day')
   )
   AND COALESCE(
@@ -346,7 +350,7 @@ WHERE inbox_item.id BETWEEN $2 AND $3
       signal_message.created_at
   ) <= COALESCE(
       network_freq.active_to,
-      CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+      $7::TIMESTAMP
   )
   AND inbox_item.id IN (
       SELECT network_link.sigint_inbox_item_id
@@ -375,6 +379,12 @@ struct NetworkCallsignActivityRow {
 struct NetworkFreqCallsignRow {
     network_freq_id: i64,
     callsign: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct NetworkFreqCallsignQueryGroup {
+    network_freq_ids: Vec<i64>,
+    period_bounds: Option<(NaiveDateTime, NaiveDateTime)>,
 }
 
 #[derive(Debug, FromRow)]
@@ -972,34 +982,45 @@ pub(crate) async fn load_network_freq_callsigns(
         .all(source_db)
         .await
         .c(h!())?;
-    let mut network_freq_ids_by_network = HashMap::<i64, Vec<i64>>::new();
+    let mut network_freqs_by_network =
+        HashMap::<i64, Vec<sigint_network_freq::Model>>::new();
     for network_freq in network_freqs {
-        network_freq_ids_by_network
+        network_freqs_by_network
             .entry(network_freq.network_id)
             .or_default()
-            .push(network_freq.id);
+            .push(network_freq);
     }
 
-    for (network_id, network_freq_ids) in network_freq_ids_by_network {
-        let Some((min_item_id, max_item_id)) =
+    let current_time = Utc::now().naive_utc();
+    for (network_id, network_freqs) in network_freqs_by_network {
+        let Some(network_bounds) =
             load_network_message_id_bounds(source_db, network_id)
                 .await
                 .context(h!())?
         else {
             continue;
         };
-        let rows = load_network_freq_callsign_rows(
-            analytics_db,
-            network_id,
-            min_item_id,
-            max_item_id,
-            &datasource_group_ids,
-            &network_freq_ids,
+        let query_groups = build_network_freq_callsign_query_groups(
+            &network_freqs,
             period,
-        )
+            current_time,
+        );
+        let rows = futures::future::try_join_all(query_groups.iter().map(
+            |query_group| {
+                load_network_freq_callsign_group_rows(
+                    analytics_db,
+                    network_id,
+                    network_bounds,
+                    &datasource_group_ids,
+                    query_group,
+                    period,
+                    current_time,
+                )
+            },
+        ))
         .await
         .context(h!())?;
-        for row in rows {
+        for row in rows.into_iter().flatten() {
             if !row.callsign.trim().is_empty() {
                 callsigns_by_network_freq_id
                     .entry(row.network_freq_id)
@@ -1014,6 +1035,170 @@ pub(crate) async fn load_network_freq_callsigns(
     ))
 }
 
+fn build_network_freq_callsign_query_groups(
+    network_freqs: &[sigint_network_freq::Model],
+    period: Option<&NetworkFreqCallsignsPeriod>,
+    current_time: NaiveDateTime,
+) -> Vec<NetworkFreqCallsignQueryGroup> {
+    let Some(lookback_days) =
+        period.and_then(NetworkFreqCallsignsPeriod::lookback_days)
+    else {
+        let mut network_freq_ids =
+            network_freqs.iter().map(|freq| freq.id).collect::<Vec<_>>();
+        network_freq_ids.sort_unstable();
+        return vec![NetworkFreqCallsignQueryGroup {
+            network_freq_ids,
+            period_bounds: None,
+        }];
+    };
+
+    let mut groups = network_freqs
+        .iter()
+        .filter_map(|network_freq| {
+            let till = network_freq.active_to.unwrap_or(current_time);
+            let lookback_since = till
+                .checked_sub_signed(Duration::days(lookback_days))
+                .unwrap_or(NaiveDateTime::MIN);
+            let since = std::cmp::max(network_freq.active_from, lookback_since);
+            (since <= till).then_some(NetworkFreqCallsignQueryGroup {
+                network_freq_ids: vec![network_freq.id],
+                period_bounds: Some((since, till)),
+            })
+        })
+        .collect::<Vec<_>>();
+    groups.sort_unstable_by_key(|group| group.period_bounds);
+    groups = merge_overlapping_network_freq_callsign_query_groups(groups);
+    merge_nearest_network_freq_callsign_query_groups(&mut groups);
+    for group in &mut groups {
+        group.network_freq_ids.sort_unstable();
+    }
+    groups
+}
+
+fn merge_overlapping_network_freq_callsign_query_groups(
+    groups: Vec<NetworkFreqCallsignQueryGroup>,
+) -> Vec<NetworkFreqCallsignQueryGroup> {
+    let mut merged = Vec::<NetworkFreqCallsignQueryGroup>::new();
+    for mut group in groups {
+        let Some(previous) = merged.last_mut() else {
+            merged.push(group);
+            continue;
+        };
+        let Some((group_since, group_till)) = group.period_bounds else {
+            merged.push(group);
+            continue;
+        };
+        let Some((previous_since, previous_till)) = previous.period_bounds
+        else {
+            merged.push(group);
+            continue;
+        };
+        if group_since > previous_till {
+            merged.push(group);
+            continue;
+        }
+        previous
+            .network_freq_ids
+            .append(&mut group.network_freq_ids);
+        previous.period_bounds = Some((
+            std::cmp::min(previous_since, group_since),
+            std::cmp::max(previous_till, group_till),
+        ));
+    }
+    merged
+}
+
+fn merge_nearest_network_freq_callsign_query_groups(
+    groups: &mut Vec<NetworkFreqCallsignQueryGroup>,
+) {
+    while groups.len()
+        > crate::config::SIGINT_NETWORK_FREQ_CALLSIGN_QUERY_MAX_PERIOD_GROUPS
+    {
+        let merge_index = (0..groups.len() - 1)
+            .min_by_key(|index| {
+                let (_, left_till) = groups[*index]
+                    .period_bounds
+                    .expect("limited query group has period bounds");
+                let (right_since, _) = groups[*index + 1]
+                    .period_bounds
+                    .expect("limited query group has period bounds");
+                right_since - left_till
+            })
+            .expect("more than one query group has adjacent groups");
+        let mut right = groups.remove(merge_index + 1);
+        let left = &mut groups[merge_index];
+        let (left_since, _) = left
+            .period_bounds
+            .expect("limited query group has period bounds");
+        let (_, right_till) = right
+            .period_bounds
+            .expect("limited query group has period bounds");
+        left.network_freq_ids.append(&mut right.network_freq_ids);
+        left.period_bounds = Some((left_since, right_till));
+    }
+}
+
+async fn load_network_freq_callsign_group_rows(
+    db: &DatabaseConnection,
+    network_id: i64,
+    network_bounds: (i64, i64),
+    datasource_group_ids: &[i64],
+    query_group: &NetworkFreqCallsignQueryGroup,
+    period: Option<&NetworkFreqCallsignsPeriod>,
+    current_time: NaiveDateTime,
+) -> Result<Vec<NetworkFreqCallsignRow>, AppError> {
+    let Some((min_item_id, max_item_id)) =
+        load_network_freq_callsign_group_message_id_bounds(
+            db,
+            network_bounds,
+            query_group.period_bounds,
+        )
+        .await
+        .context(h!())?
+    else {
+        return Ok(Vec::new());
+    };
+    Ok(load_network_freq_callsign_rows(
+        db,
+        network_id,
+        min_item_id,
+        max_item_id,
+        datasource_group_ids,
+        &query_group.network_freq_ids,
+        period,
+        current_time,
+    )
+    .await
+    .context(h!())?)
+}
+
+async fn load_network_freq_callsign_group_message_id_bounds(
+    db: &DatabaseConnection,
+    network_bounds: (i64, i64),
+    period_bounds: Option<(NaiveDateTime, NaiveDateTime)>,
+) -> Result<Option<(i64, i64)>, AppError> {
+    let Some((since, till)) = period_bounds else {
+        return Ok(Some(network_bounds));
+    };
+    let till = till
+        .checked_add_signed(Duration::microseconds(1))
+        .context(h!())?;
+    let period_bounds = load_message_id_bounds_for_period(db, since, till)
+        .await
+        .context(h!())?;
+    Ok(intersect_message_id_bounds(network_bounds, period_bounds))
+}
+
+fn intersect_message_id_bounds(
+    network_bounds: (i64, i64),
+    period_bounds: Option<(i64, i64)>,
+) -> Option<(i64, i64)> {
+    let (period_min_id, period_max_id) = period_bounds?;
+    let min_item_id = std::cmp::max(network_bounds.0, period_min_id);
+    let max_item_id = std::cmp::min(network_bounds.1, period_max_id);
+    (min_item_id <= max_item_id).then_some((min_item_id, max_item_id))
+}
+
 async fn load_network_freq_callsign_rows(
     db: &DatabaseConnection,
     network_id: i64,
@@ -1022,6 +1207,7 @@ async fn load_network_freq_callsign_rows(
     datasource_group_ids: &[i64],
     network_freq_ids: &[i64],
     period: Option<&NetworkFreqCallsignsPeriod>,
+    current_time: NaiveDateTime,
 ) -> Result<Vec<NetworkFreqCallsignRow>, AppError> {
     Ok(
         sqlx::query_as::<_, NetworkFreqCallsignRow>(NETWORK_FREQ_CALLSIGNS_SQL)
@@ -1031,6 +1217,7 @@ async fn load_network_freq_callsign_rows(
             .bind(datasource_group_ids)
             .bind(network_freq_ids)
             .bind(period.and_then(NetworkFreqCallsignsPeriod::lookback_days))
+            .bind(current_time)
             .fetch_all(db.get_postgres_connection_pool())
             .await
             .c(h!())?,
@@ -1053,12 +1240,47 @@ fn finalize_network_freq_callsigns(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::sea_orm_active_enums::SigintNetworkKind;
+
+    fn dt(month: u32, day: u32) -> NaiveDateTime {
+        chrono::NaiveDate::from_ymd_opt(2026, month, day)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+    }
+
+    fn network_freq(
+        id: i64,
+        active_from: NaiveDateTime,
+        active_to: Option<NaiveDateTime>,
+    ) -> sigint_network_freq::Model {
+        sigint_network_freq::Model {
+            id,
+            network_id: 755,
+            freq: id.to_string(),
+            created_at: active_from,
+            kind: SigintNetworkKind::Vhf,
+            modulation_id: None,
+            active_from,
+            active_to,
+            sigint_origin_id: None,
+            deleted: false,
+            original_id: None,
+            last_seen_dt: None,
+            modulation: String::new(),
+            encryption_id: None,
+        }
+    }
 
     #[test]
     fn analytics_queries_use_bounded_network_membership_semijoin() {
         for sql in [NETWORK_CALLSIGN_ACTIVITY_SQL, NETWORK_FREQ_CALLSIGNS_SQL] {
             assert!(sql.contains("echo_clickhouse_derived.message_callsign"));
             assert!(sql.contains("inbox_item.id BETWEEN $2 AND $3"));
+            assert!(sql.contains("signal_message.id BETWEEN $2 AND $3"));
+            assert!(sql.contains(
+                "message_callsign.sigint_inbox_item_id BETWEEN $2 AND $3"
+            ));
             assert!(sql.contains("inbox_item.id IN ("));
             assert!(sql.contains(
                 "FROM echo_clickhouse_derived.message_network_link network_link"
@@ -1066,6 +1288,86 @@ mod tests {
             assert!(!sql
                 .contains("JOIN echo_clickhouse_derived.message_network_link"));
         }
+        assert!(NETWORK_FREQ_CALLSIGNS_SQL.contains("$7::TIMESTAMP"));
+    }
+
+    #[test]
+    fn frequency_callsign_query_groups_preserve_historical_windows() {
+        let current_time = dt(10, 3);
+        let network_freqs = vec![
+            network_freq(1, dt(2, 20), Some(dt(2, 28))),
+            network_freq(2, dt(3, 8), Some(dt(9, 11))),
+            network_freq(3, dt(1, 1), None),
+            network_freq(4, dt(1, 1), Some(dt(9, 27))),
+        ];
+
+        let groups = build_network_freq_callsign_query_groups(
+            &network_freqs,
+            Some(&NetworkFreqCallsignsPeriod::Last21Days),
+            current_time,
+        );
+
+        assert_eq!(
+            groups,
+            vec![
+                NetworkFreqCallsignQueryGroup {
+                    network_freq_ids: vec![1],
+                    period_bounds: Some((dt(2, 20), dt(2, 28))),
+                },
+                NetworkFreqCallsignQueryGroup {
+                    network_freq_ids: vec![2, 3, 4],
+                    period_bounds: Some((dt(8, 21), current_time)),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn unlimited_frequency_callsigns_keep_one_network_query() {
+        let network_freqs = vec![
+            network_freq(2, dt(3, 8), Some(dt(9, 11))),
+            network_freq(1, dt(2, 20), Some(dt(2, 28))),
+        ];
+
+        assert_eq!(
+            build_network_freq_callsign_query_groups(
+                &network_freqs,
+                Some(&NetworkFreqCallsignsPeriod::Unlimited),
+                dt(10, 3),
+            ),
+            vec![NetworkFreqCallsignQueryGroup {
+                network_freq_ids: vec![1, 2],
+                period_bounds: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn frequency_callsign_query_groups_merge_the_nearest_excess_windows() {
+        let mut groups = [1_u32, 10, 12, 20, 30]
+            .into_iter()
+            .enumerate()
+            .map(|(index, day)| NetworkFreqCallsignQueryGroup {
+                network_freq_ids: vec![index as i64],
+                period_bounds: Some((dt(1, day), dt(1, day))),
+            })
+            .collect::<Vec<_>>();
+
+        merge_nearest_network_freq_callsign_query_groups(&mut groups);
+
+        assert_eq!(groups.len(), 4);
+        assert_eq!(groups[1].network_freq_ids, vec![1, 2]);
+        assert_eq!(groups[1].period_bounds, Some((dt(1, 10), dt(1, 12))));
+    }
+
+    #[test]
+    fn frequency_callsign_message_bounds_are_intersected() {
+        assert_eq!(
+            intersect_message_id_bounds((10, 50), Some((20, 60))),
+            Some((20, 50))
+        );
+        assert_eq!(intersect_message_id_bounds((10, 20), Some((21, 30))), None);
+        assert_eq!(intersect_message_id_bounds((10, 20), None), None);
     }
 
     #[test]
