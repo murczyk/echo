@@ -9,6 +9,7 @@ import {
   type ComponentProps,
 } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
 import type {
@@ -26,6 +27,10 @@ import { APP_TIME_ZONE } from '../../utils/misc';
 import { summarizeIntelligenceMessage } from '../shared/intelligence-reports';
 import { MessageSummaryPreview } from '../shared/message-card/MessageSummaryPreview';
 import { buildMessageLinkHref } from '../shared/message-card/message-card.utils';
+
+// Agent answers often put one item per line ("кожні координати з нової
+// строки") without Markdown list syntax; keep those single newlines visible.
+const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks];
 
 type ResolvedCitation = { message: InboxMessage; groupName: string } | null;
 const EMPTY_CITATIONS: AiAgentMessageCitation[] = [];
@@ -236,7 +241,7 @@ export function CitationMarkdown({
         <ReactMarkdown
           skipHtml
           disallowedElements={['img']}
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={MARKDOWN_PLUGINS}
           components={MARKDOWN_COMPONENTS}
           urlTransform={(url) => (url.startsWith('echo-map:') ? url : defaultUrlTransform(url))}
         >
