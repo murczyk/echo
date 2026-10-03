@@ -1,7 +1,8 @@
 use super::query;
 use super::types::{
-    DirectSubmitCopyRsp, DirectSubmitParsePayload, DirectSubmitParseRsp,
-    DirectSubmitPayload, DirectSubmitRsp,
+    DirectSubmitAttachmentUpdates, DirectSubmitCopyRsp,
+    DirectSubmitParsePayload, DirectSubmitParseRsp, DirectSubmitPayload,
+    DirectSubmitRsp,
 };
 use crate::config::{
     FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT, SIGINT_MESSAGE_DATE_ONLY_HOUR,
@@ -15,8 +16,8 @@ use crate::types::*;
 use chrono::TimeZone;
 use chrono::{SecondsFormat, Utc};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
-    QueryFilter, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction,
+    EntityTrait, QueryFilter, Set, TransactionTrait,
 };
 use std::collections::{BTreeMap, HashSet};
 use uuid::Uuid;
@@ -221,6 +222,7 @@ where
         signal_group_master_key: message.group_master_key.clone(),
         device_name_id: Some(copy_inputs.inbox_item.device_name_id),
         upload_urls: None,
+        attachment_updates: None,
         deleted_media_ids: None,
         retained_media_ids: Some(
             copy_inputs
@@ -386,6 +388,12 @@ async fn save_signal_message(
 ) -> Result<DirectSubmitRsp, AppError> {
     let is_new_message = signal_message_id.is_none();
     let upload_urls = payload.upload_urls.clone().unwrap_or_default();
+    let attachment_updates = payload.attachment_updates.clone().unwrap_or(
+        DirectSubmitAttachmentUpdates {
+            replacements: vec![],
+            renames: vec![],
+        },
+    );
     let delete_uploaded_attachments = env
         .config
         .feature_delete_uploaded_attachment
@@ -435,6 +443,15 @@ async fn save_signal_message(
     let uploads = resolve_direct_submit_uploads(env, login, &upload_urls)
         .await
         .c(h!())?;
+    let replacement_urls = attachment_updates
+        .replacements
+        .iter()
+        .map(|replacement| replacement.upload_url.clone())
+        .collect::<Vec<_>>();
+    let replacement_uploads =
+        resolve_direct_submit_uploads(env, login, &replacement_urls)
+            .await
+            .c(h!())?;
 
     let signal_group_master_key = payload
         .signal_group_master_key
@@ -523,6 +540,24 @@ async fn save_signal_message(
             (media.len(), vec![])
         }
     };
+    let existing_media = match signal_message_id {
+        Some(signal_message_id) => {
+            query::find_signal_message_media(&txn, signal_message_id)
+                .await
+                .c(h!())?
+        }
+        None => load_copy_media(&txn, copy_source_signal_message_ids, &payload)
+            .await
+            .c(h!())?,
+    };
+    validate_attachment_updates(
+        signal_message_id.is_some(),
+        signal_message_id.is_none() && !parent_signal_message_ids.is_empty(),
+        &attachment_updates,
+        &existing_media,
+        &deleted_media_ids,
+    )
+    .c(h!())?;
 
     validate_direct_submit_content(&payload, retained_media_count).c(h!())?;
     validate_direct_submit_attachment_count(
@@ -621,6 +656,9 @@ async fn save_signal_message(
         &logins,
         device_name_id,
         &uploads,
+        &attachment_updates,
+        &replacement_uploads,
+        &existing_media,
         &media_to_delete,
         delete_uploaded_attachments,
         copy_parent_signal_message_ids,
@@ -686,6 +724,123 @@ fn validate_direct_submit_payload(
         });
     }
     Ok(())
+}
+
+fn validate_attachment_updates(
+    is_edit: bool,
+    is_copy: bool,
+    updates: &DirectSubmitAttachmentUpdates,
+    existing_media: &[crate::entities::signal_message_media::Model],
+    deleted_media_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if !is_edit && !updates.replacements.is_empty() {
+        return Err(AppError::BL {
+            msg: "Замінювати вкладення можна лише під час редагування."
+                .to_string(),
+        });
+    }
+    if !is_edit && !is_copy && !updates.renames.is_empty() {
+        return Err(AppError::BL {
+            msg: "Перейменовувати вкладення можна лише під час редагування або копіювання повідомлення."
+                .to_string(),
+        });
+    }
+    if !is_edit {
+        let mut ids = HashSet::new();
+        for rename in &updates.renames {
+            let id = parse_attachment_media_id(&rename.media_id).c(h!())?;
+            let media = existing_media
+                .iter()
+                .find(|media| media.id == id)
+                .ok_or(AppError::NotFound)
+                .c(h!())?;
+            if !ids.insert(id) {
+                return Err(AppError::BL {
+                    msg: "Вкладення не можуть повторюватися.".to_string(),
+                });
+            }
+            validate_file_name(&rename.file_name).c(h!())?;
+            if media.file_ext.as_deref().map(str::to_ascii_lowercase)
+                != file_extension(&rename.file_name)
+                    .map(str::to_ascii_lowercase)
+            {
+                return Err(AppError::BL {
+                    msg: "Розширення файлу змінювати не можна.".to_string(),
+                });
+            }
+        }
+        return Ok(());
+    }
+    let existing_ids = existing_media
+        .iter()
+        .map(|media| media.id)
+        .collect::<HashSet<_>>();
+    let mut ids = HashSet::new();
+    let mut urls = HashSet::new();
+    for replacement in &updates.replacements {
+        let id = parse_attachment_media_id(&replacement.media_id).c(h!())?;
+        if !existing_ids.contains(&id)
+            || !ids.insert(id)
+            || !urls.insert(&replacement.upload_url)
+            || deleted_media_ids.contains(&id)
+        {
+            return Err(AppError::BL {
+                msg: "Вкладення для заміни не може бути видаленим, повтореним або недоступним."
+                    .to_string(),
+            });
+        }
+    }
+    for rename in &updates.renames {
+        let id = parse_attachment_media_id(&rename.media_id).c(h!())?;
+        let media = existing_media
+            .iter()
+            .find(|media| media.id == id)
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
+        if !ids.insert(id) {
+            return Err(AppError::BL {
+                msg: "Вкладення не можуть повторюватися.".to_string(),
+            });
+        }
+        validate_file_name(&rename.file_name).c(h!())?;
+        if media.file_ext.as_deref().map(str::to_ascii_lowercase)
+            != file_extension(&rename.file_name).map(str::to_ascii_lowercase)
+        {
+            return Err(AppError::BL {
+                msg: "Розширення файлу змінювати не можна.".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn parse_attachment_media_id(media_id: &str) -> Result<Uuid, AppError> {
+    Uuid::parse_str(media_id).map_err(|_| AppError::NotFound)
+}
+
+fn validate_file_name(file_name: &str) -> Result<(), AppError> {
+    let file_name = file_name.trim();
+    if file_name.is_empty()
+        || file_name.chars().any(|ch| {
+            ch.is_control()
+                || matches!(
+                    ch,
+                    '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+                )
+        })
+    {
+        return Err(AppError::BL {
+            msg: "Назва файлу містить неприпустимі символи.".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn file_extension(file_name: &str) -> Option<&str> {
+    std::path::Path::new(file_name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .filter(|extension| !extension.is_empty())
 }
 
 fn validate_signal_group_master_key(
@@ -995,6 +1150,20 @@ async fn persist_direct_submit_item(
     Ok(submitted)
 }
 
+async fn cleanup_replacement_uploads(
+    env: &Env,
+    replacements: &[crate::messenger::media::ReplacementMediaResult],
+) {
+    let mut uploads = vec![];
+    for replacement in replacements {
+        replacement
+            .cleanup_after_rollback(&env.config, &env.s3)
+            .await;
+        uploads.extend(replacement.uploaded_files_ready_after_discard());
+    }
+    crate::messenger::media::delete_uploaded_attachment_files(&uploads).await;
+}
+
 async fn finish_direct_submit(
     env: &Env,
     txn: DatabaseTransaction,
@@ -1003,13 +1172,16 @@ async fn finish_direct_submit(
     logins: &[uuid::Uuid],
     device_name_id: Option<i64>,
     uploads: &[MediaUploadInput],
+    attachment_updates: &DirectSubmitAttachmentUpdates,
+    replacement_uploads: &[MediaUploadInput],
+    existing_media: &[crate::entities::signal_message_media::Model],
     media_to_delete: &[crate::entities::signal_message_media::Model],
     delete_uploaded_attachments: bool,
     parent_signal_message_ids: &[i64],
     copy_source_signal_message_ids: &[i64],
     payload: &DirectSubmitPayload,
     is_intelligence_report: bool,
-    schedule_media_conversion: bool,
+    is_new_message: bool,
 ) -> Result<DirectSubmitRsp, AppError> {
     let signal_message_id = submitted.signal_message_id;
     let inbox_item_id = submitted.inbox_id;
@@ -1039,110 +1211,237 @@ async fn finish_direct_submit(
     .await
     .c(h!())?;
 
-    if schedule_media_conversion {
-        crate::sigint::media_conversion::schedule_uploaded_media(
-            &txn,
-            signal_message_id,
-            &upload_result.media,
-            &upload_result.stored_uploads,
-        )
-        .await
+    let replacement_old_media = attachment_updates
+        .replacements
+        .iter()
+        .map(|replacement| {
+            let id =
+                parse_attachment_media_id(&replacement.media_id).c(h!())?;
+            existing_media
+                .iter()
+                .find(|media| media.id == id)
+                .cloned()
+                .ok_or(AppError::NotFound)
+        })
+        .collect::<Result<Vec<_>, AppError>>()
         .c(h!())?;
-    }
-
-    let media_to_delete_ids = media_to_delete
+    let replacement_media_ids = replacement_old_media
         .iter()
         .map(|media| media.id)
         .collect::<Vec<_>>();
-    let ocr_result_keys =
-        crate::ocr::load_result_keys(&txn, &media_to_delete_ids)
+    let replacement_ocr_result_keys =
+        crate::ocr::load_result_keys(&txn, &replacement_media_ids)
             .await
             .c(h!())?;
-    let converted_result_keys =
+    let replacement_converted_result_keys =
+        crate::sigint::media_conversion::lock_and_load_converted_storage_keys(
+            &txn,
+            &replacement_media_ids,
+        )
+        .await
+        .c(h!())?;
+    let mut replacement_results = Vec::new();
+    for (replacement, upload) in attachment_updates
+        .replacements
+        .iter()
+        .zip(replacement_uploads)
+    {
+        let id = parse_attachment_media_id(&replacement.media_id).c(h!())?;
+        let existing = existing_media
+            .iter()
+            .find(|media| media.id == id)
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
+        match crate::messenger::media::replace_media_attachment(
+            upload,
+            existing,
+            &env.config,
+            &env.s3,
+            &txn,
+            deletion,
+        )
+        .await
+        .c(h!())
+        {
+            Ok(result) => replacement_results.push(result),
+            Err(err) => {
+                cleanup_replacement_uploads(env, &replacement_results).await;
+                return Err(err.into());
+            }
+        }
+    }
+
+    let precommit_result = async {
+        if !is_new_message {
+            for rename in &attachment_updates.renames {
+                let id = parse_attachment_media_id(&rename.media_id).c(h!())?;
+                crate::entities::signal_message_media::ActiveModel {
+                    id: Set(id),
+                    file_name: Set(Some(rename.file_name.trim().to_string())),
+                    ..Default::default()
+                }
+                .update(&txn)
+                .await
+                .c(h!())?;
+            }
+        }
+
+        if is_new_message {
+            let mut scheduled_media = upload_result.media.clone();
+            scheduled_media.extend(
+                replacement_results
+                    .iter()
+                    .map(|result| result.media.clone()),
+            );
+            let mut scheduled_uploads = upload_result.stored_uploads.clone();
+            scheduled_uploads.extend_from_slice(replacement_uploads);
+            crate::sigint::media_conversion::schedule_uploaded_media(
+                &txn,
+                signal_message_id,
+                &scheduled_media,
+                &scheduled_uploads,
+            )
+            .await
+            .c(h!())?;
+        }
+
+        let mut removed_media = media_to_delete.to_vec();
+        removed_media.extend(replacement_old_media);
+        let media_to_delete_ids = removed_media
+            .iter()
+            .map(|media| media.id)
+            .collect::<Vec<_>>();
+        let mut ocr_result_keys =
+            crate::ocr::load_result_keys(&txn, &media_to_delete_ids)
+                .await
+                .c(h!())?;
+        ocr_result_keys.extend(replacement_ocr_result_keys);
+        let mut converted_result_keys =
         crate::sigint::media_conversion::lock_and_load_converted_storage_keys(
             &txn,
             &media_to_delete_ids,
         )
         .await
         .c(h!())?;
+        converted_result_keys.extend(replacement_converted_result_keys);
 
-    if !media_to_delete.is_empty() {
-        crate::entities::signal_message_media::Entity::delete_many()
-            .filter(
-                crate::entities::signal_message_media::Column::Id
-                    .is_in(media_to_delete.iter().map(|media| media.id)),
-            )
-            .exec(&txn)
-            .await
-            .c(h!())?;
-    }
-    let media_to_delete_after_commit =
-        query::find_unreferenced_media(&txn, media_to_delete)
-            .await
-            .c(h!())?;
-
-    if !parent_signal_message_ids.is_empty() {
-        let source_media =
-            load_copy_media(&txn, copy_source_signal_message_ids, payload)
+        if !media_to_delete.is_empty() {
+            crate::entities::signal_message_media::Entity::delete_many()
+                .filter(
+                    crate::entities::signal_message_media::Column::Id
+                        .is_in(media_to_delete.iter().map(|media| media.id)),
+                )
+                .exec(&txn)
                 .await
                 .c(h!())?;
-        query::copy_signal_message_media(
-            &txn,
-            signal_message_id,
-            submitted.signal_message_uuid,
-            &source_media,
-        )
-        .await
-        .c(h!())?;
-        query::copy_signal_message_comments(
-            env,
-            &txn,
-            parent_signal_message_ids,
-            signal_message_id,
-            login,
-            logins,
-            payload.comment.as_deref(),
-        )
-        .await
-        .c(h!())?;
-        query::copy_signal_message_relations(
-            &txn,
-            parent_signal_message_ids,
-            inbox_item_id,
-            login,
-            payload,
-        )
-        .await
-        .c(h!())?;
-        query::insert_intel_product_links(
-            &txn,
-            signal_message_id,
-            submitted.signal_message_uuid,
-            parent_signal_message_ids,
-        )
-        .await
-        .c(h!())?;
-    }
+        }
+        let media_to_delete_after_commit =
+            query::find_unreferenced_media(&txn, &removed_media)
+                .await
+                .c(h!())?;
 
-    crate::transcriber::media_queue::reconcile_message(
-        &txn,
-        signal_message_id,
-        &media_to_delete
+        if !parent_signal_message_ids.is_empty() {
+            let mut source_media =
+                load_copy_media(&txn, copy_source_signal_message_ids, payload)
+                    .await
+                    .c(h!())?;
+            for rename in &attachment_updates.renames {
+                let id = parse_attachment_media_id(&rename.media_id).c(h!())?;
+                let media = source_media
+                    .iter_mut()
+                    .find(|media| media.id == id)
+                    .ok_or(AppError::NotFound)
+                    .c(h!())?;
+                validate_file_name(&rename.file_name).c(h!())?;
+                if media.file_ext.as_deref().map(str::to_ascii_lowercase)
+                    != file_extension(&rename.file_name)
+                        .map(str::to_ascii_lowercase)
+                {
+                    return Err(AppError::BL {
+                        msg: "Розширення файлу змінювати не можна.".to_string(),
+                    });
+                }
+                media.file_name = Some(rename.file_name.trim().to_string());
+            }
+            query::copy_signal_message_media(
+                &txn,
+                signal_message_id,
+                submitted.signal_message_uuid,
+                &source_media,
+            )
+            .await
+            .c(h!())?;
+            query::copy_signal_message_comments(
+                env,
+                &txn,
+                parent_signal_message_ids,
+                signal_message_id,
+                login,
+                logins,
+                payload.comment.as_deref(),
+            )
+            .await
+            .c(h!())?;
+            query::copy_signal_message_relations(
+                &txn,
+                parent_signal_message_ids,
+                inbox_item_id,
+                login,
+                payload,
+            )
+            .await
+            .c(h!())?;
+            query::insert_intel_product_links(
+                &txn,
+                signal_message_id,
+                submitted.signal_message_uuid,
+                parent_signal_message_ids,
+            )
+            .await
+            .c(h!())?;
+        }
+
+        let deleted_media_ids = media_to_delete
             .iter()
             .map(|media| media.id)
-            .collect::<Vec<_>>(),
-    )
-    .await
-    .c(h!())?;
+            .collect::<Vec<_>>();
+        crate::transcriber::media_queue::reconcile_message(
+            &txn,
+            signal_message_id,
+            &deleted_media_ids,
+        )
+        .await
+        .c(h!())?;
 
-    crate::sigint::worker::incoming_message_after_insert(
-        &txn,
-        signal_message_id,
-    )
-    .await
-    .c(h!())?;
+        crate::sigint::worker::incoming_message_after_insert(
+            &txn,
+            signal_message_id,
+        )
+        .await
+        .c(h!())?;
 
-    txn.commit().await.c(h!())?;
+        txn.commit().await.c(h!())?;
+        Ok((
+            media_to_delete_after_commit,
+            ocr_result_keys,
+            converted_result_keys,
+        ))
+    }
+    .await;
+    let (media_to_delete_after_commit, ocr_result_keys, converted_result_keys) =
+        match precommit_result {
+            Ok(result) => result,
+            Err(err) => {
+                cleanup_replacement_uploads(env, &replacement_results).await;
+                return Err(err);
+            }
+        };
+
+    for replacement in &replacement_results {
+        replacement
+            .finalize_after_commit(&env.config, &env.s3, &env.dbx)
+            .await;
+    }
 
     if delete_uploaded_attachments {
         crate::messenger::media::delete_uploaded_attachment_files(
@@ -1313,6 +1612,7 @@ mod tests {
             signal_group_master_key: Some(TEST_SIGNAL_GROUP_KEY.to_string()),
             device_name_id: None,
             upload_urls: None,
+            attachment_updates: None,
             deleted_media_ids: None,
             retained_media_ids: None,
             parent_signal_message_ids: vec![],
@@ -2168,6 +2468,93 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn report_copy_rename_keeps_source_media_immutable() {
+        let env = cleanup().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        let source = submit_signal_message(
+            &login_id,
+            &env,
+            direct_submit_payload("source body #3595"),
+        )
+        .await
+        .unwrap();
+        let source_media_id = Uuid::now_v7();
+        signal_message_media::ActiveModel {
+            id: Set(source_media_id),
+            signal_message_id: Set(source.signal_message_id),
+            signal_message_uuid: Set(
+                crate::sigint::message_id::find_signal_message_uuid(
+                    &env.dbx,
+                    source.signal_message_id,
+                )
+                .await
+                .unwrap(),
+            ),
+            content_type: Set("image/png".into()),
+            file_ext: Set(Some("png".into())),
+            file_name: Set(Some("source.png".into())),
+            size_bytes: Set(1),
+            is_encrypted: Set(false),
+            storage_key: NotSet,
+            created_at: Set(chrono::Utc::now().naive_utc()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let mut payload = direct_submit_payload("report body #3595");
+        payload.signal_group_master_key = None;
+        payload.parent_signal_message_ids = vec![source.signal_message_id];
+        payload.retained_media_ids = Some(vec![source_media_id.to_string()]);
+        payload.attachment_updates = Some(DirectSubmitAttachmentUpdates {
+            replacements: vec![],
+            renames: vec![crate::sigint::direct_submit::types::DirectSubmitAttachmentRename {
+                media_id: source_media_id.to_string(),
+                file_name: "report-name.png".to_string(),
+            }],
+        });
+        let mut duplicate_payload = payload.clone();
+        duplicate_payload
+            .attachment_updates
+            .as_mut()
+            .unwrap()
+            .renames
+            .push(crate::sigint::direct_submit::types::DirectSubmitAttachmentRename {
+                media_id: source_media_id.to_string(),
+                file_name: "duplicate-name.png".to_string(),
+            });
+        assert!(matches!(
+            submit_signal_message(&login_id, &env, duplicate_payload).await,
+            Err(AppError::BL { .. })
+        ));
+        let report = submit_signal_message(&login_id, &env, payload)
+            .await
+            .unwrap();
+
+        let source_media =
+            signal_message_media::Entity::find_by_id(source_media_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(source_media.file_name.as_deref(), Some("source.png"));
+        let report_media = signal_message_media::Entity::find()
+            .filter(
+                signal_message_media::Column::SignalMessageId
+                    .eq(report.signal_message_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_ne!(report_media.id, source_media_id);
+        assert_eq!(report_media.file_name.as_deref(), Some("report-name.png"));
     }
 
     #[tokio::test]

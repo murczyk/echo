@@ -39,6 +39,44 @@ pub struct StoreMediaAttachmentsResult {
     pub uploaded_files_ready_for_deletion: Vec<MediaUploadInput>,
 }
 
+pub struct ReplacementMediaResult {
+    pub media: signal_message_media::Model,
+    staged: StagedMediaAttachments,
+}
+
+impl ReplacementMediaResult {
+    pub async fn cleanup_after_rollback(
+        &self,
+        config: &Config,
+        s3: &Option<Operator>,
+    ) {
+        self.staged.cleanup_after_rollback(config, s3).await;
+    }
+
+    pub async fn finalize_after_commit(
+        &self,
+        config: &Config,
+        s3: &Option<Operator>,
+        dbx: &DatabaseConnection,
+    ) {
+        crate::messenger::media_cache::remove_cached_media_file_best_effort(
+            config,
+            self.media.id,
+        )
+        .await;
+        crate::messenger::media_thumbnail::remove_media_thumbnail_preview_best_effort(
+            config,
+            self.media.id,
+        )
+        .await;
+        self.staged.finalize_after_commit(config, s3, dbx).await;
+    }
+
+    pub fn uploaded_files_ready_after_discard(&self) -> Vec<MediaUploadInput> {
+        self.staged.uploaded_files_ready_after_discard()
+    }
+}
+
 struct StagedMediaAttachment {
     id: Uuid,
     content_type: String,
@@ -620,6 +658,7 @@ pub async fn stage_media_attachments(
             s3_config,
             &storage_config,
             deletion,
+            None,
         )
         .await
         {
@@ -641,6 +680,7 @@ async fn stage_media_attachment(
     s3_config: &crate::config::S3Config,
     storage_config: &storage::S3Config,
     deletion: UploadedAttachmentDeletion,
+    persisted_id: Option<Uuid>,
 ) -> Result<Option<StagedMediaAttachment>, AppError> {
     let source_lease = crate::sigint::file_upload::lock_uploaded_source(
         Path::new(&attachment.path),
@@ -673,16 +713,17 @@ async fn stage_media_attachment(
         attachment,
         prepared.probed_content_type,
     );
-    let id = Uuid::now_v7();
+    let storage_id = Uuid::now_v7();
+    let id = persisted_id.unwrap_or(storage_id);
     let file_ext = (!ext.is_empty()).then_some(ext);
     let file_name = fallback_file_name(
         attachment.name.as_deref(),
         Path::new(&attachment.path),
     );
     let storage_key = if prepared.is_encrypted {
-        storage::nested_object_key(&id)
+        storage::nested_object_key(&storage_id)
     } else {
-        storage::plaintext_media_object_key(&id)
+        storage::plaintext_media_object_key(&storage_id)
     };
     let is_video = is_video_metadata(
         &content_type,
@@ -742,6 +783,80 @@ async fn stage_media_attachment(
         retains_thumbnail_source,
         thumbnail_source_lease,
     }))
+}
+
+pub async fn replace_media_attachment(
+    attachment: &MediaUploadInput,
+    existing: &signal_message_media::Model,
+    config: &Config,
+    s3: &Option<Operator>,
+    txn: &impl ConnectionTrait,
+    deletion: UploadedAttachmentDeletion,
+) -> Result<ReplacementMediaResult, AppError> {
+    let s3_config = config
+        .s3_config
+        .as_ref()
+        .ok_or_else(|| AppError::BL {
+            msg: "Завантаження медіафайлів зараз недоступне.".to_string(),
+        })
+        .c(h!())?;
+    let storage_config = storage::S3Config::from(s3_config);
+    delete_local_media_files(std::slice::from_ref(existing), config).await;
+    let Some(staged) = stage_media_attachment(
+        attachment,
+        config,
+        s3,
+        s3_config,
+        &storage_config,
+        deletion,
+        Some(existing.id),
+    )
+    .await
+    .c(h!())?
+    else {
+        return Err(AppError::BL { msg: "Завантаження вкладення більше недоступне; завантажте його ще раз.".to_string() });
+    };
+    let staged = StagedMediaAttachments {
+        attachments_hash: None,
+        attachments: vec![staged],
+        input_count: 1,
+        skipped_missing: false,
+        deletion,
+    };
+    let attachment = &staged.attachments[0];
+    let result = async {
+        signal_message_media::Entity::delete_by_id(existing.id)
+            .exec(txn)
+            .await
+            .c(h!())?;
+        signal_message_media::ActiveModel {
+            id: Set(existing.id),
+            signal_message_id: Set(existing.signal_message_id),
+            signal_message_uuid: Set(existing.signal_message_uuid),
+            content_type: Set(attachment.content_type.clone()),
+            file_ext: Set(attachment.file_ext.clone()),
+            file_name: Set(attachment.file_name.clone()),
+            size_bytes: Set(attachment.size_bytes),
+            is_encrypted: Set(attachment.is_encrypted),
+            storage_key: Set(Some(attachment.storage_key.clone())),
+            created_at: Set(existing.created_at),
+        }
+        .insert(txn)
+        .await
+        .c(h!())
+    }
+    .await;
+    if result.is_err() {
+        staged.cleanup_after_rollback(config, s3).await;
+        delete_uploaded_attachment_files(
+            &staged.uploaded_files_ready_after_discard(),
+        )
+        .await;
+    }
+    Ok(ReplacementMediaResult {
+        media: result.c(h!())?,
+        staged,
+    })
 }
 
 pub async fn persist_staged_media(
@@ -1642,6 +1757,96 @@ mod tests {
 
         assert!(s3.as_ref().unwrap().stat(&remote_key).await.is_err());
         assert!(path.exists());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn replacement_preserves_media_id_and_created_at_in_database() {
+        let fixture = media_access_fixture(false).await;
+        let media_id = Uuid::now_v7();
+        let created_at = chrono::Utc::now().naive_utc();
+        let temporary = tempfile::tempdir().unwrap();
+        let upload = temporary.path().join("replacement.txt");
+        tokio::fs::write(&upload, b"replacement").await.unwrap();
+        let existing = signal_message_media::ActiveModel {
+            id: Set(media_id),
+            signal_message_id: Set(fixture.message_id),
+            signal_message_uuid: Set(None),
+            content_type: Set("text/plain".into()),
+            file_ext: Set(Some("txt".into())),
+            file_name: Set(Some("original.txt".into())),
+            size_bytes: Set(11),
+            is_encrypted: Set(false),
+            storage_key: Set(Some("old-storage-key".into())),
+            created_at: Set(created_at),
+        }
+        .insert(&fixture.env.dbx)
+        .await
+        .unwrap();
+        let mut config = fixture.env.config.clone();
+        config.storage_dir = temporary.path().display().to_string();
+        config.s3_config = Some(crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        });
+        let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        let cache_path =
+            crate::messenger::media_cache::media_cache_path(&config, media_id);
+        let thumbnail_path =
+            crate::messenger::media_thumbnail::media_thumbnail_path(
+                &config, media_id,
+            );
+        tokio::fs::create_dir_all(cache_path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(thumbnail_path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&cache_path, b"old-content").await.unwrap();
+        tokio::fs::write(&thumbnail_path, [0xff, 0xd8, 0xff, 0xd9])
+            .await
+            .unwrap();
+        let txn = fixture.env.dbx.begin().await.unwrap();
+        let replacement = replace_media_attachment(
+            &MediaUploadInput {
+                path: upload.display().to_string(),
+                name: Some("replacement.txt".into()),
+                content_type: Some("text/plain".into()),
+            },
+            &existing,
+            &config,
+            &s3,
+            &txn,
+            UploadedAttachmentDeletion::Preserve,
+        )
+        .await
+        .unwrap();
+        assert!(!cache_path.exists());
+        assert!(!thumbnail_path.exists());
+        tokio::fs::write(&cache_path, b"old-content").await.unwrap();
+        tokio::fs::write(&thumbnail_path, [0xff, 0xd8, 0xff, 0xd9])
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+
+        let stored = signal_message_media::Entity::find_by_id(media_id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(replacement.media.id, media_id);
+        assert_eq!(stored.id, media_id);
+        assert_eq!(stored.created_at, existing.created_at);
+        assert_ne!(stored.storage_key.as_deref(), Some("old-storage-key"));
+        replacement
+            .finalize_after_commit(&config, &s3, &fixture.env.dbx)
+            .await;
+        assert!(!cache_path.exists());
+        assert!(!thumbnail_path.exists());
     }
 
     #[tokio::test]
