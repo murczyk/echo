@@ -13,7 +13,7 @@ They come from reviewers marking mentions and locations in Admin → ШІ → П
     crew callsigns as positions: settlement rules and hints, crew callsigns,
     and dedup of inflected repeats. 16 of 16 on the extended set.
   - plus excluding generic objects («дамба», «міст»): 16 of 17. #16, a crew's
-    quoted callsigns, came back as ; it is genuinely ambiguous.
+    quoted callsigns, came back as `crew`; it is genuinely ambiguous.
 
   Of the two reviewed real cases in `raw/`, «Молния» (a UAV) and «МАГАТЭ»
   (missed), 1 passed with the old prompt and 2 with the revised one.
