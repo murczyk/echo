@@ -21,6 +21,10 @@ async function selectCsv(page: Page, name: string, contents: string) {
 test('@regression #3650 historical CSV import requires preflight', async ({ page }) => {
   let preflightRequests = 0;
   const importUrls: URL[] = [];
+  let releaseTaskStatus = () => {};
+  const taskStatusGate = new Promise<void>((resolve) => {
+    releaseTaskStatus = () => resolve();
+  });
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     if (!['fetch', 'xhr'].includes(request.resourceType())) {
@@ -69,6 +73,7 @@ test('@regression #3650 historical CSV import requires preflight', async ({ page
       return;
     }
     if (url.pathname === '/api/bgtask/3650/status-and-logs') {
+      await taskStatusGate;
       await fulfillJson(route, {
         running: false,
         loglines: [],
@@ -121,5 +126,8 @@ test('@regression #3650 historical CSV import requires preflight', async ({ page
   await expect(importButton).toBeEnabled();
   await importButton.click();
   await expect.poll(() => importUrls.length).toBe(1);
+  await expect(importButton).toBeDisabled();
   expect(importUrls[0]!.searchParams.get('isHistorical')).toBe('true');
+  releaseTaskStatus();
+  await expect(importButton).toBeEnabled();
 });

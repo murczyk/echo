@@ -164,7 +164,7 @@ update msg model =
             )
 
         ImportDone (Ok taskId) ->
-            ( { model | importSubmitting = False }
+            ( model
             , E.sendCmd <| Task.perform (always (ConsoleMsg (Shared.Components.Console.TaskLaunched taskId))) (Process.sleep 0)
             )
 
@@ -172,7 +172,12 @@ update msg model =
             Shared.Components.Console.update
                 { msg = imsg
                 , model = model.console
-                , toModel = \console -> { model | console = console }
+                , toModel =
+                    \console ->
+                        { model
+                            | importSubmitting = False
+                            , console = console
+                        }
                 , toMsg = ConsoleMsg
                 , finalizer = E.none
                 }

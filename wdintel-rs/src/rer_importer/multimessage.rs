@@ -39,10 +39,23 @@ pub async fn spawn_multiple_messages<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let lnow = Local::now().with_timezone(&crate::config::get_tz());
+    Ok(spawn_multiple_messages_at(txn, message, body, lnow)
+        .await
+        .c(h!())?)
+}
+
+pub(crate) async fn spawn_multiple_messages_at<'a, 'async_trait, C>(
+    txn: &'a C,
+    message: &signal_message::Model,
+    body: &str,
+    lnow: DateTime<Tz>,
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let mut models = vec![];
     let is_src_valid = check_message_length_is_valid(body);
-    let tz = crate::config::get_tz();
-    let lnow = Local::now().with_timezone(&tz);
     let new_messages: Vec<String> = slice_message(lnow, body);
     if new_messages.len() == 1 && is_src_valid {
         return Ok(models);

@@ -19,6 +19,18 @@ pub struct ConstructInboxItemResult {
     pub changed_inbox_item_id: Option<i64>,
 }
 
+#[derive(Clone)]
+pub(crate) enum InboxDatetimeOverride {
+    Fields {
+        date: String,
+        time: String,
+    },
+    Historical {
+        datetime: NaiveDateTime,
+        reference_time: DateTime<Tz>,
+    },
+}
+
 impl ConstructInboxItemResult {
     fn spawned(spawned_message_ids: Vec<i64>) -> Self {
         Self {
@@ -61,6 +73,33 @@ pub async fn construct_inbox_item<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let datetime_override = m_created_at
+        .map(|(date, time)| InboxDatetimeOverride::Fields { date, time });
+    Ok(construct_inbox_item_with_datetime(
+        settlements,
+        txn,
+        rq,
+        config,
+        message_id,
+        cache,
+        datetime_override,
+    )
+    .await
+    .c(h!())?)
+}
+
+pub(crate) async fn construct_inbox_item_with_datetime<'a, 'async_trait, C>(
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    txn: &'a C,
+    rq: &reqwest::Client,
+    config: &Config,
+    message_id: i64,
+    cache: &mut TopKCache<String, String>,
+    datetime_override: Option<InboxDatetimeOverride>,
+) -> Result<ConstructInboxItemResult, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let message = signal_message::Entity::find_by_id(message_id)
         .filter(signal_message::Column::Deleted.eq(false))
         .one(txn)
@@ -83,12 +122,25 @@ where
 
     let body = message.body.clone().unwrap_or("".to_string());
     if crate::rer_importer::multimessage::should_try_split_message(&body) {
-        let spawned =
-            crate::rer_importer::multimessage::spawn_multiple_messages(
+        let spawned = match datetime_override.as_ref() {
+            Some(InboxDatetimeOverride::Historical {
+                reference_time, ..
+            }) => {
+                crate::rer_importer::multimessage::spawn_multiple_messages_at(
+                    txn,
+                    &message,
+                    &body,
+                    *reference_time,
+                )
+                .await
+                .c(h!())?
+            }
+            _ => crate::rer_importer::multimessage::spawn_multiple_messages(
                 txn, &message, &body,
             )
             .await
-            .c(h!())?;
+            .c(h!())?,
+        };
         if !spawned.is_empty() {
             return Ok(ConstructInboxItemResult::spawned(spawned));
         }
@@ -257,13 +309,30 @@ where
         None => (None, None),
     };
 
-    let (date_v, time_v) = match m_created_at {
-        None => (default_date_v, default_time_v),
-        Some((d, t)) => (Some(d), Some(t)),
-    };
-    let datetime =
-        datetime::from_date_time_text(date_v.as_deref(), time_v.as_deref())
+    let (date_v, time_v, datetime) = match datetime_override {
+        Some(InboxDatetimeOverride::Historical { datetime, .. }) => {
+            let (date, time) = format_date_time_fields(datetime);
+            (Some(date), Some(time), Some(datetime))
+        }
+        Some(InboxDatetimeOverride::Fields { date, time }) => {
+            let date_v = Some(date);
+            let time_v = Some(time);
+            let datetime = datetime::from_date_time_text(
+                date_v.as_deref(),
+                time_v.as_deref(),
+            )
             .c(h!())?;
+            (date_v, time_v, datetime)
+        }
+        None => {
+            let datetime = datetime::from_date_time_text(
+                default_date_v.as_deref(),
+                default_time_v.as_deref(),
+            )
+            .c(h!())?;
+            (default_date_v, default_time_v, datetime)
+        }
+    };
 
     if existing_inbox_item {
         crate::rer_importer::inbox::prepare_message_network_activity_change(
