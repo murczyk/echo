@@ -5,12 +5,13 @@ use super::normalize::{ground, position_key};
 use super::types::{AiPositionCoordinateItem, AiPositionFound, AiPositionSpan};
 use crate::ai_engine::{request_structured_ai_response, AiEngineMessage};
 use crate::config::{
-    AI_CHAT_ROLE_SYSTEM, AI_CHAT_ROLE_USER,
+    AI_CHAT_ROLE_ASSISTANT, AI_CHAT_ROLE_SYSTEM, AI_CHAT_ROLE_USER,
     AI_POSITION_COORDINATE_MATCH_METERS, AI_POSITION_COORDINATE_MAX_CHARS,
     AI_POSITION_COORDINATE_NEAR_CHARS, AI_POSITION_EVIDENCE_MAX_CHARS,
-    AI_POSITION_MAX_COORDINATES, AI_POSITION_MAX_POSITIONS,
+    AI_POSITION_KINDS, AI_POSITION_MAX_COORDINATES, AI_POSITION_MAX_POSITIONS,
     AI_POSITION_NAME_MAX_CHARS, AI_POSITION_OUTPUT_TOKENS,
-    AI_POSITION_SOURCE_MAX_CHARS, AI_POSITION_TEMPERATURE,
+    AI_POSITION_REPAIR_PROMPT, AI_POSITION_SOURCE_MAX_CHARS,
+    AI_POSITION_TEMPERATURE,
 };
 use crate::entities::ai_engine;
 use crate::h;
@@ -30,8 +31,14 @@ struct ModelResponse {
 #[derive(Debug, Deserialize)]
 struct ModelPosition {
     name: String,
+    #[serde(default = "default_kind")]
+    kind: String,
     #[serde(default)]
     coordinates: Vec<ModelCoordinate>,
+}
+
+fn default_kind() -> String {
+    "position".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,8 +63,7 @@ pub(crate) async fn extract(
 ) -> anyhow::Result<Extraction> {
     let text: String =
         text.chars().take(AI_POSITION_SOURCE_MAX_CHARS).collect();
-    let response = request_structured_ai_response(
-        engine,
+    let base = || {
         vec![
             AiEngineMessage {
                 role: AI_CHAT_ROLE_SYSTEM.to_string(),
@@ -67,17 +73,29 @@ pub(crate) async fn extract(
                 role: AI_CHAT_ROLE_USER.to_string(),
                 content: text.clone(),
             },
-        ],
-        AI_POSITION_TEMPERATURE,
-        AI_POSITION_OUTPUT_TOKENS,
-        response_format(),
-    )
-    .await
-    .c(h!())?;
-    let parsed: ModelResponse =
-        serde_json::from_str(strip_code_fence(&response.content))
-            .c(h!())
-            .with_context(|| format!("відповідь ШІ: {}", response.content))?;
+        ]
+    };
+    let mut response = request(engine, base()).await.c(h!())?;
+    let parsed = match parse_response(&response.content) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            // Small models sometimes break the JSON (e.g. an empty
+            // coordinate value); one repair request usually fixes it.
+            let mut messages = base();
+            messages.push(AiEngineMessage {
+                role: AI_CHAT_ROLE_ASSISTANT.to_string(),
+                content: response.content.clone(),
+            });
+            messages.push(AiEngineMessage {
+                role: AI_CHAT_ROLE_USER.to_string(),
+                content: AI_POSITION_REPAIR_PROMPT.to_string(),
+            });
+            response = request(engine, messages).await.c(h!())?;
+            parse_response(&response.content).with_context(|| {
+                format!("відповідь ШІ: {}", response.content)
+            })?
+        }
+    };
     let positions = ground_positions(&text, parsed).await;
     Ok(Extraction {
         positions,
@@ -89,6 +107,25 @@ pub(crate) async fn extract(
 }
 
 use anyhow::Context as _;
+
+async fn request(
+    engine: &ai_engine::Model,
+    messages: Vec<AiEngineMessage>,
+) -> anyhow::Result<crate::ai_engine::AiEngineResponse> {
+    request_structured_ai_response(
+        engine,
+        messages,
+        AI_POSITION_TEMPERATURE,
+        AI_POSITION_OUTPUT_TOKENS,
+        response_format(),
+    )
+    .await
+    .c(h!())
+}
+
+fn parse_response(content: &str) -> anyhow::Result<ModelResponse> {
+    serde_json::from_str(strip_code_fence(content)).c(h!())
+}
 
 fn strip_code_fence(text: &str) -> &str {
     let text = text.trim();
@@ -116,8 +153,9 @@ fn response_format() -> Value {
                         "items": {
                             "type": "object",
                             "additionalProperties": false,
-                            "required": ["name", "coordinates"],
+                            "required": ["name", "kind", "coordinates"],
                             "properties": {
+                                "kind": { "type": "string", "enum": AI_POSITION_KINDS },
                                 "name": {
                                     "type": "string",
                                     "minLength": 1,
@@ -189,9 +227,15 @@ async fn ground_positions(
                 }
             }
         }
+        let kind = if AI_POSITION_KINDS.contains(&position.kind.as_str()) {
+            position.kind.clone()
+        } else {
+            "position".to_string()
+        };
         found.push(AiPositionFound {
             name: name.to_string(),
             name_key,
+            kind,
             spans: spans
                 .into_iter()
                 .map(|(begin, end)| AiPositionSpan {

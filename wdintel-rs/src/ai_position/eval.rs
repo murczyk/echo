@@ -25,6 +25,9 @@ pub struct FeedbackCase {
     pub comment: String,
     pub name: String,
     pub name_key: String,
+    /// `position`, `crew` or `callsign`, as reviewed.
+    #[serde(default)]
+    pub kind: Option<String>,
     /// `message`, `document` or `knowledge`.
     pub source_kind: String,
     pub text: Option<String>,
@@ -80,6 +83,7 @@ pub async fn export_feedback(
             comment: row.comment.clone(),
             name: row.name.clone(),
             name_key: row.name_key.clone(),
+            kind: row.kind.clone(),
             source_kind: match (&row.target_kind[..], row.sigint_inbox_item_id)
             {
                 ("knowledge", _) => "knowledge",
@@ -250,9 +254,18 @@ async fn evaluate_case(
                     .iter()
                     .any(|found| &found.0 == mgrs)
             });
+            let kind = extraction
+                .positions
+                .iter()
+                .find(|position| position.name_key == case.name_key)
+                .map(|position| position.kind.as_str());
+            let kind_ok = case.kind.is_none() || kind == case.kind.as_deref();
             (
-                has(&case.name_key) && kept,
-                "expected the position and its coordinates".to_string(),
+                has(&case.name_key) && kept && kind_ok,
+                format!(
+                    "expected «{}» ({:?}) with its coordinates, found kind {kind:?}",
+                    case.name, case.kind
+                ),
             )
         }
         "not_position" => (
@@ -293,6 +306,17 @@ async fn evaluate_case(
                     "wrong coordinates {snapshot_mgrs:?}, expected «{}»",
                     case.expected
                 ),
+            )
+        }
+        "wrong_kind" => {
+            let kind = extraction
+                .positions
+                .iter()
+                .find(|position| position.name_key == case.name_key)
+                .map(|position| position.kind.clone());
+            (
+                kind.as_deref() == Some(case.expected.trim()),
+                format!("expected kind {}, found {kind:?}", case.expected),
             )
         }
         "missed" => {

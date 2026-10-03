@@ -23,6 +23,7 @@ import {
   inboxMessagesRequestBody,
   interceptionContextRequestBody,
   messagesByIdRequestBody,
+  positionLookupRequestBody,
   normalizedToolLifecycleEvent,
   runnerHello,
   sourceEvent,
@@ -984,7 +985,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.10.01.6",
+    harnessRelease: "2026.10.03.1",
   });
 });
 
@@ -1633,4 +1634,23 @@ test("#3064 failed map edits and count mismatches are stated in the answer", () 
   assert.equal(mapOutcomeNotices(registry, false).failedEdit, null);
   registry.outcome.editSuccesses = 1;
   assert.equal(mapOutcomeNotices(registry, true).failedEdit, null);
+});
+
+test("position lookup takes a name and/or coordinates with bounded options", () => {
+  assert.deepEqual(positionLookupRequestBody({ name: " Циркон 9 ", radiusMeters: 500 }), {
+    name: "Циркон 9",
+    coordinates: null,
+    radiusMeters: 500,
+    days: null,
+    kind: null,
+    limit: null,
+  });
+  assert.equal(
+    (positionLookupRequestBody({ coordinates: "36T XT 75734 68963", kind: "crew", days: 7 }) as any).kind,
+    "crew",
+  );
+  assert.throws(() => positionLookupRequestBody({}), /name, coordinates/);
+  assert.throws(() => positionLookupRequestBody({ name: "x", kind: "uav" }), /kind/);
+  assert.throws(() => positionLookupRequestBody({ name: "x", radiusMeters: 1e9 }), /radiusMeters/);
+  assert.throws(() => positionLookupRequestBody({ name: "x", body: {} }), /unsupported/);
 });

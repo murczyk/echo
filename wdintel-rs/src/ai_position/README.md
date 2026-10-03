@@ -2,7 +2,21 @@
 
 Finds named positions («Циркон 9», «ЦИРКОН-9», «ОП Лиман») in messages and
 document summaries, highlights them in message cards, and records the
-coordinates a text ties to a position.
+coordinates a text ties to a position. Each name has a kind:
+
+- `position`: a post, observation point or code-named landmark;
+- `crew`: a crew or group tied to a place («розрахунок … ймовірно Рикки»);
+- `callsign`: a callsign, kept only when the text places it.
+
+UAV, munition and equipment names («Молния», «Ланцет») are excluded by the
+prompt. A located crew or callsign that overlaps a callsign token in a
+message card keeps the callsign pill and its hint, and adds a location
+marker.
+
+Keys ignore a leading post type («ОП Лиман-2» = «Лиман-2»). Names reviewers
+marked «не позиція» are excluded everywhere: the mark deletes their mentions
+at once, and the worker, linking and knowledge skip them. Deleting the mark
+and reparsing brings them back.
 
 ## What is stored
 
@@ -75,6 +89,22 @@ knowledge of private groups the admin cannot read.
 
 Changing a group's AORs, or deleting or restoring an AOR, recomputes the
 affected positions in the old and new AORs.
+
+## Lookup API
+
+`POST /api/positions/lookup` searches by `name`, by `coordinates` (MGRS, SK-42,
+lat,lng) with `radiusMeters`, or both, over the last `days` (default 30). It
+returns three tiers, all limited to the caller's groups:
+
+1. `known`: consolidated locations (knowledge built only from groups the
+   caller can read);
+2. `located`: mentions with coordinates;
+3. `other`: mentions without coordinates, for context. With coordinates only,
+   these are other mentions of the nearby known positions.
+
+The AI agent uses it as `echo_position_lookup` (route `position_lookup`,
+harness `2026.10.03.1` or later). The admin lists accept the same `near`
+(«<coordinates>|<metres>») and `from`/`to` (dates) filters, plus `kind`.
 
 ## Feedback and evaluation
 

@@ -23,7 +23,14 @@ export const VERDICT_LABELS: Record<string, string> = {
   wrong_name: 'неправильна назва',
   wrong_coordinates: 'неправильні координати',
   missed: 'пропущено позиції',
+  wrong_kind: 'неправильний тип',
   other: 'інше',
+};
+
+export const KIND_LABELS: Record<string, string> = {
+  position: 'позиція',
+  crew: 'розрахунок',
+  callsign: 'позивний',
 };
 
 /** What the reviewer is asked to fill in as «expected» for each verdict. */
@@ -33,6 +40,7 @@ const EXPECTED_HINTS: Record<string, string> = {
   wrong_name: 'Правильна назва позиції',
   wrong_coordinates: 'Правильні координати (якщо відомі)',
   missed: 'Пропущені позиції, через кому',
+  wrong_kind: '',
   other: 'Як має бути',
 };
 
@@ -41,6 +49,7 @@ const MENTION_VERDICTS = [
   'wrong_name',
   'wrong_coordinates',
   'missed',
+  'wrong_kind',
   'correct',
   'other',
 ];
@@ -108,6 +117,20 @@ export function FeedbackDialog({
               </MenuItem>
             ))}
           </TextField>
+          {verdict === 'wrong_kind' ? (
+            <TextField
+              select
+              label="Правильний тип"
+              value={expected}
+              onChange={(event) => setExpected(event.target.value)}
+            >
+              {Object.entries(KIND_LABELS).map(([value, label]) => (
+                <MenuItem key={value} value={value}>
+                  {label}
+                </MenuItem>
+              ))}
+            </TextField>
+          ) : null}
           {EXPECTED_HINTS[verdict] ? (
             <TextField
               label={EXPECTED_HINTS[verdict]}

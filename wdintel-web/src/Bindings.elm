@@ -4174,6 +4174,8 @@ type alias CnPosition =
     , knownMgrs : Maybe (String)
     , knownAt : Maybe (Int)
     , knownConflicting : Bool
+    , kind : String
+    , callsign : Maybe (String)
     }
 
 
@@ -4188,6 +4190,8 @@ cnPositionEncoder struct =
         , ( "known_mgrs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.knownMgrs )
         , ( "known_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.knownAt )
         , ( "known_conflicting", (Json.Encode.bool) struct.knownConflicting )
+        , ( "kind", (Json.Encode.string) struct.kind )
+        , ( "callsign", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.callsign )
         ]
 
 
@@ -14780,6 +14784,7 @@ aiPositionSpanEncoder struct =
 type alias AiPositionFound =
     { name : String
     , nameKey : String
+    , kind : String
     , spans : List (AiPositionSpan)
     , coordinates : List (AiPositionCoordinateItem)
     }
@@ -14790,6 +14795,7 @@ aiPositionFoundEncoder struct =
     Json.Encode.object
         [ ( "name", (Json.Encode.string) struct.name )
         , ( "nameKey", (Json.Encode.string) struct.nameKey )
+        , ( "kind", (Json.Encode.string) struct.kind )
         , ( "spans", (Json.Encode.list (aiPositionSpanEncoder)) struct.spans )
         , ( "coordinates", (Json.Encode.list (aiPositionCoordinateItemEncoder)) struct.coordinates )
         ]
@@ -14900,6 +14906,7 @@ type alias AiPositionMentionItem =
     , mediaName : Maybe (String)
     , name : String
     , nameKey : String
+    , kind : String
     , contextBefore : String
     , contextMatch : String
     , contextAfter : String
@@ -14922,6 +14929,7 @@ aiPositionMentionItemEncoder struct =
         , ( "mediaName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mediaName )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "nameKey", (Json.Encode.string) struct.nameKey )
+        , ( "kind", (Json.Encode.string) struct.kind )
         , ( "contextBefore", (Json.Encode.string) struct.contextBefore )
         , ( "contextMatch", (Json.Encode.string) struct.contextMatch )
         , ( "contextAfter", (Json.Encode.string) struct.contextAfter )
@@ -14973,6 +14981,7 @@ type alias AiPositionKnowledgeItem =
     , scopeIsSecret : Bool
     , name : String
     , nameKey : String
+    , kind : String
     , mgrs : String
     , lat : Float
     , lng : Float
@@ -14995,6 +15004,7 @@ aiPositionKnowledgeItemEncoder struct =
         , ( "scopeIsSecret", (Json.Encode.bool) struct.scopeIsSecret )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "nameKey", (Json.Encode.string) struct.nameKey )
+        , ( "kind", (Json.Encode.string) struct.kind )
         , ( "mgrs", (Json.Encode.string) struct.mgrs )
         , ( "lat", (Json.Encode.float) struct.lat )
         , ( "lng", (Json.Encode.float) struct.lng )
@@ -15100,6 +15110,104 @@ aiPositionReparseRspEncoder : AiPositionReparseRsp -> Json.Encode.Value
 aiPositionReparseRspEncoder struct =
     Json.Encode.object
         [ ( "queued", (Json.Encode.int) struct.queued )
+        ]
+
+
+type alias AiPositionLookupReq =
+    { name : Maybe (String)
+    , coordinates : Maybe (String)
+    , radiusMeters : Maybe (Float)
+    , days : Maybe (Int)
+    , kind : Maybe (String)
+    , limit : Maybe (Int)
+    }
+
+
+aiPositionLookupReqEncoder : AiPositionLookupReq -> Json.Encode.Value
+aiPositionLookupReqEncoder struct =
+    Json.Encode.object
+        [ ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
+        , ( "coordinates", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.coordinates )
+        , ( "radiusMeters", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.radiusMeters )
+        , ( "days", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.days )
+        , ( "kind", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.kind )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        ]
+
+
+type alias AiPositionLookupKnown =
+    { name : String
+    , kind : String
+    , mgrs : String
+    , lat : Float
+    , lng : Float
+    , certainty : String
+    , conflicting : Bool
+    , factCount : Int
+    , firstFactAt : String
+    , lastFactAt : String
+    , scope : String
+    }
+
+
+aiPositionLookupKnownEncoder : AiPositionLookupKnown -> Json.Encode.Value
+aiPositionLookupKnownEncoder struct =
+    Json.Encode.object
+        [ ( "name", (Json.Encode.string) struct.name )
+        , ( "kind", (Json.Encode.string) struct.kind )
+        , ( "mgrs", (Json.Encode.string) struct.mgrs )
+        , ( "lat", (Json.Encode.float) struct.lat )
+        , ( "lng", (Json.Encode.float) struct.lng )
+        , ( "certainty", (Json.Encode.string) struct.certainty )
+        , ( "conflicting", (Json.Encode.bool) struct.conflicting )
+        , ( "factCount", (Json.Encode.int) struct.factCount )
+        , ( "firstFactAt", (Json.Encode.string) struct.firstFactAt )
+        , ( "lastFactAt", (Json.Encode.string) struct.lastFactAt )
+        , ( "scope", (Json.Encode.string) struct.scope )
+        ]
+
+
+type alias AiPositionLookupMention =
+    { messageId : Maybe (Int)
+    , messageUuid : Maybe (String)
+    , source : String
+    , at : String
+    , name : String
+    , kind : String
+    , coordinates : List (String)
+    , context : String
+    }
+
+
+aiPositionLookupMentionEncoder : AiPositionLookupMention -> Json.Encode.Value
+aiPositionLookupMentionEncoder struct =
+    Json.Encode.object
+        [ ( "messageId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.messageId )
+        , ( "messageUuid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUuid )
+        , ( "source", (Json.Encode.string) struct.source )
+        , ( "at", (Json.Encode.string) struct.at )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "kind", (Json.Encode.string) struct.kind )
+        , ( "coordinates", (Json.Encode.list (Json.Encode.string)) struct.coordinates )
+        , ( "context", (Json.Encode.string) struct.context )
+        ]
+
+
+type alias AiPositionLookupRsp =
+    { known : List (AiPositionLookupKnown)
+    , located : List (AiPositionLookupMention)
+    , other : List (AiPositionLookupMention)
+    , note : String
+    }
+
+
+aiPositionLookupRspEncoder : AiPositionLookupRsp -> Json.Encode.Value
+aiPositionLookupRspEncoder struct =
+    Json.Encode.object
+        [ ( "known", (Json.Encode.list (aiPositionLookupKnownEncoder)) struct.known )
+        , ( "located", (Json.Encode.list (aiPositionLookupMentionEncoder)) struct.located )
+        , ( "other", (Json.Encode.list (aiPositionLookupMentionEncoder)) struct.other )
+        , ( "note", (Json.Encode.string) struct.note )
         ]
 
 
@@ -18507,6 +18615,8 @@ cnPositionDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_mgrs" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_conflicting" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" (Json.Decode.nullable (Json.Decode.string))))
 
 
 contentNodeDecoder : Json.Decode.Decoder ContentNode
@@ -25210,6 +25320,7 @@ aiPositionFoundDecoder =
     Json.Decode.succeed AiPositionFound
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nameKey" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "spans" (Json.Decode.list (aiPositionSpanDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinates" (Json.Decode.list (aiPositionCoordinateItemDecoder))))
 
@@ -25273,6 +25384,7 @@ aiPositionMentionItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaName" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nameKey" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "contextBefore" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "contextMatch" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "contextAfter" (Json.Decode.string)))
@@ -25309,6 +25421,7 @@ aiPositionKnowledgeItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scopeIsSecret" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nameKey" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mgrs" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" (Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lng" (Json.Decode.float)))
@@ -25366,6 +25479,55 @@ aiPositionReparseRspDecoder : Json.Decode.Decoder AiPositionReparseRsp
 aiPositionReparseRspDecoder =
     Json.Decode.succeed AiPositionReparseRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "queued" (Json.Decode.int)))
+
+
+aiPositionLookupReqDecoder : Json.Decode.Decoder AiPositionLookupReq
+aiPositionLookupReqDecoder =
+    Json.Decode.succeed AiPositionLookupReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinates" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radiusMeters" (Json.Decode.nullable (Json.Decode.float))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "days" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+
+
+aiPositionLookupKnownDecoder : Json.Decode.Decoder AiPositionLookupKnown
+aiPositionLookupKnownDecoder =
+    Json.Decode.succeed AiPositionLookupKnown
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mgrs" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lng" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "certainty" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conflicting" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "factCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "firstFactAt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastFactAt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scope" (Json.Decode.string)))
+
+
+aiPositionLookupMentionDecoder : Json.Decode.Decoder AiPositionLookupMention
+aiPositionLookupMentionDecoder =
+    Json.Decode.succeed AiPositionLookupMention
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageId" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageUuid" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinates" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "context" (Json.Decode.string)))
+
+
+aiPositionLookupRspDecoder : Json.Decode.Decoder AiPositionLookupRsp
+aiPositionLookupRspDecoder =
+    Json.Decode.succeed AiPositionLookupRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known" (Json.Decode.list (aiPositionLookupKnownDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "located" (Json.Decode.list (aiPositionLookupMentionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "other" (Json.Decode.list (aiPositionLookupMentionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "note" (Json.Decode.string)))
 
 
 ocrStatusLogItemDecoder : Json.Decode.Decoder OcrStatusLogItem

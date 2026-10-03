@@ -560,6 +560,17 @@
   border-bottom-style: solid;
 }
 
+.text-marked .content-token--position-crew,
+.text-marked .content-token--position-callsign {
+  border-bottom-color: #b0640d;
+}
+
+.text-marked .content-token--position-marker {
+  margin-left: 2px;
+  color: #b0640d;
+  cursor: help;
+}
+
 .text-marked .content-token--metadata {
   border-bottom: 3px solid #1b8057;
   transition: border-bottom-color 1s ease;

@@ -221,16 +221,33 @@ viewWithResults renderCallsign signals networks mFreq bodyText pointTokenClickUr
                             text sliceText
 
                 B.CnPositionC obj ->
-                    span
-                        [ class "content-token--position"
-                        , title
-                            (if List.isEmpty obj.mgrs then
-                                "Позиція «" ++ obj.text ++ "» (ШІ)"
+                    let
+                        label =
+                            (case obj.kind of
+                                "crew" ->
+                                    "Розрахунок «"
 
-                             else
-                                "Позиція «" ++ obj.text ++ "»: " ++ String.join ", " obj.mgrs
+                                "callsign" ->
+                                    "Позивний «"
+
+                                _ ->
+                                    "Позиція «"
                             )
-                        ]
+                                ++ obj.text
+                                ++ "»"
+
+                        positionTitle =
+                            case ( obj.mgrs, obj.knownMgrs ) of
+                                ( [], Just known ) ->
+                                    label ++ ": відомо з інших повідомлень " ++ known
+
+                                ( [], Nothing ) ->
+                                    label ++ " (ШІ)"
+
+                                ( own, _ ) ->
+                                    label ++ ": " ++ String.join ", " own
+                    in
+                    span [ class ("content-token--position content-token--position-" ++ obj.kind), title positionTitle ]
                         [ text obj.text ]
     in
     [ div [ class "text-marked" ] <|

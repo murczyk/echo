@@ -27,6 +27,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub model_name: String,
     pub created_at: DateTime,
+    #[sea_orm(column_type = "Text")]
+    pub kind: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -41,6 +43,8 @@ pub enum Relation {
     AiEngine,
     #[sea_orm(has_many = "super::ai_position_coordinate::Entity")]
     AiPositionCoordinate,
+    #[sea_orm(has_many = "super::ai_position_feedback::Entity")]
+    AiPositionFeedback,
     #[sea_orm(
         belongs_to = "super::sigint_inbox_item::Entity",
         from = "Column::SigintInboxItemId",
@@ -68,6 +72,12 @@ impl Related<super::ai_engine::Entity> for Entity {
 impl Related<super::ai_position_coordinate::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiPositionCoordinate.def()
+    }
+}
+
+impl Related<super::ai_position_feedback::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiPositionFeedback.def()
     }
 }
 

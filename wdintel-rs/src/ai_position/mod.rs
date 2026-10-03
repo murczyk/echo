@@ -6,6 +6,7 @@ mod extract;
 pub mod feedback;
 pub mod knowledge;
 pub mod list;
+pub mod lookup;
 pub mod normalize;
 pub mod types;
 pub mod worker;

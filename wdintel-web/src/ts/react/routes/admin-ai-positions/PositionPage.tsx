@@ -8,7 +8,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { listAiPositionKnowledge } from '../../services/api/ai-positions';
-import { FeedbackChips, FeedbackDialog } from './feedback';
+import { FeedbackChips, FeedbackDialog, KIND_LABELS } from './feedback';
 import { MentionsTab } from './MentionsTab';
 
 const CERTAINTY_LABELS: Record<string, string> = {
@@ -74,6 +74,7 @@ export function AdminAiPositionPage({ id }: { id: number }) {
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
               <Typography variant="h5">{position.name}</Typography>
               <Typography color="text.secondary">{position.nameKey}</Typography>
+              <Chip size="small" label={KIND_LABELS[position.kind] ?? position.kind} />
               <Chip
                 size="small"
                 label={`${position.scopeKind === 'aor' ? 'РВ' : 'Група'}: ${position.scopeName || '—'}`}
@@ -114,7 +115,7 @@ export function AdminAiPositionPage({ id }: { id: number }) {
       <Box sx={{ flex: 1, minHeight: 0 }}>
         <MentionsTab
           tableId="admin-ai-position-interceptions"
-          title="Перехоплення з цією позицією"
+          title="Перехоплення з цією назвою"
           fixedFilters={[
             { id: 'positionKey', value: position.nameKey },
             { id: 'positionScope', value: `${position.scopeKind}:${position.scopeKey}` },

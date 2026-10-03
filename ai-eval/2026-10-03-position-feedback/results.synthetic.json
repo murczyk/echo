@@ -1,58 +1,220 @@
 {
   "date": "2026-10-03",
   "engine": "google/gemma-4-26B-A4B-it (vLLM router)",
-  "prompt": "ai-eval/2026-10-02-position-prompt/prompt.txt",
   "cases": "cases.synthetic.jsonl",
-  "results": [
+  "runs": [
     {
-      "id": 1,
-      "verdict": "correct",
-      "passed": true,
-      "found": [
-        "циркон 9"
-      ],
-      "note": "expected the position and its coordinates"
+      "prompt": "previous prompt (before kinds and exclusions)",
+      "passed": 6,
+      "of": 12,
+      "results": [
+        {
+          "id": 1,
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» (Some(\"position\")) with its coordinates, found kind Some(\"position\")"
+        },
+        {
+          "id": 2,
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "«Гудок» is not a position"
+        },
+        {
+          "id": 3,
+          "verdict": "wrong_coordinates",
+          "passed": false,
+          "found": [],
+          "note": "extraction failed: malformed JSON from the model"
+        },
+        {
+          "id": 4,
+          "verdict": "missed",
+          "passed": false,
+          "found": [
+            "лиман 2"
+          ],
+          "note": "missed [\"береза 3\", \"оп лиман 2\"]"
+        },
+        {
+          "id": 5,
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Буран» is not a position"
+        },
+        {
+          "id": 6,
+          "verdict": "wrong_name",
+          "passed": false,
+          "found": [],
+          "note": "extraction failed: malformed JSON from the model"
+        },
+        {
+          "id": 7,
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«МОЛНИЯ» is not a position"
+        },
+        {
+          "id": 8,
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Молния» is not a position"
+        },
+        {
+          "id": 9,
+          "verdict": "correct",
+          "passed": false,
+          "found": [],
+          "note": "expected «Рикки» (Some(\"crew\")) with its coordinates, found kind None"
+        },
+        {
+          "id": 10,
+          "verdict": "correct",
+          "passed": false,
+          "found": [],
+          "note": "expected «Сова» (Some(\"callsign\")) with its coordinates, found kind None"
+        },
+        {
+          "id": 11,
+          "verdict": "missed",
+          "passed": false,
+          "found": [
+            "снт",
+            "ромб"
+          ],
+          "note": "missed [\"магатэ\"]"
+        },
+        {
+          "id": 12,
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Ланцет» is not a position"
+        }
+      ]
     },
     {
-      "id": 2,
-      "verdict": "not_position",
-      "passed": true,
-      "found": [
-        "циркон 9"
-      ],
-      "note": "«Гудок» is not a position"
-    },
-    {
-      "id": 3,
-      "verdict": "wrong_coordinates",
-      "passed": false,
-      "found": [
-        "сокіл 4"
-      ],
-      "note": "wrong coordinates [\"37UCQ1234567890\"], expected «»"
-    },
-    {
-      "id": 4,
-      "verdict": "missed",
-      "passed": false,
-      "found": [
-        "лиман 2"
-      ],
-      "note": "missed [\"береза 3\", \"оп лиман 2\"]"
-    },
-    {
-      "id": 5,
-      "verdict": "not_position",
-      "passed": true,
-      "found": [],
-      "note": "«Буран» is not a position"
-    },
-    {
-      "id": 6,
-      "verdict": "wrong_name",
-      "passed": false,
-      "found": [],
-      "note": "extraction failed: malformed JSON from the model"
+      "prompt": "ai-eval/2026-10-02-position-prompt/prompt.txt (kinds, UAV/weapon exclusions, code names, JSON repair)",
+      "passed": 11,
+      "of": 12,
+      "results": [
+        {
+          "id": 1,
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» (Some(\"position\")) with its coordinates, found kind Some(\"position\")"
+        },
+        {
+          "id": 2,
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "«Гудок» is not a position"
+        },
+        {
+          "id": 3,
+          "verdict": "wrong_coordinates",
+          "passed": true,
+          "found": [
+            "сокіл 4"
+          ],
+          "note": "wrong coordinates [\"37UCQ1234567890\"], expected «»"
+        },
+        {
+          "id": 4,
+          "verdict": "missed",
+          "passed": false,
+          "found": [
+            "циркон 9",
+            "береза 3",
+            "лиман 2"
+          ],
+          "note": "missed [\"оп лиман 2\"]"
+        },
+        {
+          "id": 5,
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Буран» is not a position"
+        },
+        {
+          "id": 6,
+          "verdict": "wrong_name",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» instead of «Цирконі 9»"
+        },
+        {
+          "id": 7,
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«МОЛНИЯ» is not a position"
+        },
+        {
+          "id": 8,
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "«Молния» is not a position"
+        },
+        {
+          "id": 9,
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "expected «Рикки» (Some(\"crew\")) with its coordinates, found kind Some(\"crew\")"
+        },
+        {
+          "id": 10,
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "сова"
+          ],
+          "note": "expected «Сова» (Some(\"callsign\")) with its coordinates, found kind Some(\"callsign\")"
+        },
+        {
+          "id": 11,
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "магатэ",
+            "снт",
+            "ромб"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": 12,
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Ланцет» is not a position"
+        }
+      ]
     }
   ]
 }

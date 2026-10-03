@@ -143,6 +143,7 @@ where
 #[derive(Debug, Clone, FromQueryResult)]
 pub(crate) struct Fact {
     pub name: String,
+    pub kind: String,
     pub mgrs: String,
     pub lat: f64,
     pub lng: f64,
@@ -154,6 +155,8 @@ pub(crate) struct Fact {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Consolidated {
     pub name: String,
+    /// The kind most of the window's facts give it.
+    pub kind: String,
     pub mgrs: String,
     pub lat: f64,
     pub lng: f64,
@@ -232,8 +235,19 @@ pub(crate) fn consolidate(facts: &[Fact]) -> Option<Consolidated> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
+    let mut kinds: std::collections::BTreeMap<&str, usize> =
+        std::collections::BTreeMap::new();
+    for fact in &facts {
+        *kinds.entry(fact.kind.as_str()).or_default() += 1;
+    }
+    let kind = kinds
+        .into_iter()
+        .max_by_key(|(_, count)| *count)
+        .map_or("position", |(kind, _)| kind)
+        .to_string();
     Some(Consolidated {
         name: best.name.clone(),
+        kind,
         mgrs: best.mgrs.clone(),
         lat: best.lat,
         lng: best.lng,
@@ -386,7 +400,8 @@ where
         DatabaseBackend::Postgres,
         format!(
             "with facts as (
-                 select m.name, c.mgrs, c.lat, c.lng, c.certainty, c.message_at, m.group_master_key
+                 select m.name, m.kind, c.mgrs, c.lat, c.lng, c.certainty, c.message_at,
+                        m.group_master_key
                  from ai_position_coordinate c
                  join ai_position_mention m on m.id = c.mention_id
                  left join signal_group sg on sg.master_key = m.group_master_key
@@ -394,6 +409,10 @@ where
                  join signal_message message
                      on message.id = coalesce(m.sigint_inbox_item_id, media.signal_message_id)
                  where m.name_key = $1 and not message.deleted and {scope_condition}
+                   and not exists (
+                       select 1 from ai_position_feedback rejected
+                       where rejected.name_key = m.name_key and rejected.verdict = 'not_position'
+                   )
              )
              select * from facts
              where message_at >= (select max(message_at) from facts) - make_interval(days => $3)"
@@ -433,6 +452,7 @@ where
         scope_key: Set(scope.key.clone()),
         name_key: Set(name_key.to_string()),
         name: Set(known.name),
+        kind: Set(known.kind),
         mgrs: Set(known.mgrs),
         lat: Set(known.lat),
         lng: Set(known.lng),
@@ -452,6 +472,7 @@ where
         ])
         .update_columns([
             ai_position_knowledge::Column::Name,
+            ai_position_knowledge::Column::Kind,
             ai_position_knowledge::Column::Mgrs,
             ai_position_knowledge::Column::Lat,
             ai_position_knowledge::Column::Lng,
@@ -475,7 +496,7 @@ where
 pub(crate) async fn known_names<C>(
     dbx: &C,
     scopes: &[Scope],
-) -> anyhow::Result<Vec<(String, String)>>
+) -> anyhow::Result<Vec<(String, String, String)>>
 where
     C: ConnectionTrait,
 {
@@ -502,7 +523,7 @@ where
     Ok(rows
         .into_iter()
         .filter(|row| seen.insert(row.name_key.clone()))
-        .map(|row| (row.name, row.name_key))
+        .map(|row| (row.name, row.name_key, row.kind))
         .collect())
 }
 
@@ -771,7 +792,8 @@ async fn link_batch(
         .max_by_key(|word| word.chars().count())
         .map(str::to_string);
     let groups = scope_groups(dbx, &scope).await.c(h!())?;
-    let (Some(_), Some(stem), false) = (known, stem, groups.is_empty()) else {
+    let (Some(known), Some(stem), false) = (known, stem, groups.is_empty())
+    else {
         delete_link_job(dbx, job.id).await.c(h!())?;
         return Ok(Vec::new());
     };
@@ -806,9 +828,15 @@ async fn link_batch(
         if spans.is_empty() || !source_unchanged(dbx, &source).await.c(h!())? {
             continue;
         }
-        insert_linked_mentions(dbx, &source, &job.name_key, &spans)
-            .await
-            .c(h!())?;
+        insert_linked_mentions(
+            dbx,
+            &source,
+            &job.name_key,
+            &known.kind,
+            &spans,
+        )
+        .await
+        .c(h!())?;
         linked.push(source.message_id);
     }
     dbx.execute_raw(Statement::from_sql_and_values(
@@ -1158,6 +1186,7 @@ mod tests {
     fn fact(lat: f64, certainty: &str, day: i64, group: &str) -> Fact {
         Fact {
             name: "Циркон 9".to_string(),
+            kind: "position".to_string(),
             mgrs: format!("M{lat}"),
             lat,
             lng: 35.0,
@@ -1177,6 +1206,7 @@ mod tests {
                 scope_key: "g".to_string(),
                 name_key: "циркон 9".to_string(),
                 name: "Циркон 9".to_string(),
+                kind: "position".to_string(),
                 mgrs: String::new(),
                 lat: 0.0,
                 lng: 0.0,

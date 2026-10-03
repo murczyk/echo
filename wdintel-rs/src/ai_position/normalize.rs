@@ -64,24 +64,52 @@ fn tokens(text: &str) -> Vec<Token> {
 }
 
 /// «ЦИРКОН-9», «Циркон 9», «"циркон9"» and «Циpкoн 9» share «циркон 9».
+/// Post-type abbreviations written before a position's name («ОП Лиман-2»).
+const TYPE_PREFIXES: [&str; 5] = ["оп", "вп", "сп", "нп", "кп"];
+
+/// «ОП Лиман-2» and «Лиман-2» are one position.
 pub fn position_key(name: &str) -> String {
-    tokens(name)
-        .into_iter()
-        .map(|token| token.key)
-        .collect::<Vec<_>>()
-        .join(" ")
+    let keys: Vec<String> =
+        tokens(name).into_iter().map(|token| token.key).collect();
+    let keys = match keys.split_first() {
+        Some((first, rest))
+            if rest
+                .iter()
+                .any(|key| !key.chars().all(|c| c.is_ascii_digit()))
+                && TYPE_PREFIXES.contains(&first.as_str()) =>
+        {
+            rest
+        }
+        _ => &keys[..],
+    };
+    keys.join(" ")
 }
 
 fn token_matches(name: &Token, body: &Token) -> bool {
     if name.digits || body.digits {
         return name.key == body.key;
     }
-    name.key == body.key
-        || (name.key.chars().count() >= MIN_INFLECTED_STEM_CHARS
+    if name.key == body.key {
+        return true;
+    }
+    // «Циркон» → «Цирконі»; «Береза» → «Березі» (stem without the final
+    // vowel, then a case ending).
+    let stems = [Some(name.key.as_str()), vowel_stem(&name.key)];
+    stems.into_iter().flatten().any(|stem| {
+        stem.chars().count() >= MIN_INFLECTED_STEM_CHARS
             && body
                 .key
-                .strip_prefix(&name.key)
-                .is_some_and(|ending| INFLECTIONS.contains(&ending)))
+                .strip_prefix(stem)
+                .is_some_and(|ending| INFLECTIONS.contains(&ending))
+    })
+}
+
+/// The name without a final vowel or soft sign, which declension replaces.
+fn vowel_stem(key: &str) -> Option<&str> {
+    let last = key.chars().last()?;
+    "аяоеєиіїйьу"
+        .contains(last)
+        .then(|| &key[..key.len() - last.len_utf8()])
 }
 
 /// Char spans of every occurrence of `name` in `text`. Empty when the name
@@ -140,6 +168,8 @@ mod tests {
 
     #[test]
     fn variants_share_a_key() {
+        assert_eq!(position_key("ОП Лиман-2"), position_key("Лиман-2"));
+        assert_eq!(position_key("ОП 5"), "оп 5");
         for name in [
             "ЦИРКОН-9",
             "Циркон 9",
@@ -162,6 +192,9 @@ mod tests {
             })
             .collect();
         assert_eq!(found, vec!["Циркон 9", "ЦИРКОН-9", "Циркона 9"]);
+        let text = "Передали Березі 3 і березою 3";
+        assert_eq!(ground(text, "Береза 3").len(), 2);
+        assert!(ground("Березень 3", "Береза 3").is_empty());
     }
 
     #[test]

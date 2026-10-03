@@ -1611,6 +1611,8 @@ export type CnPosition = {
   knownMgrs: string | null;
   knownAt: number | null;
   knownConflicting: boolean;
+  kind: string;
+  callsign: string | null;
 };
 
 export type CnHighlight = {
@@ -5732,6 +5734,7 @@ export type AiPositionSpan = {
 export type AiPositionFound = {
   name: string;
   nameKey: string;
+  kind: string;
   spans: Array<AiPositionSpan>;
   coordinates: Array<AiPositionCoordinateItem>;
 };
@@ -5781,6 +5784,7 @@ export type AiPositionMentionItem = {
   mediaName: string | null;
   name: string;
   nameKey: string;
+  kind: string;
   contextBefore: string;
   contextMatch: string;
   contextAfter: string;
@@ -5811,6 +5815,7 @@ export type AiPositionKnowledgeItem = {
   scopeIsSecret: boolean;
   name: string;
   nameKey: string;
+  kind: string;
   mgrs: string;
   lat: number;
   lng: number;
@@ -5856,6 +5861,47 @@ export type AiPositionReparseReq = {
 
 export type AiPositionReparseRsp = {
   queued: number;
+};
+
+export type AiPositionLookupReq = {
+  name: string | null;
+  coordinates: string | null;
+  radiusMeters: number | null;
+  days: number | null;
+  kind: string | null;
+  limit: number | null;
+};
+
+export type AiPositionLookupKnown = {
+  name: string;
+  kind: string;
+  mgrs: string;
+  lat: number;
+  lng: number;
+  certainty: string;
+  conflicting: boolean;
+  factCount: number;
+  firstFactAt: string;
+  lastFactAt: string;
+  scope: string;
+};
+
+export type AiPositionLookupMention = {
+  messageId: number | null;
+  messageUuid: string | null;
+  source: string;
+  at: string;
+  name: string;
+  kind: string;
+  coordinates: Array<string>;
+  context: string;
+};
+
+export type AiPositionLookupRsp = {
+  known: Array<AiPositionLookupKnown>;
+  located: Array<AiPositionLookupMention>;
+  other: Array<AiPositionLookupMention>;
+  note: string;
 };
 
 export type OcrStatusLogItem = {

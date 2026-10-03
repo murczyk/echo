@@ -41,6 +41,8 @@ pub struct Model {
     pub last_fact_at: DateTime,
     pub source_group_keys: Vec<String>,
     pub updated_at: DateTime,
+    #[sea_orm(column_type = "Text")]
+    pub kind: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -600,20 +600,28 @@ function CallsignWithHint({
   );
 }
 
+const POSITION_KIND_LABELS: Record<string, string> = {
+  position: 'Позиція',
+  crew: 'Розрахунок',
+  callsign: 'Позивний',
+};
+
 function positionTitle(
   name: string,
+  kind: string,
   mgrs: string[],
   knownMgrs: string | null,
   knownAt: number | null,
   knownConflicting: boolean,
 ): string {
-  if (mgrs.length > 0) return `Позиція «${name}»: ${mgrs.join(', ')}`;
+  const label = `${POSITION_KIND_LABELS[kind] ?? 'Позиція'} «${name}»`;
+  if (mgrs.length > 0) return `${label}: ${mgrs.join(', ')}`;
   if (knownMgrs) {
     const when = knownAt ? `, станом на ${new Date(knownAt).toLocaleDateString('uk-UA')}` : '';
     const doubt = knownConflicting ? ' (є розбіжності)' : '';
-    return `Позиція «${name}»: відомо з інших повідомлень ${knownMgrs}${when}${doubt}`;
+    return `${label}: відомо з інших повідомлень ${knownMgrs}${when}${doubt}`;
   }
-  return `Позиція «${name}» (ШІ)`;
+  return `${label} (ШІ)`;
 }
 
 export function renderMarkedText(
@@ -711,15 +719,35 @@ export function renderMarkedText(
     }
 
     if ('CNPositionC' in node) {
-      const { text, mgrs, knownMgrs, knownAt, knownConflicting } = node.CNPositionC;
-      const position = (
+      const { text, mgrs, knownMgrs, knownAt, knownConflicting, kind, callsign } = node.CNPositionC;
+      const title = positionTitle(text, kind, mgrs, knownMgrs, knownAt, knownConflicting);
+      const located = mgrs.length > 0 || knownMgrs !== null;
+      // A located crew or callsign that replaced a callsign token keeps the
+      // callsign pill (and its hint) and adds the location marker.
+      const content = callsign ? (
+        <span className="content-token--position-callsign" title={title}>
+          <CallsignWithHint
+            text={callsign}
+            callsignInfoMap={options?.callsignInfoMap}
+            networks={options?.networks}
+            unitsMap={options?.unitsMap}
+            freq={options?.freq}
+            networkIds={options?.networkIds}
+          />
+          <span className="content-token--position-marker" aria-label="координати">
+            ⌖
+          </span>
+        </span>
+      ) : (
         <span
-          className={
-            mgrs.length > 0 || knownMgrs
-              ? 'content-token--position content-token--position-located'
-              : 'content-token--position'
-          }
-          title={positionTitle(text, mgrs, knownMgrs, knownAt, knownConflicting)}
+          className={[
+            'content-token--position',
+            `content-token--position-${kind}`,
+            located ? 'content-token--position-located' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          title={title}
         >
           {text}
         </span>
@@ -727,9 +755,9 @@ export function renderMarkedText(
       // A search match inside the position keeps its search highlight.
       renderedNodes.push(
         isSearchHighlightedPosition(text, searchTerms, highlightedTexts) ? (
-          <SearchHighlightedCallsign key={i}>{position}</SearchHighlightedCallsign>
+          <SearchHighlightedCallsign key={i}>{content}</SearchHighlightedCallsign>
         ) : (
-          <span key={i}>{position}</span>
+          <span key={i}>{content}</span>
         ),
       );
       continue;

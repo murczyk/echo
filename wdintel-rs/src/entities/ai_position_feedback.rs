@@ -44,6 +44,8 @@ pub struct Model {
     pub created_by_id: Option<Uuid>,
     pub created_at: DateTime,
     pub reparsed_at: Option<DateTime>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub kind: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

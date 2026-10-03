@@ -39,6 +39,11 @@ pub struct CNPosition {
     /// latest fact behind `known_mgrs`, milliseconds since the epoch
     pub known_at: Option<i64>,
     pub known_conflicting: bool,
+    /// `position`, `crew` or `callsign`.
+    pub kind: String,
+    /// The callsign token this located mention replaced, so the card can
+    /// keep its callsign hint next to the location.
+    pub callsign: Option<String>,
 }
 
 #[derive(
@@ -320,22 +325,33 @@ pub fn highlight_with_positions(
         specials.extend(points.iter().map(|x| Special::Point(x.clone())));
     }
     if highlight_opts.highlight_positions == Some(true) {
-        // Callsigns and palitra points win wherever a position overlaps them,
+        // A located mention (own or known coordinates) takes over callsign
+        // tokens it covers and keeps the callsign for the hint; otherwise
+        // callsigns and palitra points win wherever a position overlaps them,
         // even when the position starts first.
-        let taken: Vec<(usize, usize)> = specials
-            .iter()
-            .map(|special| (special.begin(), special.end()))
-            .collect();
-        specials.extend(
-            positions
-                .iter()
-                .filter(|position| {
-                    !taken.iter().any(|&(begin, end)| {
-                        position.begin < end && begin < position.end
-                    })
-                })
-                .map(|x| Special::Position(x.clone())),
-        );
+        let mut kept: Vec<Special> = Vec::new();
+        for position in positions {
+            let mut position = position.clone();
+            let located =
+                !position.mgrs.is_empty() || position.known_mgrs.is_some();
+            let covered = specials.iter().position(|special| {
+                matches!(special, Special::Callsign(_))
+                    && position.begin <= special.begin()
+                    && special.end() <= position.end
+            });
+            if let (true, Some(index)) = (located, covered) {
+                if let Special::Callsign(callsign) = specials.remove(index) {
+                    position.callsign = Some(callsign.text);
+                }
+            }
+            let overlaps = specials.iter().any(|special| {
+                position.begin < special.end() && special.begin() < position.end
+            });
+            if !overlaps {
+                kept.push(Special::Position(position));
+            }
+        }
+        specials.extend(kept);
     }
     if highlight_opts.highlight_keywords == Some(true) {
         specials.extend(keywords.iter().map(|x| Special::Keyword(x.clone())));
@@ -1341,6 +1357,8 @@ mod tests {
             known_mgrs: None,
             known_at: None,
             known_conflicting: false,
+            kind: "position".to_string(),
+            callsign: None,
         };
         let res = highlight_with_positions(
             body,
@@ -1375,6 +1393,48 @@ mod tests {
         .unwrap();
         assert_eq!(res[1], ContentNode::CNCallsignC(callsign.clone()));
         assert_eq!(res.len(), 3);
+    }
+
+    #[test]
+    fn test_located_crew_keeps_its_callsign() {
+        let body = "ймовірно Рикки";
+        let callsign = CNCallsign {
+            begin: 9,
+            end: 14,
+            etalon: "рикки".to_string(),
+            text: "Рикки".to_string(),
+        };
+        let crew = CNPosition {
+            begin: 9,
+            end: 14,
+            etalon: "рикки".to_string(),
+            text: "Рикки".to_string(),
+            mgrs: vec!["37UCP1234554321".to_string()],
+            known_mgrs: None,
+            known_at: None,
+            known_conflicting: false,
+            kind: "crew".to_string(),
+            callsign: None,
+        };
+        let res = highlight_with_positions(
+            body,
+            None,
+            &vec![callsign],
+            &vec![],
+            std::slice::from_ref(&crew),
+            &vec![],
+            &vec![],
+            None,
+            HighlightOpts::all(),
+        )
+        .unwrap();
+        assert_eq!(
+            res[1],
+            ContentNode::CNPositionC(CNPosition {
+                callsign: Some("Рикки".to_string()),
+                ..crew
+            })
+        );
     }
 }
 

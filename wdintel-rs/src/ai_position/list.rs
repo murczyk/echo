@@ -9,11 +9,13 @@ use super::types::{
     AiPositionMentionListRsp, AiPositionSpan,
 };
 use crate::config::{
-    AI_POSITION_FEEDBACK_VERDICTS, AI_POSITION_KNOWLEDGE_WINDOW_DAYS,
+    AI_POSITION_FEEDBACK_VERDICTS, AI_POSITION_KINDS,
+    AI_POSITION_KNOWLEDGE_WINDOW_DAYS,
 };
 use crate::config::{
     AI_POSITION_LIST_DEFAULT_LIMIT, AI_POSITION_LIST_FILTER_MAX_CHARS,
     AI_POSITION_LIST_MAX_FILTERS, AI_POSITION_LIST_MAX_LIMIT,
+    AI_POSITION_NEAR_DEFAULT_METERS, AI_POSITION_NEAR_MAX_METERS,
 };
 use crate::entities::{ai_position_coordinate, ai_position_knowledge};
 use crate::error::AppError;
@@ -43,7 +45,7 @@ pub async fn list_ai_position_mentions(
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let allowed = admin_groups(&env, &user).await.context(h!())?;
     Ok(Json(
-        list(&env.dbx, req.into_inner(), allowed)
+        list(&env.dbx, req.into_inner(), allowed, Access::Admin)
             .await
             .context(h!())?,
     ))
@@ -58,7 +60,7 @@ pub async fn list_ai_position_knowledge(
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let allowed = admin_groups(&env, &user).await.context(h!())?;
     Ok(Json(
-        list_knowledge(&env.dbx, req.into_inner(), allowed)
+        list_knowledge(&env.dbx, req.into_inner(), allowed, Access::Admin)
             .await
             .context(h!())?,
     ))
@@ -98,6 +100,7 @@ struct MentionRow {
     message_uuid: Option<Uuid>,
     name: String,
     name_key: String,
+    kind: String,
     message_at: NaiveDateTime,
     model_name: String,
     group_is_secret: bool,
@@ -165,10 +168,23 @@ pub(crate) fn filter_conditions(
                     values.len()
                 )
             }
+            ("kind", value) if AI_POSITION_KINDS.contains(&value) => {
+                values.push(value.to_string().into());
+                format!("m.kind = ${}", values.len())
+            }
             // A position's interceptions: its exact key within one scope.
             ("positionKey", value) => {
                 values.push(value.to_string().into());
                 format!("m.name_key = ${}", values.len())
+            }
+            ("near", value) => {
+                let near = near_condition("c.lat", "c.lng", value, values).context(h!())?;
+                format!(
+                    "exists (select 1 from ai_position_coordinate c where c.mention_id = m.id and {near})"
+                )
+            }
+            (id @ ("from" | "to"), value) => {
+                date_condition("m.message_at", id, value, values).context(h!())?
             }
             ("positionScope", value) => {
                 scope_condition(value, values).context(h!())?
@@ -205,6 +221,100 @@ fn push_cursor(
         values.len()
     ));
     Ok(())
+}
+
+/// Resolves `near` filters («<coordinates>» or «<coordinates>|<metres>») to
+/// `lat,lng,metres`, so the SQL builders stay synchronous.
+pub(crate) async fn resolve_near_filters(
+    filters: Vec<AiPositionColumnFilter>,
+) -> Result<Vec<AiPositionColumnFilter>, AppError> {
+    let mut resolved = Vec::with_capacity(filters.len());
+    for filter in filters {
+        if filter.id != "near" {
+            resolved.push(filter);
+            continue;
+        }
+        let (place, radius) = match filter.value.rsplit_once('|') {
+            Some((place, radius)) => (place, radius.trim().parse::<f64>().ok()),
+            None => (filter.value.as_str(), None),
+        };
+        let radius = radius
+            .unwrap_or(AI_POSITION_NEAR_DEFAULT_METERS)
+            .clamp(1.0, AI_POSITION_NEAR_MAX_METERS);
+        let coordinates = super::extract::all_coords(place).await;
+        let Some((point, _)) = coordinates.first() else {
+            return Err(AppError::BL {
+                msg: format!("Не вдалося розпізнати координати «{place}»"),
+            });
+        };
+        resolved.push(AiPositionColumnFilter {
+            id: "near".to_string(),
+            value: format!("{},{},{radius}", point.lat, point.lng),
+        });
+    }
+    Ok(resolved)
+}
+
+/// Rows whose `lat_expr`/`lng_expr` lie within the resolved `near` radius:
+/// a bounding box for the indexes, then the great-circle distance.
+fn near_condition(
+    lat_expr: &str,
+    lng_expr: &str,
+    value: &str,
+    values: &mut Vec<Value>,
+) -> Result<String, AppError> {
+    let parts: Vec<f64> = value
+        .split(',')
+        .filter_map(|part| part.trim().parse().ok())
+        .collect();
+    let [lat, lng, radius] = parts[..] else {
+        return Err(AppError::BL {
+            msg: "Невідомі координати фільтра".to_string(),
+        });
+    };
+    let lat_delta = radius / 111_320.0;
+    let lng_delta = lat_delta / lat.to_radians().cos().max(0.01);
+    values.push(lat.into());
+    let lat_n = values.len();
+    values.push(lng.into());
+    let lng_n = values.len();
+    values.push(lat_delta.into());
+    let dlat_n = values.len();
+    values.push(lng_delta.into());
+    let dlng_n = values.len();
+    values.push(radius.into());
+    let radius_n = values.len();
+    Ok(format!(
+        "{lat_expr} between ${lat_n} - ${dlat_n} and ${lat_n} + ${dlat_n}
+         and {lng_expr} between ${lng_n} - ${dlng_n} and ${lng_n} + ${dlng_n}
+         and 2 * 6371000 * asin(sqrt(
+             power(sin(radians({lat_expr} - ${lat_n}) / 2), 2)
+             + cos(radians(${lat_n})) * cos(radians({lat_expr}))
+               * power(sin(radians({lng_expr} - ${lng_n}) / 2), 2)
+         )) <= ${radius_n}"
+    ))
+}
+
+/// `from`/`to` dates (`YYYY-MM-DD`, `to` inclusive) on a timestamp column.
+fn date_condition(
+    column: &str,
+    id: &str,
+    value: &str,
+    values: &mut Vec<Value>,
+) -> Result<String, AppError> {
+    let date =
+        chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| {
+            AppError::BL {
+                msg: "Дата має бути у форматі РРРР-ММ-ДД".to_string(),
+            }
+        })?;
+    let (operator, date) = if id == "from" {
+        (">=", date)
+    } else {
+        ("<", date.succ_opt().unwrap_or(date))
+    };
+    values.push(date.and_hms_opt(0, 0, 0).unwrap_or_default().into());
+    Ok(format!("{column} {operator} ${}", values.len()))
 }
 
 /// `aor:<id>`: the AOR's current non-private groups; `group:<key>`.
@@ -253,27 +363,42 @@ fn escape_like(value: &str) -> String {
         .replace('_', "\\_")
 }
 
-async fn list(
+/// Who is reading: admins see everything but private groups they cannot
+/// read; users (and the AI agent acting for them) only their groups.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Access {
+    Admin,
+    User,
+}
+
+pub(crate) async fn list(
     dbx: &DatabaseConnection,
     req: AiPositionMentionListReq,
     allowed_groups: Vec<String>,
+    access: Access,
 ) -> Result<AiPositionMentionListRsp, AppError> {
     let limit = req
         .limit
         .map_or(AI_POSITION_LIST_DEFAULT_LIMIT, |limit| limit.max(1) as u64)
         .min(AI_POSITION_LIST_MAX_LIMIT);
     let mut values: Vec<Value> = vec![CONTEXT_CHARS.into()];
+    let column_filters = resolve_near_filters(req.column_filters.clone())
+        .await
+        .context(h!())?;
     let mut conditions = filter_conditions(
         req.global_filter.as_deref(),
-        &req.column_filters,
+        &column_filters,
         &mut values,
     )
     .context(h!())?;
     values.push(allowed_groups.into());
-    conditions.push(format!(
-        "(not coalesce(sg.is_secret, false) or m.group_master_key = any(${}))",
-        values.len()
-    ));
+    conditions.push(match access {
+        Access::Admin => format!(
+            "(not coalesce(sg.is_secret, false) or m.group_master_key = any(${}))",
+            values.len()
+        ),
+        Access::User => format!("m.group_master_key = any(${})", values.len()),
+    });
     push_cursor(
         &mut conditions,
         &mut values,
@@ -291,7 +416,7 @@ async fn list(
     let sql = format!(
         "select m.id, m.sigint_inbox_item_id, m.media_id, media.file_name as media_name,
                 message.id as message_id, message.id_uuid as message_uuid,
-                m.name, m.name_key, m.message_at, m.model_name,
+                m.name, m.name_key, m.kind, m.message_at, m.model_name,
                 coalesce(sg.is_secret, false) as group_is_secret,
                 substr(source.text, greatest(m.begin_char - $1, 0) + 1, least(m.begin_char, $1)) as context_before,
                 substr(source.text, m.begin_char + 1, m.end_char - m.begin_char) as context_match,
@@ -357,6 +482,7 @@ async fn list(
                 feedback: feedback.remove(&row.id).unwrap_or_default(),
                 name: row.name,
                 name_key: row.name_key,
+                kind: row.kind,
                 context_before: row.context_before.unwrap_or_default(),
                 context_match: row.context_match.unwrap_or_default(),
                 context_after: row.context_after.unwrap_or_default(),
@@ -414,6 +540,7 @@ struct KnowledgeRow {
     scope_is_secret: bool,
     name: String,
     name_key: String,
+    kind: String,
     mgrs: String,
     lat: f64,
     lng: f64,
@@ -476,6 +603,17 @@ fn knowledge_conditions(
                    and f.scope_kind = k.scope_kind and f.scope_key = k.scope_key
              )"
             .to_string(),
+            ("kind", value) if AI_POSITION_KINDS.contains(&value) => {
+                values.push(value.to_string().into());
+                format!("k.kind = ${}", values.len())
+            }
+            ("near", value) => {
+                near_condition("k.lat", "k.lng", value, values).context(h!())?
+            }
+            (id @ ("from" | "to"), value) => {
+                date_condition("k.last_fact_at", id, value, values)
+                    .context(h!())?
+            }
             ("conflicting", "так") => "k.conflicting".to_string(),
             ("conflicting", "ні") => "not k.conflicting".to_string(),
             ("certainty", value)
@@ -495,10 +633,11 @@ fn knowledge_conditions(
     Ok(conditions)
 }
 
-async fn list_knowledge(
+pub(crate) async fn list_knowledge(
     dbx: &DatabaseConnection,
     req: AiPositionKnowledgeListReq,
     allowed_groups: Vec<String>,
+    access: Access,
 ) -> Result<AiPositionKnowledgeListRsp, AppError> {
     let limit = req
         .limit
@@ -506,16 +645,27 @@ async fn list_knowledge(
         .min(AI_POSITION_LIST_MAX_LIMIT);
     let mut values: Vec<Value> = vec![allowed_groups.into()];
     // Knowledge built from a private group only for admins who can read it.
-    let mut conditions = vec!["not exists (
+    let mut conditions = vec![match access {
+        // Knowledge built from a private group only for admins who can read it.
+        Access::Admin => {
+            "not exists (
              select 1 from unnest(k.source_group_keys) source_group
              join signal_group source_sg on source_sg.master_key = source_group
              where source_sg.is_secret and not (source_group = any($1))
          )"
+        }
+        // Users: only knowledge built entirely from groups they can read.
+        Access::User => {
+            "cardinality(k.source_group_keys) > 0 and k.source_group_keys <@ $1"
+        }
+    }
     .to_string()];
     conditions.extend(
         knowledge_conditions(
             req.global_filter.as_deref(),
-            &req.column_filters,
+            &resolve_near_filters(req.column_filters.clone())
+                .await
+                .context(h!())?,
             &mut values,
         )
         .context(h!())?,
@@ -533,7 +683,7 @@ async fn list_knowledge(
         "select k.id, k.scope_kind, k.scope_key,
                 case when k.scope_kind = 'aor' then aor.name else sg.name end as scope_name,
                 coalesce(sg.is_secret, false) as scope_is_secret,
-                k.name, k.name_key, k.mgrs, k.lat, k.lng, k.certainty, k.fact_count,
+                k.name, k.name_key, k.kind, k.mgrs, k.lat, k.lng, k.certainty, k.fact_count,
                 k.conflicting, k.first_fact_at, k.last_fact_at
          from ai_position_knowledge k
          left join area_of_responsibility aor
@@ -592,6 +742,7 @@ async fn list_knowledge(
                 scope_is_secret: row.scope_is_secret,
                 name: row.name,
                 name_key: row.name_key,
+                kind: row.kind,
                 mgrs: row.mgrs,
                 lat: row.lat,
                 lng: row.lng,
@@ -677,6 +828,8 @@ pub(crate) async fn positions_by_message(
                 }),
                 known_conflicting: knowledge
                     .is_some_and(|known| known.conflicting),
+                kind: mention.kind.clone(),
+                callsign: None,
                 etalon: mention.name_key,
                 text: mention.name,
                 mgrs: own,

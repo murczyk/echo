@@ -97,6 +97,8 @@ pub struct AiPositionSpan {
 pub struct AiPositionFound {
     pub name: String,
     pub name_key: String,
+    /// `position`, `crew` or `callsign`.
+    pub kind: String,
     pub spans: Vec<AiPositionSpan>,
     pub coordinates: Vec<AiPositionCoordinateItem>,
 }
@@ -179,6 +181,8 @@ pub struct AiPositionMentionItem {
     pub media_name: Option<String>,
     pub name: String,
     pub name_key: String,
+    /// `position`, `crew` or `callsign`.
+    pub kind: String,
     pub context_before: String,
     pub context_match: String,
     pub context_after: String,
@@ -216,6 +220,8 @@ pub struct AiPositionKnowledgeItem {
     pub scope_is_secret: bool,
     pub name: String,
     pub name_key: String,
+    /// `position`, `crew` or `callsign`.
+    pub kind: String,
     pub mgrs: String,
     pub lat: f64,
     pub lng: f64,
@@ -238,7 +244,7 @@ pub struct AiPositionFeedbackItem {
     /// `mention` or `knowledge`.
     pub target_kind: String,
     /// `correct`, `not_position`, `wrong_name`, `wrong_coordinates`,
-    /// `missed` or `other`.
+    /// `missed`, `wrong_kind` or `other`.
     pub verdict: String,
     pub expected: String,
     pub comment: String,
@@ -293,6 +299,71 @@ pub struct AiPositionReparseRsp {
 pub struct AiPositionKnowledgeListRsp {
     pub items: Vec<AiPositionKnowledgeItem>,
     pub next_cursor: Option<AiPositionListCursor>,
+}
+
+/// A position lookup: by name, by coordinates (any supported format) with a
+/// radius, or both.
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPositionLookupReq {
+    pub name: Option<String>,
+    pub coordinates: Option<String>,
+    pub radius_meters: Option<f64>,
+    /// How far back to look; default 30.
+    pub days: Option<i64>,
+    /// `position`, `crew` or `callsign`.
+    pub kind: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPositionLookupKnown {
+    pub name: String,
+    pub kind: String,
+    pub mgrs: String,
+    pub lat: f64,
+    pub lng: f64,
+    pub certainty: String,
+    pub conflicting: bool,
+    pub fact_count: i32,
+    pub first_fact_at: String,
+    pub last_fact_at: String,
+    pub scope: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPositionLookupMention {
+    pub message_id: Option<i64>,
+    pub message_uuid: Option<String>,
+    /// `message` or `document`.
+    pub source: String,
+    pub at: String,
+    pub name: String,
+    pub kind: String,
+    pub coordinates: Vec<String>,
+    /// The mention in brackets with surrounding text.
+    pub context: String,
+}
+
+/// Known locations first, then mentions with coordinates, then other
+/// mentions for broader context.
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPositionLookupRsp {
+    pub known: Vec<AiPositionLookupKnown>,
+    pub located: Vec<AiPositionLookupMention>,
+    pub other: Vec<AiPositionLookupMention>,
+    pub note: String,
 }
 
 #[derive(

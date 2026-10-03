@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { countKnownReports, createMapTools, EDIT_GUIDANCE, knownReportsGuidance, MapRegistry, MAP_GUIDANCE, normalizeToolArguments, SCRIPT_GUIDANCE, preserveMapReferences, publishReferencedDrafts, stripUnpublishedMapLinks, validateMapEdit, validateMapSummaries, type MapEditContext, type MapSummary } from "./maps.ts";
-import { INBOX_SEARCH_DESCRIPTION, SEARCH_GUIDANCE } from "./search-guidance.ts";
+import { INBOX_SEARCH_DESCRIPTION, POSITION_LOOKUP_DESCRIPTION, SEARCH_GUIDANCE } from "./search-guidance.ts";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -37,7 +37,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.01.6";
+const HARNESS_RELEASE = "2026.10.03.1";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -464,6 +464,7 @@ export function validateSkill(value: unknown): SkillDefinition {
     route.requestKind !== "inboxMessages" &&
     route.requestKind !== "interceptionContext" &&
     route.requestKind !== "messageIds" &&
+    route.requestKind !== "positionLookup" &&
     route.requestKind !== "mapRecords" &&
     route.requestKind !== "mapDocument" &&
     route.requestKind !== "mapEdit"
@@ -491,6 +492,7 @@ export function validateSkill(value: unknown): SkillDefinition {
     (route.requestKind === "interceptionContext" &&
       skill !== "interception_context") ||
     (route.requestKind === "messageIds" && skill !== "messages_by_id") ||
+    (route.requestKind === "positionLookup" && (skill !== "position_lookup" || path !== "/api/positions/lookup")) ||
     (route.requestKind === "mapRecords" && (skill !== "map_prepare" || path !== "/api/ai-agent/maps/prepare")) ||
     (route.requestKind === "mapDocument" && (skill !== "map_get" || path !== "/api/ai-agent/maps/get")) ||
     (route.requestKind === "mapEdit" && (skill !== "map_edit" || path !== "/api/ai-agent/maps/edit"))
@@ -1288,6 +1290,58 @@ const CALLSIGN_FREQUENCY_MATCHES_PARAMETERS = Type.Object(
   { additionalProperties: false },
 );
 
+const POSITION_LOOKUP_PARAMETERS = Type.Object(
+  {
+    name: Type.Optional(
+      Type.String({ minLength: 1, maxLength: 120, description: "Position, crew or callsign name, e.g. Циркон 9" }),
+    ),
+    coordinates: Type.Optional(
+      Type.String({ minLength: 3, maxLength: 120, description: "MGRS, SK-42 X/Y or lat,lng to search around" }),
+    ),
+    radiusMeters: Type.Optional(Type.Number({ minimum: 1, maximum: 50000 })),
+    days: Type.Optional(Type.Integer({ minimum: 1, maximum: 365 })),
+    kind: Type.Optional(Type.Union([Type.Literal("position"), Type.Literal("crew"), Type.Literal("callsign")])),
+  },
+  { additionalProperties: false },
+);
+
+export function positionLookupRequestBody(params: unknown): JsonObject {
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    throw new Error("position lookup input must be an object");
+  }
+  const input = params as JsonObject;
+  const allowed = ["name", "coordinates", "radiusMeters", "days", "kind"];
+  if (Object.keys(input).some((key) => !allowed.includes(key))) {
+    throw new Error("position lookup input contains an unsupported field");
+  }
+  const name = input.name === undefined ? null : requireString(input.name, "name", 120).trim();
+  const coordinates =
+    input.coordinates === undefined ? null : requireString(input.coordinates, "coordinates", 120).trim();
+  if (!name && !coordinates) {
+    throw new Error("give a position name, coordinates, or both");
+  }
+  const number = (value: unknown, label: string, min: number, max: number): number | null => {
+    if (value === undefined) return null;
+    if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) {
+      throw new Error(`${label} must be between ${min} and ${max}`);
+    }
+    return value;
+  };
+  const kind = input.kind === undefined ? null : requireString(input.kind, "kind", 20);
+  if (kind !== null && !["position", "crew", "callsign"].includes(kind)) {
+    throw new Error("kind must be position, crew or callsign");
+  }
+  const days = number(input.days, "days", 1, 365);
+  return {
+    name: name || null,
+    coordinates: coordinates || null,
+    radiusMeters: number(input.radiusMeters, "radiusMeters", 1, 50000),
+    days: days === null ? null : Math.round(days),
+    kind,
+    limit: null,
+  };
+}
+
 export function messagesByIdRequestBody(params: unknown): JsonObject {
   if (!params || typeof params !== "object" || Array.isArray(params)) {
     throw new Error("message IDs input must be an object");
@@ -1793,6 +1847,8 @@ function routeDescription(route: SkillDefinition): string {
       return "Read surrounding interception context by exact message UID. Do not pass a group key.";
     case "messageIds":
       return "Read accessible messages by their numeric IDs.";
+    case "positionLookup":
+      return POSITION_LOOKUP_DESCRIPTION;
     default:
       return `Read Echo data for ${route.skill.replaceAll("_", " ")} using the fixed read-only route.`;
   }
@@ -1816,6 +1872,8 @@ function routeParameters(route: SkillDefinition) {
       return INTERCEPTION_CONTEXT_PARAMETERS;
     case "messageIds":
       return MESSAGE_IDS_PARAMETERS;
+    case "positionLookup":
+      return POSITION_LOOKUP_PARAMETERS;
     case "json":
       return Type.Object({
         body: Type.Any({ description: "JSON request body" }),
@@ -1850,6 +1908,8 @@ function routeRequestBody(
       return interceptionContextRequestBody(params);
     case "messageIds":
       return messagesByIdRequestBody(params);
+    case "positionLookup":
+      return positionLookupRequestBody(params);
     default:
       return "body" in params ? params.body : undefined;
   }

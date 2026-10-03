@@ -39,10 +39,17 @@ import {
   listAiPositionMentions,
   reparseAiPositionFeedback,
 } from '../../services/api/ai-positions';
-import { FeedbackChips, FeedbackDialog, VERDICT_LABELS } from './feedback';
+import { FeedbackChips, FeedbackDialog, KIND_LABELS, VERDICT_LABELS } from './feedback';
 
 const PAGE_SIZE = 50;
-const FILTER_COLUMNS = new Set(['name', 'source', 'hasCoordinates', 'certainty', 'feedback']);
+const FILTER_COLUMNS = new Set([
+  'name',
+  'kind',
+  'source',
+  'hasCoordinates',
+  'certainty',
+  'feedback',
+]);
 
 const HAS_COORDINATES_OPTIONS = withExplicitSelectAllOption([
   { text: 'так', value: 'так' },
@@ -62,6 +69,9 @@ const FEEDBACK_OPTIONS = withExplicitSelectAllOption([
   { text: 'немає', value: 'немає' },
   ...Object.entries(VERDICT_LABELS).map(([value, text]) => ({ text, value })),
 ]);
+const KIND_OPTIONS = withExplicitSelectAllOption(
+  Object.entries(KIND_LABELS).map(([value, text]) => ({ text, value })),
+);
 const CERTAINTY_LABELS: Record<string, string> = {
   high: 'висока',
   medium: 'середня',
@@ -71,6 +81,7 @@ const CERTAINTY_LABELS: Record<string, string> = {
 const DEFAULT_COLUMN_ORDER = [
   'messageAt',
   'name',
+  'kind',
   'source',
   'context',
   'hasCoordinates',
@@ -154,6 +165,17 @@ function buildColumns(
           </Typography>
         </Stack>
       )),
+    },
+    {
+      id: 'kind',
+      accessorKey: 'kind',
+      header: 'Тип',
+      size: 130,
+      ...selectFilter(KIND_OPTIONS),
+      meta: { overflowMode: 'none' },
+      Cell: ({ row }) => (
+        <Chip size="small" label={KIND_LABELS[row.original.kind] ?? row.original.kind} />
+      ),
     },
     {
       id: 'source',

@@ -494,10 +494,16 @@ where
         source.group_master_key.as_deref(),
         &source.aor_ids,
     );
-    let positions =
-        with_known_names(dbx, &scopes, &source.text, extraction.positions)
-            .await
-            .c(h!())?;
+    // Names reviewers rejected («not a position») are never saved again.
+    let rejected = super::feedback::rejected_name_keys(dbx).await.c(h!())?;
+    let extracted: Vec<AiPositionFound> = extraction
+        .positions
+        .into_iter()
+        .filter(|position| !rejected.contains(&position.name_key))
+        .collect();
+    let positions = with_known_names(dbx, &scopes, &source.text, extracted)
+        .await
+        .c(h!())?;
     for position in positions {
         if !position.coordinates.is_empty() {
             knowledge_jobs.extend(
@@ -519,6 +525,7 @@ where
                         .take((span.end - span.begin) as usize)
                         .collect()),
                     name_key: Set(position.name_key.clone()),
+                    kind: Set(position.kind.clone()),
                     begin_char: Set(span.begin),
                     end_char: Set(span.end),
                     message_at: Set(source.message_at),
@@ -586,7 +593,9 @@ async fn with_known_names<C>(
 where
     C: ConnectionTrait,
 {
-    for (name, name_key) in knowledge::known_names(dbx, scopes).await.c(h!())? {
+    for (name, name_key, kind) in
+        knowledge::known_names(dbx, scopes).await.c(h!())?
+    {
         if positions
             .iter()
             .any(|position| position.name_key == name_key)
@@ -602,6 +611,7 @@ where
         positions.push(AiPositionFound {
             name,
             name_key,
+            kind,
             spans: spans
                 .into_iter()
                 .map(|(begin, end)| AiPositionSpan {
@@ -621,6 +631,7 @@ pub(super) async fn insert_linked_mentions<C>(
     dbx: &C,
     source: &Source,
     name_key: &str,
+    kind: &str,
     spans: &[(usize, usize)],
 ) -> anyhow::Result<()>
 where
@@ -638,6 +649,7 @@ where
                 .take(end - begin)
                 .collect()),
             name_key: Set(name_key.to_string()),
+            kind: Set(kind.to_string()),
             begin_char: Set(begin as i32),
             end_char: Set(end as i32),
             message_at: Set(source.message_at),
@@ -817,6 +829,7 @@ mod tests {
             positions: vec![AiPositionFound {
                 name: "Циркон 9".to_string(),
                 name_key: "циркон 9".to_string(),
+                kind: "position".to_string(),
                 spans: vec![AiPositionSpan { begin: 28, end: 36 }],
                 coordinates: if with_coordinate {
                     vec![AiPositionCoordinateItem {
@@ -1524,6 +1537,36 @@ mod tests {
         ];
         expected.sort();
         assert_eq!(knowledge_scopes(&env).await, expected);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skips_names_reviewers_rejected_3064() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        enable_worker(&env.dbx).await;
+        let (message_id, _, _) = grouped_message(&env.dbx, false).await;
+        crate::entities::ai_position_feedback::ActiveModel {
+            target_kind: Set("mention".to_string()),
+            name: Set("Циркон 9".to_string()),
+            name_key: Set("циркон 9".to_string()),
+            verdict: Set("not_position".to_string()),
+            coordinates: Set(serde_json::json!([])),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let config = load_worker_config(&env.dbx).await.unwrap().unwrap();
+        enqueue_message_if_enabled(&env.dbx, message_id)
+            .await
+            .unwrap();
+        let job = load_next_job(&env.dbx).await.unwrap().unwrap();
+        let source = load_source(&env.dbx, &job).await.unwrap().unwrap();
+        complete_job(&env.dbx, &job, &source, &config, extraction(true))
+            .await
+            .unwrap();
+        assert!(linked_names(&env.dbx, message_id).await.is_empty());
+        assert!(knowledge_scopes(&env).await.is_empty());
     }
 
     #[tokio::test]

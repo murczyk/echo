@@ -686,6 +686,13 @@
       "changes": [
         { "table": "public.ai_position_feedback", "strategy": "excluded" }
       ]
+    },
+    "echo:m20261003_111926_ai_position_kind": {
+      "changes": [
+        { "table": "public.ai_position_mention", "strategy": "excluded" },
+        { "table": "public.ai_position_knowledge", "strategy": "excluded" },
+        { "table": "public.ai_position_feedback", "strategy": "excluded" }
+      ]
     }
   },
   "dependencies": {

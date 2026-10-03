@@ -4,8 +4,15 @@ Cases for the AI position worker ([`wdintel-rs/src/ai_position`](../../wdintel-r
 They come from reviewers marking mentions and locations in Admin → ШІ → Позиції.
 
 - `cases.synthetic.jsonl`: tracked, hand-written cases with no operational data.
-- `results.synthetic.json`: the baseline on 2026-10-03 (Gemma 4 26B, default
-  prompt): 3 of 6 passed.
+- `results.synthetic.json`: runs on 2026-10-03 with Gemma 4 26B over the 12
+  synthetic cases:
+  - old prompt: 6 of 12;
+  - revised prompt (kinds, UAV and weapon exclusions, code-name landmarks,
+    JSON repair): 11 of 12. The one miss is «ОП Лиман-2», which the model
+    returned as «Лиман-2»; keys now ignore the type prefix.
+
+  Of the two reviewed real cases in `raw/`, «Молния» (a UAV) and «МАГАТЭ»
+  (missed), 1 passed with the old prompt and 2 with the revised one.
 - `raw/`: exported production feedback. It is gitignored and lives only here and
   in Backblaze B2 at `s3://echouastorage/lfs/echo-ai/evals/2026-10-03-position-feedback/`.
 
@@ -16,6 +23,7 @@ They come from reviewers marking mentions and locations in Admin → ШІ → П
    - «неправильна назва», with the right name;
    - «неправильні координати», with the right coordinates if known;
    - «пропущено позиції», listing the missed names, comma-separated;
+   - «неправильний тип»: position, crew (розрахунок) or callsign;
    - «правильно» for good examples worth keeping.
 
    Each verdict snapshots the text, span, coordinates and model, so later
@@ -52,11 +60,12 @@ They come from reviewers marking mentions and locations in Admin → ШІ → П
 
 | Verdict | Passes when |
 | --- | --- |
-| `correct` | the position is found with the reviewed coordinates |
+| `correct` | the position is found with the reviewed coordinates (and kind, if recorded) |
 | `not_position` | the name is not extracted |
 | `wrong_name` | the wrong name is gone and the expected one (if given) is found |
 | `wrong_coordinates` | the reviewed coordinates are no longer tied to it, and the expected ones (if given) are, within 50 m |
 | `missed` | every listed name is found |
+| `wrong_kind` | the name is found with the expected kind |
 
 Location feedback, cases without text and `other` are reported as skipped.
 Review them by hand.

@@ -30,10 +30,10 @@ import {
   useTableStateContext,
 } from '../../components/mui-customized/table/table-state-provider';
 import { listAiPositionKnowledge } from '../../services/api/ai-positions';
-import { VERDICT_LABELS } from './feedback';
+import { KIND_LABELS, VERDICT_LABELS } from './feedback';
 
 const PAGE_SIZE = 50;
-const FILTER_COLUMNS = new Set(['name', 'scope', 'conflicting', 'certainty', 'feedback']);
+const FILTER_COLUMNS = new Set(['name', 'kind', 'scope', 'conflicting', 'certainty', 'feedback']);
 const SCOPE_OPTIONS = withExplicitSelectAllOption([
   { text: 'район відповідальності', value: 'aor' },
   { text: 'група', value: 'group' },
@@ -51,6 +51,9 @@ const FEEDBACK_OPTIONS = withExplicitSelectAllOption([
   { text: 'є', value: 'є' },
   { text: 'немає', value: 'немає' },
 ]);
+const KIND_OPTIONS = withExplicitSelectAllOption(
+  Object.entries(KIND_LABELS).map(([value, text]) => ({ text, value })),
+);
 const CERTAINTY_LABELS: Record<string, string> = {
   high: 'висока',
   medium: 'середня',
@@ -58,6 +61,7 @@ const CERTAINTY_LABELS: Record<string, string> = {
 };
 const DEFAULT_COLUMN_ORDER = [
   'name',
+  'kind',
   'scope',
   'location',
   'certainty',
@@ -97,6 +101,17 @@ function buildColumns(): AppMrtColumnDef<AiPositionKnowledgeItem>[] {
       Cell: mrtCustomCell(({ row }) => (
         <Link href={`/admin/ai/positions/${row.original.id}`}>{row.original.name}</Link>
       )),
+    },
+    {
+      id: 'kind',
+      accessorKey: 'kind',
+      header: 'Тип',
+      size: 130,
+      ...selectFilter(KIND_OPTIONS),
+      meta: { overflowMode: 'none' },
+      Cell: ({ row }) => (
+        <Chip size="small" label={KIND_LABELS[row.original.kind] ?? row.original.kind} />
+      ),
     },
     {
       id: 'scope',

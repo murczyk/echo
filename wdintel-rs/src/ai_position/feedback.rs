@@ -8,6 +8,7 @@ use super::types::{
 };
 use crate::config::{
     AI_POSITION_FEEDBACK_TEXT_MAX_CHARS, AI_POSITION_FEEDBACK_VERDICTS,
+    AI_POSITION_KINDS,
 };
 use crate::entities::{
     ai_position_feedback, ai_position_knowledge, ai_position_mention, login,
@@ -25,6 +26,7 @@ use sea_orm::{
     ActiveValue::{NotSet, Set},
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection,
     EntityTrait, FromQueryResult, QueryFilter, QueryOrder, Statement,
+    TransactionTrait,
 };
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -64,10 +66,24 @@ pub async fn save_ai_position_feedback(
         created_by_id: Set(Some(login_id)),
         ..feedback
     };
+    let transaction = env.dbx.begin().await.c(h!())?;
     let saved = ai_position_feedback::Entity::insert(feedback)
-        .exec_with_returning(&env.dbx)
+        .exec_with_returning(&transaction)
         .await
         .c(h!())?;
+    if saved.verdict == "not_position" {
+        // The name disappears everywhere at once; the mention delete trigger
+        // recomputes the knowledge it fed. Deleting this feedback and
+        // reparsing brings it back.
+        ai_position_mention::Entity::delete_many()
+            .filter(
+                ai_position_mention::Column::NameKey.eq(saved.name_key.clone()),
+            )
+            .exec(&transaction)
+            .await
+            .c(h!())?;
+    }
+    transaction.commit().await.c(h!())?;
     let mut items = feedback_items(&env.dbx, vec![saved]).await.c(h!())?;
     Ok(Json(items.remove(0)))
 }
@@ -138,6 +154,13 @@ fn validate(req: SaveAiPositionFeedbackReq) -> Result<ValidReq, AppError> {
     if !AI_POSITION_FEEDBACK_VERDICTS.contains(&req.verdict.as_str()) {
         return Err(AppError::BL {
             msg: "Невідома оцінка".to_string(),
+        });
+    }
+    if req.verdict == "wrong_kind"
+        && !AI_POSITION_KINDS.contains(&req.expected.trim())
+    {
+        return Err(AppError::BL {
+            msg: "Оберіть правильний тип".to_string(),
         });
     }
     let bounded = |value: String| -> Result<String, AppError> {
@@ -226,6 +249,7 @@ async fn mention_feedback(
         group_master_key: Set(mention.group_master_key),
         name: Set(mention.name),
         name_key: Set(mention.name_key),
+        kind: Set(Some(mention.kind)),
         source_text: Set(text),
         begin_char: Set(Some(mention.begin_char)),
         end_char: Set(Some(mention.end_char)),
@@ -280,6 +304,7 @@ async fn knowledge_feedback(
         group_master_key: Set(None),
         name: Set(known.name),
         name_key: Set(known.name_key),
+        kind: Set(Some(known.kind)),
         source_text: Set(None),
         begin_char: Set(None),
         end_char: Set(None),
@@ -364,6 +389,27 @@ async fn reparse_open_feedback(
         .await
         .c(h!())?;
     Ok(sources.len() as i64)
+}
+
+/// Names reviewers marked «not a position»: never extracted, linked or
+/// consolidated again while the mark exists.
+pub(crate) async fn rejected_name_keys<C>(
+    dbx: &C,
+) -> anyhow::Result<HashSet<String>>
+where
+    C: ConnectionTrait,
+{
+    use sea_orm::QuerySelect;
+    let keys: Vec<String> = ai_position_feedback::Entity::find()
+        .filter(ai_position_feedback::Column::Verdict.eq("not_position"))
+        .select_only()
+        .column(ai_position_feedback::Column::NameKey)
+        .distinct()
+        .into_tuple()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(keys.into_iter().collect())
 }
 
 pub(crate) async fn open_feedback_count(

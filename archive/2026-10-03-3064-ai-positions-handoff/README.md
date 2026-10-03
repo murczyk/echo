@@ -91,3 +91,36 @@ operational records or credentials.
   request would help small models.
 - Message-time linking (pass 1) scans messages created since the range start;
   it is batched and resumable, but long histories take a while.
+
+## Follow-up on 2026-10-03: first feedback
+
+Reviewer feedback on local dev:
+- «Молния» was taken as a position, and spread by linking. It is a UAV type,
+  first extracted from «МЗП FPV-ЛТ "МОЛНИЯ"…».
+- «МАГАТЭ» was missed.
+
+**Changes**
+- Migration `m20261003_111926_ai_position_kind`: `kind`
+  (`position`/`crew`/`callsign`) on mentions, knowledge and feedback; the
+  «неправильний тип» verdict; indexes for rejected names and for
+  coordinates by place.
+- Revised prompt with kinds, UAV and equipment exclusions, code-name
+  landmarks and nominative names. A one-shot JSON repair for malformed
+  replies.
+- Grounding: vowel-stem inflections («Березі 3»), and type-prefix-free keys
+  («ОП Лиман-2» = «Лиман-2»).
+- «не позиція» now excludes the name everywhere (delete, extraction, linking,
+  knowledge).
+- Located crews and callsigns keep the callsign pill and add a location
+  marker.
+- Lookup API `POST /api/positions/lookup`, with three tiers and caller-group
+  access. Admin lists gained `near`, `from`/`to` and `kind` filters.
+- Harness `2026.10.03.1` adds the `echo_position_lookup` tool and search
+  guidance.
+
+**Evaluation (Gemma 4 26B)**
+- Synthetic cases: 6/12 with the old prompt, 11/12 with the revised one.
+- Real reviewed cases: 1/2 before, 2/2 after.
+
+`raw/local-dev-20261003.jsonl` holds the two real cases locally; uploading
+needs B2 write keys.
