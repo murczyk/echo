@@ -67,40 +67,48 @@ fn tokens(text: &str) -> Vec<Token> {
 /// Post-type abbreviations written before a position's name («ОП Лиман-2»).
 const TYPE_PREFIXES: [&str; 5] = ["оп", "вп", "сп", "нп", "кп"];
 
-/// Stems of generic objects («дамба», «міст», «посадка») that small models
-/// return as positions; with a number or code («Дамба-3») they are names.
-const GENERIC_OBJECT_STEMS: [&str; 22] = [
-    "дамб",
+/// Generic objects («дамба», «міст», «посадка») that small models return as
+/// positions; with a number or code («Дамба-3») they are names.
+const GENERIC_OBJECTS: [&str; 22] = [
+    "дамба",
     "мост",
     "міст",
-    "посадк",
-    "лісосмуг",
-    "лесополос",
+    "посадка",
+    "лісосмуга",
+    "лесополоса",
     "елеватор",
     "элеватор",
-    "точк",
-    "позиці",
-    "позици",
+    "точка",
+    "позиція",
+    "позиция",
     "бліндаж",
     "блиндаж",
     "окоп",
     "траншея",
-    "траншеї",
-    "перехрест",
-    "перекрест",
-    "висот",
-    "высот",
-    "ферм",
+    "перехрестя",
+    "перекресток",
+    "висота",
+    "высота",
+    "ферма",
     "блокпост",
+    "укриття",
 ];
 
-/// A single generic word, not a name.
+/// A single generic word in any case form («дамбу», «мосту»), not a name:
+/// longer words that merely start alike («Мостовой», «Фермер») are names.
 pub fn is_generic_object(key: &str) -> bool {
-    !key.contains(' ')
-        && !key.chars().any(|c| c.is_ascii_digit())
-        && GENERIC_OBJECT_STEMS
-            .iter()
-            .any(|stem| key.starts_with(stem))
+    if key.contains(' ') || key.chars().any(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    GENERIC_OBJECTS.iter().any(|word| {
+        key == *word
+            || [Some(*word), vowel_stem(word)].into_iter().flatten().any(
+                |stem| {
+                    key.strip_prefix(stem)
+                        .is_some_and(|ending| INFLECTIONS.contains(&ending))
+                },
+            )
+    })
 }
 
 /// «ОП Лиман-2» and «Лиман-2» are one position.
@@ -210,6 +218,10 @@ mod tests {
         assert!(!is_generic_object(&position_key("Дамба-3")));
         assert!(!is_generic_object(&position_key("Висота 120")));
         assert!(!is_generic_object(&position_key("Циркон")));
+        assert!(is_generic_object(&position_key("мосту")));
+        assert!(!is_generic_object(&position_key("Мостовой")));
+        assert!(!is_generic_object(&position_key("Фермер")));
+        assert!(!is_generic_object(&position_key("ОП Містик")));
     }
 
     #[test]

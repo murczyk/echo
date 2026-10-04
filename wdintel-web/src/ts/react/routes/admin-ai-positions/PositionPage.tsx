@@ -33,6 +33,10 @@ export function AdminAiPositionPage({ id }: { id: AiPositionKnowledgeItem['id'] 
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
+    // Another position: drop the previous one and ignore its late response.
+    let current = true;
+    setPosition(null);
+    setError(null);
     if (!id) {
       setError('Невідома позиція');
       return;
@@ -44,15 +48,20 @@ export function AdminAiPositionPage({ id }: { id: AiPositionKnowledgeItem['id'] 
       columnFilters: [{ id: 'id', value: id }],
     })
       .then((response) => {
+        if (!current) return;
         const [item] = response.items;
         if (item) setPosition(item);
         else setError('Позицію не знайдено або вона вам недоступна');
       })
       .catch((nextError) => {
+        if (!current) return;
         const message = `Не вдалося завантажити позицію: ${errorMessage(nextError)}`;
         setError(message);
         notify({ severity: 'error', message });
       });
+    return () => {
+      current = false;
+    };
   }, [id, notify]);
 
   if (error) return <PowerAlert severity="error">{error}</PowerAlert>;

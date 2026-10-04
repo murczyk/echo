@@ -302,12 +302,11 @@ fn date_condition(
     value: &str,
     values: &mut Vec<Value>,
 ) -> Result<String, AppError> {
-    let date =
-        chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| {
-            AppError::BL {
-                msg: "Дата має бути у форматі РРРР-ММ-ДД".to_string(),
-            }
-        })?;
+    let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map_err(|_| AppError::BL {
+            msg: "Дата має бути у форматі РРРР-ММ-ДД".to_string(),
+        })
+        .context(h!())?;
     let (operator, date) = if id == "from" {
         (">=", date)
     } else {
@@ -324,9 +323,12 @@ fn scope_condition(
 ) -> Result<String, AppError> {
     match value.split_once(':') {
         Some(("aor", aor_id)) => {
-            let aor_id: i64 = aor_id.parse().map_err(|_| AppError::BL {
-                msg: "Невідомий район відповідальності".to_string(),
-            })?;
+            let aor_id: i64 = aor_id
+                .parse()
+                .map_err(|_| AppError::BL {
+                    msg: "Невідомий район відповідальності".to_string(),
+                })
+                .context(h!())?;
             values.push(aor_id.into());
             Ok(format!(
                 "not coalesce(sg.is_secret, false) and exists (
@@ -585,9 +587,12 @@ fn knowledge_conditions(
             ("scope", "aor") => "k.scope_kind = 'aor'".to_string(),
             ("scope", "group") => "k.scope_kind = 'group'".to_string(),
             ("id", value) => {
-                let id: Uuid = value.parse().map_err(|_| AppError::BL {
-                    msg: "Невідома позиція".to_string(),
-                })?;
+                let id: Uuid = value
+                    .parse()
+                    .map_err(|_| AppError::BL {
+                        msg: "Невідома позиція".to_string(),
+                    })
+                    .context(h!())?;
                 values.push(id.into());
                 format!("k.id = ${}", values.len())
             }

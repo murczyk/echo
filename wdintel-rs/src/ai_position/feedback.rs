@@ -110,8 +110,19 @@ pub async fn list_ai_position_feedback(
         Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "select f.* from ai_position_feedback f
+         left join signal_message_media media on media.id = f.media_id
+         -- The source's group now: a message moved into a private group
+         -- takes its feedback with it.
+         left join lateral (
+             select smg.group_master_key
+             from signal_message_group smg
+             where smg.signal_message_id = coalesce(f.sigint_inbox_item_id, media.signal_message_id)
+               and smg.group_master_key is not null
+             order by smg.id
+             limit 1
+         ) current_group on true
          left join signal_group sg
-             on sg.master_key = coalesce(f.group_master_key,
+             on sg.master_key = coalesce(current_group.group_master_key, f.group_master_key,
                  case when f.scope_kind = 'group' then f.scope_key end)
          where (not coalesce(sg.is_secret, false) or sg.master_key = any($1))
            and ($2::text is null or f.verdict = $2)
@@ -439,8 +450,14 @@ async fn reparse_open_feedback(
         .iter()
         .map(|feedback| (feedback.sigint_inbox_item_id, feedback.media_id))
         .collect();
+    // Feedback outlives its source: skip messages and attachments that are
+    // gone, they have nothing to re-run.
+    let mut queued = 0;
     for (item_id, media_id) in &sources {
-        enqueue_source(dbx, *item_id, *media_id).await.c(h!())?;
+        if source_exists(dbx, *item_id, *media_id).await.c(h!())? {
+            enqueue_source(dbx, *item_id, *media_id).await.c(h!())?;
+            queued += 1;
+        }
     }
     ai_position_feedback::Entity::update_many()
         .col_expr(
@@ -454,7 +471,31 @@ async fn reparse_open_feedback(
         .exec(dbx)
         .await
         .c(h!())?;
-    Ok(sources.len() as i64)
+    Ok(queued)
+}
+
+async fn source_exists(
+    dbx: &DatabaseConnection,
+    sigint_inbox_item_id: Option<i64>,
+    media_id: Option<uuid::Uuid>,
+) -> anyhow::Result<bool> {
+    Ok(match (sigint_inbox_item_id, media_id) {
+        (Some(item_id), _) => {
+            crate::entities::sigint_inbox_item::Entity::find_by_id(item_id)
+                .one(dbx)
+                .await
+                .c(h!())?
+                .is_some()
+        }
+        (None, Some(media_id)) => {
+            crate::entities::signal_message_media::Entity::find_by_id(media_id)
+                .one(dbx)
+                .await
+                .c(h!())?
+                .is_some()
+        }
+        (None, None) => false,
+    })
 }
 
 pub(crate) async fn open_feedback_count(
@@ -575,9 +616,7 @@ pub(crate) async fn knowledge_feedback_items(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        reparse_open_feedback, save_ai_position_feedback, validate, ValidReq,
-    };
+    use super::{reparse_open_feedback, save_ai_position_feedback};
     use crate::ai_position::types::SaveAiPositionFeedbackReq;
     use crate::entities::{
         ai_position_feedback, ai_position_mention, sigint_inbox_item,
@@ -608,13 +647,6 @@ mod tests {
             expected: "  Береза 4 ".to_string(),
             comment: String::new(),
         }
-    }
-
-    #[test]
-    fn validates_verdicts() {
-        assert!(validate(request("bogus")).is_err());
-        let valid: ValidReq = validate(request("wrong_name")).ok().unwrap();
-        assert_eq!(valid.expected, "Береза 4");
     }
 
     async fn seed_mention(

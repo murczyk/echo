@@ -14,7 +14,9 @@ operational records or credentials.
   and the [evaluation set](../../ai-eval/2026-10-03-position-feedback/README.md).
 - Migrations:
   - `m20261002_192628_ai_position_parsing`: tables, triggers and the
-    `sigint_inbox_item (datetime, id)` index. It is deployed: never edit it.
+    `sigint_inbox_item (datetime, id)` index. As of 2026-10-04 the position
+    migrations ran only on local dev (reset when IDs moved to UUIDv7), not on
+    staging or prod. Once deployed, change them only through new migrations.
   - `m20261003_041306_ai_position_feedback`: the `ai_position_feedback` table.
 
 ## What is implemented
