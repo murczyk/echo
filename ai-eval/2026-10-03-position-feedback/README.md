@@ -17,6 +17,12 @@ They come from reviewers marking mentions and locations in Admin → ШІ → П
   - plus excluding unnamed crews («расчет БпЛА»): 18 of 18 in two of three
     runs. #3 (a target's coordinates attached to a position) failed once, so
     run each change at least three times.
+  - 2026-10-04 feedback: delivery-point labels («Куда везти», «откуда забрать»)
+    and roster callsigns («Миха», «Камыш») taken as positions. Excluding
+    descriptive point labels took the synthetic set to 22/22 and the six
+    real cases to 6/6, in each of three runs (from 20/22 and 4/6).
+    `not_position` on a mention reviewed as a position now also passes when
+    the name comes back as a callsign or crew.
 
   Of the two reviewed real cases in `raw/`, «Молния» (a UAV) and «МАГАТЭ»
   (missed), 1 passed with the old prompt and 2 with the revised one.

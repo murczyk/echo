@@ -18,7 +18,9 @@ use std::io::Write;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeedbackCase {
-    pub id: uuid::Uuid,
+    /// The feedback UUID, or a label for hand-written cases.
+    #[serde(deserialize_with = "case_id")]
+    pub id: String,
     pub target_kind: String,
     pub verdict: String,
     pub expected: String,
@@ -76,7 +78,7 @@ pub async fn export_feedback(
     let mut output = std::fs::File::create(&ps.output).c(h!())?;
     for row in &rows {
         let case = FeedbackCase {
-            id: row.id,
+            id: row.id.to_string(),
             target_kind: row.target_kind.clone(),
             verdict: row.verdict.clone(),
             expected: row.expected.clone(),
@@ -116,6 +118,17 @@ pub async fn export_feedback(
     Ok(())
 }
 
+/// Case ids are UUIDs from the export or numbers in hand-written cases.
+fn case_id<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::String(id) => id,
+        other => other.to_string(),
+    })
+}
+
 /// Private engine file: the `ai_engine` fields needed to call it.
 #[derive(Deserialize)]
 struct EngineFile {
@@ -127,7 +140,7 @@ struct EngineFile {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CaseResult {
-    id: uuid::Uuid,
+    id: String,
     verdict: String,
     /// `None`: the case cannot be replayed (location feedback, no text,
     /// `other`).
@@ -196,7 +209,7 @@ async fn evaluate_case(
     case: FeedbackCase,
 ) -> CaseResult {
     let skipped = |note: &str| CaseResult {
-        id: case.id,
+        id: case.id.clone(),
         verdict: case.verdict.clone(),
         passed: None,
         found: vec![],
@@ -268,10 +281,23 @@ async fn evaluate_case(
                 ),
             )
         }
-        "not_position" => (
-            !has(&case.name_key),
-            format!("«{}» is not a position", case.name),
-        ),
+        "not_position" => {
+            // Reviewed as a position: also fine as a callsign or crew.
+            let kind = extraction
+                .positions
+                .iter()
+                .find(|position| position.name_key == case.name_key)
+                .map(|position| position.kind.as_str());
+            let passed = match (kind, case.kind.as_deref()) {
+                (None, _) => true,
+                (Some(found), Some("position")) => found != "position",
+                _ => false,
+            };
+            (
+                passed,
+                format!("«{}» is not a position, found {kind:?}", case.name),
+            )
+        }
         "wrong_name" => {
             let expected = position_key(&case.expected);
             (
@@ -331,7 +357,7 @@ async fn evaluate_case(
         _ => return skipped("unknown verdict"),
     };
     CaseResult {
-        id: case.id,
+        id: case.id.clone(),
         verdict: case.verdict,
         passed: Some(passed),
         found,
