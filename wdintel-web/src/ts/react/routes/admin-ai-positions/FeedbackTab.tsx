@@ -12,7 +12,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AiPositionFeedbackListItem } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
@@ -34,8 +34,12 @@ export function FeedbackTab() {
   const [items, setItems] = useState<AiPositionFeedbackListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Only the latest request may update the list: an earlier verdict's
+  // response can arrive last.
+  const requestId = useRef(0);
 
   const load = useCallback(async () => {
+    const id = ++requestId.current;
     setLoading(true);
     setError(null);
     try {
@@ -43,13 +47,15 @@ export function FeedbackTab() {
         verdict: verdict === ALL ? null : verdict,
         limit: 200,
       });
+      if (id !== requestId.current) return;
       setItems(response.items);
     } catch (nextError) {
+      if (id !== requestId.current) return;
       const message = `Не вдалося завантажити відгуки: ${errorMessage(nextError)}`;
       setError(message);
       notify({ severity: 'error', message });
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, [verdict, notify]);
 

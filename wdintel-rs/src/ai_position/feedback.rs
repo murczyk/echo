@@ -78,38 +78,10 @@ pub async fn save_ai_position_feedback(
     Ok(Json(items.remove(0)))
 }
 
-#[post("/api/admin/ai-positions/feedback/delete")]
-pub async fn delete_ai_position_feedback(
-    env: actix_web::web::Data<Env>,
-    user: Identity,
-    req: Json<AiPositionIdReq>,
-) -> Result<Json<()>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
-    ai_position_feedback::Entity::delete_by_id(req.id)
-        .exec(&env.dbx)
-        .await
-        .c(h!())?;
-    Ok(Json(()))
-}
-
-#[post("/api/admin/ai-positions/feedback/list")]
-pub async fn list_ai_position_feedback(
-    env: actix_web::web::Data<Env>,
-    user: Identity,
-    req: Json<AiPositionFeedbackListReq>,
-) -> Result<Json<AiPositionFeedbackListRsp>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let allowed: Vec<String> = admin_groups(&env, &user).await.context(h!())?;
-    let req = req.into_inner();
-    let limit = req
-        .limit
-        .unwrap_or(AI_POSITION_LIST_DEFAULT_LIMIT as i64)
-        .clamp(1, AI_POSITION_LIST_MAX_LIMIT as i64);
-    // Private groups the admin cannot read stay hidden, as on the lists.
-    let rows = ai_position_feedback::Model::find_by_statement(
-        Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "select f.* from ai_position_feedback f
+/// Feedback the admin may see: private groups they cannot read stay hidden,
+/// by the source's current group and by the groups a location came from.
+/// `$1` is the admin's readable groups.
+const VISIBLE_FEEDBACK_SQL: &str = "from ai_position_feedback f
          left join signal_message_media media on media.id = f.media_id
          -- The source's group now: a message moved into a private group
          -- takes its feedback with it.
@@ -134,10 +106,52 @@ pub async fn list_ai_position_feedback(
                ) source_group
                join signal_group source_sg on source_sg.master_key = source_group
                where source_sg.is_secret and not (source_group = any($1))
-           )
+           )";
+
+#[post("/api/admin/ai-positions/feedback/delete")]
+pub async fn delete_ai_position_feedback(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+    req: Json<AiPositionIdReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let allowed: Vec<String> = admin_groups(&env, &user).await.context(h!())?;
+    env.dbx
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                "delete from ai_position_feedback where id = $2 and id in (select f.id {VISIBLE_FEEDBACK_SQL})"
+            ),
+            [allowed.into(), req.id.into()],
+        ))
+        .await
+        .c(h!())?;
+    Ok(Json(()))
+}
+
+#[post("/api/admin/ai-positions/feedback/list")]
+pub async fn list_ai_position_feedback(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+    req: Json<AiPositionFeedbackListReq>,
+) -> Result<Json<AiPositionFeedbackListRsp>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let allowed: Vec<String> = admin_groups(&env, &user).await.context(h!())?;
+    let req = req.into_inner();
+    let limit = req
+        .limit
+        .unwrap_or(AI_POSITION_LIST_DEFAULT_LIMIT as i64)
+        .clamp(1, AI_POSITION_LIST_MAX_LIMIT as i64);
+    // Private groups the admin cannot read stay hidden, as on the lists.
+    let rows = ai_position_feedback::Model::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                "select f.* {VISIBLE_FEEDBACK_SQL}
            and ($2::text is null or f.verdict = $2)
          order by f.created_at desc, f.id desc
-         limit $3",
+         limit $3"
+            ),
             [allowed.into(), req.verdict.into(), limit.into()],
         ),
     )
