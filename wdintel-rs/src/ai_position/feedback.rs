@@ -125,6 +125,16 @@ pub async fn list_ai_position_feedback(
              on sg.master_key = coalesce(current_group.group_master_key, f.group_master_key,
                  case when f.scope_kind = 'group' then f.scope_key end)
          where (not coalesce(sg.is_secret, false) or sg.master_key = any($1))
+           -- Location feedback: every group that fed the location, as private
+           -- as it is now.
+           and not exists (
+               select 1
+               from jsonb_array_elements_text(
+                   coalesce(f.known_location -> 'sourceGroupKeys', '[]'::jsonb)
+               ) source_group
+               join signal_group source_sg on source_sg.master_key = source_group
+               where source_sg.is_secret and not (source_group = any($1))
+           )
            and ($2::text is null or f.verdict = $2)
          order by f.created_at desc, f.id desc
          limit $3",
@@ -369,6 +379,8 @@ async fn knowledge_feedback(
         "conflicting": known.conflicting,
         "firstFactAt": known.first_fact_at.and_utc().timestamp_millis(),
         "lastFactAt": known.last_fact_at.and_utc().timestamp_millis(),
+        // Which groups fed it, so the feedback stays as private as they are.
+        "sourceGroupKeys": known.source_group_keys,
     });
     Ok(ai_position_feedback::ActiveModel {
         id: NotSet,

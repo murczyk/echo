@@ -325,8 +325,8 @@ pub fn highlight_with_positions(
         specials.extend(points.iter().map(|x| Special::Point(x.clone())));
     }
     if highlight_opts.highlight_positions == Some(true) {
-        // A located mention (own or known coordinates) takes over callsign
-        // tokens it covers and keeps the callsign for the hint; otherwise
+        // A located mention (own or known coordinates) takes over the one
+        // callsign token it covers and keeps it for the hint; otherwise
         // callsigns and palitra points win wherever a position overlaps them,
         // even when the position starts first.
         let mut kept: Vec<Special> = Vec::new();
@@ -334,20 +334,34 @@ pub fn highlight_with_positions(
             let mut position = position.clone();
             let located =
                 !position.mgrs.is_empty() || position.known_mgrs.is_some();
-            let covered = specials.iter().position(|special| {
-                matches!(special, Special::Callsign(_))
-                    && position.begin <= special.begin()
-                    && special.end() <= position.end
-            });
-            if let (true, Some(index)) = (located, covered) {
-                if let Special::Callsign(callsign) = specials.remove(index) {
+            let overlapping: Vec<usize> = specials
+                .iter()
+                .enumerate()
+                .filter(|(_, special)| {
+                    position.begin < special.end()
+                        && special.begin() < position.end
+                })
+                .map(|(index, _)| index)
+                .collect();
+            // Accept first, then remove: only a single callsign fully inside
+            // a located position is replaced; anything else keeps its tokens.
+            let replaceable = match overlapping[..] {
+                [index] => {
+                    located
+                        && matches!(specials[index], Special::Callsign(_))
+                        && position.begin <= specials[index].begin()
+                        && specials[index].end() <= position.end
+                }
+                _ => false,
+            };
+            if replaceable {
+                if let Special::Callsign(callsign) =
+                    specials.remove(overlapping[0])
+                {
                     position.callsign = Some(callsign.text);
                 }
-            }
-            let overlaps = specials.iter().any(|special| {
-                position.begin < special.end() && special.begin() < position.end
-            });
-            if !overlaps {
+                kept.push(Special::Position(position));
+            } else if overlapping.is_empty() {
                 kept.push(Special::Position(position));
             }
         }

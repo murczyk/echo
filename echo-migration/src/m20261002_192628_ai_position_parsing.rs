@@ -479,11 +479,31 @@ for each row
 when (old.signal_message_id is distinct from new.signal_message_id)
 execute function ai_position_media_moved();
 
+-- A group newly part of AORs: link the positions those AORs already know
+-- into its messages over their current windows (recomputing an unchanged
+-- window queues no linking).
+create function ai_position_link_group_into_aors(aor_ids bigint[])
+returns void language sql as $$
+    insert into ai_position_link_job
+        (scope_kind, scope_key, name_key, range_from, range_to, pass)
+    select 'aor', knowledge.scope_key, knowledge.name_key,
+        knowledge.first_fact_at - interval '30 days',
+        knowledge.last_fact_at + interval '30 days', 0
+    from ai_position_knowledge knowledge
+    where knowledge.scope_kind = 'aor'
+      and knowledge.scope_key = any(array(select unnest(aor_ids)::text));
+$$;
+
 -- A group made private or public on any path (zone settings, importer):
 -- recompute everything its facts feed.
 create function ai_position_group_privacy_changed()
 returns trigger language plpgsql as $$
 begin
+    if not new.is_secret then
+        perform ai_position_link_group_into_aors(array(
+            select sga.aor_id from signal_group_aor sga where sga.master_key = new.master_key
+        ));
+    end if;
     perform ai_position_enqueue_knowledge(fed.name_key, new.master_key, fed.aor_ids)
     from (
         select distinct name_key, aor_ids
@@ -513,6 +533,11 @@ execute function ai_position_group_privacy_changed();
 create function ai_position_group_aor_changed()
 returns trigger language plpgsql as $$
 begin
+    if tg_op <> 'DELETE' and not exists (
+        select 1 from signal_group sg where sg.master_key = new.master_key and sg.is_secret
+    ) then
+        perform ai_position_link_group_into_aors(array[new.aor_id]);
+    end if;
     insert into ai_position_knowledge_job (scope_kind, scope_key, name_key)
     select distinct 'aor', changed.aor_id::text, fed.name_key
     from (
@@ -592,6 +617,7 @@ drop trigger if exists ai_position_group_aor_changed on signal_group_aor;
 drop function if exists ai_position_group_aor_changed();
 drop trigger if exists ai_position_group_privacy_changed on signal_group;
 drop function if exists ai_position_group_privacy_changed();
+drop function if exists ai_position_link_group_into_aors(bigint[]);
 drop trigger if exists ai_position_media_moved on signal_message_media;
 drop function if exists ai_position_media_moved();
 drop trigger if exists ai_position_signal_message_group_inserted on signal_message_group;

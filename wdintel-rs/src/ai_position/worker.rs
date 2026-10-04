@@ -624,7 +624,7 @@ async fn with_known_names<C>(
 where
     C: ConnectionTrait,
 {
-    for (name, name_key, kind) in
+    for (scope, name, name_key, kind) in
         knowledge::known_names(dbx, scopes).await.c(h!())?
     {
         if positions
@@ -636,7 +636,11 @@ where
         // The canonical key also matches inflected or differently written
         // occurrences.
         let spans = ground(text, &name_key);
-        if spans.is_empty() {
+        // This source's own facts are already deleted: knowledge they alone
+        // supported must not bring a wrongly extracted name back.
+        if spans.is_empty()
+            || !knowledge::has_facts(dbx, &scope, &name_key).await.c(h!())?
+        {
             continue;
         }
         positions.push(AiPositionFound {

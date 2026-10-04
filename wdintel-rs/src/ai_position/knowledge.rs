@@ -492,7 +492,7 @@ where
 pub(crate) async fn known_names<C>(
     dbx: &C,
     scopes: &[Scope],
-) -> anyhow::Result<Vec<(String, String, String)>>
+) -> anyhow::Result<Vec<(Scope, String, String, String)>>
 where
     C: ConnectionTrait,
 {
@@ -515,12 +515,33 @@ where
         .all(dbx)
         .await
         .c(h!())?;
-    let mut seen = BTreeSet::new();
     Ok(rows
         .into_iter()
-        .filter(|row| seen.insert(row.name_key.clone()))
-        .map(|row| (row.name, row.name_key, row.kind))
+        .map(|row| {
+            let scope = Scope {
+                kind: if row.scope_kind == SCOPE_AOR {
+                    SCOPE_AOR
+                } else {
+                    SCOPE_GROUP
+                },
+                key: row.scope_key,
+            };
+            (scope, row.name, row.name_key, row.kind)
+        })
         .collect())
+}
+
+/// Whether facts still support this knowledge, e.g. after the source being
+/// reparsed dropped its own.
+pub(crate) async fn has_facts<C>(
+    dbx: &C,
+    scope: &Scope,
+    name_key: &str,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(!load_facts(dbx, scope, name_key).await.c(h!())?.is_empty())
 }
 
 /// Latin look-alike letters folded to Cyrillic, as `position_key` does, so
