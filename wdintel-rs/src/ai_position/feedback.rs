@@ -158,12 +158,29 @@ pub async fn list_ai_position_feedback(
     .all(&env.dbx)
     .await
     .c(h!())?;
+    // Documents link to the message they are attached to.
+    let media_parents: HashMap<uuid::Uuid, i64> =
+        crate::entities::signal_message_media::Entity::find()
+            .filter(
+                crate::entities::signal_message_media::Column::Id
+                    .is_in(rows.iter().filter_map(|row| row.media_id)),
+            )
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|media| (media.id, media.signal_message_id))
+            .collect();
+    let message_id = |row: &ai_position_feedback::Model| {
+        row.sigint_inbox_item_id.or_else(|| {
+            row.media_id.and_then(|id| media_parents.get(&id).copied())
+        })
+    };
     let uuids: HashMap<i64, uuid::Uuid> =
         crate::entities::signal_message::Entity::find()
             .filter(
-                crate::entities::signal_message::Column::Id.is_in(
-                    rows.iter().filter_map(|row| row.sigint_inbox_item_id),
-                ),
+                crate::entities::signal_message::Column::Id
+                    .is_in(rows.iter().filter_map(message_id)),
             )
             .all(&env.dbx)
             .await
@@ -178,7 +195,7 @@ pub async fn list_ai_position_feedback(
                 row.name.clone(),
                 row.name_key.clone(),
                 row.kind.clone(),
-                row.sigint_inbox_item_id,
+                message_id(row),
             )
         })
         .collect();

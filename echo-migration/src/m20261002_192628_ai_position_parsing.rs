@@ -416,7 +416,8 @@ begin
             created_at = now() at time zone 'utc';
 
     -- Knowledge the old group fed stays readable under that group's access
-    -- until recomputed: drop it now, the queued jobs rebuild it.
+    -- until recomputed: drop it now and queue every dropped scope to rebuild.
+    with dropped as (
     delete from ai_position_knowledge knowledge
     using (
         select name_key, group_master_key from ai_position_mention
@@ -428,7 +429,16 @@ begin
           and group_master_key is distinct from current_group
     ) moved
     where knowledge.name_key = moved.name_key
-      and moved.group_master_key = any(knowledge.source_group_keys);
+      and moved.group_master_key = any(knowledge.source_group_keys)
+    returning knowledge.scope_kind, knowledge.scope_key, knowledge.name_key
+    )
+    insert into ai_position_knowledge_job (scope_kind, scope_key, name_key)
+    select distinct scope_kind, scope_key, name_key from dropped
+    on conflict (scope_kind, scope_key, name_key) do update
+        set attempts = 0,
+            last_error = null,
+            next_attempt_at = now() at time zone 'utc',
+            created_at = now() at time zone 'utc';
 
     update ai_position_mention
     set group_master_key = current_group, aor_ids = current_aors
