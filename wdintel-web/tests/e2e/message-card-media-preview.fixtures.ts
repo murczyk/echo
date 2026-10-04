@@ -1,6 +1,7 @@
 import { expect, type Page, type Route } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import type { InboxMessage } from '../../src/Bindings';
 import { strToU8, zipSync } from 'fflate';
 
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
@@ -774,6 +775,7 @@ async function installMessageCardMediaPreviewHostFixture(
   messageReferenceResponse: unknown | undefined,
   messageReferenceDelayMs: number,
   signalGroups: InboxMessagesRspRaw['signal_groups'] | undefined,
+  messageOverrides: Partial<InboxMessage> | undefined,
 ): Promise<void> {
   const inboxResponse = {
     ...buildMessageCardMediaPreviewInboxResponse({
@@ -793,6 +795,7 @@ async function installMessageCardMediaPreviewHostFixture(
   };
 
   const networkInfoResponse = withPolishContent ? MESSAGE_CARD_POLISH_NETWORKS : undefined;
+  Object.assign(inboxResponse.inbox_items[0][1], messageOverrides);
 
   if (host === 'analysis') {
     await installAnalysisNeoApiMocks(page, { inboxResponse, enableAudioTranscription });
@@ -968,6 +971,7 @@ export async function openMessageCardPreviewHost(
     messageReferenceResponse,
     messageReferenceDelayMs = 0,
     signalGroups,
+    messageOverrides,
   }: {
     revealAudio?: boolean;
     revealCoordinates?: boolean;
@@ -987,6 +991,7 @@ export async function openMessageCardPreviewHost(
     messageReferenceResponse?: unknown;
     messageReferenceDelayMs?: number;
     signalGroups?: InboxMessagesRspRaw['signal_groups'];
+    messageOverrides?: Partial<InboxMessage>;
   } = {},
 ): Promise<void> {
   await installMessageCardMediaPreviewAssetRoutes(page, deferredImageResponse);
@@ -1008,6 +1013,7 @@ export async function openMessageCardPreviewHost(
     messageReferenceResponse,
     messageReferenceDelayMs,
     signalGroups,
+    messageOverrides,
   );
   await page.goto(
     host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo',
@@ -1046,6 +1052,19 @@ export async function openLegacyKmlPreviewHost(
   } else {
     await installRerDutyShortStateMocks(page, { inboxResponse });
   }
+
+  await page.route('**/api/rer-importer/signal-profile-batch', (route) =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: {} }) }),
+  );
+  await page.route('**/api/datasources/list', (route) =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify([]) }),
+  );
+  await page.route('**/api/sigint/signals', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ show_load_more: false, signals: [] }),
+    }),
+  );
 
   await page.route('**/api/messenger/media/legacy-gpx/kmz-conversion/status', (route) =>
     route.fulfill({

@@ -9,6 +9,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import * as L from 'leaflet';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SyntheticEvent } from 'react';
+import dayjs from 'dayjs';
 
 import { copyTextToClipboard } from '../../../../../copy-to-clipboard';
 import { renderWgsFloat } from '../../../importer-beta/coordinates';
@@ -24,6 +25,8 @@ import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/Messag
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { CoordinatePreviewPoint } from '../message-coordinate-preview';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
+import { MessageReferenceLink } from '../MessageReferenceLink';
+import { APP_TIME_ZONE } from '../../../../utils/misc';
 
 const PREVIEW_ZOOM = 13;
 const PREVIEW_MAX_ZOOM = 13;
@@ -91,7 +94,7 @@ function DocumentPointContext({ point }: { point: CoordinatePreviewPoint }) {
 }
 
 function PalitraPointContext({ point }: { point: CoordinatePreviewPoint }) {
-  if (point.source !== 'palitra') return null;
+  if (point.source !== 'palitra' && point.source !== 'position') return null;
   return (
     <Typography
       variant="subtitle2"
@@ -104,17 +107,37 @@ function PalitraPointContext({ point }: { point: CoordinatePreviewPoint }) {
   );
 }
 
+function PositionPointSources({ point }: { point: CoordinatePreviewPoint }) {
+  if (!point.coordinateSources?.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1" data-coordinate-position-sources="true">
+      {point.coordinateSources.map((source) => (
+        <MessageReferenceLink
+          key={source.messageUuid}
+          href={`/rer-analysis-neo?m=${encodeURIComponent(source.messageUuid)}`}
+          messageIdentifier={source.messageUuid}
+          groupInfos={{}}
+          sourceGroupName={source.groupName}
+          chipLabel={`${dayjs(source.messageAt).tz(APP_TIME_ZONE).format('DD.MM.YYYY HH:mm')} ${source.groupName}`.trim()}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function CoordinateAttachmentPreviewRenderer({
   points,
+  initialPointIndex,
   navigation,
   onClose,
 }: {
   points: CoordinatePreviewPoint[];
+  initialPointIndex?: number;
   navigation: MessageCardPreviewNavigation;
   onClose: () => void;
 }) {
   const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(initialPointIndex ?? 0);
 
   useEffect(() => {
     setActiveIndex((index) => (points.length === 0 ? 0 : Math.min(index, points.length - 1)));
@@ -143,6 +166,7 @@ export function CoordinateAttachmentPreviewRenderer({
         <CoordinateMapPreview
           points={points}
           activeIndex={activeIndex}
+          focusOnInitialPoint={initialPointIndex != null}
           onActiveIndexChange={changeActiveIndex}
           baseLayerId={baseLayerId}
         />
@@ -169,11 +193,13 @@ export function CoordinateAttachmentPreviewRenderer({
 function CoordinateMapPreview({
   points,
   activeIndex,
+  focusOnInitialPoint,
   onActiveIndexChange,
   baseLayerId,
 }: {
   points: CoordinatePreviewPoint[];
   activeIndex: number;
+  focusOnInitialPoint: boolean;
   onActiveIndexChange: (index: number) => void;
   baseLayerId: BaseLayerId;
 }) {
@@ -182,6 +208,8 @@ function CoordinateMapPreview({
   const markerRefs = useRef<L.CircleMarker[]>([]);
   const pointsRef = useRef(points);
   const activeIndexRef = useRef(activeIndex);
+  const focusOnInitialPointRef = useRef(focusOnInitialPoint);
+  focusOnInitialPointRef.current = focusOnInitialPoint;
   const previousActiveIndexRef = useRef(activeIndex);
   const onActiveIndexChangeRef = useRef(onActiveIndexChange);
   const invalidateFrameRef = useRef<number | null>(null);
@@ -255,8 +283,8 @@ function CoordinateMapPreview({
     mapRef.current = map;
     map.on('click', () => setIsPanelOpen(false));
     const latLngs = visiblePoints.map(({ lat, lng }): [number, number] => [lat, lng]);
-    if (latLngs.length === 1) {
-      map.setView(latLngs[0], PREVIEW_ZOOM);
+    if (latLngs.length === 1 || focusOnInitialPointRef.current) {
+      map.setView([currentPoint.lat, currentPoint.lng], PREVIEW_ZOOM);
     } else {
       map.fitBounds(L.latLngBounds(latLngs), {
         animate: false,
@@ -309,6 +337,7 @@ function CoordinateMapPreview({
   }, []);
 
   const resizeCoordinateMap = useCallback((map: L.Map) => {
+    if (focusOnInitialPointRef.current) return;
     const latLngs = pointsRef.current.map(({ lat, lng }): [number, number] => [lat, lng]);
     if (latLngs.length > 1) {
       map.fitBounds(L.latLngBounds(latLngs), {
@@ -525,6 +554,7 @@ function CoordinateMapPreview({
           </div>
           <PalitraPointContext point={point} />
           <DocumentPointContext point={point} />
+          <PositionPointSources point={point} />
           <div role="table" className="w-full">
             {(isExpanded ? coordinateRows : coordinateRows.slice(0, 2)).map((row) => (
               <CoordinateValueRow

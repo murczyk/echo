@@ -19,6 +19,7 @@ import { isNullOrUndefined, isPresent } from '../../../utils/misc';
 
 import type {
   CallsignInfoRes,
+  CnPosition,
   ContentNode,
   InboxMessage,
   Network,
@@ -116,6 +117,22 @@ function isSearchHighlightedCallsign(
   return false;
 }
 
+/** Search terms or headline words inside a position name («Циркон» in
+ * «Циркон 9»). */
+function isSearchHighlightedPosition(
+  positionText: string,
+  searchTerms: Set<string>,
+  highlightedTexts: Set<string>,
+): boolean {
+  const normalizedPosition = normalizeSearchToken(positionText);
+  if (normalizedPosition === '') return false;
+  for (const value of [...highlightedTexts, ...searchTerms]) {
+    const normalized = normalizeSearchToken(value);
+    if (normalized !== '' && normalizedPosition.includes(normalized)) return true;
+  }
+  return false;
+}
+
 function tokenPillBaseStyle(isInteractive: boolean): CSSProperties {
   return {
     display: 'inline-flex',
@@ -129,27 +146,6 @@ function tokenPillBaseStyle(isInteractive: boolean): CSSProperties {
     fontWeight: 600,
     lineHeight: 1.2,
     cursor: isInteractive ? 'pointer' : 'inherit',
-  };
-}
-
-function pointTokenSx(theme: Theme): CSSProperties {
-  return {
-    display: 'inline',
-    backgroundColor:
-      theme.palette.mode === 'dark' ? 'rgba(253, 136, 79, 0.22)' : 'rgba(253, 136, 79, 0.18)',
-    boxShadow:
-      theme.palette.mode === 'dark'
-        ? 'inset 0 0 0 1px rgba(253, 136, 79, 0.58)'
-        : 'inset 0 0 0 1px rgba(221, 91, 34, 0.48)',
-    color: 'inherit',
-    borderRadius: '2px',
-    padding: '1px 3px',
-    fontSize: 'inherit',
-    fontWeight: 500,
-    lineHeight: 'inherit',
-    cursor: 'pointer',
-    WebkitBoxDecorationBreak: 'clone',
-    boxDecorationBreak: 'clone',
   };
 }
 
@@ -267,10 +263,8 @@ function PointToken({
 
   return (
     <>
-      <Box
-        component="span"
+      <span
         className="content-token--point"
-        sx={pointTokenSx}
         title={title}
         role="button"
         tabIndex={0}
@@ -282,7 +276,7 @@ function PointToken({
         }}
       >
         <span className="content-token--point-link">{text}</span>
-      </Box>
+      </span>
       <PowerMenu
         id={menuId}
         anchorEl={menuAnchorEl}
@@ -584,6 +578,30 @@ function CallsignWithHint({
   );
 }
 
+const POSITION_KIND_LABELS: Record<string, string> = {
+  position: 'Позиція',
+  crew: 'Розрахунок',
+  callsign: 'Позивний',
+};
+
+function positionTitle(
+  name: string,
+  kind: string,
+  mgrs: string[],
+  knownMgrs: string | null,
+  knownAt: number | null,
+  knownConflicting: boolean,
+): string {
+  const label = `${POSITION_KIND_LABELS[kind] ?? 'Позиція'} «${name}»`;
+  if (mgrs.length > 0) return `${label}: ${mgrs.join(', ')}`;
+  if (knownMgrs) {
+    const when = knownAt ? `, станом на ${new Date(knownAt).toLocaleDateString('uk-UA')}` : '';
+    const doubt = knownConflicting ? ' (є розбіжності)' : '';
+    return `${label}: відомо з інших повідомлень ${knownMgrs}${when}${doubt}`;
+  }
+  return `${label} (ШІ)`;
+}
+
 export function renderMarkedText(
   nodes: ContentNode[],
   _bodyText: string,
@@ -593,6 +611,7 @@ export function renderMarkedText(
     message?: InboxMessage;
     messageId?: number;
     onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+    onOpenPositionOnMap?: (position: CnPosition) => void;
     onRequestPointBlacklist?: (source: PointBlacklistRequestSource) => void;
     pendingBlacklistKeys?: Set<string>;
     callsignInfoMap?: Record<string, CallsignInfoRes>;
@@ -674,6 +693,84 @@ export function renderMarkedText(
         <span key={i} className="content-token--ADV">
           {text}
         </span>,
+      );
+      continue;
+    }
+
+    if ('CNPositionC' in node) {
+      const { text, mgrs, knownMgrs, knownAt, knownConflicting, kind, callsign } = node.CNPositionC;
+      const title = positionTitle(text, kind, mgrs, knownMgrs, knownAt, knownConflicting);
+      const located = mgrs.length > 0 || knownMgrs !== null;
+      const searchHighlighted = isSearchHighlightedPosition(text, searchTerms, highlightedTexts);
+      // A located crew or callsign that replaced a callsign token keeps the
+      // callsign pill (and its hint) and adds the location marker.
+      // The position may be wider than its callsign («ОП Лиман-2» around
+      // «Лиман-2»): keep the text around the pill.
+      const callsignAt = callsign ? text.indexOf(callsign) : -1;
+      const content = callsign ? (
+        <span className="content-token--position-callsign" title={title}>
+          {callsignAt > 0 ? text.slice(0, callsignAt) : null}
+          <CallsignWithHint
+            text={callsign}
+            callsignInfoMap={options?.callsignInfoMap}
+            networks={options?.networks}
+            unitsMap={options?.unitsMap}
+            freq={options?.freq}
+            networkIds={options?.networkIds}
+          />
+          {callsignAt >= 0 ? text.slice(callsignAt + (callsign?.length ?? 0)) : null}
+          <span className="content-token--position-marker" aria-label="координати">
+            ⌖
+          </span>
+        </span>
+      ) : (
+        text
+      );
+      const interactive = located && options?.onOpenPositionOnMap != null;
+      const positionContent = (
+        <span
+          className={[
+            'content-token--position',
+            `content-token--position-${kind}`,
+            located ? 'content-token--position-located' : '',
+            searchHighlighted ? 'content-token--position-search-highlighted' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          title={title}
+          role={interactive ? 'button' : undefined}
+          tabIndex={interactive ? 0 : undefined}
+          aria-label={interactive ? `${title}. Відкрити мапу повідомлення` : undefined}
+          onClick={
+            interactive
+              ? (event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  options?.onOpenPositionOnMap?.(node.CNPositionC);
+                }
+              : undefined
+          }
+          onKeyDown={
+            interactive
+              ? (event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  options?.onOpenPositionOnMap?.(node.CNPositionC);
+                }
+              : undefined
+          }
+        >
+          {content}
+        </span>
+      );
+      // A search match inside the position keeps its search highlight.
+      renderedNodes.push(
+        searchHighlighted ? (
+          <SearchHighlightedCallsign key={i}>{positionContent}</SearchHighlightedCallsign>
+        ) : (
+          <span key={i}>{positionContent}</span>
+        ),
       );
       continue;
     }

@@ -98,6 +98,7 @@ const CONTENT_NODE_VARIANT_KEY_MAP: Record<string, string> = {
   _c_n_highlight_c: 'CNHighlightC',
   _c_n_signal_c: 'CNSignalC',
   _c_n_point_c: 'CNPointC',
+  _c_n_position_c: 'CNPositionC',
 };
 
 function restoreContentNodeVariantKeys<T>(value: T): T {

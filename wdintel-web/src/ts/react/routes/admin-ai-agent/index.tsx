@@ -83,6 +83,7 @@ import {
 } from '../../services/api/ai-agent';
 import { listAiEngines } from '../../services/api/ai-engines';
 import { AdminAiCallsignsPage } from '../admin-ai-callsigns';
+import { AdminAiPositionPage, AdminAiPositionsPage } from '../admin-ai-positions';
 import { AdminAiSettlementsPage } from '../admin-ai-settlements';
 import { AdminAiIntelReportsPage } from '../admin-ai-intel-reports';
 import { AdminOcrPage } from '../admin-ocr';
@@ -103,6 +104,8 @@ export type AiAgentAdminSection =
   | 'echo-proxies'
   | 'callsigns'
   | 'settlements'
+  | 'positions'
+  | 'position'
   | 'intelligence-reports'
   | 'ocr'
   | 'settings';
@@ -1952,7 +1955,15 @@ function SettingsPage() {
   );
 }
 
-export function AdminAiAgentPage({ section }: { section: AiAgentAdminSection }) {
+export function AdminAiAgentPage({
+  section,
+  itemId = null,
+  tab = null,
+}: {
+  section: AiAgentAdminSection;
+  itemId?: string | null;
+  tab?: string | null;
+}) {
   switch (section) {
     case 'providers':
       return <ProvidersPage />;
@@ -1968,6 +1979,10 @@ export function AdminAiAgentPage({ section }: { section: AiAgentAdminSection }) 
       return <AdminAiCallsignsPage />;
     case 'settlements':
       return <AdminAiSettlementsPage />;
+    case 'positions':
+      return <AdminAiPositionsPage tab={tab} />;
+    case 'position':
+      return <AdminAiPositionPage id={itemId} />;
     case 'intelligence-reports':
       return <AdminAiIntelReportsPage />;
     case 'ocr':

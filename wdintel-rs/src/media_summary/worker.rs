@@ -284,6 +284,9 @@ async fn complete(
     if updated.rows_affected != 1 {
         anyhow::bail!("media summary lease was lost before completion");
     }
+    crate::ai_position::worker::enqueue_media_if_enabled(dbx, job.media_id)
+        .await
+        .c(h!())?;
     Ok(())
 }
 

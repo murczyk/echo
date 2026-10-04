@@ -48,6 +48,12 @@
       "category": "document-extraction",
       "path": "archive/2026-08-09-document-ocr-evaluation",
       "runner": "legacy"
+    },
+    {
+      "id": "position-feedback",
+      "category": "position-extraction",
+      "path": "ai-eval/2026-10-03-position-feedback",
+      "runner": "legacy"
     }
   ]
 }

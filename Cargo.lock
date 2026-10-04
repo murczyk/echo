@@ -3058,6 +3058,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3666dd0eadb0785d024b56e98e3ca4845086e51c1f4d9ce7acb433d13c508184"
 dependencies = [
  "elm_rs_derive",
+ "uuid",
 ]
 
 [[package]]

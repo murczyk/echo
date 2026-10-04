@@ -33,6 +33,7 @@ type SystemSettingsCurrentFixture = {
   show_classic_analysis: boolean;
   show_peleng_distance_to_battleline: boolean;
   hide_orbit_data: boolean;
+  exclude_orbit_other_units: boolean;
   disable_bot_tags: boolean;
   duty_exclude_menu_enabled: boolean;
   analysis_aor_filter_enabled: boolean;
@@ -79,6 +80,7 @@ export function systemSettingsCurrentResponse({
     show_classic_analysis: false,
     show_peleng_distance_to_battleline: false,
     hide_orbit_data: false,
+    exclude_orbit_other_units: false,
     disable_bot_tags: false,
     duty_exclude_menu_enabled: dutyExcludeMenuEnabled,
     analysis_aor_filter_enabled: analysisAorFilterEnabled,

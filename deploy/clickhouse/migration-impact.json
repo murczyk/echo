@@ -670,6 +670,30 @@
         }
       ]
     }
+ ,
+    "echo:m20261002_192628_ai_position_parsing": {
+      "changes": [
+        { "table": "public.ai_position_settings", "strategy": "excluded" },
+        { "table": "public.ai_position_worker_job", "strategy": "excluded" },
+        { "table": "public.ai_position_mention", "strategy": "excluded" },
+        { "table": "public.ai_position_coordinate", "strategy": "excluded" },
+        { "table": "public.ai_position_knowledge", "strategy": "excluded" },
+        { "table": "public.ai_position_knowledge_job", "strategy": "excluded" },
+        { "table": "public.ai_position_link_job", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261003_041306_ai_position_feedback": {
+      "changes": [
+        { "table": "public.ai_position_feedback", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261003_111926_ai_position_kind": {
+      "changes": [
+        { "table": "public.ai_position_mention", "strategy": "excluded" },
+        { "table": "public.ai_position_knowledge", "strategy": "excluded" },
+        { "table": "public.ai_position_feedback", "strategy": "excluded" }
+      ]
+    }
   },
   "dependencies": {
     "echo-im:f9b21242397b9cb04c9c98213f1c5217f1f1e273": {
