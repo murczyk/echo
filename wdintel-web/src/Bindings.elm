@@ -4194,6 +4194,7 @@ type alias CnPosition =
     , knownMgrs : Maybe (String)
     , knownAt : Maybe (Int)
     , knownConflicting : Bool
+    , coordinateSources : List (CnPositionCoordinateSource)
     , kind : String
     , callsign : Maybe (String)
     }
@@ -4210,8 +4211,27 @@ cnPositionEncoder struct =
         , ( "known_mgrs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.knownMgrs )
         , ( "known_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.knownAt )
         , ( "known_conflicting", (Json.Encode.bool) struct.knownConflicting )
+        , ( "coordinate_sources", (Json.Encode.list (cnPositionCoordinateSourceEncoder)) struct.coordinateSources )
         , ( "kind", (Json.Encode.string) struct.kind )
         , ( "callsign", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.callsign )
+        ]
+
+
+type alias CnPositionCoordinateSource =
+    { mgrs : String
+    , messageUuid : String
+    , groupName : String
+    , messageAt : Int
+    }
+
+
+cnPositionCoordinateSourceEncoder : CnPositionCoordinateSource -> Json.Encode.Value
+cnPositionCoordinateSourceEncoder struct =
+    Json.Encode.object
+        [ ( "mgrs", (Json.Encode.string) struct.mgrs )
+        , ( "message_uuid", (Json.Encode.string) struct.messageUuid )
+        , ( "group_name", (Json.Encode.string) struct.groupName )
+        , ( "message_at", (Json.Encode.int) struct.messageAt )
         ]
 
 
@@ -18693,8 +18713,18 @@ cnPositionDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_mgrs" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_conflicting" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinate_sources" (Json.Decode.list (cnPositionCoordinateSourceDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" (Json.Decode.nullable (Json.Decode.string))))
+
+
+cnPositionCoordinateSourceDecoder : Json.Decode.Decoder CnPositionCoordinateSource
+cnPositionCoordinateSourceDecoder =
+    Json.Decode.succeed CnPositionCoordinateSource
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mgrs" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uuid" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_at" (Json.Decode.int)))
 
 
 contentNodeDecoder : Json.Decode.Decoder ContentNode

@@ -773,12 +773,16 @@ pub(crate) async fn positions_by_message(
 {
     use crate::entities::ai_position_mention;
     let mut result: HashMap<i64, Vec<_>> = HashMap::new();
-    if message_ids.is_empty() {
+    if message_ids.is_empty() || allowed_groups.is_empty() {
         return Ok(result);
     }
     let mentions = ai_position_mention::Entity::find()
         .filter(
             ai_position_mention::Column::SigintInboxItemId.is_in(message_ids),
+        )
+        .filter(
+            ai_position_mention::Column::GroupMasterKey
+                .is_in(allowed_groups.iter().cloned()),
         )
         .order_by_asc(ai_position_mention::Column::BeginChar)
         .all(dbx)
@@ -808,6 +812,20 @@ pub(crate) async fn positions_by_message(
     )
     .await
     .c(h!())?;
+    let mut own_sources = super::sources::mention_sources(
+        dbx,
+        mentions.iter().map(|mention| mention.id).collect(),
+        allowed_groups,
+    )
+    .await
+    .c(h!())?;
+    let known_sources = super::sources::knowledge_sources(
+        dbx,
+        known.iter().map(|known| known.id).collect(),
+        allowed_groups,
+    )
+    .await
+    .c(h!())?;
     for mention in mentions {
         let Some(message_id) = mention.sigint_inbox_item_id else {
             continue;
@@ -823,6 +841,10 @@ pub(crate) async fn positions_by_message(
         } else {
             None
         };
+        let coordinate_sources = knowledge.map_or_else(
+            || own_sources.remove(&mention.id).unwrap_or_default(),
+            |known| known_sources.get(&known.id).cloned().unwrap_or_default(),
+        );
         result.entry(message_id).or_default().push(
             crate::rer_importer::highlight::CNPosition {
                 begin: mention.begin_char as usize,
@@ -833,6 +855,7 @@ pub(crate) async fn positions_by_message(
                 }),
                 known_conflicting: knowledge
                     .is_some_and(|known| known.conflicting),
+                coordinate_sources,
                 kind: mention.kind.clone(),
                 callsign: None,
                 etalon: mention.name_key,

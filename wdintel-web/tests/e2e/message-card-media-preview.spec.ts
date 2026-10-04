@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { minimalInboxMessage } from '../../src/ts/react/routes/rer-duty-neo/inbox-message-mocks';
 
 import {
   createDeferredMediaResponse,
@@ -2086,9 +2087,21 @@ for (const width of [1280, 390]) {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.setViewportSize({ width, height: 900 });
     const uuid = '019a4aa8-0000-7000-8000-000000000065';
+    const sourceUuid = '019a4aa8-0000-7000-8000-000000000066';
     for (const host of ['analysis', 'duty'] as const) {
       await openMessageCardPreviewHost(page, host, {
         palitraEtalon: 'BRAVO',
+        messageReferenceResponse: {
+          message: [
+            501,
+            minimalInboxMessage({
+              messageUuid: sourceUuid,
+              text: 'Береза 3 підтверджена за координатами 37UCQ1111122222.',
+              groupMasterKey: 'source-group',
+              timestamp: 1720000000000,
+            }),
+          ],
+        },
         messageOverrides: {
           messageUuid: uuid,
           text: 'BRAVO Береза 3',
@@ -2108,6 +2121,14 @@ for (const width of [1280, 390]) {
                 knownMgrs: '37UCQ1111122222',
                 knownAt: 1720000000000,
                 knownConflicting: false,
+                coordinateSources: [
+                  {
+                    mgrs: '37UCQ1111122222',
+                    messageUuid: sourceUuid,
+                    groupName: 'Група джерела',
+                    messageAt: 1720000000000,
+                  },
+                ],
               },
             },
           ],
@@ -2153,6 +2174,18 @@ for (const width of [1280, 390]) {
       expect(
         Math.abs(targetBox!.y + targetBox!.height / 2 - (mapBox!.y + mapBox!.height / 2)),
       ).toBeLessThan(50);
+      await page.mouse.click(mapBox!.x + mapBox!.width / 2, mapBox!.y + mapBox!.height / 2);
+      const sourceChip = dialog.locator('[data-coordinate-position-sources] a.echo-chip');
+      await expect(sourceChip).toHaveCount(1);
+      await expect(sourceChip).toHaveAttribute('href', `/rer-analysis-neo?m=${sourceUuid}`);
+      await expect(sourceChip).toContainText('Група джерела');
+      const sourceRequest = page.waitForRequest('**/api/rer-importer/inbox-item-context');
+      await sourceChip.hover();
+      expect((await sourceRequest).postDataJSON()).toEqual({ message_uid: sourceUuid });
+      const sourcePreview = page.getByTestId('message-summary-preview-501');
+      await expect(sourcePreview).toBeVisible();
+      await expect(sourcePreview).toContainText('Береза 3 підтверджена');
+      await expect(sourcePreview).toContainText('Група джерела');
       await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
       const coordinates = card.getByRole('button', { name: /^(Розгорнути|Згорнути) координати:/ });
       if ((await coordinates.getAttribute('aria-expanded')) !== 'true') await coordinates.click();

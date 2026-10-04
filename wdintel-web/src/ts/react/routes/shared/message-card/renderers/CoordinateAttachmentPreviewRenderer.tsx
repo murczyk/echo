@@ -9,6 +9,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import * as L from 'leaflet';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SyntheticEvent } from 'react';
+import dayjs from 'dayjs';
 
 import { copyTextToClipboard } from '../../../../../copy-to-clipboard';
 import { renderWgsFloat } from '../../../importer-beta/coordinates';
@@ -24,6 +25,8 @@ import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/Messag
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { CoordinatePreviewPoint } from '../message-coordinate-preview';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
+import { MessageReferenceLink } from '../MessageReferenceLink';
+import { APP_TIME_ZONE } from '../../../../utils/misc';
 
 const PREVIEW_ZOOM = 13;
 const PREVIEW_MAX_ZOOM = 13;
@@ -101,6 +104,24 @@ function PalitraPointContext({ point }: { point: CoordinatePreviewPoint }) {
     >
       {point.label}
     </Typography>
+  );
+}
+
+function PositionPointSources({ point }: { point: CoordinatePreviewPoint }) {
+  if (!point.coordinateSources?.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1" data-coordinate-position-sources="true">
+      {point.coordinateSources.map((source) => (
+        <MessageReferenceLink
+          key={source.messageUuid}
+          href={`/rer-analysis-neo?m=${encodeURIComponent(source.messageUuid)}`}
+          messageIdentifier={source.messageUuid}
+          groupInfos={{}}
+          sourceGroupName={source.groupName}
+          chipLabel={`${dayjs(source.messageAt).tz(APP_TIME_ZONE).format('DD.MM.YYYY HH:mm')} ${source.groupName}`.trim()}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -533,6 +554,7 @@ function CoordinateMapPreview({
           </div>
           <PalitraPointContext point={point} />
           <DocumentPointContext point={point} />
+          <PositionPointSources point={point} />
           <div role="table" className="w-full">
             {(isExpanded ? coordinateRows : coordinateRows.slice(0, 2)).map((row) => (
               <CoordinateValueRow

@@ -1619,8 +1619,16 @@ export type CnPosition = {
   knownMgrs: string | null;
   knownAt: number | null;
   knownConflicting: boolean;
+  coordinateSources: Array<CnPositionCoordinateSource>;
   kind: string;
   callsign: string | null;
+};
+
+export type CnPositionCoordinateSource = {
+  mgrs: string;
+  messageUuid: string;
+  groupName: string;
+  messageAt: number;
 };
 
 export type CnHighlight = {

@@ -8,6 +8,7 @@ pub mod knowledge;
 pub mod list;
 pub mod lookup;
 pub mod normalize;
+mod sources;
 pub mod types;
 pub mod worker;
 

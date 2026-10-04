@@ -31,6 +31,11 @@ and document coordinates. Clicking a position opens that complete map focused
 on its location; clicking the map thumbnail fits all points. Positions without
 coordinates keep their tooltip without opening a map.
 
+The map's coordinate card links to the message supporting those coordinates,
+with the same hover preview as AI citations. Sources must belong to a current,
+accessible group and an undeleted message; knowledge sources must also match
+the displayed MGRS, scope and fact window. The message preview rechecks access.
+
 Copied message links prefer the message UUID. Legacy local/test data missing
 UUIDs can be repaired with `target/debug/wdintel-rs --mode=debug oneoff-backfill-signal-message-uuid --reset-checkpoint`;
 the existing backfill preserves assigned UUIDs and fills related references.
@@ -120,7 +125,7 @@ returns three tiers, all limited to the caller's groups:
    these are other mentions of the nearby known positions.
 
 The AI agent uses it as `echo_position_lookup` (route `position_lookup`,
-harness `2026.10.03.1` or later). The admin lists accept the same `near`
+harness `2026.10.04.1` or later). The admin lists accept the same `near`
 («<coordinates>|<metres>») and `from`/`to` (dates) filters, plus `kind`.
 
 ## Feedback and evaluation

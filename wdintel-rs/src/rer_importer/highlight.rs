@@ -39,11 +39,23 @@ pub struct CNPosition {
     /// latest fact behind `known_mgrs`, milliseconds since the epoch
     pub known_at: Option<i64>,
     pub known_conflicting: bool,
+    #[serde(default)]
+    pub coordinate_sources: Vec<CNPositionCoordinateSource>,
     /// `position`, `crew` or `callsign`.
     pub kind: String,
     /// The callsign token this located mention replaced, so the card can
     /// keep its callsign hint next to the location.
     pub callsign: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CNPositionCoordinateSource {
+    pub mgrs: String,
+    pub message_uuid: String,
+    pub group_name: String,
+    pub message_at: i64,
 }
 
 #[derive(
@@ -1371,6 +1383,7 @@ mod tests {
             known_mgrs: None,
             known_at: None,
             known_conflicting: false,
+            coordinate_sources: vec![],
             kind: "position".to_string(),
             callsign: None,
         };
@@ -1427,6 +1440,7 @@ mod tests {
             known_mgrs: None,
             known_at: None,
             known_conflicting: false,
+            coordinate_sources: vec![],
             kind: "crew".to_string(),
             callsign: None,
         };

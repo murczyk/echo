@@ -103,6 +103,14 @@ describe('message coordinate preview resolver', () => {
         knownMgrs: '37UCQ1111122222',
         knownAt: 1720000000000,
         knownConflicting: false,
+        coordinateSources: [
+          {
+            mgrs: '37UCQ1111122222',
+            messageUuid: '019a4aa8-0000-7000-8000-000000000066',
+            groupName: 'Група джерела',
+            messageAt: 1720000000000,
+          },
+        ],
       },
     };
     const message = createMessage({
@@ -121,6 +129,7 @@ describe('message coordinate preview resolver', () => {
     ]);
     expect(result?.points[3].label).toBe('Позиція «Береза 3»');
     expect(result?.points[3].description).toContain('Відомо з інших повідомлень');
+    expect(result?.points[3].coordinateSources).toEqual(position.CNPositionC.coordinateSources);
     const positionsOnly = createMessage({ textMarked: [position] });
     expect(hasCoordinatePreviewCandidate(positionsOnly, {})).toBe(true);
     expect(
@@ -143,6 +152,9 @@ describe('message coordinate preview resolver', () => {
       });
       expect(colocated?.points).toHaveLength(1);
       expect(colocated?.points[0].label).toBe('Позиція «Береза 3»');
+      expect(colocated?.points[0].coordinateSources).toEqual(
+        position.CNPositionC.coordinateSources,
+      );
     }
   });
 

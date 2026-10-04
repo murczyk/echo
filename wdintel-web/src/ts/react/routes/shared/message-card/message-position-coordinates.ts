@@ -26,6 +26,9 @@ export function resolvePositionCoordinatePreviewPoints(
         lat: point.lat,
         lng: point.lng,
         label: `${KIND_LABELS[position.kind] ?? 'Позиція'} «${position.text}»`,
+        coordinateSources: (position.coordinateSources ?? []).filter(
+          (source) => source.mgrs === coordinate,
+        ),
         description:
           position.mgrs.length > 0
             ? coordinate

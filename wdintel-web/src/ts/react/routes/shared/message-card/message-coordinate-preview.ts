@@ -1,4 +1,5 @@
 import type {
+  CnPositionCoordinateSource,
   InboxMessage,
   LocalityDetails,
   MediaSummaryCoordinate,
@@ -29,6 +30,7 @@ export type CoordinatePreviewPoint = {
   description?: string;
   plannedMeans?: string | null;
   locality?: LocalityDetails | null;
+  coordinateSources?: CnPositionCoordinateSource[];
 };
 
 export function formatCoordinatePreviewPointCount(count: number): string {
@@ -710,6 +712,12 @@ export async function resolveMessageCoordinatePreview(
             label:
               previous.source === 'direct' ? point.label : `${previous.label} · ${point.label}`,
             description: [previous.description, point.description].filter(Boolean).join('\n'),
+            coordinateSources: mergeCoordinateSources(previous, point),
+          };
+        } else {
+          points[previousIndex] = {
+            ...previous,
+            coordinateSources: mergeCoordinateSources(previous, point),
           };
         }
       }
@@ -725,6 +733,20 @@ export async function resolveMessageCoordinatePreview(
     etalons: existing?.etalons ?? [],
     lookupError,
   };
+}
+
+function mergeCoordinateSources(
+  previous: CoordinatePreviewPoint,
+  point: CoordinatePreviewPoint,
+): NonNullable<CoordinatePreviewPoint['coordinateSources']> {
+  return Array.from(
+    new Map(
+      [...(previous.coordinateSources ?? []), ...(point.coordinateSources ?? [])].map((source) => [
+        source.messageUuid,
+        source,
+      ]),
+    ).values(),
+  );
 }
 
 export function collectCoordinatePreviewEtalons(

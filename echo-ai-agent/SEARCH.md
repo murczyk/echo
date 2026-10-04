@@ -45,7 +45,7 @@ and date limits. They include untagged production-derived examples for #3572.
 
 ## Position lookup
 
-Release `2026.10.03.1` adds `echo_position_lookup` (route `position_lookup`,
+Release `2026.10.04.1` adds `echo_position_lookup` (route `position_lookup`,
 `POST /api/positions/lookup`). For questions about where a named position, crew
 or callsign is, or what is at given coordinates, the agent looks up known
 locations first, then mentions with coordinates, then other mentions for
@@ -54,14 +54,14 @@ context, and reads messages by ID before citing them. See
 
 ## Rollout
 
-Release `2026.10.03.1` requires the matching Echo build, including the AI
+Release `2026.10.04.1` requires the matching Echo build, including the AI
 position migrations. Release `2026.09.28.1` added no database migration.
 Deploy/restart Echo first, then upgrade only the intended namespace:
 
 ```sh
 just dev-tmux-restart
-just ai-control-panel upgrade --host local --release 2026.10.03.1 --dry-run
-just ai-control-panel upgrade --host local --release 2026.10.03.1
+just ai-control-panel upgrade --host local --release 2026.10.04.1 --dry-run
+just ai-control-panel upgrade --host local --release 2026.10.04.1
 ```
 
 For another host, deploy that Echo build and replace `local` with its explicit

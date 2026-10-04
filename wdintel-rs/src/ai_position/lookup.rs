@@ -305,24 +305,41 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+        let private_group = crate::functest::tests::mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                is_secret: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let now = chrono::Utc::now().naive_utc();
         let mut mention_ids = Vec::new();
-        for (body, located) in [
-            ("Переміщення до \"Циркон 9\" (36T XT 75734 68963)", true),
-            ("ЦИРКОН-9 на зв'язку", false),
+        let mut message_refs = Vec::new();
+        for (body, located, source_group) in [
+            (
+                "Переміщення до \"Циркон 9\" (36T XT 75734 68963)",
+                true,
+                &group,
+            ),
+            ("ЦИРКОН-9 на зв'язку", false, &group),
+            ("Приватне джерело Циркон 9", true, &private_group),
         ] {
             let message = crate::functest::tests::mk_signal_message(
                 &env.dbx,
                 signal_message::ActiveModel {
                     body: Set(Some(body.to_string())),
+                    id_uuid: Set(Some(uuid::Uuid::now_v7())),
                     ..Default::default()
                 },
             )
             .await
             .unwrap();
+            message_refs.push((message.id, message.id_uuid.unwrap()));
             signal_message_group::ActiveModel {
                 signal_message_id: Set(message.id),
-                group_master_key: Set(Some(group.master_key.clone())),
+                group_master_key: Set(Some(source_group.master_key.clone())),
                 created_at: Set(message.created_at),
                 ..Default::default()
             }
@@ -345,8 +362,8 @@ mod tests {
                 begin_char: Set(0),
                 end_char: Set(8),
                 message_at: Set(now),
-                group_master_key: Set(Some(group.master_key.clone())),
-                group_is_secret: Set(false),
+                group_master_key: Set(Some(source_group.master_key.clone())),
+                group_is_secret: Set(source_group.is_secret),
                 aor_ids: Set(vec![]),
                 model_name: Set("test".to_string()),
                 ..Default::default()
@@ -397,6 +414,28 @@ mod tests {
 
         assert_eq!(known.id.get_version_num(), 7);
         let allowed = vec![group.master_key.clone()];
+        let spans = crate::ai_position::list::positions_by_message(
+            &env.dbx,
+            message_refs.iter().map(|(id, _)| *id).collect(),
+            &allowed.iter().cloned().collect(),
+        )
+        .await
+        .unwrap();
+        assert!(!spans.contains_key(&message_refs[2].0));
+        for (id, _) in &message_refs[..2] {
+            let sources = &spans[id][0].coordinate_sources;
+            assert_eq!(sources.len(), 1);
+            assert_eq!(sources[0].mgrs, "36TXT7573468963");
+            assert_eq!(sources[0].message_uuid, message_refs[0].1.to_string());
+        }
+        assert!(crate::ai_position::list::positions_by_message(
+            &env.dbx,
+            message_refs.iter().map(|(id, _)| *id).collect(),
+            &Default::default(),
+        )
+        .await
+        .unwrap()
+        .is_empty());
         assert_uuid_pagination(&env.dbx, &allowed).await;
         let by_name =
             lookup(&env, request(Some("ЦИРКОН 9"), None), allowed.clone())
