@@ -371,6 +371,25 @@ fn distance_m(a: &Fact, b: &Fact) -> f64 {
     2.0 * EARTH_RADIUS_M * h.sqrt().asin()
 }
 
+/// Which facts belong to the scope, with the scope's value as `$2`.
+fn facts_scope_condition(
+    scope: &Scope,
+) -> anyhow::Result<(&'static str, sea_orm::Value)> {
+    Ok(if scope.kind == SCOPE_AOR {
+        (
+            "not coalesce(sg.is_secret, false)
+             and exists (
+                 select 1 from signal_group_aor sga
+                 join area_of_responsibility aor on aor.id = sga.aor_id and not aor.deleted
+                 where sga.master_key = m.group_master_key and sga.aor_id = $2
+             )",
+            scope.key.parse::<i64>().c(h!())?.into(),
+        )
+    } else {
+        ("m.group_master_key = $2", scope.key.clone().into())
+    })
+}
+
 /// Facts in the scope from the window before the latest one. Privacy and
 /// AOR membership are the groups' current ones; deleted messages are out.
 async fn load_facts<C>(
@@ -381,21 +400,8 @@ async fn load_facts<C>(
 where
     C: ConnectionTrait,
 {
-    let scope_condition = if scope.kind == SCOPE_AOR {
-        "not coalesce(sg.is_secret, false)
-         and exists (
-             select 1 from signal_group_aor sga
-             join area_of_responsibility aor on aor.id = sga.aor_id and not aor.deleted
-             where sga.master_key = m.group_master_key and sga.aor_id = $2
-         )"
-    } else {
-        "m.group_master_key = $2"
-    };
-    let scope_value: sea_orm::Value = if scope.kind == SCOPE_AOR {
-        scope.key.parse::<i64>().c(h!())?.into()
-    } else {
-        scope.key.clone().into()
-    };
+    let (scope_condition, scope_value) =
+        facts_scope_condition(scope).c(h!())?;
     Fact::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         format!(
@@ -541,7 +547,32 @@ pub(crate) async fn has_facts<C>(
 where
     C: ConnectionTrait,
 {
-    Ok(!load_facts(dbx, scope, name_key).await.c(h!())?.is_empty())
+    let (scope_condition, scope_value) =
+        facts_scope_condition(scope).c(h!())?;
+    #[derive(FromQueryResult)]
+    struct Found {
+        found: bool,
+    }
+    let found = Found::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!(
+            "select exists (
+                 select 1
+                 from ai_position_coordinate c
+                 join ai_position_mention m on m.id = c.mention_id
+                 left join signal_group sg on sg.master_key = m.group_master_key
+                 left join signal_message_media media on media.id = m.media_id
+                 join signal_message message
+                     on message.id = coalesce(m.sigint_inbox_item_id, media.signal_message_id)
+                 where m.name_key = $1 and not message.deleted and {scope_condition}
+             ) as found"
+        ),
+        [name_key.into(), scope_value],
+    ))
+    .one(dbx)
+    .await
+    .c(h!())?;
+    Ok(found.is_some_and(|found| found.found))
 }
 
 /// Latin look-alike letters folded to Cyrillic, as `position_key` does, so
@@ -1062,6 +1093,30 @@ pub(crate) async fn process_next(
     };
     let result = async {
         let transaction = dbx.begin().await.c(h!())?;
+        // Hold the job while recomputing: a group move re-queues it (and
+        // waits for this commit) before dropping the knowledge it fed, so a
+        // result computed from facts the move changed is never published.
+        let current = ai_position_knowledge_job::Entity::find()
+            .filter(
+                ai_position_knowledge_job::Column::ScopeKind
+                    .eq(job.scope_kind.clone()),
+            )
+            .filter(
+                ai_position_knowledge_job::Column::ScopeKey
+                    .eq(job.scope_key.clone()),
+            )
+            .filter(
+                ai_position_knowledge_job::Column::NameKey
+                    .eq(job.name_key.clone()),
+            )
+            .lock_exclusive()
+            .one(&transaction)
+            .await
+            .c(h!())?;
+        if current.is_none_or(|current| current.created_at != job.created_at) {
+            transaction.rollback().await.c(h!())?;
+            return anyhow::Ok(Vec::new());
+        }
         let before = load_knowledge(&transaction, &scope, &job.name_key)
             .await
             .c(h!())?;

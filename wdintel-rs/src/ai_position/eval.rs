@@ -346,12 +346,18 @@ async fn evaluate_case(
             )
         }
         "missed" => {
-            let missing: Vec<String> = case
+            let expected: Vec<String> = case
                 .expected
                 .split(['\n', ',', ';'])
                 .map(position_key)
-                .filter(|key| !key.is_empty() && !has(key))
+                .filter(|key| !key.is_empty())
                 .collect();
+            // Nothing named as missed: nothing to check against.
+            if expected.is_empty() {
+                return skipped("missed without an expected name");
+            }
+            let missing: Vec<String> =
+                expected.into_iter().filter(|key| !has(key)).collect();
             (missing.is_empty(), format!("missed {missing:?}"))
         }
         _ => return skipped("unknown verdict"),

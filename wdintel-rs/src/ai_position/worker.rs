@@ -464,11 +464,42 @@ async fn drop_unavailable_source(
     let unchanged =
         current.is_some_and(|current| current.created_at == job.created_at);
     if unchanged && load_source(&transaction, job).await.c(h!())?.is_none() {
-        delete_source_mentions(&transaction, job).await.c(h!())?;
+        // A soft-deleted message keeps its facts for a restore: the deletion
+        // triggers already took them out of knowledge.
+        if !message_soft_deleted(&transaction, job).await.c(h!())? {
+            delete_source_mentions(&transaction, job).await.c(h!())?;
+        }
         delete_job(&transaction, job.id).await.c(h!())?;
     }
     transaction.commit().await.c(h!())?;
     Ok(())
+}
+
+async fn message_soft_deleted<C>(
+    dbx: &C,
+    job: &ai_position_worker_job::Model,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    #[derive(FromQueryResult)]
+    struct Deleted {
+        deleted: bool,
+    }
+    let row = Deleted::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select message.deleted
+         from signal_message message
+         where message.id = coalesce(
+             $1,
+             (select media.signal_message_id from signal_message_media media where media.id = $2)
+         )",
+        [job.sigint_inbox_item_id.into(), job.media_id.into()],
+    ))
+    .one(dbx)
+    .await
+    .c(h!())?;
+    Ok(row.is_some_and(|row| row.deleted))
 }
 
 async fn complete_job(

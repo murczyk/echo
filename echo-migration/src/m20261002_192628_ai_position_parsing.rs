@@ -404,6 +404,11 @@ begin
         union all
         select 'aor', aor_id::text from unnest(mention.aor_ids) aor_id
         union all
+        -- The old group's AORs now, which may differ from the snapshot.
+        select 'aor', sga.aor_id::text
+        from signal_group_aor sga
+        where sga.master_key = mention.group_master_key
+        union all
         select 'group', current_group where current_group is not null
         union all
         select 'aor', aor_id::text from unnest(current_aors) aor_id
