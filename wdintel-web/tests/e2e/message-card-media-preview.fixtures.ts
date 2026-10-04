@@ -1056,6 +1056,15 @@ export async function openLegacyKmlPreviewHost(
   await page.route('**/api/rer-importer/signal-profile-batch', (route) =>
     route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: {} }) }),
   );
+  await page.route('**/api/datasources/list', (route) =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify([]) }),
+  );
+  await page.route('**/api/sigint/signals', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ show_load_more: false, signals: [] }),
+    }),
+  );
 
   await page.route('**/api/messenger/media/legacy-gpx/kmz-conversion/status', (route) =>
     route.fulfill({
