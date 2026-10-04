@@ -349,11 +349,7 @@ async fn persist_rer_csv_message(
             timestamp,
         ))),
         body: Set(Some(body)),
-        created_at: if context.import_as_new {
-            NotSet
-        } else {
-            Set(timestamp)
-        },
+        created_at: NotSet,
         timestamp: Set(Some(timestamp)),
         sender: Set(Some(context.source_uuid.clone())),
         login_id: NotSet,
@@ -370,6 +366,20 @@ async fn persist_rer_csv_message(
     .await
     .c(h!())?;
     let message_id = message.id;
+    let message_uid = id::generate_message_id(
+        id::MessageMeta {
+            id: message.id,
+            datetime: message.created_at,
+        },
+        context.config,
+    )
+    .c(h!())?;
+    let mut message = message.into_active_model();
+    if !context.import_as_new {
+        message.created_at = Set(timestamp);
+    }
+    message.message_uid = Set(Some(message_uid));
+    let message = message.update(context.dbx).await.c(h!())?;
 
     signal_message_group::ActiveModel {
         id: NotSet,
@@ -385,10 +395,6 @@ async fn persist_rer_csv_message(
     .insert(context.dbx)
     .await
     .c(h!())?;
-
-    id::update_message_with_uid(context.dbx, context.config, message)
-        .await
-        .context(h!())?;
     Ok(message_id)
 }
 
@@ -1362,6 +1368,57 @@ mod tests {
         assert_eq!(inbox_item.datetime, Some(expected));
     }
 
+    async fn assert_historical_message_uids_are_unique(
+        env: &Env,
+        group_id: String,
+        datasource_id: i64,
+        source_uuid: String,
+    ) {
+        let timestamp = NaiveDate::from_ymd_opt(2026, 10, 2)
+            .unwrap()
+            .and_hms_opt(7, 30, 0)
+            .unwrap();
+        let marker = Uuid::new_v4();
+        let bodies = (0..65)
+            .map(|index| format!("historical UID {index} {marker}"))
+            .collect::<Vec<_>>();
+        let context = RerCsvImportContext {
+            settlements: env.settlements.clone(),
+            dbx: &env.dbx,
+            rq: &env.rq,
+            config: &env.config,
+            group_id,
+            datasource_id,
+            source_uuid,
+            import_as_new: false,
+            lnow: fixed_now(),
+        };
+
+        for body in &bodies {
+            persist_rer_csv_message(&context, body.clone(), timestamp)
+                .await
+                .unwrap();
+        }
+
+        let messages = signal_message::Entity::find()
+            .filter(signal_message::Column::Body.is_in(bodies))
+            .order_by_asc(signal_message::Column::Id)
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(messages.len(), 65);
+        assert_eq!(messages.last().unwrap().id - messages[0].id, 64);
+        assert!(messages.iter().all(|message| {
+            message.created_at == timestamp
+                && message.timestamp == Some(timestamp)
+        }));
+        let message_uids = messages
+            .into_iter()
+            .map(|message| message.message_uid.unwrap())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(message_uids.len(), 65);
+    }
+
     #[test]
     fn rer_csv_records_preserve_multiline_messages_and_ignore_empty_rows() {
         let csv = "\"29.02.2024_15:50 first, line\r\nsecond line\"\r\n\r\n\"  Дата: 2024-03-02;\r\nЧас: 07:09;  \"\r\n";
@@ -1541,10 +1598,11 @@ mod tests {
         let datasource = crate::functest::tests::find_test_datasource(&env.dbx)
             .await
             .unwrap();
+        let group_id = Uuid::new_v4().to_string();
         let group = crate::functest::tests::mk_signal_group(
             &env.dbx,
             signal_group::ActiveModel {
-                master_key: Set(Uuid::new_v4().to_string()),
+                master_key: Set(group_id.clone()),
                 name: Set(Some(env.config.signal_import_group_name.clone())),
                 datasource_id: Set(Some(datasource.id)),
                 ..Default::default()
@@ -1562,8 +1620,9 @@ mod tests {
         )
         .await
         .unwrap();
+        let source_uuid = Uuid::new_v4().to_string();
         signal_profile::ActiveModel {
-            uuid: Set(Uuid::new_v4().to_string()),
+            uuid: Set(source_uuid.clone()),
             given_name: Set(Some(env.config.signal_import_fiven_name.clone())),
             created_at: Set(Utc::now().naive_utc()),
             ..Default::default()
@@ -1631,19 +1690,7 @@ mod tests {
             .unwrap();
         assert_eq!(message.created_at, expected);
         assert_eq!(message.timestamp, Some(expected));
-        assert_eq!(
-            message.message_uid,
-            Some(
-                id::generate_message_id(
-                    id::MessageMeta {
-                        id: message.id,
-                        datetime: expected,
-                    },
-                    &env.config,
-                )
-                .unwrap()
-            )
-        );
+        assert!(message.message_uid.is_some());
         let message_group = signal_message_group::Entity::find()
             .filter(
                 signal_message_group::Column::SignalMessageId.eq(message.id),
@@ -1653,6 +1700,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(message_group.created_at, expected);
+        assert_eq!(message_group.message_uid, message.message_uid);
         let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
             .one(&env.dbx)
             .await
@@ -1717,6 +1765,14 @@ mod tests {
                 "total=5, imported=2, skipped=3, missing_timestamp=2, invalid_message_size=1",
             )
         }));
+
+        assert_historical_message_uids_are_unique(
+            &env,
+            group_id,
+            datasource.id,
+            source_uuid,
+        )
+        .await;
 
         assert_historical_import_reuses_split_reference_time(
             &env.dbx, &mut redis, &directory, marker,
