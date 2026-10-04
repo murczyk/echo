@@ -23,7 +23,6 @@ pub const PG_POOL_BGWORKER_MAX_CONNECTIONS: u32 = 20;
 pub const PG_WDFILE_POOL_MAX_CONNECTIONS: u32 = 10;
 pub const PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS: u32 = 1;
 pub const MIGRATION_ADVISORY_LOCK_NAME: &str = "echo:migrations";
-pub const MIGRATION_ADVISORY_LOCK_RETRY_MILLIS: u64 = 250;
 pub const FILE_REGISTRY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 60;
 pub(crate) const DEVICE_FILE_CONTENT_REUSE_MAX_BODY_BYTES: usize = 1024;
 pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -455,7 +454,7 @@ pub const API_INTEGRATION_IGGY_PUBLISH_RETRY_2_MS: u64 = 100;
 pub const API_INTEGRATION_IGGY_PUBLISH_RETRY_3_MS: u64 = 1_000;
 pub const API_INTEGRATION_IGGY_ANALYTICS_WINDOW_SEC: u64 = 60;
 pub const API_INTEGRATION_IGGY_ENRICHMENT_ID_BATCH_SIZE: usize = 20_000;
-pub const API_INTEGRATION_IGGY_EVENT_BATCH_SIZE: u64 = 500;
+pub const API_INTEGRATION_IGGY_EVENT_BATCH_SIZE: u64 = 5_000;
 pub const API_INTEGRATION_IGGY_VISIBILITY_ID_BATCH_SIZE: u64 = 5_000;
 pub const API_INTEGRATION_IGGY_LOCK_NAMESPACE: &str = "iggy-integration:";
 pub const RQ_TIMEOUT_ALPINE_CONVERTER: u64 = 600;
@@ -531,6 +530,8 @@ pub const MULTIPART_MAX_FIELDS: usize = 64;
 pub const MULTIPART_TEXT_MAX_BYTES: usize = 80 * 1024;
 pub const MULTIPART_IDLE_TIMEOUT_SECS: u64 = 30;
 pub const MULTIPART_MAX_CONCURRENT_BUFFERED_REQUESTS: usize = 2;
+pub const RER_CSV_PREFLIGHT_METADATA_HEADER: &str = "x-echo-rer-csv-metadata";
+pub const RER_CSV_IMPORT_SKIP_PREVIEW_CHARS: usize = 160;
 pub const STORAGE_UPLOAD_ENCRYPT_MAX_CONCURRENT_OPERATIONS: usize = 2;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this archive-download limit synchronized
 /// with `SIGINT_MESSAGE_MAX_ATTACHMENTS`, frontend
@@ -641,6 +642,7 @@ pub const SIGINT_NETWORK_GROUP_ACTIVITY_PERIOD_LAST_30_DAYS: i64 = 30;
 pub const SIGINT_NETWORK_GROUP_ACTIVITY_PERIOD_LAST_60_DAYS: i64 = 60;
 pub const SIGINT_NETWORK_FREQ_CALLSIGN_PERIOD_LAST_7_DAYS: i64 = 7;
 pub const SIGINT_NETWORK_FREQ_CALLSIGN_PERIOD_LAST_21_DAYS: i64 = 21;
+pub const SIGINT_NETWORK_FREQ_CALLSIGN_QUERY_MAX_PERIOD_GROUPS: usize = 4;
 pub const SIGINT_NETWORK_FIND_LIVE_RETURN_LIMIT: usize = 10;
 pub const SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT: u64 = 250;
 pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
@@ -1004,6 +1006,7 @@ pub const MESSENGER_SYSTEM_SERVICE_NAME_CANDIDATE_LIMIT: usize = 1_000;
 pub const CLIENT_DATA_DIR_NAME: &str = "client_data";
 pub const WHATSAPP_CLIENT_CONFIG: &str = "/etc/echo/config.toml";
 pub const GENERATE_MESSAGE_UID_TILL_MAX_DAYS: i64 = 20;
+pub const SIGNAL_MESSAGE_UID_EPOCH_UNIX_MILLIS: i64 = 1_640_995_200_000;
 pub const UNKNOWN_GROUP_MASTER_KEY: &str = "undefined_group";
 pub const OPERATOR_INBOX_WORKER_LOOKBACK_HOURS: i64 = 3;
 pub const REDIS_MGS_ID_TTL: i32 = 3600;
@@ -1466,6 +1469,7 @@ pub struct Config {
     pub static_path: String,
     pub executable_path: String,
     pub fill_comp_freq_worker: bool,
+    pub api_integration_iggy_event_batch_size: Option<u64>,
     pub summary_table_callsign_threshold: Option<i64>,
     pub disable_cleanup_networks_worker: Option<bool>,
     pub disable_unit_location_v2_worker: Option<bool>,
@@ -1848,6 +1852,11 @@ impl AnalyticsConfig {
 }
 
 impl Config {
+    pub fn api_integration_iggy_event_batch_size(&self) -> u64 {
+        self.api_integration_iggy_event_batch_size
+            .unwrap_or(API_INTEGRATION_IGGY_EVENT_BATCH_SIZE)
+    }
+
     pub fn summary_table_callsign_threshold(&self) -> i64 {
         self.summary_table_callsign_threshold
             .unwrap_or(RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS)

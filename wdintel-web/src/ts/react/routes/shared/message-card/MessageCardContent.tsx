@@ -75,6 +75,7 @@ import { MessageCardTags } from './MessageCardTags';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import { MessageMediaDocumentLink } from './MessageMediaDocumentLink';
 import { KmzAttachmentPreviewLink } from './KmzAttachmentPreviewLink';
+import { isNativeKmlOrKmz } from './kmz/kmz-preview-utils';
 import { collectMessageDocuments } from './message-card-document-utils';
 import { blurActiveElement } from '../../../utils/focus';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -519,7 +520,14 @@ export function MessageCardMessageBody({
   );
   const kmzConversionHrefSet = new Set(
     (msg.media ?? [])
-      .filter((attachment) => attachment.kmzConversionStatus != null)
+      .filter(
+        (attachment) =>
+          attachment.kmzConversionStatus != null ||
+          isNativeKmlOrKmz(
+            mediaAttachmentDisplayName(attachment),
+            mediaAttachmentContentType(attachment),
+          ) != null,
+      )
       .map((attachment) => normalizeAttachmentHref(attachment.href)),
   );
   const documents = collectMessageDocuments(msg).filter(
@@ -546,7 +554,12 @@ export function MessageCardMessageBody({
     (attachment) => !isAudioMediaAttachment(attachment) && !isVideoMediaAttachment(attachment),
   );
   const kmzPreviewAttachments = downloadAttachments.filter(
-    (attachment) => attachment.kmzConversionStatus != null,
+    (attachment) =>
+      attachment.kmzConversionStatus != null ||
+      isNativeKmlOrKmz(
+        mediaAttachmentDisplayName(attachment),
+        mediaAttachmentContentType(attachment),
+      ) != null,
   );
   const mediaAttachmentCount = images.length + videoAttachments.length;
   const documentAttachmentCount = documents.length + downloadAttachments.length;
@@ -670,7 +683,13 @@ export function MessageCardMessageBody({
           mediaId: resolveMediaAttachmentId(attachment),
           originalHref: String(attachment.href ?? ''),
           fileName: mediaAttachmentDisplayName(attachment),
+          sizeBytes: attachment.sizeBytes ?? null,
+          contentType: mediaAttachmentContentType(attachment),
           initialStatus: attachment.kmzConversionStatus ?? 'pending',
+          nativeFormat: isNativeKmlOrKmz(
+            mediaAttachmentDisplayName(attachment),
+            mediaAttachmentContentType(attachment),
+          ),
         },
       })),
       ...audioPreviewSources.map((audio) => ({ type: 'audio' as const, value: audio })),
@@ -1063,6 +1082,8 @@ export function MessageCardMessageBody({
                     mediaId={resolveMediaAttachmentId(attachment)}
                     originalHref={String(attachment.href ?? '')}
                     fileName={mediaAttachmentDisplayName(attachment)}
+                    sizeBytes={attachment.sizeBytes ?? null}
+                    contentType={mediaAttachmentContentType(attachment)}
                     initialStatus={attachment.kmzConversionStatus ?? 'pending'}
                     selected={selected}
                     onPreview={() => {

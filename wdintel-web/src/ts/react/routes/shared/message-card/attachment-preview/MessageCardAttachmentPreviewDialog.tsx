@@ -31,10 +31,10 @@ import {
 } from './AttachmentPreviewStageCarouselNav';
 import { useBrowserBackOverlay } from '../../../../hooks/use-browser-back-overlay';
 
-const isDownloadIdle = () => false;
-const allowDownloadStart = () => true;
 const REPORT_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.report-visible';
 const MESSAGE_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.message-visible';
+const isDownloadIdle = () => false;
+const allowDownloadStart = () => true;
 const ATTACHMENT_PREVIEW_HEADER_HEIGHT_PX = 52;
 const ATTACHMENT_PREVIEW_STAGE_NAVIGATION_ZONE_RATIO = 0.25;
 const consumeEvent = (event: KeyboardEvent) => {
@@ -70,12 +70,16 @@ function getPreviewKind(item: MessageCardPreviewItem) {
   return item.type === 'coordinate' ? 'coordinate-map' : item.type;
 }
 
-function getPreviewDialogLabel(previewKind: string) {
+function getPreviewDialogLabel(item: MessageCardPreviewItem, previewKind: string) {
   if (previewKind === 'image') return 'Перегляд зображення';
   if (previewKind === 'video') return 'Перегляд відео';
   if (previewKind === 'audio') return 'Перегляд аудіо';
   if (previewKind === 'coordinate-map') return 'Перегляд координат';
-  if (previewKind === 'kmz-map') return 'Попередній перегляд KMZ';
+  if (previewKind === 'kmz-map' && item.type === 'kmz') {
+    if (item.value.nativeFormat === 'kml') return 'Попередній перегляд KML';
+    if (item.value.nativeFormat === 'kmz') return 'Попередній перегляд KMZ';
+    return 'Попередній перегляд конвертованого KMZ';
+  }
   return 'Перегляд документа';
 }
 
@@ -97,7 +101,7 @@ export function MessageCardAttachmentPreviewDialog({
   reportDraft?: AttachmentPreviewReportDraft;
 } & Partial<MessageCardDownloadGuardProps>) {
   const previewKind = getPreviewKind(item);
-  const dialogLabel = getPreviewDialogLabel(previewKind);
+  const dialogLabel = getPreviewDialogLabel(item, previewKind);
   const reportTextPreviewEnabled = reportDraft != null;
   const textPreviewKind = reportDraft?.kind ?? 'report';
   const [isEditing, setIsEditing] = useState(false);
@@ -303,7 +307,13 @@ export function MessageCardAttachmentPreviewDialog({
             {...rendererProps}
           />
         ) : item.type === 'kmz' ? (
-          <KmzAttachmentPreviewRenderer source={item.value} {...rendererProps} />
+          <KmzAttachmentPreviewRenderer
+            key={item.value.mediaId}
+            source={item.value}
+            onChildOverlayChange={onChildOverlayChange}
+            dismissChildOverlay={dismissChildOverlay}
+            {...rendererProps}
+          />
         ) : (
           <CoordinateAttachmentPreviewRenderer
             points={item.points}

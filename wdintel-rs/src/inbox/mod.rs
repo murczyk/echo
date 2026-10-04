@@ -19,6 +19,18 @@ pub struct ConstructInboxItemResult {
     pub changed_inbox_item_id: Option<i64>,
 }
 
+#[derive(Clone)]
+pub(crate) enum InboxDatetimeOverride {
+    Fields {
+        date: String,
+        time: String,
+    },
+    Historical {
+        datetime: NaiveDateTime,
+        reference_time: DateTime<Tz>,
+    },
+}
+
 impl ConstructInboxItemResult {
     fn spawned(spawned_message_ids: Vec<i64>) -> Self {
         Self {
@@ -61,6 +73,33 @@ pub async fn construct_inbox_item<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let datetime_override = m_created_at
+        .map(|(date, time)| InboxDatetimeOverride::Fields { date, time });
+    Ok(construct_inbox_item_with_datetime(
+        settlements,
+        txn,
+        rq,
+        config,
+        message_id,
+        cache,
+        datetime_override,
+    )
+    .await
+    .c(h!())?)
+}
+
+pub(crate) async fn construct_inbox_item_with_datetime<'a, 'async_trait, C>(
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    txn: &'a C,
+    rq: &reqwest::Client,
+    config: &Config,
+    message_id: i64,
+    cache: &mut TopKCache<String, String>,
+    datetime_override: Option<InboxDatetimeOverride>,
+) -> Result<ConstructInboxItemResult, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let message = signal_message::Entity::find_by_id(message_id)
         .filter(signal_message::Column::Deleted.eq(false))
         .one(txn)
@@ -83,12 +122,25 @@ where
 
     let body = message.body.clone().unwrap_or("".to_string());
     if crate::rer_importer::multimessage::should_try_split_message(&body) {
-        let spawned =
-            crate::rer_importer::multimessage::spawn_multiple_messages(
+        let spawned = match datetime_override.as_ref() {
+            Some(InboxDatetimeOverride::Historical {
+                reference_time, ..
+            }) => {
+                crate::rer_importer::multimessage::spawn_multiple_messages_at(
+                    txn,
+                    &message,
+                    &body,
+                    *reference_time,
+                )
+                .await
+                .c(h!())?
+            }
+            _ => crate::rer_importer::multimessage::spawn_multiple_messages(
                 txn, &message, &body,
             )
             .await
-            .c(h!())?;
+            .c(h!())?,
+        };
         if !spawned.is_empty() {
             return Ok(ConstructInboxItemResult::spawned(spawned));
         }
@@ -257,13 +309,30 @@ where
         None => (None, None),
     };
 
-    let (date_v, time_v) = match m_created_at {
-        None => (default_date_v, default_time_v),
-        Some((d, t)) => (Some(d), Some(t)),
-    };
-    let datetime =
-        datetime::from_date_time_text(date_v.as_deref(), time_v.as_deref())
+    let (date_v, time_v, datetime) = match datetime_override {
+        Some(InboxDatetimeOverride::Historical { datetime, .. }) => {
+            let (date, time) = format_date_time_fields(datetime);
+            (Some(date), Some(time), Some(datetime))
+        }
+        Some(InboxDatetimeOverride::Fields { date, time }) => {
+            let date_v = Some(date);
+            let time_v = Some(time);
+            let datetime = datetime::from_date_time_text(
+                date_v.as_deref(),
+                time_v.as_deref(),
+            )
             .c(h!())?;
+            (date_v, time_v, datetime)
+        }
+        None => {
+            let datetime = datetime::from_date_time_text(
+                default_date_v.as_deref(),
+                default_time_v.as_deref(),
+            )
+            .c(h!())?;
+            (default_date_v, default_time_v, datetime)
+        }
+    };
 
     if existing_inbox_item {
         crate::rer_importer::inbox::prepare_message_network_activity_change(
@@ -511,45 +580,106 @@ fn extract_message_datetime(
     ),
     AppError,
 > {
+    let (datetime, meow_format) =
+        extract_message_datetime_with_precision(lnow, body, allow_kraken_audio)
+            .c(h!())?;
+    Ok((
+        datetime
+            .filter(|datetime| datetime.has_time)
+            .map(|datetime| datetime.datetime),
+        meow_format,
+    ))
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ParsedMessageDatetime {
+    pub datetime: DateTime<Tz>,
+    pub has_time: bool,
+    pub was_future_normalized: bool,
+}
+
+pub(crate) fn extract_message_datetime_with_precision(
+    lnow: DateTime<Tz>,
+    body: &str,
+    allow_kraken_audio: bool,
+) -> Result<
+    (
+        Option<ParsedMessageDatetime>,
+        Option<crate::rer_importer::meow_format::MeowFormat>,
+    ),
+    AppError,
+> {
     let (datetime, meow_format) = if allow_kraken_audio {
         if let Some(kraken_audio) =
             crate::rer_importer::meow_format::parse_kraken_audio(body)
         {
-            (Some(kraken_audio.datetime), Some(kraken_audio.clone()))
+            (
+                Some(ParsedMessageDatetime {
+                    datetime: kraken_audio.datetime,
+                    has_time: true,
+                    was_future_normalized: false,
+                }),
+                Some(kraken_audio.clone()),
+            )
         } else {
-            extract_regular_message_datetime(lnow, body)?
+            extract_regular_message_datetime_with_precision(lnow, body)
+                .c(h!())?
         }
     } else if crate::rer_importer::meow_format::parse_kraken_audio(body)
         .is_some()
     {
         (None, None)
     } else {
-        extract_regular_message_datetime(lnow, body)?
+        extract_regular_message_datetime_with_precision(lnow, body).c(h!())?
     };
 
     Ok((
-        datetime
-            .map(|datetime| normalize_future_message_datetime(lnow, datetime)),
+        datetime.map(|datetime| {
+            let was_future_normalized = datetime.was_future_normalized
+                || datetime.datetime
+                    > lnow
+                        + Duration::hours(
+                            RER_INBOX_PARSED_DATETIME_MAX_FUTURE_HOURS,
+                        );
+            ParsedMessageDatetime {
+                datetime: normalize_future_message_datetime(
+                    lnow,
+                    datetime.datetime,
+                ),
+                has_time: datetime.has_time,
+                was_future_normalized,
+            }
+        }),
         meow_format,
     ))
 }
 
-fn extract_regular_message_datetime(
+fn extract_regular_message_datetime_with_precision(
     lnow: DateTime<Tz>,
     body: &str,
 ) -> Result<
     (
-        Option<DateTime<Tz>>,
+        Option<ParsedMessageDatetime>,
         Option<crate::rer_importer::meow_format::MeowFormat>,
     ),
     AppError,
 > {
     let meow_format = crate::rer_importer::meow_format::parse(lnow, body);
     if let Some(meow_format) = &meow_format {
-        return Ok((Some(meow_format.datetime), Some(meow_format.clone())));
+        return Ok((
+            Some(ParsedMessageDatetime {
+                datetime: meow_format.datetime,
+                has_time: true,
+                was_future_normalized: false,
+            }),
+            Some(meow_format.clone()),
+        ));
     }
 
-    Ok((extract_generic_body_datetime(lnow, body)?, None))
+    Ok((
+        extract_generic_body_datetime_with_precision(lnow, body).c(h!())?,
+        None,
+    ))
 }
 
 fn normalize_future_message_datetime(
@@ -579,28 +709,41 @@ fn normalize_future_message_datetime(
     normalized
 }
 
-fn extract_generic_body_datetime(
+fn extract_generic_body_datetime_with_precision(
     lnow: DateTime<Tz>,
     body: &str,
-) -> Result<Option<DateTime<Tz>>, AppError> {
-    let datetime = crate::rer_importer::datetime::extract_datetime(lnow, body)?;
-    let Some(dt) = datetime
-        .or_else(|| extract_far_future_datetime_with_current_date(lnow, body))
-    else {
+) -> Result<Option<ParsedMessageDatetime>, AppError> {
+    let datetime =
+        crate::rer_importer::datetime::extract_datetime_with_precision(
+            lnow, body,
+        )
+        .c(h!())?;
+    let datetime =
+        datetime.map(|datetime| (datetime.datetime, datetime.has_time, false));
+    let Some((dt, has_time, was_future_normalized)) = datetime.or_else(|| {
+        extract_far_future_datetime_with_current_date(lnow, body)
+            .map(|datetime| (datetime, true, true))
+    }) else {
         return Ok(None);
     };
 
-    Ok(match Kyiv.from_local_datetime(&dt) {
+    Ok(match lnow.timezone().from_local_datetime(&dt) {
         chrono::offset::LocalResult::None => {
             println!(
-                "> warning: couldn't convert datetime to Kyiv timezone: {dt:?}; body: {body}"
+                "> warning: couldn't convert datetime to configured timezone: {dt:?}; body: {body}"
             );
             None
         }
-        chrono::offset::LocalResult::Single(v) => Some(v),
+        chrono::offset::LocalResult::Single(datetime) => {
+            Some(ParsedMessageDatetime {
+                datetime,
+                has_time,
+                was_future_normalized,
+            })
+        }
         chrono::offset::LocalResult::Ambiguous(v1, v2) => {
             println!(
-                "> warning: couldn't convert datetime to Kyiv timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}"
+                "> warning: couldn't convert datetime to configured timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}"
             );
             None
         }
@@ -997,17 +1140,6 @@ mod tests {
     };
 
     #[test]
-    fn format_date_time_fields_keeps_seconds() {
-        let dt_utc = NaiveDate::from_ymd_opt(2025, 11, 20)
-            .unwrap()
-            .and_hms_opt(10, 29, 18)
-            .unwrap();
-        let (date, time) = format_date_time_fields(dt_utc);
-        assert_eq!(date, "2025-11-20");
-        assert_eq!(time, "12:29:18");
-    }
-
-    #[test]
     fn reprocessed_inbox_item_update_columns_reset_reviewed() {
         assert!(reprocessed_inbox_item_update_columns()
             .iter()
@@ -1097,6 +1229,23 @@ mod tests {
             datetime,
             Some(Kyiv.with_ymd_and_hms(2026, 7, 30, 11, 59, 59).unwrap())
         );
+    }
+
+    #[test]
+    fn extract_message_datetime_precision_preserves_date_only_values() {
+        let now = Kyiv.with_ymd_and_hms(2026, 7, 29, 12, 0, 0).unwrap();
+        let body = "Дата: 2026-07-28;";
+
+        let (datetime, _) =
+            extract_message_datetime_with_precision(now, body, false).unwrap();
+        let datetime = datetime.unwrap();
+
+        assert_eq!(
+            datetime.datetime,
+            Kyiv.with_ymd_and_hms(2026, 7, 28, 0, 0, 0).unwrap()
+        );
+        assert!(!datetime.has_time);
+        assert_eq!(extract_message_datetime(now, body, false).unwrap().0, None);
     }
 
     fn report_125_sample_body(mgrs: &str) -> String {

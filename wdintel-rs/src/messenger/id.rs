@@ -7,7 +7,6 @@ use crate::types::{Mode, ShortContext};
 use chrono::*;
 use echo_migration::Expr;
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use sea_orm::*;
 use std::collections::HashMap;
 
@@ -63,6 +62,11 @@ pub fn generate_message_id(
     // so id_tail_decimal is in range 1..1024, and we can encode it with 2 symbols, because 36 ^ 2 = 1296.
     let id_extra = encode_num_to_base36(id_tail_decimal as i64, 2).c(h!())?;
     Ok(format!("{id_head}-{id_mid}-{id_extra}{id_tail}"))
+}
+
+pub fn is_message_uid_datetime_supported(datetime: NaiveDateTime) -> bool {
+    datetime.and_utc().timestamp_millis()
+        >= crate::config::SIGNAL_MESSAGE_UID_EPOCH_UNIX_MILLIS
 }
 
 pub async fn update_message_with_uid<'a, 'async_trait, C>(
@@ -241,26 +245,19 @@ pub async fn oneoff_assign_message_ids(
     Ok(())
 }
 
-/// this function accepts date, converts it to seconds since 2022-01-01, and encodes to XXXXXXXXXX.
+/// this function accepts date, converts it to milliseconds since 2022-01-01, and encodes to XXXXXXXXXX.
 /// X is either a lowercase latin number or a digit.
 fn encode_datetime_to_base36(dt: NaiveDateTime) -> anyhow::Result<String> {
-    lazy_static! {
-    // Define the custom epoch as a NaiveDateTime, this way we support dates since 2022 till 2071.
-    // We create a UTC DateTime and then convert to NaiveDateTime to ensure consistent epoch.
-        static ref EPOCH_START: NaiveDateTime = Utc.with_ymd_and_hms(2022, 1, 1, 0, 0, 0).unwrap().naive_utc();
-    }
-
-    // Calculate the duration in seconds from the epoch to the given datetime.
-    let duration = dt.signed_duration_since(*EPOCH_START);
-    let seconds = duration.num_milliseconds();
+    let milliseconds = dt.and_utc().timestamp_millis()
+        - crate::config::SIGNAL_MESSAGE_UID_EPOCH_UNIX_MILLIS;
 
     // Ensure the timestamp is not before the epoch.
-    if seconds < 0 {
+    if milliseconds < 0 {
         anyhow::bail!(
             "Timestamp cannot be before the epoch (2022-01-01 00:00:00 UTC)"
         );
     }
-    encode_num_to_base36(seconds, 10)
+    encode_num_to_base36(milliseconds, 10)
 }
 
 pub fn combine_into_base36_len2(message_id: u64, server_id: u32) -> u32 {

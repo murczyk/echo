@@ -375,6 +375,14 @@ export type AlpineDownloadResultReq = {
   bgtaskId: number;
 };
 
+export type RerCsvPreflightMetadata = {
+  referenceTimestampMs: number;
+  total: number;
+  valid: number;
+  missingTimestamp: number;
+  invalidMessageSize: number;
+};
+
 export type AreaOfResponsibilityEntry = {
   id: number;
   name: string;

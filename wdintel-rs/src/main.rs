@@ -624,6 +624,8 @@ pub struct OneoffRegisterDeltaUserPs {
 #[derive(clap::Parser, Debug, Clone)]
 pub struct OneoffRerCsvImportPs {
     pub input: String,
+    #[arg(long)]
+    pub import_as_new: bool,
 }
 
 #[derive(clap::Parser, Debug, Clone)]
