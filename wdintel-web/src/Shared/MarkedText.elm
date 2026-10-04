@@ -248,7 +248,23 @@ viewWithResults renderCallsign signals networks mFreq bodyText pointTokenClickUr
                                     label ++ ": " ++ String.join ", " own
                     in
                     span [ class ("content-token--position content-token--position-" ++ obj.kind), title positionTitle ]
-                        [ text obj.text ]
+                        (case obj.callsign of
+                            -- The callsign this located mention replaced keeps
+                            -- its hint inside the position.
+                            Just callsign ->
+                                case String.indexes callsign obj.text of
+                                    index :: _ ->
+                                        [ text (String.left index obj.text)
+                                        , renderCallsign callsign
+                                        , text (String.dropLeft (index + String.length callsign) obj.text)
+                                        ]
+
+                                    [] ->
+                                        [ renderCallsign obj.text ]
+
+                            Nothing ->
+                                [ text obj.text ]
+                        )
     in
     [ div [ class "text-marked" ] <|
         renderContentNodes 0 sortedMetadataLinks config.contentNodes

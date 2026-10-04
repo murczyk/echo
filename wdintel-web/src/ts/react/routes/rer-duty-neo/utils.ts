@@ -887,8 +887,17 @@ function extractCallsignsFromNodes(nodes: ContentNode[] | null | undefined): str
   if (!nodes || nodes.length === 0) return [];
   const callsigns: string[] = [];
   for (const node of nodes) {
-    if (typeof node !== 'string' && 'CNCallsignC' in node) {
-      const callsign = normalizeCallsignLookupValue(node.CNCallsignC.text);
+    // A located position keeps the callsign token it replaced.
+    const text =
+      typeof node === 'string'
+        ? null
+        : 'CNCallsignC' in node
+          ? node.CNCallsignC.text
+          : 'CNPositionC' in node
+            ? node.CNPositionC.callsign
+            : null;
+    if (text) {
+      const callsign = normalizeCallsignLookupValue(text);
       if (callsign !== '') callsigns.push(callsign);
     }
   }

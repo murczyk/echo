@@ -192,6 +192,7 @@ mod tests {
                     | "mapRecords"
                     | "mapDocument"
                     | "mapEdit"
+                    | "positionLookup"
             ));
         }
         let daily_activity = ROUTES
