@@ -236,7 +236,10 @@ fn lookup_mention(item: AiPositionMentionItem) -> AiPositionLookupMention {
 #[cfg(test)]
 mod tests {
     use super::lookup;
-    use crate::ai_position::types::AiPositionLookupReq;
+    use crate::ai_position::list::{list, Access};
+    use crate::ai_position::types::{
+        AiPositionLookupReq, AiPositionMentionListReq,
+    };
     use crate::entities::{
         ai_position_coordinate, ai_position_knowledge, ai_position_mention,
         signal_group, signal_message, signal_message_group,
@@ -258,6 +261,38 @@ mod tests {
             kind: None,
             limit: None,
         }
+    }
+
+    async fn assert_uuid_pagination(
+        dbx: &sea_orm::DatabaseConnection,
+        allowed: &[String],
+    ) {
+        let request = AiPositionMentionListReq {
+            limit: Some(1),
+            after: None,
+            global_filter: None,
+            column_filters: vec![],
+        };
+        let first_page =
+            list(dbx, request.clone(), allowed.to_vec(), Access::User)
+                .await
+                .unwrap();
+        let cursor = first_page.next_cursor.unwrap();
+        assert_eq!(cursor.id, first_page.items[0].id);
+        let second_page = list(
+            dbx,
+            AiPositionMentionListReq {
+                after: Some(cursor),
+                ..request
+            },
+            allowed.to_vec(),
+            Access::User,
+        )
+        .await
+        .unwrap();
+        assert_eq!(second_page.items.len(), 1);
+        assert_ne!(first_page.items[0].id, second_page.items[0].id);
+        assert!(second_page.next_cursor.is_none());
     }
 
     #[tokio::test]
@@ -338,7 +373,7 @@ mod tests {
             }
             mention_ids.push(mention.id);
         }
-        ai_position_knowledge::ActiveModel {
+        let known = ai_position_knowledge::ActiveModel {
             scope_kind: Set("group".to_string()),
             scope_key: Set(group.master_key.clone()),
             name_key: Set("циркон 9".to_string()),
@@ -360,7 +395,9 @@ mod tests {
         .await
         .unwrap();
 
+        assert_eq!(known.id.get_version_num(), 7);
         let allowed = vec![group.master_key.clone()];
+        assert_uuid_pagination(&env.dbx, &allowed).await;
         let by_name =
             lookup(&env, request(Some("ЦИРКОН 9"), None), allowed.clone())
                 .await

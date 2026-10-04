@@ -272,6 +272,8 @@
   --action-color: var(--echo-color-primary);
   /* WCAG AA contrast on the light card background. */
   --message-callsign-color: #1565c0;
+  --message-map-highlight-bg: rgba(253, 136, 79, 0.18);
+  --message-map-highlight-border: rgba(221, 91, 34, 0.48);
   --action-hovered-color: var(--echo-color-primary-hover);
   --button-text-color: var(--echo-color-on-primary);
   --toggle-color: white;
@@ -299,6 +301,8 @@ html[data-bs-theme='dark'] {
   --watermark-color: var(--neutral-600);
   --action-color: var(--echo-color-primary);
   --message-callsign-color: #90caf9;
+  --message-map-highlight-bg: rgba(253, 136, 79, 0.22);
+  --message-map-highlight-border: rgba(253, 136, 79, 0.58);
   --action-hovered-color: var(--echo-color-primary-hover);
   --button-text-color: var(--echo-color-on-primary);
   --toggle-color: black;

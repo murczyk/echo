@@ -1958,9 +1958,11 @@ function SettingsPage() {
 export function AdminAiAgentPage({
   section,
   itemId = null,
+  tab = null,
 }: {
   section: AiAgentAdminSection;
   itemId?: string | null;
+  tab?: string | null;
 }) {
   switch (section) {
     case 'providers':
@@ -1978,9 +1980,9 @@ export function AdminAiAgentPage({
     case 'settlements':
       return <AdminAiSettlementsPage />;
     case 'positions':
-      return <AdminAiPositionsPage />;
+      return <AdminAiPositionsPage tab={tab} />;
     case 'position':
-      return <AdminAiPositionPage id={Number(itemId)} />;
+      return <AdminAiPositionPage id={itemId} />;
     case 'intelligence-reports':
       return <AdminAiIntelReportsPage />;
     case 'ocr':

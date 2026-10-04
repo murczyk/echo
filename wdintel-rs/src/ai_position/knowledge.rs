@@ -409,10 +409,6 @@ where
                  join signal_message message
                      on message.id = coalesce(m.sigint_inbox_item_id, media.signal_message_id)
                  where m.name_key = $1 and not message.deleted and {scope_condition}
-                   and not exists (
-                       select 1 from ai_position_feedback rejected
-                       where rejected.name_key = m.name_key and rejected.verdict = 'not_position'
-                   )
              )
              select * from facts
              where message_at >= (select max(message_at) from facts) - make_interval(days => $3)"
@@ -617,7 +613,7 @@ where
 
 #[derive(Debug, FromQueryResult)]
 struct LinkJob {
-    id: i64,
+    id: uuid::Uuid,
     scope_kind: String,
     scope_key: String,
     name_key: String,
@@ -797,12 +793,7 @@ async fn link_batch(
                 .to_string()
         });
     let groups = scope_groups(dbx, &scope).await.c(h!())?;
-    let rejected = super::feedback::rejected_name_keys(dbx)
-        .await
-        .c(h!())?
-        .contains(&job.name_key);
-    let (Some(known), Some(stem), false, false) =
-        (known, stem, groups.is_empty(), rejected)
+    let (Some(known), Some(stem), false) = (known, stem, groups.is_empty())
     else {
         delete_link_job(dbx, job.id).await.c(h!())?;
         return Ok(Vec::new());
@@ -859,7 +850,7 @@ async fn link_batch(
     Ok(linked)
 }
 
-async fn delete_link_job<C>(dbx: &C, id: i64) -> anyhow::Result<()>
+async fn delete_link_job<C>(dbx: &C, id: uuid::Uuid) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
@@ -1211,7 +1202,7 @@ mod tests {
         use super::new_ranges;
         let row = |first: i64, last: i64| {
             crate::entities::ai_position_knowledge::Model {
-                id: 1,
+                id: uuid::Uuid::now_v7(),
                 scope_kind: "group".to_string(),
                 scope_key: "g".to_string(),
                 name_key: "циркон 9".to_string(),

@@ -45,4 +45,4 @@ export type MessageCardPreviewItem =
   | { type: 'audio'; value: AudioPreviewSource }
   | { type: 'document'; value: MessageCardDocument }
   | { type: 'kmz'; value: KmzAttachmentPreviewSource }
-  | { type: 'coordinate'; points: CoordinatePreviewPoint[] };
+  | { type: 'coordinate'; points: CoordinatePreviewPoint[]; initialPointIndex?: number };

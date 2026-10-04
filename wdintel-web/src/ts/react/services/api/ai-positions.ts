@@ -70,7 +70,7 @@ export function saveAiPositionFeedback(
   return postJson<AiPositionFeedbackItem>('/api/admin/ai-positions/feedback/save', req);
 }
 
-export function deleteAiPositionFeedback(id: number): Promise<void> {
+export function deleteAiPositionFeedback(id: AiPositionIdReq['id']): Promise<void> {
   const req: AiPositionIdReq = { id };
   return postJson<void>('/api/admin/ai-positions/feedback/delete', req);
 }

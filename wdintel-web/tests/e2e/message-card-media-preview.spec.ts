@@ -1522,3 +1522,112 @@ test.describe('message card media preview contract', () => {
     await expect(reopenedAudioDialog).toBeVisible();
   });
 });
+
+for (const width of [1280, 390]) {
+  test(`#3064 positions share the message map and copied links use UUIDs at ${width}px @regression`, async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(90_000);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.setViewportSize({ width, height: 900 });
+    const uuid = '019a4aa8-0000-7000-8000-000000000065';
+    for (const host of ['analysis', 'duty'] as const) {
+      await openMessageCardPreviewHost(page, host, {
+        palitraEtalon: 'BRAVO',
+        messageOverrides: {
+          messageUuid: uuid,
+          text: 'BRAVO Береза 3',
+          coords: '50.45044, 30.52355',
+          textMarked: [
+            { CNPointC: { begin: 0, end: 5, etalon: 'BRAVO', text: 'BRAVO', palitraIds: [1] } },
+            { CNTextC: { text: ' ' } },
+            {
+              CNPositionC: {
+                begin: 6,
+                end: 14,
+                etalon: 'береза 3',
+                text: 'Береза 3',
+                kind: 'position',
+                callsign: null,
+                mgrs: [],
+                knownMgrs: '37UCQ1111122222',
+                knownAt: 1720000000000,
+                knownConflicting: false,
+              },
+            },
+          ],
+        },
+      });
+      const card = page.locator('.message-card-root').first();
+      const position = card.getByRole('button', {
+        name: /Позиція «Береза 3».*Відкрити мапу повідомлення/,
+      });
+      await expect(position).toBeVisible();
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate(
+          (value) => document.documentElement.setAttribute('data-bs-theme', value),
+          theme,
+        );
+        const styles = await card.evaluate((element) => {
+          const palette = getComputedStyle(element.querySelector('.content-token--point')!);
+          const position = getComputedStyle(element.querySelector('.content-token--position')!);
+          return {
+            palette: [palette.backgroundColor, palette.boxShadow, palette.fontSize],
+            position: [position.backgroundColor, position.boxShadow, position.fontSize],
+          };
+        });
+        expect(styles.position).toEqual(styles.palette);
+      }
+      if (host === 'analysis') {
+        await position.click();
+      } else {
+        await position.focus();
+        await page.keyboard.press('Enter');
+      }
+      const dialog = page.getByRole('dialog', { name: 'Перегляд координат' });
+      const map = dialog.locator('.coordinate-fullscreen-map');
+      await expect(map).toHaveAttribute('data-coordinate-marker-count', '3');
+      const targetLabel = map
+        .locator('.coordinate-preview-mgrs-label')
+        .filter({ hasText: /37U CQ/ });
+      await expect(targetLabel).toHaveCount(1);
+      const [mapBox, targetBox] = await Promise.all([map.boundingBox(), targetLabel.boundingBox()]);
+      expect(
+        Math.abs(targetBox!.x + targetBox!.width / 2 - (mapBox!.x + mapBox!.width / 2)),
+      ).toBeLessThan(30);
+      expect(
+        Math.abs(targetBox!.y + targetBox!.height / 2 - (mapBox!.y + mapBox!.height / 2)),
+      ).toBeLessThan(50);
+      await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
+      const coordinates = card.getByRole('button', { name: /^(Розгорнути|Згорнути) координати:/ });
+      if ((await coordinates.getAttribute('aria-expanded')) !== 'true') await coordinates.click();
+      await card
+        .locator('[data-coordinate-preview-tile]')
+        .getByRole('button', { name: /Open .* on map/ })
+        .click();
+      await expect(map).toHaveAttribute('data-coordinate-marker-count', '3');
+      await expect(map.locator('.coordinate-preview-mgrs-label')).toHaveCount(3);
+      const overviewBox = await map.boundingBox();
+      for (const label of await map.locator('.coordinate-preview-mgrs-label').all()) {
+        const box = await label.boundingBox();
+        expect(box!.x).toBeGreaterThanOrEqual(overviewBox!.x - 1);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(overviewBox!.x + overviewBox!.width + 1);
+        expect(box!.y).toBeGreaterThanOrEqual(overviewBox!.y - 1);
+        expect(box!.y + box!.height).toBeLessThanOrEqual(overviewBox!.y + overviewBox!.height + 1);
+      }
+      await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
+      const copyButton = card.getByRole('button', { name: /^Копіювати/ });
+      if (await copyButton.isVisible()) {
+        await copyButton.click();
+      } else {
+        await card.getByRole('button', { name: 'Більше дій' }).click();
+        await page.getByRole('menuitem', { name: /^Копіювати/ }).click();
+      }
+      await page.getByRole('menuitem', { name: 'Копіювати посилання на повідомлення' }).click();
+      const link = new URL(await page.evaluate(() => navigator.clipboard.readText()));
+      expect(link.searchParams.get('m')).toBe(uuid);
+      expect(link.pathname).toBe('/rer-analysis-neo');
+    }
+  });
+}

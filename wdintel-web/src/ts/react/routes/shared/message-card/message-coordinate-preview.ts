@@ -17,8 +17,9 @@ import { parseCoordinateBlock } from '../../../../maps/coordinate-parser';
 import { getPointEtalonsFromMessage } from '../../rer-duty-neo/utils';
 import { getMediaSummaryCoordinates } from '../../../services/api/media-summary';
 import { listMapPalitrasV2, searchPalitraPoints } from '../../../services/api/palitra';
+import { resolveMessagePositionCoordinatePreviewPoints } from './message-position-coordinates';
 
-export type CoordinatePreviewSource = 'direct' | 'palitra' | 'document';
+export type CoordinatePreviewSource = 'direct' | 'palitra' | 'document' | 'position';
 
 export type CoordinatePreviewPoint = {
   source: CoordinatePreviewSource;
@@ -250,7 +251,7 @@ function extractPreviewUskPairs(text: string): PreviewUskPair[] {
   return result;
 }
 
-function coordinatePointKey(point: { lat: number; lng: number }): string {
+export function coordinatePointKey(point: { lat: number; lng: number }): string {
   return `${renderWgsFloat(point.lat)}:${renderWgsFloat(point.lng)}`;
 }
 
@@ -303,7 +304,8 @@ function resolveDirectCoordinatesFromCoordinateText(rawText: string): Coordinate
       continue;
     }
 
-    const latLng = convertCoordinateToWgs84(coord);
+    const latLng =
+      coord.kind === 'mgrs' ? parseCoordinateInput(coord.value) : convertCoordinateToWgs84(coord);
     if (!latLng) {
       continue;
     }
@@ -412,6 +414,14 @@ export function resolveMessageCoordinatePreviewSummaryCount(
   tagsMap: Record<number, Tag> = {},
 ): number {
   const directPoints = resolveDirectMessageCoordinatePreviewPoints(message);
+  const positionPoints = resolveMessagePositionCoordinatePreviewPoints(message);
+  if (positionPoints.length > 0) {
+    return (
+      new Set([...directPoints, ...positionPoints].map(coordinatePointKey)).size +
+      collectCoordinatePreviewEtalons(message, tagsMap).length +
+      resolveCoordinateSummaryMediaCount(message)
+    );
+  }
   if (directPoints.length > 0) return directPoints.length;
 
   const summaryMediaCount = resolveCoordinateSummaryMediaCount(message);
@@ -433,6 +443,7 @@ export function hasCoordinatePreviewCandidate(
   message: InboxMessage,
   tagsMap: Record<number, Tag> = {},
 ): boolean {
+  if (resolveMessagePositionCoordinatePreviewPoints(message).length > 0) return true;
   if ((message.coordsWithLocality?.length ?? 0) > 0) {
     return true;
   }
@@ -559,34 +570,26 @@ async function resolveExistingMessageCoordinatePreview(
 ): Promise<CoordinatePreviewResult | null> {
   const directPoints = resolveDirectMessageCoordinatePreviewPoints(input.message);
 
-  if (directPoints.length > 0) {
-    return {
-      points: directPoints,
-      etalons: [],
-      lookupError: null,
-    };
-  }
-
   const etalons = normalizeEtalons(getPointEtalonsFromMessage(input.message, input.tagsMap ?? {}));
   if (etalons.length === 0) {
-    return null;
+    return directPoints.length > 0 ? { points: directPoints, etalons, lookupError: null } : null;
   }
 
   const { palitraIds, lookupError: paletteLookupError } = await loadAvailablePalitraIds();
   if (paletteLookupError != null) {
     return {
-      points: [],
+      points: directPoints,
       etalons,
       lookupError: paletteLookupError,
     };
   }
 
   if (palitraIds.length === 0) {
-    return null;
+    return directPoints.length > 0 ? { points: directPoints, etalons, lookupError: null } : null;
   }
 
-  const points: CoordinatePreviewPoint[] = [];
-  const palitraSeen = new Set<string>();
+  const points: CoordinatePreviewPoint[] = [...directPoints];
+  const palitraSeen = new Set(directPoints.map(coordinatePointKey));
   let lookupError: CoordinatePreviewLookupError | null = null;
 
   for (const etalon of etalons) {
@@ -689,11 +692,30 @@ export async function resolveMessageCoordinatePreview(
     resolveDocumentCoordinatePoints(input.message),
   ]);
   const points: CoordinatePreviewPoint[] = [];
-  const seen = new Set<string>();
-  for (const point of [...(existing?.points ?? []), ...document.points]) {
+  const seen = new Map<string, number>();
+  for (const point of [
+    ...(existing?.points ?? []),
+    ...document.points,
+    ...resolveMessagePositionCoordinatePreviewPoints(input.message),
+  ]) {
     const key = coordinatePointKey(point);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const previousIndex = seen.get(key);
+    if (previousIndex != null) {
+      if (point.source === 'position') {
+        const previous = points[previousIndex];
+        if (!previous.label.split(' · ').includes(point.label)) {
+          points[previousIndex] = {
+            ...previous,
+            source: previous.source === 'direct' ? 'position' : previous.source,
+            label:
+              previous.source === 'direct' ? point.label : `${previous.label} · ${point.label}`,
+            description: [previous.description, point.description].filter(Boolean).join('\n'),
+          };
+        }
+      }
+      continue;
+    }
+    seen.set(key, points.length);
     points.push(point);
   }
   const lookupError = existing?.lookupError ?? document.lookupError;

@@ -91,7 +91,7 @@ function DocumentPointContext({ point }: { point: CoordinatePreviewPoint }) {
 }
 
 function PalitraPointContext({ point }: { point: CoordinatePreviewPoint }) {
-  if (point.source !== 'palitra') return null;
+  if (point.source !== 'palitra' && point.source !== 'position') return null;
   return (
     <Typography
       variant="subtitle2"
@@ -106,15 +106,17 @@ function PalitraPointContext({ point }: { point: CoordinatePreviewPoint }) {
 
 export function CoordinateAttachmentPreviewRenderer({
   points,
+  initialPointIndex,
   navigation,
   onClose,
 }: {
   points: CoordinatePreviewPoint[];
+  initialPointIndex?: number;
   navigation: MessageCardPreviewNavigation;
   onClose: () => void;
 }) {
   const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(initialPointIndex ?? 0);
 
   useEffect(() => {
     setActiveIndex((index) => (points.length === 0 ? 0 : Math.min(index, points.length - 1)));
@@ -143,6 +145,7 @@ export function CoordinateAttachmentPreviewRenderer({
         <CoordinateMapPreview
           points={points}
           activeIndex={activeIndex}
+          focusOnInitialPoint={initialPointIndex != null}
           onActiveIndexChange={changeActiveIndex}
           baseLayerId={baseLayerId}
         />
@@ -169,11 +172,13 @@ export function CoordinateAttachmentPreviewRenderer({
 function CoordinateMapPreview({
   points,
   activeIndex,
+  focusOnInitialPoint,
   onActiveIndexChange,
   baseLayerId,
 }: {
   points: CoordinatePreviewPoint[];
   activeIndex: number;
+  focusOnInitialPoint: boolean;
   onActiveIndexChange: (index: number) => void;
   baseLayerId: BaseLayerId;
 }) {
@@ -182,6 +187,8 @@ function CoordinateMapPreview({
   const markerRefs = useRef<L.CircleMarker[]>([]);
   const pointsRef = useRef(points);
   const activeIndexRef = useRef(activeIndex);
+  const focusOnInitialPointRef = useRef(focusOnInitialPoint);
+  focusOnInitialPointRef.current = focusOnInitialPoint;
   const previousActiveIndexRef = useRef(activeIndex);
   const onActiveIndexChangeRef = useRef(onActiveIndexChange);
   const invalidateFrameRef = useRef<number | null>(null);
@@ -255,8 +262,8 @@ function CoordinateMapPreview({
     mapRef.current = map;
     map.on('click', () => setIsPanelOpen(false));
     const latLngs = visiblePoints.map(({ lat, lng }): [number, number] => [lat, lng]);
-    if (latLngs.length === 1) {
-      map.setView(latLngs[0], PREVIEW_ZOOM);
+    if (latLngs.length === 1 || focusOnInitialPointRef.current) {
+      map.setView([currentPoint.lat, currentPoint.lng], PREVIEW_ZOOM);
     } else {
       map.fitBounds(L.latLngBounds(latLngs), {
         animate: false,
@@ -309,6 +316,7 @@ function CoordinateMapPreview({
   }, []);
 
   const resizeCoordinateMap = useCallback((map: L.Map) => {
+    if (focusOnInitialPointRef.current) return;
     const latLngs = pointsRef.current.map(({ lat, lng }): [number, number] => [lat, lng]);
     if (latLngs.length > 1) {
       map.fitBounds(L.latLngBounds(latLngs), {

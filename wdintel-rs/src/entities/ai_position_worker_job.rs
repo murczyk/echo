@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 )]
 #[sea_orm(table_name = "ai_position_worker_job")]
 pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i64,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
     pub sigint_inbox_item_id: Option<i64>,
     pub media_id: Option<Uuid>,
     pub attempts: i32,

@@ -36,11 +36,6 @@ alter table ai_position_feedback add constraint ai_position_feedback_verdict_che
         'wrong_kind', 'other'
     ));
 
--- Names reviewers marked as «not a position» are excluded everywhere.
-create index ai_position_feedback_rejected_idx
-    on ai_position_feedback (name_key)
-    where verdict = 'not_position';
-
 -- Lookups by place: known locations and coordinate facts near a point.
 create index ai_position_knowledge_location_idx
     on ai_position_knowledge (lat, lng);
@@ -61,7 +56,6 @@ create index ai_position_coordinate_location_idx
                 r#"
 drop index if exists ai_position_coordinate_location_idx;
 drop index if exists ai_position_knowledge_location_idx;
-drop index if exists ai_position_feedback_rejected_idx;
 delete from ai_position_feedback where verdict = 'wrong_kind';
 alter table ai_position_feedback drop constraint ai_position_feedback_verdict_check;
 alter table ai_position_feedback add constraint ai_position_feedback_verdict_check

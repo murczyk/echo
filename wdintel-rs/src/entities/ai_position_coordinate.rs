@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 )]
 #[sea_orm(table_name = "ai_position_coordinate")]
 pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i64,
-    pub mention_id: i64,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub mention_id: Uuid,
     #[sea_orm(column_type = "Text")]
     pub coordinate_text: String,
     #[sea_orm(column_type = "Text")]

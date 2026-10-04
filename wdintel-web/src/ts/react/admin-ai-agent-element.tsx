@@ -22,14 +22,16 @@ const SECTIONS = new Set<AiAgentAdminSection>([
 function AdminAiAgentRoot({
   section,
   itemId,
+  tab,
 }: {
   section: AiAgentAdminSection;
   itemId: string | null;
+  tab: string | null;
 }) {
   return (
     <NeoMuiThemeProvider>
       <PowerSnackbarProvider>
-        <AdminAiAgentPage section={section} itemId={itemId} />
+        <AdminAiAgentPage section={section} itemId={itemId} tab={tab} />
       </PowerSnackbarProvider>
     </NeoMuiThemeProvider>
   );
@@ -39,7 +41,7 @@ class AdminAiAgentElement extends HTMLElement {
   private root: Root | null = null;
 
   static get observedAttributes() {
-    return ['data-section', 'data-item-id'];
+    return ['data-section', 'data-item-id', 'data-tab'];
   }
 
   connectedCallback() {
@@ -65,7 +67,11 @@ class AdminAiAgentElement extends HTMLElement {
     const rawSection = this.getAttribute('data-section') as AiAgentAdminSection | null;
     const section = rawSection && SECTIONS.has(rawSection) ? rawSection : 'providers';
     this.root.render(
-      <AdminAiAgentRoot section={section} itemId={this.getAttribute('data-item-id')} />,
+      <AdminAiAgentRoot
+        section={section}
+        itemId={this.getAttribute('data-item-id')}
+        tab={this.getAttribute('data-tab')}
+      />,
     );
   }
 }

@@ -542,33 +542,45 @@
   color: var(--message-callsign-color);
 }
 
-.text-marked .content-token--point {
+.text-marked .content-token--point,
+.text-marked .content-token--position {
+  display: inline;
+  background-color: var(--message-map-highlight-bg);
+  box-shadow: inset 0 0 0 1px var(--message-map-highlight-border);
+  color: inherit;
+  border-radius: 2px;
+  padding: 1px 3px;
+  font-size: inherit;
+  font-weight: 500;
+  line-height: inherit;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  cursor: pointer;
   transition: filter 0.2s ease;
 }
 
 .text-marked .content-token--point:hover,
-.text-marked .content-token--point:focus-visible {
+.text-marked .content-token--point:focus-visible,
+.text-marked .content-token--position[role='button']:hover,
+.text-marked .content-token--position[role='button']:focus-visible {
   filter: brightness(0.88);
 }
 
 .text-marked .content-token--position {
-  border-bottom: 2px dashed #7b5ea7;
   cursor: help;
 }
 
-.text-marked .content-token--position-located {
-  border-bottom-style: solid;
+.text-marked .content-token--position[role='button'] {
+  cursor: pointer;
 }
 
-.text-marked .content-token--position-crew,
-.text-marked .content-token--position-callsign {
-  border-bottom-color: #b0640d;
+.text-marked .content-token--position-search-highlighted {
+  background-color: transparent;
 }
 
 .text-marked .content-token--position-marker {
   margin-left: 2px;
-  color: #b0640d;
-  cursor: help;
+  color: inherit;
 }
 
 .text-marked .content-token--metadata {

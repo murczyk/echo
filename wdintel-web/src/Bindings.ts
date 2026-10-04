@@ -5765,7 +5765,7 @@ export type AiPositionColumnFilter = {
 
 export type AiPositionListCursor = {
   atMicros: number;
-  id: number;
+  id: string;
 };
 
 export type AiPositionMentionListReq = {
@@ -5776,7 +5776,7 @@ export type AiPositionMentionListReq = {
 };
 
 export type AiPositionMentionItem = {
-  id: number;
+  id: string;
   sourceKind: string;
   messageId: number | null;
   messageUuid: string | null;
@@ -5808,7 +5808,7 @@ export type AiPositionKnowledgeListReq = {
 };
 
 export type AiPositionKnowledgeItem = {
-  id: number;
+  id: string;
   scopeKind: string;
   scopeKey: string;
   scopeName: string;
@@ -5833,7 +5833,7 @@ export type AiPositionKnowledgeListRsp = {
 };
 
 export type AiPositionFeedbackItem = {
-  id: number;
+  id: string;
   targetKind: string;
   verdict: string;
   expected: string;
@@ -5844,19 +5844,19 @@ export type AiPositionFeedbackItem = {
 };
 
 export type SaveAiPositionFeedbackReq = {
-  mentionId: number | null;
-  knowledgeId: number | null;
+  mentionId: string | null;
+  knowledgeId: string | null;
   verdict: string;
   expected: string;
   comment: string;
 };
 
 export type AiPositionIdReq = {
-  id: number;
+  id: string;
 };
 
 export type AiPositionReparseReq = {
-  mentionId: number | null;
+  mentionId: string | null;
 };
 
 export type AiPositionReparseRsp = {

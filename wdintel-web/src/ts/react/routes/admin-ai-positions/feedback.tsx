@@ -60,7 +60,7 @@ function errorMessage(error: unknown): string {
 }
 
 export type FeedbackTarget =
-  { kind: 'mention'; id: number; title: string } | { kind: 'knowledge'; id: number; title: string };
+  { kind: 'mention'; id: string; title: string } | { kind: 'knowledge'; id: string; title: string };
 
 export function FeedbackDialog({
   target,
@@ -163,7 +163,7 @@ export function FeedbackChips({
   onDeleted,
 }: {
   feedback: AiPositionFeedbackItem[];
-  onDeleted: (id: number) => void;
+  onDeleted: (id: string) => void;
 }) {
   const { notify } = usePowerSnackbar();
   if (feedback.length === 0) return <Typography color="text.secondary">—</Typography>;

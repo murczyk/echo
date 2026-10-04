@@ -26,14 +26,14 @@ function formatDate(millis: number): string {
 }
 
 /** One known position: where it is, feedback on that, and its interceptions. */
-export function AdminAiPositionPage({ id }: { id: number }) {
+export function AdminAiPositionPage({ id }: { id: AiPositionKnowledgeItem['id'] | null }) {
   const { notify } = usePowerSnackbar();
   const [position, setPosition] = useState<AiPositionKnowledgeItem | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
-    if (!Number.isSafeInteger(id)) {
+    if (!id) {
       setError('Невідома позиція');
       return;
     }
@@ -41,7 +41,7 @@ export function AdminAiPositionPage({ id }: { id: number }) {
       limit: 1,
       after: null,
       globalFilter: null,
-      columnFilters: [{ id: 'id', value: String(id) }],
+      columnFilters: [{ id: 'id', value: id }],
     })
       .then((response) => {
         const [item] = response.items;
@@ -61,7 +61,7 @@ export function AdminAiPositionPage({ id }: { id: number }) {
   return (
     <Stack spacing={2} sx={{ height: '100%', minHeight: 0 }}>
       <Box>
-        <Link href="/admin/ai/positions" underline="hover">
+        <Link href="/admin/ai/positions/knowledge" underline="hover">
           <Stack direction="row" spacing={0.5} alignItems="center">
             <ArrowBackIcon fontSize="small" />
             <span>Позиції</span>

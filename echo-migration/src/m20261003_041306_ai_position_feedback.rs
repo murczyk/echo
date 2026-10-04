@@ -20,9 +20,9 @@ impl MigrationTrait for Migration {
 -- row snapshots the case (text, span, coordinates, model) so it survives
 -- reparsing and can be exported to the evaluation set.
 create table ai_position_feedback (
-    id bigserial primary key,
+    id uuid primary key,
     target_kind text not null check (target_kind in ('mention', 'knowledge')),
-    mention_id bigint references ai_position_mention(id) on delete set null,
+    mention_id uuid references ai_position_mention(id) on delete set null,
     scope_kind text check (scope_kind in ('aor', 'group')),
     scope_key text,
     sigint_inbox_item_id bigint,
@@ -50,6 +50,21 @@ create table ai_position_feedback (
         or (target_kind = 'knowledge' and scope_kind is not null and scope_key is not null)
     )
 );
+
+do $$
+declare
+    id_generator text;
+begin
+    if to_regprocedure('uuidv7()') is not null then
+        id_generator := 'uuidv7()';
+    elsif to_regprocedure('uuid_generate_v7()') is not null then
+        id_generator := 'uuid_generate_v7()';
+    else
+        raise exception 'UUIDv7 generator is unavailable: use PostgreSQL 18+ or enable the pg_uuidv7 extension';
+    end if;
+    execute format('alter table ai_position_feedback alter column id set default %s', id_generator);
+end
+$$;
 
 create index ai_position_feedback_created_idx
     on ai_position_feedback (created_at desc, id desc);

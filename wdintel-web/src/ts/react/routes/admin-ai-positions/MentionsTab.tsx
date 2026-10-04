@@ -139,7 +139,7 @@ function bestCertainty(coordinates: AiPositionCoordinateItem[]): string | null {
 }
 
 function buildColumns(
-  onFeedbackDeleted: (mentionId: number, feedbackId: number) => void,
+  onFeedbackDeleted: (mentionId: string, feedbackId: string) => void,
 ): AppMrtColumnDef<AiPositionMentionItem>[] {
   return [
     {
@@ -290,7 +290,7 @@ function MentionsTable({
   onQueryStateChange: (queryState: QueryState) => void;
   onFeedback: (row: AiPositionMentionItem) => void;
   onReparse: (row: AiPositionMentionItem) => void;
-  onFeedbackDeleted: (mentionId: number, feedbackId: number) => void;
+  onFeedbackDeleted: (mentionId: string, feedbackId: string) => void;
 }) {
   const tableStateContext = useTableStateContext();
   const columns = useMemo(() => buildColumns(onFeedbackDeleted), [onFeedbackDeleted]);
@@ -449,7 +449,7 @@ function MentionsBody({ fixedFilters = [], title = 'Позиції у повід
   }, [refreshOpenFeedback]);
 
   const updateFeedback = useCallback(
-    (mentionId: number, update: (feedback: AiPositionFeedbackItem[]) => AiPositionFeedbackItem[]) =>
+    (mentionId: string, update: (feedback: AiPositionFeedbackItem[]) => AiPositionFeedbackItem[]) =>
       setRows((current) =>
         current.map((row) =>
           row.id === mentionId ? { ...row, feedback: update(row.feedback) } : row,
@@ -459,14 +459,14 @@ function MentionsBody({ fixedFilters = [], title = 'Позиції у повід
   );
 
   const handleFeedbackDeleted = useCallback(
-    (mentionId: number, feedbackId: number) => {
+    (mentionId: string, feedbackId: string) => {
       updateFeedback(mentionId, (feedback) => feedback.filter((item) => item.id !== feedbackId));
       refreshOpenFeedback();
     },
     [updateFeedback, refreshOpenFeedback],
   );
 
-  async function reparse(mentionId: number | null) {
+  async function reparse(mentionId: string | null) {
     try {
       const response = await reparseAiPositionFeedback({ mentionId });
       notify({

@@ -8,11 +8,11 @@ use serde::{Deserialize, Serialize};
 )]
 #[sea_orm(table_name = "ai_position_feedback")]
 pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i64,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
     #[sea_orm(column_type = "Text")]
     pub target_kind: String,
-    pub mention_id: Option<i64>,
+    pub mention_id: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub scope_kind: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]

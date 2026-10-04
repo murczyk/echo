@@ -27,8 +27,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : String(error);
 }
 
-/** Every verdict, including «не позиція» rejections whose mentions are gone:
- * deleting a rejection lets the name be recognised again after a reparse. */
+/** Every verdict, including snapshots whose mentions were reparsed. */
 export function FeedbackTab() {
   const { notify } = usePowerSnackbar();
   const [verdict, setVerdict] = useState('not_position');
@@ -81,7 +80,7 @@ export function FeedbackTab() {
         </PowerButton>
         {verdict === 'not_position' ? (
           <Typography variant="body2" color="text.secondary">
-            Ці назви не розпізнаються. Видаліть відгук, щоб повернути назву, і перепарсіть джерела.
+            Відгуки не видаляють згадки й не блокують назву. Покращіть промпт і перепарсіть джерела.
           </Typography>
         ) : null}
       </Stack>

@@ -92,7 +92,7 @@ pub(crate) fn knowledge_visible(
 
 #[derive(Debug, FromQueryResult)]
 struct MentionRow {
-    id: i64,
+    id: Uuid,
     sigint_inbox_item_id: Option<i64>,
     media_id: Option<Uuid>,
     media_name: Option<String>,
@@ -497,9 +497,9 @@ pub(crate) async fn list(
 
 pub(crate) async fn load_coordinates(
     dbx: &DatabaseConnection,
-    mention_ids: Vec<i64>,
-) -> anyhow::Result<HashMap<i64, Vec<AiPositionCoordinateItem>>> {
-    let mut result: HashMap<i64, Vec<AiPositionCoordinateItem>> =
+    mention_ids: Vec<Uuid>,
+) -> anyhow::Result<HashMap<Uuid, Vec<AiPositionCoordinateItem>>> {
+    let mut result: HashMap<Uuid, Vec<AiPositionCoordinateItem>> =
         HashMap::new();
     if mention_ids.is_empty() {
         return Ok(result);
@@ -533,7 +533,7 @@ pub(crate) async fn load_coordinates(
 
 #[derive(Debug, FromQueryResult)]
 struct KnowledgeRow {
-    id: i64,
+    id: Uuid,
     scope_kind: String,
     scope_key: String,
     scope_name: Option<String>,
@@ -585,7 +585,7 @@ fn knowledge_conditions(
             ("scope", "aor") => "k.scope_kind = 'aor'".to_string(),
             ("scope", "group") => "k.scope_kind = 'group'".to_string(),
             ("id", value) => {
-                let id: i64 = value.parse().map_err(|_| AppError::BL {
+                let id: Uuid = value.parse().map_err(|_| AppError::BL {
                     msg: "Невідома позиція".to_string(),
                 })?;
                 values.push(id.into());
@@ -843,7 +843,7 @@ pub(crate) async fn positions_by_message(
 async fn load_knowledge_for(
     dbx: &DatabaseConnection,
     mentions: &[crate::entities::ai_position_mention::Model],
-    coordinates: &HashMap<i64, Vec<AiPositionCoordinateItem>>,
+    coordinates: &HashMap<Uuid, Vec<AiPositionCoordinateItem>>,
     scopes: &HashMap<String, Vec<knowledge::Scope>>,
     allowed_groups: &HashSet<String>,
 ) -> anyhow::Result<Vec<ai_position_knowledge::Model>> {

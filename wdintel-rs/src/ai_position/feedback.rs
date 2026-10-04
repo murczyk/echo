@@ -73,18 +73,6 @@ pub async fn save_ai_position_feedback(
         .exec_with_returning(&transaction)
         .await
         .c(h!())?;
-    if saved.verdict == "not_position" {
-        // The name disappears everywhere at once; the mention delete trigger
-        // recomputes the knowledge it fed. Deleting this feedback and
-        // reparsing brings it back.
-        ai_position_mention::Entity::delete_many()
-            .filter(
-                ai_position_mention::Column::NameKey.eq(saved.name_key.clone()),
-            )
-            .exec(&transaction)
-            .await
-            .c(h!())?;
-    }
     transaction.commit().await.c(h!())?;
     let mut items = feedback_items(&env.dbx, vec![saved]).await.c(h!())?;
     Ok(Json(items.remove(0)))
@@ -221,8 +209,8 @@ pub async fn reparse_ai_position_feedback(
 }
 
 struct ValidReq {
-    mention_id: Option<i64>,
-    knowledge_id: Option<i64>,
+    mention_id: Option<uuid::Uuid>,
+    knowledge_id: Option<uuid::Uuid>,
     verdict: String,
     expected: String,
     comment: String,
@@ -283,7 +271,7 @@ struct SourceText {
 
 async fn mention_feedback(
     dbx: &DatabaseConnection,
-    mention_id: i64,
+    mention_id: uuid::Uuid,
     allowed: &HashSet<String>,
     req: &ValidReq,
 ) -> Result<ai_position_feedback::ActiveModel, AppError> {
@@ -345,7 +333,7 @@ async fn mention_feedback(
 
 async fn knowledge_feedback(
     dbx: &DatabaseConnection,
-    knowledge_id: i64,
+    knowledge_id: uuid::Uuid,
     allowed: &HashSet<String>,
     req: &ValidReq,
 ) -> Result<ai_position_feedback::ActiveModel, AppError> {
@@ -469,27 +457,6 @@ async fn reparse_open_feedback(
     Ok(sources.len() as i64)
 }
 
-/// Names reviewers marked «not a position»: never extracted, linked or
-/// consolidated again while the mark exists.
-pub(crate) async fn rejected_name_keys<C>(
-    dbx: &C,
-) -> anyhow::Result<HashSet<String>>
-where
-    C: ConnectionTrait,
-{
-    use sea_orm::QuerySelect;
-    let keys: Vec<String> = ai_position_feedback::Entity::find()
-        .filter(ai_position_feedback::Column::Verdict.eq("not_position"))
-        .select_only()
-        .column(ai_position_feedback::Column::NameKey)
-        .distinct()
-        .into_tuple()
-        .all(dbx)
-        .await
-        .c(h!())?;
-    Ok(keys.into_iter().collect())
-}
-
 pub(crate) async fn open_feedback_count(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<i64> {
@@ -541,18 +508,18 @@ where
 /// Feedback on these mentions, newest first, by mention id.
 pub(crate) async fn mention_feedback_items(
     dbx: &DatabaseConnection,
-    mention_ids: Vec<i64>,
-) -> anyhow::Result<HashMap<i64, Vec<AiPositionFeedbackItem>>> {
+    mention_ids: Vec<uuid::Uuid>,
+) -> anyhow::Result<HashMap<uuid::Uuid, Vec<AiPositionFeedbackItem>>> {
     let rows = ai_position_feedback::Entity::find()
         .filter(ai_position_feedback::Column::MentionId.is_in(mention_ids))
         .order_by_desc(ai_position_feedback::Column::CreatedAt)
         .all(dbx)
         .await
         .c(h!())?;
-    let mention_ids: Vec<Option<i64>> =
+    let mention_ids: Vec<Option<uuid::Uuid>> =
         rows.iter().map(|row| row.mention_id).collect();
     let items = feedback_items(dbx, rows).await.c(h!())?;
-    let mut by_mention: HashMap<i64, Vec<AiPositionFeedbackItem>> =
+    let mut by_mention: HashMap<uuid::Uuid, Vec<AiPositionFeedbackItem>> =
         HashMap::new();
     for (mention_id, item) in mention_ids.into_iter().zip(items) {
         if let Some(mention_id) = mention_id {
@@ -608,18 +575,34 @@ pub(crate) async fn knowledge_feedback_items(
 
 #[cfg(test)]
 mod tests {
-    use super::{mention_feedback, reparse_open_feedback, validate, ValidReq};
+    use super::{
+        reparse_open_feedback, save_ai_position_feedback, validate, ValidReq,
+    };
     use crate::ai_position::types::SaveAiPositionFeedbackReq;
     use crate::entities::{
         ai_position_feedback, ai_position_mention, sigint_inbox_item,
         signal_message,
     };
+    use actix_web::{
+        test as web_test, web, App, HttpMessage, HttpRequest, HttpResponse,
+    };
     use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
-    use std::collections::HashSet;
+
+    async fn test_login(
+        req: HttpRequest,
+        login_id: web::Json<uuid::Uuid>,
+    ) -> HttpResponse {
+        actix_identity::Identity::login(
+            &req.extensions(),
+            login_id.to_string(),
+        )
+        .unwrap();
+        HttpResponse::NoContent().finish()
+    }
 
     fn request(verdict: &str) -> SaveAiPositionFeedbackReq {
         SaveAiPositionFeedbackReq {
-            mention_id: Some(1),
+            mention_id: Some(uuid::Uuid::now_v7()),
             knowledge_id: None,
             verdict: verdict.to_string(),
             expected: "  Береза 4 ".to_string(),
@@ -634,13 +617,12 @@ mod tests {
         assert_eq!(valid.expected, "Береза 4");
     }
 
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn snapshots_the_case_and_marks_it_reparsed_3064() {
-        let env = crate::functest::tests::cleanup().await.unwrap();
-        let body = "Переміщення до \"Циркон 9\"";
+    async fn seed_mention(
+        dbx: &sea_orm::DatabaseConnection,
+        body: &str,
+    ) -> ai_position_mention::Model {
         let message = crate::functest::tests::mk_signal_message(
-            &env.dbx,
+            dbx,
             signal_message::ActiveModel {
                 body: Set(Some(body.to_string())),
                 ..Default::default()
@@ -653,33 +635,115 @@ mod tests {
             parsed_unit_v2: Set(false),
             ..Default::default()
         }
-        .insert(&env.dbx)
+        .insert(dbx)
         .await
         .unwrap();
-        let mention = ai_position_mention::ActiveModel {
+        let begin =
+            body[..body.find("Циркон 9").unwrap()].chars().count() as i32;
+        ai_position_mention::ActiveModel {
             sigint_inbox_item_id: Set(Some(message.id)),
             name: Set("Циркон 9".to_string()),
             name_key: Set("циркон 9".to_string()),
-            begin_char: Set(16),
-            end_char: Set(24),
+            begin_char: Set(begin),
+            end_char: Set(begin + 8),
             message_at: Set(message.created_at),
             group_is_secret: Set(false),
             aor_ids: Set(vec![]),
             model_name: Set("test".to_string()),
             ..Default::default()
         }
-        .insert(&env.dbx)
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn feedback_app(
+        env: std::sync::Arc<crate::types::Env>,
+    ) -> App<
+        impl actix_web::dev::ServiceFactory<
+            actix_web::dev::ServiceRequest,
+            Config = (),
+            Response = actix_web::dev::ServiceResponse,
+            Error = actix_web::Error,
+            InitError = (),
+        >,
+    > {
+        let store = actix_session::storage::RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
         .await
         .unwrap();
-        let valid = validate(request("not_position")).ok().unwrap();
-        let feedback =
-            mention_feedback(&env.dbx, mention.id, &HashSet::new(), &valid)
+        App::new()
+            .wrap(actix_identity::IdentityMiddleware::default())
+            .wrap(actix_session::SessionMiddleware::new(
+                store,
+                actix_web::cookie::Key::generate(),
+            ))
+            .app_data(web::Data::from(env.clone()))
+            .route("/test-login", web::post().to(test_login))
+            .service(save_ai_position_feedback)
+    }
+
+    async fn review_mention(
+        env: &std::sync::Arc<crate::types::Env>,
+        mention_id: uuid::Uuid,
+    ) -> crate::ai_position::types::AiPositionFeedbackItem {
+        let admin = crate::functest::tests::mk_login(
+            &env.dbx,
+            crate::entities::login::ActiveModel {
+                roles: Set(serde_json::json!(["Admin"])),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let app = web_test::init_service(feedback_app(env.clone()).await).await;
+        let response = web_test::call_service(
+            &app,
+            web_test::TestRequest::post()
+                .uri("/test-login")
+                .set_json(admin.id)
+                .to_request(),
+        )
+        .await;
+        let cookie = response.response().cookies().next().unwrap().into_owned();
+        let response = web_test::call_service(
+            &app,
+            web_test::TestRequest::post()
+                .uri("/api/admin/ai-positions/feedback/save")
+                .cookie(cookie)
+                .set_json(SaveAiPositionFeedbackReq {
+                    mention_id: Some(mention_id),
+                    ..request("not_position")
+                })
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        web_test::read_body_json(response).await
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn snapshots_the_case_and_marks_it_reparsed_3064() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let body = "Переміщення до \"Циркон 9\"";
+        let mention = seed_mention(&env.dbx, body).await;
+        let other_mention = seed_mention(&env.dbx, "Циркон 9, на связь").await;
+        let saved = review_mention(&env, mention.id).await;
+        assert_eq!(saved.id.get_version_num(), 7);
+        for id in [mention.id, other_mention.id] {
+            assert_eq!(id.get_version_num(), 7);
+            assert!(ai_position_mention::Entity::find_by_id(id)
+                .one(&env.dbx)
                 .await
-                .ok()
-                .unwrap();
-        let saved = ai_position_feedback::Entity::insert(feedback)
-            .exec_with_returning(&env.dbx)
+                .unwrap()
+                .is_some());
+        }
+        let saved = ai_position_feedback::Entity::find_by_id(saved.id)
+            .one(&env.dbx)
             .await
+            .unwrap()
             .unwrap();
         assert_eq!(saved.source_text.as_deref(), Some(body));
         assert_eq!(saved.name_key, "циркон 9");

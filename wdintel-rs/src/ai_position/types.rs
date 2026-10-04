@@ -1,4 +1,4 @@
-use crate::types::{Deserialize, Serialize};
+use crate::types::{Deserialize, Serialize, Uuid};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 
 #[derive(
@@ -152,7 +152,7 @@ pub struct AiPositionColumnFilter {
 pub struct AiPositionListCursor {
     /// Microseconds since the epoch: the full precision rows are ordered by.
     pub at_micros: i64,
-    pub id: i64,
+    pub id: Uuid,
 }
 
 #[derive(
@@ -171,7 +171,7 @@ pub struct AiPositionMentionListReq {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AiPositionMentionItem {
-    pub id: i64,
+    pub id: Uuid,
     /// `message` or `document`.
     pub source_kind: String,
     pub message_id: Option<i64>,
@@ -211,7 +211,7 @@ pub struct AiPositionKnowledgeListReq {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AiPositionKnowledgeItem {
-    pub id: i64,
+    pub id: Uuid,
     /// `aor` or `group`.
     pub scope_kind: String,
     /// AOR id or group master key.
@@ -240,7 +240,7 @@ pub struct AiPositionKnowledgeItem {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AiPositionFeedbackItem {
-    pub id: i64,
+    pub id: Uuid,
     /// `mention` or `knowledge`.
     pub target_kind: String,
     /// `correct`, `not_position`, `wrong_name`, `wrong_coordinates`,
@@ -290,8 +290,8 @@ pub struct AiPositionFeedbackListRsp {
 #[serde(rename_all = "camelCase")]
 pub struct SaveAiPositionFeedbackReq {
     /// Exactly one of `mention_id` and `knowledge_id`.
-    pub mention_id: Option<i64>,
-    pub knowledge_id: Option<i64>,
+    pub mention_id: Option<Uuid>,
+    pub knowledge_id: Option<Uuid>,
     pub verdict: String,
     pub expected: String,
     pub comment: String,
@@ -302,7 +302,7 @@ pub struct SaveAiPositionFeedbackReq {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AiPositionIdReq {
-    pub id: i64,
+    pub id: Uuid,
 }
 
 #[derive(
@@ -312,7 +312,7 @@ pub struct AiPositionIdReq {
 pub struct AiPositionReparseReq {
     /// One mention's source; `None` re-runs every source with feedback not
     /// yet re-run.
-    pub mention_id: Option<i64>,
+    pub mention_id: Option<Uuid>,
 }
 
 #[derive(

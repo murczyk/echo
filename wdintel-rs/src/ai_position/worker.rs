@@ -531,15 +531,8 @@ where
         source.group_master_key.as_deref(),
         &source.aor_ids,
     );
-    // Names reviewers rejected («not a position») are never saved again.
-    let rejected = super::feedback::rejected_name_keys(dbx).await.c(h!())?;
-    let extracted: Vec<AiPositionFound> = extraction
-        .positions
-        .into_iter()
-        .filter(|position| !rejected.contains(&position.name_key))
-        .collect();
     let positions =
-        with_known_names(dbx, &scopes, &source.text, extracted, &rejected)
+        with_known_names(dbx, &scopes, &source.text, extraction.positions)
             .await
             .c(h!())?;
     for position in positions {
@@ -627,7 +620,6 @@ async fn with_known_names<C>(
     scopes: &[knowledge::Scope],
     text: &str,
     mut positions: Vec<AiPositionFound>,
-    rejected: &std::collections::HashSet<String>,
 ) -> anyhow::Result<Vec<AiPositionFound>>
 where
     C: ConnectionTrait,
@@ -635,9 +627,6 @@ where
     for (name, name_key, kind) in
         knowledge::known_names(dbx, scopes).await.c(h!())?
     {
-        if rejected.contains(&name_key) {
-            continue;
-        }
         if positions
             .iter()
             .any(|position| position.name_key == name_key)
@@ -780,7 +769,7 @@ async fn fail_job(
     Ok(())
 }
 
-async fn delete_job<C>(dbx: &C, id: i64) -> anyhow::Result<()>
+async fn delete_job<C>(dbx: &C, id: Uuid) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
@@ -922,6 +911,7 @@ mod tests {
                 .await
                 .unwrap();
             let job = load_next_job(&env.dbx).await.unwrap().unwrap();
+            assert_eq!(job.id.get_version_num(), 7);
             assert_eq!(job.sigint_inbox_item_id, Some(message.id));
             let source = load_source(&env.dbx, &job).await.unwrap().unwrap();
             assert_eq!(source.text, BODY);
@@ -943,6 +933,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(mentions.len(), 1);
+            assert_eq!(mentions[0].id.get_version_num(), 7);
             assert_eq!(mentions[0].name, "Циркон 9");
             assert_eq!(mentions[0].name_key, "циркон 9");
             let coordinates = ai_position_coordinate::Entity::find()
@@ -954,6 +945,9 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(coordinates.len(), usize::from(with_coordinate));
+            assert!(coordinates
+                .iter()
+                .all(|coordinate| coordinate.id.get_version_num() == 7));
             assert!(ai_position_worker_job::Entity::find()
                 .one(&env.dbx)
                 .await
@@ -1583,7 +1577,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn skips_names_reviewers_rejected_3064() {
+    async fn keeps_other_mentions_of_a_reviewed_name_3064() {
         let env = crate::functest::tests::cleanup().await.unwrap();
         enable_worker(&env.dbx).await;
         let (message_id, _, _) = grouped_message(&env.dbx, false).await;
@@ -1607,8 +1601,8 @@ mod tests {
         complete_job(&env.dbx, &job, &source, &config, extraction(true))
             .await
             .unwrap();
-        assert!(linked_names(&env.dbx, message_id).await.is_empty());
-        assert!(knowledge_scopes(&env).await.is_empty());
+        assert_eq!(linked_names(&env.dbx, message_id).await, vec!["Циркон 9"]);
+        assert!(!knowledge_scopes(&env).await.is_empty());
     }
 
     #[tokio::test]

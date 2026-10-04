@@ -15,10 +15,25 @@ dropped in code; with a number or code («Дамба-3») they count as names. A
 message card keeps the callsign pill and its hint, and adds a location
 marker.
 
-Keys ignore a leading post type («ОП Лиман-2» = «Лиман-2»). Names reviewers
-marked «не позиція» are excluded everywhere: the mark deletes their mentions
-at once, and the worker, linking and knowledge skip them. Deleting the mark
-and reparsing brings them back.
+Keys ignore a leading post type («ОП Лиман-2» = «Лиман-2»). Feedback annotates
+an individual mention or a scoped location; it never deletes mentions or
+blacklists a name. The same word can denote a position, a callsign or an
+ordinary object in different messages. All cases remain available for review
+and evaluation; improve the prompt and reparse sources to correct extraction.
+
+Position mentions, coordinate facts, known locations, feedback and worker/link
+jobs use database-generated UUIDv7 IDs. API IDs, pagination cursors and position
+page URLs carry UUID strings; existing message and AOR identifiers are unchanged.
+
+Located position highlights use the same styling as palette points. They join
+the message's coordinate preview alongside direct coordinates, palette points
+and document coordinates. Clicking a position opens that complete map focused
+on its location; clicking the map thumbnail fits all points. Positions without
+coordinates keep their tooltip without opening a map.
+
+Copied message links prefer the message UUID. Legacy local/test data missing
+UUIDs can be repaired with `target/debug/wdintel-rs --mode=debug oneoff-backfill-signal-message-uuid --reset-checkpoint`;
+the existing backfill preserves assigned UUIDs and fills related references.
 
 ## What is stored
 

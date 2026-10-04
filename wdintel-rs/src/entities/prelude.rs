@@ -32,6 +32,7 @@ pub use super::ai_position_coordinate::Entity as AiPositionCoordinate;
 pub use super::ai_position_feedback::Entity as AiPositionFeedback;
 pub use super::ai_position_knowledge::Entity as AiPositionKnowledge;
 pub use super::ai_position_knowledge_job::Entity as AiPositionKnowledgeJob;
+pub use super::ai_position_link_job::Entity as AiPositionLinkJob;
 pub use super::ai_position_mention::Entity as AiPositionMention;
 pub use super::ai_position_settings::Entity as AiPositionSettings;
 pub use super::ai_position_worker_job::Entity as AiPositionWorkerJob;

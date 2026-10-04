@@ -18,7 +18,7 @@ use std::io::Write;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeedbackCase {
-    pub id: i64,
+    pub id: uuid::Uuid,
     pub target_kind: String,
     pub verdict: String,
     pub expected: String,
@@ -127,7 +127,7 @@ struct EngineFile {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CaseResult {
-    id: i64,
+    id: uuid::Uuid,
     verdict: String,
     /// `None`: the case cannot be replayed (location feedback, no text,
     /// `other`).

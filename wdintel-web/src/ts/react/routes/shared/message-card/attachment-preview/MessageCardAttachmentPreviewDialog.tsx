@@ -307,6 +307,7 @@ export function MessageCardAttachmentPreviewDialog({
         ) : (
           <CoordinateAttachmentPreviewRenderer
             points={item.points}
+            initialPointIndex={item.initialPointIndex}
             navigation={navigation}
             onClose={closeDialog}
           />

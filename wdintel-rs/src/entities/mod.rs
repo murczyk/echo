@@ -34,6 +34,7 @@ pub mod ai_position_coordinate;
 pub mod ai_position_feedback;
 pub mod ai_position_knowledge;
 pub mod ai_position_knowledge_job;
+pub mod ai_position_link_job;
 pub mod ai_position_mention;
 pub mod ai_position_settings;
 pub mod ai_position_worker_job;

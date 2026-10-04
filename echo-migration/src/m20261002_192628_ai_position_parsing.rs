@@ -25,7 +25,7 @@ create table ai_position_settings (
 );
 
 create table ai_position_worker_job (
-    id bigserial primary key,
+    id uuid primary key,
     sigint_inbox_item_id bigint
         references sigint_inbox_item(id) on delete cascade,
     media_id uuid references signal_message_media(id) on delete cascade,
@@ -50,7 +50,7 @@ create index ai_position_worker_job_next_attempt_idx
     on ai_position_worker_job (next_attempt_at, created_at, id);
 
 create table ai_position_mention (
-    id bigserial primary key,
+    id uuid primary key,
     sigint_inbox_item_id bigint
         references sigint_inbox_item(id) on delete cascade,
     media_id uuid references signal_message_media(id) on delete cascade,
@@ -85,8 +85,8 @@ create index ai_position_mention_message_at_idx
     on ai_position_mention (message_at desc, id desc);
 
 create table ai_position_coordinate (
-    id bigserial primary key,
-    mention_id bigint not null
+    id uuid primary key,
+    mention_id uuid not null
         references ai_position_mention(id) on delete cascade,
     coordinate_text text not null,
     coordinate_system text not null
@@ -115,7 +115,7 @@ create index ai_position_mention_aor_idx
 -- Where a position is, per scope: an area of responsibility (facts from its
 -- non-private groups) or a single group (private groups never leave it).
 create table ai_position_knowledge (
-    id bigserial primary key,
+    id uuid primary key,
     scope_kind text not null check (scope_kind in ('aor', 'group')),
     scope_key text not null,
     name_key text not null,
@@ -159,7 +159,7 @@ create index ai_position_knowledge_job_next_attempt_idx
 -- Resumable linking of a known position into the scope's earlier messages:
 -- one event-time range and pass, advanced batch by batch.
 create table ai_position_link_job (
-    id bigserial primary key,
+    id uuid primary key,
     scope_kind text not null check (scope_kind in ('aor', 'group')),
     scope_key text not null,
     name_key text not null,
@@ -174,6 +174,24 @@ create table ai_position_link_job (
 
 create index ai_position_link_job_created_idx
     on ai_position_link_job (created_at, id);
+
+do $$
+declare
+    id_generator text;
+    position_table text;
+begin
+    if to_regprocedure('uuidv7()') is not null then
+        id_generator := 'uuidv7()';
+    elsif to_regprocedure('uuid_generate_v7()') is not null then
+        id_generator := 'uuid_generate_v7()';
+    else
+        raise exception 'UUIDv7 generator is unavailable: use PostgreSQL 18+ or enable the pg_uuidv7 extension';
+    end if;
+    foreach position_table in array array['ai_position_worker_job', 'ai_position_mention', 'ai_position_coordinate', 'ai_position_knowledge', 'ai_position_link_job'] loop
+        execute format('alter table %I alter column id set default %s', position_table, id_generator);
+    end loop;
+end
+$$;
 
 -- Queues recomputes for a position's facts from a group: its group scope,
 -- the recorded AORs, and every knowledge row built from the group (its AORs
