@@ -86,6 +86,11 @@ responseDecodeErrorMessage err =
 -}
 resolve : (body -> Result String a) -> Http.Response body -> Result ApiError a
 resolve toResult response =
+    resolveWithMetadata (\_ body -> toResult body) response
+
+
+resolveWithMetadata : (Http.Metadata -> body -> Result String a) -> Http.Response body -> Result ApiError a
+resolveWithMetadata toResult response =
     case response of
         Http.BadUrl_ url ->
             Err { httpError = Http.BadUrl url, formErrors = Dict.empty, errors = [] }
@@ -103,8 +108,8 @@ resolve toResult response =
                 , formErrors = Dict.empty
                 }
 
-        Http.GoodStatus_ _ body ->
-            case toResult body of
+        Http.GoodStatus_ metadata body ->
+            case toResult metadata body of
                 Ok v ->
                     Ok v
 

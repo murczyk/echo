@@ -500,6 +500,7 @@ async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
             .service(submit_direct)
             .service(edit_message)
             .service(crate::rer_importer::inbox::delete_message)
+            .service(crate::rer_importer::import_csv::rer_csv_import_preflight)
             .service(crate::rer_importer::import_csv::rer_csv_import)
             .service(crate::rer_importer::import_csv::rer_delta_csv_import)
             .service(crate::rer_importer::import_kmz::rer_delta_kmz_import)
@@ -566,6 +567,7 @@ async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
         assert_eq!(response.status(), actix_web::http::StatusCode::FORBIDDEN);
     }
     for uri in [
+        "/api/rer/csv-import/preflight",
         "/api/rer/csv-import",
         "/api/rer/delta-csv-import",
         "/api/rer/delta-kmz-import",

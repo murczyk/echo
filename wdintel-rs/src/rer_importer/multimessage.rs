@@ -22,6 +22,15 @@ pub fn check_message_length_is_valid(body: &str) -> bool {
     chars <= MAX_MESSAGE_SIZE
 }
 
+pub(crate) fn is_invalid_for_historical_csv_import(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> bool {
+    should_try_split_message(body)
+        && (!check_message_length_is_valid(body)
+            || slice_message(lnow, body).len() > 1)
+}
+
 pub async fn spawn_multiple_messages<'a, 'async_trait, C>(
     txn: &'a C,
     message: &signal_message::Model,
@@ -30,10 +39,23 @@ pub async fn spawn_multiple_messages<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let lnow = Local::now().with_timezone(&crate::config::get_tz());
+    Ok(spawn_multiple_messages_at(txn, message, body, lnow)
+        .await
+        .c(h!())?)
+}
+
+pub(crate) async fn spawn_multiple_messages_at<'a, 'async_trait, C>(
+    txn: &'a C,
+    message: &signal_message::Model,
+    body: &str,
+    lnow: DateTime<Tz>,
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let mut models = vec![];
     let is_src_valid = check_message_length_is_valid(body);
-    let tz = crate::config::get_tz();
-    let lnow = Local::now().with_timezone(&tz);
     let new_messages: Vec<String> = slice_message(lnow, body);
     if new_messages.len() == 1 && is_src_valid {
         return Ok(models);
@@ -142,6 +164,7 @@ mod tests {
         let messages = slice_message(lnow, &messages50);
         assert_eq!(messages.len(), 50);
         assert!(should_try_split_message(&messages50));
+        assert!(is_invalid_for_historical_csv_import(lnow, &messages50));
         for m in messages {
             assert!(check_message_length_is_valid(&m));
         }
@@ -154,6 +177,7 @@ mod tests {
         let messages_real =
             std::fs::read_to_string("data/test_multi_message2.txt").unwrap();
         assert!(should_try_split_message(&messages_real));
+        assert!(is_invalid_for_historical_csv_import(lnow, &messages_real));
         let messages = slice_message(lnow, &messages_real);
         assert_eq!(messages.len(), 84);
         for m in messages {
