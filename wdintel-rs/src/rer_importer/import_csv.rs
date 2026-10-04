@@ -46,6 +46,7 @@ impl HistoricalRecordValidation {
 
 #[derive(Debug)]
 struct HistoricalCsvPreflight {
+    reference_timestamp_ms: i64,
     total: usize,
     valid: usize,
     missing_timestamp: usize,
@@ -66,6 +67,7 @@ struct HistoricalCsvPreflight {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct RerCsvPreflightMetadata {
+    pub reference_timestamp_ms: i64,
     pub total: usize,
     pub valid: usize,
     pub missing_timestamp: usize,
@@ -143,6 +145,7 @@ fn preflight_historical_csv(
         }
     }
     HistoricalCsvPreflight {
+        reference_timestamp_ms: lnow.timestamp_millis(),
         total,
         valid: total - skipped_records.len(),
         missing_timestamp,
@@ -244,6 +247,7 @@ fn historical_csv_preflight_response(
     body: Vec<u8>,
 ) -> anyhow::Result<HttpResponse> {
     let metadata = serde_json::to_string(&RerCsvPreflightMetadata {
+        reference_timestamp_ms: preflight.reference_timestamp_ms,
         total: preflight.total,
         valid: preflight.valid,
         missing_timestamp: preflight.missing_timestamp,
@@ -444,8 +448,9 @@ pub async fn oneoff_rer_csv_import_go(
     redis: &mut redis::aio::ConnectionManager,
     ps: &crate::OneoffRerCsvImportPs,
     bgid: Option<i64>,
+    lnow: DateTime<Tz>,
 ) -> Result<(), AppError> {
-    let res = oneoff_rer_csv_import_1(mode, redis, ps, bgid).await;
+    let res = oneoff_rer_csv_import_at(mode, redis, ps, bgid, lnow).await;
     crate::delta::finish_bgtask(bgid, dbx, &res).await.c(h!())?;
     res
 }
@@ -639,6 +644,29 @@ pub async fn rer_csv_import_preflight(
 #[serde(rename_all = "camelCase")]
 pub struct RerCsvImportQuery {
     is_historical: Option<bool>,
+    reference_timestamp_ms: Option<i64>,
+}
+
+fn rer_csv_import_reference_time(
+    is_historical: bool,
+    reference_timestamp_ms: Option<i64>,
+) -> Result<DateTime<Tz>, AppError> {
+    if !is_historical {
+        return Ok(Local::now().with_timezone(&crate::config::get_tz()));
+    }
+    let Some(reference_timestamp_ms) = reference_timestamp_ms else {
+        return Err(AppError::BL {
+            msg: "Historical CSV import requires preflight".to_string(),
+        });
+    };
+    let Some(reference_time) =
+        DateTime::<Utc>::from_timestamp_millis(reference_timestamp_ms)
+    else {
+        return Err(AppError::BL {
+            msg: "Invalid CSV preflight reference timestamp".to_string(),
+        });
+    };
+    Ok(reference_time.with_timezone(&crate::config::get_tz()))
 }
 
 #[post("/api/rer/csv-import")]
@@ -649,6 +677,12 @@ pub async fn rer_csv_import(
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
     ensure_message_write(&env.dbx, &user).await.c(h!())?;
+    let is_historical = query.is_historical.unwrap_or(true);
+    let reference_time = rer_csv_import_reference_time(
+        is_historical,
+        query.reference_timestamp_ms,
+    )
+    .context(h!())?;
     let (_, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", tmp_dir.path().display());
@@ -675,7 +709,8 @@ pub async fn rer_csv_import(
     let mode = env.mode;
     let mode2 = Box::new(mode);
     let bgtask_id2 = Box::new(bgtask_id);
-    let import_as_new = Box::new(!query.is_historical.unwrap_or(true));
+    let import_as_new = Box::new(!is_historical);
+    let reference_time = Box::new(reference_time);
     tokio::spawn(async {
         let _tmp_dir = tmp_dir;
         let dbx3 = dbx2;
@@ -688,6 +723,7 @@ pub async fn rer_csv_import(
         // possibly https://github.com/rust-lang/rust/issues/119757
         let bgtask_id3 = bgtask_id2;
         let import_as_new2 = import_as_new;
+        let reference_time2 = reference_time;
         let res = oneoff_rer_csv_import_go(
             *mode3,
             &dbx3,
@@ -697,6 +733,7 @@ pub async fn rer_csv_import(
                 import_as_new: *import_as_new2,
             },
             Some(*bgtask_id3),
+            *reference_time2,
         )
         .await;
         let res = finish_bgtask(Some(*bgtask_id3), &dbx3, &res).await;
@@ -1565,6 +1602,7 @@ mod tests {
         assert_eq!(
             metadata,
             RerCsvPreflightMetadata {
+                reference_timestamp_ms: fixed_now().timestamp_millis(),
                 total: 2,
                 valid: 1,
                 missing_timestamp: 1,

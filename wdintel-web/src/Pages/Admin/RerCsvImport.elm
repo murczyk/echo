@@ -62,6 +62,7 @@ type PreflightState
 type alias PreflightSummary =
     { total : Int
     , valid : Int
+    , referenceTimestampMs : Int
     }
 
 
@@ -133,6 +134,7 @@ update msg model =
                 summary =
                     { total = result.total
                     , valid = result.valid
+                    , referenceTimestampMs = result.referenceTimestampMs
                     }
 
                 effects =
@@ -170,9 +172,9 @@ update msg model =
 
             else
                 case ( model.selectedFile, model.preflight ) of
-                    ( Just file, PreflightPassed _ ) ->
+                    ( Just file, PreflightPassed summary ) ->
                         ( { model | importSubmitting = True }
-                        , E.sendCmd <| Api.rer_csv_import True ImportDone file
+                        , E.sendCmd <| Api.rer_csv_import True summary.referenceTimestampMs ImportDone file
                         )
 
                     _ ->

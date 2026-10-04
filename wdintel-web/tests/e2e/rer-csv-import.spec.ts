@@ -19,6 +19,7 @@ async function selectCsv(page: Page, name: string, contents: string) {
 }
 
 test('@regression #3650 historical CSV import requires preflight', async ({ page }) => {
+  const referenceTimestampMs = 1_790_974_200_000;
   let preflightRequests = 0;
   const importUrls: URL[] = [];
   let releaseTaskStatus = () => {};
@@ -59,6 +60,7 @@ test('@regression #3650 historical CSV import requires preflight', async ({ page
         contentType: 'text/csv; charset=utf-8',
         headers: {
           'x-echo-rer-csv-metadata': JSON.stringify({
+            referenceTimestampMs,
             total: hasSkippedRows ? 2 : 1,
             valid: 1,
             missingTimestamp: hasSkippedRows ? 1 : 0,
@@ -112,7 +114,7 @@ test('@regression #3650 historical CSV import requires preflight', async ({ page
   await expect(page.getByText(/1 повідомлень із 2 буде пропущено/)).toBeVisible();
   await expect(importButton).toBeEnabled();
 
-  await selectCsv(page, 'second.csv', 'Дата: 2026-10-02;');
+  await selectCsv(page, 'second.csv', 'Час: 00:05');
   await expect(importButton).toBeDisabled();
   await preflight.click();
   await expect(
@@ -133,6 +135,9 @@ test('@regression #3650 historical CSV import requires preflight', async ({ page
   await expect.poll(() => importUrls.length).toBe(1);
   await expect(importButton).toBeDisabled();
   expect(importUrls[0]!.searchParams.get('isHistorical')).toBe('true');
+  expect(importUrls[0]!.searchParams.get('referenceTimestampMs')).toBe(
+    String(referenceTimestampMs),
+  );
   releaseTaskStatus();
   await expect(importButton).toBeEnabled();
 });

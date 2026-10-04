@@ -376,6 +376,7 @@ export type AlpineDownloadResultReq = {
 };
 
 export type RerCsvPreflightMetadata = {
+  referenceTimestampMs: number;
   total: number;
   valid: number;
   missingTimestamp: number;

@@ -415,11 +415,11 @@ decodeRerCsvPreflight metadata bytes =
 
 rer_csv_import :
     Bool
-    ->
-    (Result ApiError Int -> msg)
+    -> Int
+    -> (Result ApiError Int -> msg)
     -> File
     -> Cmd msg
-rer_csv_import isHistorical toMsg file =
+rer_csv_import isHistorical referenceTimestampMs toMsg file =
     Http.request
         { method = "POST"
         , headers = []
@@ -433,6 +433,7 @@ rer_csv_import isHistorical toMsg file =
                      else
                         "false"
                     )
+                , Url.Builder.int "referenceTimestampMs" referenceTimestampMs
                 ]
         , body =
             Http.multipartBody
