@@ -415,6 +415,21 @@ begin
             next_attempt_at = now() at time zone 'utc',
             created_at = now() at time zone 'utc';
 
+    -- Knowledge the old group fed stays readable under that group's access
+    -- until recomputed: drop it now, the queued jobs rebuild it.
+    delete from ai_position_knowledge knowledge
+    using (
+        select name_key, group_master_key from ai_position_mention
+        where sigint_inbox_item_id = target_message_id
+          and group_master_key is distinct from current_group
+        union
+        select name_key, group_master_key from ai_position_mention
+        where media_id = any(media_ids)
+          and group_master_key is distinct from current_group
+    ) moved
+    where knowledge.name_key = moved.name_key
+      and moved.group_master_key = any(knowledge.source_group_keys);
+
     update ai_position_mention
     set group_master_key = current_group, aor_ids = current_aors
     where sigint_inbox_item_id = target_message_id

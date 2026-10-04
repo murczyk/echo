@@ -648,8 +648,7 @@ pub(crate) async fn list_knowledge(
         .limit
         .map_or(AI_POSITION_LIST_DEFAULT_LIMIT, |limit| limit.max(1) as u64)
         .min(AI_POSITION_LIST_MAX_LIMIT);
-    let mut values: Vec<Value> = vec![allowed_groups.into()];
-    // Knowledge built from a private group only for admins who can read it.
+    let mut values: Vec<Value> = vec![allowed_groups.clone().into()];
     let mut conditions = vec![match access {
         // Knowledge built from a private group only for admins who can read it.
         Access::Admin => {
@@ -726,9 +725,10 @@ pub(crate) async fn list_knowledge(
             )
         })
         .collect();
-    let mut feedback = super::feedback::knowledge_feedback_items(dbx, &keys)
-        .await
-        .c(h!())?;
+    let mut feedback =
+        super::feedback::knowledge_feedback_items(dbx, &keys, &allowed_groups)
+            .await
+            .c(h!())?;
     Ok(AiPositionKnowledgeListRsp {
         items: rows
             .into_iter()

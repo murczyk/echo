@@ -587,6 +587,7 @@ pub(crate) async fn mention_feedback_items(
 pub(crate) async fn knowledge_feedback_items(
     dbx: &DatabaseConnection,
     keys: &[(String, String, String)],
+    allowed_groups: &[String],
 ) -> anyhow::Result<
     HashMap<(String, String, String), Vec<AiPositionFeedbackItem>>,
 > {
@@ -607,6 +608,35 @@ pub(crate) async fn knowledge_feedback_items(
         .all(dbx)
         .await
         .c(h!())?;
+    // The location reviewed may have come from groups now private, even when
+    // what the position is built from today is readable.
+    let snapshot_groups = |row: &ai_position_feedback::Model| -> Vec<String> {
+        row.known_location
+            .as_ref()
+            .and_then(|location| location.get("sourceGroupKeys"))
+            .and_then(|keys| serde_json::from_value(keys.clone()).ok())
+            .unwrap_or_default()
+    };
+    let secret: HashSet<String> = crate::entities::signal_group::Entity::find()
+        .filter(crate::entities::signal_group::Column::IsSecret.eq(true))
+        .filter(
+            crate::entities::signal_group::Column::MasterKey
+                .is_in(rows.iter().flat_map(snapshot_groups)),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|group| group.master_key)
+        .collect();
+    let rows: Vec<_> = rows
+        .into_iter()
+        .filter(|row| {
+            snapshot_groups(row).iter().all(|key| {
+                !secret.contains(key) || allowed_groups.contains(key)
+            })
+        })
+        .collect();
     let row_keys: Vec<(String, String, String)> = rows
         .iter()
         .map(|row| {
