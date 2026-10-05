@@ -401,6 +401,16 @@ rer_csv_preflight toMsg file =
         }
 
 
+rer_csv_import_options :
+    (Result ApiError RerCsvImportOptions -> msg)
+    -> Cmd msg
+rer_csv_import_options toMsg =
+    Http.get
+        { url = "/api/rer/csv-import/options"
+        , expect = leExpectJson toMsg rerCsvImportOptionsDecoder
+        }
+
+
 decodeRerCsvPreflight : Http.Metadata -> Bytes -> Result String ( Bytes, RerCsvPreflightMetadata )
 decodeRerCsvPreflight metadata bytes =
     case Dict.get "x-echo-rer-csv-metadata" metadata.headers of
@@ -416,10 +426,11 @@ decodeRerCsvPreflight metadata bytes =
 rer_csv_import :
     Bool
     -> Int
+    -> String
     -> (Result ApiError Int -> msg)
     -> File
     -> Cmd msg
-rer_csv_import isHistorical referenceTimestampMs toMsg file =
+rer_csv_import isHistorical referenceTimestampMs targetSignalGroupMasterKey toMsg file =
     Http.request
         { method = "POST"
         , headers = []
@@ -434,6 +445,7 @@ rer_csv_import isHistorical referenceTimestampMs toMsg file =
                         "false"
                     )
                 , Url.Builder.int "referenceTimestampMs" referenceTimestampMs
+                , Url.Builder.string "targetSignalGroupMasterKey" targetSignalGroupMasterKey
                 ]
         , body =
             Http.multipartBody

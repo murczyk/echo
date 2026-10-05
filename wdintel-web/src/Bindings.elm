@@ -1049,6 +1049,34 @@ rerCsvPreflightMetadataEncoder struct =
         ]
 
 
+type alias RerCsvImportSignalGroup =
+    { masterKey : String
+    , name : String
+    }
+
+
+rerCsvImportSignalGroupEncoder : RerCsvImportSignalGroup -> Json.Encode.Value
+rerCsvImportSignalGroupEncoder struct =
+    Json.Encode.object
+        [ ( "masterKey", (Json.Encode.string) struct.masterKey )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias RerCsvImportOptions =
+    { signalGroups : List (RerCsvImportSignalGroup)
+    , defaultTargetSignalGroupMasterKey : Maybe (String)
+    }
+
+
+rerCsvImportOptionsEncoder : RerCsvImportOptions -> Json.Encode.Value
+rerCsvImportOptionsEncoder struct =
+    Json.Encode.object
+        [ ( "signalGroups", (Json.Encode.list (rerCsvImportSignalGroupEncoder)) struct.signalGroups )
+        , ( "defaultTargetSignalGroupMasterKey", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.defaultTargetSignalGroupMasterKey )
+        ]
+
+
 type alias AreaOfResponsibilityEntry =
     { id : Int
     , name : String
@@ -17265,6 +17293,20 @@ rerCsvPreflightMetadataDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "valid" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "missingTimestamp" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "invalidMessageSize" (Json.Decode.int)))
+
+
+rerCsvImportSignalGroupDecoder : Json.Decode.Decoder RerCsvImportSignalGroup
+rerCsvImportSignalGroupDecoder =
+    Json.Decode.succeed RerCsvImportSignalGroup
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "masterKey" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+rerCsvImportOptionsDecoder : Json.Decode.Decoder RerCsvImportOptions
+rerCsvImportOptionsDecoder =
+    Json.Decode.succeed RerCsvImportOptions
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signalGroups" (Json.Decode.list (rerCsvImportSignalGroupDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "defaultTargetSignalGroupMasterKey" (Json.Decode.nullable (Json.Decode.string))))
 
 
 areaOfResponsibilityEntryDecoder : Json.Decode.Decoder AreaOfResponsibilityEntry

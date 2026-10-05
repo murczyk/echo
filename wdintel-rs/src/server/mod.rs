@@ -991,6 +991,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::latest_senders)
             .service(crate::rer_importer::senders)
             .service(crate::rer_importer::list_messages)
+            .service(crate::rer_importer::import_csv::rer_csv_import_options)
             .service(
                 crate::rer_importer::import_csv::rer_csv_import_preflight,
             )
