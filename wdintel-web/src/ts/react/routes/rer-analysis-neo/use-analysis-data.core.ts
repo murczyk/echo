@@ -735,6 +735,7 @@ export function useAnalysisData({
     summaryLoaded: sidebarData.summaryLoaded,
     summaryHasLoadedOnce: sidebarData.summaryHasLoadedOnce,
     rightSidebarLoading: sidebarData.rightSidebarLoading,
+    rightSidebarOutdated: sidebarData.rightSidebarOutdated,
     summaryRows: sidebarData.summaryRows,
     summaryCallsignsInfo: referenceState.summaryCallsignsInfo,
     unitsMap: referenceState.unitsMap,

@@ -1,5 +1,5 @@
 import { useRadioFeatures } from '../../shared/RadioFeatures';
-import { Box, Stack } from '@mui/material';
+import { Alert, Box, Stack } from '@mui/material';
 
 import type { AnalysisCountItem } from '../types';
 import { AnalysisCountBlock } from './AnalysisCountBlock';
@@ -8,6 +8,7 @@ import { normalizeUnknownUnitDisplayValue } from '../../shared/analysis-unit-fil
 type Props = {
   groupsLoading: boolean;
   rightSidebarLoading: boolean;
+  rightSidebarOutdated?: boolean;
   onClearFreq: () => void;
   onClearGroup: () => void;
   onClearLocation: () => void;
@@ -58,6 +59,7 @@ export function AnalysisStatsPane({
   selectedNetworks,
   selectedUnits,
   rightSidebarLoading,
+  rightSidebarOutdated = false,
   topFreqs,
   topGroups,
   topLocations,
@@ -69,6 +71,11 @@ export function AnalysisStatsPane({
 
   return (
     <Stack spacing={0}>
+      {rightSidebarOutdated ? (
+        <Alert severity="info" sx={{ borderRadius: 0 }}>
+          Дані зведення оновлюються для поточних фільтрів.
+        </Alert>
+      ) : null}
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
         <AnalysisCountBlock
           title="Групи"

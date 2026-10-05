@@ -799,6 +799,32 @@ export type AnalysisStatsReq = {
   messageTimeBasis: MessageTimeBasis | null;
 };
 
+export type AnalysisCallsignPageOrder =
+  | 'count_desc'
+  | 'match_then_name'
+;
+
+export type AnalysisCallsignPageReq = {
+  req: AnalysisStatsReq;
+  query: string;
+  pageSize: number | null;
+  cursor: string | null;
+  order: AnalysisCallsignPageOrder;
+};
+
+export type AnalysisCallsignPageEntry = {
+  value: string;
+  label: string;
+  values: Array<string>;
+  count: number;
+};
+
+export type AnalysisCallsignPageRsp = {
+  entries: Array<AnalysisCallsignPageEntry>;
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
 export type AnalysisCallsignFrequencyMatchesReq = {
   req: AnalysisStatsReq;
   callsigns: Array<string>;

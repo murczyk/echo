@@ -5,17 +5,28 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const api = vi.hoisted(() => ({ fetchAnalysisCallsignPage: vi.fn() }));
+
+vi.mock('../../../../services/api/analysis', () => api);
+
 vi.mock('../../../../components/SearchableMultiOptionAutocomplete', () => ({
   SearchableMultiOptionAutocomplete: ({
+    onInputChange,
     onValueIdsChange,
     options,
   }: {
+    onInputChange?: (value: string) => void;
     onValueIdsChange: (ids: number[]) => void;
     options: Array<{ id: number }>;
   }) => (
-    <button type="button" onClick={() => onValueIdsChange(options.map((option) => option.id))}>
-      Обрати позивні
-    </button>
+    <>
+      <button type="button" onClick={() => onValueIdsChange(options.map((option) => option.id))}>
+        Обрати позивні
+      </button>
+      <button type="button" onClick={() => onInputChange?.('КОМЕТА')}>
+        Шукати КОМЕТА
+      </button>
+    </>
   ),
 }));
 
@@ -27,6 +38,7 @@ describe('AnalysisCallsignFrequencySearch', () => {
   afterEach(() => {
     act(() => root?.unmount());
     root = null;
+    vi.useRealTimers();
   });
   it('searches with two matches by default and renders selectable frequency cards', async () => {
     const container = document.createElement('div');
@@ -129,5 +141,45 @@ describe('AnalysisCallsignFrequencySearch', () => {
     });
 
     expect(onSearch).toHaveBeenCalledWith(['комета', 'кот'], 2);
+  });
+
+  it('uses its own full-scope server suggestions when searching callsigns', async () => {
+    vi.useFakeTimers();
+    api.fetchAnalysisCallsignPage.mockReset();
+    api.fetchAnalysisCallsignPage.mockResolvedValue({
+      entries: [{ value: 'комета', label: 'КОМЕТА', values: ['Комета', 'комета'], count: 2 }],
+      hasMore: false,
+      nextCursor: null,
+    });
+    const container = document.createElement('div');
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <AnalysisCallsignFrequencySearch
+          analysisReq={{} as never}
+          onAddFreq={vi.fn()}
+          onSearch={vi.fn().mockResolvedValue({ frequencies: [] })}
+          onToggleFreq={vi.fn()}
+          selectedFreqs={[]}
+        />,
+      );
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    api.fetchAnalysisCallsignPage.mockClear();
+
+    await act(async () => {
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === 'Шукати КОМЕТА')
+        ?.click();
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+
+    expect(api.fetchAnalysisCallsignPage).toHaveBeenCalledTimes(1);
+    expect(api.fetchAnalysisCallsignPage.mock.calls[0]?.[0]).toMatchObject({
+      query: 'КОМЕТА',
+      cursor: null,
+      pageSize: 50,
+      order: 'match_then_name',
+    });
   });
 });

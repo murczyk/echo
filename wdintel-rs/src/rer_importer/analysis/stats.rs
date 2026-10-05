@@ -1,6 +1,7 @@
 use crate::config::{
-    ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT, ANALYSIS_STATS_UNDEFINED_UNIT_ID,
-    ANALYSIS_STATS_UNDEFINED_UNIT_NAME,
+    ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT,
+    ANALYSIS_CALLSIGN_PAGE_SIZE_DEFAULT, ANALYSIS_CALLSIGN_PAGE_SIZE_MAX,
+    ANALYSIS_STATS_UNDEFINED_UNIT_ID, ANALYSIS_STATS_UNDEFINED_UNIT_NAME,
     ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES,
     ANALYTICS_MESSAGE_ID_SCOPE_CACHE_TTL_MS,
 };
@@ -12,6 +13,7 @@ use crate::types::{debug, warn};
 use crate::users::login_id_from_identity;
 use actix_identity::Identity;
 use actix_web::web::Json;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{Duration, NaiveDate, Utc};
 use echo_migration::{Expr, JoinType};
 use once_cell::sync::Lazy;
@@ -19,7 +21,8 @@ use sea_orm::sea_query::{
     CommonTableExpression, Order, SelectStatement, SimpleExpr, UnionType,
     WithQuery,
 };
-use sea_orm::FromQueryResult;
+use sea_orm::{FromQueryResult, Value};
+use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::error::Error as StdError;
@@ -3484,6 +3487,235 @@ async fn load_callsigns_with_counts(
         .collect::<Result<Vec<_>, DbErr>>()
         .context(h!())?;
     Ok(callsigns)
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CallsignPageCursor {
+    scope: String,
+    count: i64,
+    exact_rank: i8,
+    label: String,
+}
+
+fn callsign_page_scope(
+    req: &AnalysisCallsignPageReq,
+    page_size: u64,
+) -> Result<String, AppError> {
+    let bytes =
+        serde_json::to_vec(&(&req.req, &req.query, &req.order, page_size))
+            .c(h!())?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+fn decode_callsign_page_cursor(
+    cursor: Option<&str>,
+    scope: &str,
+) -> Result<Option<CallsignPageCursor>, AppError> {
+    let Some(cursor) = cursor else {
+        return Ok(None);
+    };
+    if cursor.len() > 1024 {
+        return Err(AppError::Form(BTreeMap::from([(
+            "cursor".to_owned(),
+            "Некоректний курсор сторінки".to_owned(),
+        )])));
+    }
+    let bytes = URL_SAFE_NO_PAD.decode(cursor).map_err(|_| {
+        AppError::Form(BTreeMap::from([(
+            "cursor".to_owned(),
+            "Некоректний курсор сторінки".to_owned(),
+        )]))
+    })?;
+    let cursor: CallsignPageCursor =
+        serde_json::from_slice(&bytes).map_err(|_| {
+            AppError::Form(BTreeMap::from([(
+                "cursor".to_owned(),
+                "Некоректний курсор сторінки".to_owned(),
+            )]))
+        })?;
+    if cursor.scope != scope {
+        return Err(AppError::Form(BTreeMap::from([(
+            "cursor".to_owned(),
+            "Курсор належить іншому запиту; оновіть список".to_owned(),
+        )])));
+    }
+    Ok(Some(cursor))
+}
+
+pub(super) async fn fetch_callsigns_page_for_login(
+    page_req: &AnalysisCallsignPageReq,
+    login_str: &uuid::Uuid,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<AnalysisCallsignPageRsp, AppError> {
+    let page_size = page_req
+        .page_size
+        .unwrap_or(ANALYSIS_CALLSIGN_PAGE_SIZE_DEFAULT)
+        .clamp(1, ANALYSIS_CALLSIGN_PAGE_SIZE_MAX);
+    let scope = callsign_page_scope(page_req, page_size)?;
+    let cursor =
+        decode_callsign_page_cursor(page_req.cursor.as_deref(), &scope)?;
+    let req =
+        request_without_facet_filter(&page_req.req, AnalysisFacet::Callsigns);
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let filtered_items = build_callsign_inbox_item_ids_query(
+        &req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?
+    .build(DbBackend::Postgres);
+    let mut values = filtered_items
+        .values
+        .map(|values| values.0)
+        .unwrap_or_default();
+    let normalized_query = page_req.query.trim().to_uppercase();
+    let substring_pattern = format!(
+        "%{}%",
+        page_req
+            .query
+            .trim()
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+            .to_uppercase(),
+    );
+    let next_placeholder = |values: &mut Vec<Value>, value: Value| {
+        values.push(value);
+        format!("${}", values.len())
+    };
+    let candidate_filter = if normalized_query.is_empty() {
+        String::new()
+    } else {
+        let pattern = next_placeholder(
+            &mut values,
+            Value::String(Some(substring_pattern)),
+        );
+        format!("AND upper(trim(callsign)) LIKE {pattern} ESCAPE chr(92)")
+    };
+    let order = match page_req.order {
+        AnalysisCallsignPageOrder::CountDesc => {
+            "count DESC, label ASC".to_owned()
+        }
+        AnalysisCallsignPageOrder::MatchThenName => {
+            let exact = next_placeholder(
+                &mut values,
+                Value::String(Some(normalized_query.clone())),
+            );
+            format!(
+                "CASE WHEN label = {exact} THEN 0 ELSE 1 END ASC, label ASC"
+            )
+        }
+    };
+    let seek = cursor
+        .map(|cursor| match page_req.order {
+            AnalysisCallsignPageOrder::CountDesc => {
+                let count = next_placeholder(&mut values, Value::BigInt(Some(cursor.count)));
+                let label = next_placeholder(
+                    &mut values,
+                    Value::String(Some(cursor.label)),
+                );
+                format!("AND (count < {count} OR (count = {count} AND label > {label}))")
+            }
+            AnalysisCallsignPageOrder::MatchThenName => {
+                let exact = next_placeholder(
+                    &mut values,
+                    Value::String(Some(normalized_query.clone())),
+                );
+                let rank = next_placeholder(
+                    &mut values,
+                    Value::Int(Some(i32::from(cursor.exact_rank))),
+                );
+                let label = next_placeholder(
+                    &mut values,
+                    Value::String(Some(cursor.label)),
+                );
+                format!(
+                    "AND (CASE WHEN label = {exact} THEN 0 ELSE 1 END > {rank} OR (CASE WHEN label = {exact} THEN 0 ELSE 1 END = {rank} AND label > {label}))"
+                )
+            }
+        })
+        .unwrap_or_default();
+    let callsign_ctes =
+        crate::inbox::callsigns::postgres_effective_callsign_ctes(
+            &filtered_items.sql,
+        );
+    let sql = format!(
+        r#"
+        {callsign_ctes}, candidate_callsigns AS (
+            SELECT * FROM all_callsigns
+            WHERE trim(callsign) <> '' {candidate_filter}
+        ), grouped AS (
+            SELECT upper(trim(callsign)) AS label,
+                   array_agg(DISTINCT callsign ORDER BY callsign) AS callsign_values,
+                   COUNT(*)::bigint AS count
+            FROM candidate_callsigns
+            GROUP BY upper(trim(callsign))
+        )
+        SELECT label, callsign_values, count FROM grouped
+        WHERE TRUE
+        {seek}
+        ORDER BY {order}
+        LIMIT {}
+        "#,
+        page_size + 1
+    );
+    #[derive(FromQueryResult)]
+    struct Row {
+        label: String,
+        callsign_values: Vec<String>,
+        count: i64,
+    }
+    let rows = Row::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        sql,
+        values,
+    ))
+    .all(db)
+    .await
+    .context(h!())?;
+    let has_more = rows.len() > page_size as usize;
+    let entries = rows
+        .into_iter()
+        .take(page_size as usize)
+        .map(|row| AnalysisCallsignPageEntry {
+            value: row
+                .callsign_values
+                .first()
+                .cloned()
+                .unwrap_or_else(|| row.label.clone()),
+            label: row.label,
+            values: row.callsign_values,
+            count: row.count,
+        })
+        .collect::<Vec<_>>();
+    let next_cursor = has_more
+        .then(|| {
+            entries.last().map(|entry| {
+                URL_SAFE_NO_PAD.encode(
+                    serde_json::to_vec(&CallsignPageCursor {
+                        scope,
+                        count: entry.count,
+                        exact_rank: i8::from(
+                            page_req.order
+                                == AnalysisCallsignPageOrder::MatchThenName
+                                && entry.label != normalized_query,
+                        ),
+                        label: entry.label.clone(),
+                    })
+                    .expect("cursor serialization"),
+                )
+            })
+        })
+        .flatten();
+    Ok(AnalysisCallsignPageRsp {
+        entries,
+        has_more,
+        next_cursor,
+    })
 }
 
 fn build_callsigns_filtered_query(

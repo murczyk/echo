@@ -19,6 +19,7 @@ import { useId, useMemo, useRef, useState } from 'react';
 import type {
   AnalysisCallsignFrequencyMatch,
   AnalysisCallsignFrequencyMatchesRsp,
+  AnalysisStatsReq,
 } from '../../../../../Bindings';
 import { CompactText, CompactTitle } from '../../../components/CompactTypography';
 import { SearchableMultiOptionAutocomplete } from '../../../components/SearchableMultiOptionAutocomplete';
@@ -26,6 +27,7 @@ import {
   normalizeCallsignFilterValues,
   normalizeCallsignLookupValue,
 } from '../../../utils/callsign-normalization';
+import { useCallsignPage } from '../use-callsign-page';
 import type { AnalysisFilterOption } from '../types';
 
 const DEFAULT_MIN_MATCHES = 2;
@@ -40,7 +42,8 @@ type CallsignOption = {
 };
 
 type Props = {
-  callsignOptions: AnalysisFilterOption[];
+  analysisReq?: AnalysisStatsReq | null;
+  callsignOptions?: AnalysisFilterOption[];
   onAddFreq: (freq: string) => void;
   onSearch: (
     callsigns: string[],
@@ -133,7 +136,8 @@ function FrequencyMatchCard({
 }
 
 export function AnalysisCallsignFrequencySearch({
-  callsignOptions,
+  analysisReq = null,
+  callsignOptions = [],
   onAddFreq,
   onSearch,
   onToggleFreq,
@@ -142,23 +146,45 @@ export function AnalysisCallsignFrequencySearch({
   const headingId = useId().replace(/:/g, '-');
   const [collapsed, setCollapsed] = useState(false);
   const [selectedCallsigns, setSelectedCallsigns] = useState<string[]>([]);
+  const selectedValuesRef = useRef<Record<string, string[]>>({});
   const [minMatches, setMinMatches] = useState(DEFAULT_MIN_MATCHES);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<AnalysisCallsignFrequencyMatch[] | null>(null);
   const requestIdRef = useRef(0);
+  const suggestions = useCallsignPage({
+    active: !collapsed,
+    analysisReq,
+    onError: () => undefined,
+  });
+  const suggestionError =
+    suggestions.error instanceof Error
+      ? suggestions.error.message
+      : suggestions.error
+        ? 'Не вдалося завантажити позивні.'
+        : null;
   const options = useMemo<CallsignOption[]>(() => {
     const uniqueOptions = new Map<string, string>();
     const optionValues = new Map<string, string[]>();
-    for (const option of callsignOptions) {
-      const value = normalizeCallsignLookupValue(option.value);
+    for (const entry of [
+      ...callsignOptions,
+      ...suggestions.entries.map((item) => ({
+        value: item.value,
+        label: item.label,
+        values: item.values,
+      })),
+    ]) {
+      const value = normalizeCallsignLookupValue(entry.value);
       if (value.length > 0 && !uniqueOptions.has(value)) {
-        uniqueOptions.set(value, option.label.trim() || value);
-        optionValues.set(value, normalizeCallsignFilterValues(option.values ?? [value]));
+        uniqueOptions.set(value, entry.label.trim() || value);
+        optionValues.set(value, normalizeCallsignFilterValues(entry.values ?? [entry.value]));
       }
     }
     for (const callsign of selectedCallsigns) {
       const value = normalizeCallsignLookupValue(callsign);
-      if (!uniqueOptions.has(value)) uniqueOptions.set(value, callsign);
+      if (!uniqueOptions.has(value)) {
+        uniqueOptions.set(value, callsign);
+        optionValues.set(value, selectedValuesRef.current[value] ?? [value]);
+      }
     }
     return Array.from(uniqueOptions, ([value, label], id) => ({
       id,
@@ -166,14 +192,16 @@ export function AnalysisCallsignFrequencySearch({
       value,
       values: optionValues.get(value) ?? [value],
     }));
-  }, [callsignOptions, selectedCallsigns]);
+  }, [callsignOptions, selectedCallsigns, suggestions.entries]);
   const selectedIds = selectedCallsigns
     .map((callsign) => options.find((option) => option.value === callsign)?.id)
     .filter((id): id is number => id !== undefined);
   const canSearch = selectedCallsigns.length >= minMatches;
   const selectedCallsignValues = normalizeCallsignFilterValues(
     selectedCallsigns.flatMap(
-      (callsign) => options.find((option) => option.value === callsign)?.values ?? [callsign],
+      (callsign) =>
+        options.find((option) => option.value === callsign)?.values ??
+        selectedValuesRef.current[callsign] ?? [callsign],
     ),
   );
 
@@ -219,15 +247,20 @@ export function AnalysisCallsignFrequencySearch({
             options={options}
             valueIds={selectedIds}
             getOptionLabel={(option) => option.label}
+            loading={suggestions.loading}
+            onInputChange={suggestions.setQuery}
             onValueIdsChange={(valueIds) => {
-              setSelectedCallsigns(
-                valueIds
-                  .map((id) => options.find((option) => option.id === id)?.value)
-                  .filter((value): value is string => value !== undefined),
+              const selected = valueIds
+                .map((id) => options.find((option) => option.id === id))
+                .filter((option): option is CallsignOption => option !== undefined);
+              selectedValuesRef.current = Object.fromEntries(
+                selected.map((option) => [option.value, option.values]),
               );
+              setSelectedCallsigns(selected.map((option) => option.value));
               setResults(null);
             }}
           />
+          {suggestionError ? <CompactText color="error">{suggestionError}</CompactText> : null}
           <Box
             sx={{
               display: 'grid',

@@ -7861,6 +7861,32 @@ async fn callsign_stats(
     Ok(Json(CallsignStatsRsp { callsigns }))
 }
 
+#[post("/api/rer/analysis/callsigns-page")]
+async fn callsign_page(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisCallsignPageReq>,
+) -> Result<Json<AnalysisCallsignPageRsp>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req.req)
+        .await
+        .c(h!())?;
+    let master_keys =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .c(h!())?;
+    let page = stats::fetch_callsigns_page_for_login(
+        &req,
+        &login,
+        &env.replica(),
+        master_keys,
+    )
+    .await
+    .context(h!())?;
+    Ok(Json(page))
+}
+
 #[post("/api/rer/analysis/stats/metadata")]
 async fn metadata_stats(
     user: Identity,

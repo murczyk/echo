@@ -29,6 +29,7 @@ import {
 } from '../../shared/analysis-filter-selection';
 import { analysisCompactTabsSx } from '../analysis-tab-styles';
 import { normalizeCallsignLookupValue } from '../../../utils/callsign-normalization';
+import { buildAnalysisReq } from '../helpers';
 
 type Props = Pick<
   AnalysisPageState,
@@ -50,10 +51,10 @@ type Props = Pick<
   | 'newCallsignsLoading'
   | 'options'
   | 'rightSidebarLoading'
+  | 'rightSidebarOutdated'
   | 'queryState'
   | 'rightSidebarTab'
   | 'rightPanelOpen'
-  | 'topCallsigns'
   | 'topFreqs'
   | 'topLocations'
   | 'topUnits'
@@ -113,11 +114,11 @@ export function AnalysisSidebar({
   newCallsignsLoading,
   options,
   rightSidebarLoading,
+  rightSidebarOutdated,
   queryState,
   rightPanelOpen,
   rightSidebarTab,
   setRightSidebarTab,
-  topCallsigns,
   topFreqs,
   topLocations,
   topUnits,
@@ -136,6 +137,14 @@ export function AnalysisSidebar({
   );
   const sidebarTab = analysisMapInSidebar || rightSidebarTab !== 'map' ? rightSidebarTab : 'stats';
   const selectedFreq = queryState.freqsSelected[0] ?? null;
+  const callsignAnalysisReq = useMemo(
+    () =>
+      buildAnalysisReq(
+        queryState,
+        (options.freqs ?? []).map((option) => option.value),
+      ),
+    [options.freqs, queryState],
+  );
   const keepMapPaneMounted = analysisMapInSidebar && isSidebarVisible;
   const selectUnit = (unit: string) => {
     const normalizedUnits = normalizeUnknownUnitSelections(queryState.unitsSelected);
@@ -185,18 +194,24 @@ export function AnalysisSidebar({
   const clearGroup = () => {
     updateQueryState({ groupsSelected: [] });
   };
-  const selectCallsign = (callsign: string) => {
-    const value = normalizeCallsignLookupValue(callsign);
-    if (value === '') return;
+  const selectCallsign = (callsigns: string[] | string) => {
+    const values = (Array.isArray(callsigns) ? callsigns : [callsigns])
+      .map(normalizeCallsignLookupValue)
+      .filter((value) => value !== '');
+    if (values.length === 0) return;
     updateQueryState({
-      callsignsSelected: toggleExclusiveAnalysisSelection(queryState.callsignsSelected, value),
+      callsignsSelected: values.every((value) => queryState.callsignsSelected.includes(value))
+        ? []
+        : values,
     });
   };
-  const addCallsign = (callsign: string) => {
-    const value = normalizeCallsignLookupValue(callsign);
-    if (value === '') return;
+  const addCallsign = (callsigns: string[] | string) => {
     updateQueryState({
-      callsignsSelected: addAnalysisSelection(queryState.callsignsSelected, value),
+      callsignsSelected: (Array.isArray(callsigns) ? callsigns : [callsigns]).reduce(
+        (selected, callsign) =>
+          addAnalysisSelection(selected, normalizeCallsignLookupValue(callsign)),
+        queryState.callsignsSelected,
+      ),
     });
   };
   const clearCallsign = () => {
@@ -223,32 +238,6 @@ export function AnalysisSidebar({
         })),
       ),
     [options.groups],
-  );
-  const callsignSearchOptions = useMemo(() => {
-    const callsigns = new Map(options.callsigns.map((option) => [option.value, option]));
-    for (const callsign of topCallsigns) {
-      const value = callsign.value ?? callsign.key;
-      if (value.trim().length === 0 || callsigns.has(value)) continue;
-      callsigns.set(value, {
-        value,
-        label: callsign.key,
-        count: callsign.count,
-      });
-    }
-    return Array.from(callsigns.values());
-  }, [options.callsigns, topCallsigns]);
-  const callsignNavigationItems = useMemo(
-    () =>
-      options.callsigns.length > 0
-        ? sortAndTakeTopAnalysisCountItems(
-            options.callsigns.map((callsign) => ({
-              key: callsign.label,
-              value: callsign.value,
-              count: callsign.count,
-            })),
-          )
-        : topCallsigns,
-    [options.callsigns, topCallsigns],
   );
   const selectNetwork = (networkId: string) => {
     updateQueryState({
@@ -462,6 +451,7 @@ export function AnalysisSidebar({
                 selectedNetworks={queryState.networksSelected}
                 selectedUnits={queryState.unitsSelected}
                 rightSidebarLoading={rightSidebarLoading}
+                rightSidebarOutdated={rightSidebarOutdated}
                 topFreqs={topFreqs}
                 topGroups={topGroups}
                 topLocations={topLocations}
@@ -493,14 +483,12 @@ export function AnalysisSidebar({
         ) : null}
         {sidebarTab === 'callsigns' ? (
           <AnalysisCallsignsPane
-            callsignOptions={callsignSearchOptions}
-            loading={rightSidebarLoading}
+            analysisReq={callsignAnalysisReq}
             onClearCallsign={clearCallsign}
+            onAddCallsign={addCallsign}
             onAddFreq={addFreq}
             selectedCallsigns={queryState.callsignsSelected}
             selectedFreqs={queryState.freqsSelected}
-            topCallsigns={callsignNavigationItems}
-            onAddCallsign={addCallsign}
             onSearchFrequencyMatches={findCallsignFrequencyMatches}
             onToggleCallsign={selectCallsign}
             onToggleFreq={selectFreq}

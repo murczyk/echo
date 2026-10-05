@@ -1240,6 +1240,21 @@ async fn fetch_callsign_counts_for_req(
     Ok(callsign_counts(callsigns))
 }
 
+async fn fetch_callsign_page_for_req(
+    env: &Arc<Env>,
+    req: AnalysisCallsignPageReq,
+) -> Result<AnalysisCallsignPageRsp, AppError> {
+    let (login, master_keys) = analysis_login_and_master_keys(env).await?;
+    Ok(stats::fetch_callsigns_page_for_login(
+        &req,
+        &login,
+        &env.dbx,
+        master_keys,
+    )
+    .await
+    .context(h!())?)
+}
+
 async fn fetch_tag_counts_for_req(
     env: &Arc<Env>,
     req: &AnalysisStatsReq,
@@ -4234,6 +4249,227 @@ async fn rer_analysis_sender_callsign_and_post_filters_recalculate_values() {
         fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap();
     assert!(!freq_counts.contains_key("942.1"));
     assert!(freq_counts.contains_key("942.2"));
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_callsign_page_paginates_full_order_and_escapes_literal_search(
+) {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    for (index, callsign) in [
+        "PAGER-ALPHA",
+        "PAGER-BRAVO",
+        "PAGER-CHARLIE",
+        "A-PAGER",
+        "PAGER",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let message = mk_analysis_message(
+            db,
+            &format!("callsign-page-{index}"),
+            "943.1",
+            test_dt(2026, 3, 1, 10, index as u32),
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        set_message_callsigns(db, message.id, serde_json::json!([callsign]))
+            .await
+            .unwrap();
+    }
+    let variant = mk_analysis_message(
+        db,
+        "callsign-page-variant",
+        "943.1",
+        test_dt(2026, 3, 1, 10, 3),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_callsigns(db, variant.id, serde_json::json!(["pager-alpha"]))
+        .await
+        .unwrap();
+    let literal = mk_analysis_message(
+        db,
+        "callsign-page-literal",
+        "943.2",
+        test_dt(2026, 3, 1, 10, 9),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_callsigns(db, literal.id, serde_json::json!(["PCT%_\\'"]))
+        .await
+        .unwrap();
+
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_callsigns = Some(vec!["DOES-NOT-EXIST".to_string()]);
+    let page = AnalysisCallsignPageReq {
+        req,
+        query: "PAGER".to_string(),
+        page_size: Some(1),
+        cursor: None,
+        order: AnalysisCallsignPageOrder::MatchThenName,
+    };
+    let mut cursor = None;
+    let mut first_cursor = None;
+    let mut labels = Vec::new();
+    let mut alpha = None;
+    for _ in 0..5 {
+        let current = fetch_callsign_page_for_req(
+            &fixture.env,
+            AnalysisCallsignPageReq {
+                cursor: cursor.clone(),
+                ..page.clone()
+            },
+        )
+        .await
+        .unwrap();
+        let entry = current.entries.into_iter().next().unwrap();
+        if entry.label == "PAGER-ALPHA" {
+            alpha = Some(entry.clone());
+        }
+        if labels.is_empty() {
+            first_cursor = current.next_cursor.clone();
+        }
+        labels.push(entry.label);
+        cursor = current.next_cursor;
+    }
+    assert_eq!(
+        labels,
+        vec![
+            "PAGER",
+            "A-PAGER",
+            "PAGER-ALPHA",
+            "PAGER-BRAVO",
+            "PAGER-CHARLIE"
+        ]
+    );
+    assert!(cursor.is_none());
+    let alpha = alpha.unwrap();
+    assert_eq!(alpha.count, 2);
+    assert_eq!(
+        alpha.values.iter().cloned().collect::<BTreeSet<_>>(),
+        BTreeSet::from(["PAGER-ALPHA".to_string(), "pager-alpha".to_string()])
+    );
+    let literal_page = fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            query: "PCT%_\\'".to_string(),
+            page_size: Some(50),
+            cursor: None,
+            ..page.clone()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(literal_page.entries.len(), 1);
+    assert_eq!(literal_page.entries[0].label, "PCT%_\\'");
+
+    for index in 0..101 {
+        let message = mk_analysis_message(
+            db,
+            &format!("callsign-page-size-{index}"),
+            "943.3",
+            test_dt(2026, 3, 1, 10, 0),
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        set_message_callsigns(
+            db,
+            message.id,
+            serde_json::json!([format!("SIZE-{index:03}")]),
+        )
+        .await
+        .unwrap();
+    }
+    let size_page = AnalysisCallsignPageReq {
+        req: analysis_stats_req0(&fixture),
+        query: "SIZE-".to_string(),
+        page_size: None,
+        cursor: None,
+        order: AnalysisCallsignPageOrder::MatchThenName,
+    };
+    let default_size =
+        fetch_callsign_page_for_req(&fixture.env, size_page.clone())
+            .await
+            .unwrap();
+    assert_eq!(default_size.entries.len(), 50);
+    assert!(default_size.has_more);
+    let max_size = fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            page_size: Some(200),
+            ..size_page
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(max_size.entries.len(), 100);
+    assert!(max_size.has_more);
+
+    assert!(fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            page_size: Some(2),
+            cursor: first_cursor.clone(),
+            ..page.clone()
+        },
+    )
+    .await
+    .is_err());
+    assert!(fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            order: AnalysisCallsignPageOrder::CountDesc,
+            cursor: first_cursor.clone(),
+            ..page.clone()
+        },
+    )
+    .await
+    .is_err());
+    assert!(fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            query: "PAGER-BRAVO".to_string(),
+            cursor: first_cursor,
+            ..page.clone()
+        },
+    )
+    .await
+    .is_err());
+
+    let count_page = AnalysisCallsignPageReq {
+        order: AnalysisCallsignPageOrder::CountDesc,
+        ..page
+    };
+    let count_first =
+        fetch_callsign_page_for_req(&fixture.env, count_page.clone())
+            .await
+            .unwrap();
+    assert_eq!(count_first.entries[0].label, "PAGER-ALPHA");
+    let count_second = fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            cursor: count_first.next_cursor,
+            ..count_page
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(count_second.entries[0].label, "A-PAGER");
 }
 
 #[tokio::test]

@@ -1,6 +1,7 @@
 import { useRadioFeatures } from '../../shared/RadioFeatures';
 import {
   Box,
+  Button,
   Checkbox,
   FormControl,
   FormControlLabel,
@@ -14,7 +15,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { MouseEvent } from 'react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import type { CountStatsRsp } from '../../../../../Bindings';
 
@@ -24,6 +25,8 @@ import { NO_DATA_LABEL } from '../../../utils/misc';
 import { isCanonicalUnitIdValue } from '../../../utils/unit-search';
 import { AnalysisFilterField } from './AnalysisFilterField';
 import { AnalysisDeviceNamesFilter } from './AnalysisDeviceNamesFilter';
+import { buildAnalysisReq } from '../helpers';
+import { useCallsignPage } from '../use-callsign-page';
 import type { AnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
 import {
   compactCheckboxLabelSx,
@@ -80,6 +83,87 @@ function tagFilterModeHint(mode: TagFilterMode): string {
 }
 
 type MetadataFilterMode = 'all' | 'with' | 'without';
+
+function CallsignFilterField({
+  active,
+  fallbackOptions,
+  options,
+  queryState,
+  value,
+  onChange,
+}: {
+  active: boolean;
+  fallbackOptions: AnalysisFiltersPanelDerivedData['callsignsOptions'];
+  options: AnalysisFiltersPanelPage['options'];
+  queryState: AnalysisFiltersPanelPage['queryState'];
+  value: string[];
+  onChange: (callsigns: string[]) => void;
+}) {
+  const analysisReq = useMemo(
+    () =>
+      buildAnalysisReq(
+        queryState,
+        options.freqs.map((option) => option.value),
+      ),
+    [options.freqs, queryState],
+  );
+  const page = useCallsignPage({
+    active,
+    analysisReq,
+    onError: () => undefined,
+  });
+  const error =
+    page.error instanceof Error
+      ? page.error.message
+      : page.error
+        ? 'Не вдалося завантажити позивні.'
+        : null;
+  const callsignOptions = active
+    ? page.entries.map((entry) => ({
+        value: entry.value,
+        label: entry.label,
+        count: entry.count,
+        values: entry.values,
+      }))
+    : fallbackOptions;
+
+  return (
+    <Stack spacing={0.5}>
+      <AnalysisFilterField
+        label="Позивні"
+        options={callsignOptions}
+        loading={page.loading}
+        emptyLoading={active && page.entries.length === 0}
+        value={value}
+        deferredCommit
+        preserveInputOnSelect
+        onInputChange={page.setQuery}
+        onChange={(callsignsSelected) => onChange(normalizeCallsignFilterValues(callsignsSelected))}
+      />
+      <Stack direction="row" spacing={0.5}>
+        <Button
+          size="small"
+          disabled={page.loading || !page.hasPrevious}
+          onClick={() => void page.loadPreviousPage()}
+        >
+          Попередні
+        </Button>
+        <Button
+          size="small"
+          disabled={page.loading || !page.hasMore}
+          onClick={() => void page.loadNextPage()}
+        >
+          Наступні
+        </Button>
+      </Stack>
+      {error ? (
+        <Typography color="error" variant="caption">
+          {error}
+        </Typography>
+      ) : null}
+    </Stack>
+  );
+}
 
 function metadataFilterModeFromState(
   queryState: AnalysisFiltersPanelPage['queryState'],
@@ -283,20 +367,14 @@ export function AnalysisFiltersPanelSections({
         )}
         expanded={expandedSections.callsigns}
         onToggle={() => toggleSection('callsigns')}
-        onLoad={loadSection('callsigns')}
       >
-        <AnalysisFilterField
-          label="Позивні"
-          options={derived.callsignsOptions}
-          loading={isFilterSectionLoading('callsigns') || isFilterSectionStale('callsigns')}
-          emptyLoading={isFilterSectionEmptyLoading('callsigns', derived.callsignsOptions.length)}
+        <CallsignFilterField
+          active={expandedSections.callsigns}
+          fallbackOptions={derived.callsignsOptions}
+          options={options}
+          queryState={queryState}
           value={queryState.callsignsSelected}
-          deferredCommit
-          onChange={(callsignsSelected) =>
-            updateQueryState({
-              callsignsSelected: normalizeCallsignFilterValues(callsignsSelected),
-            })
-          }
+          onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
         />
       </FilterSection>
       {radioFeaturesAllowed ? (
