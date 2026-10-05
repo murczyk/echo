@@ -160,19 +160,22 @@ export function MessageSummaryPreview({
   useEffect(() => {
     if (anchorEl === null) return;
 
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') dismissPreview();
+    };
     const closeOnOutsideScroll = (event: Event) => {
       const target = event.target;
       if (target instanceof Node && previewElementRef.current?.contains(target)) return;
       dismissPreview();
     };
 
-    document.addEventListener('keydown', dismissPreview);
+    document.addEventListener('keydown', closeOnEscape);
     window.addEventListener('pointerdown', dismissPreview, true);
     window.addEventListener('scroll', closeOnOutsideScroll, true);
     window.addEventListener('wheel', closeOnOutsideScroll, { capture: true, passive: true });
     window.addEventListener('touchmove', closeOnOutsideScroll, { capture: true, passive: true });
     return () => {
-      document.removeEventListener('keydown', dismissPreview);
+      document.removeEventListener('keydown', closeOnEscape);
       window.removeEventListener('pointerdown', dismissPreview, true);
       window.removeEventListener('scroll', closeOnOutsideScroll, true);
       window.removeEventListener('wheel', closeOnOutsideScroll, true);
