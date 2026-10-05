@@ -5,7 +5,7 @@ import type {
   Tag,
   Unit,
 } from '../../../../Bindings';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
@@ -17,6 +17,7 @@ import {
   filterSectionsForInitialLoad,
   loadFilterSectionData,
 } from './use-analysis-data.reload';
+import { useAnalysisFilterRetries } from './use-analysis-filter-retries';
 import { toErrorMessage } from './use-analysis-data.shared';
 import type {
   AnalysisAorEntry,
@@ -176,7 +177,21 @@ export function useAnalysisFilterSections({
   setTagsMap,
   setTagsOrder,
 }: Params) {
+  const retryLoadRef = useRef<(section: AnalysisFilterSectionId) => Promise<void>>(async () => {});
+  const retryFilterSection = useCallback(
+    (section: AnalysisFilterSectionId) => retryLoadRef.current(section),
+    [],
+  );
+  const { clearFilterRetry, clearFilterRetries, isFilterRetryBlocked, scheduleFilterRetry } =
+    useAnalysisFilterRetries(retryFilterSection);
   const filterSectionLoadVersionRef = useRef(0);
+  useEffect(
+    () => () => {
+      filterSectionLoadVersionRef.current += 1;
+    },
+    [],
+  );
+
   const nextFilterSectionLoadIdRef = useRef(0);
   const loadedFilterSectionKeyRef = useRef<Record<AnalysisFilterSectionId, string>>(
     {} as Record<AnalysisFilterSectionId, string>,
@@ -225,6 +240,7 @@ export function useAnalysisFilterSections({
   }, []);
 
   const invalidateFilterSectionLoads = useCallback(() => {
+    clearFilterRetries();
     filterSectionLoadVersionRef.current += 1;
     loadedFilterSectionKeyRef.current = {} as Record<AnalysisFilterSectionId, string>;
     inFlightFilterSectionLoadIdsRef.current.clear();
@@ -232,7 +248,7 @@ export function useAnalysisFilterSections({
     reloadFilterSectionsRef.current.clear();
     hasTargetedFilterSectionInvalidationRef.current = false;
     setFilterSectionLoadStates({ ...EMPTY_SECTION_LOAD_STATES });
-  }, []);
+  }, [clearFilterRetries]);
 
   const invalidateFilterSectionLoadsForPatch = useCallback(
     (patch?: Partial<AnalysisQueryState>) => {
@@ -264,10 +280,17 @@ export function useAnalysisFilterSections({
         setSectionLoadState(section, 'stale');
       });
       sectionsToInvalidate.forEach((section) => {
+        clearFilterRetry(section);
         delete loadedFilterSectionKeyRef.current[section];
       });
     },
-    [hasLoadedSection, invalidateFilterSectionLoads, isSectionLoading, setSectionLoadState],
+    [
+      clearFilterRetry,
+      hasLoadedSection,
+      invalidateFilterSectionLoads,
+      isSectionLoading,
+      setSectionLoadState,
+    ],
   );
 
   // Toggling a tag on a message never changes `analysisReq`, so the cached 'tags'
@@ -280,9 +303,10 @@ export function useAnalysisFilterSections({
     if (!hasLoadedSection(tagsSection) && !isSectionLoading(tagsSection)) return;
     const loadedKeys: Partial<Record<AnalysisFilterSectionId, string>> =
       loadedFilterSectionKeyRef.current;
+    clearFilterRetry(tagsSection);
     delete loadedKeys[tagsSection];
     setSectionLoadState(tagsSection, 'stale');
-  }, [hasLoadedSection, isSectionLoading, setSectionLoadState]);
+  }, [clearFilterRetry, hasLoadedSection, isSectionLoading, setSectionLoadState]);
 
   const getLoadedFilterSections = useCallback(
     () => Object.keys(loadedFilterSectionKeyRef.current) as AnalysisFilterSectionId[],
@@ -307,6 +331,7 @@ export function useAnalysisFilterSections({
       const requestKey = filterSectionCacheKey(section, analysisReq);
       if (loadedFilterSectionKeyRef.current[section] === requestKey) return;
       if (inFlightFilterSectionKeysRef.current.get(section) === requestKey) return;
+      if (isFilterRetryBlocked(section, requestKey)) return;
 
       const loadVersion = filterSectionLoadVersionRef.current;
       const loadId = markSectionInFlight(section);
@@ -330,13 +355,15 @@ export function useAnalysisFilterSections({
           unitsMap: unitsMapRef.current,
         });
         if (loadVersion !== filterSectionLoadVersionRef.current) return;
+        clearFilterRetry(section);
         loadedFilterSectionKeyRef.current[section] = requestKey;
         reloadFilterSectionsRef.current.delete(section);
         setSectionLoadState(section, 'loaded');
       } catch (loadError) {
         if (loadVersion !== filterSectionLoadVersionRef.current) return;
+        const shouldReport = scheduleFilterRetry(section, requestKey, loadError);
         setSectionLoadState(section, 'error');
-        if (!onUnauthorized(loadError)) {
+        if (!onUnauthorized(loadError) && shouldReport) {
           onError(toErrorMessage(loadError));
         }
       } finally {
@@ -348,6 +375,9 @@ export function useAnalysisFilterSections({
     },
     [
       clearSectionInFlight,
+      clearFilterRetry,
+      isFilterRetryBlocked,
+      scheduleFilterRetry,
       onError,
       onUnauthorized,
       markSectionInFlight,
@@ -365,6 +395,10 @@ export function useAnalysisFilterSections({
       setSectionLoadState,
     ],
   );
+
+  useEffect(() => {
+    retryLoadRef.current = loadFilterSection;
+  }, [loadFilterSection]);
 
   const loadInitialFilterSections = useCallback(
     async (
@@ -409,6 +443,7 @@ export function useAnalysisFilterSections({
           const sectionKey = filterSectionCacheKey(section, analysisReq);
           if (loadedFilterSectionKeyRef.current[section] === sectionKey) return;
           if (inFlightFilterSectionKeysRef.current.get(section) === sectionKey) return;
+          if (isFilterRetryBlocked(section, sectionKey)) return;
           const loadVersion = filterSectionLoadVersionRef.current;
           const loadId = markSectionInFlight(section);
           inFlightFilterSectionKeysRef.current.set(section, sectionKey);
@@ -433,13 +468,15 @@ export function useAnalysisFilterSections({
               unitsMap: unitsMapRef.current,
             });
             if (signal?.aborted || loadVersion !== filterSectionLoadVersionRef.current) return;
+            clearFilterRetry(section);
             loadedFilterSectionKeyRef.current[section] = sectionKey;
             reloadFilterSectionsRef.current.delete(section);
             setSectionLoadState(section, 'loaded');
           } catch (loadError) {
             if (signal?.aborted || loadVersion !== filterSectionLoadVersionRef.current) return;
+            const shouldReport = scheduleFilterRetry(section, sectionKey, loadError);
             setSectionLoadState(section, 'error');
-            if (!onUnauthorized(loadError)) {
+            if (!onUnauthorized(loadError) && shouldReport) {
               onError(toErrorMessage(loadError));
             }
           } finally {
@@ -461,6 +498,9 @@ export function useAnalysisFilterSections({
     },
     [
       clearSectionInFlight,
+      clearFilterRetry,
+      isFilterRetryBlocked,
+      scheduleFilterRetry,
       onError,
       onUnauthorized,
       markSectionInFlight,

@@ -450,6 +450,8 @@ mod m20260929_195200_ai_agent_map_workspace;
 mod m20261002_192628_ai_position_parsing;
 mod m20261003_041306_ai_position_feedback;
 mod m20261003_111926_ai_position_kind;
+mod m20261004_175803_signal_message_media_created_at_index;
+mod m20261005_044401_messenger_media_cache_settings;
 mod m20261005_050621_attachment_documents;
 
 pub struct Migrator;
@@ -1073,6 +1075,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261002_192628_ai_position_parsing::Migration),
             Box::new(m20261003_041306_ai_position_feedback::Migration),
             Box::new(m20261003_111926_ai_position_kind::Migration),
+            Box::new(m20261004_175803_signal_message_media_created_at_index::Migration),
+            Box::new(m20261005_044401_messenger_media_cache_settings::Migration),
             Box::new(m20261005_050621_attachment_documents::Migration),
         ]
     }

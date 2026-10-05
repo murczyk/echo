@@ -96,6 +96,10 @@ configuration hashes, and stops gateway PostgreSQL before replacing its
 library. Inbox diagnostics record the final operation outcome and duration,
 including complete PostgreSQL fallback after candidate revalidation.
 
+Messenger attachments can use a persistent local tier for fresh media and
+normalized video playback, with private S3 remaining the durable original store.
+See [Messenger media delivery](messenger-media-delivery.md).
+
 ## Device file content storage
 
 Device clients send resumable content through the API. In-progress bytes live

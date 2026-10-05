@@ -919,6 +919,7 @@ pub async fn reconcile_active_message(
     .await
     .c(h!())?;
     let staged_media = crate::message_queue::stage_queue_media_for_active_edit(
+        txn,
         &snapshot_attachments,
         &source_message.attachments_hash,
         config,

@@ -12461,6 +12461,10 @@ type alias SystemSettingsItem =
     , analysisAorFilterEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , excludeOrbitOtherUnits : Bool
+    , messengerMediaCacheEnabled : Bool
+    , messengerMediaCacheRetentionHours : Int
+    , messengerMediaCacheMaxSizeGib : Int
+    , messengerMediaCacheMinFreeGib : Int
     }
 
 
@@ -12504,6 +12508,10 @@ systemSettingsItemEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
+        , ( "messenger_media_cache_enabled", (Json.Encode.bool) struct.messengerMediaCacheEnabled )
+        , ( "messenger_media_cache_retention_hours", (Json.Encode.int) struct.messengerMediaCacheRetentionHours )
+        , ( "messenger_media_cache_max_size_gib", (Json.Encode.int) struct.messengerMediaCacheMaxSizeGib )
+        , ( "messenger_media_cache_min_free_gib", (Json.Encode.int) struct.messengerMediaCacheMinFreeGib )
         ]
 
 
@@ -12552,6 +12560,10 @@ type alias CreateSystemSettingsReq =
     , analysisAorFilterEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , excludeOrbitOtherUnits : Bool
+    , messengerMediaCacheEnabled : Bool
+    , messengerMediaCacheRetentionHours : Int
+    , messengerMediaCacheMaxSizeGib : Int
+    , messengerMediaCacheMinFreeGib : Int
     }
 
 
@@ -12590,6 +12602,10 @@ createSystemSettingsReqEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
+        , ( "messenger_media_cache_enabled", (Json.Encode.bool) struct.messengerMediaCacheEnabled )
+        , ( "messenger_media_cache_retention_hours", (Json.Encode.int) struct.messengerMediaCacheRetentionHours )
+        , ( "messenger_media_cache_max_size_gib", (Json.Encode.int) struct.messengerMediaCacheMaxSizeGib )
+        , ( "messenger_media_cache_min_free_gib", (Json.Encode.int) struct.messengerMediaCacheMinFreeGib )
         ]
 
 
@@ -24506,6 +24522,10 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_retention_hours" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_max_size_gib" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_min_free_gib" (Json.Decode.int)))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -24549,6 +24569,10 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_retention_hours" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_max_size_gib" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_min_free_gib" (Json.Decode.int)))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

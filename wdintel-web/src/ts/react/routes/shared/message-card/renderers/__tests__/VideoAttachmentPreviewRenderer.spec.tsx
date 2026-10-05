@@ -402,14 +402,14 @@ describe('VideoAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('explains that pending media is being downloaded and decrypted', async () => {
+  it('shows a loading state while video is being prepared', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     const { root } = renderDialog({
       videos: [{ id: 'video-1', name: 'video.mp4', source: '/video.mp4' }],
     });
 
     expect(document.body.querySelector('[role="status"]')?.textContent).toContain(
-      'Скачування та розшифровка медіа',
+      'Завантаження відео',
     );
     expect(document.body.querySelector('[data-loading="true"]')).not.toBeNull();
 
@@ -419,6 +419,53 @@ describe('VideoAttachmentPreviewRenderer', () => {
 
     expect(document.body.querySelector('[role="status"]')).toBeNull();
 
+    root.unmount();
+  });
+
+  it('offers tap-to-play when autoplay is blocked and clears it after a user gesture', async () => {
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, 'play')
+      .mockRejectedValueOnce(new DOMException('User gesture required', 'NotAllowedError'))
+      .mockResolvedValue(undefined);
+    const { root } = renderDialog({
+      videos: [{ id: 'autoplay-blocked', name: 'blocked.mp4', source: '/assets/blocked.mp4' }],
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const button = Array.from(document.body.querySelectorAll('button')).find(
+      (element) => element.textContent === 'Торкніться, щоб відтворити',
+    );
+    expect(button).toBeDefined();
+    expect(document.body.querySelector('[role="status"]')).toBeNull();
+    await act(async () => {
+      button?.click();
+    });
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).not.toContain('Торкніться, щоб відтворити');
+    root.unmount();
+  });
+
+  it('shows a stalled-player error and permits a fresh loading attempt', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const { root } = renderDialog({
+      videos: [{ id: 'player-stalled', name: 'stalled.mp4', source: '/assets/stalled.mp4' }],
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(document.body.textContent).toContain('Завантаження відео триває надто довго.');
+    expect(latestActionProps?.openHref).toBe('/assets/stalled.mp4');
+    const retry = Array.from(document.body.querySelectorAll('button')).find(
+      (element) => element.textContent === 'Повторити завантаження',
+    );
+    expect(retry).toBeDefined();
+    await act(async () => {
+      retry?.click();
+    });
+    expect(document.body.textContent).not.toContain('Завантаження відео триває надто довго.');
+    expect(document.body.querySelector('video')?.getAttribute('src')).toBe('/assets/stalled.mp4');
     root.unmount();
   });
 
@@ -500,7 +547,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
 
     expect(fetchSpy).toHaveBeenNthCalledWith(
       1,
-      '/api/messenger/media/large-local-busy',
+      '/api/messenger/media/large-local-busy/playback',
       expect.objectContaining({
         headers: {
           Range: 'bytes=0-0',
@@ -518,7 +565,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(secondBodyCancel).toHaveBeenCalledTimes(1);
     expect(document.body.querySelector('video')?.getAttribute('src')).toBe(
-      '/api/messenger/media/large-local-busy',
+      '/api/messenger/media/large-local-busy/playback',
     );
 
     root.unmount();
@@ -635,7 +682,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(3);
     expect(successBodyCancel).toHaveBeenCalledTimes(1);
     expect(document.body.querySelector('video')?.getAttribute('src')).toBe(
-      '/api/messenger/media/large-local-retry',
+      '/api/messenger/media/large-local-retry/playback',
     );
 
     root.unmount();
@@ -689,9 +736,9 @@ describe('VideoAttachmentPreviewRenderer', () => {
       await vi.advanceTimersByTimeAsync(2_000);
     });
     expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(createObjectUrlSpy).toHaveBeenCalledTimes(1);
+    expect(createObjectUrlSpy).not.toHaveBeenCalled();
     expect(document.body.querySelector('video')?.getAttribute('src')).toBe(
-      'blob:small-local-video',
+      '/api/messenger/media/small-local/playback',
     );
 
     act(() => root.unmount());
