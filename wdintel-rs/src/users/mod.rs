@@ -963,13 +963,22 @@ async fn user_goi_state(
 }
 
 #[get("/api/user/logout")]
-async fn user_logout(user: Option<Identity>) -> Result<HttpResponse, AppError> {
+async fn user_logout(
+    user: Option<Identity>,
+    query: actix_web::web::Query<crate::utils::http::LoginRedirectQuery>,
+) -> Result<HttpResponse, AppError> {
     if let Some(user) = user {
         user.logout();
     }
     // todo call delta logout here
     Ok(HttpResponse::Found()
-        .insert_header(("Location", "/login"))
+        .insert_header((
+            "Location",
+            crate::utils::http::login_redirect_url(
+                query.redirect.as_deref(),
+                None,
+            ),
+        ))
         .body("Success. Redirecting.."))
 }
 
@@ -2331,19 +2340,29 @@ mod tests {
                 .service(user_logout),
         )
         .await;
-        let request = actix_test::TestRequest::get()
-            .uri("/api/user/logout")
-            .to_request();
-        let response = actix_test::call_service(&app, request).await;
-
-        assert_eq!(response.status(), actix_web::http::StatusCode::FOUND);
-        assert_eq!(
-            response
-                .headers()
-                .get(actix_web::http::header::LOCATION)
-                .and_then(|value| value.to_str().ok()),
-            Some("/login")
-        );
+        // Regression: https://github.com/echoua/echo/issues/3665
+        for (uri, expected) in [
+            ("/api/user/logout", "/login"),
+            (
+                "/api/user/logout?redirect=%2Frer-analysis-neo%3Fm%3Dmessage%26source%3Dhttp%253A%252F%252Fexample.test%23card",
+                "/login?redirect=%2Frer-analysis-neo%3Fm%3Dmessage%26source%3Dhttp%253A%252F%252Fexample.test%23card",
+            ),
+            ("/api/user/logout?redirect=https%3A%2F%2Fexternal.test", "/login"),
+            ("/api/user/logout?redirect=%2F%2Fexternal.test", "/login"),
+            ("/api/user/logout?redirect=%2F%5Cexternal.test", "/login"),
+            ("/api/user/logout?redirect=%2Flogin", "/login"),
+            ("/api/user/logout?redirect=%2Fignored%2F..%2Flogin", "/login"),
+        ] {
+            let request = actix_test::TestRequest::get().uri(uri).to_request();
+            let response = actix_test::call_service(&app, request).await;
+            assert_eq!(response.status(), actix_web::http::StatusCode::FOUND);
+            assert_eq!(
+                response.headers().get(actix_web::http::header::LOCATION)
+                    .and_then(|value| value.to_str().ok()),
+                Some(expected),
+                "{uri}",
+            );
+        }
     }
 
     async fn create_grouped_message(

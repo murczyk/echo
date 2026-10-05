@@ -26,22 +26,22 @@
 
 ## Authentication redirect
 
-- **Status:** inferred characterization
+- **Status:** issue-linked regression and authorization safeguard
 
 - **Behavior ID:** `react-api-unauthorized-redirect`
-- **Affected route/component:** shared React API client and authentication redirect boundary
-- **User role or permission:** any authenticated user whose server session is no longer authorized
+- **Affected route/component:** shared React API client, Elm authentication guard, login page, logout, and Delta callback
+- **User role or permission:** any user opening a protected route without an authorized server session
 - **Preconditions:** the user is on a protected route; the client receives an HTTP 401 response
 - **User action or external event:** a request is rejected with 401
-- **Expected observable result:** the browser is replaced with `/login` and a `redirect` parameter containing the current relative path, query, and hash.
-- **Loading/empty/error/success behavior:** non-401 failures remain errors and do not redirect; helpers that intentionally degrade ordinary failures to empty results must still rethrow 401.
-- **URL, localStorage, or user-settings persistence:** the original URL is preserved only in the login `redirect` parameter. The login route itself never redirects again.
-- **API endpoint and compatibility requirements:** applies to every shared client request method; server response text remains the error detail for non-401 responses.
+- **Expected observable result:** login receives a `redirect` parameter containing the original relative path, query, and hash. Successful Delta or password login, including 2FA setup/verification, restores that destination. An authenticated visit to login honors the same destination. External URLs and login loops fall back to `/`; same-origin absolute destinations from older links normalize to relative URLs.
+- **Loading/empty/error/success behavior:** non-401 failures remain errors and do not redirect; helpers that intentionally degrade ordinary failures to empty results must still rethrow 401. Login failures retain the destination for retries. Without a destination, successful login goes to `/`.
+- **URL, localStorage, or user-settings persistence:** the login `redirect` parameter preserves the destination across reloads. Delta stores it in the server session under the generated OAuth state and consumes it on callback, including failed callbacks. Separate attempts use separate state keys; missing or consumed state has no saved destination. Query contents, including embedded `http://` values, remain unchanged.
+- **API endpoint and compatibility requirements:** applies to every shared client request method; server response text remains the error detail for non-401 responses. `GET /api/fetch-redirect-url` and `GET /api/user/logout` accept an optional, URL-encoded `redirect` query parameter. Delta still returns `{ "url": ... }`; its registered callback URL is unchanged.
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** redirect is a terminal authorization transition; a 401 must not be swallowed as an ordinary empty response.
-- **Source implementation:** `src/ts/react/services/api/client.ts`, `src/ts/react/auth-redirect.ts`
-- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/client.spec.ts`
-- **Original Echo issue/PR, if known:** none recorded; retained as an authorization safeguard.
+- **Source implementation:** `wdintel-web/src/ts/react/services/api/client.ts`, `wdintel-web/src/ts/react/auth-redirect.ts`, `wdintel-web/src/Auth.elm`, `wdintel-web/src/Shared.elm`, `wdintel-web/src/Pages/Login.elm`, `wdintel-web/src/Utils/LoginRedirect.elm`, `wdintel-rs/src/delta/login/mod.rs`, `wdintel-rs/src/users/mod.rs`
+- **Existing test(s):** `wdintel-web/tests/e2e/login-redirect.spec.ts`, `wdintel-web/tests/e2e/login-2fa.spec.ts`, `wdintel-web/src/ts/react/__tests__/auth-redirect.spec.ts`, `wdintel-web/src/ts/react/services/api/__tests__/client.spec.ts`, `wdintel-rs/src/delta/login/tests.rs`, `wdintel-rs/src/users/mod.rs`.
+- **Original Echo issue/PR, if known:** https://github.com/echoua/echo/issues/3665; retained as an authorization safeguard.
 
 ## Nullable API error helper
 
