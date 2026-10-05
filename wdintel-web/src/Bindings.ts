@@ -5938,6 +5938,105 @@ export type AiPositionFeedbackListRsp = {
   items: Array<AiPositionFeedbackListItem>;
 };
 
+export type AttachmentSearchReq = {
+  query: string | null;
+  selectedGroups: Array<string> | null;
+  messageIds: Array<number> | null;
+  from: number | null;
+  to: number | null;
+  format: string | null;
+  cursor: string | null;
+  limit: number | null;
+};
+
+export type AttachmentItem = {
+  mediaId: string;
+  messageId: number;
+  messageUuid: string | null;
+  fileName: string;
+  contentType: string;
+  state: string;
+  quality: string | null;
+  complete: boolean;
+  revision: string | null;
+  summary: string | null;
+  summaryState: string;
+  positionState: string;
+  chunkCount: number;
+  lastError: string | null;
+  snippet: string | null;
+  citation: string;
+};
+
+export type AttachmentSearchRsp = {
+  documents: Array<AttachmentItem>;
+  nextCursor: string | null;
+};
+
+export type AttachmentReadReq = {
+  mediaId: string;
+  revision: string | null;
+  member: string | null;
+  after: number | null;
+  limit: number | null;
+  query: string | null;
+};
+
+export type AttachmentSection = {
+  id: string;
+  ordinal: number;
+  member: string;
+  locator: string;
+  text: string;
+  markdown: string;
+  html: string;
+  summary: string | null;
+};
+
+export type AttachmentReadRsp = {
+  document: AttachmentItem;
+  sections: Array<AttachmentSection>;
+  nextAfter: number | null;
+  warnings: Array<string>;
+  coordinates: Array<MediaSummaryCoordinate>;
+};
+
+export type AttachmentSettings = {
+  enabled: boolean;
+  positionsEnabled: boolean;
+  summariesEnabled: boolean;
+  aiEngineId: string | null;
+  positionEngineId: string | null;
+  backfillComplete: boolean;
+};
+
+export type AttachmentQueueCount = {
+  kind: string;
+  state: string;
+  count: number;
+};
+
+export type AttachmentAdminRsp = {
+  settings: AttachmentSettings;
+  counts: Array<AttachmentQueueCount>;
+  documents: Array<AttachmentItem>;
+  engines: Array<AiPositionEngineItem>;
+};
+
+export type AttachmentInspectionReq = {
+  mediaId: string;
+  member: string | null;
+  operation: string;
+  locator: string | null;
+};
+
+export type AttachmentInspectionRsp = {
+  id: string;
+  state: string;
+  result: AttachmentReadRsp | null;
+  error: string | null;
+};
+
 export type OcrStatusLogItem = {
   at: number;
   message: string;

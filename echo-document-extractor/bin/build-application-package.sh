@@ -97,7 +97,7 @@ Architecture: amd64
 Maintainer: Echo Operations
 Section: misc
 Priority: optional
-Depends: python3 (>= 3.13), openssl, libgl1, libglib2.0-0t64, libgomp1, nftables
+Depends: python3 (>= 3.13), openssl, libgl1, libglib2.0-0t64, libgomp1, nftables, libarchive13t64, libseccomp2, bubblewrap, libreoffice-writer, libreoffice-calc, libreoffice-impress
 Description: Authenticated durable Echo document extraction service
 EOF
 install -m 0755 "$PROJECT_DIR/packaging/application/postinst" "$stage/DEBIAN/postinst"

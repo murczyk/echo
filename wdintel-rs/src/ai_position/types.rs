@@ -5,6 +5,7 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 #[serde(rename_all = "camelCase")]
+#[derive(sea_orm::FromQueryResult)]
 pub struct AiPositionEngineItem {
     pub id: String,
     pub name: String,

@@ -70,7 +70,7 @@ where
         DatabaseBackend::Postgres,
         format!(
             "insert into ai_position_worker_job (media_id)
-             select $1 where {ENABLED}
+             select $1 where {ENABLED} and not exists(select 1 from attachment_document where media_id=$1 and revision is not null)
              on conflict (media_id) where media_id is not null
              do update set attempts = 0, last_error = null,
                  next_attempt_at = now() at time zone 'utc',
@@ -215,6 +215,7 @@ struct WorkerConfig {
 /// the group (with its areas of responsibility) it came from.
 #[derive(Debug, PartialEq, FromQueryResult)]
 pub(super) struct Source {
+    pub(super) attachment_chunk_id: Option<Uuid>,
     pub(super) text: String,
     pub(super) message_id: i64,
     pub(super) message_at: NaiveDateTime,
@@ -350,7 +351,7 @@ where
         (Some(item_id), _) => Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
-                "select coalesce(message.body, '') as text, message.id as message_id,
+                "select null::uuid as attachment_chunk_id, coalesce(message.body, '') as text, message.id as message_id,
                         coalesce(item.datetime, message.timestamp, message.created_at) as message_at,
                         {SOURCE_GROUP_COLUMNS}
                  from sigint_inbox_item item
@@ -365,7 +366,7 @@ where
         (None, Some(media_id)) => Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
-                "select summary.summary as text, message.id as message_id,
+                "select null::uuid as attachment_chunk_id, summary.summary as text, message.id as message_id,
                         coalesce(message.timestamp, message.created_at) as message_at,
                         {SOURCE_GROUP_COLUMNS}
                  from media_summary summary
@@ -374,6 +375,7 @@ where
                  {SOURCE_GROUP_SQL}
                  where summary.media_id = $1 and summary.state = 'completed'
                    and summary.summary is not null and not message.deleted
+                   and not exists(select 1 from attachment_document doc where doc.media_id=summary.media_id and doc.revision is not null)
                  {}",
                 if lock { "for share of summary, message" } else { "" }
             ),
@@ -549,7 +551,17 @@ async fn replace_mentions<C>(
 where
     C: ConnectionTrait,
 {
-    delete_source_mentions(dbx, job).await.c(h!())?;
+    if let Some(chunk_id) = source.attachment_chunk_id {
+        crate::attachments::store::execute(
+            dbx,
+            "delete from ai_position_mention where attachment_chunk_id=$1",
+            vec![chunk_id.into()],
+        )
+        .await
+        .c(h!())?;
+    } else {
+        delete_source_mentions(dbx, job).await.c(h!())?;
+    }
     let mut knowledge_jobs = BTreeSet::new();
     let scopes = knowledge::scopes_for(
         source.group_master_key.as_deref(),
@@ -580,6 +592,7 @@ where
                     id: NotSet,
                     sigint_inbox_item_id: Set(job.sigint_inbox_item_id),
                     media_id: Set(job.media_id),
+                    attachment_chunk_id: Set(source.attachment_chunk_id),
                     name: Set(source
                         .text
                         .chars()
@@ -703,11 +716,26 @@ pub(super) async fn insert_linked_mentions<C>(
 where
     C: ConnectionTrait,
 {
+    let media_id = if let Some(id) = source.attachment_chunk_id {
+        Some(
+            crate::entities::attachment_chunk::Entity::find_by_id(id)
+                .one(dbx)
+                .await
+                .c(h!())?
+                .c(h!())?
+                .media_id,
+        )
+    } else {
+        None
+    };
     for &(begin, end) in spans {
         ai_position_mention::Entity::insert(ai_position_mention::ActiveModel {
             id: NotSet,
-            sigint_inbox_item_id: Set(Some(source.message_id)),
-            media_id: Set(None),
+            sigint_inbox_item_id: Set(media_id
+                .is_none()
+                .then_some(source.message_id)),
+            media_id: Set(media_id),
+            attachment_chunk_id: Set(source.attachment_chunk_id),
             name: Set(source
                 .text
                 .chars()
@@ -749,9 +777,9 @@ where
     let delete = match (job.sigint_inbox_item_id, job.media_id) {
         (Some(item_id), _) => delete
             .filter(ai_position_mention::Column::SigintInboxItemId.eq(item_id)),
-        (None, media_id) => {
-            delete.filter(ai_position_mention::Column::MediaId.eq(media_id))
-        }
+        (None, media_id) => delete
+            .filter(ai_position_mention::Column::MediaId.eq(media_id))
+            .filter(ai_position_mention::Column::AttachmentChunkId.is_null()),
     };
     delete.exec(dbx).await.c(h!())?;
     Ok(())
@@ -1691,4 +1719,74 @@ mod tests {
             .unwrap()
             .is_some());
     }
+}
+
+pub(crate) async fn extract_attachment_chunk(
+    env: &Env,
+    job: &crate::attachments::worker::Job,
+    chunk_id: Uuid,
+    engine: ai_engine::Model,
+) -> anyhow::Result<()> {
+    let sql = format!("select chunk.id as attachment_chunk_id,chunk.text,message.id as message_id,
+      coalesce(message.timestamp,message.created_at) as message_at,{SOURCE_GROUP_COLUMNS}
+      from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision
+      join signal_message_media media on media.id=chunk.media_id
+      join signal_message message on message.id=media.signal_message_id
+      left join sigint_inbox_item item on item.id=message.id {SOURCE_GROUP_SQL}
+      where chunk.id=$1 and doc.generation=$2 and not message.deleted");
+    let source = crate::attachments::store::rows::<Source, _>(
+        &env.dbx,
+        &sql,
+        vec![chunk_id.into(), job.generation.into()],
+    )
+    .await
+    .c(h!())?
+    .pop()
+    .c(h!())?;
+    let settings = settings(&env.dbx).await.c(h!())?.c(h!())?;
+    let config = WorkerConfig {
+        prompt: effective_prompt(&settings.prompt).to_string(),
+        ai_engine: engine,
+    };
+    let extraction =
+        extract(&config.ai_engine, &config.prompt, &source.text, &[])
+            .await
+            .c(h!())?;
+    let tx = env.dbx.begin().await.c(h!())?;
+    crate::attachments::store::execute(&tx,"select 1 from signal_message_group where signal_message_id=$1 for share",vec![source.message_id.into()]).await.c(h!())?;
+    let current = crate::attachments::store::rows::<Source, _>(
+        &tx,
+        &format!("{sql} for share of chunk,doc,message"),
+        vec![chunk_id.into(), job.generation.into()],
+    )
+    .await
+    .c(h!())?
+    .pop();
+    anyhow::ensure!(
+        current.as_ref() == Some(&source),
+        "attachment source changed"
+    );
+    crate::attachments::enrich::renew(&tx, job).await.c(h!())?;
+    let now = Utc::now().naive_utc();
+    let source_job = ai_position_worker_job::Model {
+        id: job.id,
+        sigint_inbox_item_id: None,
+        media_id: Some(job.media_id),
+        attempts: 0,
+        last_error: None,
+        created_at: now,
+        next_attempt_at: now,
+    };
+    replace_mentions(&tx, &source_job, &source, &config, extraction)
+        .await
+        .c(h!())?;
+    crate::attachments::store::execute(
+        &tx,
+        "update attachment_chunk set positions_done=true where id=$1",
+        vec![chunk_id.into()],
+    )
+    .await
+    .c(h!())?;
+    tx.commit().await.c(h!())?;
+    Ok(())
 }

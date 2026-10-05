@@ -15299,6 +15299,248 @@ aiPositionFeedbackListRspEncoder struct =
         ]
 
 
+type alias AttachmentSearchReq =
+    { query : Maybe (String)
+    , selectedGroups : Maybe (List (String))
+    , messageIds : Maybe (List (Int))
+    , from : Maybe (Int)
+    , to : Maybe (Int)
+    , format : Maybe (String)
+    , cursor : Maybe (String)
+    , limit : Maybe (Int)
+    }
+
+
+attachmentSearchReqEncoder : AttachmentSearchReq -> Json.Encode.Value
+attachmentSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "query", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.query )
+        , ( "selectedGroups", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedGroups )
+        , ( "messageIds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.messageIds )
+        , ( "from", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.from )
+        , ( "to", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.to )
+        , ( "format", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.format )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        ]
+
+
+type alias AttachmentItem =
+    { mediaId : String
+    , messageId : Int
+    , messageUuid : Maybe (String)
+    , fileName : String
+    , contentType : String
+    , state : String
+    , quality : Maybe (String)
+    , complete : Bool
+    , revision : Maybe (String)
+    , summary : Maybe (String)
+    , summaryState : String
+    , positionState : String
+    , chunkCount : Int
+    , lastError : Maybe (String)
+    , snippet : Maybe (String)
+    , citation : String
+    }
+
+
+attachmentItemEncoder : AttachmentItem -> Json.Encode.Value
+attachmentItemEncoder struct =
+    Json.Encode.object
+        [ ( "mediaId", (Json.Encode.string) struct.mediaId )
+        , ( "messageId", (Json.Encode.int) struct.messageId )
+        , ( "messageUuid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUuid )
+        , ( "fileName", (Json.Encode.string) struct.fileName )
+        , ( "contentType", (Json.Encode.string) struct.contentType )
+        , ( "state", (Json.Encode.string) struct.state )
+        , ( "quality", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.quality )
+        , ( "complete", (Json.Encode.bool) struct.complete )
+        , ( "revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.revision )
+        , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.summary )
+        , ( "summaryState", (Json.Encode.string) struct.summaryState )
+        , ( "positionState", (Json.Encode.string) struct.positionState )
+        , ( "chunkCount", (Json.Encode.int) struct.chunkCount )
+        , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "snippet", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.snippet )
+        , ( "citation", (Json.Encode.string) struct.citation )
+        ]
+
+
+type alias AttachmentSearchRsp =
+    { documents : List (AttachmentItem)
+    , nextCursor : Maybe (String)
+    }
+
+
+attachmentSearchRspEncoder : AttachmentSearchRsp -> Json.Encode.Value
+attachmentSearchRspEncoder struct =
+    Json.Encode.object
+        [ ( "documents", (Json.Encode.list (attachmentItemEncoder)) struct.documents )
+        , ( "nextCursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        ]
+
+
+type alias AttachmentReadReq =
+    { mediaId : String
+    , revision : Maybe (String)
+    , member : Maybe (String)
+    , after : Maybe (Int)
+    , limit : Maybe (Int)
+    , query : Maybe (String)
+    }
+
+
+attachmentReadReqEncoder : AttachmentReadReq -> Json.Encode.Value
+attachmentReadReqEncoder struct =
+    Json.Encode.object
+        [ ( "mediaId", (Json.Encode.string) struct.mediaId )
+        , ( "revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.revision )
+        , ( "member", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.member )
+        , ( "after", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.after )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        , ( "query", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.query )
+        ]
+
+
+type alias AttachmentSection =
+    { id : String
+    , ordinal : Int
+    , member : String
+    , locator : String
+    , text : String
+    , markdown : String
+    , html : String
+    , summary : Maybe (String)
+    }
+
+
+attachmentSectionEncoder : AttachmentSection -> Json.Encode.Value
+attachmentSectionEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "ordinal", (Json.Encode.int) struct.ordinal )
+        , ( "member", (Json.Encode.string) struct.member )
+        , ( "locator", (Json.Encode.string) struct.locator )
+        , ( "text", (Json.Encode.string) struct.text )
+        , ( "markdown", (Json.Encode.string) struct.markdown )
+        , ( "html", (Json.Encode.string) struct.html )
+        , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.summary )
+        ]
+
+
+type alias AttachmentReadRsp =
+    { document : AttachmentItem
+    , sections : List (AttachmentSection)
+    , nextAfter : Maybe (Int)
+    , warnings : List (String)
+    , coordinates : List (MediaSummaryCoordinate)
+    }
+
+
+attachmentReadRspEncoder : AttachmentReadRsp -> Json.Encode.Value
+attachmentReadRspEncoder struct =
+    Json.Encode.object
+        [ ( "document", (attachmentItemEncoder) struct.document )
+        , ( "sections", (Json.Encode.list (attachmentSectionEncoder)) struct.sections )
+        , ( "nextAfter", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.nextAfter )
+        , ( "warnings", (Json.Encode.list (Json.Encode.string)) struct.warnings )
+        , ( "coordinates", (Json.Encode.list (mediaSummaryCoordinateEncoder)) struct.coordinates )
+        ]
+
+
+type alias AttachmentSettings =
+    { enabled : Bool
+    , positionsEnabled : Bool
+    , summariesEnabled : Bool
+    , aiEngineId : Maybe (String)
+    , positionEngineId : Maybe (String)
+    , backfillComplete : Bool
+    }
+
+
+attachmentSettingsEncoder : AttachmentSettings -> Json.Encode.Value
+attachmentSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "positionsEnabled", (Json.Encode.bool) struct.positionsEnabled )
+        , ( "summariesEnabled", (Json.Encode.bool) struct.summariesEnabled )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        , ( "positionEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.positionEngineId )
+        , ( "backfillComplete", (Json.Encode.bool) struct.backfillComplete )
+        ]
+
+
+type alias AttachmentQueueCount =
+    { kind : String
+    , state : String
+    , count : Int
+    }
+
+
+attachmentQueueCountEncoder : AttachmentQueueCount -> Json.Encode.Value
+attachmentQueueCountEncoder struct =
+    Json.Encode.object
+        [ ( "kind", (Json.Encode.string) struct.kind )
+        , ( "state", (Json.Encode.string) struct.state )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias AttachmentAdminRsp =
+    { settings : AttachmentSettings
+    , counts : List (AttachmentQueueCount)
+    , documents : List (AttachmentItem)
+    , engines : List (AiPositionEngineItem)
+    }
+
+
+attachmentAdminRspEncoder : AttachmentAdminRsp -> Json.Encode.Value
+attachmentAdminRspEncoder struct =
+    Json.Encode.object
+        [ ( "settings", (attachmentSettingsEncoder) struct.settings )
+        , ( "counts", (Json.Encode.list (attachmentQueueCountEncoder)) struct.counts )
+        , ( "documents", (Json.Encode.list (attachmentItemEncoder)) struct.documents )
+        , ( "engines", (Json.Encode.list (aiPositionEngineItemEncoder)) struct.engines )
+        ]
+
+
+type alias AttachmentInspectionReq =
+    { mediaId : String
+    , member : Maybe (String)
+    , operation : String
+    , locator : Maybe (String)
+    }
+
+
+attachmentInspectionReqEncoder : AttachmentInspectionReq -> Json.Encode.Value
+attachmentInspectionReqEncoder struct =
+    Json.Encode.object
+        [ ( "mediaId", (Json.Encode.string) struct.mediaId )
+        , ( "member", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.member )
+        , ( "operation", (Json.Encode.string) struct.operation )
+        , ( "locator", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.locator )
+        ]
+
+
+type alias AttachmentInspectionRsp =
+    { id : String
+    , state : String
+    , result : Maybe (AttachmentReadRsp)
+    , error : Maybe (String)
+    }
+
+
+attachmentInspectionRspEncoder : AttachmentInspectionRsp -> Json.Encode.Value
+attachmentInspectionRspEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "state", (Json.Encode.string) struct.state )
+        , ( "result", (Maybe.withDefault Json.Encode.null << Maybe.map (attachmentReadRspEncoder)) struct.result )
+        , ( "error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.error )
+        ]
+
+
 type alias OcrStatusLogItem =
     { at : Int
     , message : String
@@ -25660,6 +25902,127 @@ aiPositionFeedbackListRspDecoder : Json.Decode.Decoder AiPositionFeedbackListRsp
 aiPositionFeedbackListRspDecoder =
     Json.Decode.succeed AiPositionFeedbackListRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiPositionFeedbackListItemDecoder))))
+
+
+attachmentSearchReqDecoder : Json.Decode.Decoder AttachmentSearchReq
+attachmentSearchReqDecoder =
+    Json.Decode.succeed AttachmentSearchReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "query" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selectedGroups" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageIds" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "from" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "to" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "format" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+
+
+attachmentItemDecoder : Json.Decode.Decoder AttachmentItem
+attachmentItemDecoder =
+    Json.Decode.succeed AttachmentItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageId" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageUuid" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fileName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "contentType" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quality" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "complete" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summaryState" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "positionState" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chunkCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "snippet" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "citation" (Json.Decode.string)))
+
+
+attachmentSearchRspDecoder : Json.Decode.Decoder AttachmentSearchRsp
+attachmentSearchRspDecoder =
+    Json.Decode.succeed AttachmentSearchRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "documents" (Json.Decode.list (attachmentItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nextCursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+attachmentReadReqDecoder : Json.Decode.Decoder AttachmentReadReq
+attachmentReadReqDecoder =
+    Json.Decode.succeed AttachmentReadReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "member" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "after" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "query" (Json.Decode.nullable (Json.Decode.string))))
+
+
+attachmentSectionDecoder : Json.Decode.Decoder AttachmentSection
+attachmentSectionDecoder =
+    Json.Decode.succeed AttachmentSection
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ordinal" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "member" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locator" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "markdown" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "html" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (Json.Decode.string))))
+
+
+attachmentReadRspDecoder : Json.Decode.Decoder AttachmentReadRsp
+attachmentReadRspDecoder =
+    Json.Decode.succeed AttachmentReadRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "document" (attachmentItemDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sections" (Json.Decode.list (attachmentSectionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nextAfter" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "warnings" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinates" (Json.Decode.list (mediaSummaryCoordinateDecoder))))
+
+
+attachmentSettingsDecoder : Json.Decode.Decoder AttachmentSettings
+attachmentSettingsDecoder =
+    Json.Decode.succeed AttachmentSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "positionsEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summariesEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "positionEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "backfillComplete" (Json.Decode.bool)))
+
+
+attachmentQueueCountDecoder : Json.Decode.Decoder AttachmentQueueCount
+attachmentQueueCountDecoder =
+    Json.Decode.succeed AttachmentQueueCount
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+
+
+attachmentAdminRspDecoder : Json.Decode.Decoder AttachmentAdminRsp
+attachmentAdminRspDecoder =
+    Json.Decode.succeed AttachmentAdminRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" (attachmentSettingsDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "counts" (Json.Decode.list (attachmentQueueCountDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "documents" (Json.Decode.list (attachmentItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engines" (Json.Decode.list (aiPositionEngineItemDecoder))))
+
+
+attachmentInspectionReqDecoder : Json.Decode.Decoder AttachmentInspectionReq
+attachmentInspectionReqDecoder =
+    Json.Decode.succeed AttachmentInspectionReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "member" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locator" (Json.Decode.nullable (Json.Decode.string))))
+
+
+attachmentInspectionRspDecoder : Json.Decode.Decoder AttachmentInspectionRsp
+attachmentInspectionRspDecoder =
+    Json.Decode.succeed AttachmentInspectionRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "result" (Json.Decode.nullable (attachmentReadRspDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (Json.Decode.nullable (Json.Decode.string))))
 
 
 ocrStatusLogItemDecoder : Json.Decode.Decoder OcrStatusLogItem

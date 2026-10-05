@@ -785,6 +785,24 @@ fn spawn_background_workers(
         .await;
     });
 
+    for (name, kind) in [
+        ("attachment_worker", "extract"),
+        ("attachment_summary_worker", "summary"),
+        ("attachment_position_worker", "positions"),
+        ("attachment_inspection_worker", "inspect"),
+    ] {
+        let attachment_env = env.clone();
+        let attachment_cancel = cancel_token.clone();
+        spawn_named_worker(name, bg_set, async move {
+            crate::attachments::worker::run(
+                attachment_env,
+                attachment_cancel,
+                kind,
+            )
+            .await;
+        });
+    }
+
     let ocr_env = env.clone();
     let ocr_cancellation_token = cancel_token.clone();
     spawn_named_worker("ocr_worker", bg_set, async move {
@@ -1148,6 +1166,14 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_position::feedback::reparse_ai_position_feedback)
             .service(crate::ai_position::feedback::list_ai_position_feedback)
             .service(crate::ai_position::lookup::lookup_positions)
+            .service(crate::attachments::api::search)
+            .service(crate::attachments::api::get)
+            .service(crate::attachments::api::read)
+            .service(crate::attachments::api::inspect)
+            .service(crate::attachments::api::inspection_status)
+            .service(crate::attachments::api::admin_page)
+            .service(crate::attachments::api::settings)
+            .service(crate::attachments::api::retry)
             .service(crate::ocr::get_ocr_page)
             .service(crate::ocr::save_ocr_settings)
             .service(crate::ocr::reprocess_media_ocr)

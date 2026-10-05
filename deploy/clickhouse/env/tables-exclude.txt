@@ -122,3 +122,9 @@ public.ai_position_knowledge
 public.ai_position_knowledge_job
 public.ai_position_link_job
 public.ai_position_feedback
+
+# Private message attachment content and processing state.
+public.attachment_settings
+public.attachment_document
+public.attachment_chunk
+public.attachment_job

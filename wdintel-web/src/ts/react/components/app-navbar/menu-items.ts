@@ -245,6 +245,12 @@ export const aiAgentAdminSubs: Menu[] = [
   },
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/ai/documents' },
+    activeName: 'ai-agent-documents',
+    label: 'Документи',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/ai/providers' },
     activeName: 'ai-agent-providers',
     label: 'Провайдери',

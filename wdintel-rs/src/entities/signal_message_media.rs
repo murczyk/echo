@@ -11,7 +11,6 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub signal_message_id: i64,
-    pub signal_message_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Text")]
     pub content_type: String,
     #[sea_orm(column_type = "Text", nullable)]
@@ -23,10 +22,17 @@ pub struct Model {
     pub is_encrypted: bool,
     #[sea_orm(column_type = "Text", nullable)]
     pub storage_key: Option<String>,
+    pub signal_message_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::ai_position_mention::Entity")]
+    AiPositionMention,
+    #[sea_orm(has_many = "super::ai_position_worker_job::Entity")]
+    AiPositionWorkerJob,
+    #[sea_orm(has_one = "super::attachment_document::Entity")]
+    AttachmentDocument,
     #[sea_orm(has_one = "super::media_summary::Entity")]
     MediaSummary,
     #[sea_orm(has_one = "super::ocr_job::Entity")]
@@ -41,6 +47,24 @@ pub enum Relation {
     SignalMessage,
     #[sea_orm(has_one = "super::signal_message_media_conversion_job::Entity")]
     SignalMessageMediaConversionJob,
+}
+
+impl Related<super::ai_position_mention::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiPositionMention.def()
+    }
+}
+
+impl Related<super::ai_position_worker_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiPositionWorkerJob.def()
+    }
+}
+
+impl Related<super::attachment_document::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AttachmentDocument.def()
+    }
 }
 
 impl Related<super::media_summary::Entity> for Entity {

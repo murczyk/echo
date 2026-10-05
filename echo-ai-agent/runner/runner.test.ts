@@ -984,7 +984,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.10.04.1",
+    harnessRelease: "2026.10.05.1",
   });
 });
 
@@ -1635,3 +1635,34 @@ test("#3064 failed map edits and count mismatches are stated in the answer", () 
   assert.equal(mapOutcomeNotices(registry, true).failedEdit, null);
 });
 
+
+test('#3064 attachment evidence survives compaction with revision and continuation', async () => {
+  const { prepareMessageCitations, deliveredCitations } = await import('./citations.ts');
+  const mediaId = '01999999-1111-7111-8111-111111111111';
+  const revision = '01999999-2222-7222-8222-222222222222';
+  const body = {
+    document: { mediaId, revision, messageId: 42, messageUuid: mediaId, fileName: 'orders.zip', summary: 'Summary' },
+    sections: [0, 1, 2].map((ordinal) => ({ id: `${ordinal}`, ordinal, member: 'orders.zip!/sheet.xlsx', locator: `row ${ordinal}`, text: 'x'.repeat(2000), markdown: `Evidence ${ordinal} ` + 'x'.repeat(2000), html: '<p>redundant</p>' })),
+    nextAfter: null,
+  };
+  const prepared = prepareMessageCitations('attachment_read', body);
+  const text = compactToolResponse({ skill: 'attachment_read', requestKind: 'attachmentRead' }, prepared.body, 64, 3200);
+  const result = JSON.parse(text);
+  assert.equal(result.document.revision, revision);
+  assert.equal(result.sections.length, 1);
+  assert.equal(result.sections[0].markdown, body.sections[0].markdown);
+  assert.equal(result.nextAfter, 0);
+  assert.equal(deliveredCitations(text, prepared.citations).length, 1);
+  const inspected = prepareMessageCitations('attachment_inspection_status', { result: body });
+  assert.equal(inspected.citations.length, 1);
+  assert.match(inspected.messages[0].text, /Evidence|row 0/);
+});
+
+test('#3064 attachment tools reject arbitrary routes and malformed selectors', async () => {
+  const { attachmentRequest } = await import('./attachments.ts');
+  assert.throws(() => attachmentRequest('attachmentRead', { mediaId: '../secrets' }));
+  assert.throws(() => attachmentRequest('attachmentSearch', { query: 'positions', limit: 10000 }));
+  assert.throws(() => attachmentRequest('attachmentSearch', { url: 'http://localhost' }));
+  assert.throws(() => validateSkill({ method: 'POST', path: '/api/admin/attachments/settings', skill: 'attachment_search', label: 'Search', requestKind: 'attachmentSearch' }));
+  assert.deepEqual(attachmentRequest('attachmentSearch', { query: 'позиції', limit: 5 }), { query: 'позиції', limit: 5 });
+});

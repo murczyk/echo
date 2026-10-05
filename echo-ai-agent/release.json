@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
-  "release": "2026.10.04.1",
+  "release": "2026.10.05.1",
   "runnerProtocolVersion": 1,
   "nodeVersion": "24.19.0",
   "piVersion": "0.83.0",
   "supportedRunnerReleases": [
+    "2026.10.05.1",
     "2026.10.04.1",
     "2026.10.03.1",
     "2026.10.01.6",
@@ -37,7 +38,8 @@
     "m20260929_195200_ai_agent_map_workspace",
     "m20261002_192628_ai_position_parsing",
     "m20261003_041306_ai_position_feedback",
-    "m20261003_111926_ai_position_kind"
+    "m20261003_111926_ai_position_kind",
+    "m20261005_050621_attachment_documents"
   ],
   "namespaceTemplates": true
 }

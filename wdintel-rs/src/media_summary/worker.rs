@@ -930,3 +930,20 @@ mod tests {
         assert!(!messages[0].content.contains("Ignore the system"));
     }
 }
+
+pub(crate) async fn summarize_attachment_text(
+    engine: &ai_engine::Model,
+    text: &str,
+) -> anyhow::Result<(String, Vec<MediaSummaryCoordinate>)> {
+    let response = request_structured_ai_response(
+        engine,
+        summary_messages(text),
+        0.1,
+        MEDIA_SUMMARY_OUTPUT_TOKENS,
+        response_format(),
+    )
+    .await
+    .c(h!())?;
+    let summary = parse_response(&response.content).await.c(h!())?;
+    Ok((summary.summary, summary.coordinates))
+}
