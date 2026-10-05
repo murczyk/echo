@@ -2205,6 +2205,21 @@ pub fn check_is_worker_night_shift(config: &Config) -> bool {
     !(shift_end..shift_start).contains(&now.hour())
 }
 
+pub const ATTACHMENT_BATCH_SIZE: i64 = 50;
+pub const ATTACHMENT_CHUNK_CHARS: usize = 12_000;
+pub const ATTACHMENT_CHUNK_OVERLAP: usize = 1000;
+pub const ATTACHMENT_WORKER_SLEEP_SECS: u64 = 5;
+pub const ATTACHMENT_LEASE_SECS: i64 = 900;
+pub const ATTACHMENT_MAX_ATTEMPTS: i32 = 8;
+pub const ATTACHMENT_SEARCH_LIMIT: i64 = 20;
+pub const ATTACHMENT_READ_LIMIT: i64 = 4;
+pub const ATTACHMENT_MAX_QUERY_CHARS: usize = 1_000;
+pub const ATTACHMENT_MAX_RESULT_BYTES: usize = 250 * 1024 * 1024;
+
+pub const ATTACHMENT_MAX_INSPECTION_JOBS: i64 = 32;
+
+pub const ATTACHMENT_EXTRACTOR_URL_ENV: &str = "ATTACHMENT_EXTRACTOR_URL";
+
 #[cfg(test)]
 mod config_tests {
     use super::*;
@@ -2480,18 +2495,3 @@ fill_comp_freq_worker = false
         );
     }
 }
-
-pub const ATTACHMENT_BATCH_SIZE: i64 = 50;
-pub const ATTACHMENT_CHUNK_CHARS: usize = 12_000;
-pub const ATTACHMENT_CHUNK_OVERLAP: usize = 1000;
-pub const ATTACHMENT_WORKER_SLEEP_SECS: u64 = 5;
-pub const ATTACHMENT_LEASE_SECS: i64 = 900;
-pub const ATTACHMENT_MAX_ATTEMPTS: i32 = 8;
-pub const ATTACHMENT_SEARCH_LIMIT: i64 = 20;
-pub const ATTACHMENT_READ_LIMIT: i64 = 4;
-pub const ATTACHMENT_MAX_QUERY_CHARS: usize = 1_000;
-pub const ATTACHMENT_MAX_RESULT_BYTES: usize = 250 * 1024 * 1024;
-
-pub const ATTACHMENT_MAX_INSPECTION_JOBS: i64 = 32;
-
-pub const ATTACHMENT_EXTRACTOR_URL_ENV: &str = "ATTACHMENT_EXTRACTOR_URL";

@@ -860,6 +860,79 @@ fn retry_delay_secs(attempts: i32) -> i64 {
         .min(AI_POSITION_WORKER_RETRY_MAX_SECS)
 }
 
+pub(crate) async fn extract_attachment_chunk(
+    env: &Env,
+    job: &crate::attachments::worker::Job,
+    chunk_id: Uuid,
+    engine: ai_engine::Model,
+) -> anyhow::Result<()> {
+    let sql = format!("select chunk.id as attachment_chunk_id,chunk.text,message.id as message_id,
+      coalesce(message.timestamp,message.created_at) as message_at,{SOURCE_GROUP_COLUMNS}
+      from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision
+      join signal_message_media media on media.id=chunk.media_id
+      join signal_message message on message.id=media.signal_message_id
+      left join sigint_inbox_item item on item.id=message.id {SOURCE_GROUP_SQL}
+      where chunk.id=$1 and doc.generation=$2 and not message.deleted");
+    let source = crate::attachments::store::rows::<Source, _>(
+        &env.dbx,
+        &sql,
+        vec![chunk_id.into(), job.generation.into()],
+    )
+    .await
+    .c(h!())?
+    .pop()
+    .c(h!())?;
+    let settings = settings(&env.dbx).await.c(h!())?;
+    let config = WorkerConfig {
+        prompt: effective_prompt(
+            settings.as_ref().map_or("", |settings| &settings.prompt),
+        )
+        .to_string(),
+        ai_engine: engine,
+    };
+    let extraction =
+        extract(&config.ai_engine, &config.prompt, &source.text, &[])
+            .await
+            .c(h!())?;
+    let tx = env.dbx.begin().await.c(h!())?;
+    crate::attachments::store::execute(&tx,"select 1 from signal_message_group where signal_message_id=$1 for share",vec![source.message_id.into()]).await.c(h!())?;
+    let current = crate::attachments::store::rows::<Source, _>(
+        &tx,
+        &format!("{sql} for share of chunk,doc,message"),
+        vec![chunk_id.into(), job.generation.into()],
+    )
+    .await
+    .c(h!())?
+    .pop();
+    anyhow::ensure!(
+        current.as_ref() == Some(&source),
+        "attachment source changed"
+    );
+    crate::attachments::enrich::renew(&tx, job).await.c(h!())?;
+    let now = Utc::now().naive_utc();
+    let source_job = ai_position_worker_job::Model {
+        id: job.id,
+        sigint_inbox_item_id: None,
+        media_id: Some(job.media_id),
+        attempts: 0,
+        last_error: None,
+        created_at: now,
+        next_attempt_at: now,
+    };
+    replace_mentions(&tx, &source_job, &source, &config, extraction)
+        .await
+        .c(h!())?;
+    crate::attachments::store::execute(
+        &tx,
+        "update attachment_chunk set positions_done=true where id=$1",
+        vec![chunk_id.into()],
+    )
+    .await
+    .c(h!())?;
+    tx.commit().await.c(h!())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1719,77 +1792,4 @@ mod tests {
             .unwrap()
             .is_some());
     }
-}
-
-pub(crate) async fn extract_attachment_chunk(
-    env: &Env,
-    job: &crate::attachments::worker::Job,
-    chunk_id: Uuid,
-    engine: ai_engine::Model,
-) -> anyhow::Result<()> {
-    let sql = format!("select chunk.id as attachment_chunk_id,chunk.text,message.id as message_id,
-      coalesce(message.timestamp,message.created_at) as message_at,{SOURCE_GROUP_COLUMNS}
-      from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision
-      join signal_message_media media on media.id=chunk.media_id
-      join signal_message message on message.id=media.signal_message_id
-      left join sigint_inbox_item item on item.id=message.id {SOURCE_GROUP_SQL}
-      where chunk.id=$1 and doc.generation=$2 and not message.deleted");
-    let source = crate::attachments::store::rows::<Source, _>(
-        &env.dbx,
-        &sql,
-        vec![chunk_id.into(), job.generation.into()],
-    )
-    .await
-    .c(h!())?
-    .pop()
-    .c(h!())?;
-    let settings = settings(&env.dbx).await.c(h!())?;
-    let config = WorkerConfig {
-        prompt: effective_prompt(
-            settings.as_ref().map_or("", |settings| &settings.prompt),
-        )
-        .to_string(),
-        ai_engine: engine,
-    };
-    let extraction =
-        extract(&config.ai_engine, &config.prompt, &source.text, &[])
-            .await
-            .c(h!())?;
-    let tx = env.dbx.begin().await.c(h!())?;
-    crate::attachments::store::execute(&tx,"select 1 from signal_message_group where signal_message_id=$1 for share",vec![source.message_id.into()]).await.c(h!())?;
-    let current = crate::attachments::store::rows::<Source, _>(
-        &tx,
-        &format!("{sql} for share of chunk,doc,message"),
-        vec![chunk_id.into(), job.generation.into()],
-    )
-    .await
-    .c(h!())?
-    .pop();
-    anyhow::ensure!(
-        current.as_ref() == Some(&source),
-        "attachment source changed"
-    );
-    crate::attachments::enrich::renew(&tx, job).await.c(h!())?;
-    let now = Utc::now().naive_utc();
-    let source_job = ai_position_worker_job::Model {
-        id: job.id,
-        sigint_inbox_item_id: None,
-        media_id: Some(job.media_id),
-        attempts: 0,
-        last_error: None,
-        created_at: now,
-        next_attempt_at: now,
-    };
-    replace_mentions(&tx, &source_job, &source, &config, extraction)
-        .await
-        .c(h!())?;
-    crate::attachments::store::execute(
-        &tx,
-        "update attachment_chunk set positions_done=true where id=$1",
-        vec![chunk_id.into()],
-    )
-    .await
-    .c(h!())?;
-    tx.commit().await.c(h!())?;
-    Ok(())
 }
