@@ -185,7 +185,11 @@ def _convert(path: Path, temporary: Path, extension: str) -> Path:
     command = [
         "bwrap",
         "--die-with-parent",
-        "--unshare-all",
+        "--unshare-user",
+        "--unshare-pid",
+        "--unshare-ipc",
+        "--unshare-uts",
+        "--unshare-net",
         "--new-session",
         "--ro-bind",
         "/bin",
