@@ -70,6 +70,13 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
     },
     ReadOnlyRoute {
         method: "POST",
+        path: "/api/positions/lookup",
+        skill: "position_lookup",
+        label: "Шукаю позиції",
+        request_kind: "positionLookup",
+    },
+    ReadOnlyRoute {
+        method: "POST",
         path: "/api/rer-importer/messages-by-uuid",
         skill: "messages_by_uuid",
         label: "Читаю вибрані повідомлення",
@@ -185,6 +192,7 @@ mod tests {
                     | "mapRecords"
                     | "mapDocument"
                     | "mapEdit"
+                    | "positionLookup"
             ));
         }
         let daily_activity = ROUTES

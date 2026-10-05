@@ -329,6 +329,9 @@ async fn submit_inbox_item_with_groups_inner(
     )
     .await
     .c(h!())?;
+    crate::ai_position::worker::enqueue_message_if_enabled(txn, inbox_id)
+        .await
+        .c(h!())?;
 
     Ok(SubmittedInboxItem {
         signal_message_id: signal_message.id,

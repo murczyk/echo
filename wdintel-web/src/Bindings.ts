@@ -375,6 +375,14 @@ export type AlpineDownloadResultReq = {
   bgtaskId: number;
 };
 
+export type RerCsvPreflightMetadata = {
+  referenceTimestampMs: number;
+  total: number;
+  valid: number;
+  missingTimestamp: number;
+  invalidMessageSize: number;
+};
+
 export type AreaOfResponsibilityEntry = {
   id: number;
   name: string;
@@ -1602,6 +1610,27 @@ export type CnPoint = {
   palitraIds: Array<number>;
 };
 
+export type CnPosition = {
+  begin: number;
+  end: number;
+  etalon: string;
+  text: string;
+  mgrs: Array<string>;
+  knownMgrs: string | null;
+  knownAt: number | null;
+  knownConflicting: boolean;
+  coordinateSources: Array<CnPositionCoordinateSource>;
+  kind: string;
+  callsign: string | null;
+};
+
+export type CnPositionCoordinateSource = {
+  mgrs: string;
+  messageUuid: string;
+  groupName: string;
+  messageAt: number;
+};
+
 export type CnHighlight = {
   text: string;
   begin: number;
@@ -1615,6 +1644,7 @@ export type ContentNode =
   | { CNHighlightC: CnHighlight }
   | { CNSignalC: CnSignal }
   | { CNPointC: CnPoint }
+  | { CNPositionC: CnPosition }
 ;
 
 export type CnSignal = {
@@ -5665,6 +5695,247 @@ export type SaveAiSettlementParsingReq = {
 export type SaveAiSettlementWorkerSettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
+};
+
+export type AiPositionEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type AiPositionWorkerSettingsItem = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
+export type AiPositionPageRsp = {
+  prompt: string;
+  promptOverridden: boolean;
+  engines: Array<AiPositionEngineItem>;
+  worker: AiPositionWorkerSettingsItem;
+  pendingJobs: number;
+  openFeedback: number;
+};
+
+export type SaveAiPositionPromptReq = {
+  prompt: string;
+};
+
+export type AiPositionPromptState = {
+  prompt: string;
+  promptOverridden: boolean;
+};
+
+export type SaveAiPositionWorkerSettingsReq = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
+export type TestAiPositionReq = {
+  prompt: string;
+  aiEngineId: string;
+  text: string;
+};
+
+export type TestAiPositionRsp = {
+  positions: Array<AiPositionFound>;
+  responseText: string;
+};
+
+export type AiPositionSpan = {
+  begin: number;
+  end: number;
+};
+
+export type AiPositionFound = {
+  name: string;
+  nameKey: string;
+  kind: string;
+  spans: Array<AiPositionSpan>;
+  coordinates: Array<AiPositionCoordinateItem>;
+};
+
+export type AiPositionCoordinateItem = {
+  text: string;
+  system: string;
+  mgrs: string;
+  lat: number;
+  lng: number;
+  certainty: string;
+  evidence: string;
+  span: AiPositionSpan | null;
+};
+
+export type EnqueueAiPositionBackfillReq = {
+  days: number;
+};
+
+export type EnqueueAiPositionBackfillRsp = {
+  started: boolean;
+};
+
+export type AiPositionColumnFilter = {
+  id: string;
+  value: string;
+};
+
+export type AiPositionListCursor = {
+  atMicros: number;
+  id: string;
+};
+
+export type AiPositionMentionListReq = {
+  limit: number | null;
+  after: AiPositionListCursor | null;
+  globalFilter: string | null;
+  columnFilters: Array<AiPositionColumnFilter>;
+};
+
+export type AiPositionMentionItem = {
+  id: string;
+  sourceKind: string;
+  messageId: number | null;
+  messageUuid: string | null;
+  mediaId: string | null;
+  mediaName: string | null;
+  name: string;
+  nameKey: string;
+  kind: string;
+  contextBefore: string;
+  contextMatch: string;
+  contextAfter: string;
+  messageAt: number;
+  modelName: string;
+  groupIsSecret: boolean;
+  coordinates: Array<AiPositionCoordinateItem>;
+  feedback: Array<AiPositionFeedbackItem>;
+};
+
+export type AiPositionMentionListRsp = {
+  items: Array<AiPositionMentionItem>;
+  nextCursor: AiPositionListCursor | null;
+};
+
+export type AiPositionKnowledgeListReq = {
+  limit: number | null;
+  after: AiPositionListCursor | null;
+  globalFilter: string | null;
+  columnFilters: Array<AiPositionColumnFilter>;
+};
+
+export type AiPositionKnowledgeItem = {
+  id: string;
+  scopeKind: string;
+  scopeKey: string;
+  scopeName: string;
+  scopeIsSecret: boolean;
+  name: string;
+  nameKey: string;
+  kind: string;
+  mgrs: string;
+  lat: number;
+  lng: number;
+  certainty: string;
+  factCount: number;
+  conflicting: boolean;
+  firstFactAt: number;
+  lastFactAt: number;
+  feedback: Array<AiPositionFeedbackItem>;
+};
+
+export type AiPositionKnowledgeListRsp = {
+  items: Array<AiPositionKnowledgeItem>;
+  nextCursor: AiPositionListCursor | null;
+};
+
+export type AiPositionFeedbackItem = {
+  id: string;
+  targetKind: string;
+  verdict: string;
+  expected: string;
+  comment: string;
+  createdBy: string | null;
+  createdAt: number;
+  reparsedAt: number | null;
+};
+
+export type SaveAiPositionFeedbackReq = {
+  mentionId: string | null;
+  knowledgeId: string | null;
+  verdict: string;
+  expected: string;
+  comment: string;
+};
+
+export type AiPositionIdReq = {
+  id: string;
+};
+
+export type AiPositionReparseReq = {
+  mentionId: string | null;
+};
+
+export type AiPositionReparseRsp = {
+  queued: number;
+};
+
+export type AiPositionLookupReq = {
+  name: string | null;
+  coordinates: string | null;
+  radiusMeters: number | null;
+  days: number | null;
+  kind: string | null;
+  limit: number | null;
+};
+
+export type AiPositionLookupKnown = {
+  name: string;
+  kind: string;
+  mgrs: string;
+  lat: number;
+  lng: number;
+  certainty: string;
+  conflicting: boolean;
+  factCount: number;
+  firstFactAt: string;
+  lastFactAt: string;
+  scope: string;
+};
+
+export type AiPositionLookupMention = {
+  messageId: number | null;
+  messageUuid: string | null;
+  source: string;
+  at: string;
+  name: string;
+  kind: string;
+  coordinates: Array<string>;
+  context: string;
+};
+
+export type AiPositionLookupRsp = {
+  known: Array<AiPositionLookupKnown>;
+  located: Array<AiPositionLookupMention>;
+  other: Array<AiPositionLookupMention>;
+  note: string;
+};
+
+export type AiPositionFeedbackListReq = {
+  verdict: string | null;
+  limit: number | null;
+};
+
+export type AiPositionFeedbackListItem = {
+  feedback: AiPositionFeedbackItem;
+  name: string;
+  nameKey: string;
+  kind: string | null;
+  messageId: number | null;
+  messageUuid: string | null;
+};
+
+export type AiPositionFeedbackListRsp = {
+  items: Array<AiPositionFeedbackListItem>;
 };
 
 export type OcrStatusLogItem = {

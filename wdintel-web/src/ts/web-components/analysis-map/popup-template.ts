@@ -53,6 +53,10 @@ function renderMarkedText(nodes: ContentNode[]): string {
         return text === '' ? '' : `<span class="content-token--ADV">${escapeHtml(text)}</span>`;
       }
 
+      if ('CNPositionC' in node) {
+        return `<span class="content-token--position">${escapeHtml(node.CNPositionC.text)}</span>`;
+      }
+
       if ('CNPointC' in node) {
         const text = node.CNPointC.text.trim();
         const cleanEtalon = String(node.CNPointC.etalon ?? '').trim();

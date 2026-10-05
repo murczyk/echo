@@ -15,7 +15,7 @@ import Shared.Components.Toast
 import Shared.Msg exposing (ChangelogReleaseMeta, ChangelogReleasePage)
 import Url.Builder
 import Utils.Api.RetryableHttp as RetryableHttp
-import Utils.Api.Temp exposing (jsonPair, leExpectJson, resolve)
+import Utils.Api.Temp exposing (jsonPair, leExpectJson, resolve, resolveWithMetadata)
 
 
 {-| TODO: Refactor error handling to be more flexible and avoid code duplication.
@@ -382,15 +382,59 @@ delta_csv_to_kmz toMsg file =
         }
 
 
-rer_csv_import :
-    (Result ApiError Int -> msg)
+rer_csv_preflight :
+    (Result ApiError ( Bytes, RerCsvPreflightMetadata ) -> msg)
     -> File
     -> Cmd msg
-rer_csv_import toMsg file =
+rer_csv_preflight toMsg file =
     Http.request
         { method = "POST"
         , headers = []
-        , url = "/api/rer/csv-import"
+        , url = "/api/rer/csv-import/preflight"
+        , body =
+            Http.multipartBody
+                [ Http.filePart (File.name file) file
+                ]
+        , expect = Http.expectBytesResponse toMsg (resolveWithMetadata decodeRerCsvPreflight)
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+decodeRerCsvPreflight : Http.Metadata -> Bytes -> Result String ( Bytes, RerCsvPreflightMetadata )
+decodeRerCsvPreflight metadata bytes =
+    case Dict.get "x-echo-rer-csv-metadata" metadata.headers of
+        Nothing ->
+            Err "Missing response header: x-echo-rer-csv-metadata"
+
+        Just value ->
+            Decode.decodeString rerCsvPreflightMetadataDecoder value
+                |> Result.mapError Decode.errorToString
+                |> Result.map (Tuple.pair bytes)
+
+
+rer_csv_import :
+    Bool
+    -> Int
+    -> (Result ApiError Int -> msg)
+    -> File
+    -> Cmd msg
+rer_csv_import isHistorical referenceTimestampMs toMsg file =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url =
+            Url.Builder.absolute
+                [ "api", "rer", "csv-import" ]
+                [ Url.Builder.string "isHistorical"
+                    (if isHistorical then
+                        "true"
+
+                     else
+                        "false"
+                    )
+                , Url.Builder.int "referenceTimestampMs" referenceTimestampMs
+                ]
         , body =
             Http.multipartBody
                 [ Http.filePart (File.name file) file

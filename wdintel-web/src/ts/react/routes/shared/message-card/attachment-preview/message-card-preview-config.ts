@@ -47,6 +47,9 @@ const MESSAGE_CARD_PREVIEW_SHELL_CONFIG_BY_KIND = {
   md: {
     disableRestoreFocus: true,
   },
+  zip: {
+    disableRestoreFocus: true,
+  },
   unsupported: {
     disableRestoreFocus: true,
   },

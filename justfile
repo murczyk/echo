@@ -1706,6 +1706,34 @@ ai-eval-sync-from-cloud evaluation="":
 ai-eval-sync-to-cloud evaluation="":
     bash ai-eval/sync.sh to-cloud "{{ evaluation }}"
 
+# Export AI position feedback from a server into the evaluation set and upload it to Backblaze:
+
+# just ai-position-feedback-pull --server echo-cbr-staging
+[arg('server', long='server')]
+ai-position-feedback-pull server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    evaluation=2026-10-03-position-feedback
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    remote_file="/tmp/ai-position-feedback-${stamp}.jsonl"
+    local_file="ai-eval/${evaluation}/raw/{{ server }}-${stamp}.jsonl"
+    mkdir -p "ai-eval/${evaluation}/raw"
+    # The export holds message text: keep it private and remove it after copying.
+    ssh "{{ server }}" "umask 077 && sudo /usr/bin/wdintel-rs --mode=live ai-position-feedback-export --output '${remote_file}' && sudo chown \"\$(id -u)\" '${remote_file}'"
+    scp "{{ server }}:${remote_file}" "${local_file}"
+    ssh "{{ server }}" "rm -f '${remote_file}'"
+    echo "Saved $(wc -l < "${local_file}") cases to ${local_file}"
+    bash ai-eval/sync.sh to-cloud "${evaluation}"
+
+# Replay AI position evaluation cases: just ai-position-eval /path/to/private-engine.json [cases.jsonl]
+ai-position-eval engine cases="ai-eval/2026-10-03-position-feedback/cases.synthetic.jsonl" *args="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    engine="$(realpath "{{ engine }}")"
+    cases="$(realpath "{{ cases }}")"
+    cd wdintel-rs
+    cargo run --quiet -- --mode=debug ai-position-eval --engine "${engine}" --cases "${cases}" {{ args }}
+
 # run like `just copy-db-backup echo-zp2`
 [arg('server', long='server')]
 copy-db-backup server:

@@ -984,7 +984,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.10.01.6",
+    harnessRelease: "2026.10.04.1",
   });
 });
 
@@ -1634,3 +1634,4 @@ test("#3064 failed map edits and count mismatches are stated in the answer", () 
   registry.outcome.editSuccesses = 1;
   assert.equal(mapOutcomeNotices(registry, true).failedEdit, null);
 });
+

@@ -8,12 +8,17 @@ type MessageMediaInfoRaw = MessageMediaInfo & {
   file_name?: string | null;
 };
 
-const DOCUMENT_DOWNLOAD_EXTENSION_RE = /\.(pdf|docx?|xlsx?|csv)(\?|#|$)/i;
+const DOCUMENT_DOWNLOAD_EXTENSION_RE = /\.(pdf|docx?|xlsx?|csv|zip)(\?|#|$)/i;
 const LEGACY_WORD_CONTENT_TYPES = new Set(['application/msword']);
 const LEGACY_SPREADSHEET_CONTENT_TYPES = new Set(['application/vnd.ms-excel']);
 const TEXT_CONTENT_TYPES = new Set(['text/plain']);
 const CSV_CONTENT_TYPES = new Set(['text/csv']);
 const MARKDOWN_CONTENT_TYPES = new Set(['text/markdown', 'text/x-markdown']);
+const ZIP_CONTENT_TYPES = new Set([
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/x-zip',
+]);
 
 function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
   const raw = m as MessageMediaInfoRaw;
@@ -32,6 +37,14 @@ export function getDocumentKind(m: MessageMediaInfo): MessageCardDocumentKind {
   const contentType = mediaAttachmentContentType(m);
   const fileName = mediaAttachmentDisplayName(m).toLowerCase();
   const href = String(m.href ?? '').toLowerCase();
+
+  // Office formats and KMZ are ZIP containers but have more specific preview routes.
+  if (fileName.endsWith('.kmz') || /\.kmz(\?|#|$)/i.test(href)) return 'unsupported';
+  if (ZIP_CONTENT_TYPES.has(contentType)) {
+    if (fileName.endsWith('.docx') || /\.docx(\?|#|$)/i.test(href)) return 'docx';
+    if (fileName.endsWith('.xlsx') || /\.xlsx(\?|#|$)/i.test(href)) return 'xlsx';
+    return 'zip';
+  }
 
   if (contentType === 'application/pdf' || fileName.endsWith('.pdf') || /\.pdf(\?|#|$)/i.test(href))
     return 'pdf';
@@ -85,6 +98,7 @@ export function getDocumentKind(m: MessageMediaInfo): MessageCardDocumentKind {
     TEXT_CONTENT_TYPES.has(contentType)
   )
     return 'txt';
+  if (fileName.endsWith('.zip') || /\.zip(\?|#|$)/i.test(href)) return 'zip';
   return 'unsupported';
 }
 

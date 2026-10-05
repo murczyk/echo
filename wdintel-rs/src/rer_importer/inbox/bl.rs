@@ -922,6 +922,19 @@ pub async fn aggregate_to_inbox_messages(
     };
 
     let highlight_points = req.highlight_points.unwrap_or(false);
+    let highlight_positions =
+        highlight_points || req.highlight_callsigns.unwrap_or(false);
+    let mut positions_by_message = if highlight_positions {
+        crate::ai_position::list::positions_by_message(
+            &env.dbx,
+            message_ids.clone(),
+            &sigint_groups.iter().cloned().collect(),
+        )
+        .await
+        .c(h!())?
+    } else {
+        HashMap::new()
+    };
     let mut palitra_points_by_message = if highlight_points {
         get_palitra_points_by_message(&env.dbx, *login, message_ids.clone())
             .await
@@ -1053,11 +1066,14 @@ pub async fn aggregate_to_inbox_messages(
                     .flatten()
             }
         };
-        let text_marked = highlight(
+        let m_position_tokens =
+            positions_by_message.remove(&message.id).unwrap_or_default();
+        let text_marked = highlight_with_positions(
             &body,
             Some(&no_headers_body),
             &m_callsign_tokens.clone().unwrap_or_default(),
             &m_point_tokens.clone().unwrap_or_default(),
+            &m_position_tokens,
             &m_keyword_tokens,
             &m_signal_tokens.clone().unwrap_or_default(),
             ts_headline,
@@ -1065,6 +1081,7 @@ pub async fn aggregate_to_inbox_messages(
                 highlight_callsigns: req.highlight_callsigns,
                 highlight_keywords: req.highlight_keywords,
                 highlight_points: req.highlight_points,
+                highlight_positions: Some(highlight_positions),
                 highlight_signals: req.highlight_signals,
                 highlight_searchres: req.highlight_searchres,
             },
@@ -2353,6 +2370,9 @@ async fn clear_body_derived_fields(
     .await
     .c(h!())?;
     crate::ai_settlement::worker::enqueue_if_enabled(txn, inbox_id)
+        .await
+        .c(h!())?;
+    crate::ai_position::worker::enqueue_message_if_enabled(txn, inbox_id)
         .await
         .c(h!())?;
     Ok(())

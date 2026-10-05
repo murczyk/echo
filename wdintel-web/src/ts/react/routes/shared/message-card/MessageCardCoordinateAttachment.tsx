@@ -39,6 +39,9 @@ function coordinatePreviewInputKey(message: InboxMessage, tagsMap: Record<number
       summary: media.summary,
     })),
     text: message.text,
+    positions: (message.textMarked ?? []).flatMap((node) =>
+      typeof node !== 'string' && 'CNPositionC' in node ? [node.CNPositionC] : [],
+    ),
   });
 }
 

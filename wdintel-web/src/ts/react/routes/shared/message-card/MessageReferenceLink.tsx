@@ -68,10 +68,14 @@ export function MessageReferenceLink({
   href,
   messageIdentifier,
   groupInfos,
+  chipLabel,
+  sourceGroupName,
 }: {
   href: string;
   messageIdentifier: string;
   groupInfos: Record<string, SignalGroupEntry>;
+  chipLabel?: string;
+  sourceGroupName?: string;
 }) {
   const [summary, setSummary] = useState<IntelligenceReportSummary>(EMPTY_SUMMARY);
   const [unavailable, setUnavailable] = useState(false);
@@ -293,9 +297,11 @@ export function MessageReferenceLink({
     }
   };
 
-  const groupName = summary.groupMasterKey
-    ? (groupInfos[summary.groupMasterKey]?.name ?? summary.groupMasterKey)
-    : null;
+  const groupName =
+    sourceGroupName ??
+    (summary.groupMasterKey
+      ? (groupInfos[summary.groupMasterKey]?.name ?? summary.groupMasterKey)
+      : null);
 
   return (
     <MessageSummaryPreview
@@ -310,7 +316,9 @@ export function MessageReferenceLink({
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label="повідомлення"
+        aria-label={chipLabel ?? 'повідомлення'}
+        className={chipLabel ? 'echo-chip echo-chip--neutral' : undefined}
+        data-interactive={chipLabel ? 'true' : undefined}
         aria-busy={checking}
         onMouseEnter={() => void resolveMessageReference()}
         onFocus={() => void resolveMessageReference()}
@@ -324,7 +332,9 @@ export function MessageReferenceLink({
           textDecoration: 'none',
         }}
       >
-        повідомлення
+        <span className={chipLabel ? 'echo-chip__label' : undefined}>
+          {chipLabel ?? 'повідомлення'}
+        </span>
         {showCheckingIndicator ? (
           <span
             role="progressbar"

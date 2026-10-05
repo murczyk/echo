@@ -29,6 +29,8 @@ metadata_database="${CLICKHOUSE_CURRENT_DB}_meta"
 message_callsign_view=message_callsign_v2
 message_aor_link_view=message_aor_link_v1
 message_network_link_view=message_network_link_v1
+callsign_table=sigint_inbox_item_callsign_by_message_v1
+callsign_ingest_view=sigint_inbox_item_callsign_by_message_ingest_v1
 network_link_table=sigint_inbox_item_network_by_message_v1
 network_link_ingest_view=sigint_inbox_item_network_by_message_ingest_v1
 validate_identifier derived_database "$derived_database"
@@ -36,6 +38,8 @@ validate_identifier metadata_database "$metadata_database"
 validate_identifier message_callsign_view "$message_callsign_view"
 validate_identifier message_aor_link_view "$message_aor_link_view"
 validate_identifier message_network_link_view "$message_network_link_view"
+validate_identifier callsign_table "$callsign_table"
+validate_identifier callsign_ingest_view "$callsign_ingest_view"
 validate_identifier network_link_table "$network_link_table"
 validate_identifier network_link_ingest_view "$network_link_ingest_view"
 
@@ -250,6 +254,120 @@ reconcile_network_link_table() {
   "
 }
 
+reconcile_callsign_table() {
+  local raw_table=sigint_inbox_item_callsign
+  local raw_uuid state_exists target_exists ingest_exists
+
+  raw_uuid=$(clickhouse_admin_http "
+    SELECT toString(uuid)
+    FROM system.tables
+    WHERE database = '$CLICKHOUSE_RAW_DB'
+      AND name = '$raw_table'
+  ")
+  [[ "$raw_uuid" =~ ^[0-9a-fA-F-]{36}$ ]] \
+    || die "could not resolve table UUID for $CLICKHOUSE_RAW_DB.$raw_table"
+
+  state_exists=$(clickhouse_admin_http "
+    SELECT count()
+    FROM \`$metadata_database\`.\`derived_table_reconciliation\`
+    FINAL
+    WHERE raw_database = '$CLICKHOUSE_RAW_DB'
+      AND raw_table = '$raw_table'
+      AND raw_table_uuid = toUUID('$raw_uuid')
+      AND derived_database = '$derived_database'
+      AND derived_table = '$callsign_table'
+  ")
+  target_exists=$(clickhouse_admin_http "
+    SELECT count()
+    FROM system.tables
+    WHERE database = '$derived_database'
+      AND name = '$callsign_table'
+      AND engine = 'ReplacingMergeTree'
+  ")
+  ingest_exists=$(clickhouse_admin_http "
+    SELECT count()
+    FROM system.tables
+    WHERE database = '$derived_database'
+      AND name = '$callsign_ingest_view'
+      AND engine = 'MaterializedView'
+  ")
+  if [[ "$state_exists" == 1 && "$target_exists" == 1 && "$ingest_exists" == 1 ]]; then
+    return
+  fi
+
+  log "Rebuilding message-ordered callsigns for raw table UUID $raw_uuid"
+  clickhouse_admin \
+    --receive_timeout 600 \
+    --multiquery \
+    --query "
+      DROP VIEW IF EXISTS
+        \`$derived_database\`.\`$message_callsign_view\`;
+      DROP VIEW IF EXISTS
+        \`$derived_database\`.\`$callsign_ingest_view\`;
+      DROP TABLE IF EXISTS
+        \`$derived_database\`.\`$callsign_table\`;
+      CREATE TABLE
+        \`$derived_database\`.\`$callsign_table\`
+      (
+        id Int64,
+        sigint_inbox_item_id Int64,
+        callsign String,
+        deleted Bool,
+        _peerdb_synced_at DateTime64(9),
+        _peerdb_is_deleted UInt8,
+        _peerdb_version UInt64
+      )
+      ENGINE = ReplacingMergeTree(
+        _peerdb_version,
+        _peerdb_is_deleted
+      )
+      ORDER BY (sigint_inbox_item_id, id);
+      CREATE MATERIALIZED VIEW
+        \`$derived_database\`.\`$callsign_ingest_view\`
+      TO \`$derived_database\`.\`$callsign_table\`
+      AS
+      SELECT
+        id,
+        sigint_inbox_item_id,
+        callsign,
+        deleted,
+        _peerdb_synced_at,
+        _peerdb_is_deleted,
+        _peerdb_version
+      FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
+      INSERT INTO \`$derived_database\`.\`$callsign_table\`
+      SELECT
+        id,
+        sigint_inbox_item_id,
+        callsign,
+        deleted,
+        _peerdb_synced_at,
+        _peerdb_is_deleted,
+        _peerdb_version
+      FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
+    "
+  clickhouse_admin_http "
+    INSERT INTO \`$metadata_database\`.\`derived_table_reconciliation\`
+    (
+      raw_database,
+      raw_table,
+      raw_table_uuid,
+      derived_database,
+      derived_table,
+      reconciled_at
+    )
+    VALUES
+    (
+      '$CLICKHOUSE_RAW_DB',
+      '$raw_table',
+      toUUID('$raw_uuid'),
+      '$derived_database',
+      '$callsign_table',
+      now64()
+    )
+  "
+}
+
 current_table_exists=$(clickhouse_admin_http "
   SELECT count()
   FROM system.tables
@@ -321,12 +439,13 @@ callsign_table_exists=$(clickhouse_admin_http "
     AND name = 'sigint_inbox_item_callsign'
 ")
 if [[ "$callsign_table_exists" == 1 ]]; then
+  reconcile_callsign_table
   clickhouse_admin_http "
     CREATE OR REPLACE VIEW \`$derived_database\`.\`$message_callsign_view\` AS
     SELECT DISTINCT
       sigint_inbox_item_id,
       callsign
-    FROM \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_inbox_item_callsign\`
+    FROM \`$derived_database\`.\`$callsign_table\` FINAL
     WHERE NOT deleted
   "
 else
