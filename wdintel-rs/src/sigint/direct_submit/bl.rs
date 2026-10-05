@@ -1206,6 +1206,33 @@ async fn cleanup_replacement_uploads(
     crate::messenger::media::delete_uploaded_attachment_files(&uploads).await;
 }
 
+async fn cleanup_failed_direct_submit_uploads(
+    env: &Env,
+    upload_result: &crate::messenger::media::StoreMediaAttachmentsResult,
+    replacements: &[crate::messenger::media::ReplacementMediaResult],
+    delete_uploaded_attachments: bool,
+) {
+    cleanup_replacement_uploads(env, replacements).await;
+    crate::messenger::media::delete_stored_media_files(
+        &upload_result.media,
+        &[],
+        &env.config,
+        &env.s3,
+    )
+    .await;
+    crate::messenger::media::delete_local_media_files(
+        &upload_result.media,
+        &env.config,
+    )
+    .await;
+    if delete_uploaded_attachments {
+        crate::messenger::media::delete_uploaded_attachment_files(
+            &upload_result.stored_uploads,
+        )
+        .await;
+    }
+}
+
 async fn finish_direct_submit(
     env: &Env,
     txn: DatabaseTransaction,
@@ -1307,7 +1334,13 @@ async fn finish_direct_submit(
         {
             Ok(result) => replacement_results.push(result),
             Err(err) => {
-                cleanup_replacement_uploads(env, &replacement_results).await;
+                cleanup_failed_direct_submit_uploads(
+                    env,
+                    &upload_result,
+                    &replacement_results,
+                    delete_uploaded_attachments,
+                )
+                .await;
                 return Err(err.into());
             }
         }
@@ -1479,7 +1512,13 @@ async fn finish_direct_submit(
         match precommit_result {
             Ok(result) => result,
             Err(err) => {
-                cleanup_replacement_uploads(env, &replacement_results).await;
+                cleanup_failed_direct_submit_uploads(
+                    env,
+                    &upload_result,
+                    &replacement_results,
+                    delete_uploaded_attachments,
+                )
+                .await;
                 return Err(err);
             }
         };
@@ -2754,6 +2793,127 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(unchanged, document);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3595_failed_replacement_cleans_ordinary_uploads() {
+        let env = cleanup().await.unwrap();
+        let mut env = env.as_ref().clone();
+        let s3_config = crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        };
+        env.s3_config = Some(crate::storage::S3Config::from(&s3_config));
+        env.config.s3_config = Some(s3_config);
+        env.config.feature_delete_uploaded_attachment = Some(true);
+        env.s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        let upload_dir = tempfile::tempdir().unwrap();
+        env.config.storage_dir = upload_dir.path().display().to_string();
+        let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        let created = submit_signal_message(
+            &login_id,
+            &env,
+            direct_submit_payload("original #3595 cleanup"),
+        )
+        .await
+        .unwrap();
+        let media_id = Uuid::now_v7();
+        let original = signal_message_media::ActiveModel {
+            id: Set(media_id),
+            signal_message_id: Set(created.signal_message_id),
+            signal_message_uuid: Set(
+                crate::sigint::message_id::find_signal_message_uuid(
+                    &env.dbx,
+                    created.signal_message_id,
+                )
+                .await
+                .unwrap(),
+            ),
+            content_type: Set("image/png".into()),
+            file_ext: Set(Some("png".into())),
+            file_name: Set(Some("original.png".into())),
+            size_bytes: Set(1),
+            is_encrypted: Set(false),
+            storage_key: Set(Some("original-key".into())),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let tus = crate::sigint::file_upload::tus::TusHandler::new(
+            env.config.storage_dir.clone(),
+            crate::sigint::file_upload::TUS_PATH_BASE,
+        );
+        let crate::sigint::file_upload::tus::CompletedUploadWriteResult::Stored { upload_url: ordinary_upload_url, .. } = tus.create_completed_upload(&login_id, crate::sigint::file_upload::tus::TusUploadMetadata { filename: Some("ordinary.mp4".into()), meta_type: Some("video/mp4".into()), ..Default::default() }, futures_util::stream::iter([Ok(actix_web::web::Bytes::from_static(b"ordinary video"))])).await.unwrap() else { panic!() };
+        let crate::sigint::file_upload::tus::CompletedUploadWriteResult::Stored { upload_url: replacement_upload_url, .. } = tus.create_completed_upload(&login_id, crate::sigint::file_upload::tus::TusUploadMetadata { filename: Some("replacement.png".into()), meta_type: Some("image/png".into()), ..Default::default() }, futures_util::stream::iter([Ok(actix_web::web::Bytes::from_static(b"not an image"))])).await.unwrap() else { panic!() };
+        let ordinary_upload = tus
+            .resolve_completed_uploads(
+                &login_id,
+                &[ordinary_upload_url.clone()],
+            )
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        let replacement_upload = tus
+            .resolve_completed_uploads(
+                &login_id,
+                &[replacement_upload_url.clone()],
+            )
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+
+        let mut payload = direct_submit_payload("failed #3595 cleanup");
+        payload.upload_urls = Some(vec![ordinary_upload_url]);
+        payload.attachment_updates = Some(DirectSubmitAttachmentUpdates {
+            replacements: vec![crate::sigint::direct_submit::types::DirectSubmitAttachmentReplacement {
+                media_id: media_id.to_string(),
+                upload_url: replacement_upload_url,
+            }],
+            renames: vec![],
+        });
+        assert!(matches!(
+            edit_signal_message(
+                &login_id,
+                &env,
+                created.signal_message_id,
+                payload
+            )
+            .await,
+            Err(AppError::BL { .. })
+        ));
+
+        let media = query::find_signal_message_media(
+            &env.dbx,
+            created.signal_message_id,
+        )
+        .await
+        .unwrap();
+        assert_eq!(media, vec![original]);
+        assert!(env.s3.as_ref().unwrap().list("/").await.unwrap().is_empty());
+        assert!(!std::path::Path::new(&ordinary_upload.path).exists());
+        assert!(!std::path::Path::new(&replacement_upload.path).exists());
+        let local_files = walkdir::WalkDir::new(upload_dir.path())
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|entry| !entry.file_type().is_dir())
+            .filter(|entry| {
+                !entry.path().starts_with(
+                    upload_dir.path().join("file_upload_tus/locks"),
+                ) && entry.file_name() != ".source-budget.lock"
+            })
+            .map(|entry| entry.path().display().to_string())
+            .collect::<Vec<_>>();
+        assert!(local_files.is_empty(), "{local_files:?}");
     }
 
     #[tokio::test]
