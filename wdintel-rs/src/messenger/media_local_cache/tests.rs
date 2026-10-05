@@ -108,6 +108,7 @@ async fn recovery_preserves_a_newer_publication_pin() {
     let mut env = env.as_ref().clone();
     let directory = tempfile::tempdir().unwrap();
     env.config = config(directory.path());
+    enable_cache(&env).await;
     let storage =
         crate::storage::S3Config::from(env.config.s3_config.as_ref().unwrap());
     let operator = opendal::Operator::new(opendal::services::Memory::default())
@@ -197,6 +198,7 @@ async fn copied_references_extend_retention_and_serve_ranges_during_origin_outag
     let mut env = env.as_ref().clone();
     let directory = tempfile::tempdir().unwrap();
     env.config = config(directory.path());
+    enable_cache(&env).await;
     env.s3 = None;
     env.s3_config = None;
     let message =
@@ -333,6 +335,7 @@ async fn normalized_playback_is_fast_start_and_preserves_original_bytes() {
     let mut env = env.as_ref().clone();
     let directory = tempfile::tempdir().unwrap();
     env.config = config(directory.path());
+    enable_cache(&env).await;
     let original = directory.path().join("original.mp4");
     let status = tokio::process::Command::new("ffmpeg")
         .args([
@@ -390,4 +393,9 @@ async fn normalized_playback_is_fast_start_and_preserves_original_bytes() {
         data
     );
     assert_eq!(fs::read(original).await.unwrap(), data);
+}
+
+async fn enable_cache(env: &Env) {
+    use sea_orm::ConnectionTrait;
+    env.dbx.execute_unprepared("insert into system_settings (rer_analysis_units_exact_match_only_default, rer_duty_test_enabled, rer_duty_test_since_ms, rer_duty_test_limit, rer_duty_poll_interval_sec, messenger_media_cache_enabled, messenger_media_cache_min_free_gib) values (true, false, 0, 1, 5, true, 0)").await.unwrap();
 }

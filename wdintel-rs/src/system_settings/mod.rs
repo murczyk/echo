@@ -120,6 +120,24 @@ fn map_system_settings_item(
         two_factor_auth_enabled: settings
             .two_factor_auth_enabled
             .unwrap_or(true),
+        messenger_media_cache_enabled: settings
+            .messenger_media_cache_enabled
+            .unwrap_or(false),
+        messenger_media_cache_retention_hours: settings
+            .messenger_media_cache_retention_hours
+            .unwrap_or(
+                crate::config::MESSENGER_MEDIA_CACHE_RETENTION_HOURS_DEFAULT,
+            ),
+        messenger_media_cache_max_size_gib: settings
+            .messenger_media_cache_max_size_gib
+            .unwrap_or(
+                crate::config::MESSENGER_MEDIA_CACHE_MAX_SIZE_GIB_DEFAULT,
+            ),
+        messenger_media_cache_min_free_gib: settings
+            .messenger_media_cache_min_free_gib
+            .unwrap_or(
+                crate::config::MESSENGER_MEDIA_CACHE_MIN_FREE_GIB_DEFAULT,
+            ),
         exclude_orbit_other_units: settings
             .exclude_orbit_other_units
             .unwrap_or(true),
@@ -661,6 +679,18 @@ fn system_settings_active_model(
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
         two_factor_auth_enabled: Set(Some(req.two_factor_auth_enabled)),
         exclude_orbit_other_units: Set(Some(req.exclude_orbit_other_units)),
+        messenger_media_cache_enabled: Set(Some(
+            req.messenger_media_cache_enabled,
+        )),
+        messenger_media_cache_retention_hours: Set(Some(
+            req.messenger_media_cache_retention_hours,
+        )),
+        messenger_media_cache_max_size_gib: Set(Some(
+            req.messenger_media_cache_max_size_gib,
+        )),
+        messenger_media_cache_min_free_gib: Set(Some(
+            req.messenger_media_cache_min_free_gib,
+        )),
     })
 }
 
@@ -697,6 +727,7 @@ async fn create_system_settings_for_login(
     login: &uuid::Uuid,
     req: &CreateSystemSettingsReq,
 ) -> Result<system_settings::Model, AppError> {
+    validate_media_cache_settings(req)?;
     validate_peleng_bounds(req)?;
     validate_report_generation_settings(req)?;
     validate_rer_duty_test_replay_settings(req)?;
@@ -934,6 +965,21 @@ pub async fn activate_system_settings(
     Ok(Json(map_system_settings_item(settings)?))
 }
 
+fn validate_media_cache_settings(
+    req: &CreateSystemSettingsReq,
+) -> Result<(), AppError> {
+    if !(24..=crate::config::MESSENGER_MEDIA_CACHE_RETENTION_HOURS_MAX)
+        .contains(&req.messenger_media_cache_retention_hours)
+        || !(1..=crate::config::MESSENGER_MEDIA_CACHE_SIZE_GIB_MAX)
+            .contains(&req.messenger_media_cache_max_size_gib)
+        || !(0..=crate::config::MESSENGER_MEDIA_CACHE_SIZE_GIB_MAX)
+            .contains(&req.messenger_media_cache_min_free_gib)
+    {
+        return Err(AppError::BL { msg: "Кеш медіа: зберігання має бути від 24 до 8760 годин, розмір — від 1 до 1048576 ГіБ, резерв — від 0 до 1048576 ГіБ".to_string() });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -956,6 +1002,89 @@ mod tests {
         crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3660_media_cache_settings_apply_live_and_restore_from_history(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let legacy = insert_settings(&env.dbx, old_ts(), false).await;
+        let configured =
+            crate::messenger::media_local_cache::configured_config(
+                &env.config,
+                &env.dbx,
+            )
+            .await
+            .unwrap();
+        assert!(!crate::messenger::media_local_cache::enabled(&configured));
+        let mut req = settings_req(false);
+        req.messenger_media_cache_enabled = true;
+        req.messenger_media_cache_retention_hours = 48;
+        req.messenger_media_cache_max_size_gib = 64;
+        req.messenger_media_cache_min_free_gib = 12;
+        let saved = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        let configured =
+            crate::messenger::media_local_cache::configured_config(
+                &env.config,
+                &env.dbx,
+            )
+            .await
+            .unwrap();
+        let cache = configured.messenger_media_cache.unwrap();
+        assert_eq!(
+            (
+                cache.retention_secs,
+                cache.max_total_size_bytes,
+                cache.min_free_space_bytes
+            ),
+            (48 * 3600, 64 * 1024 * 1024 * 1024, 12 * 1024 * 1024 * 1024)
+        );
+        req.messenger_media_cache_retention_hours = 23;
+        assert!(create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .is_err());
+        assert_eq!(
+            get_active_system_settings(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            saved.id
+        );
+        activate_system_settings_for_login(&env.dbx, &login, legacy.id)
+            .await
+            .unwrap();
+        let configured =
+            crate::messenger::media_local_cache::configured_config(
+                &env.config,
+                &env.dbx,
+            )
+            .await
+            .unwrap();
+        assert!(!crate::messenger::media_local_cache::enabled(&configured));
+        activate_system_settings_for_login(&env.dbx, &login, saved.id)
+            .await
+            .unwrap();
+        let configured =
+            crate::messenger::media_local_cache::configured_config(
+                &env.config,
+                &env.dbx,
+            )
+            .await
+            .unwrap();
+        assert!(crate::messenger::media_local_cache::enabled(&configured));
+        assert_eq!(
+            map_system_settings_item(saved)
+                .unwrap()
+                .messenger_media_cache_retention_hours,
+            48
+        );
     }
 
     #[tokio::test]
@@ -1368,6 +1497,13 @@ mod tests {
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             two_factor_auth_enabled: true,
             exclude_orbit_other_units: true,
+            messenger_media_cache_enabled: false,
+            messenger_media_cache_retention_hours:
+                crate::config::MESSENGER_MEDIA_CACHE_RETENTION_HOURS_DEFAULT,
+            messenger_media_cache_max_size_gib:
+                crate::config::MESSENGER_MEDIA_CACHE_MAX_SIZE_GIB_DEFAULT,
+            messenger_media_cache_min_free_gib:
+                crate::config::MESSENGER_MEDIA_CACHE_MIN_FREE_GIB_DEFAULT,
         }
     }
 
@@ -1437,6 +1573,10 @@ mod tests {
             analysis_aor_filter_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),
+            messenger_media_cache_enabled: Set(None),
+            messenger_media_cache_retention_hours: Set(None),
+            messenger_media_cache_max_size_gib: Set(None),
+            messenger_media_cache_min_free_gib: Set(None),
         }
         .insert(dbx)
         .await

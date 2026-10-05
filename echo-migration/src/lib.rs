@@ -448,6 +448,7 @@ mod m20260928_145311_enable_message_auto_parse;
 mod m20260929_152018_ai_agent_map_artifacts;
 mod m20260929_195200_ai_agent_map_workspace;
 mod m20261004_175803_signal_message_media_created_at_index;
+mod m20261005_044401_messenger_media_cache_settings;
 
 pub struct Migrator;
 
@@ -1068,6 +1069,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260929_152018_ai_agent_map_artifacts::Migration),
             Box::new(m20260929_195200_ai_agent_map_workspace::Migration),
             Box::new(m20261004_175803_signal_message_media_created_at_index::Migration),
+            Box::new(m20261005_044401_messenger_media_cache_settings::Migration),
         ]
     }
 }

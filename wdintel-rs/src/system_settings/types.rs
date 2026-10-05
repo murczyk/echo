@@ -87,6 +87,14 @@ pub struct SystemSettingsItem {
     pub two_factor_auth_enabled: bool,
     #[serde(default = "default_true")]
     pub exclude_orbit_other_units: bool,
+    #[serde(default)]
+    pub messenger_media_cache_enabled: bool,
+    #[serde(default = "default_media_cache_retention_hours")]
+    pub messenger_media_cache_retention_hours: i64,
+    #[serde(default = "default_media_cache_max_size_gib")]
+    pub messenger_media_cache_max_size_gib: i64,
+    #[serde(default = "default_media_cache_min_free_gib")]
+    pub messenger_media_cache_min_free_gib: i64,
 }
 
 #[derive(
@@ -153,6 +161,14 @@ pub struct CreateSystemSettingsReq {
     pub two_factor_auth_enabled: bool,
     #[serde(default = "default_true")]
     pub exclude_orbit_other_units: bool,
+    #[serde(default)]
+    pub messenger_media_cache_enabled: bool,
+    #[serde(default = "default_media_cache_retention_hours")]
+    pub messenger_media_cache_retention_hours: i64,
+    #[serde(default = "default_media_cache_max_size_gib")]
+    pub messenger_media_cache_max_size_gib: i64,
+    #[serde(default = "default_media_cache_min_free_gib")]
+    pub messenger_media_cache_min_free_gib: i64,
 }
 
 fn default_analysis_aor_filter_enabled() -> bool {
@@ -191,6 +207,18 @@ fn default_report_chunking_hours() -> i64 {
 )]
 pub struct ActivateSystemSettingsReq {
     pub id: i64,
+}
+
+fn default_media_cache_retention_hours() -> i64 {
+    crate::config::MESSENGER_MEDIA_CACHE_RETENTION_HOURS_DEFAULT
+}
+
+fn default_media_cache_max_size_gib() -> i64 {
+    crate::config::MESSENGER_MEDIA_CACHE_MAX_SIZE_GIB_DEFAULT
+}
+
+fn default_media_cache_min_free_gib() -> i64 {
+    crate::config::MESSENGER_MEDIA_CACHE_MIN_FREE_GIB_DEFAULT
 }
 
 #[cfg(test)]

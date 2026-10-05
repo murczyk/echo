@@ -18,6 +18,67 @@ use tokio::io::AsyncReadExt;
 pub(crate) use playback::playback_status;
 pub(crate) use worker::run_nofail;
 
+pub(crate) async fn configured_config(
+    config: &Config,
+    dbx: &impl sea_orm::ConnectionTrait,
+) -> Result<Config> {
+    use crate::config::*;
+    let active = crate::system_settings::get_active_system_settings(dbx)
+        .await
+        .c(h!())?;
+    let mut config = config.clone();
+    config.messenger_media_cache = active
+        .filter(|active| active.messenger_media_cache_enabled.unwrap_or(false))
+        .map(|active| MessengerMediaCacheConfig {
+            enabled: true,
+            retention_secs: active
+                .messenger_media_cache_retention_hours
+                .unwrap_or(MESSENGER_MEDIA_CACHE_RETENTION_HOURS_DEFAULT)
+                .clamp(24, MESSENGER_MEDIA_CACHE_RETENTION_HOURS_MAX)
+                as u64
+                * 3600,
+            max_total_size_bytes: active
+                .messenger_media_cache_max_size_gib
+                .unwrap_or(MESSENGER_MEDIA_CACHE_MAX_SIZE_GIB_DEFAULT)
+                .clamp(1, MESSENGER_MEDIA_CACHE_SIZE_GIB_MAX)
+                as u64
+                * 1024
+                * 1024
+                * 1024,
+            min_free_space_bytes: active
+                .messenger_media_cache_min_free_gib
+                .unwrap_or(MESSENGER_MEDIA_CACHE_MIN_FREE_GIB_DEFAULT)
+                .clamp(0, MESSENGER_MEDIA_CACHE_SIZE_GIB_MAX)
+                as u64
+                * 1024
+                * 1024
+                * 1024,
+        });
+    Ok(config)
+}
+
+pub(super) async fn configured_env(env: &Env) -> Result<Env> {
+    let mut configured = env.clone();
+    configured.config =
+        configured_config(&env.config, &env.dbx).await.c(h!())?;
+    Ok(configured)
+}
+
+pub(crate) async fn configured_config_best_effort(
+    config: &Config,
+    dbx: &impl sea_orm::ConnectionTrait,
+) -> Config {
+    match configured_config(config, dbx).await {
+        Ok(config) => config,
+        Err(error) => {
+            warn!("failed to load media cache settings: {error:#}");
+            let mut config = config.clone();
+            config.messenger_media_cache = None;
+            config
+        }
+    }
+}
+
 pub(super) fn settings(config: &Config) -> Option<&MessengerMediaCacheConfig> {
     config.messenger_media_cache.as_ref().filter(|settings| {
         settings.enabled
@@ -150,10 +211,10 @@ pub(crate) async fn discard_upload_best_effort(
     size: i64,
     encrypted: bool,
 ) {
-    if !enabled(config) {
-        return;
-    }
     let result = async {
+        if !fs::try_exists(files::root(config)).await.c(h!())? {
+            return Ok(());
+        }
         let entry =
             Entry::new(config, key, u64::try_from(size).c(h!())?, encrypted)
                 .c(h!())?;
@@ -175,15 +236,17 @@ pub(crate) async fn discard_upload_best_effort(
 }
 
 pub(crate) async fn pin_media_best_effort(
+    dbx: &impl sea_orm::ConnectionTrait,
     config: &Config,
     media: &[signal_message_media::Model],
 ) {
-    if !enabled(config) {
+    let config = configured_config_best_effort(config, dbx).await;
+    if !enabled(&config) {
         return;
     }
     for media in media {
         if let Err(error) =
-            pin_media(config, media, Utc::now().timestamp()).await
+            pin_media(&config, media, Utc::now().timestamp()).await
         {
             warn!(
                 "messenger media retention degraded media_id={}: {error:#}",
@@ -197,10 +260,10 @@ pub(crate) async fn remove_unreferenced_best_effort(
     config: &Config,
     media: &signal_message_media::Model,
 ) {
-    if !enabled(config) {
-        return;
-    }
     let result = async {
+        if !fs::try_exists(files::root(config)).await.c(h!())? {
+            return Ok(());
+        }
         let entry = entry(config, media).c(h!())?;
         files::ensure_root(config).await.c(h!())?;
         let _lock = entry.lock().await.c(h!())?;
@@ -234,13 +297,10 @@ pub(super) async fn pin_media(
 
 pub(crate) async fn pin_message_best_effort(env: &Env, message_id: i64) {
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-    if !enabled(&env.config) {
-        return;
-    }
     match signal_message_media::Entity::find()
         .filter(signal_message_media::Column::SignalMessageId.eq(message_id))
         .all(&env.dbx).await {
-        Ok(media) => pin_media_best_effort(&env.config, &media).await,
+        Ok(media) => pin_media_best_effort(&env.dbx, &env.config, &media).await,
         Err(error) => warn!("failed to pin published message media message_id={message_id}: {error:?}"),
     }
 }

@@ -17,14 +17,12 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
 pub(crate) async fn run_nofail(env: Arc<Env>) {
-    if settings(&env.config).is_none() {
-        warn!("messenger media local retention is disabled; configure [messenger_media_cache] to enable it");
-        return;
-    }
+    let mut first_cycle = true;
     loop {
-        if let Err(error) = reconcile(&env).await {
+        if let Err(error) = reconcile(&env, first_cycle).await {
             warn!("messenger media local retention recovery failed: {error:#}");
         }
+        first_cycle = false;
         tokio::time::sleep(Duration::from_secs(
             MESSENGER_MEDIA_LOCAL_CACHE_WORKER_INTERVAL_SECS,
         ))
@@ -32,7 +30,15 @@ pub(crate) async fn run_nofail(env: Arc<Env>) {
     }
 }
 
-async fn reconcile(env: &Env) -> Result<()> {
+async fn reconcile(env: &Env, first_cycle: bool) -> Result<()> {
+    let env = super::configured_env(env).await.c(h!())?;
+    if settings(&env.config).is_none() {
+        if first_cycle {
+            warn!("messenger media local retention is disabled; enable it in admin system settings");
+        }
+        return Ok(());
+    }
+    let env = &env;
     files::ensure_root(&env.config).await.c(h!())?;
     let Some(_worker) =
         files::try_lock(&files::root(&env.config).join("worker.lock"))

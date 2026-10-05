@@ -888,6 +888,7 @@ async fn process_recovery_message(
     created_at: NaiveDateTime,
 ) -> anyhow::Result<ProcessSignalMessageQueueItemResult> {
     let staged_media = crate::message_queue::stage_queue_media(
+        dbx,
         &attachments,
         deps.config,
         deps.s3,
@@ -2947,6 +2948,10 @@ mod tests {
             analysis_aor_filter_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),
+            messenger_media_cache_enabled: Set(None),
+            messenger_media_cache_retention_hours: Set(None),
+            messenger_media_cache_max_size_gib: Set(None),
+            messenger_media_cache_min_free_gib: Set(None),
         }
         .insert(dbx)
         .await

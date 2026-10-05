@@ -80,9 +80,3 @@ strongbox_key = ""
 #s3_region = "eu-central-003"
 #s3_bucket = "echouastorage"
 #strongbox_key = ""
-
-
-# Optional persistent retention for fresh messenger attachments and MP4 playback.
-# See docs/messenger-media-delivery.md for capacity and rollout guidance.
-[messenger_media_cache]
-enabled = false

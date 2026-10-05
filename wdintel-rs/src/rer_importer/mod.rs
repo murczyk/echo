@@ -279,8 +279,14 @@ pub(crate) async fn serve_messenger_media(
     env: &Env,
     media: &signal_message_media::Model,
 ) -> Result<HttpResponse, AppError> {
+    let cache_config =
+        crate::messenger::media_local_cache::configured_config_best_effort(
+            &env.config,
+            &env.dbx,
+        )
+        .await;
     match crate::messenger::media_local_cache::ready_original(
-        &env.config,
+        &cache_config,
         media,
     )
     .await

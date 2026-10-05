@@ -284,12 +284,13 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     await act(async () => root.unmount());
   });
 
-  it('shows cache maintenance without the settings save button', async () => {
+  it('shows media cache settings beside cache maintenance', async () => {
     window.history.replaceState({}, '', '/admin/system-settings-neo#cache');
     const { container, root } = await renderPage();
 
     expect(container.textContent).toContain('Перерахунок кешу');
-    expect(button(container, 'зберегти')).toBeUndefined();
+    expect(container.textContent).toContain('Локальний кеш медіа');
+    expect(button(container, 'зберегти')?.disabled).toBe(true);
     await act(async () => root.unmount());
   });
 

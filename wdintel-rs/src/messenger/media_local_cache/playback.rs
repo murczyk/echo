@@ -44,6 +44,7 @@ pub(crate) async fn playback_status(
     env: Arc<Env>,
     media: &signal_message_media::Model,
 ) -> Result<PlaybackStatus> {
+    let env = Arc::new(super::configured_env(&env).await.c(h!())?);
     if settings(&env.config).is_none() {
         return Ok(PlaybackStatus::Original);
     }

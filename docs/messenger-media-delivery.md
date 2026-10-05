@@ -6,24 +6,26 @@ Original URLs keep their original bytes; video playback copies have their own UR
 
 ## Enable local retention
 
-Add this section to the installation's `/etc/echo/config.toml`:
+Open **Адмін → Системні налаштування Neo → Кеш**, enable
+**Увімкнути локальний кеш медіа**, and save. The same form controls retention
+in hours (minimum 24, default 24), maximum cache size in GiB (default 32), and
+reserved filesystem free space in GiB (default 10). Settings use the existing
+admin authorization and configuration history. Older settings have caching off.
 
-```toml
-[messenger_media_cache]
-enabled = true
-retention_secs = 86400
-max_total_size_bytes = 34359738368
-min_free_space_bytes = 10737418240
-```
+Changes apply to new uploads and media requests immediately, without editing
+configuration files or restarting services. Background recovery reloads settings
+at each cycle, starting within 30 seconds when idle. A cycle already in progress
+finishes with its settings snapshot; disabling does not interrupt an active file
+write. Lower limits do not shorten existing protection or evict protected files.
 
-Restart the API and background workers through the normal deployment procedure.
-Apply `m20261004_175803_signal_message_media_created_at_index` before enabling
-recovery, and ensure FFmpeg/ffprobe are installed. The index is built concurrently;
+Apply `m20261004_175803_signal_message_media_created_at_index` and
+`m20261005_044401_messenger_media_cache_settings` through normal deployment first,
+and ensure FFmpeg/ffprobe are installed. The index is built concurrently;
 if its build is interrupted, inspect its validity and drop only an invalid
 `signal_message_media_created_at_id_idx` before retrying the migration.
-Both processes must share the same persistent `storage_dir` and S3 configuration.
-Absent or disabled configuration preserves existing media delivery. This feature
-supports one application host; multiple processes coordinate through file locks.
+API and background processes must share the same persistent `storage_dir` and
+S3 configuration. This feature supports one application host; multiple processes
+coordinate through file locks.
 
 Originals and playback copies live in
 `<storage_dir>/messenger_media_cache/local`. The directory is private. Protected
@@ -81,7 +83,8 @@ origin traffic, and playback latency. The worker logs reconciliation counts and
 retries missing originals after storage recovers. Investigation of ingest lag is
 separate from this delivery path.
 
-To roll back, set `enabled = false` and restart API/background workers. Original
+To roll back, turn off **Увімкнути локальний кеш медіа** in the same admin form
+and save. Original
 objects and existing media metadata remain compatible. Retained local files can
 be removed after stopping the new worker; never remove active cache files or
 lock files while their processes are running.

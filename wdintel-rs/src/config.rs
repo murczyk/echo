@@ -719,6 +719,11 @@ pub const SIGNAL_RESTART_MAINTENANCE_TTL_SEC: u64 = 90;
 pub const SIGNAL_RESTART_COOLDOWN_TTL_SEC: u64 = 5 * 60;
 pub const SIGNAL_RESTART_MAINTENANCE_RETRY_SEC: u64 = 1;
 pub const MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR: &str = "/tmp";
+pub const MESSENGER_MEDIA_CACHE_RETENTION_HOURS_DEFAULT: i64 = 24;
+pub const MESSENGER_MEDIA_CACHE_MAX_SIZE_GIB_DEFAULT: i64 = 32;
+pub const MESSENGER_MEDIA_CACHE_MIN_FREE_GIB_DEFAULT: i64 = 10;
+pub const MESSENGER_MEDIA_CACHE_RETENTION_HOURS_MAX: i64 = 8760;
+pub const MESSENGER_MEDIA_CACHE_SIZE_GIB_MAX: i64 = 1_048_576;
 pub const MESSENGER_MEDIA_CACHE_DIR_NAME: &str = "messenger_media_cache";
 pub const MESSENGER_MEDIA_CACHE_PREFLIGHT_HEADER: &str =
     "x-echo-media-cache-preflight";
@@ -1412,7 +1417,8 @@ pub struct Config {
     #[serde(default)]
     pub totp_strongbox_key: Option<String>,
     pub storage_dir: String,
-    pub messenger_media_cache: Option<MessengerMediaCacheConfig>,
+    #[serde(skip)]
+    pub(crate) messenger_media_cache: Option<MessengerMediaCacheConfig>,
     pub signal_api_phone: String,
     pub signal_import_group_name: String,
     pub signal_import_fiven_name: String,

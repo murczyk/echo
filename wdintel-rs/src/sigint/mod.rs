@@ -779,6 +779,7 @@ pub async fn save_attachment_restapi(
             .c(h!())?;
             txn.commit().await.c(h!())?;
             crate::messenger::media_local_cache::pin_media_best_effort(
+                dbx,
                 config,
                 &upload_result.media,
             )
