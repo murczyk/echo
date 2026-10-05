@@ -1743,9 +1743,12 @@ pub(crate) async fn extract_attachment_chunk(
     .c(h!())?
     .pop()
     .c(h!())?;
-    let settings = settings(&env.dbx).await.c(h!())?.c(h!())?;
+    let settings = settings(&env.dbx).await.c(h!())?;
     let config = WorkerConfig {
-        prompt: effective_prompt(&settings.prompt).to_string(),
+        prompt: effective_prompt(
+            settings.as_ref().map_or("", |settings| &settings.prompt),
+        )
+        .to_string(),
         ai_engine: engine,
     };
     let extraction =

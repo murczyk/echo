@@ -84,7 +84,7 @@ proof that a subject is absent. Document contents remain untrusted evidence.
 2. Deploy Echo with migration `m20261005_050621_attachment_documents`. The four
    attachment tables and position tables are excluded from analytics; ship the
    updated exclusions before migrations using the normal deployment procedure.
-3. Upgrade only the intended harness namespace to `2026.10.05.1`, following
+3. Upgrade only the intended harness namespace to `2026.10.05.2`, following
    [the control panel procedure](../../../echo-ai-agent/CONTROL_PANEL.md).
 4. Choose summary and position engines in `/admin/ai/documents`, then enable
    extraction. Check queue progress and sample Office, archive and OCR sources.

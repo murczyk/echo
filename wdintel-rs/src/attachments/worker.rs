@@ -313,7 +313,11 @@ async fn extract(env: &Env, job: &Job) -> anyhow::Result<bool> {
     Ok(false)
 }
 
-async fn extract_ocr(env: &Env, job: &Job, name: &str) -> anyhow::Result<bool> {
+pub(super) async fn extract_ocr(
+    env: &Env,
+    job: &Job,
+    name: &str,
+) -> anyhow::Result<bool> {
     use crate::entities::ocr_job;
     let ocr = ocr_job::Entity::find_by_id(job.media_id)
         .one(&env.dbx)
@@ -346,8 +350,8 @@ async fn extract_ocr(env: &Env, job: &Job, name: &str) -> anyhow::Result<bool> {
     } else if let Some(engine) =
         crate::ocr::main_ocr_engine(&env.dbx).await.c(h!())?
     {
-        execute(&env.dbx,"insert into ocr_job(media_id,ai_engine_id,ai_engine_name,model_name) values($1,$2,$3,$4) on conflict do nothing",
-            vec![job.media_id.into(),engine.id.into(),engine.name.into(),engine.model_name.into()]).await.c(h!())?;
+        execute(&env.dbx,"insert into ocr_job(media_id,ai_engine_id,ai_engine_name,model_name,ocr_request_profile) values($1,$2,$3,$4,$5) on conflict do nothing",
+            vec![job.media_id.into(),engine.id.into(),engine.name.into(),engine.model_name.into(),engine.ocr_request_profile.into()]).await.c(h!())?;
     }
     Ok(false)
 }

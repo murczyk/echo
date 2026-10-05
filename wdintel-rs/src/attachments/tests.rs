@@ -96,6 +96,57 @@ fn package(text: &str) -> Package {
 
 #[tokio::test]
 #[serial_test::serial]
+async fn attachment_ocr_keeps_provider_profile_3662() {
+    let (env, _, message) = fixture().await;
+    let job = attachment(&env, message, "scan.pdf").await;
+    let engine = Uuid::now_v7();
+    execute(&env.dbx,"insert into ai_engine(id,name,url,model_name,enabled,ocr_enabled) values($1,$2,'http://localhost','ocr',true,true)",vec![engine.into(),format!("attachment-ocr-{engine}").into()]).await.unwrap();
+    execute(&env.dbx,"insert into ocr_settings(id,worker_enabled,main_ai_engine_id) values(1,true,$1) on conflict(id) do update set main_ai_engine_id=excluded.main_ai_engine_id",vec![engine.into()]).await.unwrap();
+    assert!(!super::worker::extract_ocr(&env, &job, "scan.pdf")
+        .await
+        .unwrap());
+    let ocr = crate::entities::ocr_job::Entity::find_by_id(job.media_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(ocr.ocr_request_profile.as_deref(), Some("openai_vision"));
+    assert_eq!(ocr.ai_engine_id, Some(engine));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn attachment_summary_projection_constraints_3662() {
+    let (env, _, message) = fixture().await;
+    let job = attachment(&env, message, "report.txt").await;
+    let engine = Uuid::now_v7();
+    execute(&env.dbx,"insert into ai_engine(id,name,url,model_name,enabled) values($1,$2,'http://localhost','text',true)",vec![engine.into(),format!("attachment-summary-{engine}").into()]).await.unwrap();
+    publish(&env, &job, package("Батарей: 42"), vec![1])
+        .await
+        .unwrap();
+    execute(&env.dbx,"update attachment_chunk set summary='Батарей: 42',coordinates=$2 where media_id=$1",vec![job.media_id.into(),serde_json::json!(vec![serde_json::json!({"value":"36UXV1234567890"}); 60]).into()]).await.unwrap();
+    assert!(super::enrich::summarize(&env, &job, Some(engine))
+        .await
+        .unwrap());
+    let summary =
+        crate::entities::media_summary::Entity::find_by_id(job.media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(summary.state, "completed");
+    assert_eq!(summary.source_digest.len(), 64);
+    assert_eq!(summary.coordinates.as_array().unwrap().len(), 50);
+    publish(&env, &job, Package::default(), vec![2])
+        .await
+        .unwrap();
+    assert!(super::enrich::summarize(&env, &job, Some(engine))
+        .await
+        .unwrap());
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn attachment_search_visibility_and_revision_3064() {
     let (env, group, message) = fixture().await;
     let first = attachment(&env, message, "Бойовий звіт.txt").await;

@@ -99,6 +99,13 @@ pub async fn summarize(
         .all(&env.dbx)
         .await
         .c(h!())?;
+    if chunks.is_empty() {
+        let tx = env.dbx.begin().await.c(h!())?;
+        renew(&tx, job).await.c(h!())?;
+        execute(&tx,"update attachment_document set summary_state='completed' where media_id=$1 and generation=$2",vec![job.media_id.into(),job.generation.into()]).await.c(h!())?;
+        tx.commit().await.c(h!())?;
+        return Ok(true);
+    }
     let mut summaries: Vec<String> = chunks
         .iter()
         .filter_map(|c| {
@@ -146,6 +153,7 @@ pub async fn summarize(
     let coordinates: Vec<_> = chunks
         .iter()
         .flat_map(|c| c.coordinates.as_array().cloned().unwrap_or_default())
+        .take(crate::config::MEDIA_SUMMARY_COORDINATES_MAX_COUNT)
         .collect();
     let tx = env.dbx.begin().await.c(h!())?;
     renew(&tx, job).await.c(h!())?;
@@ -155,7 +163,7 @@ pub async fn summarize(
       on conflict(media_id) do update set source_kind=excluded.source_kind,source_digest=excluded.source_digest,source_char_count=excluded.source_char_count,
       state=excluded.state,ai_engine_id=excluded.ai_engine_id,ai_engine_name=excluded.ai_engine_name,model_name=excluded.model_name,
       summary=excluded.summary,coordinates=excluded.coordinates,completed_at=excluded.completed_at,source_text=null,lease_expires_at=null",
-      vec![job.media_id.into(),revision.to_string().into(),(chunks.iter().map(|c|c.text.chars().count()).sum::<usize>() as i32).into(),engine.id.into(),engine.name.into(),engine.model_name.into(),summary.into(),serde_json::json!(coordinates).into()]).await.c(h!())?;
+      vec![job.media_id.into(),sha256::digest(revision.as_bytes()).into(),(chunks.iter().map(|c|c.text.chars().count()).sum::<usize>() as i32).into(),engine.id.into(),engine.name.into(),engine.model_name.into(),summary.into(),serde_json::json!(coordinates).into()]).await.c(h!())?;
     tx.commit().await.c(h!())?;
     Ok(true)
 }
