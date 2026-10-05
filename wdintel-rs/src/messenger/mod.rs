@@ -24,6 +24,7 @@ pub mod group;
 pub mod id;
 pub mod media;
 pub mod media_cache;
+pub(crate) mod media_local_cache;
 pub mod media_thumbnail;
 pub mod media_wave;
 pub mod missing_message;

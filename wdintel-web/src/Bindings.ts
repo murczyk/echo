@@ -4808,6 +4808,10 @@ export type SystemSettingsItem = {
   analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
+  messengerMediaCacheEnabled: boolean;
+  messengerMediaCacheRetentionHours: number;
+  messengerMediaCacheMaxSizeGib: number;
+  messengerMediaCacheMinFreeGib: number;
 };
 
 export type SystemSettingsListRsp = {
@@ -4847,6 +4851,10 @@ export type CreateSystemSettingsReq = {
   analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
+  messengerMediaCacheEnabled: boolean;
+  messengerMediaCacheRetentionHours: number;
+  messengerMediaCacheMaxSizeGib: number;
+  messengerMediaCacheMinFreeGib: number;
 };
 
 export type ActivateSystemSettingsReq = {

@@ -168,10 +168,18 @@ impl StagedMediaAttachments {
             .all(dbx)
             .await;
         let committed_media = match committed_media {
-            Ok(committed_media) => committed_media
-                .into_iter()
-                .map(|media| media.id)
-                .collect::<HashSet<_>>(),
+            Ok(committed_media) => {
+                crate::messenger::media_local_cache::pin_media_best_effort(
+                    dbx,
+                    config,
+                    &committed_media,
+                )
+                .await;
+                committed_media
+                    .into_iter()
+                    .map(|media| media.id)
+                    .collect::<HashSet<_>>()
+            }
             Err(err) => {
                 error!(
                     "failed to check committed staged media references; preserving uploaded objects and local files: {:?}",
@@ -554,7 +562,7 @@ pub async fn store_media_attachments(
     deletion: UploadedAttachmentDeletion,
 ) -> Result<StoreMediaAttachmentsResult, AppError> {
     let staged =
-        stage_media_attachments(attachments, config, s3, deletion, None)
+        stage_media_attachments(txn, attachments, config, s3, deletion, None)
             .await
             .c(h!())?;
     let media = match persist_staged_media(
@@ -591,12 +599,19 @@ pub async fn store_media_attachments(
 }
 
 pub async fn stage_media_attachments(
+    dbx: &impl ConnectionTrait,
     attachments: &[MediaUploadInput],
     config: &Config,
     s3: &Option<Operator>,
     deletion: UploadedAttachmentDeletion,
     attachments_hash: Option<String>,
 ) -> Result<StagedMediaAttachments, AppError> {
+    let cache_config =
+        crate::messenger::media_local_cache::configured_config_best_effort(
+            config, dbx,
+        )
+        .await;
+    let config = &cache_config;
     let mut staged = StagedMediaAttachments {
         attachments_hash,
         attachments: Vec::with_capacity(attachments.len()),
@@ -706,6 +721,15 @@ async fn stage_media_attachment(
     }
     let mut thumbnail_source_lease = None;
     let mut retains_thumbnail_source = false;
+    crate::messenger::media_local_cache::stage_upload_best_effort(
+        config,
+        &storage_key,
+        size_bytes,
+        is_encrypted,
+        Path::new(&attachment.path),
+        source_lease.is_some(),
+    )
+    .await;
     if is_video {
         thumbnail_source_lease = Some(
             crate::messenger::media_thumbnail::ThumbnailSourceLease::new(id),
@@ -778,6 +802,13 @@ async fn delete_staged_object_best_effort(
     s3: &Option<Operator>,
     attachment: &StagedMediaAttachment,
 ) {
+    crate::messenger::media_local_cache::discard_upload_best_effort(
+        config,
+        &attachment.storage_key,
+        attachment.size_bytes,
+        attachment.is_encrypted,
+    )
+    .await;
     delete_staged_storage_key_best_effort(config, s3, &attachment.storage_key)
         .await;
 }
@@ -839,6 +870,12 @@ pub async fn delete_stored_media_files(
 ) {
     if media.is_empty() && ocr_result_keys.is_empty() {
         return;
+    }
+    for media in media {
+        crate::messenger::media_local_cache::remove_unreferenced_best_effort(
+            config, media,
+        )
+        .await;
     }
     let Some(config) = config.s3_config.as_ref() else {
         warn!("S3 is not configured, cannot delete attachment files!");
@@ -1621,6 +1658,7 @@ mod tests {
         });
         let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
         let staged = stage_media_attachments(
+            &env.dbx,
             &[MediaUploadInput {
                 path: path.display().to_string(),
                 name: Some("rollback.txt".into()),
@@ -1664,6 +1702,7 @@ mod tests {
         });
         let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
         let staged = stage_media_attachments(
+            &env.dbx,
             &[
                 MediaUploadInput {
                     path: existing_path.display().to_string(),
@@ -1695,8 +1734,11 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn removed_resolved_upload_fails_staging_and_rolls_back_earlier_objects(
     ) {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
         let temporary = tempfile::tempdir().unwrap();
         let handler = crate::sigint::file_upload::tus::TusHandler::new_for_test(
             temporary.path().display().to_string(),
@@ -1743,6 +1785,7 @@ mod tests {
         });
         let op = Operator::new(Memory::default()).unwrap().finish();
         let result = stage_media_attachments(
+            &env.dbx,
             &attachments,
             &config,
             &Some(op.clone()),
