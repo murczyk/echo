@@ -15,6 +15,7 @@ use crate::types::Env;
 use crate::types::ShortContext;
 use actix_identity::Identity;
 use actix_web::{post, web::Json};
+use anyhow::Context;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
@@ -727,7 +728,7 @@ async fn create_system_settings_for_login(
     login: &uuid::Uuid,
     req: &CreateSystemSettingsReq,
 ) -> Result<system_settings::Model, AppError> {
-    validate_media_cache_settings(req)?;
+    validate_media_cache_settings(req).context(h!())?;
     validate_peleng_bounds(req)?;
     validate_report_generation_settings(req)?;
     validate_rer_duty_test_replay_settings(req)?;
