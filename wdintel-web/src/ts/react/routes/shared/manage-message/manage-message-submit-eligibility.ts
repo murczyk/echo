@@ -14,6 +14,7 @@ export type ManageMessageSubmitEligibilityInput = {
   newAttachmentCount: number;
   existingAttachmentIds: readonly string[];
   deletedAttachmentIds: readonly string[];
+  replacedAttachmentIds: readonly string[];
   maxAttachmentCount: number;
 };
 
@@ -33,10 +34,14 @@ export function isManageMessageSubmitEligible({
   newAttachmentCount,
   existingAttachmentIds,
   deletedAttachmentIds,
+  replacedAttachmentIds,
   maxAttachmentCount,
 }: ManageMessageSubmitEligibilityInput): boolean {
   const deletedIds = new Set(deletedAttachmentIds);
-  const retainedAttachmentCount = existingAttachmentIds.filter((id) => !deletedIds.has(id)).length;
+  const replacedIds = new Set(replacedAttachmentIds);
+  const retainedAttachmentCount = existingAttachmentIds.filter(
+    (id) => !deletedIds.has(id) && !replacedIds.has(id),
+  ).length;
   const attachmentCount = retainedAttachmentCount + newAttachmentCount;
   const hasContent = reportTextRequired
     ? Boolean(fullBody.trim())

@@ -110,6 +110,7 @@ export function makeMessageSchema(
           : dmrMetadataSchema.extend({ cc: optionalDmrText }),
       ),
       deleted_media_ids: z.array(z.string()).optional(),
+      attachment_file_names: z.record(z.string()).optional(),
     })
     .superRefine((data, ctx) => {
       if (data.coords?.trim() && !parseCoordLine(data.coords)) {
@@ -143,4 +144,5 @@ export const EMPTY_FORM_VALUES: MessageFormData = {
   network_name: '',
   dmr: [],
   deleted_media_ids: [],
+  attachment_file_names: {},
 };

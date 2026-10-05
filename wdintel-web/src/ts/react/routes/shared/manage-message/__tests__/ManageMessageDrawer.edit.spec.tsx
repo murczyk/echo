@@ -38,6 +38,8 @@ const aiIntelReportMocks = vi.hoisted(() => ({
 }));
 const uppyMocks = vi.hoisted(() => ({
   latest: null as {
+    files: Array<Record<string, unknown>>;
+    addFile: (file: Record<string, unknown>) => Record<string, unknown>;
     emitUploadProgress: (percentage: number) => void;
     emitUploadSuccess: () => void;
   } | null,
@@ -403,6 +405,11 @@ vi.mock('@mui/material', () => ({
     </div>
   ),
   Divider: () => <hr />,
+  Dialog: ({ children, open }: { children?: ReactNode; open?: boolean }) =>
+    open ? <div role="dialog">{children}</div> : null,
+  DialogActions: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  DialogContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
   Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Menu: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   MenuItem: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) => (
@@ -1850,11 +1857,100 @@ describe('ManageMessageDrawer edit mode', () => {
         full_body: 'new report body',
         signal_group_master_key: null,
         retained_media_ids: ['media-1'],
+        attachment_updates: undefined,
         parent_signal_message_ids: [42],
         comment: undefined,
       }),
     );
 
+    root.unmount();
+  });
+
+  it('#3595 uploads a report-source edit as new and excludes the original attachment', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [
+        {
+          full_body: 'original body',
+          retained_media_ids: ['source-image'],
+          parent_signal_message_ids: [42],
+        },
+      ],
+    });
+    const source = buildMessage({
+      media: [
+        {
+          id: 'source-image',
+          contentType: 'image/png',
+          fileName: 'source.png',
+          sizeBytes: 11,
+          href: '/media/source-image',
+          transcription: null,
+        },
+      ],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: source }}
+        />,
+      );
+    });
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Більше дій для source.png"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      Array.from(container.querySelectorAll('button[role="menuitem"]'))
+        .find((button) => button.textContent === 'Перейменувати')
+        ?.click();
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      textFieldPropsByLabel.get('Назва файлу')?.onChange?.({ target: { value: 'renamed-source' } });
+      Array.from(container.querySelectorAll('button'))
+        .filter((button) => button.textContent === 'Перейменувати')
+        .at(-1)
+        ?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      uppyMocks.latest?.addFile({
+        name: 'source-edited.png',
+        type: 'image/png',
+        size: 11,
+        data: new File(['replacement'], 'source-edited.png', { type: 'image/png' }),
+        meta: { replaces_media_id: 'source-image' },
+        uploadURL: '/upload/report-image',
+      });
+      textFieldPropsByLabel
+        .get('Текст розвіддонесення')
+        ?.onChange?.({ target: { value: 'report body' } });
+      const noSendOption = autocompleteOptionsByLabel
+        .get('Відправити в групу')
+        ?.find((option) => (option as { name?: string }).name === 'Не відправляти');
+      autocompleteOnChangeByLabel.get('Відправити в групу')?.(null, noSendOption);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      container
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        upload_urls: ['/upload/report-image'],
+        attachment_updates: undefined,
+        retained_media_ids: [],
+        parent_signal_message_ids: [42],
+      }),
+    );
     root.unmount();
   });
 
@@ -3532,6 +3628,154 @@ describe('ManageMessageDrawer edit mode', () => {
       }),
     );
 
+    root.unmount();
+  });
+
+  it('#3595 submits an edited image as a same-ID replacement without deleting it', async () => {
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 42 });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          editTarget={{
+            id: 42,
+            message: buildMessage({
+              media: Array.from({ length: 20 }, (_, index) => ({
+                id: index === 10 ? 'middle-image' : `image-${index}`,
+                contentType: 'image/png',
+                fileName: index === 10 ? 'middle.png' : `image-${index}.png`,
+                sizeBytes: 11,
+                href: index === 10 ? '/media/middle-image' : `/media/image-${index}`,
+                transcription: null,
+              })),
+            }),
+          }}
+        />,
+      );
+    });
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Більше дій для middle.png"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      Array.from(container.querySelectorAll('button[role="menuitem"]'))
+        .find((button) => button.textContent === 'Перейменувати')
+        ?.click();
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      textFieldPropsByLabel.get('Назва файлу')?.onChange?.({ target: { value: 'renamed-middle' } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      Array.from(container.querySelectorAll('button'))
+        .filter((button) => button.textContent === 'Перейменувати')
+        .at(-1)
+        ?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      uppyMocks.latest?.addFile({
+        name: 'middle-edited.png',
+        type: 'image/png',
+        size: 11,
+        data: new File(['replacement'], 'middle-edited.png', { type: 'image/png' }),
+        meta: { replaces_media_id: 'middle-image' },
+        uploadURL: '/upload/replacement',
+      });
+    });
+
+    await act(async () => {
+      container
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        upload_urls: null,
+        attachment_updates: {
+          replacements: [{ media_id: 'middle-image', upload_url: '/upload/replacement' }],
+          renames: [],
+        },
+        deleted_media_ids: [],
+      }),
+    );
+    root.unmount();
+  });
+
+  it('#3321 submits a renamed existing attachment without changing its extension', async () => {
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 42 });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          editTarget={{
+            id: 42,
+            message: buildMessage({
+              media: [
+                {
+                  id: 'document-id',
+                  contentType: 'application/pdf',
+                  fileName: 'report.pdf',
+                  sizeBytes: 4,
+                  href: '/media/document-id',
+                  transcription: null,
+                },
+              ],
+            }),
+          }}
+        />,
+      );
+    });
+
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Більше дій для report.pdf"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      Array.from(container.querySelectorAll('button[role="menuitem"]'))
+        .find((button) => button.textContent === 'Перейменувати')
+        ?.click();
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      textFieldPropsByLabel.get('Назва файлу')?.onChange?.({ target: { value: 'renamed-report' } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      Array.from(container.querySelectorAll('button'))
+        .filter((button) => button.textContent === 'Перейменувати')
+        .at(-1)
+        ?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      container
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        attachment_updates: {
+          replacements: [],
+          renames: [{ media_id: 'document-id', file_name: 'renamed-report.pdf' }],
+        },
+      }),
+    );
     root.unmount();
   });
 
