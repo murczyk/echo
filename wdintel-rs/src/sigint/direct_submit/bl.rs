@@ -1144,6 +1144,12 @@ async fn finish_direct_submit(
 
     txn.commit().await.c(h!())?;
 
+    crate::messenger::media_local_cache::pin_message_best_effort(
+        env,
+        signal_message_id,
+    )
+    .await;
+
     if delete_uploaded_attachments {
         crate::messenger::media::delete_uploaded_attachment_files(
             &upload_result.uploaded_files_ready_for_deletion,

@@ -1329,10 +1329,12 @@ list_organisms toMsg req =
         }
 
 
-get_delta_redirect_url : (Result ApiError DeltaLoginUrl -> msg) -> Cmd msg
-get_delta_redirect_url toMsg =
+get_delta_redirect_url : (Result ApiError DeltaLoginUrl -> msg) -> Maybe String -> Cmd msg
+get_delta_redirect_url toMsg redirect =
     Http.get
-        { url = "/api/fetch-redirect-url"
+        { url =
+            Url.Builder.absolute [ "api", "fetch-redirect-url" ]
+                (redirect |> Maybe.map (\target -> [ Url.Builder.string "redirect" target ]) |> Maybe.withDefault [])
         , expect = leExpectJson toMsg deltaLoginUrlDecoder
         }
 

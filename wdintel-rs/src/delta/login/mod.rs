@@ -1,10 +1,15 @@
+use crate::config::DELTA_LOGIN_REDIRECT_SESSION_PREFIX;
 use crate::delta::login::oauth::build_auth_url;
 use crate::delta::login::types::UserInfo;
 use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::*;
 use crate::types::*;
 use crate::users::validate_login;
-use actix_web::web::{Data, Json};
+use crate::utils::http::{
+    local_login_redirect, login_redirect_url, LoginRedirectQuery,
+};
+use actix_session::SessionExt;
+use actix_web::web::{Data, Json, Query};
 use actix_web::{get, HttpRequest, HttpResponse};
 use echo_migration::Expr;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
@@ -12,6 +17,9 @@ use sea_orm::*;
 
 pub mod oauth;
 pub mod types;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct DeltaLoginUrl {
@@ -21,16 +29,13 @@ pub struct DeltaLoginUrl {
 #[get("/api/fetch-redirect-url")]
 pub async fn fetch_redirect_url(
     req: HttpRequest,
-    env: actix_web::web::Data<Env>,
+    env: Data<Env>,
+    query: Query<LoginRedirectQuery>,
 ) -> HttpResponse {
-    let config = &env.config;
-    let authority = crate::utils::http::extract_authority_header(&req);
-    let is_echoua =
-        authority.clone().filter(|x| x.contains("echoua")).is_some();
-    match build_auth_url(config, is_echoua).await.context(h!()) {
-        Ok(url) => {
-            HttpResponse::Ok().json(Json(DeltaLoginUrl { url: Some(url) }))
-        }
+    match auth_url_for_request(&req, &env, query.redirect.as_deref()).await {
+        Ok(url) => HttpResponse::Ok()
+            .insert_header(("Cache-Control", "no-store"))
+            .json(Json(DeltaLoginUrl { url: Some(url) })),
         Err(e) => {
             warn!("failed to build auth url: {:?}", e);
             HttpResponse::BadRequest().body("Missing Delta API config")
@@ -38,54 +43,107 @@ pub async fn fetch_redirect_url(
     }
 }
 
+async fn auth_url_for_request(
+    req: &HttpRequest,
+    env: &Env,
+    redirect: Option<&str>,
+) -> anyhow::Result<String> {
+    let authority = crate::utils::http::extract_authority_header(req);
+    let is_echoua = authority.is_some_and(|x| x.contains("echoua"));
+    let (url, state) = build_auth_url(&env.config, is_echoua).await.c(h!())?;
+    remember_redirect(req, state.secret(), redirect).c(h!())?;
+    Ok(url)
+}
+
+fn remember_redirect(
+    req: &HttpRequest,
+    state: &str,
+    redirect: Option<&str>,
+) -> anyhow::Result<()> {
+    if let Some(redirect) = redirect.and_then(local_login_redirect) {
+        req.get_session()
+            .insert(
+                format!("{DELTA_LOGIN_REDIRECT_SESSION_PREFIX}{state}"),
+                redirect,
+            )
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+fn take_redirect(req: &HttpRequest) -> anyhow::Result<Option<String>> {
+    #[derive(Deserialize)]
+    struct CallbackState {
+        state: Option<String>,
+    }
+    let query =
+        Query::<CallbackState>::from_query(req.query_string()).c(h!())?;
+    let Some(state) = &query.state else {
+        return Ok(None);
+    };
+    let key = format!("{DELTA_LOGIN_REDIRECT_SESSION_PREFIX}{state}");
+    let session = req.get_session();
+    let redirect = session.get::<String>(&key).c(h!())?;
+    session.remove(&key);
+    Ok(redirect.filter(|target| local_login_redirect(target).is_some()))
+}
+
 #[get("/api/delta-redirect")]
-pub async fn handle_redirect(
-    req: HttpRequest,
-    env: actix_web::web::Data<Env>,
+pub async fn handle_redirect(req: HttpRequest, env: Data<Env>) -> HttpResponse {
+    let redirect = match take_redirect(&req) {
+        Ok(redirect) => redirect,
+        Err(e) => {
+            error!("Failed to retrieve Delta login destination: {:?}", e);
+            return login_response(None, Some("err_delta_login_4536"));
+        }
+    };
+    let user_info = oauth::handle_receive_code(env.clone(), req.clone()).await;
+    complete_login(&env, &req, user_info, redirect.as_deref()).await
+}
+
+async fn complete_login(
+    env: &Data<Env>,
+    req: &HttpRequest,
+    user_info: anyhow::Result<UserInfo>,
+    redirect: Option<&str>,
 ) -> HttpResponse {
-    let req_clone = req.clone();
-    match oauth::handle_receive_code(env.clone(), req).await {
+    let api_error = match user_info {
         Ok(user_info) => {
             let user_name = user_info.user_name.clone();
-            match perform_login(&env, &req_clone, user_info).await {
-                Ok(reason) => {
-                    if let Some(_reason) = reason {
-                        HttpResponse::Found()
-                            .insert_header((
-                                "Location",
-                                "/login?api_error=err_delta_login_3278",
-                            ))
-                            .body("err_delta_login_3278")
-                    } else {
-                        HttpResponse::Found()
-                            .insert_header(("Location", "/"))
-                            .body("Success. Redirecting..")
-                    }
-                }
+            match perform_login(env, req, user_info).await {
+                Ok(None) => None,
+                Ok(Some(_)) => Some("err_delta_login_3278"),
                 Err(e) => {
                     error!(
                         "Failed to login, probably EXO account is missing: user_name: {user_name}; error: {:?}",
                         e
                     );
-                    HttpResponse::Found()
-                        .insert_header((
-                            "Location",
-                            "/login?api_error=err_delta_login_7639",
-                        ))
-                        .body("err_delta_login_7639")
+                    Some("err_delta_login_7639")
                 }
             }
         }
         Err(e) => {
             error!("Delta API error occurred: {:?}", e);
-            HttpResponse::Found()
-                .insert_header((
-                    "Location",
-                    "/login?api_error=err_delta_login_4536",
-                ))
-                .body("err_delta_login_4536")
+            Some("err_delta_login_4536")
         }
-    }
+    };
+    login_response(redirect, api_error)
+}
+
+fn login_response(
+    redirect: Option<&str>,
+    api_error: Option<&'static str>,
+) -> HttpResponse {
+    let location = match api_error {
+        Some(_) => login_redirect_url(redirect, api_error),
+        None => redirect
+            .and_then(local_login_redirect)
+            .unwrap_or("/")
+            .to_owned(),
+    };
+    HttpResponse::Found()
+        .insert_header(("Location", location))
+        .body(api_error.unwrap_or("Success. Redirecting.."))
 }
 
 async fn perform_login(

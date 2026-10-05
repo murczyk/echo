@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { minimalInboxMessage } from '../../src/ts/react/routes/rer-duty-neo/inbox-message-mocks';
 
 import {
+  buildMessageCardMediaPreviewInboxResponse,
   createDeferredMediaResponse,
   KML_PREVIEW_FIXTURE,
   MACOS_ZIP_MEMBER_NAMES,
@@ -170,6 +171,71 @@ async function verifyEscapeClose(page: Page, dialog: Locator, reopen: () => Prom
 
 // Regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke @regression', () => {
+  test('ECHO-3660 streams managed playback after readiness and retains original download controls', async ({
+    page,
+  }) => {
+    await openMessageCardPreviewHost(page, 'duty');
+    const fixture = await createPlayableVideoFixture(page);
+    const originalUrl = '/api/messenger/media/browser-cache-test';
+    const inbox = buildMessageCardMediaPreviewInboxResponse();
+    const attachment = inbox.inbox_items[0][1].media?.find((item) => item.id === 'e2e-video-1');
+    expect(attachment).toBeDefined();
+    if (!attachment) throw new Error('Missing video fixture');
+    attachment.href = originalUrl;
+    await page.route('**/api/rer-importer/get-inbox', (route) => route.fulfill({ json: inbox }));
+    let readinessRequests = 0;
+    let streamingRequests = 0;
+    await page.route('**/api/messenger/media/browser-cache-test**', async (route) => {
+      const request = route.request();
+      if (new URL(request.url()).pathname.endsWith('/playback')) {
+        if (request.headers()['x-echo-media-cache-preflight'] === '1') {
+          readinessRequests += 1;
+          expect(request.headers().range).toBe('bytes=0-0');
+          if (readinessRequests === 1) {
+            await route.fulfill({ status: 503, headers: { 'Retry-After': '2' } });
+            return;
+          }
+        } else {
+          streamingRequests += 1;
+        }
+        const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers().range ?? '');
+        const start = range ? Number(range[1]) : 0;
+        const end = range?.[2]
+          ? Math.min(Number(range[2]), fixture.length - 1)
+          : fixture.length - 1;
+        await route.fulfill({
+          status: range ? 206 : 200,
+          contentType: 'video/webm',
+          headers: {
+            'Accept-Ranges': 'bytes',
+            ...(range ? { 'Content-Range': `bytes ${start}-${end}/${fixture.length}` } : {}),
+          },
+          body: fixture.subarray(start, end + 1),
+        });
+        return;
+      }
+      await route.fulfill({ status: 404 });
+    });
+    await page.reload();
+    await page.getByRole('button', { name: /^Розгорнути медіа:/ }).click();
+    const dialog = await openVideoPreview(page);
+    const video = dialog.locator('video');
+    await expect(video).toHaveAttribute('src', resolveFixtureUrl(page, `${originalUrl}/playback`));
+    await video.evaluate(async (element) => {
+      element.muted = true;
+      element.loop = true;
+      await element.play();
+    });
+    await expect(video).toHaveJSProperty('paused', false);
+    expect(readinessRequests).toBe(2);
+    expect(streamingRequests).toBeGreaterThan(0);
+    await expect(dialog.getByRole('link', { name: 'Відкрити в новій вкладці' })).toHaveAttribute(
+      'href',
+      originalUrl,
+    );
+    await expect(dialog.getByRole('button', { name: 'Скачати' })).toBeVisible();
+  });
+
   for (const host of ['duty', 'analysis'] as const) {
     test(`${host} document, map, and other attachment tiles download inside their borders`, async ({
       page,

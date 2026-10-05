@@ -17,6 +17,7 @@ import Route exposing (Route)
 import Route.Path
 import Shared
 import Shared.Components.AdminRoute
+import Utils.LoginRedirect
 import View exposing (View)
 
 
@@ -56,7 +57,7 @@ onPageLoad shared route =
             Auth.Action.pushRoute
                 { path = Route.Path.Login
                 , query =
-                    Dict.empty
+                    Utils.LoginRedirect.loginQuery route.url
                 , hash = Nothing
                 }
 
