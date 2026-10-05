@@ -471,30 +471,28 @@ pub async fn ensure_datasource_group_id<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let (group_name, datasource_group_id) = signal_group::Entity::find()
-        .left_join(datasource_group::Entity)
-        .filter(signal_group::Column::MasterKey.eq(master_key.clone()))
-        .filter(
-            datasource_group::Column::Id.is_null().or(
-                datasource_group::Column::GroupMasterKey
-                    .eq(master_key.clone())
-                    .and(
-                        datasource_group::Column::DatasourceId
-                            .eq(datasource_id),
-                    ),
-            ),
-        )
+    let datasource_group_id = datasource_group::Entity::find()
+        .filter(datasource_group::Column::GroupMasterKey.eq(master_key.clone()))
+        .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
+        .filter(datasource_group::Column::Deleted.eq(false))
+        .order_by_desc(datasource_group::Column::CreatedAt)
         .select_only()
-        .column(signal_group::Column::Name)
         .column(datasource_group::Column::Id)
-        .into_tuple::<(Option<String>, Option<i64>)>()
+        .into_tuple::<i64>()
         .one(db)
         .await
-        .context(h!())?
-        .unwrap_or((None, None));
+        .context(h!())?;
     if let Some(datasource_group_id) = datasource_group_id {
         return Ok(datasource_group_id);
     };
+    let group_name = signal_group::Entity::find_by_id(master_key.clone())
+        .select_only()
+        .column(signal_group::Column::Name)
+        .into_tuple::<Option<String>>()
+        .one(db)
+        .await
+        .context(h!())?
+        .flatten();
 
     let master_key = ensure_signal_group(
         db,
