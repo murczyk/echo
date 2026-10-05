@@ -32,8 +32,9 @@ import Shared.Msg exposing (Msg(..))
 import String
 import Task
 import TimeZone
-import Url
+import Url.Builder
 import Utils.Api.ErrorHandling
+import Utils.LoginRedirect
 import Utils.Api.Temp exposing (leExpectJson)
 import Utils.RemoteData exposing (RemoteData(..))
 
@@ -236,7 +237,7 @@ update req msg model =
 
                 else
                     ( stoppedModel
-                    , E.replaceRoute { path = Route.Path.Login, query = Dict.fromList [ ( "redirect", Url.toString req.url ) ], hash = Nothing }
+                    , E.replaceRoute { path = Route.Path.Login, query = Utils.LoginRedirect.loginQuery req.url, hash = Nothing }
                     )
 
             else
@@ -251,7 +252,7 @@ update req msg model =
               }
             , E.batch
                 [ if req.path == Route.Path.Login then
-                    E.replaceRoutePath Route.Path.Home_
+                    E.loadExternalUrl (Utils.LoginRedirect.destination req.url req.query)
 
                   else if shouldRedirectUnauthorizedPage req.path user then
                     E.replaceRoutePath Route.Path.Home_
@@ -382,7 +383,17 @@ update req msg model =
                 E.none
 
               else
-                E.loadExternalUrl "/api/user/logout"
+                E.loadExternalUrl
+                    (Url.Builder.absolute [ "api", "user", "logout" ]
+                        [ Url.Builder.string "redirect"
+                            (if req.path == Route.Path.Login then
+                                Utils.LoginRedirect.destination req.url req.query
+
+                             else
+                                Utils.LoginRedirect.relativeUrl req.url
+                            )
+                        ]
+                    )
             )
 
         GotLocation loc ->

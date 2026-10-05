@@ -67,7 +67,7 @@ pub async fn login(
 pub async fn build_auth_url(
     config: &Config,
     is_echoua: bool,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(String, CsrfToken)> {
     let (_, client) = build_clients(config, is_echoua).context(h!())?;
 
     let mut url_builder = client.authorize_url(CsrfToken::new_random);
@@ -76,11 +76,12 @@ pub async fn build_auth_url(
     for scope in scopes {
         url_builder = url_builder.add_scope(Scope::new(String::from(scope)));
     }
-    let res = String::from(url_builder.url().0.as_str());
+    let (url, state) = url_builder.url();
+    let res = String::from(url.as_str());
     let claims = urlencoding::encode(&api_config.claims_json);
     let res = format!("{res}&claims={claims}");
     debug!("auth url: {res}");
-    Ok(res)
+    Ok((res, state))
 }
 
 pub fn build_clients(
