@@ -122,3 +122,25 @@ def test_legacy_rtf_is_converted_in_filesystem_sandbox(tmp_path: Path) -> None:
         [sys.executable, "-m", "echo_document_extractor.documents", str(source), str(output)], check=True
     )
     assert "BEREZA" in " ".join(section.text for section in load(output).sections)
+
+
+def test_original_pdf_inspection_preserves_selected_page_3662(tmp_path: Path) -> None:
+    from contextlib import closing
+
+    import pypdfium2 as pdfium
+
+    from echo_document_extractor.worker import _inspection_page
+
+    path = tmp_path / "original.pdf"
+    with closing(pdfium.PdfDocument.new()) as original:
+        original.new_page(200, 300).close()
+        original.new_page(400, 500).close()
+        original.save(str(path))
+    selected, offset = _inspection_page(path, tmp_path, {"inspection_locator": "page 2"})
+    assert offset == 1
+    with closing(pdfium.PdfDocument(str(selected))) as document:
+        assert len(document) == 1
+        with closing(document[0]) as page:
+            assert page.get_size() == (400, 500)
+    with pytest.raises(ValueError, match="outside"):
+        _inspection_page(path, tmp_path, {"inspection_locator": "page 3"})

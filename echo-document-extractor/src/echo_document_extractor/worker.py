@@ -453,6 +453,7 @@ def run_worker(config_path: str | Path) -> None:
 
 def _inspection_page(path: Path, work: Path, metadata: dict) -> tuple[Path, int]:
     import re
+    from contextlib import closing
 
     import pypdfium2 as pdfium
 
@@ -462,7 +463,7 @@ def _inspection_page(path: Path, work: Path, metadata: dict) -> tuple[Path, int]
         return path, 0
     number = int(match.group(1))
     target = work / f"inspection-{path.stem}-{number}.pdf"
-    with pdfium.PdfDocument(str(path)) as source, pdfium.PdfDocument.new() as selected:
+    with closing(pdfium.PdfDocument(str(path))) as source, closing(pdfium.PdfDocument.new()) as selected:
         if not 1 <= number <= len(source):
             raise ValueError("requested page is outside the original PDF")
         selected.import_pages(source, pages=[number - 1])
