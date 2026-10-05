@@ -1272,6 +1272,11 @@ async fn finish_direct_submit(
     }
 
     let precommit_result = async {
+        for replacement in &replacement_results {
+            crate::ocr::queue_replaced_media(&txn, &replacement.media)
+                .await
+                .c(h!())?;
+        }
         if !is_new_message {
             for rename in &attachment_updates.renames {
                 let id = parse_attachment_media_id(&rename.media_id).c(h!())?;
@@ -1558,17 +1563,20 @@ fn direct_submit_timestamp(
 mod tests {
     use super::*;
     use crate::entities::{
-        device_name, intel_product, login, palitra,
+        ai_engine, device_name, intel_product, login, media_summary, ocr_job,
+        ocr_settings, ocr_settings_ai_engine, palitra,
         palitra_highlight_worker_job, sigint_comment, sigint_inbox_item,
         sigint_inbox_item_point_token, sigint_inbox_item_tag, signal_message,
         signal_message_group, signal_message_media, system_settings, tag,
         tag_suggestion_worker_queue,
     };
     use crate::functest::tests::cleanup;
+    use opendal::{services::Memory, Operator};
     use sea_orm::{
         ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait,
         IntoActiveModel, NotSet, PaginatorTrait, QueryFilter, Set,
     };
+    use serde_json::json;
     use serial_test::serial;
 
     const TEST_LOGIN: &str = "Tester";
@@ -2465,6 +2473,168 @@ mod tests {
             .unwrap()
             .is_none());
         assert!(echo_gpu_client::lookup(&env.dbx, media_id)
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3595_replacement_requeues_old_ocr_media() {
+        let env = cleanup().await.unwrap();
+        let mut env = env.as_ref().clone();
+        let s3_config = crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        };
+        env.s3_config = Some(crate::storage::S3Config::from(&s3_config));
+        env.config.s3_config = Some(s3_config);
+        env.s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        let upload_dir = tempfile::tempdir().unwrap();
+        env.config.storage_dir = upload_dir.path().display().to_string();
+        let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        let created = submit_signal_message(
+            &login_id,
+            &env,
+            direct_submit_payload("original #3595"),
+        )
+        .await
+        .unwrap();
+        let media_id = Uuid::now_v7();
+        let created_at =
+            (chrono::Utc::now() - chrono::Duration::days(8)).naive_utc();
+        let original = signal_message_media::ActiveModel {
+            id: Set(media_id),
+            signal_message_id: Set(created.signal_message_id),
+            signal_message_uuid: Set(
+                crate::sigint::message_id::find_signal_message_uuid(
+                    &env.dbx,
+                    created.signal_message_id,
+                )
+                .await
+                .unwrap(),
+            ),
+            content_type: Set("image/png".into()),
+            file_ext: Set(Some("png".into())),
+            file_name: Set(Some("old.png".into())),
+            size_bytes: Set(1),
+            is_encrypted: Set(false),
+            storage_key: Set(Some("old-key".into())),
+            created_at: Set(created_at),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        let engine = ai_engine::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            name: Set(format!("OCR #3595 {}", Uuid::now_v7())),
+            url: Set("http://127.0.0.1:8000/v1".into()),
+            token: Set(None),
+            model_name: Set("ocr-model".into()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            enabled: Set(true),
+            callsign_enabled: Set(true),
+            ocr_enabled: Set(true),
+            ocr_request_profile: Set("openai_vision".into()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let mut settings =
+            ocr_settings::Entity::find_by_id(crate::config::OCR_SETTINGS_ID)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .into_active_model();
+        settings.main_ai_engine_id = Set(Some(engine.id));
+        settings.update(&env.dbx).await.unwrap();
+        ocr_settings_ai_engine::ActiveModel {
+            ocr_settings_id: Set(crate::config::OCR_SETTINGS_ID),
+            ai_engine_id: Set(engine.id),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        ocr_job::ActiveModel {
+            media_id: Set(media_id),
+            state: Set("completed".into()),
+            attempts: Set(3),
+            html_s3_key: Set(Some("old.html".into())),
+            completed_at: Set(Some(now)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        media_summary::ActiveModel {
+            media_id: Set(media_id),
+            source_kind: Set("ocr_text".into()),
+            source_digest: Set("a".repeat(64)),
+            source_text: Set(None),
+            source_char_count: Set(1),
+            state: Set("completed".into()),
+            ai_engine_id: Set(None),
+            ai_engine_name: Set("old".into()),
+            model_name: Set("old".into()),
+            summary: Set(Some("old".into())),
+            coordinates: Set(json!([])),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let tus = crate::sigint::file_upload::tus::TusHandler::new(
+            env.config.storage_dir.clone(),
+            crate::sigint::file_upload::TUS_PATH_BASE,
+        );
+        let crate::sigint::file_upload::tus::CompletedUploadWriteResult::Stored { upload_url, .. } = tus.create_completed_upload(&login_id, crate::sigint::file_upload::tus::TusUploadMetadata { filename: Some("replacement.png".into()), meta_type: Some("image/png".into()), ..Default::default() }, futures_util::stream::iter([Ok(actix_web::web::Bytes::from_static(b"png"))])).await.unwrap() else { panic!() };
+        let mut payload = direct_submit_payload("edited #3595");
+        payload.attachment_updates = Some(DirectSubmitAttachmentUpdates {
+            replacements: vec![
+                crate::sigint::direct_submit::types::DirectSubmitAttachmentReplacement {
+                    media_id: media_id.to_string(),
+                    upload_url,
+                },
+            ],
+            renames: vec![],
+        });
+        edit_signal_message(
+            &login_id,
+            &env,
+            created.signal_message_id,
+            payload,
+        )
+        .await
+        .unwrap();
+        let media = signal_message_media::Entity::find_by_id(media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let job = ocr_job::Entity::find_by_id(media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(media.created_at, original.created_at);
+        assert_eq!(job.state, "queued");
+        assert_eq!(job.ai_engine_id, Some(engine.id));
+        assert_eq!(job.attempts, 0);
+        assert_eq!(job.completed_at, None);
+        assert!(job.html_s3_key.is_none());
+        assert!(job.discovered_at > original.created_at);
+        assert!(job.next_attempt_at > original.created_at);
+        assert!(media_summary::Entity::find_by_id(media_id)
+            .one(&env.dbx)
             .await
             .unwrap()
             .is_none());

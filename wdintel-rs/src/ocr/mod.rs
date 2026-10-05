@@ -655,9 +655,10 @@ struct OcrSelection {
     main_ai_engine_id: Option<Uuid>,
 }
 
-async fn load_ocr_selection(
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<OcrSelection> {
+async fn load_ocr_selection<C>(dbx: &C) -> anyhow::Result<OcrSelection>
+where
+    C: ConnectionTrait,
+{
     let settings = ocr_settings::Entity::find_by_id(OCR_SETTINGS_ID)
         .one(dbx)
         .await
@@ -758,9 +759,12 @@ async fn selected_ocr_engine(
         })
 }
 
-pub(crate) async fn main_ocr_engine(
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<Option<ai_engine::Model>> {
+pub(crate) async fn main_ocr_engine<C>(
+    dbx: &C,
+) -> anyhow::Result<Option<ai_engine::Model>>
+where
+    C: ConnectionTrait,
+{
     let selection = load_ocr_selection(dbx).await.c(h!())?;
     let Some(main_id) = selection.main_ai_engine_id else {
         return Ok(None);
@@ -771,6 +775,45 @@ pub(crate) async fn main_ocr_engine(
         .one(dbx)
         .await
         .c(h!())
+}
+
+pub(crate) async fn queue_replaced_media<C>(
+    dbx: &C,
+    media: &signal_message_media::Model,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    if !media_is_ocr_eligible(media) {
+        return Ok(false);
+    }
+    let Some(engine) = main_ocr_engine(dbx).await.c(h!())? else {
+        return Ok(false);
+    };
+    let now = Utc::now().naive_utc();
+    let result = dbx
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+insert into ocr_job (
+    media_id, state, next_attempt_at, discovered_at, updated_at, force_summary,
+    ai_engine_id, ai_engine_name, model_name, ocr_request_profile
+)
+values ($1, 'queued', $2, $2, $2, false, $3, $4, $5, $6)
+on conflict (media_id) do nothing
+            "#,
+            [
+                media.id.into(),
+                now.into(),
+                engine.id.into(),
+                engine.name.into(),
+                engine.model_name.into(),
+                engine.ocr_request_profile.into(),
+            ],
+        ))
+        .await
+        .c(h!())?;
+    Ok(result.rows_affected() > 0)
 }
 
 async fn load_counts(dbx: &DatabaseConnection) -> anyhow::Result<OcrCounts> {
@@ -942,7 +985,9 @@ fn media_is_pending_candidate(
     media.created_at >= cutoff && media_is_ocr_eligible(media)
 }
 
-fn media_is_ocr_eligible(media: &signal_message_media::Model) -> bool {
+pub(crate) fn media_is_ocr_eligible(
+    media: &signal_message_media::Model,
+) -> bool {
     let content_type = media
         .content_type
         .split(';')
