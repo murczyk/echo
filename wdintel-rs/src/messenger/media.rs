@@ -840,6 +840,7 @@ pub async fn delete_stored_media_files(
     if media.is_empty() && ocr_result_keys.is_empty() {
         return;
     }
+    let attachment_prefix = crate::attachments::store::artifact_prefix(config);
     let Some(config) = config.s3_config.as_ref() else {
         warn!("S3 is not configured, cannot delete attachment files!");
         return;
@@ -872,6 +873,11 @@ pub async fn delete_stored_media_files(
         }
     }
     for object_key in ocr_result_keys {
+        if object_key.starts_with("attachments/")
+            && !object_key.starts_with(&attachment_prefix)
+        {
+            continue;
+        }
         let remote_key = s3_config.prefixed_key(object_key);
         if let Err(e) = s3.delete(&remote_key).await {
             error!(

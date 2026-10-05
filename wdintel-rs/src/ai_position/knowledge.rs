@@ -758,20 +758,30 @@ where
     LinkCandidate::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         format!(
-            "select coalesce(message.body, '') as text, message.id as message_id,
-                    coalesce(item.datetime, message.timestamp, message.created_at) as message_at,
+            "select source.text, source.attachment_chunk_id, message.id as message_id,
+                    case when source.attachment_chunk_id is null then coalesce(item.datetime,message.timestamp,message.created_at) else coalesce(message.timestamp,message.created_at) end as message_at,
                     {SOURCE_GROUP_COLUMNS}
              from signal_message message
              join sigint_inbox_item item on item.id = message.id
              {SOURCE_GROUP_SQL}
+             cross join lateral (
+                 select coalesce(message.body,'') as text, null::uuid as attachment_chunk_id
+                 union all
+                 select chunk.text,chunk.id from signal_message_media media
+                 join attachment_document doc on doc.media_id=media.id
+                 join attachment_chunk chunk on chunk.media_id=media.id and chunk.revision=doc.revision
+                 where media.signal_message_id=message.id
+             ) source
              where message.id = any($1)
                and grp.group_master_key = any($2)
-               and {time}
+               and ((source.attachment_chunk_id is null and {time}) or (source.attachment_chunk_id is not null and coalesce(message.timestamp,message.created_at) between $3 and $4))
                and not message.deleted
-               and translate(lower(message.body), '{FOLD_FROM}', '{FOLD_TO}') like $5
+               and translate(lower(source.text), '{FOLD_FROM}', '{FOLD_TO}') like $5
                and not exists (
                    select 1 from ai_position_mention m
-                   where m.sigint_inbox_item_id = message.id and m.name_key = $6
+                   where m.name_key = $6 and (
+                       source.attachment_chunk_id is null and m.sigint_inbox_item_id=message.id
+                       or source.attachment_chunk_id is not null and m.attachment_chunk_id=source.attachment_chunk_id)
                )
              order by message.id"
         ),
@@ -940,18 +950,29 @@ where
     ))
     .await
     .c(h!())?;
+    if let Some(id) = source.attachment_chunk_id {
+        dbx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select 1 from attachment_chunk where id=$1 for share",
+            [id.into()],
+        ))
+        .await
+        .c(h!())?;
+    }
     let current = Current::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "select coalesce(message.body, '') as body,
+        "select coalesce(chunk.text,message.body,'') as body,
                 (select smg.group_master_key from signal_message_group smg
                  where smg.signal_message_id = message.id and smg.group_master_key is not null
                  order by smg.id limit 1) as group_master_key,
-                coalesce(item.datetime, message.timestamp, message.created_at) as message_at
+                case when $2::uuid is null then coalesce(item.datetime,message.timestamp,message.created_at) else coalesce(message.timestamp,message.created_at) end as message_at
          from signal_message message
          join sigint_inbox_item item on item.id = message.id
-         where message.id = $1 and not message.deleted
+         left join signal_message_media media on media.signal_message_id=message.id and $2::uuid is not null
+         left join attachment_chunk chunk on chunk.media_id=media.id and chunk.id=$2
+         where message.id = $1 and not message.deleted and ($2::uuid is null or chunk.id=$2)
          for share of message, item",
-        [source.message_id.into()],
+        [source.message_id.into(), source.attachment_chunk_id.into()],
     ))
     .one(dbx)
     .await
@@ -965,6 +986,7 @@ where
 
 #[derive(FromQueryResult)]
 struct LinkCandidate {
+    attachment_chunk_id: Option<uuid::Uuid>,
     text: String,
     message_id: i64,
     message_at: NaiveDateTime,
@@ -976,6 +998,7 @@ struct LinkCandidate {
 impl LinkCandidate {
     fn into_source(self) -> super::worker::Source {
         super::worker::Source {
+            attachment_chunk_id: self.attachment_chunk_id,
             text: self.text,
             message_id: self.message_id,
             message_at: self.message_at,

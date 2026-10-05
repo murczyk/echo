@@ -87,6 +87,7 @@ import { AdminAiPositionPage, AdminAiPositionsPage } from '../admin-ai-positions
 import { AdminAiSettlementsPage } from '../admin-ai-settlements';
 import { AdminAiIntelReportsPage } from '../admin-ai-intel-reports';
 import { AdminOcrPage } from '../admin-ocr';
+import { AdminDocumentsPage } from '../admin-documents';
 import { AiEnginesSection } from '../admin-system-settings-neo/AiEnginesSection';
 import {
   type AiAgentEngineCompatibility,
@@ -107,6 +108,7 @@ export type AiAgentAdminSection =
   | 'positions'
   | 'position'
   | 'intelligence-reports'
+  | 'documents'
   | 'ocr'
   | 'settings';
 
@@ -1985,6 +1987,8 @@ export function AdminAiAgentPage({
       return <AdminAiPositionPage id={itemId} />;
     case 'intelligence-reports':
       return <AdminAiIntelReportsPage />;
+    case 'documents':
+      return <AdminDocumentsPage />;
     case 'ocr':
       return <AdminOcrPage />;
     case 'settings':

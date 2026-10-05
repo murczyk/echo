@@ -49,6 +49,10 @@ pub enum Relation {
     AiIntelReportAttempt,
     #[sea_orm(has_many = "super::ai_intel_report_settings::Entity")]
     AiIntelReportSettings,
+    #[sea_orm(has_many = "super::ai_position_mention::Entity")]
+    AiPositionMention,
+    #[sea_orm(has_many = "super::ai_position_settings::Entity")]
+    AiPositionSettings,
     #[sea_orm(has_many = "super::ai_settlement_parse_result::Entity")]
     AiSettlementParseResult,
     #[sea_orm(has_many = "super::ai_settlement_settings::Entity")]
@@ -122,6 +126,18 @@ impl Related<super::ai_intel_report_attempt::Entity> for Entity {
 impl Related<super::ai_intel_report_settings::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiIntelReportSettings.def()
+    }
+}
+
+impl Related<super::ai_position_mention::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiPositionMention.def()
+    }
+}
+
+impl Related<super::ai_position_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiPositionSettings.def()
     }
 }
 

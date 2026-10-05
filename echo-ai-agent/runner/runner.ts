@@ -1,3 +1,4 @@
+import { ATTACHMENT_ROUTES, ATTACHMENT_PARAMETERS, ATTACHMENT_DESCRIPTION, attachmentRequest } from "./attachments.ts";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -37,7 +38,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.04.1";
+const HARNESS_RELEASE = "2026.10.05.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -105,7 +106,11 @@ interface SkillDefinition {
     | "messageIds"
     | "mapRecords"
     | "mapDocument"
-    | "mapEdit";
+    | "mapEdit"
+    | "attachmentSearch"
+    | "attachmentRead"
+    | "attachmentInspect"
+    | "attachmentStatus";
 }
 
 interface TimeContext {
@@ -465,6 +470,7 @@ export function validateSkill(value: unknown): SkillDefinition {
     route.requestKind !== "interceptionContext" &&
     route.requestKind !== "messageIds" &&
     route.requestKind !== "positionLookup" &&
+    !Object.values(ATTACHMENT_ROUTES).some((entry) => entry.kind === route.requestKind) &&
     route.requestKind !== "mapRecords" &&
     route.requestKind !== "mapDocument" &&
     route.requestKind !== "mapEdit"
@@ -472,6 +478,7 @@ export function validateSkill(value: unknown): SkillDefinition {
     throw new Error("skill requestKind is invalid");
   }
   if (
+    (String(route.requestKind).startsWith("attachment") && (ATTACHMENT_ROUTES[skill]?.kind !== route.requestKind || ATTACHMENT_ROUTES[skill]?.path !== path)) ||
     (route.method === "GET" && route.requestKind !== "none") ||
     (route.method === "POST" && route.requestKind === "none") ||
     (route.requestKind === "analysisPeriod" &&
@@ -1436,6 +1443,11 @@ function projectMessageFields(
     unit: typeof message.unit === "string" ? message.unit : null,
     location: typeof message.location === "string" ? message.location : null,
     text: text.text,
+    ...(Array.isArray(message.media) ? { attachments: message.media.slice(0, 50).map((value) => {
+      const media = value as JsonObject;
+      return { mediaId: media.id, fileName: media.file_name, contentType: media.content_type,
+        summaryState: media.summary, ocrState: media.ocr };
+    }) } : {}),
     recognizedImageText: recognizedImageText.text,
     truncated: text.truncated || recognizedImageText.truncated,
   };
@@ -1745,6 +1757,30 @@ export function compactToolResponse(
   ) {
     return compactMessageBearingResponse(route.skill, value, maxCharacters);
   }
+  if (route.requestKind.startsWith("attachment")) {
+    const document = structuredClone(value) as JsonObject;
+    const result = document.result && typeof document.result === "object" ? document.result as JsonObject : document;
+    if (Array.isArray(result.sections)) {
+      for (const section of result.sections as JsonObject[]) { delete section.html; delete section.text; }
+      while (JSON.stringify(document).length > maxCharacters && result.sections.length > 1) {
+        result.sections.pop();
+        result.nextAfter = (result.sections.at(-1) as JsonObject).ordinal;
+      }
+      if (result !== document && result.nextAfter != null) {
+        result.nextAfter = null;
+        result.warnings = [...(Array.isArray(result.warnings) ? result.warnings : []), "Result shortened; inspect a more specific member or locator for remaining sections"];
+      }
+    }
+    if (Array.isArray(result.documents)) {
+      while (JSON.stringify(document).length > maxCharacters && result.documents.length > 1) {
+        result.documents.pop();
+        result.nextCursor = (result.documents.at(-1) as JsonObject).mediaId;
+      }
+    }
+    const encoded = JSON.stringify(document);
+    if (encoded.length > maxCharacters) throw new Error("Attachment response exceeds available context; request fewer sections");
+    return encoded;
+  }
   const original = value;
   let itemLimit = maxItems;
   let stringLimit = INBOX_TEXT_MAX_CHARACTERS;
@@ -1833,6 +1869,7 @@ export function interceptionContextRequestBody(params: unknown): JsonObject {
 }
 
 function routeDescription(route: SkillDefinition): string {
+  if (ATTACHMENT_DESCRIPTION[route.requestKind]) return ATTACHMENT_DESCRIPTION[route.requestKind];
   switch (route.requestKind) {
     case "analysisPeriod":
     case "dailyActivity":
@@ -1855,6 +1892,7 @@ function routeDescription(route: SkillDefinition): string {
 }
 
 function routeParameters(route: SkillDefinition) {
+  if (route.requestKind in ATTACHMENT_PARAMETERS) return ATTACHMENT_PARAMETERS[route.requestKind as keyof typeof ATTACHMENT_PARAMETERS];
   switch (route.requestKind) {
     case "analysisPeriod":
       return route.skill === "callsign_relations"
@@ -1888,6 +1926,7 @@ function routeRequestBody(
   params: JsonObject,
   timeContext: TimeContext,
 ): unknown {
+  if (route.requestKind.startsWith("attachment")) return attachmentRequest(route.requestKind, params);
   switch (route.requestKind) {
     case "analysisPeriod":
       return analysisPeriodRequestBody(

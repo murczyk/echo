@@ -336,7 +336,7 @@ pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
 pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.04.1";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.05.2";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -2430,3 +2430,18 @@ fill_comp_freq_worker = false
         );
     }
 }
+
+pub const ATTACHMENT_BATCH_SIZE: i64 = 50;
+pub const ATTACHMENT_CHUNK_CHARS: usize = 12_000;
+pub const ATTACHMENT_CHUNK_OVERLAP: usize = 1000;
+pub const ATTACHMENT_WORKER_SLEEP_SECS: u64 = 5;
+pub const ATTACHMENT_LEASE_SECS: i64 = 900;
+pub const ATTACHMENT_MAX_ATTEMPTS: i32 = 8;
+pub const ATTACHMENT_SEARCH_LIMIT: i64 = 20;
+pub const ATTACHMENT_READ_LIMIT: i64 = 4;
+pub const ATTACHMENT_MAX_QUERY_CHARS: usize = 1_000;
+pub const ATTACHMENT_MAX_RESULT_BYTES: usize = 250 * 1024 * 1024;
+
+pub const ATTACHMENT_MAX_INSPECTION_JOBS: i64 = 32;
+
+pub const ATTACHMENT_EXTRACTOR_URL_ENV: &str = "ATTACHMENT_EXTRACTOR_URL";

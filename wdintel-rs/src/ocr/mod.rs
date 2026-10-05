@@ -139,14 +139,28 @@ where
     if media_ids.is_empty() {
         return Ok(vec![]);
     }
-    Ok(ocr_job::Entity::find()
+    let mut keys: Vec<String> = ocr_job::Entity::find()
         .filter(ocr_job::Column::MediaId.is_in(media_ids.iter().copied()))
         .all(dbx)
         .await
         .c(h!())?
         .into_iter()
         .filter_map(|job| job.html_s3_key)
-        .collect())
+        .collect();
+    let documents = crate::entities::attachment_document::Entity::find()
+        .filter(
+            crate::entities::attachment_document::Column::MediaId
+                .is_in(media_ids.iter().copied()),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    keys.extend(
+        documents
+            .into_iter()
+            .filter_map(|document| document.artifact_key),
+    );
+    Ok(keys)
 }
 
 pub async fn load_media_summaries(
