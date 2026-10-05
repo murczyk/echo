@@ -49,6 +49,16 @@ test('@regression #3650 historical CSV import requires preflight', async ({ page
       });
       return;
     }
+    if (url.pathname === '/api/rer/csv-import/options') {
+      await fulfillJson(route, {
+        signalGroups: [
+          { masterKey: 'csv-target', name: 'CSV target' },
+          { masterKey: 'other-group', name: 'Other group' },
+        ],
+        defaultTargetSignalGroupMasterKey: null,
+      });
+      return;
+    }
     if (url.pathname === '/api/rer/csv-import/preflight') {
       preflightRequests += 1;
       if (preflightRequests === 2) {
@@ -101,6 +111,8 @@ test('@regression #3650 historical CSV import requires preflight', async ({ page
   await page.goto('/admin/rer-csv-import');
   const preflight = page.getByRole('button', { name: 'Перевірити дані' });
   const importButton = page.getByRole('button', { name: 'Імпортувати' });
+  const targetGroup = page.getByLabel('Цільова група');
+  await expect(targetGroup).toHaveValue('');
   await expect(preflight).toBeDisabled();
   await expect(importButton).toBeDisabled();
 
@@ -112,6 +124,8 @@ test('@regression #3650 historical CSV import requires preflight', async ({ page
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe('first-skipped-messages.csv');
   await expect(page.getByText(/1 повідомлень із 2 буде пропущено/)).toBeVisible();
+  await expect(importButton).toBeDisabled();
+  await targetGroup.selectOption('csv-target');
   await expect(importButton).toBeEnabled();
 
   await selectCsv(page, 'second.csv', 'Час: 00:05');
@@ -138,6 +152,7 @@ test('@regression #3650 historical CSV import requires preflight', async ({ page
   expect(importUrls[0]!.searchParams.get('referenceTimestampMs')).toBe(
     String(referenceTimestampMs),
   );
+  expect(importUrls[0]!.searchParams.get('targetSignalGroupMasterKey')).toBe('csv-target');
   releaseTaskStatus();
   await expect(importButton).toBeEnabled();
 });

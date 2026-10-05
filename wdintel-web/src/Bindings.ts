@@ -383,6 +383,16 @@ export type RerCsvPreflightMetadata = {
   invalidMessageSize: number;
 };
 
+export type RerCsvImportSignalGroup = {
+  masterKey: string;
+  name: string;
+};
+
+export type RerCsvImportOptions = {
+  signalGroups: Array<RerCsvImportSignalGroup>;
+  defaultTargetSignalGroupMasterKey: string | null;
+};
+
 export type AreaOfResponsibilityEntry = {
   id: number;
   name: string;

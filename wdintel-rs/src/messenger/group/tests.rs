@@ -4,6 +4,55 @@ use serial_test::serial;
 
 #[serial]
 #[tokio::test]
+async fn ensure_datasource_group_id_ignores_deleted_mapping() {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let datasource = mk_datasource(&txn, Default::default()).await.unwrap();
+    let group_name = "Soft-deleted mapping group".to_string();
+    let group = mk_signal_group(
+        &txn,
+        signal_group::ActiveModel {
+            name: Set(Some(group_name.clone())),
+            datasource_id: Set(Some(datasource.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let deleted_mapping = mk_datasource_group(
+        &txn,
+        datasource_group::ActiveModel {
+            group_master_key: Set(group.master_key.clone()),
+            datasource_id: Set(datasource.id),
+            deleted: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let datasource_group_id = ensure_datasource_group_id(
+        &txn,
+        group.master_key.clone(),
+        datasource.id,
+    )
+    .await
+    .unwrap();
+
+    assert_ne!(datasource_group_id, deleted_mapping.id);
+    let datasource_group =
+        datasource_group::Entity::find_by_id(datasource_group_id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+    assert!(!datasource_group.deleted);
+    assert_eq!(datasource_group.name, group_name);
+    txn.rollback().await.unwrap();
+}
+
+#[serial]
+#[tokio::test]
 async fn collect_groups_includes_whatsapp_only_group_names() {
     let env = cleanup().await.unwrap();
     let jid = "whatsapp-only-saved-filter-group".to_string();

@@ -5,11 +5,11 @@ use crate::config::{
 use crate::delta::finish_bgtask;
 use crate::messenger::id;
 use crate::rer_importer::bgtask_log;
-use crate::users::ensure_message_write;
+use crate::users::{ensure_admin, ensure_message_write};
 use crate::utils::*;
 use crate::{entities::*, error::*, types::*};
 use actix_multipart::Multipart;
-use actix_web::{post, web, web::Json, HttpResponse};
+use actix_web::{get, post, web, web::Json, HttpResponse};
 use anyhow::Context;
 use chrono::prelude::*;
 use chrono_tz::Tz;
@@ -72,6 +72,40 @@ pub struct RerCsvPreflightMetadata {
     pub valid: usize,
     pub missing_timestamp: usize,
     pub invalid_message_size: usize,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct RerCsvImportSignalGroup {
+    pub master_key: String,
+    pub name: String,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct RerCsvImportOptions {
+    pub signal_groups: Vec<RerCsvImportSignalGroup>,
+    pub default_target_signal_group_master_key: Option<String>,
 }
 
 fn read_rer_csv_records(
@@ -277,9 +311,10 @@ struct RerCsvImportContext<'a> {
     rq: &'a reqwest::Client,
     config: &'a Config,
     group_id: String,
-    datasource_id: i64,
+    datasource_group_id: i64,
     source_uuid: String,
     import_as_new: bool,
+    reconcile_target_group: bool,
     lnow: DateTime<Tz>,
 }
 
@@ -338,14 +373,6 @@ async fn persist_rer_csv_message(
     body: String,
     timestamp: NaiveDateTime,
 ) -> anyhow::Result<i64> {
-    let datasource_group_id =
-        crate::messenger::group::ensure_datasource_group_id(
-            context.dbx,
-            context.group_id.clone(),
-            context.datasource_id,
-        )
-        .await
-        .context(h!())?;
     let message = signal_message::ActiveModel {
         id: NotSet,
         id_uuid: Set(Some(crate::sigint::message_id::signal_message_uuid(
@@ -362,7 +389,7 @@ async fn persist_rer_csv_message(
         external_id: NotSet,
         echo_inbox_message_id: Set(None),
         message_uid: NotSet,
-        datasource_group_id: Set(Some(datasource_group_id)),
+        datasource_group_id: Set(Some(context.datasource_group_id)),
         operator_tags: NotSet,
         attachments_hash: NotSet,
     }
@@ -402,6 +429,75 @@ async fn persist_rer_csv_message(
     Ok(message_id)
 }
 
+async fn reconcile_rer_csv_message_target_group(
+    context: &RerCsvImportContext<'_>,
+    message_id: i64,
+) -> anyhow::Result<()> {
+    let txn = context.dbx.begin().await.context(h!())?;
+    let datasource_group_id = context.datasource_group_id;
+    let message = signal_message::Entity::find_by_id(message_id)
+        .one(&txn)
+        .await
+        .context(h!())?
+        .context(h!())?;
+    let message = if message.datasource_group_id != Some(datasource_group_id) {
+        let mut message_act = message.into_active_model();
+        message_act.datasource_group_id = Set(Some(datasource_group_id));
+        message_act.update(&txn).await.context(h!())?
+    } else {
+        message
+    };
+    let group_link = signal_message_group::Entity::find()
+        .filter(signal_message_group::Column::SignalMessageId.eq(message.id))
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq(context.group_id.clone()),
+        )
+        .order_by_asc(signal_message_group::Column::Id)
+        .one(&txn)
+        .await
+        .context(h!())?;
+    match group_link {
+        Some(group_link)
+            if group_link.signal_message_uuid != message.id_uuid
+                || group_link.sender != message.sender
+                || group_link.login_id != message.login_id
+                || group_link.message_uid != message.message_uid
+                || group_link.datasource_group_id
+                    != Some(datasource_group_id)
+                || group_link.created_at != message.created_at =>
+        {
+            let mut group_link_act = group_link.into_active_model();
+            group_link_act.signal_message_uuid = Set(message.id_uuid);
+            group_link_act.sender = Set(message.sender.clone());
+            group_link_act.login_id = Set(message.login_id);
+            group_link_act.message_uid = Set(message.message_uid.clone());
+            group_link_act.datasource_group_id = Set(Some(datasource_group_id));
+            group_link_act.created_at = Set(message.created_at);
+            group_link_act.update(&txn).await.context(h!())?;
+        }
+        Some(_) => {}
+        None => {
+            signal_message_group::ActiveModel {
+                id: NotSet,
+                signal_message_id: Set(message.id),
+                signal_message_uuid: Set(message.id_uuid),
+                group_master_key: Set(Some(context.group_id.clone())),
+                sender: Set(message.sender.clone()),
+                login_id: Set(message.login_id),
+                message_uid: Set(message.message_uid.clone()),
+                datasource_group_id: Set(Some(datasource_group_id)),
+                created_at: Set(message.created_at),
+            }
+            .insert(&txn)
+            .await
+            .context(h!())?;
+        }
+    }
+    txn.commit().await.context(h!())?;
+    Ok(())
+}
+
 async fn process_imported_rer_csv_message(
     context: &RerCsvImportContext<'_>,
     redis: &mut redis::aio::ConnectionManager,
@@ -430,15 +526,32 @@ async fn process_imported_rer_csv_message(
         )
         .await
     };
+    let processed_message_ids = if changed_inbox_item_ids.is_empty() {
+        vec![message_id]
+    } else {
+        changed_inbox_item_ids.clone()
+    };
+    if context.reconcile_target_group {
+        for processed_message_id in &processed_message_ids {
+            reconcile_rer_csv_message_target_group(
+                context,
+                *processed_message_id,
+            )
+            .await
+            .context(h!())?;
+        }
+    }
     crate::inbox::fanout_inbox_changes(redis, changed_inbox_item_ids)
         .await
         .context(h!())?;
-    crate::sigint::worker::incoming_message_after_insert(
-        context.dbx,
-        message_id,
-    )
-    .await
-    .context(h!())?;
+    for processed_message_id in processed_message_ids {
+        crate::sigint::worker::incoming_message_after_insert(
+            context.dbx,
+            processed_message_id,
+        )
+        .await
+        .context(h!())?;
+    }
     Ok(())
 }
 
@@ -449,8 +562,17 @@ pub async fn oneoff_rer_csv_import_go(
     ps: &crate::OneoffRerCsvImportPs,
     bgid: Option<i64>,
     lnow: DateTime<Tz>,
+    target_signal_group_master_key: &str,
 ) -> Result<(), AppError> {
-    let res = oneoff_rer_csv_import_at(mode, redis, ps, bgid, lnow).await;
+    let res = oneoff_rer_csv_import_at(
+        mode,
+        redis,
+        ps,
+        bgid,
+        lnow,
+        Some(target_signal_group_master_key),
+    )
+    .await;
     crate::delta::finish_bgtask(bgid, dbx, &res).await.c(h!())?;
     res
 }
@@ -462,7 +584,66 @@ pub async fn oneoff_rer_csv_import_1(
     bgid: Option<i64>,
 ) -> Result<(), AppError> {
     let lnow = Local::now().with_timezone(&crate::config::get_tz());
-    oneoff_rer_csv_import_at(mode, redis, ps, bgid, lnow).await
+    oneoff_rer_csv_import_at(mode, redis, ps, bgid, lnow, None).await
+}
+
+async fn load_rer_csv_import_options(
+    dbx: &DatabaseConnection,
+    config: &Config,
+) -> anyhow::Result<RerCsvImportOptions> {
+    let groups = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
+        .order_by_asc(signal_group::Column::Name)
+        .order_by_desc(signal_group::Column::CreatedAt)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let default_target_signal_group_master_key = groups
+        .iter()
+        .find(|group| {
+            group.name.as_deref()
+                == Some(config.signal_import_group_name.as_str())
+        })
+        .map(|group| group.master_key.clone());
+    let signal_groups = groups
+        .into_iter()
+        .map(|group| RerCsvImportSignalGroup {
+            name: group
+                .name
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or_else(|| group.master_key.clone()),
+            master_key: group.master_key,
+        })
+        .collect();
+    Ok(RerCsvImportOptions {
+        signal_groups,
+        default_target_signal_group_master_key,
+    })
+}
+
+async fn find_target_rer_csv_import_group(
+    dbx: &DatabaseConnection,
+    master_key: &str,
+) -> anyhow::Result<Option<signal_group::Model>> {
+    let group = if master_key.trim().is_empty() {
+        None
+    } else {
+        signal_group::Entity::find_by_id(master_key)
+            .filter(signal_group::Column::Deleted.eq(false))
+            .filter(signal_group::Column::IsArchived.eq(false))
+            .one(dbx)
+            .await
+            .c(h!())?
+    };
+    Ok(group)
+}
+
+fn target_rer_csv_import_group_error() -> AppError {
+    AppError::BL {
+        msg: "Target signal group is required or no longer available"
+            .to_string(),
+    }
 }
 
 async fn oneoff_rer_csv_import_at(
@@ -471,6 +652,7 @@ async fn oneoff_rer_csv_import_at(
     ps: &crate::OneoffRerCsvImportPs,
     bgid: Option<i64>,
     lnow: DateTime<Tz>,
+    target_signal_group_master_key: Option<&str>,
 ) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
@@ -510,23 +692,38 @@ async fn oneoff_rer_csv_import_at(
         .await
         .c(h!())?;
 
-    let group_name = config.signal_import_group_name.clone();
-    let group = signal_group::Entity::find()
-        .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::Name.eq(group_name))
-        .order_by_desc(signal_group::Column::CreatedAt)
-        .one(&dbx)
-        .await
-        .c(h!())?;
-    let Some(group) = group else {
-        return Err(AppError::BL {
-            msg: format!(
-                "Signal group for import not found: {}; create in signal_group table",
-                config.signal_import_group_name
-            ),
-        });
+    let group = match target_signal_group_master_key {
+        Some(master_key) => {
+            let group = find_target_rer_csv_import_group(&dbx, master_key)
+                .await
+                .c(h!())?;
+            let Some(group) = group else {
+                return Err(target_rer_csv_import_group_error());
+            };
+            group
+        }
+        None => {
+            let group_name = config.signal_import_group_name.clone();
+            let group = signal_group::Entity::find()
+                .filter(signal_group::Column::Deleted.eq(false))
+                .filter(signal_group::Column::Name.eq(group_name))
+                .order_by_desc(signal_group::Column::CreatedAt)
+                .one(&dbx)
+                .await
+                .c(h!())?;
+            let Some(group) = group else {
+                return Err(AppError::BL {
+                    msg: format!(
+                        "Signal group for import not found: {}; create in signal_group table",
+                        config.signal_import_group_name
+                    ),
+                });
+            };
+            group
+        }
     };
     let group_id = group.master_key;
+    let group_datasource_id = group.datasource_id;
 
     let sender_name = config.signal_import_fiven_name.clone();
     let signal_profile = signal_profile::Entity::find()
@@ -546,23 +743,38 @@ async fn oneoff_rer_csv_import_at(
     let source_uuid = signal_profile.uuid;
 
     // choose datasource for this group based on datasource_group mapping
-    let datasource_id = datasource_group::Entity::find()
-        .filter(datasource_group::Column::GroupMasterKey.eq(group_id.clone()))
-        .order_by_desc(datasource_group::Column::CreatedAt)
-        .one(&dbx)
+    let datasource_id = match group_datasource_id {
+        Some(datasource_id) => datasource_id,
+        None => datasource_group::Entity::find()
+            .filter(
+                datasource_group::Column::GroupMasterKey.eq(group_id.clone()),
+            )
+            .filter(datasource_group::Column::Deleted.eq(false))
+            .order_by_desc(datasource_group::Column::CreatedAt)
+            .one(&dbx)
+            .await
+            .c(h!())?
+            .map(|datasource_group| datasource_group.datasource_id)
+            .unwrap_or(crate::config::SIGNAL_DATASOURCE_ID),
+    };
+    let datasource_group_id =
+        crate::messenger::group::ensure_datasource_group_id(
+            &dbx,
+            group_id.clone(),
+            datasource_id,
+        )
         .await
-        .map(|m| m.map(|dg| dg.datasource_id))
-        .unwrap_or(None)
-        .unwrap_or(crate::config::SIGNAL_DATASOURCE_ID);
+        .c(h!())?;
     let context = RerCsvImportContext {
         settlements,
         dbx: &dbx,
         rq: &rq,
         config: &config,
         group_id,
-        datasource_id,
+        datasource_group_id,
         source_uuid,
         import_as_new: ps.import_as_new,
+        reconcile_target_group: target_signal_group_master_key.is_some(),
         lnow,
     };
 
@@ -621,6 +833,19 @@ pub async fn oneoff_rer_csv_import(
     oneoff_rer_csv_import_1(mode, &mut redis, ps, None).await
 }
 
+#[get("/api/rer/csv-import/options")]
+pub async fn rer_csv_import_options(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<RerCsvImportOptions>, AppError> {
+    ensure_message_write(&env.dbx, &user).await.c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let options = load_rer_csv_import_options(&env.dbx, &env.config)
+        .await
+        .c(h!())?;
+    Ok(Json(options))
+}
+
 #[post("/api/rer/csv-import/preflight")]
 pub async fn rer_csv_import_preflight(
     user: actix_identity::Identity,
@@ -645,6 +870,7 @@ pub async fn rer_csv_import_preflight(
 pub struct RerCsvImportQuery {
     is_historical: Option<bool>,
     reference_timestamp_ms: Option<i64>,
+    target_signal_group_master_key: String,
 }
 
 fn rer_csv_import_reference_time(
@@ -677,12 +903,24 @@ pub async fn rer_csv_import(
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
     ensure_message_write(&env.dbx, &user).await.c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     let is_historical = query.is_historical.unwrap_or(true);
     let reference_time = rer_csv_import_reference_time(
         is_historical,
         query.reference_timestamp_ms,
     )
     .context(h!())?;
+    let target_signal_group = find_target_rer_csv_import_group(
+        &env.dbx,
+        &query.target_signal_group_master_key,
+    )
+    .await
+    .c(h!())?;
+    if target_signal_group.is_none() {
+        return Err(target_rer_csv_import_group_error());
+    }
+    let target_signal_group_master_key =
+        query.target_signal_group_master_key.clone();
     let (_, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", tmp_dir.path().display());
@@ -711,7 +949,7 @@ pub async fn rer_csv_import(
     let bgtask_id2 = Box::new(bgtask_id);
     let import_as_new = Box::new(!is_historical);
     let reference_time = Box::new(reference_time);
-    tokio::spawn(async {
+    tokio::spawn(async move {
         let _tmp_dir = tmp_dir;
         let dbx3 = dbx2;
         let mut redis3 = redis2;
@@ -734,6 +972,7 @@ pub async fn rer_csv_import(
             },
             Some(*bgtask_id3),
             *reference_time2,
+            &target_signal_group_master_key,
         )
         .await;
         let res = finish_bgtask(Some(*bgtask_id3), &dbx3, &res).await;
@@ -1316,6 +1555,12 @@ pub async fn ensure_import_group_exists(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use actix_identity::IdentityMiddleware;
+    use actix_session::{storage::RedisSessionStore, SessionMiddleware};
+    use actix_web::{
+        cookie::Key, test as actix_test, web, App, HttpMessage, HttpRequest,
+        HttpResponse,
+    };
     use chrono::TimeZone;
     use std::path::PathBuf;
 
@@ -1334,6 +1579,18 @@ mod tests {
             writer.serialize((body,)).unwrap();
         }
         writer.flush().unwrap();
+    }
+
+    async fn rer_csv_import_test_login(
+        request: HttpRequest,
+        login_id: web::Path<Uuid>,
+    ) -> HttpResponse {
+        actix_identity::Identity::login(
+            &request.extensions(),
+            login_id.to_string(),
+        )
+        .unwrap();
+        HttpResponse::NoContent().finish()
     }
 
     async fn assert_historical_import_reuses_split_reference_time(
@@ -1385,6 +1642,7 @@ mod tests {
             },
             None,
             import_now,
+            None,
         )
         .await
         .unwrap();
@@ -1419,15 +1677,24 @@ mod tests {
         let bodies = (0..65)
             .map(|index| format!("historical UID {index} {marker}"))
             .collect::<Vec<_>>();
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                group_id.clone(),
+                datasource_id,
+            )
+            .await
+            .unwrap();
         let context = RerCsvImportContext {
             settlements: env.settlements.clone(),
             dbx: &env.dbx,
             rq: &env.rq,
             config: &env.config,
             group_id,
-            datasource_id,
+            datasource_group_id,
             source_uuid,
             import_as_new: false,
+            reconcile_target_group: false,
             lnow: fixed_now(),
         };
 
@@ -1493,6 +1760,99 @@ mod tests {
             ("..", "upload-skipped-messages.csv"),
         ] {
             assert_eq!(skipped_messages_filename_from_source(source), expected);
+        }
+    }
+
+    #[actix_web::test]
+    #[serial_test::serial]
+    async fn issue_3650_csv_target_group_endpoints_require_admin_writer() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let writer = crate::functest::tests::mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                roles: Set(serde_json::json!(["Rer"])),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let admin_writer = crate::functest::tests::mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                roles: Set(serde_json::json!(["Admin", "Rer"])),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::from(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(session_store, Key::generate()))
+                .route(
+                    "/test/rer-csv-import-login/{login_id}",
+                    web::post().to(rer_csv_import_test_login),
+                )
+                .service(rer_csv_import_options)
+                .service(rer_csv_import),
+        )
+        .await;
+
+        for (login_id, expected_status) in [
+            (writer.id, actix_web::http::StatusCode::FORBIDDEN),
+            (admin_writer.id, actix_web::http::StatusCode::OK),
+        ] {
+            let login_response = actix_test::call_service(
+                &app,
+                actix_test::TestRequest::post()
+                    .uri(&format!("/test/rer-csv-import-login/{login_id}"))
+                    .to_request(),
+            )
+            .await;
+            let session_cookie = login_response
+                .response()
+                .cookies()
+                .next()
+                .unwrap()
+                .into_owned();
+            let options_response = actix_test::call_service(
+                &app,
+                actix_test::TestRequest::get()
+                    .uri("/api/rer/csv-import/options")
+                    .cookie(session_cookie.clone())
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(options_response.status(), expected_status);
+
+            if expected_status == actix_web::http::StatusCode::FORBIDDEN {
+                let import_response = actix_test::call_service(
+                    &app,
+                    actix_test::TestRequest::post()
+                        .uri(
+                            "/api/rer/csv-import?isHistorical=true&referenceTimestampMs=1790974200000&targetSignalGroupMasterKey=forbidden-target",
+                        )
+                        .cookie(session_cookie)
+                        .insert_header((
+                            actix_web::http::header::CONTENT_TYPE,
+                            "multipart/form-data; boundary=csv-import-boundary",
+                        ))
+                        .set_payload("--csv-import-boundary--\r\n")
+                        .to_request(),
+                )
+                .await;
+                assert_eq!(
+                    import_response.status(),
+                    actix_web::http::StatusCode::FORBIDDEN
+                );
+            }
         }
     }
 
@@ -1641,6 +2001,28 @@ mod tests {
             &env.dbx,
             signal_group::ActiveModel {
                 master_key: Set(group_id.clone()),
+                name: Set(Some("Other CSV import group".to_string())),
+                datasource_id: Set(Some(datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::functest::tests::mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                group_master_key: Set(group.master_key.clone()),
+                datasource_id: Set(datasource.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let target_group_id = Uuid::new_v4().to_string();
+        let target_group = crate::functest::tests::mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set(target_group_id.clone()),
                 name: Set(Some(env.config.signal_import_group_name.clone())),
                 datasource_id: Set(Some(datasource.id)),
                 ..Default::default()
@@ -1651,13 +2033,46 @@ mod tests {
         crate::functest::tests::mk_datasource_group(
             &env.dbx,
             datasource_group::ActiveModel {
-                group_master_key: Set(group.master_key),
+                group_master_key: Set(target_group.master_key),
                 datasource_id: Set(datasource.id),
                 ..Default::default()
             },
         )
         .await
         .unwrap();
+        let archived_group_id = Uuid::new_v4().to_string();
+        crate::functest::tests::mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set(archived_group_id.clone()),
+                name: Set(Some("Archived CSV import group".to_string())),
+                is_archived: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let options = load_rer_csv_import_options(&env.dbx, &env.config)
+            .await
+            .unwrap();
+        assert_eq!(
+            options.default_target_signal_group_master_key,
+            Some(target_group_id.clone())
+        );
+        assert!(options
+            .signal_groups
+            .iter()
+            .any(|group| group.master_key == target_group_id));
+        assert!(!options
+            .signal_groups
+            .iter()
+            .any(|group| group.master_key == archived_group_id));
+        assert!(
+            find_target_rer_csv_import_group(&env.dbx, &archived_group_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
         let source_uuid = Uuid::new_v4().to_string();
         signal_profile::ActiveModel {
             uuid: Set(source_uuid.clone()),
@@ -1669,7 +2084,9 @@ mod tests {
         .await
         .unwrap();
         let marker = Uuid::new_v4();
-        let valid_body = format!("Час: 10:15:00\nF=146.5000\nvalid {marker}");
+        let valid_body = format!(
+            "Час: 10:15:00\nF=146.5000\nvalid {marker}\n48.1434076, 37.7146826"
+        );
         let ambiguous_body =
             format!("unit | 2024-10-27\n03-30\nambiguous {marker}");
         let missing_timestamp_body = format!("missing timestamp {marker}");
@@ -1712,6 +2129,7 @@ mod tests {
             },
             Some(background_task.id),
             fixed_now(),
+            Some(&target_group_id),
         )
         .await
         .unwrap();
@@ -1729,6 +2147,14 @@ mod tests {
         assert_eq!(message.created_at, expected);
         assert_eq!(message.timestamp, Some(expected));
         assert!(message.message_uid.is_some());
+        let datasource_group = datasource_group::Entity::find_by_id(
+            message.datasource_group_id.unwrap(),
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(datasource_group.group_master_key, target_group_id);
         let message_group = signal_message_group::Entity::find()
             .filter(
                 signal_message_group::Column::SignalMessageId.eq(message.id),
@@ -1739,6 +2165,10 @@ mod tests {
             .unwrap();
         assert_eq!(message_group.created_at, expected);
         assert_eq!(message_group.message_uid, message.message_uid);
+        assert_eq!(
+            message_group.group_master_key.as_deref(),
+            Some(target_group_id.as_str())
+        );
         let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
             .one(&env.dbx)
             .await
@@ -1747,6 +2177,7 @@ mod tests {
         assert_eq!(inbox_item.datetime, Some(expected));
         assert_eq!(inbox_item.date.as_deref(), Some("2026-10-02"));
         assert_eq!(inbox_item.time.as_deref(), Some("10:15:00"));
+        assert!(inbox_item.coords.is_some());
         let ambiguous_expected = NaiveDate::from_ymd_opt(2024, 10, 27)
             .unwrap()
             .and_hms_opt(0, 30, 0)
