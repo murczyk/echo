@@ -416,7 +416,7 @@ pub(crate) async fn list(
         format!("where {}", conditions.join(" and "))
     };
     let sql = format!(
-        "select m.id, m.sigint_inbox_item_id, m.media_id, media.file_name as media_name,
+        "select m.id, m.sigint_inbox_item_id, m.media_id, case when m.attachment_chunk_id is null then media.file_name else media.file_name || ' — ' || chunk.member || ' — ' || chunk.locator end as media_name,
                 message.id as message_id, message.id_uuid as message_uuid,
                 m.name, m.name_key, m.kind, m.message_at, m.model_name,
                 coalesce(sg.is_secret, false) as group_is_secret,
@@ -424,6 +424,7 @@ pub(crate) async fn list(
                 substr(source.text, m.begin_char + 1, m.end_char - m.begin_char) as context_match,
                 substr(source.text, m.end_char + 1, $1) as context_after
          from ai_position_mention m
+         left join attachment_chunk chunk on chunk.id=m.attachment_chunk_id
          left join signal_message_media media on media.id = m.media_id
          join signal_message message
              on message.id = coalesce(m.sigint_inbox_item_id, media.signal_message_id)
@@ -432,6 +433,7 @@ pub(crate) async fn list(
          left join lateral (
              select coalesce(
                  case when m.sigint_inbox_item_id is not null then message.body end,
+                 (select text from attachment_chunk where id=m.attachment_chunk_id),
                  (select summary from media_summary where media_id = m.media_id)
              ) as text
          ) source on true

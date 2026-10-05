@@ -1,3 +1,4 @@
+import { AttachmentDocumentDialog } from './DocumentContentDialog';
 import ArrowLeftIcon from '@mui/icons-material/ArrowLeft';
 import ArrowRightIcon from '@mui/icons-material/ArrowRight';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -643,6 +644,7 @@ export function MessageCardMediaSummary({
     onNext: () => void;
   } | null;
 }) {
+  const [documentOpen, setDocumentOpen] = useState(false);
   const [prevMediaId, setPrevMediaId] = useState(mediaId);
   const [expanded, setExpanded] = useState(false);
   const textRef = useRef<HTMLParagraphElement>(null);
@@ -673,6 +675,7 @@ export function MessageCardMediaSummary({
     setPrevSummary(summary);
     if (prevMediaId !== mediaId) {
       setExpanded(false);
+      setDocumentOpen(false);
     }
     setHasOverflow(summary.split(/\r?\n/).length > 3);
   }
@@ -705,6 +708,16 @@ export function MessageCardMediaSummary({
       data-media-summary-inline="true"
       className="audio-transcription m-0 mt-0.5 mb-1 flex min-w-0 w-[min(580px,100%)] gap-1 px-2 py-1.5 text-sm leading-5"
     >
+      {mediaId && (
+        <>
+          <Button size="small" onClick={() => setDocumentOpen(true)}>
+            Вміст
+          </Button>
+          {documentOpen && (
+            <AttachmentDocumentDialog mediaId={mediaId} onClose={() => setDocumentOpen(false)} />
+          )}
+        </>
+      )}
       <SmartToyOutlinedIcon
         data-media-summary-icon="robot"
         className="audio-transcription-icon shrink-0 mt-0.5"

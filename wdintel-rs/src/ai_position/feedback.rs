@@ -233,7 +233,15 @@ pub async fn reparse_ai_position_feedback(
         .await
         .c(h!())?
         .is_some_and(|settings| settings.worker_enabled);
-    if !worker_enabled {
+    let documents_enabled =
+        crate::entities::attachment_settings::Entity::find_by_id(1i16)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .is_some_and(|settings| {
+                settings.enabled && settings.positions_enabled
+            });
+    if !worker_enabled && !documents_enabled {
         return Err(AppError::BL {
             msg: "Спершу увімкніть воркер".to_string(),
         });
@@ -343,9 +351,14 @@ async fn mention_feedback(
         DatabaseBackend::Postgres,
         "select coalesce(
              (select body from signal_message where id = $1),
+             (select text from attachment_chunk where id=$3),
              (select summary from media_summary where media_id = $2)
          ) as text",
-        [mention.sigint_inbox_item_id.into(), mention.media_id.into()],
+        [
+            mention.sigint_inbox_item_id.into(),
+            mention.media_id.into(),
+            mention.attachment_chunk_id.into(),
+        ],
     ))
     .one(dbx)
     .await
@@ -473,6 +486,12 @@ async fn enqueue_source(
             super::worker::enqueue_message_if_enabled(dbx, item_id).await
         }
         (None, Some(media_id)) => {
+            if crate::attachments::enrich::requeue_positions(dbx, media_id)
+                .await
+                .c(h!())?
+            {
+                return Ok(());
+            }
             super::worker::enqueue_media_if_enabled(dbx, media_id).await
         }
         (None, None) => Ok(()),

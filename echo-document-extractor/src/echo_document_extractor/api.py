@@ -177,7 +177,10 @@ def create_app(config: RuntimeConfig, start_metrics: bool = False) -> FastAPI:
                 (incoming / "manifest.json").write_text(
                     json.dumps(parsed_manifest, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
-            total_pages = sum(count_pages(incoming / "inputs" / name) for name in names)
+            native = bool(parsed_manifest and parsed_manifest.get("metadata", {}).get("attachment_native"))
+            total_pages = (
+                len(names) if native else sum(count_pages(incoming / "inputs" / name) for name in names)
+            )
             if total_pages > service.limits.max_pages or len(names) > service.limits.max_pages:
                 raise ValueError("submission exceeds the 200 page/file limit")
             ensure_capacity(

@@ -47,6 +47,10 @@ pub use super::api_integration_iggy_destination::Entity as ApiIntegrationIggyDes
 pub use super::api_integration_iggy_event::Entity as ApiIntegrationIggyEvent;
 pub use super::area_of_responsibility::Entity as AreaOfResponsibility;
 pub use super::area_of_responsibility_report_order::Entity as AreaOfResponsibilityReportOrder;
+pub use super::attachment_chunk::Entity as AttachmentChunk;
+pub use super::attachment_document::Entity as AttachmentDocument;
+pub use super::attachment_job::Entity as AttachmentJob;
+pub use super::attachment_settings::Entity as AttachmentSettings;
 pub use super::battle_line_aor_geometry::Entity as BattleLineAorGeometry;
 pub use super::battle_line_version::Entity as BattleLineVersion;
 pub use super::bgtask::Entity as Bgtask;

@@ -29,6 +29,7 @@ pub struct Model {
     pub created_at: DateTime,
     #[sea_orm(column_type = "Text")]
     pub kind: String,
+    pub attachment_chunk_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -45,6 +46,14 @@ pub enum Relation {
     AiPositionCoordinate,
     #[sea_orm(has_many = "super::ai_position_feedback::Entity")]
     AiPositionFeedback,
+    #[sea_orm(
+        belongs_to = "super::attachment_chunk::Entity",
+        from = "Column::AttachmentChunkId",
+        to = "super::attachment_chunk::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    AttachmentChunk,
     #[sea_orm(
         belongs_to = "super::sigint_inbox_item::Entity",
         from = "Column::SigintInboxItemId",
@@ -78,6 +87,12 @@ impl Related<super::ai_position_coordinate::Entity> for Entity {
 impl Related<super::ai_position_feedback::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiPositionFeedback.def()
+    }
+}
+
+impl Related<super::attachment_chunk::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AttachmentChunk.def()
     }
 }
 
