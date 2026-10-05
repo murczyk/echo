@@ -25,6 +25,7 @@ pub mod ai_settlement;
 pub(crate) mod alpine;
 pub mod api_integrations;
 pub mod atak;
+pub mod attachments;
 pub mod aws;
 pub mod backup;
 pub mod battle_line;

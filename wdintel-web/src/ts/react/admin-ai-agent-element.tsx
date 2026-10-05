@@ -16,6 +16,7 @@ const SECTIONS = new Set<AiAgentAdminSection>([
   'position',
   'intelligence-reports',
   'ocr',
+  'documents',
   'settings',
 ]);
 

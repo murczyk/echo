@@ -70,6 +70,18 @@ async fn enqueue_inner<C>(
 where
     C: ConnectionTrait,
 {
+    if crate::entities::attachment_document::Entity::find_by_id(media_id)
+        .filter(
+            crate::entities::attachment_document::Column::Revision
+                .is_not_null(),
+        )
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some()
+    {
+        return Ok(false);
+    }
     let source_kind = source_kind.trim();
     if source_kind.is_empty()
         || source_kind.chars().count() > MEDIA_SUMMARY_SOURCE_KIND_MAX_CHARS

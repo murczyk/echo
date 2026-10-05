@@ -14,6 +14,41 @@ pub struct ReadOnlyRoute {
 pub const ROUTES: &[ReadOnlyRoute] = &[
     ReadOnlyRoute {
         method: "POST",
+        path: "/api/attachments/search",
+        skill: "attachment_search",
+        label: "Шукаю документи",
+        request_kind: "attachmentSearch",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/attachments/get",
+        skill: "attachment_get",
+        label: "Читаю опис документа",
+        request_kind: "attachmentRead",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/attachments/read",
+        skill: "attachment_read",
+        label: "Читаю вміст документа",
+        request_kind: "attachmentRead",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/attachments/inspect-original",
+        skill: "attachment_inspect",
+        label: "Перевіряю оригінал",
+        request_kind: "attachmentInspect",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/attachments/inspection-status",
+        skill: "attachment_inspection_status",
+        label: "Читаю результат перевірки",
+        request_kind: "attachmentStatus",
+    },
+    ReadOnlyRoute {
+        method: "POST",
         path: "/api/ai-agent/maps/prepare",
         skill: "map_prepare",
         label: "Готую точки мапи",
@@ -193,6 +228,10 @@ mod tests {
                     | "mapDocument"
                     | "mapEdit"
                     | "positionLookup"
+                    | "attachmentSearch"
+                    | "attachmentRead"
+                    | "attachmentInspect"
+                    | "attachmentStatus"
             ));
         }
         let daily_activity = ROUTES

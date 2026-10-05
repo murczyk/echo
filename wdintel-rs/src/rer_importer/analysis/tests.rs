@@ -8009,11 +8009,11 @@ fn creation_time_requests_bypass_interception_scoped_analytics() {
 }
 
 #[test]
-fn count_stats_analytics_supports_callsign_and_search_filters() {
+fn count_stats_analytics_supports_callsigns_but_bypasses_text_search() {
     let mut req = mk_analysis_stats_req(0, 1);
 
     req.search = Some("callsign".to_string());
-    assert!(analytics_count_request_supported(&req));
+    assert!(!analytics_count_request_supported(&req));
 
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
@@ -8028,7 +8028,7 @@ fn count_stats_analytics_supports_unit_filters() {
 }
 
 #[test]
-fn summary_table_analytics_supports_unit_filters_and_supports_search() {
+fn summary_table_analytics_supports_units_but_bypasses_text_search() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
     assert!(analytics_summary_table_request_supported(&req));
@@ -8036,11 +8036,11 @@ fn summary_table_analytics_supports_unit_filters_and_supports_search() {
 
     req.selected_units = None;
     req.search = Some("message".to_string());
-    assert!(analytics_summary_table_request_supported(&req));
+    assert!(!analytics_summary_table_request_supported(&req));
 }
 
 #[test]
-fn analytical_inbox_reads_support_callsign_and_search_filters() {
+fn analytical_inbox_reads_support_callsigns_but_bypass_text_search() {
     let mut req = InboxMessagesReq::default();
     assert!(!analytics_inbox_request_supported(&req));
 
@@ -8052,7 +8052,7 @@ fn analytical_inbox_reads_support_callsign_and_search_filters() {
     assert!(analytics_inbox_request_supported(&req));
 
     req.search = Some("callsign".to_string());
-    assert!(analytics_inbox_request_supported(&req));
+    assert!(!analytics_inbox_request_supported(&req));
 
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
@@ -8090,7 +8090,7 @@ fn analytical_inbox_candidates_reject_unbounded_and_support_bounded_media_and_no
 
     req.only_with_media = None;
     req.search = Some("message".to_string());
-    assert!(analytics_inbox_candidates_supported(&req));
+    assert!(!analytics_inbox_candidates_supported(&req));
 
     req.search = None;
     req.nolimit = Some(true);
