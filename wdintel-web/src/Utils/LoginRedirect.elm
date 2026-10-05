@@ -43,12 +43,25 @@ normalize current target =
         parsed
             |> Maybe.andThen
                 (\url ->
-                    if url.protocol == current.protocol && url.host == current.host && url.port_ == current.port_ && safePath url.path then
+                    if url.protocol == current.protocol && url.host == current.host && effectivePort url == effectivePort current && safePath url.path then
                         Just (relativeUrl url)
 
                     else
                         Nothing
                 )
+
+
+effectivePort : Url -> Int
+effectivePort url =
+    Maybe.withDefault
+        (case url.protocol of
+            Url.Http ->
+                80
+
+            Url.Https ->
+                443
+        )
+        url.port_
 
 
 isUnsafeCharacter : Char -> Bool
