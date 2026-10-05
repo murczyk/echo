@@ -579,8 +579,8 @@ exposes owner-owned compatibility views over private foreign tables in the
 gateway:
 
 - `echo_clickhouse_derived.message_callsign` exposes distinct active callsigns
-  from `sigint_inbox_item_callsign`. The legacy JSONB columns are no longer
-  mirrored or used as a fallback.
+  from a message-ordered copy of `sigint_inbox_item_callsign`. The legacy JSONB
+  columns are no longer mirrored or used as a fallback.
 - `echo_clickhouse_derived.message_aor_link` combines assigned-group and
   explicit network AOR links into message ID and AOR-bound rows.
 - `echo_clickhouse_derived.message_network_link` exposes current network links
@@ -592,13 +592,13 @@ correlated full-history scans while retaining the PostgreSQL overlap
 semantics. The compatibility-view layout matches replicated gateway tables so
 joins and distinct aggregation remain pushdown-safe.
 
-The network and AOR compatibility relations read a derived
-`ReplacingMergeTree` ordered by
-`(sigint_inbox_item_id, id)`. A materialized view copies every PeerDB version
-and deletion marker into it, so `FINAL` preserves current-state semantics
-while the message-ID envelope prunes by the primary key. Reconciliation records
-the PeerDB raw-table UUID and rebuilds the table plus ingestion view after a
-mirror resync replaces that UUID.
+The callsign, network, and AOR compatibility relations read derived
+`ReplacingMergeTree` tables ordered by `(sigint_inbox_item_id, id)`.
+Materialized views copy every PeerDB version and deletion marker into them, so
+`FINAL` preserves current-state semantics while the message-ID envelope prunes
+by the primary key. Reconciliation records each PeerDB raw-table UUID and
+rebuilds its derived table plus ingestion view after a mirror resync replaces
+that UUID.
 
 The derived-schema reconciliation also owns the ClickHouse data-skipping
 indexes used by time-bounded analytical queries. PeerDB does not copy

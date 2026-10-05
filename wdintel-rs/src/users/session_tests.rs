@@ -566,7 +566,7 @@ async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
         assert_eq!(response.status(), actix_web::http::StatusCode::FORBIDDEN);
     }
     for uri in [
-        "/api/rer/csv-import",
+        "/api/rer/csv-import?targetSignalGroupMasterKey=forbidden",
         "/api/rer/delta-csv-import",
         "/api/rer/delta-kmz-import",
     ] {
