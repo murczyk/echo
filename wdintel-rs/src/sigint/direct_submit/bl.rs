@@ -779,6 +779,13 @@ fn validate_attachment_updates(
     let mut urls = HashSet::new();
     for replacement in &updates.replacements {
         let id = parse_attachment_media_id(&replacement.media_id).c(h!())?;
+        let Some(media) = existing_media.iter().find(|media| media.id == id)
+        else {
+            return Err(AppError::BL {
+                msg: "Вкладення для заміни не може бути видаленим, повтореним або недоступним."
+                    .to_string(),
+            });
+        };
         if !existing_ids.contains(&id)
             || !ids.insert(id)
             || !urls.insert(&replacement.upload_url)
@@ -786,6 +793,12 @@ fn validate_attachment_updates(
         {
             return Err(AppError::BL {
                 msg: "Вкладення для заміни не може бути видаленим, повтореним або недоступним."
+                .to_string(),
+            });
+        }
+        if !media_is_editable_image(media) {
+            return Err(AppError::BL {
+                msg: "Замінювати можна лише зображення JPEG, PNG або WebP."
                     .to_string(),
             });
         }
@@ -812,6 +825,35 @@ fn validate_attachment_updates(
         }
     }
     Ok(())
+}
+
+fn media_is_editable_image(
+    media: &crate::entities::signal_message_media::Model,
+) -> bool {
+    let content_type = media
+        .content_type
+        .split(';')
+        .next()
+        .unwrap_or(&media.content_type)
+        .trim()
+        .to_ascii_lowercase();
+    if matches!(
+        content_type.as_str(),
+        "image/jpeg" | "image/jpg" | "image/png" | "image/webp"
+    ) {
+        return true;
+    }
+    if !content_type.is_empty() && content_type != "application/octet-stream" {
+        return false;
+    }
+    media.file_name.as_deref().is_some_and(|file_name| {
+        file_extension(file_name).is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "jpg" | "jpeg" | "png" | "webp"
+            )
+        })
+    })
 }
 
 fn parse_attachment_media_id(media_id: &str) -> Result<Uuid, AppError> {
@@ -2481,6 +2523,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn issue_3595_replacement_requeues_old_ocr_media() {
+        const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89\0\0\0\x0dIDAT\x08\xd7c\xf8\xcf\xc0\xf0\x1f\0\x05\0\x01\xff\x89\x99=\x1d\0\0\0\0IEND\xaeB`\x82";
         let env = cleanup().await.unwrap();
         let mut env = env.as_ref().clone();
         let s3_config = crate::config::S3Config {
@@ -2596,7 +2639,7 @@ mod tests {
             env.config.storage_dir.clone(),
             crate::sigint::file_upload::TUS_PATH_BASE,
         );
-        let crate::sigint::file_upload::tus::CompletedUploadWriteResult::Stored { upload_url, .. } = tus.create_completed_upload(&login_id, crate::sigint::file_upload::tus::TusUploadMetadata { filename: Some("replacement.png".into()), meta_type: Some("image/png".into()), ..Default::default() }, futures_util::stream::iter([Ok(actix_web::web::Bytes::from_static(b"png"))])).await.unwrap() else { panic!() };
+        let crate::sigint::file_upload::tus::CompletedUploadWriteResult::Stored { upload_url, .. } = tus.create_completed_upload(&login_id, crate::sigint::file_upload::tus::TusUploadMetadata { filename: Some("replacement.png".into()), meta_type: Some("image/png".into()), ..Default::default() }, futures_util::stream::iter([Ok(actix_web::web::Bytes::from_static(PNG))])).await.unwrap() else { panic!() };
         let mut payload = direct_submit_payload("edited #3595");
         payload.attachment_updates = Some(DirectSubmitAttachmentUpdates {
             replacements: vec![
@@ -2625,6 +2668,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+        assert_eq!(media.id, original.id);
         assert_eq!(media.created_at, original.created_at);
         assert_eq!(job.state, "queued");
         assert_eq!(job.ai_engine_id, Some(engine.id));
@@ -2638,6 +2682,78 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+
+        let replacement_storage_key = media.storage_key.clone();
+        let crate::sigint::file_upload::tus::CompletedUploadWriteResult::Stored { upload_url, .. } = tus.create_completed_upload(&login_id, crate::sigint::file_upload::tus::TusUploadMetadata { filename: Some("disguised.png".into()), meta_type: Some("image/png".into()), ..Default::default() }, futures_util::stream::iter([Ok(actix_web::web::Bytes::from_static(b"not an image"))])).await.unwrap() else { panic!() };
+        let mut payload =
+            direct_submit_payload("invalid image replacement #3595");
+        payload.attachment_updates = Some(DirectSubmitAttachmentUpdates {
+            replacements: vec![crate::sigint::direct_submit::types::DirectSubmitAttachmentReplacement {
+                media_id: media_id.to_string(),
+                upload_url,
+            }],
+            renames: vec![],
+        });
+        assert!(matches!(
+            edit_signal_message(
+                &login_id,
+                &env,
+                created.signal_message_id,
+                payload
+            )
+            .await,
+            Err(AppError::BL { .. })
+        ));
+        let unchanged = signal_message_media::Entity::find_by_id(media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(unchanged, media);
+        assert_eq!(unchanged.storage_key, replacement_storage_key);
+
+        let document_id = Uuid::now_v7();
+        let document = signal_message_media::ActiveModel {
+            id: Set(document_id),
+            signal_message_id: Set(created.signal_message_id),
+            signal_message_uuid: Set(original.signal_message_uuid),
+            content_type: Set("application/pdf".into()),
+            file_ext: Set(Some("pdf".into())),
+            file_name: Set(Some("original.pdf".into())),
+            size_bytes: Set(1),
+            is_encrypted: Set(false),
+            storage_key: Set(Some("document-key".into())),
+            created_at: Set(original.created_at),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let crate::sigint::file_upload::tus::CompletedUploadWriteResult::Stored { upload_url, .. } = tus.create_completed_upload(&login_id, crate::sigint::file_upload::tus::TusUploadMetadata { filename: Some("replacement.png".into()), meta_type: Some("image/png".into()), ..Default::default() }, futures_util::stream::iter([Ok(actix_web::web::Bytes::from_static(PNG))])).await.unwrap() else { panic!() };
+        let mut payload =
+            direct_submit_payload("invalid document replacement #3595");
+        payload.attachment_updates = Some(DirectSubmitAttachmentUpdates {
+            replacements: vec![crate::sigint::direct_submit::types::DirectSubmitAttachmentReplacement {
+                media_id: document_id.to_string(),
+                upload_url,
+            }],
+            renames: vec![],
+        });
+        assert!(matches!(
+            edit_signal_message(
+                &login_id,
+                &env,
+                created.signal_message_id,
+                payload
+            )
+            .await,
+            Err(AppError::BL { .. })
+        ));
+        let unchanged = signal_message_media::Entity::find_by_id(document_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(unchanged, document);
     }
 
     #[tokio::test]

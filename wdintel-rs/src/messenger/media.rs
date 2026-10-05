@@ -417,6 +417,55 @@ fn content_type_is_generic(content_type: &str) -> bool {
     )
 }
 
+fn replacement_image_format(content_type: &str) -> Option<&'static str> {
+    match content_type
+        .split(';')
+        .next()
+        .unwrap_or(content_type)
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "image/jpeg" | "image/jpg" => Some("jpeg"),
+        "image/png" => Some("png"),
+        "image/webp" => Some("webp"),
+        _ => None,
+    }
+}
+
+fn replacement_image_extension_matches(format: &str, extension: &str) -> bool {
+    matches!(
+        (format, extension.to_ascii_lowercase().as_str()),
+        ("jpeg", "jpg" | "jpeg") | ("png", "png") | ("webp", "webp")
+    )
+}
+
+fn replacement_image_error() -> AppError {
+    AppError::BL {
+        msg: "Замінювати можна лише зображення JPEG, PNG або WebP.".to_string(),
+    }
+}
+
+fn validate_replacement_image(
+    probed_content_type: Option<&str>,
+    resolved_content_type: &str,
+    file_ext: Option<&str>,
+) -> Result<(), AppError> {
+    let probed_format = probed_content_type.and_then(replacement_image_format);
+    let resolved_format = replacement_image_format(resolved_content_type);
+    let Some(probed_format) = probed_format else {
+        return Err(replacement_image_error());
+    };
+    if resolved_format != Some(probed_format)
+        || !file_ext.is_some_and(|extension| {
+            replacement_image_extension_matches(probed_format, extension)
+        })
+    {
+        return Err(replacement_image_error());
+    }
+    Ok(())
+}
+
 fn content_type_is_explicit_non_video_media(content_type: &str) -> bool {
     let content_type = content_type
         .split(';')
@@ -659,6 +708,7 @@ pub async fn stage_media_attachments(
             &storage_config,
             deletion,
             None,
+            false,
         )
         .await
         {
@@ -681,6 +731,7 @@ async fn stage_media_attachment(
     storage_config: &storage::S3Config,
     deletion: UploadedAttachmentDeletion,
     persisted_id: Option<Uuid>,
+    require_editable_image: bool,
 ) -> Result<Option<StagedMediaAttachment>, AppError> {
     let source_lease = crate::sigint::file_upload::lock_uploaded_source(
         Path::new(&attachment.path),
@@ -720,6 +771,14 @@ async fn stage_media_attachment(
         attachment.name.as_deref(),
         Path::new(&attachment.path),
     );
+    if require_editable_image {
+        validate_replacement_image(
+            prepared.probed_content_type,
+            &content_type,
+            file_ext.as_deref(),
+        )
+        .c(h!())?;
+    }
     let storage_key = if prepared.is_encrypted {
         storage::nested_object_key(&storage_id)
     } else {
@@ -801,8 +860,7 @@ pub async fn replace_media_attachment(
         })
         .c(h!())?;
     let storage_config = storage::S3Config::from(s3_config);
-    delete_local_media_files(std::slice::from_ref(existing), config).await;
-    let Some(staged) = stage_media_attachment(
+    let staged = match stage_media_attachment(
         attachment,
         config,
         s3,
@@ -810,11 +868,23 @@ pub async fn replace_media_attachment(
         &storage_config,
         deletion,
         Some(existing.id),
+        true,
     )
     .await
-    .c(h!())?
-    else {
-        return Err(AppError::BL { msg: "Завантаження вкладення більше недоступне; завантажте його ще раз.".to_string() });
+    {
+        Ok(Some(staged)) => staged,
+        Ok(None) => {
+            return Err(AppError::BL { msg: "Завантаження вкладення більше недоступне; завантажте його ще раз.".to_string() });
+        }
+        Err(err) => {
+            if deletion.should_delete() {
+                delete_uploaded_attachment_files(std::slice::from_ref(
+                    attachment,
+                ))
+                .await;
+            }
+            return Err(err);
+        }
     };
     let staged = StagedMediaAttachments {
         attachments_hash: None,
@@ -824,6 +894,7 @@ pub async fn replace_media_attachment(
         deletion,
     };
     let attachment = &staged.attachments[0];
+    delete_local_media_files(std::slice::from_ref(existing), config).await;
     let result = async {
         signal_message_media::Entity::delete_by_id(existing.id)
             .exec(txn)
@@ -1772,15 +1843,16 @@ mod tests {
         let media_id = Uuid::now_v7();
         let created_at = chrono::Utc::now().naive_utc();
         let temporary = tempfile::tempdir().unwrap();
-        let upload = temporary.path().join("replacement.txt");
-        tokio::fs::write(&upload, b"replacement").await.unwrap();
+        let upload = temporary.path().join("replacement.png");
+        let replacement_bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89\0\0\0\x0dIDAT\x08\xd7c\xf8\xcf\xc0\xf0\x1f\0\x05\0\x01\xff\x89\x99=\x1d\0\0\0\0IEND\xaeB`\x82";
+        tokio::fs::write(&upload, replacement_bytes).await.unwrap();
         let existing = signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(fixture.message_id),
             signal_message_uuid: Set(None),
-            content_type: Set("text/plain".into()),
-            file_ext: Set(Some("txt".into())),
-            file_name: Set(Some("original.txt".into())),
+            content_type: Set("image/png".into()),
+            file_ext: Set(Some("png".into())),
+            file_name: Set(Some("original.png".into())),
             size_bytes: Set(11),
             is_encrypted: Set(false),
             storage_key: Set(Some("old-storage-key".into())),
@@ -1820,8 +1892,8 @@ mod tests {
         let replacement = replace_media_attachment(
             &MediaUploadInput {
                 path: upload.display().to_string(),
-                name: Some("replacement.txt".into()),
-                content_type: Some("text/plain".into()),
+                name: Some("replacement.png".into()),
+                content_type: Some("image/png".into()),
             },
             &existing,
             &config,
