@@ -30,7 +30,7 @@ insert into attachment_settings(id) values(1);
 create table attachment_document (
  media_id uuid primary key references signal_message_media(id) on delete cascade,
  revision uuid,
- generation uuid not null default uuidv7(),
+ generation uuid not null default gen_random_uuid(),
  state text not null default 'queued',
  quality text,
  complete boolean not null default false,
@@ -48,7 +48,7 @@ create table attachment_document (
 );
 create index attachment_document_state_idx on attachment_document(state, updated_at, media_id);
 create table attachment_chunk (
- id uuid primary key default uuidv7(),
+ id uuid primary key,
  media_id uuid not null references attachment_document(media_id) on delete cascade,
  revision uuid not null,
  ordinal integer not null,
@@ -69,7 +69,7 @@ create index attachment_chunk_text_idx on attachment_chunk using gin(text gin_tr
 create index attachment_chunk_member_idx on attachment_chunk using gin(member gin_trgm_ops);
 create index attachment_media_name_idx on signal_message_media using gin(file_name gin_trgm_ops);
 create table attachment_job (
- id uuid primary key default uuidv7(),
+ id uuid primary key,
  media_id uuid not null references attachment_document(media_id) on delete cascade,
  generation uuid not null,
  kind text not null check(kind in ('extract','summary','positions','inspect')),
@@ -84,6 +84,20 @@ create table attachment_job (
  result jsonb,
  last_error text
 );
+do $$
+declare
+ id_generator text;
+begin
+ if to_regprocedure('uuidv7()') is not null then
+   id_generator := 'uuidv7()';
+ elsif to_regprocedure('uuid_generate_v7()') is not null then
+   id_generator := 'uuid_generate_v7()';
+ else
+   raise exception 'UUIDv7 generator is unavailable: use PostgreSQL 18+ or enable the pg_uuidv7 extension';
+ end if;
+ execute format('alter table attachment_chunk alter column id set default %s', id_generator);
+ execute format('alter table attachment_job alter column id set default %s', id_generator);
+end $$;
 create index attachment_job_due_idx on attachment_job(kind,next_attempt_at,created_at,id)
  where state in ('queued','retry_wait','running');
 create unique index attachment_job_generation_idx on attachment_job(media_id,generation,kind)
@@ -98,7 +112,7 @@ begin
    return new;
  end if;
  insert into attachment_document(media_id) values(new.id)
- on conflict(media_id) do update set generation=uuidv7(), revision=null,
+ on conflict(media_id) do update set generation=gen_random_uuid(), revision=null,
  state='queued', summary=null, summary_state='queued', position_state='queued',
  artifact_key=null, complete=false, extractor_job_id=null, updated_at=now() at time zone 'utc';
  update attachment_job set state='superseded',lease=null,lease_until=null where media_id=new.id and state<>'completed';
@@ -118,7 +132,7 @@ create function attachment_ocr_changed() returns trigger language plpgsql as $$
 begin
  if new.state='completed' and new.quality_status in ('accepted','degraded') then
    insert into attachment_document(media_id) values(new.media_id)
-   on conflict(media_id) do update set generation=uuidv7(),state='queued',
+   on conflict(media_id) do update set generation=gen_random_uuid(),state='queued',
      updated_at=now() at time zone 'utc';
    update attachment_job set state='superseded',lease=null,lease_until=null where media_id=new.media_id and state<>'completed';
    insert into attachment_job(media_id,generation,kind)

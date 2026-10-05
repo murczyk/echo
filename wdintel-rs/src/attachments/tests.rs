@@ -68,7 +68,7 @@ async fn attachment(env: &Env, message: i64, name: &str) -> Job {
     .insert(&env.dbx)
     .await
     .unwrap();
-    execute(&env.dbx,"update attachment_job set state='running',lease=uuidv7(),lease_until=now()+interval '15 minutes' where media_id=$1",vec![media.id.into()]).await.unwrap();
+    execute(&env.dbx,"update attachment_job set state='running',lease=gen_random_uuid(),lease_until=now()+interval '15 minutes' where media_id=$1",vec![media.id.into()]).await.unwrap();
     rows(
         &env.dbx,
         "select * from attachment_job where media_id=$1",
@@ -147,7 +147,7 @@ async fn attachment_search_visibility_and_revision_3064() {
     assert!(!read.coordinates.is_empty());
     execute(
         &env.dbx,
-        "update attachment_document set generation=uuidv7() where media_id=$1",
+        "update attachment_document set generation=gen_random_uuid() where media_id=$1",
         vec![first.media_id.into()],
     )
     .await
