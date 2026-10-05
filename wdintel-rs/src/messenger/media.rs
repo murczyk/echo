@@ -168,10 +168,17 @@ impl StagedMediaAttachments {
             .all(dbx)
             .await;
         let committed_media = match committed_media {
-            Ok(committed_media) => committed_media
-                .into_iter()
-                .map(|media| media.id)
-                .collect::<HashSet<_>>(),
+            Ok(committed_media) => {
+                crate::messenger::media_local_cache::pin_media_best_effort(
+                    config,
+                    &committed_media,
+                )
+                .await;
+                committed_media
+                    .into_iter()
+                    .map(|media| media.id)
+                    .collect::<HashSet<_>>()
+            }
             Err(err) => {
                 error!(
                     "failed to check committed staged media references; preserving uploaded objects and local files: {:?}",
@@ -706,6 +713,15 @@ async fn stage_media_attachment(
     }
     let mut thumbnail_source_lease = None;
     let mut retains_thumbnail_source = false;
+    crate::messenger::media_local_cache::stage_upload_best_effort(
+        config,
+        &storage_key,
+        size_bytes,
+        is_encrypted,
+        Path::new(&attachment.path),
+        source_lease.is_some(),
+    )
+    .await;
     if is_video {
         thumbnail_source_lease = Some(
             crate::messenger::media_thumbnail::ThumbnailSourceLease::new(id),
@@ -778,6 +794,13 @@ async fn delete_staged_object_best_effort(
     s3: &Option<Operator>,
     attachment: &StagedMediaAttachment,
 ) {
+    crate::messenger::media_local_cache::discard_upload_best_effort(
+        config,
+        &attachment.storage_key,
+        attachment.size_bytes,
+        attachment.is_encrypted,
+    )
+    .await;
     delete_staged_storage_key_best_effort(config, s3, &attachment.storage_key)
         .await;
 }
@@ -839,6 +862,12 @@ pub async fn delete_stored_media_files(
 ) {
     if media.is_empty() && ocr_result_keys.is_empty() {
         return;
+    }
+    for media in media {
+        crate::messenger::media_local_cache::remove_unreferenced_best_effort(
+            config, media,
+        )
+        .await;
     }
     let Some(config) = config.s3_config.as_ref() else {
         warn!("S3 is not configured, cannot delete attachment files!");

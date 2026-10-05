@@ -792,6 +792,26 @@ pub const MESSENGER_MEDIA_CACHE_TEMP_TTL_SECS: u64 = 2 * 60 * 60;
 pub const MESSENGER_MEDIA_CACHE_CLEANUP_INTERVAL_SECS: u64 = 15 * 60;
 pub const MESSENGER_MEDIA_CACHE_DIR_MODE: u32 = 0o700;
 pub const MESSENGER_MEDIA_CACHE_FILE_MODE: u32 = 0o600;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_DIR_NAME: &str = "local";
+pub const MESSENGER_MEDIA_LOCAL_CACHE_RETENTION_SECS: u64 = 24 * 60 * 60;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_MAX_TOTAL_SIZE_BYTES: u64 =
+    32 * 1024 * 1024 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_MIN_FREE_SPACE_BYTES: u64 =
+    10 * 1024 * 1024 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_LOCK_WAIT_MILLIS: u64 = 500;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_LOCK_RETRY_MILLIS: u64 = 25;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_WORKER_INTERVAL_SECS: u64 = 30;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_RECOVERY_BATCH_SIZE: u64 = 100;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_RECOVERY_CONCURRENCY: usize = 2;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_ORPHAN_TTL_SECS: i64 = 2 * 60 * 60;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_METADATA_MAX_BYTES: u64 = 16 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_TIMEOUT_SECS: u64 = 5 * 60;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_PROBE_TIMEOUT_SECS: u64 = 15;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_MP4_METADATA_MAX_BYTES: u64 =
+    16 * 1024 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_EXTRA_BYTES: u64 = 1024 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_FFMPEG_BIN: &str = "ffmpeg";
+pub const MESSENGER_MEDIA_LOCAL_CACHE_FFPROBE_BIN: &str = "ffprobe";
 pub const MESSENGER_MEDIA_THUMBNAIL_DIR_NAME: &str = "thumbnails";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_DIR_NAME: &str = "thumbnail_sources";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_BUDGET_LOCK_FILE_NAME: &str =
@@ -1392,6 +1412,7 @@ pub struct Config {
     #[serde(default)]
     pub totp_strongbox_key: Option<String>,
     pub storage_dir: String,
+    pub messenger_media_cache: Option<MessengerMediaCacheConfig>,
     pub signal_api_phone: String,
     pub signal_import_group_name: String,
     pub signal_import_fiven_name: String,
@@ -1460,6 +1481,28 @@ pub struct Config {
     pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
     pub ai_agent_dispatcher: Option<AiAgentDispatcherConfig>,
     pub ocr: Option<OcrConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[serde(default)]
+pub struct MessengerMediaCacheConfig {
+    pub enabled: bool,
+    pub retention_secs: u64,
+    pub max_total_size_bytes: u64,
+    pub min_free_space_bytes: u64,
+}
+
+impl Default for MessengerMediaCacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            retention_secs: MESSENGER_MEDIA_LOCAL_CACHE_RETENTION_SECS,
+            max_total_size_bytes:
+                MESSENGER_MEDIA_LOCAL_CACHE_MAX_TOTAL_SIZE_BYTES,
+            min_free_space_bytes:
+                MESSENGER_MEDIA_LOCAL_CACHE_MIN_FREE_SPACE_BYTES,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]

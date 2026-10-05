@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20261004_175803_signal_message_media_created_at_index": {
+      "changes": []
+    },
     "echo:m20260929_195200_ai_agent_map_workspace": {
       "changes": [
         { "table": "public.ai_agent_map", "strategy": "excluded" },
