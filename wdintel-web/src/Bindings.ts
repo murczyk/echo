@@ -5437,6 +5437,7 @@ export type AiAgentAdminSettingsItem = {
   securityReviewEnabled: boolean;
   mattermostChatEnabled: boolean;
   hasMattermostWebhook: boolean;
+  hasMattermostChatWebhook: boolean;
   allowedAiEngineIds: Array<string>;
   providerRuntimeProfiles: Array<AiAgentProviderRuntimeProfileItem>;
 };
@@ -5450,6 +5451,8 @@ export type AiAgentAdminSettingsUpdateReq = {
   mattermostChatEnabled: boolean;
   mattermostWebhookUrl: string | null;
   clearMattermostWebhook: boolean;
+  mattermostChatWebhookUrl: string | null;
+  clearMattermostChatWebhook: boolean;
   allowedAiEngineIds: Array<string>;
   providerRuntimeProfiles: Array<AiAgentProviderRuntimeProfileItem>;
 };

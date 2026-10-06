@@ -139,17 +139,23 @@ pub async fn update_settings(
     .c(h!())?
     .ok_or(AppError::NotFound)?;
     lifecycle::reconcile_template_login_id(&txn, template_login_id).await?;
-    let mattermost_webhook_url = if req.clear_mattermost_webhook {
-        None
-    } else {
-        req.mattermost_webhook_url
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .or(settings.mattermost_webhook_url.clone())
-    };
-    if let Some(webhook) = mattermost_webhook_url.as_deref() {
+    let mattermost_webhook_url = updated_webhook(
+        req.mattermost_webhook_url.as_deref(),
+        req.clear_mattermost_webhook,
+        settings.mattermost_webhook_url.clone(),
+    );
+    let mattermost_chat_webhook_url = updated_webhook(
+        req.mattermost_chat_webhook_url.as_deref(),
+        req.clear_mattermost_chat_webhook,
+        settings.mattermost_chat_webhook_url.clone(),
+    );
+    for webhook in [
+        mattermost_webhook_url.as_deref(),
+        mattermost_chat_webhook_url.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
         mattermost::resolve_webhook(
             webhook,
             Duration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC),
@@ -163,9 +169,9 @@ pub async fn update_settings(
                 .to_string(),
         });
     }
-    if req.mattermost_chat_enabled && mattermost_webhook_url.is_none() {
+    if req.mattermost_chat_enabled && mattermost_chat_webhook_url.is_none() {
         return Err(AppError::BL {
-            msg: "Mattermost webhook is required while chat monitoring is enabled"
+            msg: "Mattermost chat webhook is required while chat monitoring is enabled"
                 .to_string(),
         });
     }
@@ -194,6 +200,7 @@ pub async fn update_settings(
     settings.security_review_enabled = Set(req.security_review_enabled);
     settings.mattermost_chat_enabled = Set(req.mattermost_chat_enabled);
     settings.mattermost_webhook_url = Set(mattermost_webhook_url);
+    settings.mattermost_chat_webhook_url = Set(mattermost_chat_webhook_url);
     settings.updated_at = Set(Utc::now().naive_utc());
     settings.update(&txn).await.c(h!())?;
     if !req.mattermost_chat_enabled {
@@ -253,6 +260,22 @@ pub async fn update_settings(
     Ok(Json(settings_item(&env).await?))
 }
 
+fn updated_webhook(
+    replacement: Option<&str>,
+    clear: bool,
+    saved: Option<String>,
+) -> Option<String> {
+    if clear {
+        None
+    } else {
+        replacement
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or(saved)
+    }
+}
+
 async fn settings_item(
     env: &Env,
 ) -> Result<AiAgentAdminSettingsItem, AppError> {
@@ -295,6 +318,9 @@ async fn settings_item(
         security_review_enabled: settings.security_review_enabled,
         mattermost_chat_enabled: settings.mattermost_chat_enabled,
         has_mattermost_webhook: settings.mattermost_webhook_url.is_some(),
+        has_mattermost_chat_webhook: settings
+            .mattermost_chat_webhook_url
+            .is_some(),
         allowed_ai_engine_ids,
         provider_runtime_profiles,
     })

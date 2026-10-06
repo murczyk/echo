@@ -192,6 +192,9 @@ export type AiAgentSettings = {
   mattermostWebhookConfigured: boolean;
   mattermostWebhookUrl: string;
   clearMattermostWebhook: boolean;
+  mattermostChatWebhookConfigured: boolean;
+  mattermostChatWebhookUrl: string;
+  clearMattermostChatWebhook: boolean;
 };
 
 export type AiAgentUserStatus = {
@@ -529,6 +532,9 @@ function normalizeSettings(value: AiAgentAdminSettingsItem): AiAgentSettings {
     mattermostWebhookConfigured: value.hasMattermostWebhook,
     mattermostWebhookUrl: '',
     clearMattermostWebhook: false,
+    mattermostChatWebhookConfigured: value.hasMattermostChatWebhook,
+    mattermostChatWebhookUrl: '',
+    clearMattermostChatWebhook: false,
   };
 }
 
@@ -904,6 +910,8 @@ export async function saveAiAgentSettings(settings: AiAgentSettings): Promise<Ai
     mattermostChatEnabled: settings.mattermostChatEnabled,
     mattermostWebhookUrl: settings.mattermostWebhookUrl.trim() || null,
     clearMattermostWebhook: settings.clearMattermostWebhook,
+    mattermostChatWebhookUrl: settings.mattermostChatWebhookUrl.trim() || null,
+    clearMattermostChatWebhook: settings.clearMattermostChatWebhook,
   };
   return normalizeSettings(
     await postJson<AiAgentAdminSettingsItem>('/api/admin/ai-agent/settings', req),

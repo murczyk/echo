@@ -455,6 +455,7 @@ mod m20261005_044401_messenger_media_cache_settings;
 mod m20261005_050621_attachment_documents;
 mod m20261006_075657_ai_gov_ua_settings;
 mod m20261006_110425_merge_cyber_roles;
+mod m20261006_150705_ai_agent_chat_webhook;
 
 mod m20261006_082251_device_document_settings;
 
@@ -1085,6 +1086,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261006_075657_ai_gov_ua_settings::Migration),
             Box::new(m20261006_110425_merge_cyber_roles::Migration),
             Box::new(m20261006_082251_device_document_settings::Migration),
+            Box::new(m20261006_150705_ai_agent_chat_webhook::Migration),
         ]
     }
 }
