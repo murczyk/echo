@@ -10,10 +10,15 @@ import type { DeviceFileJournalState } from '../../device-files/use-device-file-
 import { DeviceAnalyticsPanel } from './DeviceAnalyticsPanel';
 import { PowerButton } from '../../../components/PowerButton';
 import { selectDeviceSyncSession } from '../url-state';
+import type { DeviceAudioState } from '../use-device-audio';
+import type { DeviceAudioEditorState } from '../use-device-audio-editor';
+import { DeviceAudioTab } from './DeviceAudioTab';
 
-export type DeviceDetailsTab = 'analytical' | 'files' | 'journal';
+export type DeviceDetailsTab = 'analytical' | 'files' | 'journal' | 'audio';
 
 export function DeviceDetailsTabPanel({
+  audio,
+  audioEditor,
   mobileFiles,
   mobile = false,
   activeTab,
@@ -31,6 +36,8 @@ export function DeviceDetailsTabPanel({
   onTagFilterChange,
   onTabChange,
 }: {
+  audio: DeviceAudioState;
+  audioEditor: DeviceAudioEditorState;
   mobileFiles?: ReactNode;
   mobile?: boolean;
   activeTab: DeviceDetailsTab;
@@ -93,11 +100,20 @@ export function DeviceDetailsTabPanel({
             value="journal"
             label="Журнал"
           />
+          <Tab
+            id="device-details-audio-tab"
+            aria-controls="device-details-audio-panel"
+            value="audio"
+            label="Аудіо"
+          />
         </Tabs>
       </Box>
 
       <Box sx={{ minHeight: 0, flex: 1, overflow: 'hidden' }}>
-        {!dataReady ? (
+        {activeTab === 'audio' ? (
+          <DeviceAudioTab audio={audio} editor={audioEditor} mobile={mobile} />
+        ) : null}
+        {!dataReady && activeTab !== 'audio' ? (
           <div className="p-echo-lg" role={sessionError ? 'alert' : 'status'}>
             {sessionError ? (
               <>

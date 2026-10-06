@@ -139,6 +139,13 @@ async fn new_env_with_initialization(
         mode,
     )
     .await;
+    let device_audio = crate::devices::audio::build_runtime(
+        &config,
+        &dbx,
+        file_registry_db.as_ref(),
+        s3.as_ref(),
+        metrics.clone(),
+    );
     let mut replicas = vec![];
     if let Some(replica_configs) = config.replicas.clone() {
         for replica in replica_configs {
@@ -244,6 +251,7 @@ async fn new_env_with_initialization(
         )),
         echo_gpu_client,
         file_registry_db,
+        device_audio,
         device_file_content,
         rq,
         rq_goi_associations,
@@ -883,6 +891,15 @@ fn spawn_background_workers(
         .await;
     });
     if env.file_registry_db.is_some() {
+        let audio_cleanup_runtime = env.device_audio.clone();
+        let audio_cleanup_cancellation = cancel_token.clone();
+        spawn_named_worker("device_audio_cleanup", bg_set, async move {
+            crate::devices::audio::run_cleanup_nofail(
+                audio_cleanup_runtime,
+                audio_cleanup_cancellation,
+            )
+            .await;
+        });
         spawn_device_file_analytics_worker_pool(
             bg_set,
             env.clone(),
@@ -1241,6 +1258,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::file_upload::tus_base)
             .service(crate::sigint::file_upload::tus_file)
             .service(crate::sigint::file_upload::fallback_upload)
+            .service(crate::devices::audio::upload_routes())
+            .service(crate::devices::audio::routes())
             .service(crate::sigint::device_name::device_name_create)
             .service(crate::sigint::device_name::device_name_search)
             .service(crate::sigint::device_name::device_name_resolve)

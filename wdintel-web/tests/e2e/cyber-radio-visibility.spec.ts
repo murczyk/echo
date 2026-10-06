@@ -54,14 +54,7 @@ function classicDutyState() {
 
 // Regression: https://github.com/echoua/echo/issues/3568
 test.describe('Cyber radio visibility @regression #3568', () => {
-  for (const roles of [
-    ['Rer'],
-    ['Rer', 'Cyber'],
-    ['Admin'],
-    ['Full'],
-    ['Cyber'],
-    ['CyberViewer'],
-  ]) {
+  for (const roles of [['Rer'], ['Rer', 'Cyber'], ['Admin'], ['Full'], ['Cyber']]) {
     test(`@smoke #3568 classic Duty saved filters wait for ${roles.join('+')} permissions`, async ({
       page,
     }) => {
@@ -94,7 +87,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
       expect(JSON.parse(new URL(page.url()).searchParams.get('state')!)).toEqual(state);
       releaseUser();
 
-      const radioAllowed = !['Cyber', 'CyberViewer'].includes(roles[0]);
+      const radioAllowed = roles[0] !== 'Cyber';
       const settings = page.locator('button').filter({ has: page.locator('i.bi-gear') });
       await expect(settings).toHaveCount(2);
       await settings.nth(0).click();
@@ -160,7 +153,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     await page.route('**/api/user', (route) =>
       route.fulfill({ status: 401, body: 'Unauthorized' }),
     );
-    await page.route('**/api/user/logout', (route) =>
+    await page.route(/\/api\/user\/logout(?:\?.*)?$/, (route) =>
       route.fulfill({ status: 302, headers: { location: '/login' } }),
     );
     const requests: string[] = [];

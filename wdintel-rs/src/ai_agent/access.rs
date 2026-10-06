@@ -147,7 +147,7 @@ fn has_rer_or_cyber_role(roles: &serde_json::Value) -> bool {
     let Ok(roles) = serde_json::from_value::<Vec<String>>(roles.clone()) else {
         return false;
     };
-    [AI_AGENT_ROLE_RER, crate::config::ROLE_CYBER_VIEWER]
+    [AI_AGENT_ROLE_RER, crate::config::ROLE_CYBER]
         .iter()
         .any(|role| crate::users::role_matches(&roles, role).unwrap_or(false))
 }

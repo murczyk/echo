@@ -115,7 +115,7 @@ pub async fn network_callsigns_relations(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
+        vec!["Rer", "Cyber", "Api", "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -198,7 +198,7 @@ pub async fn network_callsigns_relation_messages(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
+        vec!["Rer", "Cyber", "Api", "ApiAgent"],
     )
     .await
     .c(h!())?;

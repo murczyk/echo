@@ -171,7 +171,7 @@ export async function setupMap(
         isCleanedUp = true;
         clearSmallMapFullscreenBodyLock();
         removalObserver.disconnect();
-        navigationApi?.removeEventListener('navigate', handleRouteChange);
+        navigationApi?.removeEventListener('navigatesuccess', handleRouteChange);
         window.removeEventListener('popstate', handleRouteChange);
         window.removeEventListener('pagehide', handleRouteChange);
         map.off('unload', cleanup);
@@ -188,7 +188,7 @@ export async function setupMap(
         }
       });
       removalObserver.observe(document.body, { childList: true, subtree: true });
-      navigationApi?.addEventListener('navigate', handleRouteChange);
+      navigationApi?.addEventListener('navigatesuccess', handleRouteChange);
       window.addEventListener('popstate', handleRouteChange);
       window.addEventListener('pagehide', handleRouteChange);
       map.on('unload', cleanup);

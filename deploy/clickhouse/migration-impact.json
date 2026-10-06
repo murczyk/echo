@@ -707,6 +707,7 @@
         { "table": "public.ai_position_feedback", "strategy": "excluded" }
       ]
     },
+    "echo:m20261006_110425_merge_cyber_roles": { "changes": [] },
     "echo:m20261005_050621_attachment_documents": {
       "changes": [
         { "table": "public.attachment_settings", "strategy": "excluded" },

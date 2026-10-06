@@ -37,13 +37,13 @@ suite =
                     |> Result.andThen (Json.Decode.decodeValue Bindings.userDecoder)
                     |> Result.map .displayName
                     |> Expect.equal (Ok Nothing)
-        , test "admits Cyber and Admin, but not DeviceSource alone" <|
+        , test "admits Cyber and Admin, but not unrelated roles" <|
             \_ ->
                 Expect.all
                     [ \_ -> Expect.equal True (Core.Auth.canReadDevices (user [ "Cyber" ]))
                     , \_ -> Expect.equal True (Core.Auth.canReadDevices (user [ "Admin" ]))
-                    , \_ -> Expect.equal False (Core.Auth.canReadDevices (user [ "DeviceSource" ]))
-                    , \_ -> Expect.equal True (Core.Auth.canReadDevices (user [ "DeviceSource", "Cyber" ]))
+                    , \_ -> Expect.equal False (Core.Auth.canReadDevices (user [ "Basic" ]))
+                    , \_ -> Expect.equal True (Core.Auth.canReadDevices (user [ "Cyber", "Rer" ]))
                     ]
                     ()
         , test "#3568 radio access respects Rer inheritance independently of Cyber and editors" <|
@@ -66,7 +66,7 @@ suite =
                             |> List.all (user >> Core.Auth.hasRerOrCyber)
                             |> Expect.equal True
                     , \_ ->
-                        [ [], [ "Basic" ], [ "DeviceSource" ], [ "Api" ], [ "ApiAgent" ] ]
+                        [ [], [ "Basic" ], [ "Api" ], [ "ApiAgent" ] ]
                             |> List.any (user >> Core.Auth.hasRerOrCyber)
                             |> Expect.equal False
                     , \_ -> Expect.equal True (Core.Auth.hasRole "Basic" (user [ "Cyber" ]))
@@ -97,17 +97,26 @@ suite =
                     , \_ -> Expect.equal (Just False) normalized.withoutNetwork
                     ]
                     ()
-        , test "#3569 CyberViewer reads Cyber data with additive message write permissions" <|
+        , test "Cyber can write messages without radio access" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Expect.equal True (Core.Auth.hasRerOrCyber (user [ "CyberViewer" ]))
-                    , \_ -> Expect.equal True (Core.Auth.canReadDevices (user [ "CyberViewer" ]))
-                    , \_ -> Expect.equal False (Core.Auth.canUseRadioFeatures (user [ "CyberViewer" ]))
-                    , \_ -> Expect.equal False (Core.Auth.canWriteMessages (user [ "CyberViewer" ]))
-                    , \_ ->
-                        [ "Cyber", "Rer", "Full", "Admin" ]
-                            |> List.all (\role -> Core.Auth.canWriteMessages (user [ "CyberViewer", role ]))
-                            |> Expect.equal True
+                    [ \_ -> Expect.equal True (Core.Auth.canWriteMessages (user [ "Cyber" ]))
+                    , \_ -> Expect.equal False (Core.Auth.canUseRadioFeatures (user [ "Cyber" ]))
                     ]
                     ()
+        , test "removed roles grant no application access" <|
+            \_ ->
+                [ [ "DeviceSource" ], [ "CyberViewer" ], [ "DeviceSource", "CyberViewer" ] ]
+                    |> List.map user
+                    |> List.any
+                        (\account ->
+                            Core.Auth.hasRole "Basic" account
+                                || Core.Auth.hasRerOrCyber account
+                                || Core.Auth.canReadDevices account
+                                || Core.Auth.canWriteMessages account
+                                || Core.Auth.canUseRadioFeatures account
+                                || Core.Auth.hasRole "DeviceSource" account
+                                || Core.Auth.hasRole "CyberViewer" account
+                        )
+                    |> Expect.equal False
         ]

@@ -1,4 +1,5 @@
 import type { MouseEvent } from 'react';
+import { requestNavigation } from '../../browser/navigation-guard';
 
 export function windowWidth() {
   return window.innerWidth;
@@ -11,8 +12,7 @@ export function withBackTo(path: string) {
 }
 
 export function navigateWithinSpa(path: string) {
-  window.history.pushState({}, '', path);
-  window.dispatchEvent(new PopStateEvent('popstate'));
+  void requestNavigation(path);
 }
 
 export function shouldHandleAsSpaClick(event: MouseEvent<HTMLElement>): boolean {
