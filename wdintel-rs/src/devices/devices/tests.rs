@@ -7,7 +7,7 @@ use super::types::*;
 use crate::config::{DEVICE_CUSTOM_FIELDS_MAX_COUNT, ROLE_ADMIN};
 use crate::devices::access;
 use crate::devices::tests::schema::device_active_model;
-use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
+use crate::devices::ROLE_CYBER;
 use crate::entities::{
     area_of_responsibility, device, device_aor, login, organism, sigint_unit,
 };
@@ -136,7 +136,7 @@ fn assert_forbidden(error: AppError) {
 #[serial_test::serial]
 async fn batch_hydration_preserves_input_order_and_current_references() {
     let (env, _guard) = cleanup_locked().await.unwrap();
-    let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
+    let source_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
     let reader = login_with_roles(&source_login, &[ROLE_CYBER]);
     let first_aor = mk_aor(
         &env.dbx,
@@ -246,10 +246,10 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn device_source_create_persists_normalized_state() {
+async fn cyber_create_persists_normalized_state() {
     let (env, _guard) = cleanup_locked().await.unwrap();
-    let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
-    let actor = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let source_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
+    let actor = login_with_roles(&source_login, &[ROLE_CYBER]);
     let main_db = env.dbx.clone();
 
     let state = create(
@@ -306,12 +306,11 @@ async fn device_source_create_persists_normalized_state() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn device_source_mixed_update_is_atomic_and_cyber_cannot_change_analysis()
-{
+async fn cyber_actors_update_analysis_but_basic_cannot() {
     let (env, _guard) = cleanup_locked().await.unwrap();
-    let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
+    let source_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
     let cyber_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
-    let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let source = login_with_roles(&source_login, &[ROLE_CYBER]);
     let cyber = login_with_roles(&cyber_login, &[ROLE_CYBER]);
     let main_db = env.dbx.clone();
     let created = create(
@@ -380,11 +379,30 @@ async fn device_source_mixed_update_is_atomic_and_cyber_cannot_change_analysis()
     );
     assert_ne!(updated.updated_at, created.updated_at);
 
+    let mut command = update_command(created.id);
+    command.name = DevicePatchField::Value("Cyber renamed".to_string());
+    command.aor_ids = DevicePatchField::Value(Vec::new());
+    command.unit_id = DevicePatchField::Value(None);
+    let updated = update(&main_db, &cyber, command).await.unwrap();
+    assert_eq!(updated.name.as_deref(), Some("Cyber renamed"));
+    assert!(updated.aors.is_empty());
+    assert_eq!(updated.unit, None);
+
+    let mut command = update_command(created.id);
+    command.aor_ids = DevicePatchField::Value(vec![aor.id]);
+    command.unit_id = DevicePatchField::Value(Some(unit.id));
+    let updated = update(&main_db, &cyber, command).await.unwrap();
+    assert_eq!(updated.aors[0].id, aor.id);
+    assert_eq!(updated.unit.unwrap().id, unit.id);
+
+    let basic = login_with_roles(&cyber_login, &["Basic"]);
     let mut forbidden_command = update_command(created.id);
     forbidden_command.name =
-        DevicePatchField::Value("Cyber cannot set this".to_string());
+        DevicePatchField::Value("Basic cannot set this".to_string());
+    forbidden_command.aor_ids = DevicePatchField::Value(Vec::new());
+    forbidden_command.unit_id = DevicePatchField::Value(None);
     assert_forbidden(
-        update(&main_db, &cyber, forbidden_command)
+        update(&main_db, &basic, forbidden_command)
             .await
             .unwrap_err(),
     );
@@ -393,22 +411,22 @@ async fn device_source_mixed_update_is_atomic_and_cyber_cannot_change_analysis()
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(unchanged.name.as_deref(), Some("Updated device"));
+    assert_eq!(unchanged.name.as_deref(), Some("Cyber renamed"));
+    assert_eq!(unchanged.unit_id, Some(unit.id));
 }
 
 #[tokio::test]
 #[serial_test::serial]
-async fn create_allows_all_device_roles_but_only_sources_may_name() {
+async fn create_allows_cyber_and_admin_but_basic_cannot() {
     let (env, _guard) = cleanup_locked().await.unwrap();
-    let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let admin_login = insert_login(&env.dbx, &[ROLE_ADMIN]).await;
     let cyber_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
-    let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
     let admin = login_with_roles(&admin_login, &[ROLE_ADMIN]);
     let cyber = login_with_roles(&cyber_login, &[ROLE_CYBER]);
+    let basic = login_with_roles(&cyber_login, &["Basic"]);
     let main_db = env.dbx.clone();
 
-    for (login, actor) in [(&source_login, &source), (&admin_login, &admin)] {
+    for (login, actor) in [(&admin_login, &admin), (&cyber_login, &cyber)] {
         let state = create(
             &main_db,
             actor,
@@ -445,9 +463,9 @@ async fn create_allows_all_device_roles_but_only_sources_may_name() {
     assert_forbidden(
         create(
             &main_db,
-            &cyber,
+            &basic,
             CreateDeviceCommand {
-                name: Some("Cyber device".to_string()),
+                name: Some("Basic device".to_string()),
                 external_url: None,
                 custom_fields: None,
             },
@@ -458,7 +476,7 @@ async fn create_allows_all_device_roles_but_only_sources_may_name() {
 
     let created = create(
         &main_db,
-        &source,
+        &cyber,
         CreateDeviceCommand {
             name: Some("Authorization target".to_string()),
             external_url: None,
@@ -472,7 +490,7 @@ async fn create_allows_all_device_roles_but_only_sources_may_name() {
         DevicePatchField::Value(Some("not a URL".to_string()));
     malformed_mixed.name = DevicePatchField::Value("   ".to_string());
     assert_forbidden(
-        update(&main_db, &cyber, malformed_mixed).await.unwrap_err(),
+        update(&main_db, &basic, malformed_mixed).await.unwrap_err(),
     );
     let unchanged = device::Entity::find_by_id(created.id)
         .one(&env.dbx)
@@ -486,10 +504,10 @@ async fn create_allows_all_device_roles_but_only_sources_may_name() {
 #[serial_test::serial]
 async fn patch_presence_and_clears_follow_the_internal_contract() {
     let (env, _guard) = cleanup_locked().await.unwrap();
-    let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
+    let source_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
     let cyber_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
     let unauthorized_login = insert_login(&env.dbx, &[]).await;
-    let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let source = login_with_roles(&source_login, &[ROLE_CYBER]);
     let cyber = login_with_roles(&cyber_login, &[ROLE_CYBER]);
     let unauthorized = login_with_roles(&unauthorized_login, &[]);
     let main_db = env.dbx.clone();
@@ -604,8 +622,8 @@ async fn patch_presence_and_clears_follow_the_internal_contract() {
 #[serial_test::serial]
 async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     let (env, _guard) = cleanup_locked().await.unwrap();
-    let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
-    let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let source_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
+    let source = login_with_roles(&source_login, &[ROLE_CYBER]);
     let reader = login_with_roles(&source_login, &[ROLE_CYBER]);
     let main_db = env.dbx.clone();
     let created = create(
@@ -762,8 +780,8 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
 #[serial_test::serial]
 async fn custom_field_patches_and_effective_no_ops_preserve_state() {
     let (env, _guard) = cleanup_locked().await.unwrap();
-    let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
-    let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let source_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
+    let source = login_with_roles(&source_login, &[ROLE_CYBER]);
     let main_db = env.dbx.clone();
     let created = create(
         &main_db,
@@ -887,9 +905,9 @@ async fn custom_field_patches_and_effective_no_ops_preserve_state() {
 #[serial_test::serial]
 async fn read_handles_archives_and_deleted_references() {
     let (env, _guard) = cleanup_locked().await.unwrap();
-    let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
+    let source_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
     let cyber_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
-    let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let source = login_with_roles(&source_login, &[ROLE_CYBER]);
     let cyber = login_with_roles(&cyber_login, &[ROLE_CYBER]);
     let main_db = env.dbx.clone();
     let created = create(
@@ -1007,6 +1025,14 @@ async fn read_handles_archives_and_deleted_references() {
     );
     assert!(state.archived);
     assert!(state.archived_at.is_some());
+
+    let mut command = update_command(created.id);
+    command.name = DevicePatchField::Value("Archived rename".to_string());
+    assert_form_error(
+        update(&main_db, &cyber, command).await.unwrap_err(),
+        "device_id",
+        "Архівований пристрій не можна редагувати",
+    );
 }
 
 #[tokio::test]
@@ -1448,7 +1474,7 @@ mod query_tests {
     use crate::devices::access;
     use crate::devices::files::query;
     use crate::devices::tests::schema::device_active_model;
-    use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
+    use crate::devices::ROLE_CYBER;
     use crate::entities::{device, login, organism, system_settings};
     use crate::error::AppError;
     use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
@@ -1786,14 +1812,12 @@ mod query_tests {
         let archived =
             insert_device(&env.dbx, &owner.login, organism.id, true).await;
         let cyber = login_with_roles(&owner, &[ROLE_CYBER]);
-        let source = login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
+        let admin = login_with_roles(&owner, &[crate::config::ROLE_ADMIN]);
 
         access::require_source_write(&cyber.roles).unwrap();
-        assert_device_operation_forbidden(
-            access::require_analytical_write(&cyber.roles).unwrap_err(),
-        );
-        access::require_source_write(&source.roles).unwrap();
-        access::require_analytical_write(&source.roles).unwrap();
+        access::require_analytical_write(&cyber.roles).unwrap();
+        access::require_source_write(&admin.roles).unwrap();
+        access::require_analytical_write(&admin.roles).unwrap();
 
         assert_eq!(
             authorize_file_registry_access(
@@ -1809,7 +1833,7 @@ mod query_tests {
         assert_eq!(
             authorize_file_registry_access(
                 &env.dbx,
-                &source,
+                &admin,
                 active.id,
                 FileRegistryDeviceAccess::FileSync,
             )
@@ -1819,20 +1843,26 @@ mod query_tests {
         );
 
         let main_db = env.dbx.clone();
+        let basic = login_with_roles(&owner, &["Basic"]);
         assert_device_operation_forbidden(
-            find_active_visible_device(&main_db, &source, archived.id)
+            find_active_visible_device(&main_db, &basic, active.id)
+                .await
+                .unwrap_err(),
+        );
+        assert_archived_device_error(
+            find_active_visible_device(&main_db, &admin, archived.id)
                 .await
                 .unwrap_err(),
         );
 
         let transaction = env.dbx.begin().await.unwrap();
         assert_archived_device_error(
-            lock_active_device_for_update(&transaction, &source, archived.id)
+            lock_active_device_for_update(&transaction, &admin, archived.id)
                 .await
                 .unwrap_err(),
         );
         assert_eq!(
-            lock_active_device_for_update(&transaction, &source, active.id,)
+            lock_active_device_for_update(&transaction, &admin, active.id,)
                 .await
                 .unwrap()
                 .id,
@@ -1850,7 +1880,7 @@ mod query_tests {
         let owner = insert_login(&env.dbx, organism.id, &[]).await;
         let device =
             insert_device(&env.dbx, &owner.login, organism.id, false).await;
-        let actor = login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
+        let actor = login_with_roles(&owner, &[ROLE_CYBER]);
         let main_pool =
             crate::new_pg_pool_from_conn_string_with_max_connections(
                 crate::mk_conn_string(&env.config),

@@ -4,6 +4,8 @@ pub mod prelude;
 
 pub mod analytics_tag;
 pub mod analytics_tag_test_file;
+pub mod device_audio;
+pub mod device_audio_ingest;
 pub mod device_file_tag;
 pub mod file_analysis_definition;
 pub mod file_analysis_run;

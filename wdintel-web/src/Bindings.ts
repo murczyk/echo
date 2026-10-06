@@ -2241,6 +2241,80 @@ export type DeviceSyncSessionSummariesRsp = {
   summaries: Array<DeviceSyncSessionSummary>;
 };
 
+export type DeviceAudio = {
+  id: string;
+  deviceId: string;
+  recordingStartedAt: string;
+  recordingEndedAt: string;
+  durationSeconds: number;
+  processed: boolean;
+  processingVersion: string;
+};
+
+export type DeviceAudioTranscription = {
+  text: string;
+  textVersion: string;
+};
+
+export type DeviceAudioDetails = {
+  audio: DeviceAudio;
+  transcription: DeviceAudioTranscription;
+  canEdit: boolean;
+};
+
+export type ReceiveDeviceAudioReq = {
+  deviceId: string;
+  uploadUrl: string;
+  name: string;
+  recordingStartedAt: string;
+};
+
+export type ReceiveDeviceAudioRsp = {
+  audio: DeviceAudio;
+};
+
+export type ListDeviceAudioReq = {
+  deviceId: string;
+  unprocessedOnly: boolean;
+  limit: number;
+  cursor: string | null;
+};
+
+export type ListDeviceAudioRsp = {
+  audio: Array<DeviceAudio>;
+  nextCursor: string | null;
+};
+
+export type DeviceAudioDetailReq = {
+  deviceId: string;
+  audioId: string;
+};
+
+export type SaveDeviceAudioTranscriptionReq = {
+  deviceId: string;
+  audioId: string;
+  text: string;
+  expectedTextVersion: string;
+};
+
+export type SaveDeviceAudioTranscriptionRsp = {
+  audioId: string;
+  transcription: DeviceAudioTranscription;
+};
+
+export type SetDeviceAudioProcessingReq = {
+  deviceId: string;
+  audioId: string;
+  processed: boolean;
+  expectedProcessingVersion: string;
+};
+
+export type SetDeviceAudioProcessingRsp = {
+  audioId: string;
+  processed: boolean;
+  processingVersion: string;
+};
+
 export type BatchSummary = {
   syncId: string;
   batchIndex: number;
@@ -2486,6 +2560,7 @@ export type DeviceAnalyticsSummaryItem = {
 
 export type DeviceAnalyticsSummaryRsp = {
   totalFileCount: number;
+  filesWithContentCount: number;
   analyzedFileCount: number;
   items: Array<DeviceAnalyticsSummaryItem>;
 };
@@ -4908,6 +4983,28 @@ export type RerDutyTestReplayStatusRsp = {
   nextSourcePosition: number | null;
   generatedCount: number;
   nextEmitAtMs: number | null;
+};
+
+export type AiGovUaSettingsRsp = {
+  enabled: boolean;
+  tenantId: string;
+  clientId: string;
+  scope: string;
+  hasClientSecret: boolean;
+  updatedAt: number;
+};
+
+export type SaveAiGovUaSettingsReq = {
+  enabled: boolean;
+  tenantId: string;
+  clientId: string;
+  scope: string;
+  clientSecret: string | null;
+  clearClientSecret: boolean;
+};
+
+export type AiGovUaModelsRsp = {
+  models: Array<string>;
 };
 
 export type AiEngineItem = {

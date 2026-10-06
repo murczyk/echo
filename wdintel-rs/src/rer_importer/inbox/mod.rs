@@ -288,7 +288,7 @@ async fn inbox_item_context(
     req: Json<InboxItemContextReq>,
 ) -> Result<Json<InboxItemContextRsp>, AppError> {
     let login = login_id_from_identity(&user).context(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
         .await
         .c(h!())?;
     let Some(message_uid) =
@@ -712,7 +712,7 @@ async fn messages_by_id(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "ApiAgent"],
+        vec!["Rer", "Cyber", "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -742,7 +742,7 @@ async fn messages_by_id_with_metadata(
     req: Json<MessageIdsReq>,
 ) -> Result<Json<InboxMessagesRsp>, AppError> {
     let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
         .await
         .c(h!())?;
     let is_admin = has_role(&env.dbx, &login, "Admin").await.is_ok();
@@ -794,7 +794,7 @@ async fn messages_by_uuid(
 ) -> Result<Json<MessageIdsRsp>, AppError> {
     let req = req.into_inner();
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
         .await
         .c(h!())?;
     let default_req = InboxMessagesReq {
@@ -1145,7 +1145,7 @@ async fn inbox_messages(
     req: Json<InboxMessagesReq>,
 ) -> Result<Json<InboxMessagesApiRsp>, AppError> {
     let user_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &user_id, vec!["Rer", "CyberViewer", "ApiAgent"])
+    has_any_role(&env.dbx, &user_id, vec!["Rer", "Cyber", "ApiAgent"])
         .await
         .c(h!())?;
     let is_admin = has_role(&env.dbx, &user_id, "Admin").await.is_ok();
@@ -1916,7 +1916,7 @@ async fn inbox_messages_count(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "ApiAgent"],
+        vec!["Rer", "Cyber", "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -4790,7 +4790,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .into_active_model();
-        login.roles = Set(json!(["Rer", "DeviceSource"]));
+        login.roles = Set(json!(["Rer"]));
         login.update(&env.dbx).await.unwrap();
         let response = actix_test::call_service(
             &app,

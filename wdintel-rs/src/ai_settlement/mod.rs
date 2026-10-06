@@ -149,7 +149,8 @@ pub async fn test_ai_settlement_parsing(
         .context(h!())?;
     let messages = load_test_messages(&env.dbx).await.context(h!())?;
     let message_versions = test_message_versions(&messages);
-    let results = run_parsing(prompt, engines, messages).await;
+    let results =
+        run_parsing(&env.ai_engine_client, prompt, engines, messages).await;
     Ok(Json(AiSettlementParsingRsp {
         results,
         message_versions,
@@ -200,7 +201,13 @@ pub async fn recalculate_ai_settlement_parsing(
     let engine_versions = ai_engine_versions(&engines);
     let messages = load_test_messages(&env.dbx).await.context(h!())?;
     let message_versions = test_message_versions(&messages);
-    let results = run_parsing(prompt.clone(), engines, messages.clone()).await;
+    let results = run_parsing(
+        &env.ai_engine_client,
+        prompt.clone(),
+        engines,
+        messages.clone(),
+    )
+    .await;
     let results = save_recalculated_prompt_and_results(
         &env.dbx,
         prompt,
@@ -529,6 +536,7 @@ fn result_item_from_db(
 }
 
 async fn run_parsing(
+    ai_client: &crate::ai_engine::AiEngineClient,
     prompt: String,
     engines: Vec<ai_engine::Model>,
     messages: Vec<ai_settlement_test_message::Model>,
@@ -538,7 +546,7 @@ async fn run_parsing(
         messages.clone().into_iter().map(move |message| {
             let engine = engine.clone();
             let prompt = prompt.clone();
-            async move { parse_one(prompt, engine, message).await }
+            async move { parse_one(ai_client, prompt, engine, message).await }
         })
     });
     stream::iter(jobs)
@@ -548,11 +556,13 @@ async fn run_parsing(
 }
 
 async fn parse_one(
+    ai_client: &crate::ai_engine::AiEngineClient,
     prompt: String,
     engine: ai_engine::Model,
     message: ai_settlement_test_message::Model,
 ) -> AiSettlementParseResultItem {
     let response = request_ai_response(
+        ai_client,
         &engine,
         vec![
             AiEngineMessage {

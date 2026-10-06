@@ -260,7 +260,7 @@ pub async fn list_units(
     req: Json<ListUnitsReq>,
 ) -> Result<Json<ListUnitsRsp>, AppError> {
     let login_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login_id, vec!["Rer", "CyberViewer", "Api"])
+    has_any_role(&env.dbx, &login_id, vec!["Rer", "Cyber", "Api"])
         .await
         .c(h!())?;
     let can_view_orbit =
@@ -297,7 +297,7 @@ pub async fn unit_status_counts(
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<UnitStatusCountsRsp>, AppError> {
     let login_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login_id, vec!["Rer", "CyberViewer", "Api"])
+    has_any_role(&env.dbx, &login_id, vec!["Rer", "Cyber", "Api"])
         .await
         .c(h!())?;
     Ok(Json(read_unit_status_counts(&env.dbx).await?))
@@ -1091,7 +1091,7 @@ pub async fn list_units_by_id(
     req: Json<ListUnitsByIdReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "Api"])
         .await
         .c(h!())?;
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
@@ -3419,7 +3419,7 @@ pub async fn units_search(
     req: Json<UnitSearchReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber"])
         .await
         .c(h!())?;
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;

@@ -52,6 +52,7 @@ async fn parse(
         return Ok(None);
     };
     let callsigns = crate::ai_callsign::parse_with_feedback(
+        &env.ai_engine_client,
         &env.dbx,
         &env.rq,
         &config.ai_engine,

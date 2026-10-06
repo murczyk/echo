@@ -92,6 +92,7 @@ describe('DeviceAnalyticsPanel', () => {
   it('renders only active tags with files and lazily paginates a generic tag widget', async () => {
     mocks.getDeviceAnalyticsSummary.mockResolvedValue({
       totalFileCount: 18,
+      filesWithContentCount: 7,
       analyzedFileCount: 12,
       items: [
         {
@@ -129,7 +130,7 @@ describe('DeviceAnalyticsPanel', () => {
     renderPanel(onTagFilterChange);
     await flush();
 
-    expect(container.textContent).toContain('Усього файлів18');
+    expect(container.textContent).toContain('Файлів з контентом / усього7/18');
     expect(container.textContent).toContain('Проаналізовано файлів12');
     expect(container.textContent).toContain('Звіти');
     expect(container.textContent).not.toContain('Архіви');
@@ -163,6 +164,7 @@ describe('DeviceAnalyticsPanel', () => {
   it('shows an empty state when active tags have no files', async () => {
     mocks.getDeviceAnalyticsSummary.mockResolvedValue({
       totalFileCount: 4,
+      filesWithContentCount: 0,
       analyzedFileCount: 4,
       items: [
         {
@@ -183,6 +185,7 @@ describe('DeviceAnalyticsPanel', () => {
   it('keeps a failed widget retryable and exposes device reanalysis only to Admin', async () => {
     mocks.getDeviceAnalyticsSummary.mockResolvedValue({
       totalFileCount: 1,
+      filesWithContentCount: 1,
       analyzedFileCount: 1,
       items: [
         {

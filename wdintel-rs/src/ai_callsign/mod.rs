@@ -136,8 +136,15 @@ pub async fn test_ai_callsign_parsing(
     let prompt = validate_prompt(req.prompt)?;
     let engines = load_enabled_engines(&env.dbx, req.ai_engine_ids).await?;
     let messages = load_test_messages(&env.dbx).await?;
-    let results =
-        run_parsing(&env.dbx, &env.rq, prompt, engines, messages).await;
+    let results = run_parsing(
+        &env.ai_engine_client,
+        &env.dbx,
+        &env.rq,
+        prompt,
+        engines,
+        messages,
+    )
+    .await;
     Ok(Json(AiCallsignParsingRsp { results }))
 }
 
@@ -166,8 +173,15 @@ pub async fn recalculate_ai_callsign_parsing(
     let prompt = validate_prompt(req.prompt)?;
     let engines = load_enabled_engines(&env.dbx, req.ai_engine_ids).await?;
     let messages = load_test_messages(&env.dbx).await?;
-    let results =
-        run_parsing(&env.dbx, &env.rq, prompt.clone(), engines, messages).await;
+    let results = run_parsing(
+        &env.ai_engine_client,
+        &env.dbx,
+        &env.rq,
+        prompt.clone(),
+        engines,
+        messages,
+    )
+    .await;
     let results = save_prompt_and_results(&env.dbx, prompt, results).await?;
     Ok(Json(AiCallsignParsingRsp { results }))
 }
@@ -429,6 +443,7 @@ fn result_item_from_db(
 }
 
 async fn run_parsing(
+    ai_client: &crate::ai_engine::AiEngineClient,
     db: &DatabaseConnection,
     rq: &reqwest::Client,
     prompt: String,
@@ -440,7 +455,9 @@ async fn run_parsing(
         messages.clone().into_iter().map(move |message| {
             let engine = engine.clone();
             let prompt = prompt.clone();
-            async move { parse_one(db, rq, prompt, engine, message).await }
+            async move {
+                parse_one(ai_client, db, rq, prompt, engine, message).await
+            }
         })
     });
     stream::iter(jobs)
@@ -450,21 +467,27 @@ async fn run_parsing(
 }
 
 async fn parse_one(
+    ai_client: &crate::ai_engine::AiEngineClient,
     db: &DatabaseConnection,
     rq: &reqwest::Client,
     prompt: String,
     engine: ai_engine::Model,
     message: ai_callsign_test_message::Model,
 ) -> AiCallsignParseResultItem {
-    let response =
-        parse_with_feedback(db, rq, &engine, &prompt, &message.message, false)
-            .await
-            .and_then(|callsigns| {
-                serde_json::to_string(
-                    &serde_json::json!({"callsigns": callsigns}),
-                )
-                .c(h!())
-            });
+    let response = parse_with_feedback(
+        ai_client,
+        db,
+        rq,
+        &engine,
+        &prompt,
+        &message.message,
+        false,
+    )
+    .await
+    .and_then(|callsigns| {
+        serde_json::to_string(&serde_json::json!({"callsigns": callsigns}))
+            .c(h!())
+    });
     match response {
         Ok(response_text) => match parse_callsigns(&response_text) {
             Ok(callsigns) => AiCallsignParseResultItem {
@@ -496,6 +519,7 @@ async fn parse_one(
 }
 
 pub(crate) async fn parse_with_feedback<C: sea_orm::ConnectionTrait>(
+    ai_client: &crate::ai_engine::AiEngineClient,
     db: &C,
     rq: &reqwest::Client,
     engine: &ai_engine::Model,
@@ -510,19 +534,25 @@ pub(crate) async fn parse_with_feedback<C: sea_orm::ConnectionTrait>(
     )
     .await
     .c(h!())?;
-    let initial = extract_ai_callsigns(engine, prompt, body).await.c(h!())?;
-    let ai = feedback::refine(db, engine, prompt, body, initial, &templates)
+    let initial = extract_ai_callsigns(ai_client, engine, prompt, body)
         .await
         .c(h!())?;
+    let ai = feedback::refine(
+        ai_client, db, engine, prompt, body, initial, &templates,
+    )
+    .await
+    .c(h!())?;
     Ok(worker::merge_current_and_ai_callsigns(templates, ai))
 }
 
 pub(crate) async fn extract_ai_callsigns(
+    ai_client: &crate::ai_engine::AiEngineClient,
     ai_engine: &ai_engine::Model,
     prompt: &str,
     body: &str,
 ) -> Result<Vec<String>, AppError> {
     let response_text = request_ai_response(
+        ai_client,
         ai_engine,
         vec![
             AiEngineMessage {

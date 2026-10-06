@@ -254,7 +254,7 @@ async fn reuse_authentication_digest_and_target_guards_fail_closed() {
         &env.dbx,
         login::ActiveModel {
             login: Set(format!("reuse-outsider-{}", Uuid::new_v4())),
-            roles: Set(json!([ROLE_DEVICE_SOURCE])),
+            roles: Set(json!([ROLE_CYBER])),
             organism_id: Set(Some(outsider_organism.id)),
             ..Default::default()
         },

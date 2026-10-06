@@ -1,4 +1,7 @@
+pub mod client;
+pub mod gov;
 pub mod types;
+pub use client::AiEngineClient;
 
 use crate::config::{
     AI_CHAT_PROMPT_MAX_CHARS, AI_CHAT_ROLE_ASSISTANT, AI_CHAT_ROLE_USER,
@@ -464,7 +467,9 @@ pub async fn send_ai_chat_message(
         role: AI_CHAT_ROLE_USER.to_string(),
         content: prompt.clone(),
     });
-    let response = request_ai_response(&ai_engine, messages).await?;
+    let response =
+        request_ai_response(&env.ai_engine_client, &ai_engine, messages)
+            .await?;
     let chat_id = save_chat_exchange(
         &env.dbx,
         ai_engine_id,
@@ -754,21 +759,22 @@ async fn load_chat_for_send(
 }
 
 pub async fn request_ai_response(
+    client: &AiEngineClient,
     ai_engine: &ai_engine::Model,
     messages: Vec<AiEngineMessage>,
 ) -> Result<String, AppError> {
-    Ok(
-        request_ai_response_with_options(ai_engine, messages, None, None, None)
-            .await?
-            .content,
+    Ok(request_ai_response_with_options(
+        client, ai_engine, messages, None, None, None,
     )
+    .await?
+    .content)
 }
 
 pub async fn request_ocr_response(
+    client: &AiEngineClient,
     ai_engine: &ai_engine::Model,
     request: AiEngineOcrRequest,
 ) -> Result<AiEngineOcrResponse, AppError> {
-    let endpoint = chat_completions_url(&ai_engine.url)?;
     let image_url = format!(
         "data:image/png;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(request.image_png)
@@ -792,15 +798,14 @@ pub async fn request_ocr_response(
         body["mm_processor_kwargs"] =
             serde_json::json!({"max_pixels": 1120_u64 * 1120});
     }
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(AI_ENGINE_REQUEST_TIMEOUT_SEC))
-        .build()
+    let response = client
+        .send(
+            ai_engine,
+            body,
+            Duration::from_secs(AI_ENGINE_REQUEST_TIMEOUT_SEC),
+        )
+        .await
         .c(h!())?;
-    let mut request_builder = client.post(endpoint).json(&body);
-    if let Some(token) = ai_engine.token.as_deref() {
-        request_builder = request_builder.bearer_auth(token);
-    }
-    let response = request_builder.send().await.c(h!())?;
     let status = response.status();
     let body = response.text().await.c(h!())?;
     if !status.is_success() {
@@ -853,6 +858,7 @@ fn ocr_prompt() -> &'static str {
 }
 
 pub async fn request_structured_ai_response(
+    client: &AiEngineClient,
     ai_engine: &ai_engine::Model,
     messages: Vec<AiEngineMessage>,
     temperature: f32,
@@ -860,6 +866,7 @@ pub async fn request_structured_ai_response(
     response_format: serde_json::Value,
 ) -> Result<AiEngineResponse, AppError> {
     request_ai_response_with_options(
+        client,
         ai_engine,
         messages,
         Some(temperature),
@@ -870,28 +877,29 @@ pub async fn request_structured_ai_response(
 }
 
 async fn request_ai_response_with_options(
+    client: &AiEngineClient,
     ai_engine: &ai_engine::Model,
     messages: Vec<AiEngineMessage>,
     temperature: Option<f32>,
     max_tokens: Option<u32>,
     response_format: Option<serde_json::Value>,
 ) -> Result<AiEngineResponse, AppError> {
-    let endpoint = chat_completions_url(&ai_engine.url)?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(AI_ENGINE_REQUEST_TIMEOUT_SEC))
-        .build()
-        .c(h!())?;
-    let mut request = client.post(endpoint).json(&OpenAiChatCompletionReq {
+    let body = serde_json::to_value(OpenAiChatCompletionReq {
         model_name: ai_engine.model_name.clone(),
         messages,
         temperature,
         max_tokens,
         response_format,
-    });
-    if let Some(token) = ai_engine.token.as_deref() {
-        request = request.bearer_auth(token);
-    }
-    let response = request.send().await.c(h!())?;
+    })
+    .c(h!())?;
+    let response = client
+        .send(
+            ai_engine,
+            body,
+            Duration::from_secs(AI_ENGINE_REQUEST_TIMEOUT_SEC),
+        )
+        .await
+        .c(h!())?;
     let status = response.status();
     let body = response.text().await.c(h!())?;
     if !status.is_success() {
@@ -1062,3 +1070,6 @@ mod tests {
         assert_eq!(chat_title(&"a".repeat(121)).chars().count(), 120);
     }
 }
+
+#[cfg(test)]
+mod gov_tests;

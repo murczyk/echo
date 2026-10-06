@@ -70,6 +70,8 @@ pub mod tests {
                 .execute_unprepared(
                     r#"
                     truncate table
+                        public.device_audio,
+                        public.device_audio_ingest,
                         public.file_analysis_run_item,
                         public.file_analysis_run,
                         public.file_analysis_definition,

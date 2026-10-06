@@ -82,7 +82,7 @@ pub async fn post_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", "Cyber", "Api"],
     )
     .await?;
 
@@ -224,7 +224,7 @@ pub async fn post_name_search(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer"],
+        vec!["Rer", "Cyber"],
     )
     .await
     .c(h!())?;

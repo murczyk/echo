@@ -28,6 +28,7 @@ pub mod ai_callsign_worker_job;
 pub mod ai_chat;
 pub mod ai_chat_message;
 pub mod ai_engine;
+pub mod ai_gov_ua_settings;
 pub mod ai_intel_report_attempt;
 pub mod ai_intel_report_settings;
 pub mod ai_position_coordinate;

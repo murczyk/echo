@@ -36,7 +36,7 @@ pub(super) async fn summarize(
     };
     let db = env.file_registry_db().c(h!())?.connection();
     if let Some(chunk)=rows::<Chunk,_>(db,"select id,text from file_document_chunk where generation=$1 and summary is null order by ordinal limit 1",vec![job.generation.into()]).await.c(h!())?.pop() {
-        let (summary,_)=crate::media_summary::worker::summarize_attachment_text(&engine,&chunk.text).await.c(h!())?;
+        let (summary,_)=crate::media_summary::worker::summarize_attachment_text(&env.ai_engine_client,&engine,&chunk.text).await.c(h!())?;
         let tx=db.begin().await.c(h!())?; queue::renew(&tx,job).await.c(h!())?;
         execute(&tx,"update file_document_chunk set summary=$2 where id=$1",vec![chunk.id.into(),summary.into()]).await.c(h!())?;
         tx.commit().await.c(h!())?;
@@ -69,7 +69,9 @@ pub(super) async fn summarize(
             queue::renew(db, job).await.c(h!())?;
             let (summary, _) =
                 crate::media_summary::worker::summarize_attachment_text(
-                    &engine, &batch,
+                    &env.ai_engine_client,
+                    &engine,
+                    &batch,
                 )
                 .await
                 .c(h!())?;
@@ -106,6 +108,7 @@ pub(super) async fn positions(
     };
     let settings = crate::ai_position::settings(&env.dbx).await.c(h!())?;
     let extraction = crate::ai_position::extract::extract(
+        &env.ai_engine_client,
         &engine,
         crate::ai_position::effective_prompt(
             settings

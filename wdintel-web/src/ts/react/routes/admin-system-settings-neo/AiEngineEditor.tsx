@@ -12,6 +12,7 @@ import {
 import { useState } from 'react';
 
 import type { AiEngineItem } from '../../../../Bindings';
+import { isGovernmentAiUrl } from '../admin-ai-agent/engine-eligibility';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { createAiEngine, updateAiEngine } from '../../services/api/ai-engines';
@@ -84,6 +85,10 @@ export function AiEngineEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEdit = aiEngine !== undefined;
+  let isGovernment = false;
+  try {
+    isGovernment = isGovernmentAiUrl(new URL(form.url));
+  } catch {}
 
   function patchForm(patch: Partial<AiEngineForm>) {
     setForm((current) => ({ ...current, ...patch }));
@@ -98,7 +103,7 @@ export function AiEngineEditor({
     setSaving(true);
     setError(null);
     try {
-      const token = form.token.trim() || null;
+      const token = isGovernment ? null : form.token.trim() || null;
       const saved = isEdit
         ? await updateAiEngine({
             id: aiEngine.id,
@@ -106,7 +111,7 @@ export function AiEngineEditor({
             url: form.url.trim(),
             modelName: form.modelName.trim(),
             token,
-            clearToken: form.clearToken,
+            clearToken: isGovernment || form.clearToken,
             enabled: form.enabled,
             callsignEnabled: form.callsignEnabled,
             ocrEnabled: form.ocrEnabled,
@@ -173,7 +178,7 @@ export function AiEngineEditor({
           label="Base URL"
           value={form.url}
           onChange={(event) => patchForm({ url: event.target.value })}
-          helperText="Наприклад, https://api.openai.com/v1 або http://spark:8000/v1"
+          helperText="https://inference.ai.mod.gov.ua/v1, https://api.openai.com/v1 або http://spark:8000/v1"
         />
         <TextField
           fullWidth
@@ -181,7 +186,7 @@ export function AiEngineEditor({
           label="Модель"
           value={form.modelName}
           onChange={(event) => patchForm({ modelName: event.target.value })}
-          helperText="Ідентифікатор моделі OpenAI або ім’я моделі vLLM"
+          helperText="Ідентифікатор моделі, наприклад gpt-6-sol або gpt-6-luna"
         />
         <FormControlLabel
           control={
@@ -215,15 +220,17 @@ export function AiEngineEditor({
           label="Токен"
           type="password"
           value={form.token}
-          disabled={form.clearToken}
+          disabled={isGovernment || form.clearToken}
           onChange={(event) => patchForm({ token: event.target.value })}
           helperText={
-            isEdit && aiEngine.hasToken
-              ? 'Залиште порожнім, щоб зберегти чинний токен'
-              : 'Можна залишити порожнім для vLLM без автентифікації'
+            isGovernment
+              ? 'Спільна авторизація Azure задається в налаштуваннях державного шлюзу ШІ.'
+              : isEdit && aiEngine.hasToken
+                ? 'Залиште порожнім, щоб зберегти чинний токен'
+                : 'Можна залишити порожнім для vLLM без автентифікації'
           }
         />
-        {isEdit && aiEngine.hasToken ? (
+        {!isGovernment && isEdit && aiEngine.hasToken ? (
           <FormControlLabel
             control={
               <Switch

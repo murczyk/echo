@@ -8,7 +8,7 @@ it never requests an upload or connects to a source device.
 ## Access and source identity
 
 Device access requires the enabled Devices section, an active user and organism,
-and the existing Cyber, CyberViewer or Admin read permission. API agents resolve
+and the existing Cyber or Admin read permission. API agents resolve
 their linked human on every request. Existing organization hierarchy rules apply.
 Search defaults to active devices and current file revisions; archived devices
 and history require explicit options. Historical sources remain readable while
@@ -119,7 +119,10 @@ tables and immutable generations so existing sources can be recovered. A schema
 down migration deletes derived evidence and should not be used for routine
 rollback.
 
-Regression coverage: `wdintel-rs/src/devices/documents/tests/`,
+Regression coverage: `wdintel-rs/src/devices/documents/tests/authorization.rs`,
+`wdintel-rs/src/devices/documents/tests/lifecycle.rs`,
+`wdintel-rs/src/devices/documents/tests/maps.rs`,
+`wdintel-rs/src/devices/documents/tests/positions.rs`,
 `echo-ai-agent/runner/devices.test.ts`,
 `echo-ai-agent/runner/map-script.test.ts`, and
 `wdintel-web/tests/e2e/ai-agent-files.spec.ts`.

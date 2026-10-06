@@ -91,13 +91,16 @@ pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
             break;
         }
         let _loop_guard = worker_watch::loop_guard("ai_settlement_worker");
-        let processed = match process_next(&env.dbx, &mut redis).await {
-            Ok(processed) => processed,
-            Err(error) => {
-                error!("ai_settlement_worker failed: {error:#?}");
-                false
-            }
-        };
+        let processed =
+            match process_next(&env.ai_engine_client, &env.dbx, &mut redis)
+                .await
+            {
+                Ok(processed) => processed,
+                Err(error) => {
+                    error!("ai_settlement_worker failed: {error:#?}");
+                    false
+                }
+            };
         if processed {
             continue;
         }
@@ -111,6 +114,7 @@ pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
 }
 
 async fn process_next(
+    ai_client: &crate::ai_engine::AiEngineClient,
     dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
 ) -> Result<bool, AppError> {
@@ -133,6 +137,7 @@ async fn process_next(
     };
     let body = message.body.unwrap_or_default();
     let response = request_ai_response(
+        ai_client,
         &config.ai_engine,
         vec![
             AiEngineMessage {
