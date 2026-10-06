@@ -17,6 +17,7 @@ import {
 import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import { attachmentIcon, fileExtension, formatFileSize, mediaKind } from './attachment-files';
+import { AttachmentRenameDialog } from './AttachmentRenameDialog';
 
 export type AttachmentPreviewFile = {
   id: string;
@@ -263,6 +264,7 @@ type FileRowProps = {
   onRemove: () => void;
   onDownload?: () => void;
   onEdit?: () => void;
+  onRename?: (fileName: string) => void;
   previewUrl?: string;
   onPreviewError?: () => void;
   onPreviewClick?: () => void;
@@ -275,6 +277,7 @@ export function AttachmentFileRow({
   onRemove,
   onDownload,
   onEdit,
+  onRename,
   previewUrl,
   onPreviewError,
   onPreviewClick,
@@ -287,6 +290,8 @@ export function AttachmentFileRow({
   const kind = mediaKind(file.type, file.name);
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchorEl);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const renameActionRef = useRef<HTMLElement | null>(null);
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation();
@@ -307,6 +312,13 @@ export function AttachmentFileRow({
     handleMenuClose();
     menuAnchor?.blur();
     window.setTimeout(() => onEdit?.(), 0);
+  };
+  const handleRenameClick = () => {
+    const menuAnchor = menuAnchorEl;
+    renameActionRef.current = menuAnchor;
+    handleMenuClose();
+    menuAnchor?.blur();
+    window.setTimeout(() => setRenameOpen(true), 0);
   };
 
   return (
@@ -389,7 +401,7 @@ export function AttachmentFileRow({
             {meta}
           </Typography>
         ) : null}
-        {onDownload || onEdit ? (
+        {onDownload || onEdit || onRename ? (
           <span className="flex shrink-0 items-center gap-0">
             <IconButton
               size="small"
@@ -425,6 +437,11 @@ export function AttachmentFileRow({
                   <ListItemText>Завантажити</ListItemText>
                 </MenuItem>
               ) : null}
+              {onRename ? (
+                <MenuItem onClick={handleRenameClick}>
+                  <ListItemText>Перейменувати</ListItemText>
+                </MenuItem>
+              ) : null}
             </Menu>
             <IconButton
               size="small"
@@ -436,7 +453,7 @@ export function AttachmentFileRow({
             </IconButton>
           </span>
         ) : null}
-        {!onDownload && !onEdit ? (
+        {!onDownload && !onEdit && !onRename ? (
           <IconButton
             size="small"
             aria-label={`Видалити ${file.name}`}
@@ -468,6 +485,19 @@ export function AttachmentFileRow({
             {upload.label}
           </Typography>
         </Box>
+      ) : null}
+      {onRename && renameOpen ? (
+        <AttachmentRenameDialog
+          open={renameOpen}
+          fileName={file.name}
+          onClose={() => {
+            setRenameOpen(false);
+            window.setTimeout(() => renameActionRef.current?.focus(), 0);
+          }}
+          onRename={async (fileName) => {
+            await onRename(fileName);
+          }}
+        />
       ) : null}
     </Box>
   );

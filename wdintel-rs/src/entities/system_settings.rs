@@ -54,6 +54,10 @@ pub struct Model {
     pub two_factor_auth_enabled: Option<bool>,
     pub analysis_aor_filter_enabled: Option<bool>,
     pub exclude_orbit_other_units: Option<bool>,
+    pub messenger_media_cache_enabled: Option<bool>,
+    pub messenger_media_cache_retention_hours: Option<i64>,
+    pub messenger_media_cache_max_size_gib: Option<i64>,
+    pub messenger_media_cache_min_free_gib: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

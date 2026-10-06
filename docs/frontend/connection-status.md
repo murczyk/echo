@@ -19,3 +19,14 @@ Errors from user actions retain their existing notifications.
 
 Coverage: `wdintel-web/tests/SessionExpiryTests.elm` and
 `wdintel-web/tests/e2e/connection-status.spec.ts`.
+
+Analysis filter requests also recover from network failures and HTTP 5xx responses.
+Each section has at most one scheduled retry, starting at 2 seconds and doubling
+up to a 25–30 second interval. Random spacing reduces simultaneous retries across
+clients. Renders cannot bypass that delay, including when other sections fail.
+Successful loads reset the delay; query invalidation and leaving the page cancel
+pending retries. A failure streak reports its first error once. Other HTTP errors
+remain blocked for the same filter request until the query is invalidated.
+
+Regression: [#3658](https://github.com/echoua/echo/issues/3658), exercised by
+`wdintel-web/tests/e2e/connection-status.spec.ts` for gateway and network failures.

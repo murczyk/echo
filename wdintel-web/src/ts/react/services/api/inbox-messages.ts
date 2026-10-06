@@ -111,6 +111,7 @@ export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaI
     transcription: (m.transcription ?? raw.transcription ?? null) as string | null,
     ocr: m.ocr ?? null,
     summary: m.summary ?? null,
+    positions: transformSnakeToCamel<MessageMediaInfo['positions']>(m.positions ?? []),
     kmzConversionStatus: (m.kmzConversionStatus ?? raw.kmz_conversion_status ?? null) as
       string | null,
   };

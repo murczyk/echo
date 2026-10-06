@@ -10,6 +10,7 @@ import File exposing (File)
 import File.Select
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Html.Events exposing (onInput)
 import Layouts
 import Page exposing (Page)
 import Process
@@ -47,6 +48,9 @@ toLayout user _ =
 type alias Model =
     { selectedFile : Maybe File
     , preflight : PreflightState
+    , signalGroups : List B.RerCsvImportSignalGroup
+    , targetSignalGroupMasterKey : Maybe String
+    , signalGroupsLoading : Bool
     , importSubmitting : Bool
     , console : Shared.Components.Console.Model
     }
@@ -70,15 +74,20 @@ init : () -> ( Model, Effect Msg )
 init _ =
     ( { selectedFile = Nothing
       , preflight = PreflightNotRun
+      , signalGroups = []
+      , targetSignalGroupMasterKey = Nothing
+      , signalGroupsLoading = True
       , importSubmitting = False
       , console = Shared.Components.Console.init
       }
-    , E.none
+    , E.sendCmd <| Api.rer_csv_import_options ImportOptionsDone
     )
 
 
 type Msg
-    = ChooseFile
+    = ImportOptionsDone (Result ApiError B.RerCsvImportOptions)
+    | TargetSignalGroupSelected String
+    | ChooseFile
     | FileSelected File
     | PreflightData
     | PreflightDone (Result ApiError ( Bytes, B.RerCsvPreflightMetadata ))
@@ -91,6 +100,32 @@ type Msg
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
+        ImportOptionsDone (Err error) ->
+            ( { model | signalGroupsLoading = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" error
+            )
+
+        ImportOptionsDone (Ok options) ->
+            ( { model
+                | signalGroups = options.signalGroups
+                , targetSignalGroupMasterKey = options.defaultTargetSignalGroupMasterKey
+                , signalGroupsLoading = False
+              }
+            , E.none
+            )
+
+        TargetSignalGroupSelected masterKey ->
+            ( { model
+                | targetSignalGroupMasterKey =
+                    if String.isEmpty masterKey then
+                        Nothing
+
+                    else
+                        Just masterKey
+              }
+            , E.none
+            )
+
         ChooseFile ->
             ( model
             , E.sendCmd <|
@@ -171,10 +206,10 @@ update msg model =
                 ( model, E.none )
 
             else
-                case ( model.selectedFile, model.preflight ) of
-                    ( Just file, PreflightPassed summary ) ->
+                case ( model.selectedFile, model.preflight, model.targetSignalGroupMasterKey ) of
+                    ( Just file, PreflightPassed summary, Just targetSignalGroupMasterKey ) ->
                         ( { model | importSubmitting = True }
-                        , E.sendCmd <| Api.rer_csv_import True summary.referenceTimestampMs ImportDone file
+                        , E.sendCmd <| Api.rer_csv_import True summary.referenceTimestampMs targetSignalGroupMasterKey ImportDone file
                         )
 
                     _ ->
@@ -290,6 +325,9 @@ importControls model =
 
                 _ ->
                     False
+
+        hasTargetSignalGroup =
+            model.targetSignalGroupMasterKey /= Nothing
     in
     div [ class "mt-4 flex flex-wrap justify-center items-center gap-3" ]
         [ Button.new
@@ -324,8 +362,44 @@ importControls model =
                   else
                     i [ class "bi bi-upload" ] []
                 ]
-            |> Button.withDisabled (not preflightPassed || busy)
+            |> Button.withDisabled (not preflightPassed || not hasTargetSignalGroup || busy)
             |> Button.view
+        ]
+
+
+targetSignalGroupSelect : Model -> Html Msg
+targetSignalGroupSelect model =
+    div [ class "mt-4 max-w-xl mx-auto" ]
+        [ label [ for "rer-csv-target-signal-group", class "form-label" ]
+            [ text "Цільова група" ]
+        , select
+            [ id "rer-csv-target-signal-group"
+            , class "form-input w-full"
+            , required True
+            , disabled (model.signalGroupsLoading || isBusy model)
+            , onInput TargetSignalGroupSelected
+            ]
+            (option
+                [ value ""
+                , selected (model.targetSignalGroupMasterKey == Nothing)
+                ]
+                [ text <|
+                    if model.signalGroupsLoading then
+                        "Завантаження груп…"
+
+                    else
+                        "Оберіть групу"
+                ]
+                :: List.map
+                    (\group ->
+                        option
+                            [ value group.masterKey
+                            , selected (model.targetSignalGroupMasterKey == Just group.masterKey)
+                            ]
+                            [ text group.name ]
+                    )
+                    model.signalGroups
+            )
         ]
 
 
@@ -366,6 +440,7 @@ contentBlock model =
                 [ text "Дата: 2024-03-02;\nЧас: 07:09;\nЧастота: 460.3250;\nПост: П325;\nЛокація: Авдіївка - Ласточкіне;\nПідрозділ: УКХ р/м 1 мсб 5 омсбр;\nХто: КАЛУГА;\nКому: БРЕСТ;\nТекст:\n- Калуга\n- Брест\n- Это кассеты по нам работают, не надо назад, вперед не останавливайтесь.Какие нахуй соседи по вам ложат, мы стреляем по лесополосе,вперед пошли пока ничего не летеит, быстрее. У нас БКне безгранично, идем пока держым.Вы чо сука охуели, почему вперед не идёте, Быстрее пошли пока нету воздействия, пока идем по всем фронтам, что один раз прилитело и вы обосрались, сейчас вон по 455 ебашут нахуй потому что там пацаны тоже идут. Пошли быстрее\n- СТарший я Брест я не понял в чем дело, мы только ебашим, прикрываем. Идем ребятки. Не по вам давайте быстрее и закрепляйтесь. Заходите закрепляйтесь молодци ребята, Ребята вы где уже в нашей полосе? Всё вы уже в блиндаже?сейчас подойду;\n\n48.1434076, 37.7146826"
                 ]
             ]
+        , targetSignalGroupSelect model
         , importControls model
         , selectedFileStatus model
         , Shared.Components.Console.view model.console

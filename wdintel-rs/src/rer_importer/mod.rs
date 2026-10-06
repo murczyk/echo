@@ -168,9 +168,22 @@ async fn messenger_media(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user).c(h!())?;
-    let media_id = path.0;
+    let media = load_authorized_messenger_media(env.as_ref(), &user, path.0)
+        .await
+        .c(h!())?;
+
+    Ok(serve_messenger_media(&req, env.as_ref(), &media)
+        .await
+        .c(h!())?)
+}
+
+async fn load_authorized_messenger_media(
+    env: &Env,
+    user: &actix_identity::Identity,
+    media_id: Uuid,
+) -> Result<signal_message_media::Model, AppError> {
+    ensure_base_role(&env.dbx, user).await.c(h!())?;
+    let login = login_id_from_identity(user).c(h!())?;
     let media = signal_message_media::Entity::find_by_id(media_id)
         .one(&env.dbx)
         .await
@@ -185,9 +198,80 @@ async fn messenger_media(
     .await
     .c(h!())?;
 
-    Ok(serve_messenger_media(&req, env.as_ref(), &media)
+    Ok(media)
+}
+
+#[get("/api/messenger/media/{media_id}/playback")]
+async fn messenger_media_playback(
+    user: actix_identity::Identity,
+    req: HttpRequest,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<(Uuid,)>,
+) -> Result<HttpResponse, AppError> {
+    use crate::messenger::media_local_cache::playback::PlaybackStatus;
+    let media = load_authorized_messenger_media(env.as_ref(), &user, path.0)
         .await
-        .c(h!())?)
+        .c(h!())?;
+    match crate::messenger::media_local_cache::playback_status(
+        env.into_inner(),
+        &media,
+    )
+    .await
+    .c(h!())?
+    {
+        PlaybackStatus::Ready(path) => {
+            let file =
+                actix_files::NamedFile::open_async(path).await.c(h!())?;
+            Ok(local_messenger_media_response(
+                &req,
+                &media,
+                file,
+                "video/mp4",
+            ))
+        }
+        PlaybackStatus::Original => Ok(HttpResponse::TemporaryRedirect()
+            .insert_header((
+                header::LOCATION,
+                format!("/api/messenger/media/{}", media.id),
+            ))
+            .insert_header((header::CACHE_CONTROL, "private, no-store"))
+            .finish()),
+        PlaybackStatus::Pending => Err(AppError::ServiceUnavailable {
+            msg: "video playback copy is being prepared".to_string(),
+            retry_after_secs:
+                crate::config::MESSENGER_MEDIA_CACHE_BUSY_RETRY_AFTER_SECS,
+        }),
+        PlaybackStatus::Failed => Ok(HttpResponse::UnprocessableEntity()
+            .insert_header((header::CACHE_CONTROL, "private, no-store"))
+            .finish()),
+    }
+}
+
+fn local_messenger_media_response(
+    req: &HttpRequest,
+    media: &signal_message_media::Model,
+    file: actix_files::NamedFile,
+    content_type: &str,
+) -> HttpResponse {
+    let mut file = file.use_etag(false).use_last_modified(false);
+    if let Ok(content_type) = content_type.parse::<actix_web::mime::Mime>() {
+        file = file.set_content_type(content_type);
+    }
+    if let Some(disposition) =
+        media_inline_content_disposition(media.file_name.as_deref())
+    {
+        file = file.set_content_disposition(disposition);
+    }
+    let mut response = file.into_response(req);
+    response.headers_mut().insert(
+        header::HeaderName::from_static("x-accel-buffering"),
+        header::HeaderValue::from_static("no"),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("private, no-store"),
+    );
+    response
 }
 
 pub(crate) async fn serve_messenger_media(
@@ -195,6 +279,39 @@ pub(crate) async fn serve_messenger_media(
     env: &Env,
     media: &signal_message_media::Model,
 ) -> Result<HttpResponse, AppError> {
+    let cache_config =
+        crate::messenger::media_local_cache::configured_config_best_effort(
+            &env.config,
+            &env.dbx,
+        )
+        .await;
+    match crate::messenger::media_local_cache::ready_original(
+        &cache_config,
+        media,
+    )
+    .await
+    {
+        Ok(Some(path)) => {
+            match actix_files::NamedFile::open_async(path).await {
+                Ok(file) => {
+                    return Ok(local_messenger_media_response(
+                        req,
+                        media,
+                        file,
+                        &media.content_type,
+                    ))
+                }
+                Err(error) => warn!(
+                    "could not open retained media {}: {error:?}",
+                    media.id
+                ),
+            }
+        }
+        Ok(None) => {}
+        Err(error) => {
+            warn!("could not inspect retained media {}: {error:#}", media.id)
+        }
+    }
     if !media.is_encrypted {
         return Ok(serve_plaintext_messenger_media(req, env, media)
             .await

@@ -28,7 +28,9 @@ page URLs carry UUID strings; existing message and AOR identifiers are unchanged
 Located position highlights use the same styling as palette points. They join
 the message's coordinate preview alongside direct coordinates, palette points
 and document coordinates. Clicking a position opens that complete map focused
-on its location; clicking the map thumbnail fits all points. Positions without
+on its location; hovering shows the shared overview/detail map preview. Recognized
+document positions also join the message map, using their own or known coordinates.
+Clicking the map thumbnail fits all points. Positions without
 coordinates keep their tooltip without opening a map.
 
 The map's coordinate card links to the message supporting those coordinates,
@@ -105,7 +107,9 @@ knowledge as conflicting. The tunables are in `config.rs`
 
 When a mention in a message card has no coordinates of its own, the card shows
 the knowledge for the mention's scopes. AOR knowledge is preferred, and the
-mention's time must fall within the window. The card only uses knowledge built
+mention's time must be no earlier than the start of the window. Later mentions
+retain the last known location even after 30 days, with its source date and
+conflict indication; this does not claim a newly confirmed position. The card only uses knowledge built
 entirely from groups the viewer can read. The admin page hides mentions and
 knowledge of private groups the admin cannot read.
 

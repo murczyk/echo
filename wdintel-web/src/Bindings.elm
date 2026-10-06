@@ -1049,6 +1049,34 @@ rerCsvPreflightMetadataEncoder struct =
         ]
 
 
+type alias RerCsvImportSignalGroup =
+    { masterKey : String
+    , name : String
+    }
+
+
+rerCsvImportSignalGroupEncoder : RerCsvImportSignalGroup -> Json.Encode.Value
+rerCsvImportSignalGroupEncoder struct =
+    Json.Encode.object
+        [ ( "masterKey", (Json.Encode.string) struct.masterKey )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias RerCsvImportOptions =
+    { signalGroups : List (RerCsvImportSignalGroup)
+    , defaultTargetSignalGroupMasterKey : Maybe (String)
+    }
+
+
+rerCsvImportOptionsEncoder : RerCsvImportOptions -> Json.Encode.Value
+rerCsvImportOptionsEncoder struct =
+    Json.Encode.object
+        [ ( "signalGroups", (Json.Encode.list (rerCsvImportSignalGroupEncoder)) struct.signalGroups )
+        , ( "defaultTargetSignalGroupMasterKey", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.defaultTargetSignalGroupMasterKey )
+        ]
+
+
 type alias AreaOfResponsibilityEntry =
     { id : Int
     , name : String
@@ -7124,6 +7152,7 @@ type alias MessageMediaInfo =
     , ocr : Maybe (OcrMediaSummary)
     , summary : Maybe (MediaSummaryStatus)
     , kmzConversionStatus : Maybe (String)
+    , positions : List (CnPosition)
     }
 
 
@@ -7139,6 +7168,7 @@ messageMediaInfoEncoder struct =
         , ( "ocr", (Maybe.withDefault Json.Encode.null << Maybe.map (ocrMediaSummaryEncoder)) struct.ocr )
         , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (mediaSummaryStatusEncoder)) struct.summary )
         , ( "kmz_conversion_status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.kmzConversionStatus )
+        , ( "positions", (Json.Encode.list (cnPositionEncoder)) struct.positions )
         ]
 
 
@@ -12461,6 +12491,10 @@ type alias SystemSettingsItem =
     , analysisAorFilterEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , excludeOrbitOtherUnits : Bool
+    , messengerMediaCacheEnabled : Bool
+    , messengerMediaCacheRetentionHours : Int
+    , messengerMediaCacheMaxSizeGib : Int
+    , messengerMediaCacheMinFreeGib : Int
     }
 
 
@@ -12504,6 +12538,10 @@ systemSettingsItemEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
+        , ( "messenger_media_cache_enabled", (Json.Encode.bool) struct.messengerMediaCacheEnabled )
+        , ( "messenger_media_cache_retention_hours", (Json.Encode.int) struct.messengerMediaCacheRetentionHours )
+        , ( "messenger_media_cache_max_size_gib", (Json.Encode.int) struct.messengerMediaCacheMaxSizeGib )
+        , ( "messenger_media_cache_min_free_gib", (Json.Encode.int) struct.messengerMediaCacheMinFreeGib )
         ]
 
 
@@ -12552,6 +12590,10 @@ type alias CreateSystemSettingsReq =
     , analysisAorFilterEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , excludeOrbitOtherUnits : Bool
+    , messengerMediaCacheEnabled : Bool
+    , messengerMediaCacheRetentionHours : Int
+    , messengerMediaCacheMaxSizeGib : Int
+    , messengerMediaCacheMinFreeGib : Int
     }
 
 
@@ -12590,6 +12632,10 @@ createSystemSettingsReqEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
+        , ( "messenger_media_cache_enabled", (Json.Encode.bool) struct.messengerMediaCacheEnabled )
+        , ( "messenger_media_cache_retention_hours", (Json.Encode.int) struct.messengerMediaCacheRetentionHours )
+        , ( "messenger_media_cache_max_size_gib", (Json.Encode.int) struct.messengerMediaCacheMaxSizeGib )
+        , ( "messenger_media_cache_min_free_gib", (Json.Encode.int) struct.messengerMediaCacheMinFreeGib )
         ]
 
 
@@ -17251,6 +17297,20 @@ rerCsvPreflightMetadataDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "invalidMessageSize" (Json.Decode.int)))
 
 
+rerCsvImportSignalGroupDecoder : Json.Decode.Decoder RerCsvImportSignalGroup
+rerCsvImportSignalGroupDecoder =
+    Json.Decode.succeed RerCsvImportSignalGroup
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "masterKey" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+rerCsvImportOptionsDecoder : Json.Decode.Decoder RerCsvImportOptions
+rerCsvImportOptionsDecoder =
+    Json.Decode.succeed RerCsvImportOptions
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signalGroups" (Json.Decode.list (rerCsvImportSignalGroupDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "defaultTargetSignalGroupMasterKey" (Json.Decode.nullable (Json.Decode.string))))
+
+
 areaOfResponsibilityEntryDecoder : Json.Decode.Decoder AreaOfResponsibilityEntry
 areaOfResponsibilityEntryDecoder =
     Json.Decode.succeed AreaOfResponsibilityEntry
@@ -21005,6 +21065,7 @@ messageMediaInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ocr" (Json.Decode.nullable (ocrMediaSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (mediaSummaryStatusDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kmz_conversion_status" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "positions" (Json.Decode.list (cnPositionDecoder))))
 
 
 signalMediaKmzConversionStatusRspDecoder : Json.Decode.Decoder SignalMediaKmzConversionStatusRsp
@@ -24506,6 +24567,10 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_retention_hours" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_max_size_gib" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_min_free_gib" (Json.Decode.int)))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -24549,6 +24614,10 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_retention_hours" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_max_size_gib" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_min_free_gib" (Json.Decode.int)))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

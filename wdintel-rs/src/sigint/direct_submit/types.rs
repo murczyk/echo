@@ -54,6 +54,8 @@ pub struct DirectSubmitPayload {
     #[serde(default)]
     pub upload_urls: Option<Vec<String>>,
     #[serde(default)]
+    pub attachment_updates: Option<DirectSubmitAttachmentUpdates>,
+    #[serde(default)]
     pub deleted_media_ids: Option<Vec<String>>,
     #[serde(default)]
     pub retained_media_ids: Option<Vec<String>>,
@@ -61,6 +63,26 @@ pub struct DirectSubmitPayload {
     pub parent_signal_message_ids: Vec<i64>,
     #[serde(default)]
     pub copy_source_signal_message_ids: Vec<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct DirectSubmitAttachmentUpdates {
+    #[serde(default)]
+    pub replacements: Vec<DirectSubmitAttachmentReplacement>,
+    #[serde(default)]
+    pub renames: Vec<DirectSubmitAttachmentRename>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct DirectSubmitAttachmentReplacement {
+    pub media_id: String,
+    pub upload_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct DirectSubmitAttachmentRename {
+    pub media_id: String,
+    pub file_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

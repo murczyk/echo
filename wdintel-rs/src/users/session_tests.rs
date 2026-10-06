@@ -568,7 +568,7 @@ async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
     }
     for uri in [
         "/api/rer/csv-import/preflight",
-        "/api/rer/csv-import",
+        "/api/rer/csv-import?targetSignalGroupMasterKey=forbidden",
         "/api/rer/delta-csv-import",
         "/api/rer/delta-kmz-import",
     ] {

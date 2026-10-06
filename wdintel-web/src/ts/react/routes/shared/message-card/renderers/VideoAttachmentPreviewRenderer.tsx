@@ -1,6 +1,6 @@
 import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Typography } from '@mui/material';
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from 'react';
 
 import type {
@@ -16,6 +16,7 @@ import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/Messag
 import { AttachmentPreviewPlaybackControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
+import { loadManagedVideo } from '../message-card-video-loading';
 import { handleUnauthorizedMediaResponse } from '../message-card-media-fetch';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
@@ -26,73 +27,6 @@ import {
   type AttachmentPreviewReportDraft,
   type AttachmentPreviewReportVisibility,
 } from '../attachment-preview/ReportTextPreview';
-
-const VIDEO_LOCAL_PREFLIGHT_MIN_SIZE_BYTES = 10 * 1024 * 1024;
-const VIDEO_LOCAL_PREFLIGHT_RETRY_DELAY_MS = 2_000;
-const VIDEO_LOCAL_PREFLIGHT_MAX_RETRY_DELAY_MS = 30_000;
-
-function isManagedLocalVideo(video: VideoPreviewSource): video is VideoPreviewSource & {
-  source: string;
-} {
-  return (
-    typeof video.source === 'string' &&
-    video.source.startsWith('/api/messenger/media/') &&
-    !video.source.includes('/thumbnail')
-  );
-}
-
-function isSmallLocalVideo(video: VideoPreviewSource): video is VideoPreviewSource & {
-  source: string;
-} {
-  return (
-    isManagedLocalVideo(video) &&
-    typeof video.sizeBytes === 'number' &&
-    Number.isFinite(video.sizeBytes) &&
-    video.sizeBytes >= 0 &&
-    video.sizeBytes <= VIDEO_LOCAL_PREFLIGHT_MIN_SIZE_BYTES
-  );
-}
-
-function preflightVideoSize(response: Response): number | null {
-  const contentRange = response.headers.get('Content-Range');
-  const rangeSize = contentRange?.match(/\/(\d+)$/)?.[1];
-  const size =
-    rangeSize ?? (response.status === 206 ? null : response.headers.get('Content-Length'));
-  if (size === null || size === undefined) return null;
-  const value = Number(size);
-  return Number.isSafeInteger(value) && value >= 0 ? value : null;
-}
-
-function videoRetryDelay(response: Response | null, attempt: number): number {
-  const fallback = Math.min(
-    VIDEO_LOCAL_PREFLIGHT_MAX_RETRY_DELAY_MS,
-    VIDEO_LOCAL_PREFLIGHT_RETRY_DELAY_MS * 2 ** attempt,
-  );
-  const retryAfter = response?.headers.get('Retry-After');
-  if (retryAfter === null || retryAfter === undefined) {
-    return fallback;
-  }
-
-  const retryAfterSeconds = Number(retryAfter);
-  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
-    return Math.max(fallback, retryAfterSeconds * 1_000);
-  }
-
-  const retryAt = Date.parse(retryAfter);
-  return Number.isFinite(retryAt) ? Math.max(fallback, retryAt - Date.now()) : fallback;
-}
-
-function responseCanBeRetried(status: number): boolean {
-  return status === 408 || status === 425 || status === 429 || status >= 500;
-}
-
-async function discardResponseBody(response: Response) {
-  try {
-    await response.body?.cancel();
-  } catch {
-    // The response may already be closed.
-  }
-}
 
 function VideoPreview({
   src,
@@ -108,8 +42,16 @@ function VideoPreview({
   onRateChange,
   onError,
   videoRef,
+  onRetry,
+  onRequestPlay,
+  needsPlayGesture,
+  onLoadTimeout,
 }: {
   src: string | null;
+  onRetry: () => void;
+  onRequestPlay: () => void;
+  needsPlayGesture: boolean;
+  onLoadTimeout: () => void;
   error?: VideoPreviewError;
   zoom?: number;
   pan?: { x: number; y: number };
@@ -127,6 +69,12 @@ function VideoPreview({
   const [showIcon, setShowIcon] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const clickActionTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!src || !isBuffering || error || needsPlayGesture) return;
+    const timer = window.setTimeout(onLoadTimeout, 30_000);
+    return () => window.clearTimeout(timer);
+  }, [src, isBuffering, error, needsPlayGesture, onLoadTimeout]);
 
   useEffect(
     () => () => {
@@ -161,7 +109,7 @@ function VideoPreview({
             if (!video) return;
             if (clickActionTimer.current) window.clearTimeout(clickActionTimer.current);
             if (video.paused) {
-              video.play().catch(console.error);
+              onRequestPlay();
               setClickAction('play');
             } else {
               video.pause();
@@ -183,7 +131,7 @@ function VideoPreview({
         />
       ) : null}
 
-      {(!src && !error) || (src && !error && isBuffering) ? (
+      {(!src && !error) || (src && !error && isBuffering && !needsPlayGesture) ? (
         <Box
           role="status"
           aria-live="polite"
@@ -201,7 +149,7 @@ function VideoPreview({
         >
           <CircularProgress size={22} />
           <Typography variant="body2" color="text.secondary">
-            Скачування та розшифровка медіа
+            Завантаження відео
           </Typography>
         </Box>
       ) : null}
@@ -244,6 +192,12 @@ function VideoPreview({
         </Box>
       ) : null}
 
+      {needsPlayGesture && !error ? (
+        <Button onClick={onRequestPlay} sx={{ position: 'absolute', zIndex: 11 }}>
+          Торкніться, щоб відтворити
+        </Button>
+      ) : null}
+
       {error ? (
         <Box
           sx={{
@@ -264,6 +218,7 @@ function VideoPreview({
           <Typography variant="body2" color="text.secondary">
             Спробуйте завантажити оригінальний файл відео.
           </Typography>
+          <Button onClick={onRetry}>Повторити завантаження</Button>
         </Box>
       ) : null}
     </>
@@ -320,6 +275,8 @@ export function VideoAttachmentPreviewRenderer({
   AttachmentPreviewReportVisibility) {
   const [src, setSrc] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [needsPlayGesture, setNeedsPlayGesture] = useState(false);
 
   const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
   const infoOpen = infoAnchorEl !== null;
@@ -353,111 +310,22 @@ export function VideoAttachmentPreviewRenderer({
     setSrc(null);
 
     if (typeof video.source === 'string') {
-      if (isManagedLocalVideo(video)) {
-        let stopped = false;
-        let retryTimer: number | null = null;
-        const requestController = new AbortController();
-        const source = video.source;
-        let blobUrl = '';
-        let retryAttempt = 0;
-
-        const fail = (cause: unknown) => {
-          if (stopped) return;
-          setPlayerState((state) => ({
-            ...state,
-            error: {
-              code: 'VIDEO_LOAD_ERROR',
-              message: 'Не вдалося завантажити відео.',
-              cause,
-            },
-          }));
-        };
-        const scheduleRetry = (response: Response | null, request: () => Promise<void>) => {
-          const delay = videoRetryDelay(response, retryAttempt);
-          retryAttempt += 1;
-          retryTimer = window.setTimeout(() => {
-            retryTimer = null;
-            void request();
-          }, delay);
-        };
-        const requestPreflight = async () => {
-          let response: Response;
-          try {
-            response = await fetch(source, {
-              headers: {
-                Range: 'bytes=0-0',
-                'X-Echo-Media-Cache-Preflight': '1',
-              },
-              signal: requestController.signal,
-            });
-          } catch {
-            if (!requestController.signal.aborted) scheduleRetry(null, requestPreflight);
-            return;
-          }
-          handleUnauthorizedMediaResponse(response, source);
-          const videoSize = preflightVideoSize(response);
-          await discardResponseBody(response);
-          if (stopped) return;
-          if (responseCanBeRetried(response.status)) {
-            scheduleRetry(response, requestPreflight);
-            return;
-          }
-          if (!response.ok) {
-            fail(new Error(`Video preflight failed with status ${response.status}`));
-            return;
-          }
-          if (videoSize !== null && videoSize <= VIDEO_LOCAL_PREFLIGHT_MIN_SIZE_BYTES) {
-            void requestSmallVideo();
-            return;
-          }
-          setCachedVideoSrc(cacheKey, source);
-          setSrc(source);
-        };
-        const requestSmallVideo = async () => {
-          let response: Response;
-          try {
-            response = await fetch(source, {
-              credentials: 'same-origin',
-              signal: requestController.signal,
-            });
-          } catch {
-            if (!requestController.signal.aborted) scheduleRetry(null, requestSmallVideo);
-            return;
-          }
-          handleUnauthorizedMediaResponse(response, source);
-          if (stopped) return;
-          if (responseCanBeRetried(response.status)) {
-            await discardResponseBody(response);
-            if (!stopped) scheduleRetry(response, requestSmallVideo);
-            return;
-          }
-          if (!response.ok) {
-            await discardResponseBody(response);
-            fail(new Error(`Video fetch failed with status ${response.status}`));
-            return;
-          }
-
-          try {
-            const videoBlob = await response.blob();
-            if (stopped) return;
-            blobUrl = URL.createObjectURL(videoBlob);
-            setCachedVideoSrc(cacheKey, blobUrl);
-            setSrc(blobUrl);
-          } catch (error) {
-            if (!requestController.signal.aborted) scheduleRetry(null, requestSmallVideo);
-          }
-        };
-
-        if (isSmallLocalVideo(video)) {
-          void requestSmallVideo();
-        } else {
-          void requestPreflight();
-        }
-        return () => {
-          stopped = true;
-          requestController.abort();
-          if (retryTimer !== null) window.clearTimeout(retryTimer);
-        };
+      if (
+        video.source.startsWith('/api/messenger/media/') &&
+        !video.source.includes('/thumbnail')
+      ) {
+        return loadManagedVideo(
+          video.source,
+          (url) => {
+            setCachedVideoSrc(cacheKey, url);
+            setSrc(url);
+          },
+          (cause) =>
+            setPlayerState((state) => ({
+              ...state,
+              error: { code: 'VIDEO_LOAD_ERROR', message: 'Не вдалося завантажити відео.', cause },
+            })),
+        );
       }
       if (video.source.startsWith('/') || video.source.startsWith('data:')) {
         setCachedVideoSrc(cacheKey, video.source);
@@ -508,7 +376,7 @@ export function VideoAttachmentPreviewRenderer({
     return () => {
       isMounted = false;
     };
-  }, [video.source, video.sizeBytes, video.id, video.name]);
+  }, [video.source, video.sizeBytes, video.id, video.name, loadAttempt]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -522,24 +390,57 @@ export function VideoAttachmentPreviewRenderer({
       currentTime: 0,
       error: undefined,
     }));
+    setNeedsPlayGesture(false);
   }, [navigation.index, video.source]);
 
+  const requestPlay = useCallback(() => {
+    const element = videoRef.current;
+    if (!element) return;
+    void element
+      .play()
+      .then(() => setNeedsPlayGesture(false))
+      .catch((cause: unknown) => {
+        if (videoRef.current !== element) return;
+        if (cause instanceof DOMException && cause.name === 'AbortError') return;
+        if (cause instanceof DOMException && cause.name === 'NotAllowedError') {
+          setNeedsPlayGesture(true);
+          return;
+        }
+        setPlayerState((state) => ({
+          ...state,
+          error: { code: 'VIDEO_PLAY_ERROR', message: 'Не вдалося відтворити відео.', cause },
+        }));
+      });
+  }, []);
+
   useEffect(() => {
-    if (!src) return;
-    const v = videoRef.current;
-    if (!v) return;
-    v.play().catch(() => {});
-  }, [src]);
+    if (src) requestPlay();
+  }, [src, requestPlay]);
 
   const handlePlayPause = useCallback(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (v.paused) {
-      v.play().catch(console.error);
-    } else {
-      v.pause();
-    }
+    const element = videoRef.current;
+    if (!element) return;
+    if (element.paused) requestPlay();
+    else element.pause();
+  }, [requestPlay]);
+
+  const handleLoadTimeout = useCallback(() => {
+    setPlayerState((state) => ({
+      ...state,
+      error: {
+        code: 'VIDEO_LOAD_ERROR',
+        message: 'Завантаження відео триває надто довго. Спробуйте ще раз.',
+      },
+    }));
   }, []);
+
+  const retryLoad = useCallback(() => {
+    if (typeof video.source === 'string') videoBlobUrlCache.delete(video.source);
+    setSrc(null);
+    setNeedsPlayGesture(false);
+    setPlayerState((state) => ({ ...state, error: undefined, isPlaying: false }));
+    setLoadAttempt((attempt) => attempt + 1);
+  }, [video.source]);
 
   const handleStop = useCallback(() => {
     const v = videoRef.current;
@@ -779,6 +680,10 @@ export function VideoAttachmentPreviewRenderer({
         <VideoPreview
           videoRef={videoRef}
           src={src}
+          onRetry={retryLoad}
+          onRequestPlay={requestPlay}
+          needsPlayGesture={needsPlayGesture}
+          onLoadTimeout={handleLoadTimeout}
           error={playerState.error}
           zoom={zoom}
           pan={pan}
