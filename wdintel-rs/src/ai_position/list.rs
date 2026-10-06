@@ -766,7 +766,7 @@ pub(crate) async fn list_knowledge(
 
 /// Highlight spans for message cards, by message id. A mention without
 /// coordinates of its own shows where the position is known to be, from
-/// knowledge the viewer may see and facts near the message's time.
+/// knowledge the viewer may see, retaining the last known location's date.
 pub(crate) async fn positions_by_message(
     dbx: &DatabaseConnection,
     message_ids: Vec<i64>,
@@ -790,6 +790,61 @@ pub(crate) async fn positions_by_message(
         .all(dbx)
         .await
         .c(h!())?;
+    let positions = position_highlights(dbx, mentions, allowed_groups)
+        .await
+        .c(h!())?;
+    for (mention, position) in positions {
+        if let Some(message_id) = mention.sigint_inbox_item_id {
+            result.entry(message_id).or_default().push(position);
+        }
+    }
+    Ok(result)
+}
+
+pub(crate) async fn positions_by_media(
+    dbx: &DatabaseConnection,
+    media_ids: Vec<Uuid>,
+    allowed_groups: &HashSet<String>,
+) -> anyhow::Result<
+    HashMap<Uuid, Vec<crate::rer_importer::highlight::CNPosition>>,
+> {
+    use crate::entities::ai_position_mention;
+    let mut result: HashMap<Uuid, Vec<_>> = HashMap::new();
+    if media_ids.is_empty() || allowed_groups.is_empty() {
+        return Ok(result);
+    }
+    let mentions = ai_position_mention::Entity::find()
+        .filter(ai_position_mention::Column::MediaId.is_in(media_ids))
+        .filter(
+            ai_position_mention::Column::GroupMasterKey
+                .is_in(allowed_groups.iter().cloned()),
+        )
+        .order_by_asc(ai_position_mention::Column::BeginChar)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let positions = position_highlights(dbx, mentions, allowed_groups)
+        .await
+        .c(h!())?;
+    for (mention, position) in positions {
+        if let Some(media_id) = mention.media_id {
+            result.entry(media_id).or_default().push(position);
+        }
+    }
+    Ok(result)
+}
+
+async fn position_highlights(
+    dbx: &DatabaseConnection,
+    mentions: Vec<crate::entities::ai_position_mention::Model>,
+    allowed_groups: &HashSet<String>,
+) -> anyhow::Result<
+    Vec<(
+        crate::entities::ai_position_mention::Model,
+        crate::rer_importer::highlight::CNPosition,
+    )>,
+> {
+    let mut result = Vec::new();
     let mut coordinates = load_coordinates(
         dbx,
         mentions.iter().map(|mention| mention.id).collect(),
@@ -829,9 +884,6 @@ pub(crate) async fn positions_by_message(
     .await
     .c(h!())?;
     for mention in mentions {
-        let Some(message_id) = mention.sigint_inbox_item_id else {
-            continue;
-        };
         let own: Vec<String> = coordinates
             .remove(&mention.id)
             .unwrap_or_default()
@@ -847,24 +899,21 @@ pub(crate) async fn positions_by_message(
             || own_sources.remove(&mention.id).unwrap_or_default(),
             |known| known_sources.get(&known.id).cloned().unwrap_or_default(),
         );
-        result.entry(message_id).or_default().push(
-            crate::rer_importer::highlight::CNPosition {
-                begin: mention.begin_char as usize,
-                end: mention.end_char as usize,
-                known_mgrs: knowledge.map(|known| known.mgrs.clone()),
-                known_at: knowledge.map(|known| {
-                    known.last_fact_at.and_utc().timestamp_millis()
-                }),
-                known_conflicting: knowledge
-                    .is_some_and(|known| known.conflicting),
-                coordinate_sources,
-                kind: mention.kind.clone(),
-                callsign: None,
-                etalon: mention.name_key,
-                text: mention.name,
-                mgrs: own,
-            },
-        );
+        let position = crate::rer_importer::highlight::CNPosition {
+            begin: mention.begin_char as usize,
+            end: mention.end_char as usize,
+            known_mgrs: knowledge.map(|known| known.mgrs.clone()),
+            known_at: knowledge
+                .map(|known| known.last_fact_at.and_utc().timestamp_millis()),
+            known_conflicting: knowledge.is_some_and(|known| known.conflicting),
+            coordinate_sources,
+            kind: mention.kind.clone(),
+            callsign: None,
+            etalon: mention.name_key.clone(),
+            text: mention.name.clone(),
+            mgrs: own,
+        };
+        result.push((mention, position));
     }
     Ok(result)
 }
@@ -916,8 +965,8 @@ async fn load_knowledge_for(
 }
 
 /// A mention's knowledge: one of its scopes, built from facts within the
-/// window of the mention's time; the area of responsibility before the
-/// single group, then the most recent.
+/// window before the first fact or later; the area of responsibility before
+/// the single group, then the most recent. Older locations retain their date.
 fn best_knowledge<'a>(
     known: &'a [ai_position_knowledge::Model],
     scopes: &HashMap<String, Vec<knowledge::Scope>>,
@@ -933,7 +982,6 @@ fn best_knowledge<'a>(
                     scope.kind == row.scope_kind && scope.key == row.scope_key
                 })
                 && mention.message_at >= row.first_fact_at - window
-                && mention.message_at <= row.last_fact_at + window
         })
         .max_by_key(|row| (row.scope_kind == SCOPE_AOR, row.last_fact_at))
 }

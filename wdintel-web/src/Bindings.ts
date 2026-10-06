@@ -2763,6 +2763,7 @@ export type MessageMediaInfo = {
   ocr: OcrMediaSummary | null;
   summary: MediaSummaryStatus | null;
   kmzConversionStatus: string | null;
+  positions: Array<CnPosition>;
 };
 
 export type SignalMediaKmzConversionStatusRsp = {
