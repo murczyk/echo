@@ -1,8 +1,12 @@
-pub(crate) const ROLE_CYBER: &str = "Cyber";
-pub(crate) const ROLE_DEVICE_SOURCE: &str = "DeviceSource";
+pub(crate) use crate::config::ROLE_CYBER;
 
 pub(crate) mod access;
 pub(crate) mod analytics;
+#[allow(
+    dead_code,
+    reason = "Foundation interfaces are consumed by subsequent audio tasks"
+)]
+pub(crate) mod audio;
 
 #[allow(clippy::module_inception)]
 pub(crate) mod devices;

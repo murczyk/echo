@@ -18,6 +18,8 @@ use sea_orm_migration::MigratorTrait;
 use sqlx::migrate::MigrateDatabase;
 use std::{collections::BTreeMap, error::Error as StdError, future::Future};
 
+mod device_audio;
+
 #[tokio::test]
 async fn missing_configuration_skips_connection_and_migrations() {
     let config: Config = toml::from_str(
@@ -653,6 +655,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260905_160446_device_file_content".to_string(),
             "m20260915_212032_reuse_verified_file_content".to_string(),
             "m20260921_122222_device_sync_session_history".to_string(),
+            "m20261003_152726_create_device_audio".to_string(),
         ]
     );
 }

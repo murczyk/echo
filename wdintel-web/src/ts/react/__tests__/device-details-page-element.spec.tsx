@@ -42,7 +42,12 @@ beforeEach(() => {
         return jsonResponse({ tags: [] });
       }
       if (url === '/api/device/analytics/summary') {
-        return jsonResponse({ total_file_count: 0, analyzed_file_count: 0, items: [] });
+        return jsonResponse({
+          total_file_count: 0,
+          files_with_content_count: 0,
+          analyzed_file_count: 0,
+          items: [],
+        });
       }
       return jsonResponse({});
     }),
@@ -78,7 +83,7 @@ describe('device-details-page custom element', () => {
   it('trims and accepts UUID device IDs', async () => {
     const element = document.createElement('device-details-page');
     element.setAttribute('device-id', ` ${DEVICE_ID} `);
-    element.setAttribute('data-auth-user-roles', 'DeviceSource');
+    element.setAttribute('data-auth-user-roles', 'Basic');
 
     await mount(element);
 

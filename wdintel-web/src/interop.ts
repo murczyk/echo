@@ -89,8 +89,14 @@ import './ts/react/importer-beta-element';
 import './ts/react/updates-neo-element';
 import { saveLegacyRerAnalysisQueryState } from './ts/rer-analysis-query-state-legacy';
 import { setupCommentDraftTracker } from './ts/comment-draft-tracker';
-import { getNavigationApi, type NavigationNavigateEvent } from './ts/browser/navigation-api';
 import './ts/logo-coin';
+import { getNavigationApi } from './ts/browser/navigation-api';
+import {
+  installNavigationGuard,
+  requestNavigation,
+  requestTraversal,
+  prepareForcedNavigation,
+} from './ts/browser/navigation-guard';
 
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -408,15 +414,14 @@ import('../static/js-search').then((module) => {
   } else {
     const navigation = getNavigationApi();
     if (navigation) {
-      const navHandler = async (event: Event) => {
-        const navigateEvent = event as unknown as NavigationNavigateEvent;
-        if (navigateEvent.destination.url.endsWith('/importer')) {
+      const navHandler = async () => {
+        if (window.location.pathname.endsWith('/importer')) {
           await loadDescriptionIconTitle(search);
-          navigation.removeEventListener('navigate', navHandler);
+          navigation.removeEventListener('navigatesuccess', navHandler);
         }
       };
 
-      navigation.addEventListener('navigate', navHandler);
+      navigation.addEventListener('navigatesuccess', navHandler);
     } else {
       // fallback for firefox and safari (Navigation API is not implemented there yet)
       loadDescriptionIconTitle(search);
@@ -429,6 +434,7 @@ import('../static/js-search').then((module) => {
 // The value returned here will be passed as flags
 // into your `Shared.init` function.
 export const flags = ({ env }) => {
+  installNavigationGuard();
   const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   const now = dayjs().tz('Europe/Kiev').valueOf();
   return {
@@ -443,6 +449,19 @@ export const flags = ({ env }) => {
 // to your Elm application, or subscribe to incoming
 // messages from Elm
 export const onReady = ({ app, env }) => {
+  app.ports?.shared_requestNavigation?.subscribe(
+    (intent: { kind: string; url: string; forced: boolean }) => {
+      if (intent.kind === 'back') void requestTraversal(-1);
+      else if (intent.kind === 'load') {
+        if (intent.forced) prepareForcedNavigation();
+        window.location.assign(intent.url);
+      } else
+        void requestNavigation(intent.url, {
+          replace: intent.kind === 'replace',
+          forced: intent.forced,
+        });
+    },
+  );
   initializeAuthorNotifications();
   // Apply initial theme based on localStorage or system preference
   applyCurrentTheme();

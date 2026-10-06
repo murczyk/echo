@@ -18,20 +18,15 @@ describe('roles', () => {
     expect(hasRole(['Full'], 'UnitsEditor')).toBe(false);
     expect(hasRole(['Admin'], 'UnitsEditor')).toBe(true);
     expect(hasRole(['Cyber'], 'Cyber')).toBe(true);
-    expect(hasRole(['DeviceSource'], 'Cyber')).toBe(false);
-    expect(hasRole(['DeviceSource'], 'DeviceSource')).toBe(true);
     expect(hasRole(['Admin'], 'Cyber')).toBe(true);
-    expect(hasRole(['Admin'], 'DeviceSource')).toBe(true);
     expect(hasRole(['Api'], 'Cyber')).toBe(false);
     expect(hasRole(['Full'], 'Cyber')).toBe(false);
     expect(hasRole(['Rer'], 'Cyber')).toBe(false);
     expect(canReadDevices(['Cyber'])).toBe(true);
-    expect(canReadDevices(['DeviceSource'])).toBe(false);
     expect(canReadDevices(['Admin'])).toBe(true);
     expect(canReadDevices(['Api'])).toBe(false);
     expect(canUseMessageDevices(['Cyber'], true)).toBe(true);
     expect(canUseMessageDevices(['Admin'], true)).toBe(true);
-    expect(canUseMessageDevices(['DeviceSource'], true)).toBe(false);
     expect(canUseMessageDevices(['Cyber'], false)).toBe(false);
     expect(hasRole(['Full'], 'DeleteMsg')).toBe(true);
     expect(hasRole(['Admin'], 'NoAutoLogout')).toBe(false);
@@ -56,7 +51,7 @@ describe('roles', () => {
       expect(hasRerOrCyber(roles)).toBe(true);
       expect(hasRole(roles, 'Basic')).toBe(true);
     }
-    for (const roles of [[], ['Basic'], ['DeviceSource'], ['Api'], ['ApiAgent'], null, undefined]) {
+    for (const roles of [[], ['Basic'], ['Api'], ['ApiAgent'], null, undefined]) {
       expect(hasRerOrCyber(roles)).toBe(false);
     }
     expect(hasRole(['Cyber'], 'Rer')).toBe(false);
@@ -65,30 +60,31 @@ describe('roles', () => {
     expect(hasRole(['Rer'], 'Cyber')).toBe(false);
   });
 
-  it('resolves Devices capabilities by action instead of role inheritance', () => {
-    expect(resolveDevicesCapabilities(['Cyber'])).toEqual({
+  it.each(['Cyber', 'Admin'])('grants full Devices capabilities to %s', (role) => {
+    expect(resolveDevicesCapabilities([role])).toEqual({
       canRead: true,
       canCreate: true,
       canWriteSourceData: true,
-      canWriteAnalyticalData: false,
+      canWriteAnalyticalData: true,
     });
-    expect(resolveDevicesCapabilities(['DeviceSource'])).toEqual({
+    expect(canWriteMessages([role])).toBe(true);
+  });
+
+  it.each([
+    { roles: ['DeviceSource'] },
+    { roles: ['CyberViewer'] },
+    { roles: ['DeviceSource', 'CyberViewer'] },
+  ])('denies access from removed roles $roles', ({ roles }) => {
+    expect(hasRole(roles, 'Basic')).toBe(false);
+    expect(hasRerOrCyber(roles)).toBe(false);
+    expect(canReadDevices(roles)).toBe(false);
+    expect(canUseMessageDevices(roles, true)).toBe(false);
+    expect(canWriteMessages(roles)).toBe(false);
+    expect(resolveDevicesCapabilities(roles)).toEqual({
       canRead: false,
-      canCreate: true,
-      canWriteSourceData: true,
-      canWriteAnalyticalData: true,
-    });
-    expect(resolveDevicesCapabilities(['Cyber', 'DeviceSource'])).toEqual({
-      canRead: true,
-      canCreate: true,
-      canWriteSourceData: true,
-      canWriteAnalyticalData: true,
-    });
-    expect(resolveDevicesCapabilities(['Admin'])).toEqual({
-      canRead: true,
-      canCreate: true,
-      canWriteSourceData: true,
-      canWriteAnalyticalData: true,
+      canCreate: false,
+      canWriteSourceData: false,
+      canWriteAnalyticalData: false,
     });
   });
 
@@ -96,26 +92,7 @@ describe('roles', () => {
     expect(hasAnyRole(['Admin'], ['AdvancedReports'])).toBe(true);
     expect(hasAnyRole(['Full'], ['UnitsEditor', 'CallsignsEditor'])).toBe(false);
     expect(hasAnyRole(['CallsignsEditor'], ['UnitsEditor', 'CallsignsEditor'])).toBe(true);
-    expect(hasAnyRole(['DeviceSource'], ['Cyber', 'DeviceSource'])).toBe(true);
-    expect(hasAnyRole(['Api'], ['Cyber', 'DeviceSource'])).toBe(false);
-  });
-});
-
-it.each([
-  { extra: [] },
-  { extra: ['Cyber'] },
-  { extra: ['Rer'] },
-  { extra: ['Full'] },
-  { extra: ['Admin'] },
-])('#3569 keeps CyberViewer permissions additive with %j', ({ extra: additionalRoles }) => {
-  const roles = ['CyberViewer', ...additionalRoles];
-  expect(hasRerOrCyber(roles)).toBe(true);
-  expect(hasRole(roles, 'Basic')).toBe(true);
-  expect(canWriteMessages(roles)).toBe(additionalRoles.length > 0);
-  expect(resolveDevicesCapabilities(roles)).toEqual({
-    canRead: true,
-    canCreate: true,
-    canWriteSourceData: true,
-    canWriteAnalyticalData: additionalRoles.includes('Admin'),
+    expect(hasAnyRole(['Cyber'], ['Cyber', 'Rer'])).toBe(true);
+    expect(hasAnyRole(['Api'], ['Cyber', 'Rer'])).toBe(false);
   });
 });

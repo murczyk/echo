@@ -178,6 +178,10 @@ just deploy-proj-db --server=$SERVER
 
 ## Nginx
 
+For device audio, verify the existing request-body limit against TUS chunk
+sizes and long transcription saves. See the
+[audio rollout and recovery runbook](../wdintel-rs/src/devices/audio/README.md#розгортання).
+
 Run the setup recipe to install the nginx systemd file limit and restart nginx:
 
 ```

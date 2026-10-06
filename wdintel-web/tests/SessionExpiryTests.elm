@@ -44,7 +44,7 @@ tests =
                             [ \_ -> Expect.equal Nothing signedOut.user
                             , \_ -> Expect.equal False signedOut.eventService.isPolling
                             , \_ -> Expect.equal 0 signedOut.eventService.retryCount
-                            , \_ -> Expect.equal (E.loadExternalUrl "/api/user/logout?redirect=%2F") effect
+                            , \_ -> Expect.equal (E.loadExternalUrlForced "/api/user/logout?redirect=%2F") effect
                             ]
                             ()
         , test "late responses and queued polling messages cannot restart a stopped session" <|

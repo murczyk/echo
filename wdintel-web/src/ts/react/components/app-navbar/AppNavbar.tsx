@@ -19,6 +19,7 @@ import { currentSystemSettings } from '../../services/api/system-settings';
 import { fetchUserSettings, USER_SETTINGS_UPDATED_EVENT } from '../../services/api/user-settings';
 import { canReadDevices, canUseRadioFeatures, hasRole, hasRerOrCyber } from '../../utils/roles';
 import { shouldHandleAsSpaClick } from '../../utils/browser';
+import { requestNavigation } from '../../../browser/navigation-guard';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../../routes/ai-agent-chat/conversation-url';
 import { mountLogoCoin } from '../../../logo-coin';
 
@@ -349,6 +350,11 @@ export function AppNavbar({
     },
   ];
 
+  useEffect(() => {
+    setOpenDropdown(null);
+    setMobileNavOpen(false);
+  }, [activeName]);
+
   const renderLabel = (item: { label: string; activeName: string }) => {
     return <span className="inline-flex items-center gap-2">{item.label}</span>;
   };
@@ -356,10 +362,12 @@ export function AppNavbar({
   const handleInternalLinkClick = (e: ReactMouseEvent<HTMLAnchorElement>, path: string) => {
     if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
       e.preventDefault();
-      window.history.pushState({}, '', path);
-      window.dispatchEvent(new Event('popstate'));
-      closeDropdowns();
-      setMobileNavOpen(false);
+      void requestNavigation(path).then((accepted) => {
+        if (accepted) {
+          closeDropdowns();
+          setMobileNavOpen(false);
+        }
+      });
     }
   };
 

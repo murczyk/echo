@@ -11,13 +11,14 @@ use crate::file_registry::entities::{
         FileEntryKind, SourceFileStateKind as DbSourceFileStateKind,
     },
 };
+use crate::{h, types::ShortContext};
 use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::{
     AccessMode, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
     DatabaseConnection, DatabaseTransaction, DbBackend, DbErr, EntityTrait,
-    FromQueryResult, IntoActiveModel, IsolationLevel, JoinType, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, QueryTrait, RelationTrait, Set,
-    Statement, TransactionTrait,
+    FromQueryResult, IntoActiveModel, IsolationLevel, JoinType, QueryFilter,
+    QueryOrder, QuerySelect, QueryTrait, RelationTrait, Set, Statement,
+    TransactionTrait,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -344,29 +345,43 @@ pub(in crate::devices) async fn analysis_run_summary(
 pub(in crate::devices) async fn device_summary(
     file_db: &DatabaseConnection,
     device_id: Uuid,
-) -> Result<DeviceAnalyticsProgress, DbErr> {
+) -> anyhow::Result<DeviceAnalyticsProgress> {
     let transaction = file_db
         .begin_with_config(
             Some(IsolationLevel::RepeatableRead),
             Some(AccessMode::ReadOnly),
         )
-        .await?;
-    let total_file_count = file_entry::Entity::find()
-        .filter(file_entry::Column::DeviceId.eq(device_id))
-        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
-        .count(&transaction)
-        .await?;
-    let analyzed_file_count = file_entry::Entity::find()
-        .filter(file_entry::Column::DeviceId.eq(device_id))
-        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
-        .filter(file_entry::Column::CurrentAnalysisRunId.is_not_null())
-        .count(&transaction)
-        .await?;
-    let items = device_summary_items(&transaction, device_id).await?;
-    transaction.commit().await?;
+        .await
+        .c(h!())?;
+    let (total_file_count, files_with_content_count, analyzed_file_count) =
+        file_entry::Entity::find()
+            .select_only()
+            .column_as(file_entry::Column::Id.count(), "total_file_count")
+            .column_as(
+                file_entry::Column::ContentPath.count(),
+                "files_with_content_count",
+            )
+            .column_as(
+                file_entry::Column::CurrentAnalysisRunId.count(),
+                "analyzed_file_count",
+            )
+            .filter(file_entry::Column::DeviceId.eq(device_id))
+            .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
+            .into_tuple::<(i64, i64, i64)>()
+            .one(&transaction)
+            .await
+            .c(h!())?
+            .c(h!())?;
+    let items = device_summary_items(&transaction, device_id)
+        .await
+        .c(h!())?;
+    transaction.commit().await.c(h!())?;
     Ok(DeviceAnalyticsProgress {
-        total_file_count,
-        analyzed_file_count,
+        total_file_count: total_file_count.try_into().c(h!())?,
+        files_with_content_count: files_with_content_count
+            .try_into()
+            .c(h!())?,
+        analyzed_file_count: analyzed_file_count.try_into().c(h!())?,
         items,
     })
 }

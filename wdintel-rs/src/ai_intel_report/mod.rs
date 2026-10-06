@@ -258,7 +258,7 @@ async fn ensure_quick_suggestion_role(
     dbx: &DatabaseConnection,
     login_id: &Uuid,
 ) -> Result<(), AppError> {
-    has_any_role(dbx, login_id, vec!["Rer", "CyberViewer"]).await
+    has_any_role(dbx, login_id, vec!["Rer", "Cyber"]).await
 }
 
 pub(crate) async fn ensure_engine_not_used<C>(

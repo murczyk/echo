@@ -5789,6 +5789,202 @@ deviceSyncSessionSummariesRspEncoder struct =
         ]
 
 
+type alias DeviceAudio =
+    { id : String
+    , deviceId : String
+    , recordingStartedAt : String
+    , recordingEndedAt : String
+    , durationSeconds : Float
+    , processed : Bool
+    , processingVersion : String
+    }
+
+
+deviceAudioEncoder : DeviceAudio -> Json.Encode.Value
+deviceAudioEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "recording_started_at", (Json.Encode.string) struct.recordingStartedAt )
+        , ( "recording_ended_at", (Json.Encode.string) struct.recordingEndedAt )
+        , ( "duration_seconds", (Json.Encode.float) struct.durationSeconds )
+        , ( "processed", (Json.Encode.bool) struct.processed )
+        , ( "processing_version", (Json.Encode.string) struct.processingVersion )
+        ]
+
+
+type alias DeviceAudioTranscription =
+    { text : String
+    , textVersion : String
+    }
+
+
+deviceAudioTranscriptionEncoder : DeviceAudioTranscription -> Json.Encode.Value
+deviceAudioTranscriptionEncoder struct =
+    Json.Encode.object
+        [ ( "text", (Json.Encode.string) struct.text )
+        , ( "text_version", (Json.Encode.string) struct.textVersion )
+        ]
+
+
+type alias DeviceAudioDetails =
+    { audio : DeviceAudio
+    , transcription : DeviceAudioTranscription
+    , canEdit : Bool
+    }
+
+
+deviceAudioDetailsEncoder : DeviceAudioDetails -> Json.Encode.Value
+deviceAudioDetailsEncoder struct =
+    Json.Encode.object
+        [ ( "audio", (deviceAudioEncoder) struct.audio )
+        , ( "transcription", (deviceAudioTranscriptionEncoder) struct.transcription )
+        , ( "can_edit", (Json.Encode.bool) struct.canEdit )
+        ]
+
+
+type alias ReceiveDeviceAudioReq =
+    { deviceId : String
+    , uploadUrl : String
+    , name : String
+    , recordingStartedAt : String
+    }
+
+
+receiveDeviceAudioReqEncoder : ReceiveDeviceAudioReq -> Json.Encode.Value
+receiveDeviceAudioReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "upload_url", (Json.Encode.string) struct.uploadUrl )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "recording_started_at", (Json.Encode.string) struct.recordingStartedAt )
+        ]
+
+
+type alias ReceiveDeviceAudioRsp =
+    { audio : DeviceAudio
+    }
+
+
+receiveDeviceAudioRspEncoder : ReceiveDeviceAudioRsp -> Json.Encode.Value
+receiveDeviceAudioRspEncoder struct =
+    Json.Encode.object
+        [ ( "audio", (deviceAudioEncoder) struct.audio )
+        ]
+
+
+type alias ListDeviceAudioReq =
+    { deviceId : String
+    , unprocessedOnly : Bool
+    , limit : Int
+    , cursor : Maybe (String)
+    }
+
+
+listDeviceAudioReqEncoder : ListDeviceAudioReq -> Json.Encode.Value
+listDeviceAudioReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "unprocessed_only", (Json.Encode.bool) struct.unprocessedOnly )
+        , ( "limit", (Json.Encode.int) struct.limit )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        ]
+
+
+type alias ListDeviceAudioRsp =
+    { audio : List (DeviceAudio)
+    , nextCursor : Maybe (String)
+    }
+
+
+listDeviceAudioRspEncoder : ListDeviceAudioRsp -> Json.Encode.Value
+listDeviceAudioRspEncoder struct =
+    Json.Encode.object
+        [ ( "audio", (Json.Encode.list (deviceAudioEncoder)) struct.audio )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        ]
+
+
+type alias DeviceAudioDetailReq =
+    { deviceId : String
+    , audioId : String
+    }
+
+
+deviceAudioDetailReqEncoder : DeviceAudioDetailReq -> Json.Encode.Value
+deviceAudioDetailReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "audio_id", (Json.Encode.string) struct.audioId )
+        ]
+
+
+type alias SaveDeviceAudioTranscriptionReq =
+    { deviceId : String
+    , audioId : String
+    , text : String
+    , expectedTextVersion : String
+    }
+
+
+saveDeviceAudioTranscriptionReqEncoder : SaveDeviceAudioTranscriptionReq -> Json.Encode.Value
+saveDeviceAudioTranscriptionReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "audio_id", (Json.Encode.string) struct.audioId )
+        , ( "text", (Json.Encode.string) struct.text )
+        , ( "expected_text_version", (Json.Encode.string) struct.expectedTextVersion )
+        ]
+
+
+type alias SaveDeviceAudioTranscriptionRsp =
+    { audioId : String
+    , transcription : DeviceAudioTranscription
+    }
+
+
+saveDeviceAudioTranscriptionRspEncoder : SaveDeviceAudioTranscriptionRsp -> Json.Encode.Value
+saveDeviceAudioTranscriptionRspEncoder struct =
+    Json.Encode.object
+        [ ( "audio_id", (Json.Encode.string) struct.audioId )
+        , ( "transcription", (deviceAudioTranscriptionEncoder) struct.transcription )
+        ]
+
+
+type alias SetDeviceAudioProcessingReq =
+    { deviceId : String
+    , audioId : String
+    , processed : Bool
+    , expectedProcessingVersion : String
+    }
+
+
+setDeviceAudioProcessingReqEncoder : SetDeviceAudioProcessingReq -> Json.Encode.Value
+setDeviceAudioProcessingReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "audio_id", (Json.Encode.string) struct.audioId )
+        , ( "processed", (Json.Encode.bool) struct.processed )
+        , ( "expected_processing_version", (Json.Encode.string) struct.expectedProcessingVersion )
+        ]
+
+
+type alias SetDeviceAudioProcessingRsp =
+    { audioId : String
+    , processed : Bool
+    , processingVersion : String
+    }
+
+
+setDeviceAudioProcessingRspEncoder : SetDeviceAudioProcessingRsp -> Json.Encode.Value
+setDeviceAudioProcessingRspEncoder struct =
+    Json.Encode.object
+        [ ( "audio_id", (Json.Encode.string) struct.audioId )
+        , ( "processed", (Json.Encode.bool) struct.processed )
+        , ( "processing_version", (Json.Encode.string) struct.processingVersion )
+        ]
+
+
 type alias BatchSummary =
     { syncId : String
     , batchIndex : Int
@@ -6450,6 +6646,7 @@ deviceAnalyticsSummaryItemEncoder struct =
 
 type alias DeviceAnalyticsSummaryRsp =
     { totalFileCount : Int
+    , filesWithContentCount : Int
     , analyzedFileCount : Int
     , items : List (DeviceAnalyticsSummaryItem)
     }
@@ -6459,6 +6656,7 @@ deviceAnalyticsSummaryRspEncoder : DeviceAnalyticsSummaryRsp -> Json.Encode.Valu
 deviceAnalyticsSummaryRspEncoder struct =
     Json.Encode.object
         [ ( "total_file_count", (Json.Encode.int) struct.totalFileCount )
+        , ( "files_with_content_count", (Json.Encode.int) struct.filesWithContentCount )
         , ( "analyzed_file_count", (Json.Encode.int) struct.analyzedFileCount )
         , ( "items", (Json.Encode.list (deviceAnalyticsSummaryItemEncoder)) struct.items )
         ]
@@ -20040,6 +20238,104 @@ deviceSyncSessionSummariesRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summaries" (Json.Decode.list (deviceSyncSessionSummaryDecoder))))
 
 
+deviceAudioDecoder : Json.Decode.Decoder DeviceAudio
+deviceAudioDecoder =
+    Json.Decode.succeed DeviceAudio
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "recording_started_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "recording_ended_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duration_seconds" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "processed" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "processing_version" (Json.Decode.string)))
+
+
+deviceAudioTranscriptionDecoder : Json.Decode.Decoder DeviceAudioTranscription
+deviceAudioTranscriptionDecoder =
+    Json.Decode.succeed DeviceAudioTranscription
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text_version" (Json.Decode.string)))
+
+
+deviceAudioDetailsDecoder : Json.Decode.Decoder DeviceAudioDetails
+deviceAudioDetailsDecoder =
+    Json.Decode.succeed DeviceAudioDetails
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio" (deviceAudioDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription" (deviceAudioTranscriptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_edit" (Json.Decode.bool)))
+
+
+receiveDeviceAudioReqDecoder : Json.Decode.Decoder ReceiveDeviceAudioReq
+receiveDeviceAudioReqDecoder =
+    Json.Decode.succeed ReceiveDeviceAudioReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "upload_url" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "recording_started_at" (Json.Decode.string)))
+
+
+receiveDeviceAudioRspDecoder : Json.Decode.Decoder ReceiveDeviceAudioRsp
+receiveDeviceAudioRspDecoder =
+    Json.Decode.succeed ReceiveDeviceAudioRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio" (deviceAudioDecoder)))
+
+
+listDeviceAudioReqDecoder : Json.Decode.Decoder ListDeviceAudioReq
+listDeviceAudioReqDecoder =
+    Json.Decode.succeed ListDeviceAudioReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unprocessed_only" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+listDeviceAudioRspDecoder : Json.Decode.Decoder ListDeviceAudioRsp
+listDeviceAudioRspDecoder =
+    Json.Decode.succeed ListDeviceAudioRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio" (Json.Decode.list (deviceAudioDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceAudioDetailReqDecoder : Json.Decode.Decoder DeviceAudioDetailReq
+deviceAudioDetailReqDecoder =
+    Json.Decode.succeed DeviceAudioDetailReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_id" (Json.Decode.string)))
+
+
+saveDeviceAudioTranscriptionReqDecoder : Json.Decode.Decoder SaveDeviceAudioTranscriptionReq
+saveDeviceAudioTranscriptionReqDecoder =
+    Json.Decode.succeed SaveDeviceAudioTranscriptionReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected_text_version" (Json.Decode.string)))
+
+
+saveDeviceAudioTranscriptionRspDecoder : Json.Decode.Decoder SaveDeviceAudioTranscriptionRsp
+saveDeviceAudioTranscriptionRspDecoder =
+    Json.Decode.succeed SaveDeviceAudioTranscriptionRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription" (deviceAudioTranscriptionDecoder)))
+
+
+setDeviceAudioProcessingReqDecoder : Json.Decode.Decoder SetDeviceAudioProcessingReq
+setDeviceAudioProcessingReqDecoder =
+    Json.Decode.succeed SetDeviceAudioProcessingReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "processed" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected_processing_version" (Json.Decode.string)))
+
+
+setDeviceAudioProcessingRspDecoder : Json.Decode.Decoder SetDeviceAudioProcessingRsp
+setDeviceAudioProcessingRspDecoder =
+    Json.Decode.succeed SetDeviceAudioProcessingRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "processed" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "processing_version" (Json.Decode.string)))
+
+
 batchSummaryDecoder : Json.Decode.Decoder BatchSummary
 batchSummaryDecoder =
     Json.Decode.succeed BatchSummary
@@ -20466,6 +20762,7 @@ deviceAnalyticsSummaryRspDecoder : Json.Decode.Decoder DeviceAnalyticsSummaryRsp
 deviceAnalyticsSummaryRspDecoder =
     Json.Decode.succeed DeviceAnalyticsSummaryRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_file_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "files_with_content_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analyzed_file_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (deviceAnalyticsSummaryItemDecoder))))
 

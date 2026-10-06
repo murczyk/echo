@@ -24,6 +24,12 @@ import { DeviceMobileHeader } from './components/DeviceMobileHeader';
 import { DeviceMobileSheet } from '../devices/components/DeviceMobileSheet';
 import { DeviceMobileFilesPanel } from '../device-files/components/DeviceMobileFilesPanel';
 import { useDeviceDetailsPage } from './use-device-details-page';
+import { useDeviceAudio } from './use-device-audio';
+import { useDeviceAudioEditor } from './use-device-audio-editor';
+import { useDeviceAudioDraftGuard } from './use-device-audio-draft-guard';
+import { DeviceAudioLeaveDialog } from './components/DeviceAudioLeaveDialog';
+import { DeviceAudioEditor } from './components/DeviceAudioEditor';
+import { DeviceAudioSidebar } from './components/DeviceAudioSidebar';
 import { useDeviceSyncSessions } from './use-device-sync-sessions';
 import { selectDeviceSyncSession } from './url-state';
 import { DeviceSyncSessionsSidebar } from './components/DeviceSyncSessionsSidebar';
@@ -106,6 +112,38 @@ export function DeviceDetailsPage({
     untagged: false,
   });
   const device = page.device;
+  const audio = useDeviceAudio(deviceId, page.permissions.canRead && device?.id === deviceId);
+  const editorSelection = useRef({ deviceId, audioId: audio.selectedAudioId });
+  if (editorSelection.current.deviceId !== deviceId)
+    editorSelection.current = { deviceId, audioId: null };
+  if (audio.selectedAudioId !== null) editorSelection.current.audioId = audio.selectedAudioId;
+  const audioEditor = useDeviceAudioEditor(
+    deviceId,
+    editorSelection.current.audioId,
+    page.permissions.canRead &&
+      device?.archived === false &&
+      (editorSelection.current.audioId === null ||
+        audio.processing[editorSelection.current.audioId]?.canEdit !== false),
+    audio,
+  );
+  const audioGuard = useDeviceAudioDraftGuard(audioEditor);
+  const guardedAudio = {
+    ...audio,
+    selectAudio: (id: string | null) => {
+      if (id !== audio.selectedAudioId) void audioGuard.requestIntent(() => audio.selectAudio(id));
+    },
+    setUnprocessedOnly: (checked: boolean) => {
+      void audioGuard.requestIntent(() => audio.setUnprocessedOnly(checked));
+    },
+    retry: async () => {
+      await audioGuard.requestIntent(() => audio.retry());
+    },
+    setProcessed: async (id: string, target: boolean) => {
+      if (audio.unprocessedOnly && target && id === audio.selectedAudioId)
+        await audioGuard.requestIntent(() => audio.setProcessed(id, target));
+      else await audio.setProcessed(id, target);
+    },
+  };
   const sessions = useDeviceSyncSessions({
     deviceId,
     syncId,
@@ -166,7 +204,13 @@ export function DeviceDetailsPage({
   const toggleSidePanelLabel = leftPanelVisible ? 'Згорнути ліву панель' : 'Розгорнути ліву панель';
 
   if (!page.permissions.canRead) {
-    return <PageErrorState message="Немає доступу до пристроїв." minHeight="100%" />;
+    return (
+      <>
+        <PageErrorState message="Немає доступу до пристроїв." minHeight="100%" />
+        {audioEditor.confirmed ? <DeviceAudioEditor editor={audioEditor} /> : null}
+        <DeviceAudioLeaveDialog guard={audioGuard} editor={audioEditor} />
+      </>
+    );
   }
 
   if (page.initialLoadFailed) {
@@ -258,6 +302,7 @@ export function DeviceDetailsPage({
         />
       )}
 
+      <DeviceAudioLeaveDialog guard={audioGuard} editor={audioEditor} />
       {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
       {device?.archived ? (
         <PowerAlert severity="warning" autoHideDuration={null}>
@@ -273,7 +318,7 @@ export function DeviceDetailsPage({
         }
         style={
           {
-            '--device-columns': `${leftPanelVisible ? (activeTab === 'files' ? '320px ' : 'minmax(360px, 420px) ') : ''}minmax(0, 1fr)${rightPanelOpen ? ' 344px' : ''}`,
+            '--device-columns': `${leftPanelVisible ? (activeTab === 'files' || activeTab === 'audio' ? '320px ' : 'minmax(360px, 420px) ') : ''}minmax(0, 1fr)${rightPanelOpen ? ' 344px' : ''}`,
           } as CSSProperties
         }
       >
@@ -299,6 +344,8 @@ export function DeviceDetailsPage({
                   onTagFilterChange={setTagFilter}
                 />
               </div>
+            ) : !isMobileLayout && activeTab === 'audio' && leftPanelVisible ? (
+              <DeviceAudioSidebar audio={guardedAudio} />
             ) : !isMobileLayout && leftPanelVisible ? (
               <Box sx={{ minHeight: 0, overflow: 'hidden' }}>
                 <DeviceDetailsLeftPanel device={device} loading={page.loading} />
@@ -312,6 +359,8 @@ export function DeviceDetailsPage({
               }
             >
               <DeviceDetailsTabPanel
+                audio={guardedAudio}
+                audioEditor={audioEditor}
                 mobile={isMobileLayout}
                 mobileFiles={
                   isMobileLayout ? (
@@ -339,7 +388,9 @@ export function DeviceDetailsPage({
                 tagsState={tagsState}
                 tagFilter={tagFilter}
                 onTagFilterChange={setTagFilter}
-                onTabChange={setActiveTab}
+                onTabChange={(tab) => {
+                  if (tab !== activeTab) void audioGuard.requestIntent(() => setActiveTab(tab));
+                }}
               />
             </div>
             {!isMobileLayout && rightPanelOpen ? (
@@ -400,6 +451,7 @@ export function DeviceDetailsPage({
         aorOptions={page.aorOptions}
         unitOptions={page.unitOptions}
         hasChanges={page.editHasChanges}
+        nameRequired={page.device?.name !== null}
         onClose={page.closeEditDrawer}
         onChange={page.setEditForm}
         onSave={(form) => void page.saveEditDevice(form)}

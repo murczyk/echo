@@ -1,3 +1,5 @@
+import { prepareForcedNavigation } from '../browser/navigation-guard';
+
 export const AUTH_UNAUTHORIZED_EVENT = 'echo:api-unauthorized';
 let unauthorizedRedirectListenerInstalled = false;
 let unauthorizedRedirectStarted = false;
@@ -17,6 +19,7 @@ export function redirectToLogin(): void {
   const loginUrl = buildLoginRedirectUrl();
   if (loginUrl === null) return;
   unauthorizedRedirectStarted = true;
+  prepareForcedNavigation();
   window.location.replace(loginUrl);
 }
 

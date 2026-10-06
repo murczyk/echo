@@ -23,7 +23,7 @@ use super::{
     finalizer, protocol, repository, runtime_for_test, worker,
     DeviceFileContentRuntime,
 };
-use crate::devices::ROLE_DEVICE_SOURCE;
+use crate::devices::ROLE_CYBER;
 use crate::entities::{device, login, organism, system_settings};
 use crate::file_registry::entities::{
     file_content, file_content_upload, file_device_source_state, file_entry,
@@ -78,7 +78,7 @@ impl Fixture {
             &env.dbx,
             login::ActiveModel {
                 login: Set(format!("upload-acceptance-{}", Uuid::new_v4())),
-                roles: Set(json!([ROLE_DEVICE_SOURCE])),
+                roles: Set(json!([ROLE_CYBER])),
                 organism_id: Set(Some(organism.id)),
                 ..Default::default()
             },
@@ -822,7 +822,7 @@ async fn acceptance_final_authorization_revocation_removes_unpublished_object()
         env.dbx
             .execute_unprepared(&format!(
                 "update login set roles = '[\"{}\"]'::jsonb where id = '{}'",
-                ROLE_DEVICE_SOURCE, fixture.login.id
+                ROLE_CYBER, fixture.login.id
             ))
             .await
             .unwrap();
@@ -1991,7 +1991,7 @@ async fn acceptance_creation_input_matrix_and_cross_login_replay() {
         login::ActiveModel {
             login: Set(format!("upload-second-{}", Uuid::new_v4())),
             organism_id: Set(fixture.login.organism_id),
-            roles: Set(json!([ROLE_DEVICE_SOURCE])),
+            roles: Set(json!([ROLE_CYBER])),
             ..Default::default()
         },
     )
@@ -2906,6 +2906,17 @@ async fn acceptance_content_read_requires_visible_device_and_current_publication
     )
     .await
     .unwrap();
+    let basic = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("content-basic-{}", Uuid::new_v4())),
+            roles: Set(json!(["Basic"])),
+            organism_id: Set(fixture.login.organism_id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     let env_mut = Arc::get_mut(&mut env).unwrap();
     env_mut.s3 = Some(fixture.runtime.storage.clone());
     env_mut.s3_config = Some(crate::storage::S3Config {
@@ -2922,7 +2933,7 @@ async fn acceptance_content_read_requires_visible_device_and_current_publication
     });
     let app = app!(env);
     let reader_cookie: Cookie<'static> = cookie!(app, reader.id);
-    let source_cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    let basic_cookie: Cookie<'static> = cookie!(app, basic.id);
     let outsider_cookie: Cookie<'static> = cookie!(app, outsider.id);
     let path = format!(
         "/api/device/files/{}/{}/revisions/1/content",
@@ -2931,7 +2942,7 @@ async fn acceptance_content_read_requires_visible_device_and_current_publication
     for method in [Method::GET, Method::HEAD] {
         for (cookie, status) in [
             (None, StatusCode::UNAUTHORIZED),
-            (Some(source_cookie.clone()), StatusCode::FORBIDDEN),
+            (Some(basic_cookie.clone()), StatusCode::FORBIDDEN),
             (Some(outsider_cookie.clone()), StatusCode::NOT_FOUND),
         ] {
             let mut request = test::TestRequest::default()

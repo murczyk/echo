@@ -41,7 +41,7 @@ async fn issue_3390_session_analysis_uses_the_latest_compatible_completed_result
         .await
         .unwrap()
         .unwrap();
-    let actor = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
+    let actor = access::login_with_roles(&owner, &[ROLE_CYBER]);
     let reader =
         access::login_with_roles(&owner, &[crate::devices::ROLE_CYBER]);
     let metadata_only = crate::devices::files::sync::automatic(

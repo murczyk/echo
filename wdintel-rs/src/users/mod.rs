@@ -25,6 +25,8 @@ pub mod totp_crypto;
 pub mod types;
 
 #[cfg(test)]
+mod cyber_roles_migration_tests;
+#[cfg(test)]
 mod session_tests;
 
 pub fn login_id_from_identity(user: &Identity) -> Result<Uuid, AppError> {
@@ -201,7 +203,7 @@ pub async fn ensure_base_role_by_id<T>(
 where
     T: ToString + ?Sized,
 {
-    has_any_role(dbx, user_id, vec!["Rer", "CyberViewer"]).await
+    has_any_role(dbx, user_id, vec!["Rer", "Cyber"]).await
 }
 
 pub async fn ensure_message_write(
@@ -288,7 +290,6 @@ pub(crate) fn role_matches(
                 || roles.contains(&"Bpla".to_string())
                 || roles.contains(&"Rer".to_string())
                 || roles.contains(&"Cyber".to_string())
-                || roles.contains(&crate::config::ROLE_CYBER_VIEWER.to_string())
                 || roles.contains(&"Basic".to_string())
         }
         "UnitsEditor" => {
@@ -306,15 +307,6 @@ pub(crate) fn role_matches(
         "Cyber" => {
             roles.contains(&"Admin".to_string())
                 || roles.contains(&"Cyber".to_string())
-        }
-        "CyberViewer" => {
-            roles.contains(&"Admin".to_string())
-                || roles.contains(&"Cyber".to_string())
-                || roles.contains(&crate::config::ROLE_CYBER_VIEWER.to_string())
-        }
-        "DeviceSource" => {
-            roles.contains(&"Admin".to_string())
-                || roles.contains(&"DeviceSource".to_string())
         }
         "AdvancedReports" => {
             roles.contains(&"Admin".to_string())
@@ -1578,7 +1570,7 @@ pub async fn user_sigint_groups_detailed(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Admin", "Api"],
+        vec!["Rer", "Cyber", "Admin", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
@@ -3003,17 +2995,14 @@ mod tests {
     #[test]
     fn devices_roles_preserve_boundaries() {
         assert!(role_matches(&roles(&["Cyber"]), "Cyber").unwrap());
-        assert!(!role_matches(&roles(&["DeviceSource"]), "Cyber").unwrap());
-        assert!(!role_matches(&roles(&["Cyber"]), "DeviceSource").unwrap());
-        assert!(
-            role_matches(&roles(&["DeviceSource"]), "DeviceSource").unwrap()
-        );
         assert!(role_matches(&roles(&["Admin"]), "Cyber").unwrap());
-        assert!(role_matches(&roles(&["Admin"]), "DeviceSource").unwrap());
         assert!(!role_matches(&roles(&["Api"]), "Cyber").unwrap());
         assert!(!role_matches(&roles(&["Full"]), "Cyber").unwrap());
-        assert!(!role_matches(&roles(&["Api"]), "DeviceSource").unwrap());
-        assert!(!role_matches(&roles(&["Full"]), "DeviceSource").unwrap());
+        for removed_role in ["DeviceSource", "CyberViewer"] {
+            assert!(!role_matches(&roles(&[removed_role]), "Cyber").unwrap());
+            assert!(!role_matches(&roles(&[removed_role]), "Basic").unwrap());
+            assert!(role_matches(&roles(&["Admin"]), removed_role).is_err());
+        }
     }
 
     #[test]
