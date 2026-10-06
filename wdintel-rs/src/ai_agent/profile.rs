@@ -71,7 +71,19 @@ struct ProfileSettings {
     mattermost_webhook_url: Option<String>,
     #[serde(default)]
     mattermost_chat_enabled: bool,
+    #[serde(default)]
+    mattermost_chat_webhook_url: Option<String>,
     allowed_ai_engine_ids: Vec<Uuid>,
+}
+
+impl ProfileSettings {
+    fn chat_webhook(&self) -> Option<&str> {
+        self.mattermost_chat_webhook_url.as_deref().or_else(|| {
+            self.mattermost_chat_enabled
+                .then_some(self.mattermost_webhook_url.as_deref())
+                .flatten()
+        })
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -220,6 +232,7 @@ async fn load_profile(
             security_review_enabled: settings.security_review_enabled,
             mattermost_webhook_url: settings.mattermost_webhook_url,
             mattermost_chat_enabled: settings.mattermost_chat_enabled,
+            mattermost_chat_webhook_url: settings.mattermost_chat_webhook_url,
             allowed_ai_engine_ids,
         },
         engines: engines.into_iter().map(ProfileEngine::from).collect(),
@@ -349,6 +362,8 @@ fn validate_profile_settings(
         profile.settings.mattermost_webhook_url.as_deref(),
     )
     .context(h!())?;
+    mattermost::validate_webhook(profile.settings.chat_webhook())
+        .context(h!())?;
     if profile.settings.security_review_enabled
         && profile.settings.mattermost_webhook_url.is_none()
     {
@@ -357,10 +372,10 @@ fn validate_profile_settings(
         );
     }
     if profile.settings.mattermost_chat_enabled
-        && profile.settings.mattermost_webhook_url.is_none()
+        && profile.settings.chat_webhook().is_none()
     {
         anyhow::bail!(
-            "Mattermost webhook is required while chat monitoring is enabled"
+            "Mattermost chat webhook is required while chat monitoring is enabled"
         );
     }
     let engine_ids = profile
@@ -409,7 +424,13 @@ fn validate_profile_settings(
 async fn validate_profile_webhook_target(
     profile: &LocalAiAgentProfile,
 ) -> anyhow::Result<()> {
-    if let Some(webhook) = profile.settings.mattermost_webhook_url.as_deref() {
+    for webhook in [
+        profile.settings.mattermost_webhook_url.as_deref(),
+        profile.settings.chat_webhook(),
+    ]
+    .into_iter()
+    .flatten()
+    {
         mattermost::resolve_webhook(
             webhook,
             Duration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC),
@@ -520,6 +541,7 @@ where
     settings.security_review_enabled = Set(false);
     settings.mattermost_webhook_url = Set(None);
     settings.mattermost_chat_enabled = Set(false);
+    settings.mattermost_chat_webhook_url = Set(None);
     settings.updated_at = Set(Utc::now().naive_utc());
     settings.update(dbx).await.c(h!())?;
     Ok(())
@@ -746,6 +768,8 @@ where
     settings.mattermost_chat_enabled = Set(profile.mattermost_chat_enabled);
     settings.mattermost_webhook_url =
         Set(profile.mattermost_webhook_url.clone());
+    settings.mattermost_chat_webhook_url =
+        Set(profile.chat_webhook().map(str::to_string));
     settings.updated_at = Set(Utc::now().naive_utc());
     settings.update(dbx).await.c(h!())?;
     ai_agent_allowed_engine::Entity::delete_many()
@@ -872,6 +896,9 @@ mod tests {
                     "https://hooks.example.com/secret".to_string(),
                 ),
                 mattermost_chat_enabled: true,
+                mattermost_chat_webhook_url: Some(
+                    "https://hooks.example.com/chat-secret".to_string(),
+                ),
                 allowed_ai_engine_ids: vec![engine_id],
             },
             engines: vec![ProfileEngine {
@@ -987,6 +1014,27 @@ mod tests {
                 .unwrap();
         assert_eq!(template.login, AI_AGENT_TEMPLATE_LOGIN_NAME);
         assert_eq!(settings.template_login_id, Some(template_login_id));
+        assert_eq!(
+            settings.mattermost_webhook_url,
+            profile.settings.mattermost_webhook_url,
+        );
+        assert_eq!(
+            settings.mattermost_chat_webhook_url,
+            profile.settings.mattermost_chat_webhook_url,
+        );
+
+        profile.settings.mattermost_chat_webhook_url = None;
+        replace_profile(&env.dbx, &profile).await.unwrap();
+        let settings =
+            ai_agent_settings::Entity::find_by_id(AI_AGENT_SETTINGS_ID)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            settings.mattermost_chat_webhook_url,
+            profile.settings.mattermost_webhook_url,
+        );
 
         clear_copied_control_plane(&env.dbx, false).await.unwrap();
         ai_engine::Entity::delete_by_id(profile.engines[0].id)

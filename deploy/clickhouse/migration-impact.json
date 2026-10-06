@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20261006_150705_ai_agent_chat_webhook": {
+      "changes": [
+        { "table": "public.ai_agent_settings", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261006_075657_ai_gov_ua_settings": {
       "changes": [
         { "table": "public.ai_gov_ua_settings", "strategy": "excluded" }

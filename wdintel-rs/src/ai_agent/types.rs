@@ -177,6 +177,7 @@ pub struct AiAgentAdminSettingsItem {
     pub security_review_enabled: bool,
     pub mattermost_chat_enabled: bool,
     pub has_mattermost_webhook: bool,
+    pub has_mattermost_chat_webhook: bool,
     pub allowed_ai_engine_ids: Vec<String>,
     pub provider_runtime_profiles: Vec<AiAgentProviderRuntimeProfileItem>,
 }
@@ -206,6 +207,9 @@ pub struct AiAgentAdminSettingsUpdateReq {
     pub mattermost_chat_enabled: bool,
     pub mattermost_webhook_url: Option<String>,
     pub clear_mattermost_webhook: bool,
+    pub mattermost_chat_webhook_url: Option<String>,
+    #[serde(default)]
+    pub clear_mattermost_chat_webhook: bool,
     pub allowed_ai_engine_ids: Vec<String>,
     pub provider_runtime_profiles: Vec<AiAgentProviderRuntimeProfileItem>,
 }

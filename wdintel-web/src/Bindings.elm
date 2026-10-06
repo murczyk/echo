@@ -13801,6 +13801,7 @@ type alias AiAgentAdminSettingsItem =
     , securityReviewEnabled : Bool
     , mattermostChatEnabled : Bool
     , hasMattermostWebhook : Bool
+    , hasMattermostChatWebhook : Bool
     , allowedAiEngineIds : List (String)
     , providerRuntimeProfiles : List (AiAgentProviderRuntimeProfileItem)
     }
@@ -13816,6 +13817,7 @@ aiAgentAdminSettingsItemEncoder struct =
         , ( "securityReviewEnabled", (Json.Encode.bool) struct.securityReviewEnabled )
         , ( "mattermostChatEnabled", (Json.Encode.bool) struct.mattermostChatEnabled )
         , ( "hasMattermostWebhook", (Json.Encode.bool) struct.hasMattermostWebhook )
+        , ( "hasMattermostChatWebhook", (Json.Encode.bool) struct.hasMattermostChatWebhook )
         , ( "allowedAiEngineIds", (Json.Encode.list (Json.Encode.string)) struct.allowedAiEngineIds )
         , ( "providerRuntimeProfiles", (Json.Encode.list (aiAgentProviderRuntimeProfileItemEncoder)) struct.providerRuntimeProfiles )
         ]
@@ -13830,6 +13832,8 @@ type alias AiAgentAdminSettingsUpdateReq =
     , mattermostChatEnabled : Bool
     , mattermostWebhookUrl : Maybe (String)
     , clearMattermostWebhook : Bool
+    , mattermostChatWebhookUrl : Maybe (String)
+    , clearMattermostChatWebhook : Bool
     , allowedAiEngineIds : List (String)
     , providerRuntimeProfiles : List (AiAgentProviderRuntimeProfileItem)
     }
@@ -13846,6 +13850,8 @@ aiAgentAdminSettingsUpdateReqEncoder struct =
         , ( "mattermostChatEnabled", (Json.Encode.bool) struct.mattermostChatEnabled )
         , ( "mattermostWebhookUrl", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mattermostWebhookUrl )
         , ( "clearMattermostWebhook", (Json.Encode.bool) struct.clearMattermostWebhook )
+        , ( "mattermostChatWebhookUrl", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mattermostChatWebhookUrl )
+        , ( "clearMattermostChatWebhook", (Json.Encode.bool) struct.clearMattermostChatWebhook )
         , ( "allowedAiEngineIds", (Json.Encode.list (Json.Encode.string)) struct.allowedAiEngineIds )
         , ( "providerRuntimeProfiles", (Json.Encode.list (aiAgentProviderRuntimeProfileItemEncoder)) struct.providerRuntimeProfiles )
         ]
@@ -25263,6 +25269,7 @@ aiAgentAdminSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "securityReviewEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostChatEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasMattermostWebhook" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasMattermostChatWebhook" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowedAiEngineIds" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "providerRuntimeProfiles" (Json.Decode.list (aiAgentProviderRuntimeProfileItemDecoder))))
 
@@ -25278,6 +25285,8 @@ aiAgentAdminSettingsUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostChatEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostWebhookUrl" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clearMattermostWebhook" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostChatWebhookUrl" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clearMattermostChatWebhook" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowedAiEngineIds" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "providerRuntimeProfiles" (Json.Decode.list (aiAgentProviderRuntimeProfileItemDecoder))))
 
