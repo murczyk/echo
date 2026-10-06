@@ -1403,7 +1403,6 @@ fn callsign_frequency_matches_statement(
         .query(expanded_query)
         .table_name(expanded_alias.clone())
         .to_owned();
-
     let mut matches_query = Query::select()
         .column((expanded_alias.clone(), freq_alias.clone()))
         .expr_as(
@@ -3650,16 +3649,24 @@ pub(super) async fn fetch_callsigns_page_for_login(
             WHERE trim(callsign) <> '' {candidate_filter}
         ), grouped AS (
             SELECT upper(trim(callsign)) AS label,
-                   array_agg(DISTINCT callsign ORDER BY callsign) AS callsign_values,
                    COUNT(*)::bigint AS count
             FROM candidate_callsigns
             GROUP BY upper(trim(callsign))
+        ), paged AS (
+            SELECT label, count FROM grouped
+            WHERE TRUE
+            {seek}
+            ORDER BY {order}
+            LIMIT {}
         )
-        SELECT label, callsign_values, count FROM grouped
-        WHERE TRUE
-        {seek}
+        SELECT paged.label,
+               array_agg(DISTINCT candidate_callsigns.callsign ORDER BY candidate_callsigns.callsign) AS callsign_values,
+               paged.count
+        FROM paged
+        INNER JOIN candidate_callsigns
+            ON upper(trim(candidate_callsigns.callsign)) = paged.label
+        GROUP BY paged.label, paged.count
         ORDER BY {order}
-        LIMIT {}
         "#,
         page_size + 1
     );
@@ -3669,14 +3676,12 @@ pub(super) async fn fetch_callsigns_page_for_login(
         callsign_values: Vec<String>,
         count: i64,
     }
-    let rows = Row::find_by_statement(Statement::from_sql_and_values(
-        DbBackend::Postgres,
-        sql,
-        values,
-    ))
-    .all(db)
-    .await
-    .context(h!())?;
+    let statement =
+        Statement::from_sql_and_values(DbBackend::Postgres, sql, values);
+    let rows = Row::find_by_statement(statement)
+        .all(db)
+        .await
+        .context(h!())?;
     let has_more = rows.len() > page_size as usize;
     let entries = rows
         .into_iter()

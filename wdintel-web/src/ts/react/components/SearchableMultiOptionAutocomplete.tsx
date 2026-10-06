@@ -1,6 +1,6 @@
 import { Autocomplete, TextField } from '@mui/material';
 import type { AutocompleteProps } from '@mui/material/Autocomplete';
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import { createRankedFilterOptions } from '../utils/search-filter';
 
@@ -24,6 +24,7 @@ type Props<T extends SearchableOption> = {
   disablePortal?: boolean;
   onBlur?: () => void;
   onInputChange?: (value: string) => void;
+  serverSearch?: boolean;
   loading?: boolean;
   loadingText?: string;
   slotProps?: AutocompleteProps<T, true, false, false>['slotProps'];
@@ -45,10 +46,12 @@ export function SearchableMultiOptionAutocomplete<T extends SearchableOption>({
   disablePortal,
   onBlur,
   onInputChange,
+  serverSearch = false,
   loading = false,
   loadingText,
   slotProps,
 }: Props<T>) {
+  const [inputValue, setInputValue] = useState('');
   const selectedOptions = useMemo(
     () =>
       valueIds
@@ -68,6 +71,7 @@ export function SearchableMultiOptionAutocomplete<T extends SearchableOption>({
       className={className}
       options={options}
       value={selectedOptions}
+      inputValue={inputValue}
       disabled={disabled}
       disablePortal={disablePortal}
       slotProps={slotProps}
@@ -76,12 +80,18 @@ export function SearchableMultiOptionAutocomplete<T extends SearchableOption>({
       noOptionsText={noOptionsText}
       getOptionLabel={getOptionLabel}
       isOptionEqualToValue={(option, value) => option.id === value.id}
-      filterOptions={filterOptions}
+      filterOptions={serverSearch ? (items) => items : filterOptions}
       onInputChange={(_event, value, reason) => {
-        if (reason !== 'reset') onInputChange?.(value);
+        if (reason === 'reset') return;
+        setInputValue(value);
+        onInputChange?.(value);
       }}
-      onChange={(_, nextOptions) => {
+      onChange={(_, nextOptions, reason) => {
         onValueIdsChange(nextOptions.map((option) => option.id));
+        if (reason === 'selectOption') {
+          setInputValue('');
+          onInputChange?.('');
+        }
       }}
       renderInput={(params) => (
         <TextField

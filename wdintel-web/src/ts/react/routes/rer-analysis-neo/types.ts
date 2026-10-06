@@ -306,6 +306,7 @@ export type AnalysisPageActions = {
   findCallsignFrequencyMatches: (
     callsigns: string[],
     minMatches: number,
+    signal?: AbortSignal,
   ) => Promise<AnalysisCallsignFrequencyMatchesRsp | null>;
   loadCallsignGraph: () => void;
   loadCorrelatedFreqs: () => void;

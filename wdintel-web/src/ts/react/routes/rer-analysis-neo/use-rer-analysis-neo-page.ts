@@ -704,6 +704,7 @@ export function useRerAnalysisNeoPage(
     async (
       callsigns: string[],
       minMatches: number,
+      signal?: AbortSignal,
     ): Promise<AnalysisCallsignFrequencyMatchesRsp | null> => {
       if (isNullOrUndefined(analysisReq)) {
         setPageError('Перевірте дату та час перед пошуком частот.');
@@ -711,12 +712,16 @@ export function useRerAnalysisNeoPage(
       }
 
       try {
-        return await fetchAnalysisCallsignFrequencyMatches({
-          req: analysisReq,
-          callsigns,
-          minMatches,
-        });
+        return await fetchAnalysisCallsignFrequencyMatches(
+          {
+            req: analysisReq,
+            callsigns,
+            minMatches,
+          },
+          { signal },
+        );
       } catch (loadError) {
+        if (signal?.aborted) return null;
         if (!handleUnauthorized(loadError)) setPageError(toErrorMessage(loadError));
         return null;
       }

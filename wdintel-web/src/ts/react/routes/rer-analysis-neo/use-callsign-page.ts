@@ -51,6 +51,7 @@ export function useCallsignPage({
 }) {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState<PageState>(emptyPage);
+  const [pageScope, setPageScope] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<CursorHistoryEntry[]>([
     { cursor: null, index: 0 },
   ]);
@@ -58,6 +59,7 @@ export function useCallsignPage({
   const [loading, setLoading] = useState(false);
   const [debouncing, setDebouncing] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [errorScope, setErrorScope] = useState<string | null>(null);
   const [failedRequest, setFailedRequest] = useState<PageRequest | null>(null);
   const requestIdRef = useRef(0);
   const controllerRef = useRef<AbortController | null>(null);
@@ -111,8 +113,10 @@ export function useCallsignPage({
           hasMore: response.hasMore,
           nextCursor: response.nextCursor,
         });
+        setPageScope(scope);
         setPageIndex(request.index);
         setError(null);
+        setErrorScope(null);
         setFailedRequest(null);
         return true;
       } catch (loadError) {
@@ -122,6 +126,7 @@ export function useCallsignPage({
           scope === effectiveScopeRef.current
         ) {
           setError(loadError);
+          setErrorScope(scope);
           setFailedRequest(request);
           onErrorRef.current(loadError);
         }
@@ -137,16 +142,23 @@ export function useCallsignPage({
     if (!active || !hasRequest) {
       abortRequest();
       requestIdRef.current += 1;
+      setPage(emptyPage);
+      setPageScope(null);
       setLoading(false);
       setDebouncing(false);
+      setError(null);
+      setErrorScope(null);
       return;
     }
     requestIdRef.current += 1;
     abortRequest();
     setPage(emptyPage);
+    setPageScope(null);
     setCursorHistory([{ cursor: null, index: 0 }]);
     setPageIndex(0);
+    setLoading(false);
     setError(null);
+    setErrorScope(null);
     setFailedRequest(null);
     setDebouncing(true);
     const scope = effectiveScope;
@@ -160,46 +172,62 @@ export function useCallsignPage({
     };
   }, [active, abortRequest, effectiveScope, hasRequest, requestPage]);
 
+  const hasCurrentPage = active && hasRequest && pageScope === effectiveScope;
+
   const loadNextPage = useCallback(async () => {
-    if (loading || debouncing || !page.hasMore || page.nextCursor == null) return;
+    if (!hasCurrentPage || loading || debouncing || !page.hasMore || page.nextCursor == null)
+      return;
     const request = { cursor: page.nextCursor, index: pageIndex + 1 };
     const loaded = await requestPage(request, effectiveScope);
     if (loaded) setCursorHistory((history) => retainCursorHistory(history, request));
-  }, [debouncing, effectiveScope, loading, page.hasMore, page.nextCursor, pageIndex, requestPage]);
+  }, [
+    debouncing,
+    effectiveScope,
+    hasCurrentPage,
+    loading,
+    page.hasMore,
+    page.nextCursor,
+    pageIndex,
+    requestPage,
+  ]);
 
   const loadPreviousPage = useCallback(async () => {
-    if (loading || debouncing) return;
+    if (!hasCurrentPage || loading || debouncing) return;
     const request = cursorHistory.find((item) => item.index === pageIndex - 1);
     if (request == null) return;
     await requestPage(request, effectiveScope);
-  }, [cursorHistory, debouncing, effectiveScope, loading, pageIndex, requestPage]);
+  }, [cursorHistory, debouncing, effectiveScope, hasCurrentPage, loading, pageIndex, requestPage]);
 
   const loadFirstPage = useCallback(async () => {
-    if (loading || debouncing || pageIndex === 0) return;
+    if (!hasCurrentPage || loading || debouncing || pageIndex === 0) return;
     await requestPage({ cursor: null, index: 0 }, effectiveScope);
-  }, [debouncing, effectiveScope, loading, pageIndex, requestPage]);
+  }, [debouncing, effectiveScope, hasCurrentPage, loading, pageIndex, requestPage]);
 
   const retry = useCallback(async () => {
-    if (loading || debouncing || failedRequest == null) return;
+    if (errorScope !== effectiveScope || loading || debouncing || failedRequest == null) return;
     const loaded = await requestPage(failedRequest, effectiveScope);
     if (loaded && failedRequest.index > pageIndex) {
       setCursorHistory((history) => retainCursorHistory(history, failedRequest));
     }
-  }, [debouncing, effectiveScope, failedRequest, loading, pageIndex, requestPage]);
+  }, [debouncing, effectiveScope, errorScope, failedRequest, loading, pageIndex, requestPage]);
 
   useEffect(() => () => abortRequest(), [abortRequest]);
 
+  const displayedPage = hasCurrentPage ? page : emptyPage;
+
   return {
-    entries: page.entries,
-    error,
-    canRetry: failedRequest != null,
-    hasMore: page.hasMore,
-    hasPrevious: cursorHistory.some((item) => item.index === pageIndex - 1),
+    entries: displayedPage.entries,
+    error: errorScope === effectiveScope ? error : null,
+    canRetry: errorScope === effectiveScope && failedRequest != null,
+    failedPageIndex: errorScope === effectiveScope ? (failedRequest?.index ?? null) : null,
+    hasMore: displayedPage.hasMore,
+    hasPrevious: hasCurrentPage && cursorHistory.some((item) => item.index === pageIndex - 1),
     loadFirstPage,
     loadNextPage,
     loadPreviousPage,
     loading,
-    pageIndex,
+    pageIndex: hasCurrentPage ? pageIndex : 0,
+    pending: loading || debouncing,
     query,
     retry,
     setQuery,

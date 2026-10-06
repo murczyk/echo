@@ -4,9 +4,23 @@ import type {
   AnalysisStatsReq,
 } from '../../../../../Bindings';
 import { AnalysisCallsignFrequencySearch } from './AnalysisCallsignFrequencySearch';
-import { Box, Button, Paper, Stack, TextField, Typography } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import ClearIcon from '@mui/icons-material/Clear';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  InputAdornment,
+  Paper,
+  Stack,
+  TablePagination,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCallsignPage } from '../use-callsign-page';
+import { PowerIconButton } from '../../../components/PowerIconButton';
 import {
   normalizeCallsignFilterValues,
   normalizeCallsignLookupValue,
@@ -23,6 +37,7 @@ type Props = {
   onSearchFrequencyMatches: (
     callsigns: string[],
     minMatches: number,
+    signal?: AbortSignal,
   ) => Promise<AnalysisCallsignFrequencyMatchesRsp | null>;
   onToggleCallsign: (callsigns: string[]) => void;
   onToggleFreq: (freq: string) => void;
@@ -52,6 +67,18 @@ export function AnalysisCallsignsPane({
       : page.error
         ? 'Не вдалося завантажити позивні.'
         : null;
+  const failedNavigation =
+    page.failedPageIndex == null || page.failedPageIndex === page.pageIndex
+      ? null
+      : page.failedPageIndex === 0
+        ? 'Не вдалося завантажити першу сторінку позивних.'
+        : page.failedPageIndex > page.pageIndex
+          ? 'Не вдалося завантажити наступну сторінку позивних.'
+          : 'Не вдалося завантажити попередню сторінку позивних.';
+  const displayedRange =
+    page.entries.length === 0
+      ? 'Немає позивних'
+      : `${page.pageIndex * 50 + 1}–${page.pageIndex * 50 + page.entries.length} позивних`;
   const selectedValues = useMemo(
     () => new Set(normalizeCallsignFilterValues(selectedCallsigns)),
     [selectedCallsigns],
@@ -90,6 +117,24 @@ export function AnalysisCallsignsPane({
           size="small"
           value={page.query}
           onChange={(event) => page.setQuery(event.target.value)}
+          slotProps={{
+            input: {
+              endAdornment: page.query ? (
+                <InputAdornment position="end">
+                  <Tooltip title="Очистити пошук позивного">
+                    <PowerIconButton
+                      aria-label="Очистити пошук позивного"
+                      size="small"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => page.setQuery('')}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </PowerIconButton>
+                  </Tooltip>
+                </InputAdornment>
+              ) : undefined,
+            },
+          }}
           sx={{ mb: 1 }}
         />
         {selectedGroups.length > 0 ? (
@@ -112,58 +157,118 @@ export function AnalysisCallsignsPane({
         ) : null}
         {error ? (
           <Stack direction="row" spacing={1} alignItems="center">
-            <Typography color="error">{error}</Typography>
-            <Button disabled={!page.canRetry || page.loading} onClick={() => void page.retry()}>
+            <Typography color="error">{failedNavigation ?? error}</Typography>
+            <Button disabled={!page.canRetry || page.pending} onClick={() => void page.retry()}>
               Повторити
             </Button>
           </Stack>
         ) : null}
-        {page.loading && page.entries.length === 0 ? <Typography>Завантаження…</Typography> : null}
-        {!page.loading && page.entries.length === 0 && !error ? (
+        {page.pending && page.entries.length === 0 ? (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ py: 2 }}>
+            <CircularProgress size={20} />
+            <Typography>Завантаження позивних…</Typography>
+          </Stack>
+        ) : null}
+        {!page.pending && page.entries.length === 0 && !error ? (
           <Typography color="text.secondary">Нічого не знайдено</Typography>
         ) : null}
-        <Stack spacing={0.5}>
-          {page.entries.map((item) => {
-            const selected = item.values
-              .map(normalizeCallsignLookupValue)
-              .every((value) => selectedValues.has(value));
-            return (
-              <Stack key={item.label} direction="row" spacing={0.5}>
-                <Button
-                  color={selected ? 'primary' : 'inherit'}
-                  onClick={() => onToggleCallsign(item.values)}
-                  sx={{ flex: 1, justifyContent: 'space-between' }}
-                >
-                  <span>{item.label}</span>
-                  <span>{item.count}</span>
-                </Button>
-                <Button
-                  aria-label={`Додати ${item.label}`}
-                  onClick={() => onAddCallsign(item.values)}
-                >
-                  +
-                </Button>
-              </Stack>
-            );
-          })}
-        </Stack>
-        <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-          <Button
-            disabled={page.loading || page.pageIndex === 0}
-            onClick={() => void page.loadFirstPage()}
-          >
-            Перша
-          </Button>
-          <Button
-            disabled={page.loading || !page.hasPrevious}
-            onClick={() => void page.loadPreviousPage()}
-          >
-            Попередні 50
-          </Button>
-          <Button disabled={page.loading || !page.hasMore} onClick={() => void page.loadNextPage()}>
-            Наступні 50
-          </Button>
-        </Stack>
+        <Box aria-busy={page.pending}>
+          <Stack spacing={0.5} sx={{ opacity: page.pending ? 0.55 : 1 }}>
+            {page.entries.map((item) => {
+              const selected = item.values
+                .map(normalizeCallsignLookupValue)
+                .every((value) => selectedValues.has(value));
+              return (
+                <Stack key={item.label} direction="row" spacing={0.5} alignItems="stretch">
+                  <Button
+                    color={selected ? 'primary' : 'inherit'}
+                    disabled={page.pending}
+                    onClick={() => onToggleCallsign(item.values)}
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      justifyContent: 'space-between',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <span style={{ overflowWrap: 'anywhere' }}>{item.label}</span>
+                    <Typography
+                      component="span"
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ ml: 1 }}
+                    >
+                      {`${item.count} повідомлень`}
+                    </Typography>
+                  </Button>
+                  <Tooltip title={`Додати ${item.label} до поточного фільтра`}>
+                    <span>
+                      <PowerIconButton
+                        aria-label={`Додати ${item.label} до поточного фільтра`}
+                        disabled={page.pending}
+                        onClick={() => onAddCallsign(item.values)}
+                      >
+                        <AddIcon fontSize="small" />
+                      </PowerIconButton>
+                    </span>
+                  </Tooltip>
+                </Stack>
+              );
+            })}
+          </Stack>
+        </Box>
+        <Box
+          aria-busy={page.pending}
+          sx={{
+            position: 'sticky',
+            bottom: 0,
+            zIndex: 1,
+            backgroundColor: 'background.paper',
+            borderTop: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <TablePagination
+              component="div"
+              count={-1}
+              page={page.pageIndex}
+              rowsPerPage={50}
+              rowsPerPageOptions={[]}
+              showFirstButton
+              showLastButton={false}
+              getItemAriaLabel={(type) =>
+                ({
+                  first: 'Перша сторінка позивних',
+                  last: 'Остання сторінка позивних',
+                  next: 'Наступна сторінка позивних',
+                  previous: 'Попередня сторінка позивних',
+                })[type]
+              }
+              labelDisplayedRows={() => displayedRange}
+              labelRowsPerPage=""
+              slotProps={{
+                select: { inputProps: { 'aria-label': 'Кількість позивних на сторінці' } },
+                actions: {
+                  firstButton: { disabled: page.pending || page.pageIndex === 0 },
+                  previousButton: { disabled: page.pending || !page.hasPrevious },
+                  nextButton: { disabled: page.pending || !page.hasMore },
+                },
+              }}
+              onPageChange={(_event, nextPage) => {
+                if (nextPage === 0) void page.loadFirstPage();
+                else if (nextPage < page.pageIndex) void page.loadPreviousPage();
+                else void page.loadNextPage();
+              }}
+            />
+            {page.pending ? (
+              <Box role="status" aria-live="polite" sx={{ pr: 1, display: 'flex', gap: 0.5 }}>
+                <CircularProgress size={18} aria-label="Оновлення позивних" />
+                <Typography variant="caption">Оновлення…</Typography>
+              </Box>
+            ) : null}
+          </Stack>
+        </Box>
         {selectedCallsigns.length > 0 ? (
           <Button onClick={onClearCallsign} sx={{ mt: 1 }}>
             Очистити вибір

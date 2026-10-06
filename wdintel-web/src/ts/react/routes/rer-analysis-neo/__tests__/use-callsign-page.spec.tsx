@@ -126,7 +126,7 @@ describe('useCallsignPage', () => {
 
     await act(async () => root?.render(createElement(Harness, { active: false, search: 'new' })));
     await act(async () => resolveFirst({ entries: [], hasMore: false, nextCursor: null }));
-    expect(latest?.entries.map((entry) => entry.label)).toEqual(['BRAVO']);
+    expect(latest?.entries).toEqual([]);
   });
 
   it('keeps the displayed page and permits retry after a next-page failure', async () => {
@@ -152,6 +152,66 @@ describe('useCallsignPage', () => {
     await act(async () => latest?.retry());
     expect(latest?.entries.map((entry) => entry.label)).toEqual(['BRAVO']);
     expect(latest?.error).toBeNull();
+  });
+
+  it('invalidates a prior scope during debounce, failure, retry, and a late response', async () => {
+    let resolveSearch!: (value: {
+      entries: Array<{ value: string; label: string; values: string[]; count: number }>;
+      hasMore: boolean;
+      nextCursor: null;
+    }) => void;
+    let rejectSearch!: (reason: Error) => void;
+    let resolveRetry!: (value: {
+      entries: Array<{ value: string; label: string; values: string[]; count: number }>;
+      hasMore: boolean;
+      nextCursor: null;
+    }) => void;
+    api.fetchAnalysisCallsignPage
+      .mockResolvedValueOnce({
+        entries: [{ value: 'alpha', label: 'ALPHA', values: ['alpha'], count: 1 }],
+        hasMore: false,
+        nextCursor: null,
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            resolveSearch = resolve;
+            rejectSearch = reject;
+          }),
+      )
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveRetry = resolve)));
+    await act(async () => root?.render(createElement(Harness)));
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+
+    act(() => latest?.setQuery('bravo'));
+    expect(latest?.entries).toEqual([]);
+    expect(latest?.pending).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    expect(latest?.loading).toBe(true);
+    expect(latest?.entries).toEqual([]);
+
+    await act(async () => rejectSearch(new Error('search failed')));
+    expect(latest?.entries).toEqual([]);
+    expect(latest?.canRetry).toBe(true);
+
+    void latest?.retry();
+    await act(async () =>
+      resolveSearch({
+        entries: [{ value: 'old', label: 'OLD', values: ['old'], count: 1 }],
+        hasMore: false,
+        nextCursor: null,
+      }),
+    );
+    expect(latest?.entries).toEqual([]);
+
+    await act(async () =>
+      resolveRetry({
+        entries: [{ value: 'bravo', label: 'BRAVO', values: ['bravo'], count: 1 }],
+        hasMore: false,
+        nextCursor: null,
+      }),
+    );
+    expect(latest?.entries.map((entry) => entry.label)).toEqual(['BRAVO']);
   });
 
   it('retries an initial page failure without changing its scope', async () => {

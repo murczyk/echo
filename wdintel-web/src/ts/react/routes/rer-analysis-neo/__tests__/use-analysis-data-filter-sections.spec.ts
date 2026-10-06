@@ -15,7 +15,7 @@ import { loadFilterSectionData } from '../use-analysis-data.reload';
 
 const analysisApiMocks = vi.hoisted(() => ({
   fetchAnalysisGroups: vi.fn(),
-  fetchAnalysisCallsigns: vi.fn(),
+  fetchAnalysisCallsignPage: vi.fn(),
   fetchAnalysisSenders: vi.fn(),
   fetchAnalysisTags: vi.fn(),
   fetchAnalysisUnits: vi.fn(),
@@ -27,7 +27,7 @@ const analysisApiMocks = vi.hoisted(() => ({
 
 vi.mock('../../../services/api/analysis', () => ({
   fetchAnalysisGroups: analysisApiMocks.fetchAnalysisGroups,
-  fetchAnalysisCallsigns: analysisApiMocks.fetchAnalysisCallsigns,
+  fetchAnalysisCallsignPage: analysisApiMocks.fetchAnalysisCallsignPage,
   fetchAnalysisSenders: analysisApiMocks.fetchAnalysisSenders,
   fetchAnalysisTags: analysisApiMocks.fetchAnalysisTags,
   fetchAnalysisUnits: analysisApiMocks.fetchAnalysisUnits,
@@ -92,7 +92,11 @@ beforeEach(() => {
   document.body.appendChild(container);
   latest = null;
   analysisApiMocks.fetchAnalysisGroups.mockResolvedValue({ groups: [], groupNames: [] });
-  analysisApiMocks.fetchAnalysisCallsigns.mockResolvedValue({ callsigns: [] });
+  analysisApiMocks.fetchAnalysisCallsignPage.mockResolvedValue({
+    entries: [],
+    hasMore: false,
+    nextCursor: null,
+  });
   analysisApiMocks.fetchAnalysisSenders.mockResolvedValue({ senders: [] });
   analysisApiMocks.fetchAnalysisTags.mockResolvedValue({ tags: [] });
   analysisApiMocks.fetchAnalysisUnits.mockResolvedValue({ units: [] });
@@ -277,7 +281,9 @@ describe('useAnalysisFilterSections', () => {
   });
   it('treats an in-flight section as reloadable before loading state propagates', async () => {
     const callsignsDeferred = deferred<{ callsigns: Array<{ callsign: string; res: [] }> }>();
-    analysisApiMocks.fetchAnalysisCallsigns.mockImplementationOnce(() => callsignsDeferred.promise);
+    analysisApiMocks.fetchAnalysisCallsignPage.mockImplementationOnce(
+      () => callsignsDeferred.promise,
+    );
 
     await renderHook();
 
@@ -310,7 +316,7 @@ describe('useAnalysisFilterSections', () => {
       latest?.invalidateFilterSectionLoadsForPatch({ unitsSelected: ['u1'] });
     });
 
-    analysisApiMocks.fetchAnalysisCallsigns.mockRejectedValueOnce(new Error('boom'));
+    analysisApiMocks.fetchAnalysisCallsignPage.mockRejectedValueOnce(new Error('boom'));
 
     const analysisReq = buildAnalysisReq({
       ...emptyQueryState(),
@@ -392,7 +398,9 @@ describe('useAnalysisFilterSections', () => {
   });
   it('moves an in-flight invalidated section to stale and keeps it queued for reload', async () => {
     const callsignsDeferred = deferred<{ callsigns: Array<{ callsign: string; res: [] }> }>();
-    analysisApiMocks.fetchAnalysisCallsigns.mockImplementationOnce(() => callsignsDeferred.promise);
+    analysisApiMocks.fetchAnalysisCallsignPage.mockImplementationOnce(
+      () => callsignsDeferred.promise,
+    );
 
     await renderHook();
 

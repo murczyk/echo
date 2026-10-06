@@ -82,13 +82,92 @@ test.describe('@smoke @regression', () => {
     await page.getByRole('button', { name: 'Розгорнути праву панель' }).click();
     const callsignsTab = page.getByRole('tab', { name: 'Позивні' });
     await callsignsTab.click();
-    await expect(page.getByRole('button', { name: 'Додати ALPHA' })).toBeVisible();
-    await page.getByRole('button', { name: 'Додати ALPHA' }).click();
+    await expect(
+      page.getByRole('button', { name: 'Додати ALPHA до поточного фільтра' }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Додати ALPHA до поточного фільтра' }).click();
     await expect(page.getByRole('button', { name: 'ALPHA ×' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Наступні 50' }).click();
-    await expect(page.getByRole('button', { name: 'Додати BRAVO' })).toBeVisible();
+    await page.getByRole('button', { name: 'Наступна сторінка позивних' }).click();
+    await expect(
+      page.getByRole('button', { name: 'Додати BRAVO до поточного фільтра' }),
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'ALPHA ×' })).toBeVisible();
+  });
+
+  test('@regression discards stale callsign frequency matches after matching inputs change', async ({
+    page,
+  }) => {
+    let matchingRequests = 0;
+    let releaseFirstRequest: (() => void) | undefined;
+    let firstRequestStarted!: () => void;
+    const firstRequestStartedPromise = new Promise<void>((resolve) => {
+      firstRequestStarted = resolve;
+    });
+    let releaseThirdRequest: (() => void) | undefined;
+    let thirdRequestStarted!: () => void;
+    const thirdRequestStartedPromise = new Promise<void>((resolve) => {
+      thirdRequestStarted = resolve;
+    });
+    await setupAnalysisNeoPage(page, {
+      callsignPageResponse: () => ({
+        entries: [
+          { value: 'alpha', label: 'ALPHA', values: ['alpha'], count: 2 },
+          { value: 'bravo', label: 'BRAVO', values: ['bravo'], count: 2 },
+        ],
+        has_more: false,
+        next_cursor: null,
+      }),
+    });
+    await page.route('**/api/rer/analysis/callsign-frequency-matches', async (route) => {
+      matchingRequests += 1;
+      if (matchingRequests === 1) {
+        firstRequestStarted();
+        await new Promise<void>((resolve) => {
+          releaseFirstRequest = resolve;
+        });
+      }
+      if (matchingRequests === 3) {
+        thirdRequestStarted();
+        await new Promise<void>((resolve) => {
+          releaseThirdRequest = resolve;
+        });
+      }
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({
+          frequencies: [
+            { freq: `${matchingRequests}00.00`, callsigns: ['alpha', 'bravo'], message_count: 2 },
+          ],
+        }),
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+
+    await page.getByRole('button', { name: 'Розгорнути праву панель' }).click();
+    await page.getByRole('tab', { name: 'Позивні' }).click();
+    await page.getByRole('button', { name: 'Розгорнути Пошук частот' }).click();
+    const callsignInput = page.getByRole('combobox', { name: 'Позивні' });
+    await callsignInput.fill('alpha');
+    await page.getByRole('option', { name: 'ALPHA', exact: true }).click();
+    await callsignInput.fill('bravo');
+    await page.getByRole('option', { name: 'BRAVO', exact: true }).click();
+
+    await page.getByRole('button', { name: 'Знайти', exact: true }).click();
+    await firstRequestStartedPromise;
+    await page.getByRole('button', { name: 'Збільшити мінімум збігів' }).click();
+    releaseFirstRequest?.();
+    await expect(page.getByText('100.00', { exact: true })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Зменшити мінімум збігів' }).click();
+    await page.getByRole('button', { name: 'Знайти', exact: true }).click();
+    await expect(page.getByText('200.00', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Знайти', exact: true }).click();
+    await thirdRequestStartedPromise;
+    await page.getByRole('textbox', { name: 'Пошук', exact: true }).fill('оновлений фільтр');
+    releaseThirdRequest?.();
+    await expect(page.getByText('300.00', { exact: true })).toHaveCount(0);
   });
 
   test('analysis neo keeps narrow controls fixed while messages scroll', async ({ page }) => {
