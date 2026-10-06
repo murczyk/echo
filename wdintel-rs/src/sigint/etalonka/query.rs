@@ -1036,43 +1036,61 @@ async fn load_exact_network_freq_counts(
                 ON iin.sigint_network_id = $7
                AND iin.sigint_inbox_item_id = candidate.id
         ),
-        requested_frequencies AS MATERIALIZED (
-            SELECT DISTINCT frequency
-            FROM exact_requests
-        ),
-        undated_inbox_items AS MATERIALIZED (
-            SELECT ii.id, ii.freq
-            FROM requested_frequencies requested
-            CROSS JOIN LATERAL (
-                SELECT id, freq
-                FROM sigint_inbox_item
-                WHERE freq = requested.frequency
-                  AND datetime IS NULL
-                OFFSET 0
-            ) ii
-        ),
-        undated_messages AS MATERIALIZED (
+        undated_network_messages AS MATERIALIZED (
             SELECT
                 req.request_id,
-                candidate.id,
                 candidate.freq,
-                COALESCE(sm.timestamp, sm.created_at) AS activity_datetime,
-                sm.datasource_group_id
-            FROM undated_inbox_items candidate
-            JOIN signal_message sm
-                ON sm.id = candidate.id
-               AND sm.deleted = false
-            JOIN exact_requests req
-                ON req.frequency = candidate.freq
-               AND COALESCE(sm.timestamp, sm.created_at) >= req.day_since_ts
-               AND COALESCE(sm.timestamp, sm.created_at) < req.day_till_ts
-        ),
-        undated_network_items AS MATERIALIZED (
-            SELECT candidate.*
-            FROM undated_messages candidate
-            JOIN sigint_inbox_item_network iin
-                ON iin.sigint_network_id = $7
-               AND iin.sigint_inbox_item_id = candidate.id
+                candidate.activity_datetime
+            FROM exact_requests req
+            CROSS JOIN LATERAL (
+                SELECT
+                    ii.freq,
+                    sm.timestamp AS activity_datetime
+                FROM datasource_group dg
+                JOIN signal_message sm
+                    ON sm.datasource_group_id = dg.id
+                   AND sm.timestamp >= req.day_since_ts
+                   AND sm.timestamp < req.day_till_ts
+                   AND sm.deleted = false
+                JOIN sigint_inbox_item ii
+                    ON ii.id = sm.id
+                   AND ii.freq = req.frequency
+                   AND ii.datetime IS NULL
+                JOIN sigint_inbox_item_network iin
+                    ON iin.sigint_network_id = $7
+                   AND iin.sigint_inbox_item_id = ii.id
+                WHERE dg.group_master_key = ANY($8)
+                OFFSET 0
+            ) candidate
+
+            UNION ALL
+
+            SELECT
+                req.request_id,
+                candidate.freq,
+                candidate.activity_datetime
+            FROM exact_requests req
+            CROSS JOIN LATERAL (
+                SELECT
+                    ii.freq,
+                    sm.created_at AS activity_datetime
+                FROM datasource_group dg
+                JOIN signal_message sm
+                    ON sm.datasource_group_id = dg.id
+                   AND sm.timestamp IS NULL
+                   AND sm.created_at >= req.day_since_ts
+                   AND sm.created_at < req.day_till_ts
+                   AND sm.deleted = false
+                JOIN sigint_inbox_item ii
+                    ON ii.id = sm.id
+                   AND ii.freq = req.frequency
+                   AND ii.datetime IS NULL
+                JOIN sigint_inbox_item_network iin
+                    ON iin.sigint_network_id = $7
+                   AND iin.sigint_inbox_item_id = ii.id
+                WHERE dg.group_master_key = ANY($8)
+                OFFSET 0
+            ) candidate
         ),
         network_messages AS MATERIALIZED (
             SELECT
@@ -1093,10 +1111,7 @@ async fn load_exact_network_freq_counts(
                 candidate.request_id,
                 candidate.freq,
                 candidate.activity_datetime
-            FROM undated_network_items candidate
-            JOIN datasource_group dg
-                ON dg.id = candidate.datasource_group_id
-               AND dg.group_master_key = ANY($8)
+            FROM undated_network_messages candidate
         )
         SELECT
             exact_ranges.network_freq_id,
@@ -3065,12 +3080,15 @@ mod tests {
         frequency: &str,
         inbox_datetime: Option<NaiveDateTime>,
         activity_datetime: NaiveDateTime,
+        uses_created_at_fallback: bool,
     ) {
         let message = mk_signal_message(
             db,
             signal_message::ActiveModel {
                 datasource_group_id: Set(Some(datasource_group_id)),
-                timestamp: Set(Some(activity_datetime)),
+                timestamp: Set(
+                    (!uses_created_at_fallback).then_some(activity_datetime)
+                ),
                 created_at: Set(activity_datetime),
                 ..Default::default()
             },
@@ -3140,6 +3158,7 @@ mod tests {
             frequency,
             Some(day_since + chrono::Duration::hours(2)),
             day_since + chrono::Duration::hours(2),
+            false,
         )
         .await;
         mk_exact_count_message(
@@ -3149,6 +3168,17 @@ mod tests {
             frequency,
             None,
             day_since + chrono::Duration::hours(3),
+            false,
+        )
+        .await;
+        mk_exact_count_message(
+            &env.dbx,
+            authorized_group.id,
+            network.id,
+            frequency,
+            None,
+            day_since + chrono::Duration::minutes(210),
+            true,
         )
         .await;
         mk_exact_count_message(
@@ -3158,6 +3188,7 @@ mod tests {
             frequency,
             Some(day_since + chrono::Duration::minutes(30)),
             day_since + chrono::Duration::minutes(30),
+            false,
         )
         .await;
         mk_exact_count_message(
@@ -3167,6 +3198,7 @@ mod tests {
             frequency,
             Some(day_since + chrono::Duration::minutes(150)),
             day_since + chrono::Duration::minutes(150),
+            false,
         )
         .await;
 
@@ -3185,7 +3217,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(counts, HashMap::from([(network_freq.id, 2)]));
+        assert_eq!(counts, HashMap::from([(network_freq.id, 3)]));
     }
 
     async fn mk_network_with_unit(

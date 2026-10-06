@@ -30,10 +30,12 @@ excluding the undated fallback rows.
 
 Rows without `sigint_inbox_item.datetime` retain the existing timestamp
 fallback semantics. Production checks found no such rows among any network
-link and none for network 834's 27 frequencies. The partial
-`sigint_inbox_item (freq, id) WHERE datetime IS NULL` index makes that fallback
-a bounded frequency lookup without enlarging the index for the other roughly
-94% of inbox rows. After rollout, repeat the full endpoint plan and compare a
-short `pg_stat_statements` delta to confirm that the dated lookup uses the new
-index and that latency remains bounded under live cache and concurrency
-conditions.
+link and none for network 834's 27 frequencies. The fallback separates
+timestamp and created-at ranges so existing message indexes can seek within
+each requested day, then applies authorization, frequency, and network before
+materialization. The partial `sigint_inbox_item (freq, id) WHERE datetime IS
+NULL` index supports the resulting frequency-and-ID probes without enlarging
+the index for the other roughly 94% of inbox rows. After rollout, repeat the
+full endpoint plan and compare a short `pg_stat_statements` delta to confirm
+that the bounded lookups use the expected indexes and that latency remains
+stable under live cache and concurrency conditions.
