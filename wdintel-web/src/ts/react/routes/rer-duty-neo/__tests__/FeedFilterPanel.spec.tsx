@@ -285,7 +285,6 @@ describe('FeedFilterPanel', () => {
     value: string[];
     options: string[];
     placeholder?: string;
-    titleTooltip?: string;
     bulkPasteSeparators?: string[];
     bulkPasteMenuLabel?: string;
     bulkCopyMenuLabel?: string;
@@ -341,7 +340,6 @@ describe('FeedFilterPanel', () => {
     expect(locations?.bulkPasteSeparators).toEqual(['\n']);
     expect(locations?.bulkPasteMenuLabel).toBe('Додати кілька локацій');
     expect(locations?.bulkCopyMenuLabel).toBe('Копіювати обрані локації');
-    expect(locations?.titleTooltip).toContain('після перезавантаження');
   });
 
   it('keeps the locations section without radio features', async () => {

@@ -34,6 +34,12 @@ const RER_DUTY_WF_COMPAT_FIELDS: &[(&str, &str)] = &[
         "Json.Decode.list (Json.Decode.string)",
     ),
     ("units_exact_match_only", "Json.Decode.bool"),
+    (
+        "locations_selected",
+        "Json.Decode.list (Json.Decode.string)",
+    ),
+    ("locations_denied", "Json.Decode.list (Json.Decode.string)"),
+    ("include_peleng_locations", "Json.Decode.bool"),
 ];
 const EVENT_MSG_ORIGIN_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "event_type" (eventTypeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))

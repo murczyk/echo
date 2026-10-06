@@ -18436,9 +18436,51 @@ rerDutyQueryStateWfDecoder =
                                 Json.Decode.fail (Json.Decode.errorToString error)
             )
             (Json.Decode.dict Json.Decode.value)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "locations_selected" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "locations_denied" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "include_peleng_locations" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.bool)) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_viewed_message_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keywords_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keyword_set_id" (Json.Decode.nullable (Json.Decode.int))))
