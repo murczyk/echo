@@ -2,13 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Box, CircularProgress, Typography, useTheme } from '@mui/material';
 
 import { buildDocxHtmlDocument } from '../docx/build-docx-html-document';
+import type { DocxPageSize, DocxPreviewResult } from '../docx/docx-preview.types';
 import { sanitizeDocxHtml } from '../docx/sanitize-docx-html';
 import { fetchCachedDocumentResponse } from '../document-preview-utils';
 import { runWorkerTask } from '../workers/worker-client';
-
-type DocxPreviewResult = {
-  html: string;
-};
 
 const MAX_DOCX_FILE_MB = 10;
 const MAX_DOCX_FILE_BYTES = MAX_DOCX_FILE_MB * 1024 * 1024;
@@ -34,6 +31,7 @@ export function DocxDocumentPreview({
   const theme = useTheme();
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [html, setHtml] = useState('');
+  const [pageSize, setPageSize] = useState<DocxPageSize | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,6 +42,7 @@ export function DocxDocumentPreview({
       setStatus('loading');
       setError(null);
       setHtml('');
+      setPageSize(null);
 
       try {
         if (sizeBytes != null && sizeBytes > MAX_DOCX_FILE_BYTES) {
@@ -74,8 +73,8 @@ export function DocxDocumentPreview({
           [buffer],
         );
         if (disposed) return;
-        const sanitizedHtml = sanitizeDocxHtml(result.html);
-        setHtml(sanitizedHtml);
+        setHtml(sanitizeDocxHtml(result.html));
+        setPageSize(result.pageSize);
         setStatus('ready');
       } catch (error) {
         if (disposed || abortController.signal.aborted) return;
@@ -94,8 +93,8 @@ export function DocxDocumentPreview({
   }, [href, sizeBytes, onError]);
 
   const srcDoc = useMemo(
-    () => buildDocxHtmlDocument(html, zoom, theme.palette.mode),
-    [html, zoom, theme.palette.mode],
+    () => buildDocxHtmlDocument(html, pageSize, zoom, theme.palette.mode),
+    [html, pageSize, zoom, theme.palette.mode],
   );
 
   if (status === 'error') {
