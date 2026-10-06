@@ -45,6 +45,7 @@ pub(super) struct ActivityTitles {
 
 impl ActivityTitles {
     pub fn new(
+        ai_client: std::sync::Arc<crate::ai_engine::AiEngineClient>,
         dbx: DatabaseConnection,
         request_id: Uuid,
         purpose: &str,
@@ -54,8 +55,15 @@ impl ActivityTitles {
         let (input, receiver) = watch::channel(None);
         let cancellation = cancellation.child_token();
         let task = tokio::spawn(async move {
-            generate_titles(dbx, request_id, purpose, receiver, cancellation)
-                .await;
+            generate_titles(
+                ai_client,
+                dbx,
+                request_id,
+                purpose,
+                receiver,
+                cancellation,
+            )
+            .await;
         });
         Self {
             next_key: 0,
@@ -135,10 +143,17 @@ async fn load_title_engine(
     engines.retain(|engine| {
         access::agent_provider_transport(engine)
             == Some(access::AgentProviderTransport::DirectHttp)
+            || crate::ai_engine::client::is_government_url(&engine.url)
     });
     engines.sort_by(|left, right| {
         (&left.name, left.id).cmp(&(&right.name, right.id))
     });
+    if let Some(index) = engines.iter().position(|engine| {
+        crate::ai_engine::client::is_government_url(&engine.url)
+            && engine.model_name == crate::config::AI_AGENT_OPENAI_GPT_6_LUNA
+    }) {
+        return Ok(Some(engines.remove(index)));
+    }
     for preferred in [
         settings.default_ai_engine_id,
         settings.reviewer_ai_engine_id,
@@ -156,6 +171,7 @@ async fn load_title_engine(
 }
 
 async fn generate_titles(
+    ai_client: std::sync::Arc<crate::ai_engine::AiEngineClient>,
     dbx: DatabaseConnection,
     request_id: Uuid,
     purpose: String,
@@ -168,7 +184,7 @@ async fn generate_titles(
             match result {
                 Ok(Ok(Some(engine))) => engine,
                 _ => {
-                    warn!("AI agent activity titles have no available allowed local engine");
+                    warn!("AI agent activity titles have no available allowed engine");
                     return;
                 }
             }
@@ -194,7 +210,7 @@ async fn generate_titles(
         } else if cache.len() < AI_AGENT_ACTIVITY_TITLE_MAX_GENERATIONS {
             let generated = tokio::select! {
                 _ = cancellation.cancelled() => return,
-                title = generate_title(&engine, &purpose, &activity.action) => title,
+                title = generate_title(&ai_client, &engine, &purpose, &activity.action) => title,
             };
             cache.insert(activity.action.clone(), generated.clone());
             generated
@@ -247,6 +263,7 @@ fn title_timeout() -> Duration {
 }
 
 async fn generate_title(
+    ai_client: &crate::ai_engine::AiEngineClient,
     engine: &ai_engine::Model,
     purpose: &str,
     action: &str,
@@ -255,6 +272,7 @@ async fn generate_title(
     let response = tokio::time::timeout(title_timeout(), async {
         let _slot = TITLE_SLOTS.acquire().await.c(h!())?;
         request_structured_ai_response(
+            ai_client,
             engine,
             vec![
                 AiEngineMessage { role: AI_CHAT_ROLE_SYSTEM.to_string(), content: AI_AGENT_ACTIVITY_TITLE_PROMPT.to_string() },

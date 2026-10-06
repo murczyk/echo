@@ -141,7 +141,13 @@ async fn run_owned(env: Arc<Env>, cancellation_token: CancellationToken) {
             break;
         }
         let _loop_guard = worker_watch::loop_guard("ai_callsign_worker");
-        let processed = match process_next(&env.dbx, &env.rq, &mut redis).await
+        let processed = match process_next(
+            &env.ai_engine_client,
+            &env.dbx,
+            &env.rq,
+            &mut redis,
+        )
+        .await
         {
             Ok(processed) => processed,
             Err(error) => {
@@ -169,6 +175,7 @@ async fn run_owned(env: Arc<Env>, cancellation_token: CancellationToken) {
 }
 
 async fn process_next(
+    ai_client: &crate::ai_engine::AiEngineClient,
     dbx: &DatabaseConnection,
     rq: &reqwest::Client,
     redis: &mut redis::aio::ConnectionManager,
@@ -196,6 +203,7 @@ async fn process_next(
             .c(h!())?;
     let body = message.body.unwrap_or_default();
     let callsigns = match super::parse_with_feedback(
+        ai_client,
         dbx,
         rq,
         &config.ai_engine,

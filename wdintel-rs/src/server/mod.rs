@@ -220,7 +220,15 @@ async fn new_env_with_initialization(
         }
     };
 
+    let ai_engine_client = Arc::new(
+        crate::ai_engine::AiEngineClient::new(
+            dbx.clone(),
+            config.totp_strongbox_key.clone(),
+        )
+        .c(h!())?,
+    );
     let env = Env {
+        ai_engine_client,
         mode,
         redis: redis.clone(),
         stats_redis,
@@ -1090,6 +1098,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::system_settings::create_system_settings)
             .service(crate::system_settings::activate_system_settings)
             .service(crate::system_settings::rer_duty_test_replay_status)
+            .service(crate::ai_engine::gov::get_settings)
+            .service(crate::ai_engine::gov::save_settings)
+            .service(crate::ai_engine::gov::list_models)
             .service(crate::ai_engine::list_ai_engines)
             .service(crate::ai_engine::get_ai_engine)
             .service(crate::ai_engine::create_ai_engine)
