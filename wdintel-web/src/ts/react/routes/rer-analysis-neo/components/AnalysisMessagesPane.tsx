@@ -180,6 +180,13 @@ type MessageViewportAnchor = {
   offsetTop: number;
 };
 
+type MessageViewportCapture =
+  | { position: 'leading-edge' }
+  | { position: 'trailing-edge' }
+  | { position: 'message-anchor'; anchor: MessageViewportAnchor };
+
+const MESSAGE_VIEWPORT_EDGE_TOLERANCE_PX = 1;
+
 function captureMessageViewportAnchor(container: HTMLElement): MessageViewportAnchor | null {
   const containerTop = container.getBoundingClientRect().top + container.clientTop;
   const messageElements = container.querySelectorAll<HTMLElement>('[data-message-id]');
@@ -205,6 +212,32 @@ function restoreMessageViewportAnchor(
   const offset = messageElement.getBoundingClientRect().top - containerTop - anchor.offsetTop;
   if (Math.abs(offset) >= 0.5) container.scrollTop += offset;
   return true;
+}
+
+function captureMessageViewport(container: HTMLElement): MessageViewportCapture | null {
+  if (container.scrollTop <= MESSAGE_VIEWPORT_EDGE_TOLERANCE_PX) {
+    return { position: 'leading-edge' };
+  }
+  if (
+    container.scrollHeight - container.scrollTop - container.clientHeight <=
+    MESSAGE_VIEWPORT_EDGE_TOLERANCE_PX
+  ) {
+    return { position: 'trailing-edge' };
+  }
+  const anchor = captureMessageViewportAnchor(container);
+  return anchor == null ? null : { position: 'message-anchor', anchor };
+}
+
+function restoreMessageViewport(container: HTMLElement, capture: MessageViewportCapture): boolean {
+  if (capture.position === 'leading-edge') {
+    container.scrollTop = 0;
+    return true;
+  }
+  if (capture.position === 'trailing-edge') {
+    container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+    return true;
+  }
+  return restoreMessageViewportAnchor(container, capture.anchor);
 }
 
 function stabilizeMessageAtContainerTop(
@@ -594,6 +627,7 @@ function AnalysisMessagesPaneComponent({
   const centeredTargetIdRef = useRef<number | null>(null);
   const preserveTargetAnchorRef = useRef(false);
   const viewportAnchorRef = useRef<MessageViewportAnchor | null>(null);
+  const refreshViewportCaptureRef = useRef<MessageViewportCapture | null>(null);
   const preserveViewportAnchorRef = useRef(false);
   const refreshViewportAnchorActiveRef = useRef(false);
   const viewportPreservationKeyRef = useRef(viewportPreservationKey);
@@ -663,6 +697,7 @@ function AnalysisMessagesPaneComponent({
     if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
     refreshViewportAnchorActiveRef.current = false;
     viewportAnchorRef.current = null;
+    refreshViewportCaptureRef.current = null;
   }, [scrollResetKey]);
 
   const handleLoadMoreMessages = useCallback(async () => {
@@ -716,10 +751,16 @@ function AnalysisMessagesPaneComponent({
     viewportAnchorRef.current = captureMessageViewportAnchor(container);
   }, []);
 
+  const captureRefreshViewport = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (container == null) return;
+    refreshViewportCaptureRef.current = captureMessageViewport(container);
+  }, []);
+
   useLayoutEffect(() => {
-    onViewportCaptureChange(captureViewportAnchor);
+    onViewportCaptureChange(captureRefreshViewport);
     return () => onViewportCaptureChange(null);
-  }, [captureViewportAnchor, onViewportCaptureChange]);
+  }, [captureRefreshViewport, onViewportCaptureChange]);
 
   const restoreViewportAnchor = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -728,12 +769,19 @@ function AnalysisMessagesPaneComponent({
     if (!restoreMessageViewportAnchor(container, anchor)) captureViewportAnchor();
   }, [captureViewportAnchor]);
 
+  const restoreRefreshViewport = useCallback(() => {
+    const container = scrollContainerRef.current;
+    const capture = refreshViewportCaptureRef.current;
+    if (container == null || capture == null) return;
+    if (!restoreMessageViewport(container, capture)) captureRefreshViewport();
+  }, [captureRefreshViewport]);
+
   useLayoutEffect(() => {
     if (viewportPreservationKeyRef.current === viewportPreservationKey) return;
     viewportPreservationKeyRef.current = viewportPreservationKey;
-    if (viewportAnchorRef.current == null) captureViewportAnchor();
-    refreshViewportAnchorActiveRef.current = viewportAnchorRef.current != null;
-  }, [captureViewportAnchor, viewportPreservationKey]);
+    if (refreshViewportCaptureRef.current == null) captureRefreshViewport();
+    refreshViewportAnchorActiveRef.current = refreshViewportCaptureRef.current != null;
+  }, [captureRefreshViewport, viewportPreservationKey]);
 
   const restoreTargetAnchor = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -882,12 +930,12 @@ function AnalysisMessagesPaneComponent({
   useLayoutEffect(() => {
     if (refreshViewportAnchorActiveRef.current) {
       const container = scrollContainerRef.current;
-      const anchor = viewportAnchorRef.current;
-      if (container != null && anchor != null) {
-        const restored = restoreMessageViewportAnchor(container, anchor);
+      const capture = refreshViewportCaptureRef.current;
+      if (container != null && capture != null) {
+        const restored = restoreMessageViewport(container, capture);
         if (!restored) {
           refreshViewportAnchorActiveRef.current = false;
-          viewportAnchorRef.current = null;
+          refreshViewportCaptureRef.current = null;
         }
       }
       return;
@@ -944,7 +992,7 @@ function AnalysisMessagesPaneComponent({
     }
     const observer = new ResizeObserver(() => {
       if (refreshViewportAnchorActiveRef.current) {
-        restoreViewportAnchor();
+        restoreRefreshViewport();
         return;
       }
       if (directMessageNavigation == null) return;
@@ -965,6 +1013,7 @@ function AnalysisMessagesPaneComponent({
     directMessageNavigation,
     messages,
     restoreTargetAnchor,
+    restoreRefreshViewport,
     restoreViewportAnchor,
     viewportPreservationKey,
   ]);

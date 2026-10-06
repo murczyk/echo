@@ -1369,6 +1369,10 @@ export type MessageIdsRsp = {
   messages: Array<[number, InboxMessage]>;
 };
 
+export type MatchingMessageIdsRsp = {
+  messageIds: Array<number>;
+};
+
 export type InboxItemContextReq = {
   messageUid: string;
 };
@@ -1591,6 +1595,10 @@ export type ImportantAddReq = {
 
 export type ImportantRmReq = {
   messageId: number;
+};
+
+export type ImportantMutationRsp = {
+  important: boolean;
 };
 
 export type ImportantListReq = {

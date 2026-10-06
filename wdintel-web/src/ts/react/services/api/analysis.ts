@@ -29,6 +29,7 @@ import type {
   GroupStatsRsp,
   InboxMessagesReq,
   InboxMessage,
+  MatchingMessageIdsRsp,
   MessageIdsReq,
   MessageIdsRsp,
   MapSettlementMessagesReq,
@@ -404,6 +405,29 @@ export async function fetchMessagesByIds(
           options,
         );
   return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
+}
+
+export async function fetchMessageIdsMatchingFilters(
+  messageIds: number[],
+  inboxReq?: Partial<InboxMessagesReq> | null,
+  options?: RequestOptions,
+): Promise<number[]> {
+  const req: MessageIdsReq = {
+    messageIds,
+    inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
+  };
+  const raw =
+    options == null
+      ? await postJson<unknown>(
+          '/api/rer-importer/messages-by-id-matching-filters',
+          transformCamelToSnake(req),
+        )
+      : await postJson<unknown>(
+          '/api/rer-importer/messages-by-id-matching-filters',
+          transformCamelToSnake(req),
+          options,
+        );
+  return transformSnakeToCamel<MatchingMessageIdsRsp>(raw).messageIds ?? [];
 }
 
 export async function fetchMapSettlementMessages(

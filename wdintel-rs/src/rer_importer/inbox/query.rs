@@ -2131,6 +2131,37 @@ pub(crate) async fn any_accessible_inbox_candidate_id(
         .is_some())
 }
 
+pub(crate) async fn matching_inbox_candidate_ids(
+    env: &Env,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    candidate_ids: &[i64],
+) -> Result<Vec<i64>, AppError> {
+    if candidate_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let query = build_filtered_inbox_query_with_scope(
+        &env.dbx,
+        login,
+        env,
+        req,
+        None,
+        None,
+        InboxQueryPurpose::Messages,
+        InboxUnitLookupStrategy::Default,
+    )
+    .await
+    .c(h!())?
+    .filter(signal_message::Column::Id.eq_any(candidate_ids.to_vec()))
+    .select_only()
+    .column(signal_message::Column::Id);
+    let mut message_ids =
+        query.into_tuple::<i64>().all(&env.dbx).await.c(h!())?;
+    message_ids.sort_unstable();
+    message_ids.dedup();
+    Ok(message_ids)
+}
+
 async fn finish_inbox_query<'a, 'async_trait, C>(
     dbx: &'a C,
     login: &uuid::Uuid,

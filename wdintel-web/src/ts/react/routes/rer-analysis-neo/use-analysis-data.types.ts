@@ -38,6 +38,7 @@ export type UseAnalysisDataProps = {
   focusedMessageActive?: boolean;
   leftPanelOpen?: boolean;
   newestFirst: boolean;
+  onBeforeRealtimeMessageListChange?: () => void;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
   shouldLoadNewCallsigns: boolean;

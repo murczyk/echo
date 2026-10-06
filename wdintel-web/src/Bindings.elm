@@ -3539,6 +3539,18 @@ messageIdsRspEncoder struct =
         ]
 
 
+type alias MatchingMessageIdsRsp =
+    { messageIds : List (Int)
+    }
+
+
+matchingMessageIdsRspEncoder : MatchingMessageIdsRsp -> Json.Encode.Value
+matchingMessageIdsRspEncoder struct =
+    Json.Encode.object
+        [ ( "message_ids", (Json.Encode.list (Json.Encode.int)) struct.messageIds )
+        ]
+
+
 type alias InboxItemContextReq =
     { messageUid : String
     }
@@ -4136,6 +4148,18 @@ importantRmReqEncoder : ImportantRmReq -> Json.Encode.Value
 importantRmReqEncoder struct =
     Json.Encode.object
         [ ( "message_id", (Json.Encode.int) struct.messageId )
+        ]
+
+
+type alias ImportantMutationRsp =
+    { important : Bool
+    }
+
+
+importantMutationRspEncoder : ImportantMutationRsp -> Json.Encode.Value
+importantMutationRspEncoder struct =
+    Json.Encode.object
+        [ ( "important", (Json.Encode.bool) struct.important )
         ]
 
 
@@ -19302,6 +19326,12 @@ messageIdsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.int)) (Json.Decode.index 1 (inboxMessageDecoder))))))
 
 
+matchingMessageIdsRspDecoder : Json.Decode.Decoder MatchingMessageIdsRsp
+matchingMessageIdsRspDecoder =
+    Json.Decode.succeed MatchingMessageIdsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_ids" (Json.Decode.list (Json.Decode.int))))
+
+
 inboxGroupStatsByMinuteDecoder : Json.Decode.Decoder InboxGroupStatsByMinute
 inboxGroupStatsByMinuteDecoder =
     Json.Decode.succeed InboxGroupStatsByMinute
@@ -19575,6 +19605,12 @@ importantRmReqDecoder : Json.Decode.Decoder ImportantRmReq
 importantRmReqDecoder =
     Json.Decode.succeed ImportantRmReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.int)))
+
+
+importantMutationRspDecoder : Json.Decode.Decoder ImportantMutationRsp
+importantMutationRspDecoder =
+    Json.Decode.succeed ImportantMutationRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important" (Json.Decode.bool)))
 
 
 importantListReqDecoder : Json.Decode.Decoder ImportantListReq

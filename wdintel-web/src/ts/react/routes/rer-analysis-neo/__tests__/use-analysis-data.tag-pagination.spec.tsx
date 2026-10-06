@@ -37,6 +37,7 @@ const api = vi.hoisted(() => ({
   fetchInboxMessages: vi.fn(),
   fetchMessageComments: vi.fn(),
   fetchMessagesByIds: vi.fn(),
+  fetchMessageIdsMatchingFilters: vi.fn(),
   fetchNetworksByIds: vi.fn(),
   fetchReportHistoryStatus: vi.fn(),
   getLatestSenders: vi.fn(),
@@ -88,6 +89,8 @@ function message(id: number, tagId: number): [number, InboxMessage] {
   return [
     id,
     minimalInboxMessage({
+      date: '2026-04-01',
+      time: '12:00:00',
       tags: [tagId],
       inboxTags: [
         {
@@ -181,6 +184,7 @@ describe('useAnalysisData tag pagination', () => {
     api.fetchInboxCount.mockResolvedValue({ quantity: 2, firstElementTs: null });
     api.fetchMessageComments.mockResolvedValue({ data: [] });
     api.fetchMessagesByIds.mockResolvedValue([]);
+    api.fetchMessageIdsMatchingFilters.mockResolvedValue([]);
     api.fetchNetworksByIds.mockResolvedValue([]);
     api.fetchReportHistoryStatus.mockResolvedValue({});
     api.getLatestSenders.mockResolvedValue({ data: {} });
@@ -194,7 +198,7 @@ describe('useAnalysisData tag pagination', () => {
     root = null;
     container?.remove();
     container = null;
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('does not reload the current page after a real tag mutation', async () => {
@@ -237,9 +241,6 @@ describe('useAnalysisData tag pagination', () => {
     api.fetchInboxMessages
       .mockResolvedValueOnce({ inboxItems: [message(1, 7)], callsigns: [], pageLimit: 20 })
       .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 });
-    api.fetchMessagesByIds.mockResolvedValueOnce([
-      [2, { ...message(2, 7)[1], tags: [], inboxTags: [] }],
-    ]);
     let rejectMutation: ((error: Error) => void) | undefined;
     let eventOrigin: string | undefined;
     api.inboxMessageTagsRm.mockImplementationOnce((_req, options) => {
@@ -276,11 +277,11 @@ describe('useAnalysisData tag pagination', () => {
 
     expect(current!.pageIndex).toBe(1);
     expect(current!.messages).toEqual([]);
-    expect(api.fetchMessagesByIds).toHaveBeenCalledWith(
+    expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [2],
       expect.objectContaining({ search: 'server-filtered' }),
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+    expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(api.fetchInboxMessages).not.toHaveBeenCalled();
   });
 
@@ -328,9 +329,6 @@ describe('useAnalysisData tag pagination', () => {
     api.fetchInboxMessages
       .mockResolvedValueOnce({ inboxItems: [message(1, 7)], callsigns: [], pageLimit: 20 })
       .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 });
-    api.fetchMessagesByIds.mockResolvedValueOnce([
-      [2, { ...message(2, 7)[1], tags: [], inboxTags: [] }],
-    ]);
     api.inboxMessageTagsRm.mockRejectedValueOnce(new Error('response lost'));
 
     await renderAnalysisData();
@@ -349,11 +347,12 @@ describe('useAnalysisData tag pagination', () => {
           detail: { events: [{ messageId: 2, origin: eventOrigin }] },
         }),
       );
-      await vi.waitFor(() => expect(api.fetchMessagesByIds).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce());
     });
 
     expect(current!.pageIndex).toBe(1);
     expect(current!.messages).toEqual([]);
+    expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(api.fetchInboxMessages).not.toHaveBeenCalled();
   });
 
@@ -391,19 +390,17 @@ describe('useAnalysisData tag pagination', () => {
     expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(api.fetchInboxMessages).not.toHaveBeenCalled();
 
-    api.fetchInboxMessages.mockResolvedValueOnce({
-      inboxItems: [message(1, 7)],
-      callsigns: [],
-      pageLimit: 20,
-    });
     await act(async () => {
       window.dispatchEvent(
         new CustomEvent('echo-inbox-changed', {
           detail: { events: [{ messageId: 2, origin: 'foreign-tab.origin' }] },
         }),
       );
-      await vi.waitFor(() => expect(api.fetchInboxMessages).toHaveBeenCalled());
+      await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce());
     });
+    expect(current!.messages).toEqual([]);
+    expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(api.fetchInboxMessages).not.toHaveBeenCalled();
   });
 
   it('keeps page 2 when the model-error event arrives before its response', async () => {
@@ -461,9 +458,6 @@ describe('useAnalysisData tag pagination', () => {
           callsigns: [],
           pageLimit: 20,
         });
-      api.fetchMessagesByIds.mockResolvedValueOnce([
-        [2, { ...message(2, 7)[1], tags: [], inboxTags: [] }],
-      ]);
       let rejectMutation: ((error: Error) => void) | undefined;
       if (order === 'event-before-failure') {
         api.inboxMessageTagsModelError.mockImplementationOnce(
@@ -504,19 +498,25 @@ describe('useAnalysisData tag pagination', () => {
         );
         rejectMutation?.(new Error('response lost'));
         await mutationPromise;
-        await vi.waitFor(() => expect(api.fetchMessagesByIds).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce());
       });
 
       expect(current!.pageIndex).toBe(1);
       expect(current!.messages).toEqual([]);
+      expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
       expect(api.fetchInboxMessages).not.toHaveBeenCalled();
     },
   );
 
-  it('ignores an unrelated event on page 2 but reloads for the visible page message', async () => {
+  it('target-reconciles a foreign visible page-2 event without reloading the page', async () => {
     api.fetchInboxMessages
       .mockResolvedValueOnce({ inboxItems: [message(1, 7)], callsigns: [], pageLimit: 20 })
+      .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 })
       .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 });
+    api.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([2]);
+    api.fetchMessagesByIds.mockResolvedValueOnce([
+      [2, { ...message(2, 7)[1], text: 'refreshed on page 2' }],
+    ]);
 
     await renderAnalysisData();
     await act(async () => {
@@ -530,28 +530,160 @@ describe('useAnalysisData tag pagination', () => {
     await act(async () => {
       window.dispatchEvent(
         new CustomEvent('echo-inbox-changed', {
-          detail: { events: [{ messageId: 999, origin: 'foreign-tab.origin' }] },
+          detail: { events: [{ messageId: 2, origin: 'foreign-tab.origin' }] },
         }),
       );
-      await Promise.resolve();
+      await vi.waitFor(() => expect(api.fetchMessagesByIds).toHaveBeenCalledOnce());
     });
 
     expect(current!.pageIndex).toBe(1);
+    expect(current!.messages).toHaveLength(1);
+    expect(current!.messages[0]?.[0]).toBe(2);
+    expect(current!.messages[0]?.[1].text).toBe('refreshed on page 2');
     expect(api.fetchInboxMessages).not.toHaveBeenCalled();
-    expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce();
+    expect(api.fetchMessageIdsMatchingFilters.mock.calls[0]?.[0]).toEqual([2]);
+    expect(api.fetchMessageIdsMatchingFilters.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ search: 'server-filtered', selectedTags: [7] }),
+    );
+    expect(api.fetchMessagesByIds).toHaveBeenCalledWith(
+      [2],
+      expect.objectContaining({ search: 'server-filtered', selectedTags: [7] }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
 
-    api.fetchInboxMessages.mockResolvedValueOnce({
-      inboxItems: [message(1, 7)],
-      callsigns: [],
-      pageLimit: 20,
+  it('does not mix a page-one realtime message into page 2 after navigation', async () => {
+    api.fetchInboxMessages
+      .mockResolvedValueOnce({ inboxItems: [message(1, 7)], callsigns: [], pageLimit: 20 })
+      .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 });
+    let resolveFilterProbe: ((messageIds: number[]) => void) | undefined;
+    const filterProbe = new Promise<number[]>((resolve) => {
+      resolveFilterProbe = resolve;
+    });
+    api.fetchMessageIdsMatchingFilters.mockReturnValueOnce(filterProbe);
+    api.fetchMessagesByIds.mockResolvedValueOnce([message(999, 7)]);
+
+    await renderAnalysisData();
+    await act(async () => {
+      await vi.waitFor(() => expect(current!.messages).toHaveLength(1));
     });
     await act(async () => {
       window.dispatchEvent(
         new CustomEvent('echo-inbox-changed', {
-          detail: { events: [{ messageId: 2, origin: 'foreign-tab.origin' }] },
+          detail: { events: [{ messageId: 999, origin: 'foreign-tab.origin' }] },
         }),
       );
-      await vi.waitFor(() => expect(api.fetchInboxMessages).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce());
     });
+
+    await act(async () => await current!.loadNextPage());
+    const pageTwoMessages = current!.messages;
+    api.fetchInboxMessages.mockClear();
+    await act(async () => {
+      resolveFilterProbe?.([999]);
+      await filterProbe;
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+
+    expect(current!.pageIndex).toBe(1);
+    expect(current!.messages).toBe(pageTwoMessages);
+    expect(current!.messages.map(([messageId]) => messageId)).toEqual([2]);
+    expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(api.fetchInboxMessages).not.toHaveBeenCalled();
+  });
+
+  it('retries a realtime insertion after appending another loaded page', async () => {
+    const firstPage = Array.from({ length: 20 }, (_, index) => message(index + 1, 7));
+    const secondPage = Array.from({ length: 20 }, (_, index) => message(index + 21, 7));
+    api.fetchInboxMessages
+      .mockResolvedValueOnce({ inboxItems: firstPage, callsigns: [], pageLimit: 20 })
+      .mockResolvedValueOnce({ inboxItems: secondPage, callsigns: [], pageLimit: 20 });
+    let resolveFilterProbe: ((messageIds: number[]) => void) | undefined;
+    const filterProbe = new Promise<number[]>((resolve) => {
+      resolveFilterProbe = resolve;
+    });
+    api.fetchMessageIdsMatchingFilters
+      .mockReturnValueOnce(filterProbe)
+      .mockResolvedValueOnce([999]);
+    api.fetchMessagesByIds.mockResolvedValueOnce([message(999, 7)]);
+
+    await renderAnalysisData();
+    await act(async () => {
+      await vi.waitFor(() => expect(current!.messages).toHaveLength(20));
+    });
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('echo-inbox-changed', {
+          detail: { events: [{ messageId: 999, origin: 'foreign-tab.origin' }] },
+        }),
+      );
+      await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce());
+    });
+
+    await act(async () => await current!.loadMoreMessages());
+    expect(current!.pageIndex).toBe(1);
+    expect(current!.messages).toHaveLength(40);
+    api.fetchInboxMessages.mockClear();
+    await act(async () => {
+      resolveFilterProbe?.([999]);
+      await filterProbe;
+      await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(api.fetchMessagesByIds).toHaveBeenCalledOnce());
+    });
+
+    expect(current!.pageIndex).toBe(1);
+    expect(current!.messages).toHaveLength(41);
+    expect(current!.messages[0]?.[0]).toBe(999);
+    expect(api.fetchInboxMessages).not.toHaveBeenCalled();
+  });
+
+  it('keeps a matching unseen event off a deep page while refreshing counts once', async () => {
+    api.fetchInboxMessages
+      .mockResolvedValueOnce({ inboxItems: [message(1, 7)], callsigns: [], pageLimit: 20 })
+      .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 })
+      .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 });
+
+    await renderAnalysisData();
+    await act(async () => {
+      await vi.waitFor(() => expect(api.fetchInboxMessages).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(current!.messages).toHaveLength(1));
+      await vi.waitFor(() => expect(api.fetchInboxCount).toHaveBeenCalledTimes(2));
+    });
+    await act(async () => await current!.loadNextPage());
+    expect(current!.pageIndex).toBe(1);
+    const pageTwoMessages = current!.messages;
+    api.fetchInboxMessages.mockClear();
+    api.fetchInboxCount.mockClear();
+    api.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([999]);
+    api.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 3, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 4, firstElementTs: null });
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('echo-inbox-changed', {
+          detail: { events: [{ messageId: 999, origin: 'foreign-tab.origin' }] },
+        }),
+      );
+      await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce());
+    });
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    });
+
+    expect(current!.messagesTotalCount).toBe(3);
+    expect(current!.pageIndex).toBe(1);
+    expect(current!.messages).toBe(pageTwoMessages);
+    expect(current!.messages).toHaveLength(1);
+    expect(current!.messages[0]?.[0]).toBe(2);
+    expect(api.fetchMessageIdsMatchingFilters.mock.calls[0]?.[0]).toEqual([999]);
+    expect(api.fetchMessageIdsMatchingFilters.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ search: 'server-filtered', selectedTags: [7] }),
+    );
+    expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(api.fetchInboxMessages).not.toHaveBeenCalled();
+    expect(api.fetchInboxCount).toHaveBeenCalledTimes(2);
+    expect(current!.messagesOverallCount).toBe(4);
   });
 });

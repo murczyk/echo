@@ -735,6 +735,42 @@ async fn messages_by_id(
     Ok(Json(MessageIdsRsp { messages }))
 }
 
+#[post("/api/rer-importer/messages-by-id-matching-filters")]
+async fn messages_by_id_matching_filters(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<MessageIdsReq>,
+) -> Result<Json<MatchingMessageIdsRsp>, AppError> {
+    let login = login_id_from_identity(&user).c(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
+        .await
+        .c(h!())?;
+    let req = req.into_inner();
+    let default_req = InboxMessagesReq {
+        highlight_points: Some(true),
+        ..Default::default()
+    };
+    let mut inbox_req = req.inbox_req.clone().unwrap_or(default_req);
+    inbox_req.since_id_noninclusive.get_or_insert(0);
+    require_device_filters(&env.dbx, &login, &inbox_req)
+        .await
+        .c(h!())?;
+    if req.message_ids.is_empty() {
+        return Ok(Json(MatchingMessageIdsRsp {
+            message_ids: Vec::new(),
+        }));
+    }
+    let message_ids = matching_inbox_candidate_ids(
+        &env,
+        &login,
+        &inbox_req,
+        &req.message_ids,
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(MatchingMessageIdsRsp { message_ids }))
+}
+
 #[post("/api/rer-importer/messages-by-id-with-metadata")]
 async fn messages_by_id_with_metadata(
     user: Identity,
@@ -4893,10 +4929,14 @@ mod tests {
         for (name, device_name_id) in
             [("allowed", allowed_device.id), ("other", other_device.id)]
         {
+            let body = format!("ECHO-3461 {name}");
+            let body_noheader =
+                crate::rer_importer::body_noheader::extract_text(&body)
+                    .unwrap();
             let message = mk_signal_message(
                 &env.dbx,
                 signal_message::ActiveModel {
-                    body: Set(Some(format!("ECHO-3461 {name}"))),
+                    body: Set(Some(body)),
                     created_at: Set(now),
                     timestamp: Set(Some(now)),
                     sender: Set(Some(login.id.to_string())),
@@ -4932,8 +4972,16 @@ mod tests {
                     checked: Set(Some(true)),
                     reviewed: Set(Some(true)),
                     parsed_unit_v2: Set(false),
+                    body_noheader: Set(Some(
+                        serde_json::to_value(body_noheader).unwrap(),
+                    )),
                     ..Default::default()
                 },
+            )
+            .await
+            .unwrap();
+            crate::sigint::worker::incoming_message_after_insert(
+                &env.dbx, message.id,
             )
             .await
             .unwrap();
@@ -4957,6 +5005,7 @@ mod tests {
                     web::post().to(echo_3461_login),
                 )
                 .service(messages_by_id)
+                .service(messages_by_id_matching_filters)
                 .service(messages_by_id_with_metadata)
                 .service(messages_by_uuid),
         )
@@ -4980,6 +5029,11 @@ mod tests {
                     "/api/rer-importer/messages-by-id",
                     json!({"message_ids": [messages[0].0, messages[1].0], "inbox_req": filter}),
                     "messages",
+                ),
+                (
+                    "/api/rer-importer/messages-by-id-matching-filters",
+                    json!({"message_ids": [messages[0].0, messages[1].0], "inbox_req": filter}),
+                    "message_ids",
                 ),
                 (
                     "/api/rer-importer/messages-by-id-with-metadata",
@@ -5092,7 +5146,9 @@ mod tests {
                     .as_array()
                     .unwrap()
                     .iter()
-                    .map(|row| row[0].as_i64().unwrap())
+                    .map(|row| {
+                        row.as_i64().or_else(|| row[0].as_i64()).unwrap()
+                    })
                     .collect::<Vec<_>>();
                 ids.sort_unstable();
                 let mut expected = expected.clone();
@@ -5100,6 +5156,26 @@ mod tests {
                 assert_eq!(ids, expected, "{endpoint}");
             }
         }
+        // ECHO-3694: realtime candidate probes must apply the full Analysis
+        // filter, not only message access and device filters.
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer-importer/messages-by-id-matching-filters")
+                .cookie(session_cookie.clone())
+                .set_json(json!({
+                    "message_ids": [messages[0].0, messages[1].0],
+                    "inbox_req": {
+                        "search": "allowed"
+                    }
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response: serde_json::Value =
+            actix_test::read_body_json(response).await;
+        assert_eq!(response["message_ids"], json!([messages[0].0]));
         set_devices_section_enabled(&env.dbx, false).await;
         for filter in [
             InboxMessagesReq {

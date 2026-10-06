@@ -159,6 +159,10 @@ export function useRerAnalysisNeoPage(
   const setMessageViewportCapture = useCallback((capture: (() => void) | null) => {
     messageViewportCaptureRef.current = capture;
   }, []);
+  const preserveMessageViewportForRealtime = useCallback(() => {
+    messageViewportCaptureRef.current?.();
+    setMessageViewportPreservationKey((current) => current + 1);
+  }, []);
   const [visibleMessagesPageIndex, setVisibleMessagesPageIndexState] =
     useState(initialMessagesPageIndex);
   const setVisibleMessagesPageIndex = useCallback(
@@ -444,6 +448,7 @@ export function useRerAnalysisNeoPage(
     leftPanelOpen,
     centerTab,
     newestFirst,
+    onBeforeRealtimeMessageListChange: preserveMessageViewportForRealtime,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
     rightPanelOpen,

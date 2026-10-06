@@ -273,6 +273,8 @@ describe('useRerDutyMessageActions', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    hoisted.importantAdd.mockResolvedValue(true);
+    hoisted.importantRemove.mockResolvedValue(false);
     hoisted.deleteMessage.mockResolvedValue(undefined);
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
     hoisted.inboxMessageTagsModelError.mockResolvedValue(undefined);
@@ -308,6 +310,30 @@ describe('useRerDutyMessageActions', () => {
       document.body.innerHTML = '';
     });
     vi.useRealTimers();
+  });
+
+  it('uses the authoritative aggregate importance returned by the server', async () => {
+    hoisted.importantRemove.mockResolvedValueOnce(true);
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({
+              items: [[1, buildMessage({ important: true })]],
+            }),
+          ]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleMessageImportant('mf-0', 1, true);
+    });
+
+    expect(hoisted.importantRemove).toHaveBeenCalledWith({ messageId: 1 });
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].important).toBe(true);
   });
 
   it('uses the last message id cursor when loading newer mail from the arrow button', async () => {
