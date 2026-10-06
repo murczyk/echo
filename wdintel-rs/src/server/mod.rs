@@ -1101,6 +1101,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_engine::gov::get_settings)
             .service(crate::ai_engine::gov::save_settings)
             .service(crate::ai_engine::gov::list_models)
+            .service(crate::ai_engine::gov::check_models)
             .service(crate::ai_engine::list_ai_engines)
             .service(crate::ai_engine::get_ai_engine)
             .service(crate::ai_engine::create_ai_engine)

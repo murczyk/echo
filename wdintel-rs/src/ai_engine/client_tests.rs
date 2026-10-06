@@ -224,6 +224,70 @@ async fn azure_settings_rotation_singleflight_expiry_and_bounded_retry() {
 }
 
 // Regression: https://github.com/echoua/echo/issues/3682
+#[tokio::test]
+#[serial]
+async fn azure_preview_keeps_saved_credentials_and_active_token_isolated() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let key = base64::engine::general_purpose::STANDARD.encode([7u8; 32]);
+    let mut disabled = settings_request(None);
+    disabled.enabled = false;
+    disabled.clear_client_secret = true;
+    let disabled = gov::save(&env.dbx, Some(&key), disabled).await.unwrap();
+    let mut draft = settings_request(Some("secret&first"));
+    draft.enabled = false;
+    let preview = gov::preview(&env.dbx, Some(&key), draft).await.unwrap();
+    assert_eq!(preview.enabled, Some(true));
+    assert_eq!(gov::load(&env.dbx).await.unwrap(), disabled);
+
+    let saved =
+        gov::save(&env.dbx, Some(&key), settings_request(Some("secret&first")))
+            .await
+            .unwrap();
+    let reused = gov::preview(&env.dbx, Some(&key), settings_request(None))
+        .await
+        .unwrap();
+    assert_eq!(
+        reused.client_secret_encrypted,
+        saved.client_secret_encrypted
+    );
+    let (endpoint, token_count, token_task) = token_server().await;
+    let mut client =
+        AiEngineClient::new(env.dbx.clone(), Some(key.clone())).unwrap();
+    client.token_endpoint = Some(endpoint);
+    assert_eq!(
+        client.government_token(&saved, None).await.unwrap(),
+        "token-1"
+    );
+
+    let mut draft = settings_request(Some("secret-second"));
+    draft.scope = "api://draft-inference/.default".into();
+    let draft = gov::preview(&env.dbx, Some(&key), draft).await.unwrap();
+    let preview = client.preview(draft.clone());
+    let (endpoint, inference_count, inference_task) = rejecting_server().await;
+    let response = preview
+        .send_government(
+            endpoint,
+            Some(json!({})),
+            Duration::from_secs(2),
+            draft.clone(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
+    assert_eq!(inference_count.load(Ordering::SeqCst), 2);
+    assert_eq!(token_count.load(Ordering::SeqCst), 3);
+    assert_eq!(preview.government_settings().await.unwrap(), draft);
+    assert_eq!(
+        client.government_token(&saved, None).await.unwrap(),
+        "token-1"
+    );
+    assert_eq!(token_count.load(Ordering::SeqCst), 3);
+    assert_eq!(gov::load(&env.dbx).await.unwrap(), saved);
+    inference_task.abort();
+    token_task.abort();
+}
+
+// Regression: https://github.com/echoua/echo/issues/3682
 #[test]
 fn government_compatibility_preserves_legacy_and_tool_image_schema_payloads() {
     let payload = json!({
