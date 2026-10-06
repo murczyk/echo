@@ -9,6 +9,7 @@ const callsignPage = vi.hoisted(() => ({
     entries: [],
     error: null,
     hasMore: false,
+    hasLoadedOnce: true,
     hasPrevious: false,
     loadFirstPage: vi.fn(),
     loadNextPage: vi.fn(),
@@ -19,6 +20,9 @@ const callsignPage = vi.hoisted(() => ({
     query: '',
     retry: vi.fn(),
     setQuery: vi.fn(),
+    snapshotEntries: [],
+    snapshotPageIndex: null,
+    stale: false,
   },
 }));
 
@@ -62,8 +66,7 @@ describe('AnalysisCallsignsPane', () => {
     await act(async () => root?.render(<AnalysisCallsignsPane {...props} />));
 
     const alphaRow = Array.from(container.querySelectorAll('button')).find(
-      (button) =>
-        button.textContent?.includes('ALPHA') && button.textContent?.includes('2 повідомлень'),
+      (button) => button.textContent?.includes('ALPHA') && button.textContent?.includes('2'),
     );
     expect(alphaRow?.className).toContain('MuiButton-colorPrimary');
 
@@ -79,8 +82,7 @@ describe('AnalysisCallsignsPane', () => {
     );
     expect(
       Array.from(container.querySelectorAll('button')).find(
-        (button) =>
-          button.textContent?.includes('ALPHA') && button.textContent?.includes('2 повідомлень'),
+        (button) => button.textContent?.includes('ALPHA') && button.textContent?.includes('2'),
       )?.className,
     ).toContain('MuiButton-colorPrimary');
 
@@ -92,9 +94,9 @@ describe('AnalysisCallsignsPane', () => {
     expect(container.textContent).toContain('BRAVO');
 
     await act(async () => {
-      Array.from(container.querySelectorAll('button'))
-        .find((button) => button.textContent === 'ALPHA ×')
-        ?.click();
+      container
+        .querySelector('.MuiChip-deleteIcon')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(onRemoveCallsign).toHaveBeenCalledWith(['Alpha', 'alpha']);
   });
@@ -103,6 +105,8 @@ describe('AnalysisCallsignsPane', () => {
     const loadFirstPage = vi.fn();
     callsignPage.value = {
       ...callsignPage.value,
+      canRetry: true,
+      entries: [{ value: 'Alpha', label: 'ALPHA', values: ['Alpha'], count: 1 }],
       hasPrevious: false,
       loadFirstPage,
       pageIndex: 6,
@@ -170,6 +174,7 @@ describe('AnalysisCallsignsPane', () => {
     expect(container.textContent).toContain('ALPHA');
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Оновлення позивних"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Завантаження позивних"]')).toBeNull();
     expect(
       Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
         button.getAttribute('aria-label')?.startsWith('Додати ALPHA'),
@@ -189,6 +194,150 @@ describe('AnalysisCallsignsPane', () => {
     });
     expect(loadFirstPage).not.toHaveBeenCalled();
     expect(loadNextPage).not.toHaveBeenCalled();
+  });
+
+  it('stops loading after a failed scope refresh while keeping its snapshot noninteractive', async () => {
+    callsignPage.value = {
+      ...callsignPage.value,
+      canRetry: true,
+      entries: [],
+      error: new Error('refresh failed'),
+      hasMore: false,
+      pending: false,
+      snapshotEntries: [{ value: 'Bravo', label: 'BRAVO', values: ['Bravo'], count: 1 }],
+      snapshotPageIndex: 1,
+      stale: true,
+    };
+    const container = document.createElement('div');
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(
+        <AnalysisCallsignsPane
+          analysisReq={null}
+          onAddCallsign={vi.fn()}
+          onAddFreq={vi.fn()}
+          onClearCallsign={vi.fn()}
+          onRemoveCallsign={vi.fn()}
+          onSearchFrequencyMatches={vi.fn()}
+          onToggleCallsign={vi.fn()}
+          onToggleFreq={vi.fn()}
+          selectedCallsigns={[]}
+          selectedFreqs={[]}
+        />,
+      ),
+    );
+
+    expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Оновлення позивних"]')).toBeNull();
+    expect(container.textContent).toContain('Показано результати попереднього запиту.');
+    expect(container.textContent).toContain('51–51 позивних');
+    expect(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent === 'Повторити',
+      )?.disabled,
+    ).toBe(false);
+    expect(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+        button.textContent?.includes('BRAVO'),
+      )?.disabled,
+    ).toBe(true);
+  });
+
+  it('does not leave an enabled add action for a fully selected callsign group', async () => {
+    callsignPage.value = {
+      ...callsignPage.value,
+      entries: [{ value: 'Alpha', label: 'ALPHA', values: ['Alpha', 'alpha'], count: 2 }],
+      pending: false,
+    };
+    const container = document.createElement('div');
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(
+        <AnalysisCallsignsPane
+          analysisReq={null}
+          onAddCallsign={vi.fn()}
+          onAddFreq={vi.fn()}
+          onClearCallsign={vi.fn()}
+          onRemoveCallsign={vi.fn()}
+          onSearchFrequencyMatches={vi.fn()}
+          onToggleCallsign={vi.fn()}
+          onToggleFreq={vi.fn()}
+          selectedCallsigns={['alpha']}
+          selectedFreqs={[]}
+        />,
+      ),
+    );
+
+    expect(container.querySelector('[aria-label="Додати ALPHA до поточного фільтра"]')).toBeNull();
+  });
+
+  it('keeps a completed empty result out of the initial skeleton state', async () => {
+    callsignPage.value = {
+      ...callsignPage.value,
+      entries: [],
+      error: null,
+      hasLoadedOnce: true,
+      pending: false,
+      snapshotEntries: [],
+      snapshotPageIndex: null,
+      stale: false,
+    };
+    const container = document.createElement('div');
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(
+        <AnalysisCallsignsPane
+          analysisReq={null}
+          onAddCallsign={vi.fn()}
+          onAddFreq={vi.fn()}
+          onClearCallsign={vi.fn()}
+          onRemoveCallsign={vi.fn()}
+          onSearchFrequencyMatches={vi.fn()}
+          onToggleCallsign={vi.fn()}
+          onToggleFreq={vi.fn()}
+          selectedCallsigns={[]}
+          selectedFreqs={[]}
+        />,
+      ),
+    );
+
+    expect(container.querySelector('[aria-label="Завантаження позивних"]')).toBeNull();
+    expect(container.textContent).toContain('У поточній області аналізу немає позивних.');
+  });
+
+  it('shows results-region progress for a refresh after an empty result', async () => {
+    callsignPage.value = {
+      ...callsignPage.value,
+      entries: [],
+      error: null,
+      hasLoadedOnce: true,
+      pending: true,
+      snapshotEntries: [],
+      snapshotPageIndex: null,
+      stale: false,
+    };
+    const container = document.createElement('div');
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(
+        <AnalysisCallsignsPane
+          analysisReq={null}
+          onAddCallsign={vi.fn()}
+          onAddFreq={vi.fn()}
+          onClearCallsign={vi.fn()}
+          onRemoveCallsign={vi.fn()}
+          onSearchFrequencyMatches={vi.fn()}
+          onToggleCallsign={vi.fn()}
+          onToggleFreq={vi.fn()}
+          selectedCallsigns={[]}
+          selectedFreqs={[]}
+        />,
+      ),
+    );
+
+    expect(container.querySelector('[aria-label="Завантаження позивних"]')).toBeNull();
+    expect(container.querySelector('.MuiCircularProgress-root')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Наступна сторінка позивних"]')).toBeNull();
   });
 
   it('uses the actual entries to display a cursor-page range', async () => {

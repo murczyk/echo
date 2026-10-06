@@ -56,6 +56,7 @@ export function useCallsignPage({
     { cursor: null, index: 0 },
   ]);
   const [pageIndex, setPageIndex] = useState(0);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [loading, setLoading] = useState(false);
   const [debouncing, setDebouncing] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -65,13 +66,20 @@ export function useCallsignPage({
   const controllerRef = useRef<AbortController | null>(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
-  const scopeKey = useMemo(() => JSON.stringify(analysisReq), [analysisReq]);
+  // The callsign facet is deliberately removed by the callsign-page endpoint.
+  // Keep its scope aligned with the request so selecting a callsign does not
+  // discard a valid page or start an unnecessary list refresh.
+  const callsignPageReq = useMemo(
+    () => (analysisReq == null ? null : { ...analysisReq, selectedCallsigns: null }),
+    [analysisReq],
+  );
+  const scopeKey = useMemo(() => JSON.stringify(callsignPageReq), [callsignPageReq]);
   const effectiveScope = `${scopeKey}:${query}:${pageOrder(query)}`;
   const hasRequest = analysisReq != null;
-  const analysisReqRef = useRef(analysisReq);
+  const analysisReqRef = useRef(callsignPageReq);
   const queryRef = useRef(query);
   const effectiveScopeRef = useRef(effectiveScope);
-  analysisReqRef.current = analysisReq;
+  analysisReqRef.current = callsignPageReq;
   queryRef.current = query;
   effectiveScopeRef.current = effectiveScope;
 
@@ -113,6 +121,7 @@ export function useCallsignPage({
           hasMore: response.hasMore,
           nextCursor: response.nextCursor,
         });
+        setHasLoadedOnce(true);
         setPageScope(scope);
         setPageIndex(request.index);
         setError(null);
@@ -152,10 +161,7 @@ export function useCallsignPage({
     }
     requestIdRef.current += 1;
     abortRequest();
-    setPage(emptyPage);
-    setPageScope(null);
     setCursorHistory([{ cursor: null, index: 0 }]);
-    setPageIndex(0);
     setLoading(false);
     setError(null);
     setErrorScope(null);
@@ -213,15 +219,17 @@ export function useCallsignPage({
 
   useEffect(() => () => abortRequest(), [abortRequest]);
 
-  const displayedPage = hasCurrentPage ? page : emptyPage;
+  const currentPage = hasCurrentPage ? page : emptyPage;
+  const snapshotAvailable = active && hasRequest && !hasCurrentPage && pageScope != null;
 
   return {
-    entries: displayedPage.entries,
+    entries: currentPage.entries,
     error: errorScope === effectiveScope ? error : null,
     canRetry: errorScope === effectiveScope && failedRequest != null,
     failedPageIndex: errorScope === effectiveScope ? (failedRequest?.index ?? null) : null,
-    hasMore: displayedPage.hasMore,
+    hasMore: currentPage.hasMore,
     hasPrevious: hasCurrentPage && cursorHistory.some((item) => item.index === pageIndex - 1),
+    hasLoadedOnce,
     loadFirstPage,
     loadNextPage,
     loadPreviousPage,
@@ -231,5 +239,8 @@ export function useCallsignPage({
     query,
     retry,
     setQuery,
+    snapshotEntries: snapshotAvailable ? page.entries : [],
+    snapshotPageIndex: snapshotAvailable ? pageIndex : null,
+    stale: snapshotAvailable,
   };
 }

@@ -86,13 +86,117 @@ test.describe('@smoke @regression', () => {
       page.getByRole('button', { name: 'Додати ALPHA до поточного фільтра' }),
     ).toBeVisible();
     await page.getByRole('button', { name: 'Додати ALPHA до поточного фільтра' }).click();
-    await expect(page.getByRole('button', { name: 'ALPHA ×' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Прибрати ALPHA з фільтра' })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Додати ALPHA до поточного фільтра' }),
+    ).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Наступна сторінка позивних' }).click();
     await expect(
       page.getByRole('button', { name: 'Додати BRAVO до поточного фільтра' }),
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'ALPHA ×' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Прибрати ALPHA з фільтра' })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('callsigns-pagination.png') });
+    await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole('button', { name: 'Прибрати ALPHA з фільтра' })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('callsigns-pagination-dark-narrow.png') });
+    await expect(page.getByRole('button', { name: 'ALPHA 2 повідомлень' })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('callsigns-populated-dark-narrow.png') });
+  });
+
+  test('@regression keeps callsign pagination progress visible at the scrolled footer', async ({
+    page,
+  }, testInfo) => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      value: `callsign-${index + 1}`,
+      label: `CALLSIGN-${index + 1}`,
+      values: [`callsign-${index + 1}`],
+      count: index + 1,
+    }));
+    let nextRequestStarted!: () => void;
+    const nextRequestStartedPromise = new Promise<void>((resolve) => {
+      nextRequestStarted = resolve;
+    });
+    let releaseNextResponse!: () => void;
+    const nextResponsePromise = new Promise<void>((resolve) => {
+      releaseNextResponse = resolve;
+    });
+    let retryRequestStarted!: () => void;
+    const retryRequestStartedPromise = new Promise<void>((resolve) => {
+      retryRequestStarted = resolve;
+    });
+    let releaseRetryResponse!: () => void;
+    const retryResponsePromise = new Promise<void>((resolve) => {
+      releaseRetryResponse = resolve;
+    });
+    let nextRequests = 0;
+    await setupAnalysisNeoPage(page);
+    await page.route('**/api/rer/analysis/callsigns-page', async (route) => {
+      const { cursor } = route.request().postDataJSON() as { cursor?: string | null };
+      if (cursor == null) {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ entries: firstPage, has_more: true, next_cursor: 'next-page' }),
+        });
+        return;
+      }
+      nextRequests += 1;
+      if (nextRequests === 1) {
+        nextRequestStarted();
+        await nextResponsePromise;
+      } else if (nextRequests === 2) {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+        return;
+      } else {
+        retryRequestStarted();
+        await retryResponsePromise;
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          entries: [{ value: 'next', label: 'NEXT PAGE', values: ['next'], count: 1 }],
+          has_more: false,
+          next_cursor: null,
+        }),
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+    await page.getByRole('button', { name: 'Розгорнути праву панель' }).click();
+    await page.getByRole('tab', { name: 'Позивні' }).click();
+    await expect(page.getByRole('button', { name: 'CALLSIGN-50 50 повідомлень' })).toBeVisible();
+
+    const sidebar = page.locator('[data-analysis-sidebar-scroll-body]');
+    await sidebar.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const nextButton = page.getByRole('button', { name: 'Наступна сторінка позивних' });
+    await expect(nextButton).toBeVisible();
+    await nextButton.click();
+    await nextRequestStartedPromise;
+
+    const progress = page.getByRole('status', { name: 'Оновлення позивних' });
+    await expect(progress).toBeVisible();
+    await expect(nextButton).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'CALLSIGN-50 50 повідомлень' })).toBeDisabled();
+    await page.screenshot({ path: testInfo.outputPath('callsigns-pagination-progress.png') });
+
+    releaseNextResponse();
+    await expect(page.getByRole('button', { name: 'NEXT PAGE 1 повідомлень' })).toBeVisible();
+    await expect(progress).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Перша сторінка позивних' }).click();
+    await expect(page.getByRole('button', { name: 'CALLSIGN-50 50 повідомлень' })).toBeVisible();
+    await nextButton.click();
+    await expect(
+      page.getByText('Не вдалося завантажити наступну сторінку позивних.'),
+    ).toBeVisible();
+    await expect(progress).toHaveCount(0);
+    await page.getByRole('button', { name: 'Повторити' }).click();
+    await retryRequestStartedPromise;
+    await expect(progress).toBeVisible();
+    releaseRetryResponse();
+    await expect(page.getByRole('button', { name: 'NEXT PAGE 1 повідомлень' })).toBeVisible();
   });
 
   test('@regression discards stale callsign frequency matches after matching inputs change', async ({
