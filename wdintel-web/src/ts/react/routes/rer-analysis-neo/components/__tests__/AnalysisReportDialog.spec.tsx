@@ -49,6 +49,7 @@ function renderDialog(overrides: Partial<Parameters<typeof AnalysisReportDialog>
     taskRuns: [],
     open: true,
     currentUser: { roles: ['Rer'] } as never,
+    rerReportEnabled: false,
     supportNonRerInterceptions: false,
     report: buildReport(),
     queryState: createResetQueryState(),
@@ -278,6 +279,26 @@ describe('AnalysisReportDialog', () => {
     act(() => {
       view.root.unmount();
     });
+  });
+
+  it('shows RER and Sposob templates only for their respective settings', () => {
+    const view = renderDialog({ rerReportEnabled: true });
+    expect(view.container.textContent).toContain('РЕР Звіт');
+    expect(view.container.textContent).not.toContain('Способ');
+
+    act(() => {
+      view.root.render(
+        createElement(AnalysisReportDialog, {
+          ...view.props,
+          rerReportEnabled: false,
+          supportNonRerInterceptions: true,
+        }),
+      );
+    });
+    expect(view.container.textContent).not.toContain('РЕР Звіт');
+    expect(view.container.textContent).toContain('Способ');
+
+    act(() => view.root.unmount());
   });
 
   it('shows report 1.2.5 as an advanced report option', () => {

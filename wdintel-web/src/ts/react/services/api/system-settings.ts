@@ -18,6 +18,7 @@ type SystemSettingsItemRaw = {
   updated_by?: string | null;
   deleted: boolean;
   short_url_enabled: boolean;
+  rer_report_enabled?: boolean;
   support_non_rer_interceptions?: boolean;
   default_neo_analysis?: boolean;
   show_classic_duty?: boolean;
@@ -58,6 +59,7 @@ type SystemSettingsCurrentRspRaw = {
   rer_duty_poll_interval_sec: number;
   rer_duty_test_replay_interval_sec?: number;
   short_url_enabled: boolean;
+  rer_report_enabled?: boolean;
   support_non_rer_interceptions?: boolean;
   default_neo_analysis?: boolean;
   show_classic_duty?: boolean;
@@ -97,6 +99,7 @@ type CreateSystemSettingsReqRaw = {
   rer_duty_poll_interval_sec: number;
   rer_duty_test_replay_interval_sec: number;
   short_url_enabled: boolean;
+  rer_report_enabled: boolean;
   support_non_rer_interceptions: boolean;
   default_neo_analysis: boolean;
   show_classic_duty: boolean;
@@ -145,6 +148,7 @@ export type SystemSettingsItem = {
   updatedBy: string | null;
   deleted: boolean;
   rerShortUrlEnabled: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
@@ -185,6 +189,7 @@ export type SystemSettingsCurrent = {
   rerDutyPollIntervalSec: number;
   rerDutyTestReplayIntervalSec: number;
   rerShortUrlEnabled: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
@@ -220,6 +225,7 @@ export type CreateSystemSettingsInput = {
   rerDutyPollIntervalSec: number;
   rerDutyTestReplayIntervalSec: number;
   rerDutyShortUrl: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
@@ -265,6 +271,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     updatedBy: raw.updated_by ?? null,
     deleted: raw.deleted,
     rerShortUrlEnabled: raw.short_url_enabled,
+    rerReportEnabled: raw.rer_report_enabled ?? false,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     showClassicDuty: raw.show_classic_duty ?? true,
@@ -307,6 +314,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
     rerDutyTestReplayIntervalSec: raw.rer_duty_test_replay_interval_sec ?? 1,
     rerShortUrlEnabled: raw.short_url_enabled,
+    rerReportEnabled: raw.rer_report_enabled ?? false,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     showClassicDuty: raw.show_classic_duty ?? true,
@@ -351,6 +359,7 @@ export async function createSystemSettings(
     rer_duty_poll_interval_sec: input.rerDutyPollIntervalSec,
     rer_duty_test_replay_interval_sec: input.rerDutyTestReplayIntervalSec,
     short_url_enabled: input.rerDutyShortUrl,
+    rer_report_enabled: input.rerReportEnabled,
     support_non_rer_interceptions: input.supportNonRerInterceptions,
     default_neo_analysis: input.defaultNeoAnalysis,
     show_classic_duty: input.showClassicDuty,
@@ -392,6 +401,14 @@ export async function currentSystemSettings(): Promise<SystemSettingsCurrent> {
 export async function activateSystemSettings(id: number): Promise<SystemSettingsItem> {
   const req: ActivateSystemSettingsReqRaw = { id };
   const data = await postJson<SystemSettingsItemRaw>('/api/admin/system-settings/activate', req);
+  return normalizeItem(data);
+}
+
+export async function setRerReportEnabled(enabled: boolean): Promise<SystemSettingsItem> {
+  const data = await postJson<SystemSettingsItemRaw>(
+    '/api/admin/system-settings/rer-report-enabled',
+    { enabled },
+  );
   return normalizeItem(data);
 }
 

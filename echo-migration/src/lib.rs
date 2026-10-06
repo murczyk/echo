@@ -459,6 +459,7 @@ mod m20261006_150705_ai_agent_chat_webhook;
 
 mod m20261006_082251_device_document_settings;
 mod m20261006_150248_network_freq_exact_count_index;
+mod m20261006_160533_rer_report_enabled;
 mod m20261006_164921_sigint_inbox_item_freq_datetime_index;
 
 pub struct Migrator;
@@ -1090,6 +1091,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261006_082251_device_document_settings::Migration),
             Box::new(m20261006_150705_ai_agent_chat_webhook::Migration),
             Box::new(m20261006_150248_network_freq_exact_count_index::Migration),
+            Box::new(m20261006_160533_rer_report_enabled::Migration),
             Box::new(m20261006_164921_sigint_inbox_item_freq_datetime_index::Migration),
         ]
     }

@@ -1411,6 +1411,7 @@ type alias InboxMessagesReq =
     , selectedAors : Maybe (List (Int))
     , selectedNetworks : Maybe (List (Int))
     , withoutNetwork : Maybe (Bool)
+    , onlyWithNetwork : Maybe (Bool)
     , metadataCc : Maybe (List (String))
     , metadataSender : Maybe (List (String))
     , metadataReceiver : Maybe (List (String))
@@ -1479,6 +1480,7 @@ inboxMessagesReqEncoder struct =
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedAors )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedNetworks )
         , ( "without_network", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutNetwork )
+        , ( "only_with_network", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.onlyWithNetwork )
         , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataCc )
         , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataSender )
         , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataReceiver )
@@ -2039,6 +2041,7 @@ type alias AnalysisStatsReq =
     , tagPresence : Maybe (TagPresenceFilter)
     , selectedNetworks : Maybe (List (Int))
     , withoutNetwork : Maybe (Bool)
+    , onlyWithNetwork : Maybe (Bool)
     , metadataCc : Maybe (List (String))
     , metadataSender : Maybe (List (String))
     , metadataReceiver : Maybe (List (String))
@@ -2080,6 +2083,7 @@ analysisStatsReqEncoder struct =
         , ( "tag_presence", (Maybe.withDefault Json.Encode.null << Maybe.map (tagPresenceFilterEncoder)) struct.tagPresence )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedNetworks )
         , ( "without_network", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutNetwork )
+        , ( "only_with_network", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.onlyWithNetwork )
         , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataCc )
         , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataSender )
         , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataReceiver )
@@ -12597,6 +12601,7 @@ type alias SystemSettingsCurrentRsp =
     , rerDutyPollIntervalSec : Int
     , rerDutyTestReplayIntervalSec : Int
     , shortUrlEnabled : Bool
+    , rerReportEnabled : Bool
     , supportNonRerInterceptions : Bool
     , defaultNeoAnalysis : Bool
     , autofixEchoimMissingMessages : Bool
@@ -12636,6 +12641,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
         , ( "rer_duty_test_replay_interval_sec", (Json.Encode.int) struct.rerDutyTestReplayIntervalSec )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
+        , ( "rer_report_enabled", (Json.Encode.bool) struct.rerReportEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
         , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
         , ( "autofix_echoim_missing_messages", (Json.Encode.bool) struct.autofixEchoimMissingMessages )
@@ -12677,6 +12683,7 @@ type alias SystemSettingsItem =
     , updatedByLoginId : Maybe (String)
     , deleted : Bool
     , shortUrlEnabled : Bool
+    , rerReportEnabled : Bool
     , supportNonRerInterceptions : Bool
     , defaultNeoAnalysis : Bool
     , autofixEchoimMissingMessages : Bool
@@ -12724,6 +12731,7 @@ systemSettingsItemEncoder struct =
         , ( "updated_by_login_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.updatedByLoginId )
         , ( "deleted", (Json.Encode.bool) struct.deleted )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
+        , ( "rer_report_enabled", (Json.Encode.bool) struct.rerReportEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
         , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
         , ( "autofix_echoim_missing_messages", (Json.Encode.bool) struct.autofixEchoimMissingMessages )
@@ -12776,6 +12784,7 @@ type alias CreateSystemSettingsReq =
     , rerDutyPollIntervalSec : Int
     , rerDutyTestReplayIntervalSec : Int
     , shortUrlEnabled : Bool
+    , rerReportEnabled : Bool
     , supportNonRerInterceptions : Bool
     , defaultNeoAnalysis : Bool
     , autofixEchoimMissingMessages : Bool
@@ -12818,6 +12827,7 @@ createSystemSettingsReqEncoder struct =
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
         , ( "rer_duty_test_replay_interval_sec", (Json.Encode.int) struct.rerDutyTestReplayIntervalSec )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
+        , ( "rer_report_enabled", (Json.Encode.bool) struct.rerReportEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
         , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
         , ( "autofix_echoim_missing_messages", (Json.Encode.bool) struct.autofixEchoimMissingMessages )
@@ -18196,6 +18206,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_aors" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "only_with_network" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
@@ -18421,6 +18432,7 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_presence" (Json.Decode.nullable (tagPresenceFilterDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "only_with_network" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
@@ -25242,6 +25254,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_replay_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_report_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "autofix_echoim_missing_messages" (Json.Decode.bool)))
@@ -25284,6 +25297,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_by_login_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_report_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "autofix_echoim_missing_messages" (Json.Decode.bool)))
@@ -25331,6 +25345,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_replay_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_report_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "autofix_echoim_missing_messages" (Json.Decode.bool)))

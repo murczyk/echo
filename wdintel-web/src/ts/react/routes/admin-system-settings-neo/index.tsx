@@ -50,6 +50,7 @@ import {
 
 type SystemSettingsForm = {
   exactMatchOnlyDefault: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
@@ -90,6 +91,7 @@ type PatchSystemSettingsForm = (patch: Partial<SystemSettingsForm>) => void;
 
 type SystemSettingsPayload = {
   exactMatchOnlyDefault: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
@@ -130,6 +132,7 @@ const DUTY_POLL_INTERVAL_SEC_MIN = 5;
 
 const EMPTY_FORM: SystemSettingsForm = {
   exactMatchOnlyDefault: true,
+  rerReportEnabled: false,
   supportNonRerInterceptions: false,
   defaultNeoAnalysis: false,
   showClassicDuty: true,
@@ -220,6 +223,7 @@ function InfoLabel({ label, tooltip }: { label: string; tooltip: string }) {
 function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsForm {
   return {
     exactMatchOnlyDefault: item?.rerAnalysisUnitsExactMatchOnlyDefault ?? true,
+    rerReportEnabled: item?.rerReportEnabled ?? false,
     supportNonRerInterceptions: item?.supportNonRerInterceptions ?? false,
     defaultNeoAnalysis: item?.defaultNeoAnalysis ?? false,
     showClassicDuty: item?.showClassicDuty ?? true,
@@ -263,6 +267,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
 function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
   return (
     a.exactMatchOnlyDefault === b.exactMatchOnlyDefault &&
+    a.rerReportEnabled === b.rerReportEnabled &&
     a.supportNonRerInterceptions === b.supportNonRerInterceptions &&
     a.defaultNeoAnalysis === b.defaultNeoAnalysis &&
     a.showClassicDuty === b.showClassicDuty &&
@@ -362,6 +367,7 @@ function normalizeForm(form: SystemSettingsForm): SystemSettingsForm {
 function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
   return {
     exactMatchOnlyDefault: form.exactMatchOnlyDefault,
+    rerReportEnabled: form.rerReportEnabled,
     supportNonRerInterceptions: form.supportNonRerInterceptions,
     defaultNeoAnalysis: form.defaultNeoAnalysis,
     showClassicDuty: form.showClassicDuty,
@@ -1225,6 +1231,7 @@ export function AdminSystemSettingsNeoPage() {
       rerDutyPollIntervalSec: payload.dutyPollIntervalSec,
       rerDutyTestReplayIntervalSec: payload.dutyTestReplayIntervalSec,
       rerDutyShortUrl: payload.shortUrlEnabled,
+      rerReportEnabled: payload.rerReportEnabled,
       supportNonRerInterceptions: payload.supportNonRerInterceptions,
       defaultNeoAnalysis: payload.defaultNeoAnalysis,
       showClassicDuty: payload.showClassicDuty,

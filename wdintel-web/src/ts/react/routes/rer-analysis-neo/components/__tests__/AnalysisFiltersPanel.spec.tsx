@@ -300,6 +300,7 @@ function buildProps(
       queryState: emptyQueryState(),
       unitsExactMatchOnlyDefault: false,
       analysisAorFilterEnabled: true,
+      rerReportEnabled: false,
       saveInFlight: false,
       savedFilterName: '',
       savedFilters: [],
@@ -1052,6 +1053,22 @@ describe('AnalysisFiltersPanel', () => {
 
     expect(updateQueryState).toHaveBeenCalledWith({ orWithCoords: true, orWithoutCoords: false });
     expect(updateQueryState).toHaveBeenCalledWith({ onlyWithMedia: true });
+  });
+
+  it('shows the RER report filter only when enabled', async () => {
+    const hidden = await renderComponent(buildProps());
+    rendered.push(hidden);
+    expect(hidden.container.textContent).not.toContain('для звіту РЕР');
+
+    const updateQueryState = vi.fn();
+    const visible = await renderComponent(buildProps({ rerReportEnabled: true, updateQueryState }));
+    rendered.push(visible);
+    await setChecked(findLabelInput(visible.container, 'для звіту РЕР'), true);
+
+    expect(updateQueryState).toHaveBeenCalledWith({
+      onlyWithNetwork: true,
+      withoutNetwork: false,
+    });
   });
 
   it('maps the metadata mode buttons into the query state updates and helper text', async () => {

@@ -433,6 +433,7 @@ getInboxReq model =
                 |> List.filterMap String.toInt
                 |> emptyToNothing
     , withoutNetwork = Just model.withoutNetwork
+    , onlyWithNetwork = Nothing
     , withoutModelTags = Just model.withoutModelTags
     }
 

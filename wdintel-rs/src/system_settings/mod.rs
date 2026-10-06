@@ -8,8 +8,8 @@ use crate::error::AppError;
 use crate::h;
 use crate::system_settings::types::{
     ActivateSystemSettingsReq, CreateSystemSettingsReq,
-    RerDutyTestReplayStatusRsp, SystemSettingsCurrentRsp, SystemSettingsItem,
-    SystemSettingsListRsp,
+    RerDutyTestReplayStatusRsp, SetRerReportEnabledReq,
+    SystemSettingsCurrentRsp, SystemSettingsItem, SystemSettingsListRsp,
 };
 use crate::types::Env;
 use crate::types::ShortContext;
@@ -93,6 +93,7 @@ fn map_system_settings_item(
             .map(|login_id| login_id.to_string()),
         deleted: settings.deleted,
         short_url_enabled: settings.short_url_enabled,
+        rer_report_enabled: settings.rer_report_enabled.unwrap_or(false),
         support_non_rer_interceptions: settings.support_non_rer_interceptions,
         default_neo_analysis: settings.default_neo_analysis,
         autofix_echoim_missing_messages: settings
@@ -403,6 +404,29 @@ where
         .unwrap_or(false))
 }
 
+pub async fn rer_report_enabled<C>(dbx: &C) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(settings
+        .and_then(|settings| settings.rer_report_enabled)
+        .unwrap_or(false))
+}
+
+pub async fn ensure_rer_report_enabled<C>(dbx: &C) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if rer_report_enabled(dbx).await.c(h!())? {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "rer_report_enabled is disabled".to_string(),
+        ))
+    }
+}
+
 pub async fn ensure_support_non_rer_interceptions_enabled<C>(
     dbx: &C,
 ) -> Result<(), AppError>
@@ -640,6 +664,7 @@ fn system_settings_active_model(
         updated_by_login_id: Set(Some(*login)),
         deleted: Set(false),
         short_url_enabled: Set(req.short_url_enabled),
+        rer_report_enabled: Set(Some(req.rer_report_enabled)),
         support_non_rer_interceptions: Set(req.support_non_rer_interceptions),
         default_neo_analysis: Set(req.default_neo_analysis),
         show_classic_duty: Set(req.show_classic_duty),
@@ -802,6 +827,32 @@ async fn activate_system_settings_for_login(
     Ok(settings)
 }
 
+async fn set_rer_report_enabled_for_login(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    enabled: bool,
+) -> Result<system_settings::Model, AppError> {
+    let txn = dbx.begin().await.c(h!())?;
+    let settings = get_active_system_settings(&txn)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
+    deactivate_active_settings(&txn, login).await.c(h!())?;
+
+    let mut settings: system_settings::ActiveModel = settings.into();
+    settings.id = sea_orm::ActiveValue::NotSet;
+    settings.created_at = sea_orm::ActiveValue::NotSet;
+    settings.updated_at = sea_orm::ActiveValue::NotSet;
+    settings.updated_by_login_id = Set(Some(*login));
+    settings.deleted = Set(false);
+    settings.rer_report_enabled = Set(Some(enabled));
+    let settings = settings.insert(&txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+
+    Ok(settings)
+}
+
 #[post("/api/system-settings/current")]
 pub async fn current_system_settings(
     user: Identity,
@@ -825,6 +876,7 @@ pub async fn current_system_settings(
             rer_duty_test_replay_interval_sec: settings
                 .rer_duty_test_replay_interval_sec,
             short_url_enabled: settings.short_url_enabled,
+            rer_report_enabled: settings.rer_report_enabled.unwrap_or(false),
             support_non_rer_interceptions: settings
                 .support_non_rer_interceptions,
             default_neo_analysis: settings.default_neo_analysis,
@@ -877,6 +929,7 @@ pub async fn current_system_settings(
                 crate::config::RER_DUTY_POLL_INTERVAL_MIN_SEC,
             rer_duty_test_replay_interval_sec: 1,
             short_url_enabled: false,
+            rer_report_enabled: false,
             support_non_rer_interceptions: false,
             default_neo_analysis: false,
             autofix_echoim_missing_messages: false,
@@ -949,6 +1002,22 @@ pub async fn create_system_settings(
         create_system_settings_for_login(&env.dbx, &login, &req).await?;
 
     Ok(Json(map_system_settings_item(created)?))
+}
+
+#[post("/api/admin/system-settings/rer-report-enabled")]
+pub async fn set_rer_report_enabled(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<SetRerReportEnabledReq>,
+) -> Result<Json<SystemSettingsItem>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    let settings =
+        set_rer_report_enabled_for_login(&env.dbx, &login, req.enabled)
+            .await
+            .c(h!())?;
+
+    Ok(Json(map_system_settings_item(settings).c(h!())?))
 }
 
 #[post("/api/admin/system-settings/activate")]
@@ -1100,6 +1169,37 @@ mod tests {
         settings.enable_audio_transcription = Set(true);
         settings.update(&env.dbx).await.unwrap();
         assert!(audio_transcription_enabled(&env.dbx).await.unwrap());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3598_rer_report_toggle_creates_a_preserving_revision() {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let mut req = settings_req(true);
+        req.support_non_rer_interceptions = true;
+        let previous = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+
+        let updated = set_rer_report_enabled_for_login(&env.dbx, &login, true)
+            .await
+            .unwrap();
+
+        assert_ne!(updated.id, previous.id);
+        assert_eq!(updated.rer_report_enabled, Some(true));
+        assert!(updated.short_url_enabled);
+        assert!(updated.support_non_rer_interceptions);
+        assert!(
+            system_settings::Entity::find_by_id(previous.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
     }
 
     #[tokio::test]
@@ -1473,6 +1573,7 @@ mod tests {
             rer_duty_poll_interval_sec: 1,
             rer_duty_test_replay_interval_sec: 1,
             short_url_enabled,
+            rer_report_enabled: false,
             support_non_rer_interceptions: false,
             default_neo_analysis: false,
             autofix_echoim_missing_messages: false,
@@ -1547,6 +1648,7 @@ mod tests {
             rer_duty_test_replay_interval_sec: Set(1),
             rer_duty_insert_historical_interceptions: Set(false),
             short_url_enabled: Set(false),
+            rer_report_enabled: Set(None),
             support_non_rer_interceptions: Set(false),
             peleng_bounds_enabled: Set(false),
             peleng_bounds_top_left_lat: Set(None),

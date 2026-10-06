@@ -3,6 +3,11 @@
     "echo:m20261006_164921_sigint_inbox_item_freq_datetime_index": {
       "changes": []
     },
+    "echo:m20261006_160533_rer_report_enabled": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20261006_150248_network_freq_exact_count_index": {
       "changes": []
     },

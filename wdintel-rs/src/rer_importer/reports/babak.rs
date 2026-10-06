@@ -104,6 +104,7 @@ pub async fn collect_babak_report_data(
         tag_presence: inbox_req.tag_presence,
         selected_networks: inbox_req.selected_networks,
         without_network: inbox_req.without_network,
+        only_with_network: inbox_req.only_with_network,
         metadata_cc: inbox_req.metadata_cc,
         metadata_sender: inbox_req.metadata_sender,
         metadata_receiver: inbox_req.metadata_receiver,
@@ -1614,12 +1615,14 @@ async fn load_babak_candidate_page_for_groups(
             query,
             &req.selected_networks,
             &req.without_network,
+            &req.only_with_network,
             Some(scope),
         ),
         None => filter_selected_networks(
             query,
             &req.selected_networks,
             &req.without_network,
+            &req.only_with_network,
         ),
     }
     .context(h!())?;

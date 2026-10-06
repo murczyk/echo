@@ -516,6 +516,7 @@ fn filter_selected_networks_for_scope<E>(
     query: Select<E>,
     selected_networks: &Option<Vec<i64>>,
     without_network: &Option<bool>,
+    only_with_network: &Option<bool>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<E>, AppError>
 where
@@ -526,10 +527,16 @@ where
             query,
             selected_networks,
             without_network,
+            only_with_network,
             scope,
         )
     } else {
-        filter_selected_networks(query, selected_networks, without_network)
+        filter_selected_networks(
+            query,
+            selected_networks,
+            without_network,
+            only_with_network,
+        )
     }
 }
 
@@ -1125,6 +1132,7 @@ fn apply_group_stats_filters(
         query,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
         scope,
     )
     .context(h!())?;
@@ -1861,6 +1869,7 @@ fn build_senders_filtered_query(
         senders_res,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
         scope,
     )
     .context(h!())?;
@@ -2000,6 +2009,7 @@ where
         query,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
         scope,
     )
     .context(h!())?;
@@ -2319,6 +2329,7 @@ fn build_posts_filtered_query(
         post_res,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
         scope,
     )
     .context(h!())?;
@@ -2766,6 +2777,7 @@ fn build_freqs_filtered_query(
         freqs_res,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
         scope,
     )
     .context(h!())?;
@@ -3559,6 +3571,7 @@ fn build_callsigns_filtered_query(
         callsigns_res,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
         scope,
     )
     .context(h!())?;
@@ -4264,6 +4277,7 @@ fn build_tags_filtered_query_with_owner_condition(
             tags_res,
             &req.selected_networks,
             &req.without_network,
+            &req.only_with_network,
             scope,
         )
     } else {
@@ -4271,6 +4285,7 @@ fn build_tags_filtered_query_with_owner_condition(
             tags_res,
             &req.selected_networks,
             &req.without_network,
+            &req.only_with_network,
         )
     }
     .context(h!())?;
@@ -4700,6 +4715,7 @@ fn build_units_filtered_query(
         units_res,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
         scope,
     )
     .context(h!())?;
@@ -5030,6 +5046,7 @@ fn build_locations_filtered_query_for_login(
         locations_res,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
         scope,
     )
     .context(h!())?;
@@ -6009,6 +6026,7 @@ fn build_network_analytics_messages_query(
         messages,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
         scope,
     )
     .context(h!())?;
@@ -6732,6 +6750,7 @@ fn build_networks_query_for_login(
         messages_q,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
     )
     .context(h!())?;
     let messages_q = apply_metadata_filters(messages_q, &req)?;
@@ -7135,6 +7154,7 @@ async fn fetch_counts_for_login_with_conn(
         selected_count_res,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
         scope,
     )
     .context(h!())?;
@@ -8173,6 +8193,7 @@ mod tests {
             sigint_inbox_item::Entity::find(),
             &None,
             &Some(true),
+            &None,
             Some(&scope),
         )
         .unwrap()

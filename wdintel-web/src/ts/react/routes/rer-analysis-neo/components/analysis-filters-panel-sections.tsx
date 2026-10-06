@@ -54,6 +54,7 @@ type Props = Pick<
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   unitsExactMatchOnlyDefault: boolean | null;
   analysisAorFilterEnabled: boolean;
+  rerReportEnabled: boolean;
   toggleSection: (section: FilterSectionId) => void;
 };
 
@@ -117,6 +118,7 @@ export function AnalysisFiltersPanelSections({
   queryState,
   unitsExactMatchOnlyDefault,
   analysisAorFilterEnabled,
+  rerReportEnabled,
   setIncludeOnlyNewFreqs,
   toggleSection,
   updateQueryState,
@@ -569,6 +571,23 @@ export function AnalysisFiltersPanelSections({
             label="Важливі"
             sx={compactCheckboxLabelSx}
           />
+          {rerReportEnabled ? (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={queryState.onlyWithNetwork}
+                  onChange={(_event, value) =>
+                    updateQueryState({
+                      onlyWithNetwork: value,
+                      withoutNetwork: value ? false : queryState.withoutNetwork,
+                    })
+                  }
+                />
+              }
+              label="для звіту РЕР"
+              sx={compactCheckboxLabelSx}
+            />
+          ) : null}
         </Box>
       </FilterSection>
       <FilterSection

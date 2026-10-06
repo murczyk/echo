@@ -391,6 +391,7 @@ async fn load_geojson_report_items(
         items,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
     )
     .context(h!())?;
     let items = filter_selected_metadata_for_analysis_stats(items, req)

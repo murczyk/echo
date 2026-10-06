@@ -129,6 +129,7 @@ export function useRerAnalysisNeoPage(
     null,
   );
   const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
+  const [rerReportEnabled, setRerReportEnabled] = useState(false);
   const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
   const [showPelengDistanceToBattleline, setShowPelengDistanceToBattleline] = useState(false);
@@ -760,6 +761,12 @@ export function useRerAnalysisNeoPage(
         if (abortController.signal.aborted) return;
         setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
         setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
+        setRerReportEnabled(settings.rerReportEnabled);
+        if (!settings.rerReportEnabled) {
+          setQueryState((current) =>
+            current.onlyWithNetwork ? { ...current, onlyWithNetwork: false } : current,
+          );
+        }
         setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
         setShowPelengDistanceToBattleline(settings.showPelengDistanceToBattleline);
@@ -1313,6 +1320,7 @@ export function useRerAnalysisNeoPage(
     toggleReportTaskRunLogs: report.toggleReportTaskRunLogs,
     unitsExactMatchOnlyDefault,
     analysisAorFilterEnabled,
+    rerReportEnabled,
     supportNonRerInterceptions,
     cyberEchoEnabled: canUseDevices,
     updateReport: report.updateReport,

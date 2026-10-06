@@ -564,6 +564,7 @@ export type InboxMessagesReq = {
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
   withoutNetwork: boolean | null;
+  onlyWithNetwork: boolean | null;
   metadataCc: Array<string> | null;
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
@@ -795,6 +796,7 @@ export type AnalysisStatsReq = {
   tagPresence: TagPresenceFilter | null;
   selectedNetworks: Array<number> | null;
   withoutNetwork: boolean | null;
+  onlyWithNetwork: boolean | null;
   metadataCc: Array<string> | null;
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
@@ -4864,6 +4866,7 @@ export type SystemSettingsCurrentRsp = {
   rerDutyPollIntervalSec: number;
   rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
@@ -4904,6 +4907,7 @@ export type SystemSettingsItem = {
   updatedByLoginId: string | null;
   deleted: boolean;
   shortUrlEnabled: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
@@ -4947,6 +4951,7 @@ export type CreateSystemSettingsReq = {
   rerDutyPollIntervalSec: number;
   rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;

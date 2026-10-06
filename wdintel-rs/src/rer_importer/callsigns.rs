@@ -1905,6 +1905,7 @@ pub async fn callsigns_graph(
         selected_device_names: req.selected_device_names.clone(),
         selected_networks: req.selected_networks.clone(),
         without_network: req.without_network,
+        only_with_network: None,
         or_with_extended_form: req.or_with_extended_form,
         or_bookmarked: req.or_bookmarked,
         or_important: req.or_important,
