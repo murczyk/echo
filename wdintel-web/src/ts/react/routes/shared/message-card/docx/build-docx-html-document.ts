@@ -1,5 +1,18 @@
+import type { DocxPageSize } from './docx-preview.types';
+
+const TWIPS_PER_CSS_PIXEL = 15;
+
+function pageStyle(pageSize: DocxPageSize | null): string {
+  const width =
+    pageSize != null && pageSize.widthTwips > pageSize.heightTwips
+      ? `${(pageSize.widthTwips / TWIPS_PER_CSS_PIXEL).toFixed(2)}px`
+      : '860px';
+  return `width: min(${width}, 100%); min-height: calc(100vh - 70px);`;
+}
+
 export function buildDocxHtmlDocument(
   bodyHtml: string,
+  pageSize: DocxPageSize | null,
   zoom: number,
   colorScheme: 'light' | 'dark',
 ): string {
@@ -25,8 +38,6 @@ export function buildDocxHtmlDocument(
       }
       .docx-preview-page {
         box-sizing: border-box;
-        width: min(860px, 100%);
-        min-height: calc(100vh - 70px);
         margin: 0 auto;
         padding: 42px 48px;
         background: #fff;
@@ -48,6 +59,6 @@ export function buildDocxHtmlDocument(
       }
     </style>
   </head>
-  <body><main class="docx-preview-page">${bodyHtml}</main></body>
+  <body><main class="docx-preview-page" style="${pageStyle(pageSize)}">${bodyHtml}</main></body>
 </html>`;
 }
