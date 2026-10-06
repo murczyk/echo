@@ -18,6 +18,36 @@ fn settings_request(secret: Option<&str>) -> SaveAiGovUaSettingsReq {
     }
 }
 
+async fn read_http_body(stream: &mut tokio::net::TcpStream) -> Vec<u8> {
+    let mut request = Vec::new();
+    loop {
+        let mut chunk = [0; 4096];
+        let read = stream.read(&mut chunk).await.unwrap();
+        assert_ne!(read, 0);
+        request.extend_from_slice(&chunk[..read]);
+        let Some(end) = request
+            .windows(4)
+            .position(|chunk| chunk == b"\r\n\r\n")
+            .map(|end| end + 4)
+        else {
+            continue;
+        };
+        let headers = std::str::from_utf8(&request[..end]).unwrap();
+        let length: usize = headers
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+            .unwrap()
+            .1
+            .trim()
+            .parse()
+            .unwrap();
+        if request.len() >= end + length {
+            return request[end..end + length].to_vec();
+        }
+    }
+}
+
 async fn token_server() -> (Url, Arc<AtomicUsize>, tokio::task::JoinHandle<()>)
 {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
@@ -31,47 +61,14 @@ async fn token_server() -> (Url, Arc<AtomicUsize>, tokio::task::JoinHandle<()>)
     let task = tokio::spawn(async move {
         loop {
             let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = Vec::new();
-            loop {
-                let mut chunk = [0; 4096];
-                let read = stream.read(&mut chunk).await.unwrap();
-                assert_ne!(read, 0);
-                request.extend_from_slice(&chunk[..read]);
-                let Some(end) = request
-                    .windows(4)
-                    .position(|chunk| chunk == b"\r\n\r\n")
-                    .map(|end| end + 4)
-                else {
-                    continue;
-                };
-                let headers = std::str::from_utf8(&request[..end]).unwrap();
-                let length: usize = headers
-                    .lines()
-                    .filter_map(|line| line.split_once(':'))
-                    .find(|(name, _)| {
-                        name.eq_ignore_ascii_case("content-length")
-                    })
-                    .unwrap()
-                    .1
-                    .trim()
-                    .parse()
-                    .unwrap();
-                if request.len() < end + length {
-                    continue;
-                }
-                let form =
-                    url::form_urlencoded::parse(&request[end..end + length])
-                        .collect::<std::collections::HashMap<_, _>>();
-                assert_eq!(
-                    form.get("grant_type").unwrap(),
-                    "client_credentials"
-                );
-                assert!(matches!(
-                    form.get("client_secret").unwrap().as_ref(),
-                    "secret&first" | "secret-second"
-                ));
-                break;
-            }
+            let body = read_http_body(&mut stream).await;
+            let form = url::form_urlencoded::parse(&body)
+                .collect::<std::collections::HashMap<_, _>>();
+            assert_eq!(form.get("grant_type").unwrap(), "client_credentials");
+            assert!(matches!(
+                form.get("client_secret").unwrap().as_ref(),
+                "secret&first" | "secret-second"
+            ));
             let sequence = requests.fetch_add(1, Ordering::SeqCst) + 1;
             let body = json!({ "token_type": "Bearer", "expires_in": 3600, "access_token": format!("token-{sequence}") }).to_string();
             stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
@@ -95,8 +92,7 @@ async fn rejecting_server(
     let task = tokio::spawn(async move {
         loop {
             let (mut stream, _) = listener.accept().await.unwrap();
-            let mut bytes = [0; 4096];
-            stream.read(&mut bytes).await.unwrap();
+            read_http_body(&mut stream).await;
             requests.fetch_add(1, Ordering::SeqCst);
             stream.write_all(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
         }
@@ -115,8 +111,7 @@ async fn interrupted_stream_server() -> (Url, tokio::task::JoinHandle<()>) {
     .unwrap();
     let task = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        let mut bytes = [0; 4096];
-        stream.read(&mut bytes).await.unwrap();
+        read_http_body(&mut stream).await;
         stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 1000\r\nConnection: close\r\n\r\ndata: {\"choices\":[]}\n\n").await.unwrap();
     });
     (endpoint, task)
