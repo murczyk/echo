@@ -519,7 +519,7 @@ body _ deltaLoginFlag sharedToasts model =
                     [ class "logo-coin-trigger d-flex justify-content-center align-items-center"
                     , style "gap" "5px"
                     ]
-                    [ div
+                    [ node "echo-logo-coin"
                         [ class "logo-coin logo-coin--auto d-flex align-items-center justify-content-center"
                         , style "width" "60px"
                         , style "height" "60px"

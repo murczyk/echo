@@ -20,6 +20,7 @@ import { fetchUserSettings, USER_SETTINGS_UPDATED_EVENT } from '../../services/a
 import { canReadDevices, canUseRadioFeatures, hasRole, hasRerOrCyber } from '../../utils/roles';
 import { shouldHandleAsSpaClick } from '../../utils/browser';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../../routes/ai-agent-chat/conversation-url';
+import { mountLogoCoin } from '../../../logo-coin';
 
 function filterTranscriptionSettings(items: Menu[], enabled: boolean): Menu[] {
   return items.flatMap<Menu>((item): Menu[] => {
@@ -142,6 +143,13 @@ export function AppNavbar({
     shared?.systemSettings ? shared.systemSettings.devicesSectionEnabled : null,
   );
   const navbarRef = useRef<HTMLElement>(null);
+  const logoCoinRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const logoCoin = logoCoinRef.current;
+    if (!logoCoin) return;
+    return mountLogoCoin(logoCoin);
+  }, []);
 
   useEffect(() => {
     if (shared?.systemSettings) {
@@ -517,7 +525,7 @@ export function AppNavbar({
                 handleInternalLinkClick(e, '/');
               }}
             >
-              <div className="logo-coin relative h-7 w-8">
+              <div ref={logoCoinRef} className="logo-coin relative h-7 w-8">
                 <div className="logo-coin__idle">
                   <div className="logo-coin__disc">
                     <div

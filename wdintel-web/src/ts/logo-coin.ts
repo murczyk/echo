@@ -108,6 +108,15 @@ function registerCoin(coin: HTMLElement): LogoCoinController | undefined {
   return controller;
 }
 
+export function mountLogoCoin(coin: HTMLElement): () => void {
+  const controller = registerCoin(coin);
+  return () => {
+    if (controllers.get(coin) !== controller) return;
+    controller?.dispose();
+    controllers.delete(coin);
+  };
+}
+
 function controllerFromTrigger(trigger: HTMLElement): LogoCoinController | undefined {
   const coin = trigger.querySelector<HTMLElement>('.logo-coin');
   return coin ? registerCoin(coin) : undefined;
@@ -123,22 +132,17 @@ function triggerAtBoundary(event: MouseEvent | FocusEvent): HTMLElement | undefi
   return trigger;
 }
 
-function registerTree(node: Node) {
-  if (!(node instanceof Element)) return;
-  if (node.matches('.logo-coin')) registerCoin(node as HTMLElement);
-  node.querySelectorAll<HTMLElement>('.logo-coin').forEach(registerCoin);
-}
+class LogoCoinElement extends HTMLElement {
+  private unmountLogoCoin: (() => void) | undefined;
 
-function disposeTree(node: Node) {
-  if (!(node instanceof Element)) return;
+  connectedCallback() {
+    this.unmountLogoCoin = mountLogoCoin(this);
+  }
 
-  const coins = node.matches('.logo-coin')
-    ? [node as HTMLElement]
-    : Array.from(node.querySelectorAll<HTMLElement>('.logo-coin'));
-  coins.forEach((coin) => {
-    controllers.get(coin)?.dispose();
-    controllers.delete(coin);
-  });
+  disconnectedCallback() {
+    this.unmountLogoCoin?.();
+    this.unmountLogoCoin = undefined;
+  }
 }
 
 function initializeLogoCoins() {
@@ -160,14 +164,10 @@ function initializeLogoCoins() {
     const trigger = triggerAtBoundary(event);
     if (trigger) controllerFromTrigger(trigger)?.setFocused(false);
   });
+}
 
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      mutation.removedNodes.forEach(disposeTree);
-      mutation.addedNodes.forEach(registerTree);
-    }
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+if (!customElements.get('echo-logo-coin')) {
+  customElements.define('echo-logo-coin', LogoCoinElement);
 }
 
 initializeLogoCoins();
