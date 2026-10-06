@@ -43,6 +43,7 @@ type Props = {
   aorOptions: DeviceLookupOption[];
   unitOptions: DeviceLookupOption[];
   hasChanges?: boolean;
+  nameRequired?: boolean;
   onClose: () => void;
   onChange: (form: DeviceUpsertForm | null) => void;
   onSave: (form: DeviceUpsertForm) => void;
@@ -75,6 +76,7 @@ export function DeviceUpsertDrawer({
   aorOptions,
   unitOptions,
   hasChanges = true,
+  nameRequired = true,
   onClose,
   onChange,
   onSave,
@@ -84,8 +86,8 @@ export function DeviceUpsertDrawer({
   const [submitted, setSubmitted] = useState(false);
   const [touched, setTouched] = useState<Partial<Record<TouchedField, true>>>({});
   const validation = useMemo(
-    () => validateDeviceUpsertForm(form, fieldPermissions),
-    [fieldPermissions, form],
+    () => validateDeviceUpsertForm(form, fieldPermissions, nameRequired),
+    [fieldPermissions, form, nameRequired],
   );
   const formBlocked =
     saving || (mode === 'edit' && fieldPermissions.analyticalData && referenceLoading);
@@ -235,7 +237,7 @@ export function DeviceUpsertDrawer({
                 <>
                   <TextField
                     label="Назва"
-                    required
+                    required={nameRequired}
                     value={form.name}
                     onChange={(event) => patchForm({ name: event.target.value })}
                     onBlur={() => setTouched((current) => ({ ...current, name: true }))}
@@ -244,7 +246,10 @@ export function DeviceUpsertDrawer({
                     size="small"
                     inputProps={{ maxLength: DEVICE_NAME_MAX_CHARS }}
                     error={fieldError('name') !== undefined}
-                    helperText={fieldError('name') ?? 'Обов’язкова назва пристрою.'}
+                    helperText={
+                      fieldError('name') ??
+                      (nameRequired ? 'Обов’язкова назва пристрою.' : undefined)
+                    }
                   />
 
                   {mode === 'edit' ? (

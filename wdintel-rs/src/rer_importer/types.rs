@@ -246,6 +246,8 @@ pub struct MessageMediaInfo {
     pub summary: Option<crate::media_summary::types::MediaSummaryStatus>,
     #[serde(default)]
     pub kmz_conversion_status: Option<String>,
+    #[serde(default)]
+    pub positions: Vec<crate::rer_importer::highlight::CNPosition>,
 }
 
 #[derive(

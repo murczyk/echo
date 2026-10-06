@@ -1545,6 +1545,12 @@ pub async fn oneoff_reprocess_callsigns(
     let (mut start_dt, end_dt) = parse_reprocess_period(&ps.start, &ps.end)?;
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let rq = reqwest::Client::new();
+    let config = crate::config::read_config(mode).c(h!())?;
+    let ai_client = crate::ai_engine::AiEngineClient::new(
+        dbx.clone(),
+        config.totp_strongbox_key,
+    )
+    .c(h!())?;
     let ai = crate::ai_callsign::worker::load_worker_config(&dbx).await?;
     print_reprocess_banner(ai.as_ref(), start_dt, end_dt);
 
@@ -1572,6 +1578,7 @@ pub async fn oneoff_reprocess_callsigns(
                 .cloned()
                 .unwrap_or_default();
             let Some(recomputed) = recompute_inbox_item_callsigns(
+                &ai_client,
                 &dbx,
                 &rq,
                 &inbox_item,
@@ -1700,6 +1707,7 @@ where
 }
 
 pub(crate) async fn recompute_inbox_item_callsigns<C>(
+    ai_client: &crate::ai_engine::AiEngineClient,
     dbx: &C,
     rq: &reqwest::Client,
     inbox_item: &sigint_inbox_item::Model,
@@ -1720,10 +1728,16 @@ where
         crate::inbox::message_is_aviation_group(dbx, message)
             .await
             .c(h!())?;
-    let after =
-        parse_reprocess_callsigns(dbx, rq, &body, is_aviation_group, ai)
-            .await
-            .c(h!())?;
+    let after = parse_reprocess_callsigns(
+        ai_client,
+        dbx,
+        rq,
+        &body,
+        is_aviation_group,
+        ai,
+    )
+    .await
+    .c(h!())?;
     let after = crate::ai_callsign::feedback::apply_overrides(
         dbx,
         inbox_item.id,
@@ -1747,6 +1761,7 @@ where
 }
 
 async fn parse_reprocess_callsigns<C: ConnectionTrait>(
+    ai_client: &crate::ai_engine::AiEngineClient,
     db: &C,
     rq: &reqwest::Client,
     body: &str,
@@ -1755,6 +1770,7 @@ async fn parse_reprocess_callsigns<C: ConnectionTrait>(
 ) -> anyhow::Result<Vec<String>> {
     match ai {
         Some(ai) => crate::ai_callsign::parse_with_feedback(
+            ai_client,
             db,
             rq,
             &ai.ai_engine,

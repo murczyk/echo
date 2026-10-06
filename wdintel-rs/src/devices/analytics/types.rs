@@ -604,6 +604,7 @@ pub struct DeviceAnalyticsSummaryItem {
 #[serde(deny_unknown_fields)]
 pub struct DeviceAnalyticsSummaryRsp {
     pub total_file_count: u64,
+    pub files_with_content_count: u64,
     pub analyzed_file_count: u64,
     pub items: Vec<DeviceAnalyticsSummaryItem>,
 }
@@ -709,6 +710,7 @@ pub(in crate::devices) struct DeviceAnalyticsSummary {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::devices) struct DeviceAnalyticsProgress {
     pub total_file_count: u64,
+    pub files_with_content_count: u64,
     pub analyzed_file_count: u64,
     pub items: Vec<DeviceAnalyticsSummary>,
 }

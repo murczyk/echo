@@ -34,19 +34,22 @@ it('blurs the launcher before opening the drawer', async () => {
 });
 
 // Regression: https://github.com/echoua/echo/issues/3569
-it.each([['CyberViewer'], ['CyberViewer', 'Cyber'], ['CyberViewer', 'Admin']])(
-  'applies message creation permissions for %j',
-  async (...roles) => {
-    const container = document.createElement('div');
-    const root = createRoot(container);
-    await act(async () =>
-      root.render(
-        <MessageWriteAccessContext.Provider value={canWriteMessages(roles)}>
-          <CreateMessageFab onClick={vi.fn()} />
-        </MessageWriteAccessContext.Provider>,
-      ),
-    );
-    expect(container.querySelector('button') != null).toBe(roles.length > 1);
-    await act(async () => root.unmount());
-  },
-);
+it.each([
+  { roles: ['Basic'], allowed: false },
+  { roles: ['Cyber'], allowed: true },
+  { roles: ['Admin'], allowed: true },
+  { roles: ['Basic', 'Cyber'], allowed: true },
+  { roles: ['Basic', 'Admin'], allowed: true },
+])('applies message creation permissions for %j', async ({ roles, allowed }) => {
+  const container = document.createElement('div');
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      <MessageWriteAccessContext.Provider value={canWriteMessages(roles)}>
+        <CreateMessageFab onClick={vi.fn()} />
+      </MessageWriteAccessContext.Provider>,
+    ),
+  );
+  expect(container.querySelector('button') != null).toBe(allowed);
+  await act(async () => root.unmount());
+});

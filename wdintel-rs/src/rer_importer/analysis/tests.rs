@@ -9548,12 +9548,8 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
         Some(destructive_device.id)
     );
 
-    set_login_roles(
-        &fixture.env.dbx,
-        login_id,
-        serde_json::json!(["Rer", "DeviceSource"]),
-    )
-    .await;
+    set_login_roles(&fixture.env.dbx, login_id, serde_json::json!(["Rer"]))
+        .await;
     assert_eq!(
         call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
             .await

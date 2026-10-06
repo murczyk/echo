@@ -243,10 +243,11 @@ mod tests {
     use crate::entities::{
         ai_position_coordinate, ai_position_knowledge, ai_position_mention,
         signal_group, signal_message, signal_message_group,
+        signal_message_media,
     };
     use sea_orm::{
         ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
-        QueryFilter,
+        IntoActiveModel, QueryFilter,
     };
 
     fn request(
@@ -293,6 +294,108 @@ mod tests {
         assert_eq!(second_page.items.len(), 1);
         assert_ne!(first_page.items[0].id, second_page.items[0].id);
         assert!(second_page.next_cursor.is_none());
+    }
+
+    async fn assert_last_known_body_and_document_positions_3676(
+        dbx: &sea_orm::DatabaseConnection,
+        mention_ids: &[uuid::Uuid],
+        message_refs: &[(i64, uuid::Uuid)],
+        known: ai_position_knowledge::Model,
+    ) {
+        let fact_at = known.last_fact_at - chrono::Duration::days(60);
+        let allowed = known.source_group_keys.iter().cloned().collect();
+        let mut known = known.into_active_model();
+        known.first_fact_at = Set(fact_at);
+        known.last_fact_at = Set(fact_at);
+        known.update(dbx).await.unwrap();
+        ai_position_mention::Entity::update_many()
+            .col_expr(
+                ai_position_mention::Column::MessageAt,
+                sea_orm::sea_query::Expr::value(fact_at),
+            )
+            .filter(ai_position_mention::Column::Id.eq(mention_ids[0]))
+            .exec(dbx)
+            .await
+            .unwrap();
+        ai_position_coordinate::Entity::update_many()
+            .col_expr(
+                ai_position_coordinate::Column::MessageAt,
+                sea_orm::sea_query::Expr::value(fact_at),
+            )
+            .filter(
+                ai_position_coordinate::Column::MentionId.eq(mention_ids[0]),
+            )
+            .exec(dbx)
+            .await
+            .unwrap();
+        let spans = crate::ai_position::list::positions_by_message(
+            dbx,
+            vec![message_refs[1].0],
+            &allowed,
+        )
+        .await
+        .unwrap();
+        let position = &spans[&message_refs[1].0][0];
+        assert_eq!(position.known_mgrs.as_deref(), Some("36TXT7573468963"));
+        assert_eq!(
+            position.known_at,
+            Some(fact_at.and_utc().timestamp_millis())
+        );
+        assert_eq!(
+            position.coordinate_sources[0].message_uuid,
+            message_refs[0].1.to_string()
+        );
+
+        let mut media_ids = Vec::new();
+        for index in [1, 2] {
+            let media = signal_message_media::ActiveModel {
+                id: Set(uuid::Uuid::now_v7()),
+                signal_message_id: Set(message_refs[index].0),
+                content_type: Set("application/pdf".to_string()),
+                size_bytes: Set(1),
+                created_at: Set(chrono::Utc::now().naive_utc()),
+                is_encrypted: Set(false),
+                ..Default::default()
+            }
+            .insert(dbx)
+            .await
+            .unwrap();
+            let mention =
+                ai_position_mention::Entity::find_by_id(mention_ids[index])
+                    .one(dbx)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            let mut mention = mention.into_active_model();
+            mention.id = sea_orm::ActiveValue::NotSet;
+            mention.sigint_inbox_item_id = Set(None);
+            mention.media_id = Set(Some(media.id));
+            mention.insert(dbx).await.unwrap();
+            media_ids.push(media.id);
+        }
+        let positions = crate::ai_position::list::positions_by_media(
+            dbx,
+            media_ids.clone(),
+            &allowed,
+        )
+        .await
+        .unwrap();
+        assert!(!positions.contains_key(&media_ids[1]));
+        let position = &positions[&media_ids[0]][0];
+        assert_eq!(position.text, "Циркон 9");
+        assert_eq!(position.known_mgrs.as_deref(), Some("36TXT7573468963"));
+        assert_eq!(
+            position.coordinate_sources[0].message_uuid,
+            message_refs[0].1.to_string()
+        );
+        assert!(crate::ai_position::list::positions_by_media(
+            dbx,
+            media_ids,
+            &Default::default()
+        )
+        .await
+        .unwrap()
+        .is_empty());
     }
 
     #[tokio::test]
@@ -463,6 +566,13 @@ mod tests {
                 && hidden.located.is_empty()
                 && hidden.other.is_empty()
         );
+        assert_last_known_body_and_document_positions_3676(
+            &env.dbx,
+            &mention_ids,
+            &message_refs,
+            known,
+        )
+        .await;
         let far = lookup(
             &env,
             request(None, Some("37U CQ 11111 22222")),

@@ -383,6 +383,51 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     expect(latestState?.freqCallsignsStatus).toBe('success');
   });
 
+  it('hydrates active frequency callsigns before loading inactive frequencies', async () => {
+    const activeBatch = createDeferred<Map<number, string[]>>();
+    const inactiveBatch = createDeferred<Map<number, string[]>>();
+    apiMock.getSingleNetworkFreqs.mockResolvedValueOnce({
+      freqs: [
+        buildFreq({ networkFreqId: 8, freq: '40.0000', isActive: false }),
+        buildFreq({ networkFreqId: 7, freq: '30.0000', isActive: true }),
+      ],
+    });
+    apiMock.getNetworkFreqsActivity.mockResolvedValueOnce({ 7: {}, 8: {} });
+    apiMock.getNetworkFreqCallsignsBatch
+      .mockReturnValueOnce(activeBatch.promise)
+      .mockReturnValueOnce(inactiveBatch.promise);
+
+    renderHarness({
+      ...EMPTY_STATE,
+      network: buildNetwork(),
+    });
+
+    await act(async () => {
+      await latestActions?.loadFrequencies(1);
+    });
+
+    expect(apiMock.getNetworkFreqCallsignsBatch).toHaveBeenCalledTimes(1);
+    expect(apiMock.getNetworkFreqCallsignsBatch).toHaveBeenNthCalledWith(1, [7], 'Last21Days');
+
+    await act(async () => {
+      activeBatch.resolve(new Map([[7, ['ALPHA']]]));
+      await Promise.resolve();
+    });
+
+    expect(latestState?.freqCallsignsById.get(7)).toEqual(['ALPHA']);
+    expect(latestState?.freqCallsignsById.has(8)).toBe(false);
+    expect(latestState?.freqCallsignsStatus).toBe('loading');
+    expect(apiMock.getNetworkFreqCallsignsBatch).toHaveBeenNthCalledWith(2, [8], 'Last21Days');
+
+    await act(async () => {
+      inactiveBatch.resolve(new Map([[8, ['BRAVO']]]));
+      await Promise.resolve();
+    });
+
+    expect(latestState?.freqCallsignsById.get(8)).toEqual(['BRAVO']);
+    expect(latestState?.freqCallsignsStatus).toBe('success');
+  });
+
   it('replaces a frequency row in place when editing metadata', async () => {
     apiMock.updateNetworkFreqV2.mockResolvedValueOnce({
       network: buildNetwork(),

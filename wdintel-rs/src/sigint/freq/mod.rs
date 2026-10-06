@@ -703,7 +703,7 @@ pub async fn list_freqs(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", "Cyber", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
@@ -1067,7 +1067,7 @@ pub async fn list_freqs_v2(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", "Cyber", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
@@ -1758,7 +1758,7 @@ pub async fn list_freqs_for_period(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", "Cyber", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
@@ -1810,7 +1810,7 @@ pub async fn freq_search(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer"],
+        vec!["Rer", "Cyber"],
     )
     .await
     .c(h!())?;

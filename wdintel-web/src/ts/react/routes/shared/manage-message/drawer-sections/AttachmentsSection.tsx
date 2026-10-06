@@ -320,6 +320,7 @@ export function AttachmentsSection({
           ocr: null,
           summary: null,
           kmzConversionStatus: null,
+          positions: [],
           href: previewUrl,
         });
         if (docKind !== 'unsupported') {

@@ -139,6 +139,13 @@ async fn new_env_with_initialization(
         mode,
     )
     .await;
+    let device_audio = crate::devices::audio::build_runtime(
+        &config,
+        &dbx,
+        file_registry_db.as_ref(),
+        s3.as_ref(),
+        metrics.clone(),
+    );
     let mut replicas = vec![];
     if let Some(replica_configs) = config.replicas.clone() {
         for replica in replica_configs {
@@ -220,7 +227,15 @@ async fn new_env_with_initialization(
         }
     };
 
+    let ai_engine_client = Arc::new(
+        crate::ai_engine::AiEngineClient::new(
+            dbx.clone(),
+            config.totp_strongbox_key.clone(),
+        )
+        .c(h!())?,
+    );
     let env = Env {
+        ai_engine_client,
         mode,
         redis: redis.clone(),
         stats_redis,
@@ -236,6 +251,7 @@ async fn new_env_with_initialization(
         )),
         echo_gpu_client,
         file_registry_db,
+        device_audio,
         device_file_content,
         rq,
         rq_goi_associations,
@@ -875,6 +891,15 @@ fn spawn_background_workers(
         .await;
     });
     if env.file_registry_db.is_some() {
+        let audio_cleanup_runtime = env.device_audio.clone();
+        let audio_cleanup_cancellation = cancel_token.clone();
+        spawn_named_worker("device_audio_cleanup", bg_set, async move {
+            crate::devices::audio::run_cleanup_nofail(
+                audio_cleanup_runtime,
+                audio_cleanup_cancellation,
+            )
+            .await;
+        });
         spawn_device_file_analytics_worker_pool(
             bg_set,
             env.clone(),
@@ -991,6 +1016,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::latest_senders)
             .service(crate::rer_importer::senders)
             .service(crate::rer_importer::list_messages)
+            .service(crate::rer_importer::import_csv::rer_csv_import_options)
             .service(
                 crate::rer_importer::import_csv::rer_csv_import_preflight,
             )
@@ -1090,6 +1116,10 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::system_settings::create_system_settings)
             .service(crate::system_settings::activate_system_settings)
             .service(crate::system_settings::rer_duty_test_replay_status)
+            .service(crate::ai_engine::gov::get_settings)
+            .service(crate::ai_engine::gov::save_settings)
+            .service(crate::ai_engine::gov::list_models)
+            .service(crate::ai_engine::gov::check_models)
             .service(crate::ai_engine::list_ai_engines)
             .service(crate::ai_engine::get_ai_engine)
             .service(crate::ai_engine::create_ai_engine)
@@ -1229,6 +1259,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::file_upload::tus_base)
             .service(crate::sigint::file_upload::tus_file)
             .service(crate::sigint::file_upload::fallback_upload)
+            .service(crate::devices::audio::upload_routes())
+            .service(crate::devices::audio::routes())
             .service(crate::sigint::device_name::device_name_create)
             .service(crate::sigint::device_name::device_name_search)
             .service(crate::sigint::device_name::device_name_resolve)

@@ -71,6 +71,7 @@
 - The main issue dashboard is https://github.com/orgs/echoua/projects/1/views/1.
 - When asking the user for a ticket number, if `gh` is installed and authenticated, search the project's `Ready` column for relevant issues and suggest existing options with their numbers and links.
 - Also suggest creating a new issue. If the user chooses this option, create the issue, add it to the project, and set its status to `In Progress`.
+- Whenever creating a new issue, self-assign it to the authenticated GitHub user (`gh issue create --assignee @me`).
 - Ensure the selected or newly created issue belongs to the project. Suggest labels (tags) based on similar recent issues in `Done`, `Testing`, and `Ready` from the current user and other users.
 
 ## Changelog

@@ -833,12 +833,7 @@ mod tests {
             history_count
         );
 
-        set_roles(
-            &env.dbx,
-            login_id,
-            serde_json::json!(["Rer", "DeviceSource"]),
-        )
-        .await;
+        set_roles(&env.dbx, login_id, serde_json::json!(["Rer"])).await;
         assert_eq!(
             launch(report_request(None, Some(vec!["ECHO-3461".to_string()])))
                 .await

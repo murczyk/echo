@@ -185,7 +185,9 @@ export function useDeviceDetailsPage({
   const saveEditDevice = useCallback(
     async (form: DeviceUpsertForm): Promise<boolean> => {
       if (!permissions.canEdit || !device || device.archived || editSubmitting) return false;
-      if (validateDeviceUpsertForm(form, permissions.fieldPermissions) !== null) {
+      if (
+        validateDeviceUpsertForm(form, permissions.fieldPermissions, device.name !== null) !== null
+      ) {
         setEditError('Перевірте поля форми.');
         return false;
       }

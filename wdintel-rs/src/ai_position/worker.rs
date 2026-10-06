@@ -170,13 +170,16 @@ pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
             break;
         }
         let _loop_guard = worker_watch::loop_guard("ai_position_worker");
-        let processed = match process_next(&env.dbx, &mut redis).await {
-            Ok(processed) => processed,
-            Err(error) => {
-                error!("ai_position_worker failed: {error:#?}");
-                false
-            }
-        };
+        let processed =
+            match process_next(&env.ai_engine_client, &env.dbx, &mut redis)
+                .await
+            {
+                Ok(processed) => processed,
+                Err(error) => {
+                    error!("ai_position_worker failed: {error:#?}");
+                    false
+                }
+            };
         let recomputed =
             match knowledge::process_next(&env.dbx, &mut redis).await {
                 Ok(recomputed) => recomputed,
@@ -246,6 +249,7 @@ pub(super) const SOURCE_GROUP_COLUMNS: &str = "
     ), '{}') as aor_ids";
 
 async fn process_next(
+    ai_client: &crate::ai_engine::AiEngineClient,
     dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
 ) -> anyhow::Result<bool> {
@@ -261,6 +265,7 @@ async fn process_next(
         return Ok(true);
     };
     let extraction = match extract(
+        ai_client,
         &config.ai_engine,
         &config.prompt,
         &source.text,
@@ -890,10 +895,15 @@ pub(crate) async fn extract_attachment_chunk(
         .to_string(),
         ai_engine: engine,
     };
-    let extraction =
-        extract(&config.ai_engine, &config.prompt, &source.text, &[])
-            .await
-            .c(h!())?;
+    let extraction = extract(
+        &env.ai_engine_client,
+        &config.ai_engine,
+        &config.prompt,
+        &source.text,
+        &[],
+    )
+    .await
+    .c(h!())?;
     let tx = env.dbx.begin().await.c(h!())?;
     crate::attachments::store::execute(&tx,"select 1 from signal_message_group where signal_message_id=$1 for share",vec![source.message_id.into()]).await.c(h!())?;
     let current = crate::attachments::store::rows::<Source, _>(

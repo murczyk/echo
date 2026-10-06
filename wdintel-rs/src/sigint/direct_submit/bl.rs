@@ -2862,7 +2862,7 @@ mod tests {
         let ordinary_upload = tus
             .resolve_completed_uploads(
                 &login_id,
-                &[ordinary_upload_url.clone()],
+                std::slice::from_ref(&ordinary_upload_url),
             )
             .await
             .unwrap()
@@ -2871,7 +2871,7 @@ mod tests {
         let replacement_upload = tus
             .resolve_completed_uploads(
                 &login_id,
-                &[replacement_upload_url.clone()],
+                std::slice::from_ref(&replacement_upload_url),
             )
             .await
             .unwrap()

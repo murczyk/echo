@@ -7743,7 +7743,7 @@ async fn freq_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<FreqStatsRsp>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "Api"])
         .await
         .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
@@ -9826,7 +9826,7 @@ async fn freq_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "Api"])
         .await
         .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)

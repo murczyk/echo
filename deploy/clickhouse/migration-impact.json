@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20261006_075657_ai_gov_ua_settings": {
+      "changes": [
+        { "table": "public.ai_gov_ua_settings", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261005_044401_messenger_media_cache_settings": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_additive" }
@@ -702,6 +707,7 @@
         { "table": "public.ai_position_feedback", "strategy": "excluded" }
       ]
     },
+    "echo:m20261006_110425_merge_cyber_roles": { "changes": [] },
     "echo:m20261005_050621_attachment_documents": {
       "changes": [
         { "table": "public.attachment_settings", "strategy": "excluded" },
@@ -713,6 +719,7 @@
     }
   },
   "dependencies": {
+    "echo-im:80589feab5a9afbe6e474f76b39cc563506c9262": { "changes": [] },
     "echo-im:f9b21242397b9cb04c9c98213f1c5217f1f1e273": {
       "changes": [
         {

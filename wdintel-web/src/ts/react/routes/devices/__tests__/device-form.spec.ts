@@ -34,7 +34,7 @@ function buildDevice(overrides: Partial<DeviceDetails> = {}): DeviceDetails {
 }
 
 describe('device form helpers', () => {
-  it('omits analytical fields from Cyber create requests', () => {
+  it('omits analytical fields from create requests without analytical permission', () => {
     const form = createDefaultDeviceUpsertForm();
     form.name = 'Device Beta';
     form.externalUrl = 'https://example.test/beta';

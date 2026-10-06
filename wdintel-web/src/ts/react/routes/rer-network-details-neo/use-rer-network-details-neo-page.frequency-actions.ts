@@ -134,6 +134,12 @@ function buildFreqCallsignsStatusPatch(
   };
 }
 
+function buildFreqCallsignBatches(freqs: NetworkFreqsRes[]): number[][] {
+  const activeIds = freqs.filter((freq) => freq.isActive).map((freq) => freq.networkFreqId);
+  const inactiveIds = freqs.filter((freq) => !freq.isActive).map((freq) => freq.networkFreqId);
+  return [activeIds, inactiveIds].filter((networkFreqIds) => networkFreqIds.length > 0);
+}
+
 export function useRerNetworkDetailsNeoPageFrequencyActions({
   state,
   setState,
@@ -228,9 +234,9 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
         currentNetworkIdRef.current === networkId &&
         freqCallsignsBatchRequestIdRef.current === requestId;
 
-      const networkFreqIds = freqs.map((freq) => freq.networkFreqId);
+      const networkFreqIdBatches = buildFreqCallsignBatches(freqs);
 
-      if (networkFreqIds.length === 0) {
+      if (networkFreqIdBatches.length === 0) {
         if (!isCurrent()) return;
         setState((current) => ({
           ...current,
@@ -245,12 +251,19 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
       }));
 
       try {
-        const callsignsById = await getNetworkFreqCallsignsBatch(networkFreqIds, period);
+        for (const networkFreqIds of networkFreqIdBatches) {
+          const callsignsById = await getNetworkFreqCallsignsBatch(networkFreqIds, period);
+          if (!isCurrent()) return;
+
+          setState((current) => ({
+            ...current,
+            freqCallsignsById: new Map([...callsignsById, ...current.freqCallsignsById]),
+          }));
+        }
         if (!isCurrent()) return;
 
         setState((current) => ({
           ...current,
-          freqCallsignsById: new Map([...callsignsById, ...current.freqCallsignsById]),
           freqCallsignsStatus: 'success',
         }));
       } catch (error) {

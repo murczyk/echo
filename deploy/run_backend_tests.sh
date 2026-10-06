@@ -97,6 +97,6 @@ done
 
 # Run backend tests
 echo "Running backend tests..."
-TEST_DB_NAME="$TEST_DB_NAME" TEST_WDFILE_DB_NAME="$TEST_WDFILE_DB_NAME" just test-be
+bash "$SCRIPT_DIR/ci/with_test_storage.sh" just test-be
 
 echo "Backend tests completed successfully!"
