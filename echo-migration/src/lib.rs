@@ -453,6 +453,7 @@ mod m20261003_111926_ai_position_kind;
 mod m20261004_175803_signal_message_media_created_at_index;
 mod m20261005_044401_messenger_media_cache_settings;
 mod m20261005_050621_attachment_documents;
+mod m20261006_075657_ai_gov_ua_settings;
 
 pub struct Migrator;
 
@@ -1078,6 +1079,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261004_175803_signal_message_media_created_at_index::Migration),
             Box::new(m20261005_044401_messenger_media_cache_settings::Migration),
             Box::new(m20261005_050621_attachment_documents::Migration),
+            Box::new(m20261006_075657_ai_gov_ua_settings::Migration),
         ]
     }
 }

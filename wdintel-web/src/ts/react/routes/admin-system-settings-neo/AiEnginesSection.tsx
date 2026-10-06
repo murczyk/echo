@@ -15,6 +15,7 @@ import { PowerButton } from '../../components/PowerButton';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { deleteAiEngine, getAiEngine, listAiEngines } from '../../services/api/ai-engines';
+import { AiGovUaSettings } from './AiGovUaSettings';
 import { AiEngineDetails } from './AiEngineDetails';
 import { AiEngineEditor } from './AiEngineEditor';
 import { AiEnginesTable, type AiEngineCompatibilityResolver } from './AiEnginesTable';
@@ -185,6 +186,7 @@ export function AiEnginesSection({
     <Stack spacing={2}>
       {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
 
+      {screen.kind === 'list' ? <AiGovUaSettings /> : null}
       {screen.kind === 'list' ? (
         <AiEnginesTable
           aiEngines={aiEngines}

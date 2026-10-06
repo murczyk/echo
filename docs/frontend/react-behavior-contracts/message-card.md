@@ -136,6 +136,13 @@
 - **API endpoint and compatibility requirements:** document coordinate summaries retain title, description, planned means, and supported coordinate-system mapping.
 - **Responsive and keyboard requirements:** none at the parser boundary.
 - **Known race/idempotency constraints:** a failed document lookup must not overwrite already resolved coordinates.
+
+Named positions in message text and recognized document positions join this map
+with their names, source dates and accessible supporting messages (#3676).
+Hovering or focusing a located text position opens the shared overview/detail
+preview; clicking or pressing Enter/Space opens the full message map focused on
+that point. Positions without parseable coordinates remain textual. Regression:
+`wdintel-web/tests/e2e/message-card-media-preview.spec.ts`.
 - **Source implementation:** `message-coordinate-preview.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-coordinate-preview.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational coordinate parser coverage.

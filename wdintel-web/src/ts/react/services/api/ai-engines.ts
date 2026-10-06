@@ -1,4 +1,7 @@
 import type {
+  AiGovUaSettingsRsp,
+  AiGovUaModelsRsp,
+  SaveAiGovUaSettingsReq,
   AiChatDetail,
   AiChatGetReq,
   AiChatListReq,
@@ -47,4 +50,17 @@ export async function getAiChat(aiEngineId: string, chatId: string): Promise<AiC
 
 export async function sendAiChatMessage(req: SendAiChatMessageReq): Promise<AiChatDetail> {
   return postJson<AiChatDetail>('/api/admin/ai-engines/chats/send', req);
+}
+
+export function getAiGovUaSettings(): Promise<AiGovUaSettingsRsp> {
+  return postJson<AiGovUaSettingsRsp>('/api/admin/ai-engines/gov/settings');
+}
+
+export function saveAiGovUaSettings(req: SaveAiGovUaSettingsReq): Promise<AiGovUaSettingsRsp> {
+  return postJson<AiGovUaSettingsRsp>('/api/admin/ai-engines/gov/save', req);
+}
+
+export async function listAiGovUaModels(req: SaveAiGovUaSettingsReq): Promise<string[]> {
+  const response = await postJson<AiGovUaModelsRsp>('/api/admin/ai-engines/gov/check', req);
+  return response.models;
 }

@@ -188,6 +188,7 @@ struct Evidence {
 }
 
 pub(crate) async fn refine<C: ConnectionTrait>(
+    ai_client: &crate::ai_engine::AiEngineClient,
     db: &C,
     engine: &ai_engine::Model,
     prompt: &str,
@@ -220,6 +221,7 @@ pub(crate) async fn refine<C: ConnectionTrait>(
         }
     };
     let response = crate::ai_engine::request_ai_response(
+        ai_client,
         engine,
         vec![
             crate::ai_engine::AiEngineMessage {

@@ -383,6 +383,16 @@ export type RerCsvPreflightMetadata = {
   invalidMessageSize: number;
 };
 
+export type RerCsvImportSignalGroup = {
+  masterKey: string;
+  name: string;
+};
+
+export type RerCsvImportOptions = {
+  signalGroups: Array<RerCsvImportSignalGroup>;
+  defaultTargetSignalGroupMasterKey: string | null;
+};
+
 export type AreaOfResponsibilityEntry = {
   id: number;
   name: string;
@@ -2757,6 +2767,7 @@ export type MessageMediaInfo = {
   ocr: OcrMediaSummary | null;
   summary: MediaSummaryStatus | null;
   kmzConversionStatus: string | null;
+  positions: Array<CnPosition>;
 };
 
 export type SignalMediaKmzConversionStatusRsp = {
@@ -4901,6 +4912,28 @@ export type RerDutyTestReplayStatusRsp = {
   nextSourcePosition: number | null;
   generatedCount: number;
   nextEmitAtMs: number | null;
+};
+
+export type AiGovUaSettingsRsp = {
+  enabled: boolean;
+  tenantId: string;
+  clientId: string;
+  scope: string;
+  hasClientSecret: boolean;
+  updatedAt: number;
+};
+
+export type SaveAiGovUaSettingsReq = {
+  enabled: boolean;
+  tenantId: string;
+  clientId: string;
+  scope: string;
+  clientSecret: string | null;
+  clearClientSecret: boolean;
+};
+
+export type AiGovUaModelsRsp = {
+  models: Array<string>;
 };
 
 export type AiEngineItem = {

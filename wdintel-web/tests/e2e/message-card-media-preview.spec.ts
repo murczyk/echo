@@ -2205,6 +2205,14 @@ for (const width of [1280, 390]) {
         name: /Позиція «Береза 3».*Відкрити мапу повідомлення/,
       });
       await expect(position).toBeVisible();
+      await expect(position).not.toHaveAttribute('title');
+      await position.hover();
+      const hoverPreview = page.locator('[data-coordinate-hover-preview]');
+      await expect(hoverPreview).toBeVisible();
+      await expect(hoverPreview).toContainText('Позиція «Береза 3»');
+      await expect(hoverPreview.locator('.coordinate-hover-preview__map-region')).toHaveCount(2);
+      await page.keyboard.press('Escape');
+      await expect(hoverPreview).toHaveCount(0);
       for (const theme of ['light', 'dark']) {
         await page.evaluate(
           (value) => document.documentElement.setAttribute('data-bs-theme', value),
@@ -2282,5 +2290,75 @@ for (const width of [1280, 390]) {
       expect(link.searchParams.get('m')).toBe(uuid);
       expect(link.pathname).toBe('/rer-analysis-neo');
     }
+  });
+}
+
+for (const host of ['analysis', 'duty'] as const) {
+  test(`#3676 recognized document positions join the embedded ${host} message map @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: host === 'analysis' ? 1280 : 390, height: 900 });
+    const position = {
+      begin: 0,
+      end: 10,
+      etalon: 'северный 2',
+      text: 'Северный 2',
+      kind: 'position',
+      callsign: null,
+      mgrs: [],
+      knownMgrs: '36TXT8727176222',
+      knownAt: Date.UTC(2026, 7, 16, 16, 20),
+      knownConflicting: true,
+      coordinateSources: [],
+    };
+    await openMessageCardPreviewHost(page, host, {
+      messageOverrides: {
+        coords: null,
+        text: 'Документи з розпізнаними позиціями',
+        textMarked: [],
+        media: [
+          ...(buildMessageCardMediaPreviewInboxResponse().inbox_items[0][1].media ?? []),
+          {
+            id: 'e2e-coordinate-error',
+            contentType: 'application/pdf',
+            fileName: 'positions.pdf',
+            sizeBytes: 128,
+            href: '/test-assets/message-card-media-preview/e2e-preview.txt',
+            transcription: null,
+            ocr: null,
+            summary: { state: 'completed', lastError: null, hasCoordinates: false },
+            kmzConversionStatus: null,
+            positions: [
+              position,
+              position,
+              {
+                ...position,
+                text: 'Янсон 5',
+                etalon: 'янсон 5',
+                mgrs: ['37UCQ1111122222'],
+                knownMgrs: null,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const card = page.locator('.message-card-root').first();
+    const coordinates = card.getByRole('button', { name: /^(Розгорнути|Згорнути) координати:/ });
+    await expect(coordinates).toContainText('2');
+    if ((await coordinates.getAttribute('aria-expanded')) !== 'true') await coordinates.click();
+    await card
+      .locator('[data-coordinate-preview-tile]')
+      .getByRole('button', { name: /Open .* on map/ })
+      .click();
+    const dialog = page.getByRole('dialog', { name: 'Перегляд координат' });
+    await expect(dialog.locator('.coordinate-fullscreen-map')).toHaveAttribute(
+      'data-coordinate-marker-count',
+      '2',
+    );
+    await expect(dialog).toContainText('Северный 2');
+    await expect(dialog).toContainText('16.08.2026');
+    await expect(dialog).toContainText('є розбіжності');
+    await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
   });
 }

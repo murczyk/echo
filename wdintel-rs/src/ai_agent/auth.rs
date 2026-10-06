@@ -212,10 +212,6 @@ return {value, calls}
     if super::access::agent_provider_transport(&ai_engine)
         != Some(super::access::AgentProviderTransport::EchoGateway)
         || ai_engine.model_name != grant.model_name
-        || ai_engine
-            .token
-            .as_deref()
-            .is_none_or(|token| token.trim().is_empty())
     {
         return Ok(None);
     }

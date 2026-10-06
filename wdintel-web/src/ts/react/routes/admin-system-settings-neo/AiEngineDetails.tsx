@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import { useState } from 'react';
 
+import { isGovernmentAiUrl } from '../admin-ai-agent/engine-eligibility';
 import type { AiEngineItem } from '../../../../Bindings';
 import { PowerButton } from '../../components/PowerButton';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
@@ -35,6 +36,14 @@ function DetailValue({ label, value }: { label: string; value: string }) {
       <Typography sx={{ overflowWrap: 'anywhere' }}>{value}</Typography>
     </Box>
   );
+}
+
+function isGovernmentEngine(aiEngine: AiEngineItem): boolean {
+  try {
+    return isGovernmentAiUrl(new URL(aiEngine.url));
+  } catch {
+    return false;
+  }
 }
 
 export function AiEngineDetails({
@@ -131,7 +140,16 @@ export function AiEngineDetails({
                   value={aiEngine.callsignEnabled ? 'Увімкнено' : 'Вимкнено'}
                 />
                 <DetailValue label="OCR" value={aiEngine.ocrEnabled ? 'Увімкнено' : 'Вимкнено'} />
-                <DetailValue label="Токен" value={aiEngine.hasToken ? 'Задано' : 'Не задано'} />
+                <DetailValue
+                  label="Токен"
+                  value={
+                    isGovernmentEngine(aiEngine)
+                      ? 'Спільна авторизація Azure'
+                      : aiEngine.hasToken
+                        ? 'Задано'
+                        : 'Не задано'
+                  }
+                />
                 <DetailValue label="Створено" value={formatDate(aiEngine.createdAt)} />
                 <DetailValue label="Оновлено" value={formatDate(aiEngine.updatedAt)} />
               </Stack>

@@ -554,7 +554,7 @@ function buildLegacyKmlPreviewInboxResponse(): InboxMessagesRspRaw {
           message_uuid: null,
           message_uid: 'legacy-kml-preview-message',
           text: 'Legacy KML preview fixture',
-          media: LEGACY_KML_PREVIEW_MEDIA,
+          media: LEGACY_KML_PREVIEW_MEDIA.map((media) => ({ ...media, positions: [] })),
           images: [],
           image_recognized: [],
           date: null,

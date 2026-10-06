@@ -142,3 +142,31 @@ pub struct SendAiChatMessageReq {
     pub chat_id: Option<String>,
     pub prompt: String,
 }
+
+#[derive(Elm, ElmEncode, ElmDecode, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AiGovUaSettingsRsp {
+    pub enabled: bool,
+    pub tenant_id: String,
+    pub client_id: String,
+    pub scope: String,
+    pub has_client_secret: bool,
+    pub updated_at: i64,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAiGovUaSettingsReq {
+    pub enabled: bool,
+    pub tenant_id: String,
+    pub client_id: String,
+    pub scope: String,
+    pub client_secret: Option<String>,
+    pub clear_client_secret: bool,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiGovUaModelsRsp {
+    pub models: Vec<String>,
+}

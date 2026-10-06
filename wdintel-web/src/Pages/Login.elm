@@ -516,43 +516,51 @@ body _ deltaLoginFlag sharedToasts model =
         logoBlock =
             div [ class "mb-4 pt-2" ]
                 [ div
-                    [ class "logo-animated d-flex justify-content-center align-items-center"
+                    [ class "logo-coin-trigger d-flex justify-content-center align-items-center"
                     , style "gap" "5px"
                     ]
-                    [ div
-                        [ class "d-flex align-items-center justify-content-center"
-                        , style "width" "65px"
+                    [ node "echo-logo-coin"
+                        [ class "logo-coin logo-coin--auto d-flex align-items-center justify-content-center"
+                        , style "width" "60px"
                         , style "height" "60px"
-                        , style "position" "relative"
                         ]
                         [ div
-                            [ class "main-image"
-                            , style "width" "60px"
-                            , style "height" "60px"
-                            ]
-                            [ img
-                                [ src "/img/kraken-mark.png"
+                            [ class "logo-coin__idle" ]
+                            [ div
+                                [ class "logo-coin__disc"
                                 , style "width" "60px"
                                 , style "height" "60px"
-                                , alt "Echo"
                                 ]
-                                []
-                            ]
-                        , div
-                            [ class "hover-image"
-                            , style "width" "60px"
-                            , style "height" "60px"
-                            , style "background-color" "#000"
-                            , style "border-radius" "50%"
-                            ]
-                            [ img
-                                [ src "/img/flying_skull_logo_transparent.png"
-                                , style "width" "60px"
-                                , style "height" "42px"
-                                , style "z-index" "1"
-                                , alt "Flying Skull"
+                                [ div
+                                    [ class "main-image logo-coin__face logo-coin__face--front"
+                                    , style "width" "60px"
+                                    , style "height" "60px"
+                                    ]
+                                    [ img
+                                        [ src "/img/kraken-mark.png"
+                                        , style "width" "60px"
+                                        , style "height" "60px"
+                                        , alt "Echo"
+                                        ]
+                                        []
+                                    ]
+                                , div
+                                    [ class "hover-image logo-coin__face logo-coin__face--back"
+                                    , style "width" "60px"
+                                    , style "height" "60px"
+                                    , style "background-color" "#000"
+                                    , style "border-radius" "50%"
+                                    ]
+                                    [ img
+                                        [ src "/img/riskdept.svg"
+                                        , style "width" "54px"
+                                        , style "height" "54px"
+                                        , style "z-index" "1"
+                                        , alt "Risk Department"
+                                        ]
+                                        []
+                                    ]
                                 ]
-                                []
                             ]
                         ]
                     , div []

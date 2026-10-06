@@ -348,7 +348,10 @@ async fn generate_quick_suggestion_with_review(
     .c(h!())?;
     let user_prompt =
         build_user_prompt(source_materials.clone(), style_examples).c(h!())?;
-    let response = request_suggestion(&ai_engine, user_prompt).await.c(h!())?;
+    let response =
+        request_suggestion(&env.ai_engine_client, &ai_engine, user_prompt)
+            .await
+            .c(h!())?;
     review.raw_response = Some(truncate_chars(
         &response.content,
         AI_INTEL_REPORT_ATTEMPT_RAW_RESPONSE_MAX_CHARS,
@@ -359,10 +362,12 @@ async fn generate_quick_suggestion_with_review(
 }
 
 async fn request_suggestion(
+    ai_client: &crate::ai_engine::AiEngineClient,
     ai_engine: &ai_engine::Model,
     user_prompt: String,
 ) -> Result<AiEngineResponse, AppError> {
     request_suggestion_with_timeout(
+        ai_client,
         ai_engine,
         user_prompt,
         std::time::Duration::from_secs(AI_INTEL_REPORT_TIMEOUT_SECS),
@@ -371,6 +376,7 @@ async fn request_suggestion(
 }
 
 async fn request_suggestion_with_timeout(
+    ai_client: &crate::ai_engine::AiEngineClient,
     ai_engine: &ai_engine::Model,
     user_prompt: String,
     timeout: std::time::Duration,
@@ -412,6 +418,7 @@ async fn request_suggestion_with_timeout(
     match tokio::time::timeout(
         timeout,
         request_structured_ai_response(
+            ai_client,
             ai_engine,
             messages,
             0.0,
@@ -1123,6 +1130,11 @@ mod tests {
         let ai_engine = engine_record(format!("http://{address}/v1"));
 
         let response = request_suggestion_with_timeout(
+            &crate::ai_engine::AiEngineClient::new(
+                sea_orm::DatabaseConnection::default(),
+                None,
+            )
+            .unwrap(),
             &ai_engine,
             "{}".to_string(),
             StdDuration::from_secs(1),
@@ -1149,6 +1161,11 @@ mod tests {
         let ai_engine = engine_record(format!("http://{address}/v1"));
 
         let result = request_suggestion_with_timeout(
+            &crate::ai_engine::AiEngineClient::new(
+                sea_orm::DatabaseConnection::default(),
+                None,
+            )
+            .unwrap(),
             &ai_engine,
             "{}".to_string(),
             StdDuration::from_millis(25),

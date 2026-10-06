@@ -89,3 +89,17 @@ describe('isAiAgentEligibleEngine', () => {
     ).toEqual({ message: AI_AGENT_GATEWAY_TOKEN_NOTICE, severity: 'info' });
   });
 });
+
+// Regression: https://github.com/echoua/echo/issues/3682
+it('uses the Echo capability gateway for government engines without static tokens', () => {
+  const engine = { enabled: true, hasToken: false, url: 'https://inference.ai.mod.gov.ua/v1' };
+  expect(isAiAgentEligibleEngine(engine)).toBe(true);
+  expect(getAiAgentTokenNotice(engine)?.severity).toBe('info');
+  for (const url of [
+    'http://inference.ai.mod.gov.ua/v1',
+    'https://inference.ai.mod.gov.ua:8443/v1',
+    'https://inference.ai.mod.gov.ua/v1?key=secret',
+  ]) {
+    expect(isAiAgentEligibleEngine({ ...engine, url })).toBe(false);
+  }
+});

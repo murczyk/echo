@@ -1049,6 +1049,34 @@ rerCsvPreflightMetadataEncoder struct =
         ]
 
 
+type alias RerCsvImportSignalGroup =
+    { masterKey : String
+    , name : String
+    }
+
+
+rerCsvImportSignalGroupEncoder : RerCsvImportSignalGroup -> Json.Encode.Value
+rerCsvImportSignalGroupEncoder struct =
+    Json.Encode.object
+        [ ( "masterKey", (Json.Encode.string) struct.masterKey )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias RerCsvImportOptions =
+    { signalGroups : List (RerCsvImportSignalGroup)
+    , defaultTargetSignalGroupMasterKey : Maybe (String)
+    }
+
+
+rerCsvImportOptionsEncoder : RerCsvImportOptions -> Json.Encode.Value
+rerCsvImportOptionsEncoder struct =
+    Json.Encode.object
+        [ ( "signalGroups", (Json.Encode.list (rerCsvImportSignalGroupEncoder)) struct.signalGroups )
+        , ( "defaultTargetSignalGroupMasterKey", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.defaultTargetSignalGroupMasterKey )
+        ]
+
+
 type alias AreaOfResponsibilityEntry =
     { id : Int
     , name : String
@@ -7132,6 +7160,7 @@ type alias MessageMediaInfo =
     , ocr : Maybe (OcrMediaSummary)
     , summary : Maybe (MediaSummaryStatus)
     , kmzConversionStatus : Maybe (String)
+    , positions : List (CnPosition)
     }
 
 
@@ -7147,6 +7176,7 @@ messageMediaInfoEncoder struct =
         , ( "ocr", (Maybe.withDefault Json.Encode.null << Maybe.map (ocrMediaSummaryEncoder)) struct.ocr )
         , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (mediaSummaryStatusEncoder)) struct.summary )
         , ( "kmz_conversion_status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.kmzConversionStatus )
+        , ( "positions", (Json.Encode.list (cnPositionEncoder)) struct.positions )
         ]
 
 
@@ -12649,6 +12679,62 @@ rerDutyTestReplayStatusRspEncoder struct =
         ]
 
 
+type alias AiGovUaSettingsRsp =
+    { enabled : Bool
+    , tenantId : String
+    , clientId : String
+    , scope : String
+    , hasClientSecret : Bool
+    , updatedAt : Int
+    }
+
+
+aiGovUaSettingsRspEncoder : AiGovUaSettingsRsp -> Json.Encode.Value
+aiGovUaSettingsRspEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "tenantId", (Json.Encode.string) struct.tenantId )
+        , ( "clientId", (Json.Encode.string) struct.clientId )
+        , ( "scope", (Json.Encode.string) struct.scope )
+        , ( "hasClientSecret", (Json.Encode.bool) struct.hasClientSecret )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        ]
+
+
+type alias SaveAiGovUaSettingsReq =
+    { enabled : Bool
+    , tenantId : String
+    , clientId : String
+    , scope : String
+    , clientSecret : Maybe (String)
+    , clearClientSecret : Bool
+    }
+
+
+saveAiGovUaSettingsReqEncoder : SaveAiGovUaSettingsReq -> Json.Encode.Value
+saveAiGovUaSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "tenantId", (Json.Encode.string) struct.tenantId )
+        , ( "clientId", (Json.Encode.string) struct.clientId )
+        , ( "scope", (Json.Encode.string) struct.scope )
+        , ( "clientSecret", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.clientSecret )
+        , ( "clearClientSecret", (Json.Encode.bool) struct.clearClientSecret )
+        ]
+
+
+type alias AiGovUaModelsRsp =
+    { models : List (String)
+    }
+
+
+aiGovUaModelsRspEncoder : AiGovUaModelsRsp -> Json.Encode.Value
+aiGovUaModelsRspEncoder struct =
+    Json.Encode.object
+        [ ( "models", (Json.Encode.list (Json.Encode.string)) struct.models )
+        ]
+
+
 type alias AiEngineItem =
     { id : String
     , name : String
@@ -17275,6 +17361,20 @@ rerCsvPreflightMetadataDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "invalidMessageSize" (Json.Decode.int)))
 
 
+rerCsvImportSignalGroupDecoder : Json.Decode.Decoder RerCsvImportSignalGroup
+rerCsvImportSignalGroupDecoder =
+    Json.Decode.succeed RerCsvImportSignalGroup
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "masterKey" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+rerCsvImportOptionsDecoder : Json.Decode.Decoder RerCsvImportOptions
+rerCsvImportOptionsDecoder =
+    Json.Decode.succeed RerCsvImportOptions
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signalGroups" (Json.Decode.list (rerCsvImportSignalGroupDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "defaultTargetSignalGroupMasterKey" (Json.Decode.nullable (Json.Decode.string))))
+
+
 areaOfResponsibilityEntryDecoder : Json.Decode.Decoder AreaOfResponsibilityEntry
 areaOfResponsibilityEntryDecoder =
     Json.Decode.succeed AreaOfResponsibilityEntry
@@ -21033,6 +21133,7 @@ messageMediaInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ocr" (Json.Decode.nullable (ocrMediaSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (mediaSummaryStatusDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kmz_conversion_status" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "positions" (Json.Decode.list (cnPositionDecoder))))
 
 
 signalMediaKmzConversionStatusRspDecoder : Json.Decode.Decoder SignalMediaKmzConversionStatusRsp
@@ -24601,6 +24702,34 @@ rerDutyTestReplayStatusRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_source_position" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generated_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_emit_at_ms" (Json.Decode.nullable (Json.Decode.int))))
+
+
+aiGovUaSettingsRspDecoder : Json.Decode.Decoder AiGovUaSettingsRsp
+aiGovUaSettingsRspDecoder =
+    Json.Decode.succeed AiGovUaSettingsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tenantId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clientId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scope" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasClientSecret" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+
+
+saveAiGovUaSettingsReqDecoder : Json.Decode.Decoder SaveAiGovUaSettingsReq
+saveAiGovUaSettingsReqDecoder =
+    Json.Decode.succeed SaveAiGovUaSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tenantId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clientId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scope" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clientSecret" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clearClientSecret" (Json.Decode.bool)))
+
+
+aiGovUaModelsRspDecoder : Json.Decode.Decoder AiGovUaModelsRsp
+aiGovUaModelsRspDecoder =
+    Json.Decode.succeed AiGovUaModelsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "models" (Json.Decode.list (Json.Decode.string))))
 
 
 aiEngineItemDecoder : Json.Decode.Decoder AiEngineItem

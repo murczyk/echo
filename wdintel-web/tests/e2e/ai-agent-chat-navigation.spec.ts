@@ -787,6 +787,45 @@ test('@regression #3064 desktop history menu confirms deletion and preserves fai
   await expect(chat).not.toContainText('Збережена відповідь: Інша розмова');
 });
 
+test.describe('mobile navbar', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test('@regression #3633 tapping the navbar logo keeps its front side visible', async ({
+    page,
+  }) => {
+    await installChat(page, true);
+    await page.goto(`/?conversation=${conversationId}`);
+    const chat = page.locator('ai-agent-chat');
+    const logo = page.locator('a.app-navbar-logo');
+    const coin = logo.locator('.logo-coin');
+    await expect(chat).toContainText('Збережена відповідь: Розвіддані');
+    await expect(coin).toHaveAttribute('data-logo-coin-side', 'front');
+
+    await logo.tap();
+
+    await expect(page).toHaveURL(/\/$/);
+    await expect(chat).not.toContainText('Збережена відповідь: Розвіддані');
+    await expect(coin).toHaveAttribute('data-logo-coin-side', 'front');
+  });
+});
+
+test('@regression #3633 keyboard focus flips the navbar logo and blur restores it', async ({
+  page,
+}) => {
+  await installChat(page);
+  await page.goto('/');
+  const logo = page.locator('a.app-navbar-logo');
+  const coin = logo.locator('.logo-coin');
+
+  await page.keyboard.press('Tab');
+  await expect(logo).toBeFocused();
+  await expect(coin).toHaveAttribute('data-logo-coin-side', 'back');
+
+  await page.keyboard.press('Tab');
+  await expect(logo).not.toBeFocused();
+  await expect(coin).toHaveAttribute('data-logo-coin-side', 'front');
+});
+
 test.describe('mobile history', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 

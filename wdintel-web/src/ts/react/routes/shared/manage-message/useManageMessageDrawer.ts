@@ -429,6 +429,7 @@ export function useManageMessageDrawer({
         contentType,
         sizeBytes,
         href,
+        positions: m.positions ?? [],
         transcription: m.transcription ?? (raw as any).transcription ?? null,
         ocr: m.ocr ?? (raw as any).ocr ?? null,
         summary: m.summary ?? (raw as any).summary ?? null,

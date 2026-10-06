@@ -108,10 +108,13 @@ function PalitraPointContext({ point }: { point: CoordinatePreviewPoint }) {
 }
 
 function PositionPointSources({ point }: { point: CoordinatePreviewPoint }) {
-  if (!point.coordinateSources?.length) return null;
+  if (point.source !== 'position' && !point.coordinateSources?.length) return null;
   return (
     <div className="flex flex-wrap gap-1" data-coordinate-position-sources="true">
-      {point.coordinateSources.map((source) => (
+      {point.source === 'position' && point.description?.trim() ? (
+        <p className="m-0 w-full whitespace-pre-wrap text-echo-sm">{point.description}</p>
+      ) : null}
+      {point.coordinateSources?.map((source) => (
         <MessageReferenceLink
           key={source.messageUuid}
           href={`/rer-analysis-neo?m=${encodeURIComponent(source.messageUuid)}`}

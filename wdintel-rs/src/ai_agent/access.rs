@@ -241,6 +241,10 @@ pub fn agent_provider_transport(
     if !common_valid {
         return None;
     }
+    if url.host_str() == Some(crate::config::AI_GOV_UA_API_HOST) {
+        return crate::ai_engine::client::is_government_url(&ai_engine.url)
+            .then_some(AgentProviderTransport::EchoGateway);
+    }
     if url.scheme() == "http"
         && url.host_str().is_some_and(is_dispatcher_upstream_host)
         && url.port_or_known_default().is_some()

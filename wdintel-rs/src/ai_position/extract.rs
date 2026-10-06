@@ -59,6 +59,7 @@ pub(crate) struct Extraction {
 /// `settlements`: places the settlement parsers found in this text; the model
 /// is told they are not positions.
 pub(crate) async fn extract(
+    ai_client: &crate::ai_engine::AiEngineClient,
     engine: &ai_engine::Model,
     prompt: &str,
     text: &str,
@@ -78,7 +79,7 @@ pub(crate) async fn extract(
             },
         ]
     };
-    let mut response = request(engine, base()).await.c(h!())?;
+    let mut response = request(ai_client, engine, base()).await.c(h!())?;
     let parsed = match parse_response(&response.content) {
         Ok(parsed) => parsed,
         Err(_) => {
@@ -93,7 +94,7 @@ pub(crate) async fn extract(
                 role: AI_CHAT_ROLE_USER.to_string(),
                 content: AI_POSITION_REPAIR_PROMPT.to_string(),
             });
-            response = request(engine, messages).await.c(h!())?;
+            response = request(ai_client, engine, messages).await.c(h!())?;
             parse_response(&response.content).with_context(|| {
                 format!("відповідь ШІ: {}", response.content)
             })?
@@ -122,10 +123,12 @@ fn user_content(text: &str, settlements: &[String]) -> String {
 }
 
 async fn request(
+    ai_client: &crate::ai_engine::AiEngineClient,
     engine: &ai_engine::Model,
     messages: Vec<AiEngineMessage>,
 ) -> anyhow::Result<crate::ai_engine::AiEngineResponse> {
     request_structured_ai_response(
+        ai_client,
         engine,
         messages,
         AI_POSITION_TEMPERATURE,

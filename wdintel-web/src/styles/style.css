@@ -12,6 +12,7 @@
 @import 'toast/_toast.css';
 @import 'tooltip/_tooltip.css';
 @import 'dialog/_dialog.css';
+@import 'logo-coin.css';
 
 @import 'scrollbar/_scrollbar.css';
 @import 'highlight/_highlight.css';
@@ -567,7 +568,7 @@
 }
 
 .text-marked .content-token--position {
-  cursor: help;
+  cursor: default;
 }
 
 .text-marked .content-token--position[role='button'] {
@@ -956,33 +957,6 @@ sl-tooltip {
   width: 7px;
   border-radius: 100%;
   background-color: var(--bs-success);
-}
-
-.main-image,
-.hover-image {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  backface-visibility: hidden;
-  transition: transform 0.6s;
-  transform-style: preserve-3d;
-}
-
-.hover-image {
-  transform: rotateY(180deg);
-}
-
-.logo-animated:hover .main-image {
-  transform: rotateY(180deg);
-}
-
-.logo-animated:hover .hover-image {
-  transform: rotateY(0deg);
 }
 
 .login-creds-link-wrap {

@@ -524,6 +524,7 @@ async fn run_request_inner(
         return Err(interrupted_error());
     }
     let mut activity_titles = ActivityTitles::new(
+        env.ai_engine_client.clone(),
         env.dbx.clone(),
         request.id,
         &request.prompt,
