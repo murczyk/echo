@@ -20,6 +20,7 @@ import { fetchUserSettings, USER_SETTINGS_UPDATED_EVENT } from '../../services/a
 import { canReadDevices, canUseRadioFeatures, hasRole, hasRerOrCyber } from '../../utils/roles';
 import { shouldHandleAsSpaClick } from '../../utils/browser';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../../routes/ai-agent-chat/conversation-url';
+import { mountLogoCoin } from '../../../logo-coin';
 
 function filterTranscriptionSettings(items: Menu[], enabled: boolean): Menu[] {
   return items.flatMap<Menu>((item): Menu[] => {
@@ -142,6 +143,13 @@ export function AppNavbar({
     shared?.systemSettings ? shared.systemSettings.devicesSectionEnabled : null,
   );
   const navbarRef = useRef<HTMLElement>(null);
+  const logoCoinRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const logoCoin = logoCoinRef.current;
+    if (!logoCoin) return;
+    return mountLogoCoin(logoCoin);
+  }, []);
 
   useEffect(() => {
     if (shared?.systemSettings) {
@@ -509,7 +517,7 @@ export function AppNavbar({
         <div className="app-navbar-row flex w-full flex-wrap items-center gap-x-3 gap-y-2 lg:flex-nowrap lg:gap-x-[80px]">
           <div className="app-navbar-brand flex shrink-0 flex-row flex-nowrap items-center gap-2">
             <a
-              className="app-navbar-logo flex shrink-0 items-center space-x-2"
+              className="app-navbar-logo logo-coin-trigger flex shrink-0 items-center space-x-2"
               href="/"
               onClick={(e) => {
                 if (!shouldHandleAsSpaClick(e)) return;
@@ -517,28 +525,35 @@ export function AppNavbar({
                 handleInternalLinkClick(e, '/');
               }}
             >
-              <div className="relative h-7 w-8">
-                <div className="main-image absolute" style={{ height: '28px', width: '28px' }}>
-                  <img
-                    src="/img/kraken-mark.png"
-                    alt="Echo"
-                    style={{ width: '28px', height: '28px' }}
-                  />
-                </div>
-                <div
-                  className="hover-image absolute"
-                  style={{
-                    width: '28px',
-                    height: '28px',
-                    backgroundColor: '#000',
-                    borderRadius: '50%',
-                  }}
-                >
-                  <img
-                    src="/img/flying_skull_logo_transparent.png"
-                    style={{ width: '28px', zIndex: 1 }}
-                    alt="Flying Skull"
-                  />
+              <div ref={logoCoinRef} className="logo-coin relative h-7 w-8">
+                <div className="logo-coin__idle">
+                  <div className="logo-coin__disc">
+                    <div
+                      className="main-image logo-coin__face logo-coin__face--front absolute"
+                      style={{ height: '28px', width: '28px' }}
+                    >
+                      <img
+                        src="/img/kraken-mark.png"
+                        alt="Echo"
+                        style={{ width: '28px', height: '28px' }}
+                      />
+                    </div>
+                    <div
+                      className="hover-image logo-coin__face logo-coin__face--back absolute"
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        backgroundColor: '#000',
+                        borderRadius: '50%',
+                      }}
+                    >
+                      <img
+                        src="/img/riskdept.svg"
+                        style={{ width: '25px', height: '25px', zIndex: 1 }}
+                        alt="Risk Department"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
               <img
