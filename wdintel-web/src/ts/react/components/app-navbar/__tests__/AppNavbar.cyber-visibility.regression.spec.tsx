@@ -100,7 +100,11 @@ describe('AppNavbar', () => {
     const logoImg = Array.from(container.querySelectorAll('img')).find((img) =>
       img.src.includes('echo-logo.svg'),
     );
+    const hoverLogoImg = Array.from(container.querySelectorAll('img')).find(
+      (img) => img.alt === 'Risk Department',
+    );
     expect(logoImg).not.toBeUndefined();
+    expect(hoverLogoImg).not.toBeUndefined();
   });
 
   // Regression: https://github.com/echoua/echo/issues/3568

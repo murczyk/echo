@@ -90,6 +90,7 @@ import './ts/react/updates-neo-element';
 import { saveLegacyRerAnalysisQueryState } from './ts/rer-analysis-query-state-legacy';
 import { setupCommentDraftTracker } from './ts/comment-draft-tracker';
 import { getNavigationApi, type NavigationNavigateEvent } from './ts/browser/navigation-api';
+import './ts/logo-coin';
 
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';

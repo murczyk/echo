@@ -1,0 +1,96 @@
+.logo-coin {
+  --logo-coin-flip-duration: 520ms;
+  --logo-coin-flip-easing: cubic-bezier(0.16, 1, 0.3, 1);
+  --logo-coin-auto-interval: 3s;
+  --logo-coin-front-transform: translateY(0) rotateY(0deg) rotateZ(0deg) scale(1);
+  --logo-coin-back-transform: translateY(0) rotateY(180deg) rotateZ(0deg) scale(1);
+  --logo-coin-shadow-front-transform: scaleX(0.8);
+  --logo-coin-shadow-back-transform: scaleX(0.55);
+  position: relative;
+  isolation: isolate;
+}
+
+.logo-coin::after {
+  position: absolute;
+  right: 18%;
+  bottom: -4px;
+  left: 18%;
+  z-index: -1;
+  height: 5px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 28%);
+  content: '';
+  filter: blur(3px);
+  opacity: 0.25;
+  pointer-events: none;
+  transform: var(--logo-coin-shadow-front-transform);
+  transition:
+    opacity var(--logo-coin-flip-duration) var(--logo-coin-flip-easing),
+    transform var(--logo-coin-flip-duration) var(--logo-coin-flip-easing);
+}
+
+.logo-coin__idle {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+
+.logo-coin__disc {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  margin-inline: auto;
+  transform-style: preserve-3d;
+  transition: transform var(--logo-coin-flip-duration) var(--logo-coin-flip-easing);
+}
+
+.logo-coin__face {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+}
+
+.logo-coin__face--back {
+  transform: rotateY(180deg);
+}
+
+.logo-coin[data-logo-coin-side='back'] .logo-coin__disc {
+  transform: var(--logo-coin-back-transform);
+}
+
+.logo-coin[data-logo-coin-side='back']::after {
+  opacity: 0.16;
+  transform: var(--logo-coin-shadow-back-transform);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-coin__disc {
+    transform: none;
+    transition: none;
+  }
+
+  .logo-coin::after {
+    transition: none;
+  }
+
+  .logo-coin__face {
+    transition: opacity 140ms ease;
+  }
+
+  .logo-coin__face--back {
+    opacity: 0;
+    transform: none;
+  }
+
+  .logo-coin[data-logo-coin-side='back'] .logo-coin__face--front {
+    opacity: 0;
+  }
+
+  .logo-coin[data-logo-coin-side='back'] .logo-coin__face--back {
+    opacity: 1;
+  }
+}
