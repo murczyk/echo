@@ -935,16 +935,12 @@ fn should_use_exact_counts_for_day(
     network_freqs_for_day: &[&NetworkFreqStatsRangeRow],
     dt: NaiveDate,
 ) -> Result<bool, AppError> {
-    if network_freqs_for_day.len() > 1 {
-        return Ok(true);
+    for network_freq in network_freqs_for_day {
+        if network_freq_has_intra_day_boundary(network_freq, dt).c(h!())? {
+            return Ok(true);
+        }
     }
-    if network_freqs_for_day.is_empty() {
-        return Ok(false);
-    }
-    Ok(
-        network_freq_has_intra_day_boundary(network_freqs_for_day[0], dt)
-            .c(h!())?,
-    )
+    Ok(false)
 }
 
 async fn load_exact_network_freq_counts(
@@ -981,7 +977,7 @@ async fn load_exact_network_freq_counts(
 
     let rows = sqlx::query_as::<_, ExactNetworkFreqCountRow>(
         r#"
-        WITH exact_requests AS (
+        WITH exact_requests AS MATERIALIZED (
             SELECT *
             FROM unnest(
                 $1::bigint[],
@@ -990,54 +986,144 @@ async fn load_exact_network_freq_counts(
                 $4::timestamp[]
             ) AS req(request_id, frequency, day_since_ts, day_till_ts)
         ),
-        exact_freqs AS (
+        exact_freqs AS MATERIALIZED (
             SELECT *
             FROM unnest(
                 $5::bigint[],
                 $6::bigint[]
             ) AS freq(request_id, network_freq_id)
+        ),
+        exact_ranges AS MATERIALIZED (
+            SELECT
+                req.request_id,
+                req.frequency,
+                nf.id AS network_freq_id,
+                nf.active_from,
+                nf.active_to
+            FROM exact_requests req
+            JOIN exact_freqs ef
+                ON ef.request_id = req.request_id
+            JOIN sigint_network_freq nf
+                ON nf.id = ef.network_freq_id
+               AND nf.network_id = $7
+               AND nf.freq = req.frequency
+               AND nf.deleted = false
+        ),
+        dated_inbox_items AS MATERIALIZED (
+            SELECT
+                req.request_id,
+                ii.id,
+                ii.freq,
+                ii.datetime AS activity_datetime
+            FROM exact_requests req
+            CROSS JOIN LATERAL (
+                SELECT id, freq, datetime
+                FROM sigint_inbox_item
+                WHERE freq = req.frequency
+                  AND datetime >= req.day_since_ts
+                  AND datetime < req.day_till_ts
+                OFFSET 0
+            ) ii
+        ),
+        dated_network_items AS MATERIALIZED (
+            SELECT
+                candidate.request_id,
+                candidate.id,
+                candidate.freq,
+                candidate.activity_datetime
+            FROM dated_inbox_items candidate
+            JOIN sigint_inbox_item_network iin
+                ON iin.sigint_network_id = $7
+               AND iin.sigint_inbox_item_id = candidate.id
+        ),
+        requested_frequencies AS MATERIALIZED (
+            SELECT DISTINCT frequency
+            FROM exact_requests
+        ),
+        undated_inbox_items AS MATERIALIZED (
+            SELECT ii.id, ii.freq
+            FROM requested_frequencies requested
+            CROSS JOIN LATERAL (
+                SELECT id, freq
+                FROM sigint_inbox_item
+                WHERE freq = requested.frequency
+                  AND datetime IS NULL
+                OFFSET 0
+            ) ii
+        ),
+        undated_messages AS MATERIALIZED (
+            SELECT
+                req.request_id,
+                candidate.id,
+                candidate.freq,
+                COALESCE(sm.timestamp, sm.created_at) AS activity_datetime,
+                sm.datasource_group_id
+            FROM undated_inbox_items candidate
+            JOIN signal_message sm
+                ON sm.id = candidate.id
+               AND sm.deleted = false
+            JOIN exact_requests req
+                ON req.frequency = candidate.freq
+               AND COALESCE(sm.timestamp, sm.created_at) >= req.day_since_ts
+               AND COALESCE(sm.timestamp, sm.created_at) < req.day_till_ts
+        ),
+        undated_network_items AS MATERIALIZED (
+            SELECT candidate.*
+            FROM undated_messages candidate
+            JOIN sigint_inbox_item_network iin
+                ON iin.sigint_network_id = $7
+               AND iin.sigint_inbox_item_id = candidate.id
+        ),
+        network_messages AS MATERIALIZED (
+            SELECT
+                candidate.request_id,
+                candidate.freq,
+                candidate.activity_datetime
+            FROM dated_network_items candidate
+            JOIN signal_message sm
+                ON sm.id = candidate.id
+               AND sm.deleted = false
+            JOIN datasource_group dg
+                ON dg.id = sm.datasource_group_id
+               AND dg.group_master_key = ANY($8)
+
+            UNION ALL
+
+            SELECT
+                candidate.request_id,
+                candidate.freq,
+                candidate.activity_datetime
+            FROM undated_network_items candidate
+            JOIN datasource_group dg
+                ON dg.id = candidate.datasource_group_id
+               AND dg.group_master_key = ANY($8)
         )
         SELECT
-            nf.id AS network_freq_id,
+            exact_ranges.network_freq_id,
             COUNT(*) AS quantity
-        FROM exact_requests req
-        JOIN exact_freqs ef
-            ON ef.request_id = req.request_id
-        JOIN sigint_network_freq nf
-            ON nf.id = ef.network_freq_id
-           AND nf.network_id = $7
-           AND nf.freq = req.frequency
-           AND nf.deleted = false
-        JOIN sigint_inbox_item_network iin
-            ON iin.sigint_network_id = nf.network_id
-        JOIN sigint_inbox_item ii
-            ON ii.id = iin.sigint_inbox_item_id
-           AND ii.freq = nf.freq
-        JOIN signal_message sm
-            ON sm.id = ii.id
-        JOIN datasource_group dg
-            ON dg.id = sm.datasource_group_id
-        WHERE sm.deleted = false
-          AND dg.group_master_key = ANY($8)
-          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at) >= nf.active_from
-          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at)
-                <= COALESCE(nf.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at) >= req.day_since_ts
-          AND COALESCE(ii.datetime, sm.timestamp, sm.created_at) < req.day_till_ts
-        GROUP BY nf.id
+        FROM exact_ranges
+        JOIN network_messages
+            ON network_messages.request_id = exact_ranges.request_id
+           AND network_messages.freq = exact_ranges.frequency
+           AND network_messages.activity_datetime >= exact_ranges.active_from
+           AND network_messages.activity_datetime <= COALESCE(
+                exact_ranges.active_to,
+                CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+           )
+        GROUP BY exact_ranges.network_freq_id
         "#,
     )
-        .bind(request_ids)
-        .bind(frequencies)
-        .bind(day_since_tss)
-        .bind(day_till_tss)
-        .bind(freq_request_ids)
-        .bind(network_freq_ids)
-        .bind(network_id)
-        .bind(groups)
-        .fetch_all(dbx.get_postgres_connection_pool())
-        .await
-        .c(h!())?;
+    .bind(request_ids)
+    .bind(frequencies)
+    .bind(day_since_tss)
+    .bind(day_till_tss)
+    .bind(freq_request_ids)
+    .bind(network_freq_ids)
+    .bind(network_id)
+    .bind(groups)
+    .fetch_all(dbx.get_postgres_connection_pool())
+    .await
+    .c(h!())?;
 
     Ok(rows
         .into_iter()
@@ -1147,10 +1233,11 @@ pub async fn load_network_freqs_counts_from_stats(
             should_use_exact_counts_for_day(&network_freqs_for_day, row.dt)
                 .c(h!())?;
         if !use_exact {
-            let network_freq = network_freqs_for_day[0];
-            *network_freq_counts
-                .entry(network_freq.network_freq_id)
-                .or_insert(0) += row.quantity;
+            for network_freq in network_freqs_for_day {
+                *network_freq_counts
+                    .entry(network_freq.network_freq_id)
+                    .or_insert(0) += row.quantity;
+            }
             continue;
         }
 
@@ -2853,7 +2940,10 @@ pub async fn load_networks_by_id(
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, mk_sigint_network, mk_sigint_network_unit, mk_sigint_unit,
+        cleanup, mk_datasource_group, mk_sigint_inbox_item,
+        mk_sigint_inbox_item_network, mk_sigint_network,
+        mk_sigint_network_freq, mk_sigint_network_unit, mk_sigint_unit,
+        mk_signal_message,
     };
     use crate::sigint::network::types::ListNetworksSortBy;
     use serial_test::serial;
@@ -2932,6 +3022,170 @@ mod tests {
             source_name: String::new(),
             created_at: id,
         }
+    }
+
+    #[test]
+    fn overlapping_full_day_network_freqs_do_not_require_exact_counts() {
+        let dt = NaiveDate::from_ymd_opt(2026, 8, 10).unwrap();
+        let day_since = crate::stats::start_of_day(dt).unwrap();
+        let day_till =
+            crate::stats::start_of_day(dt + chrono::Duration::days(1)).unwrap();
+        let full_day = NetworkFreqStatsRangeRow {
+            network_freq_id: 1,
+            frequency: "165.4500".to_string(),
+            active_from: day_since,
+            active_to: Some(day_till),
+        };
+        let overlapping = NetworkFreqStatsRangeRow {
+            network_freq_id: 2,
+            frequency: "165.4500".to_string(),
+            active_from: day_since - chrono::Duration::days(1),
+            active_to: None,
+        };
+
+        let full_day_uses_exact_counts =
+            should_use_exact_counts_for_day(&[&full_day, &overlapping], dt)
+                .unwrap();
+        assert!(!full_day_uses_exact_counts);
+
+        let partial = NetworkFreqStatsRangeRow {
+            active_from: day_since + chrono::Duration::minutes(1),
+            ..full_day
+        };
+        let partial_day_uses_exact_counts =
+            should_use_exact_counts_for_day(&[&partial, &overlapping], dt)
+                .unwrap();
+        assert!(partial_day_uses_exact_counts);
+    }
+
+    async fn mk_exact_count_message(
+        db: &DatabaseConnection,
+        datasource_group_id: i64,
+        network_id: i64,
+        frequency: &str,
+        inbox_datetime: Option<NaiveDateTime>,
+        activity_datetime: NaiveDateTime,
+    ) {
+        let message = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group_id)),
+                timestamp: Set(Some(activity_datetime)),
+                created_at: Set(activity_datetime),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(frequency.to_string())),
+                datetime: Set(inbox_datetime),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            db,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                sigint_network_id: Set(network_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn exact_network_freq_counts_preserve_time_and_access_boundaries() {
+        let env = cleanup().await.unwrap();
+        let authorized_group =
+            mk_datasource_group(&env.dbx, Default::default())
+                .await
+                .unwrap();
+        let unauthorized_group =
+            mk_datasource_group(&env.dbx, Default::default())
+                .await
+                .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let frequency = "165.4500";
+        let dt = NaiveDate::from_ymd_opt(2026, 8, 10).unwrap();
+        let day_since = crate::stats::start_of_day(dt).unwrap();
+        let day_till =
+            crate::stats::start_of_day(dt + chrono::Duration::days(1)).unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set(frequency.to_string()),
+                active_from: Set(day_since + chrono::Duration::hours(1)),
+                active_to: Set(Some(day_since + chrono::Duration::hours(4))),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        mk_exact_count_message(
+            &env.dbx,
+            authorized_group.id,
+            network.id,
+            frequency,
+            Some(day_since + chrono::Duration::hours(2)),
+            day_since + chrono::Duration::hours(2),
+        )
+        .await;
+        mk_exact_count_message(
+            &env.dbx,
+            authorized_group.id,
+            network.id,
+            frequency,
+            None,
+            day_since + chrono::Duration::hours(3),
+        )
+        .await;
+        mk_exact_count_message(
+            &env.dbx,
+            authorized_group.id,
+            network.id,
+            frequency,
+            Some(day_since + chrono::Duration::minutes(30)),
+            day_since + chrono::Duration::minutes(30),
+        )
+        .await;
+        mk_exact_count_message(
+            &env.dbx,
+            unauthorized_group.id,
+            network.id,
+            frequency,
+            Some(day_since + chrono::Duration::minutes(150)),
+            day_since + chrono::Duration::minutes(150),
+        )
+        .await;
+
+        let groups = vec![authorized_group.group_master_key];
+        let counts = load_exact_network_freq_counts(
+            &env.dbx,
+            &groups,
+            network.id,
+            vec![ExactNetworkFreqCountRequest {
+                frequency: frequency.to_string(),
+                day_since_ts: day_since,
+                day_till_ts: day_till,
+                network_freq_ids: vec![network_freq.id],
+            }],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(counts, HashMap::from([(network_freq.id, 2)]));
     }
 
     async fn mk_network_with_unit(

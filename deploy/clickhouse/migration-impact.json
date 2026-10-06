@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20261006_164921_sigint_inbox_item_freq_datetime_index": {
+      "changes": []
+    },
+    "echo:m20261006_150248_network_freq_exact_count_index": {
+      "changes": []
+    },
     "echo:m20261005_044401_messenger_media_cache_settings": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_additive" }
