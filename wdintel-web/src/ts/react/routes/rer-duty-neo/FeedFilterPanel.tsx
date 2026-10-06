@@ -25,6 +25,9 @@ export type FeedFilterPanelModel = {
     unitsDenied?: string[];
     selectedDeviceNames?: string[];
     deniedDeviceNames?: string[];
+    locationsSelected?: string[];
+    locationsDenied?: string[];
+    includePelengLocations?: boolean | null;
   };
   devices?: {
     onSelectedChange: (v: string[]) => void;
@@ -38,6 +41,7 @@ export type FeedFilterPanelModel = {
     senderOptions: Array<{ id: string; label: string }>;
     freqs: string[];
     postsList?: string[];
+    locationsList?: string[];
     unitsList?: Unit[];
     persistentUnitFilterValues?: string[];
   };
@@ -49,6 +53,7 @@ export type FeedFilterPanelModel = {
     reloadFreqsLoading: boolean;
     groupCatalogLoading?: boolean;
     groupCatalogError?: GroupCatalogError | null;
+    locationsLoading?: boolean;
   };
   savedFilters: {
     savedFilters: SavedFilterDuty[];
@@ -72,6 +77,11 @@ export type FeedFilterPanelModel = {
     onUnitsDeniedChange?: (v: string[]) => void;
     onUnitsModeTransfer: (next: FeedFilterModeTransfer) => void;
     onUnitsExactMatchOnlyChange?: (v: boolean) => void;
+    onLocationsChange?: (v: string[]) => void;
+    onLocationsDeniedChange?: (v: string[]) => void;
+    onLocationsModeTransfer?: (next: FeedFilterModeTransfer) => void;
+    onIncludePelengLocationsChange?: (v: boolean) => void;
+    onLoadLocations?: () => void;
     onAdjacentFreqsRangeChange?: (v: number) => void;
     onHighlightSignalsChange?: (v: boolean) => void;
     onOnlyMyUnitTagsChange?: (v: boolean) => void;

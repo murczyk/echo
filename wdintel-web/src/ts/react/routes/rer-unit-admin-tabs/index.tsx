@@ -71,6 +71,7 @@ function unitInterceptionsRequest(
     deniedUnits: null,
     deniedUnitIds: null,
     selectedLocations: null,
+    deniedLocations: null,
     nolimit: null,
     orWithExtendedForm: null,
     loadLatest: beforeIdNoninclusive === null,

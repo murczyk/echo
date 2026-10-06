@@ -1790,47 +1790,105 @@ where
     Q: QueryFilter,
 {
     if let Some(selected_locations) = selected_locations.as_ref() {
-        if !selected_locations.is_empty() {
-            let mut nonempty_locations = vec![];
-            let mut expressions = vec![];
-            let mut include_empty = false;
-            for location in selected_locations {
-                if location_is_empty(location) {
-                    include_empty = true;
-                } else {
-                    nonempty_locations.push(location.clone());
-                    let loc = format_location(location);
-                    expressions.push(sea_orm::ColumnTrait::contains(
-                        &sigint_inbox_item::Column::LocationV2,
-                        loc,
-                    ));
-                }
-            }
-            if include_peleng_locations && !nonempty_locations.is_empty() {
-                expressions.push(
-                    sigint_inbox_item::Column::Freq.in_subquery(
-                        Query::select()
-                            .column(freq_location::Column::Freq)
-                            .from(freq_location::Entity)
-                            .and_where(
-                                freq_location::Column::Location
-                                    .eq_any(nonempty_locations),
-                            )
-                            .to_owned(),
-                    ),
-                )
-            }
-            if include_empty {
-                expressions
-                    .push(sigint_inbox_item::Column::LocationV2.is_null());
-            }
-            let expr = expressions.into_iter().reduce(|a, b| a.or(b));
-            if let Some(expr) = expr {
-                return Ok(q.filter(expr));
-            }
+        if let Some(expr) =
+            locations_match_expr(selected_locations, include_peleng_locations)
+        {
+            return Ok(q.filter(expr));
         }
     }
     Ok(q)
+}
+
+pub fn filter_denied_locations<Q>(
+    q: Q,
+    denied_locations: &Option<Vec<String>>,
+    include_peleng_locations: bool,
+) -> anyhow::Result<Q>
+where
+    Q: QueryFilter,
+{
+    if let Some(denied_locations) = denied_locations.as_ref() {
+        if let Some(expr) =
+            locations_denied_expr(denied_locations, include_peleng_locations)
+        {
+            return Ok(q.filter(expr));
+        }
+    }
+    Ok(q)
+}
+
+fn locations_match_expr(
+    locations: &[String],
+    include_peleng_locations: bool,
+) -> Option<SimpleExpr> {
+    let mut nonempty_locations = vec![];
+    let mut expressions = vec![];
+    let mut include_empty = false;
+    for location in locations {
+        if location_is_empty(location) {
+            include_empty = true;
+        } else {
+            nonempty_locations.push(location.clone());
+            expressions.push(location_contains_expr(location));
+        }
+    }
+    if include_peleng_locations && !nonempty_locations.is_empty() {
+        expressions.push(
+            sigint_inbox_item::Column::Freq
+                .in_subquery(peleng_location_freqs_query(nonempty_locations)),
+        )
+    }
+    if include_empty {
+        expressions.push(sigint_inbox_item::Column::LocationV2.is_null());
+    }
+    expressions.into_iter().reduce(|a, b| a.or(b))
+}
+
+/// Keeps rows with `NULL` location / freq unless the empty location is
+/// denied: plain `NOT LIKE` / `NOT IN` would drop them.
+fn locations_denied_expr(
+    locations: &[String],
+    include_peleng_locations: bool,
+) -> Option<SimpleExpr> {
+    let (empty_locations, nonempty_locations): (Vec<String>, Vec<String>) =
+        locations
+            .iter()
+            .cloned()
+            .partition(|location| location_is_empty(location));
+    let mut expressions = nonempty_locations
+        .iter()
+        .map(|location| {
+            sigint_inbox_item::Column::LocationV2
+                .is_null()
+                .or(location_contains_expr(location).not())
+        })
+        .collect_vec();
+    if include_peleng_locations && !nonempty_locations.is_empty() {
+        expressions.push(sigint_inbox_item::Column::Freq.is_null().or(
+            sigint_inbox_item::Column::Freq.not_in_subquery(
+                peleng_location_freqs_query(nonempty_locations),
+            ),
+        ));
+    }
+    if !empty_locations.is_empty() {
+        expressions.push(sigint_inbox_item::Column::LocationV2.is_not_null());
+    }
+    expressions.into_iter().reduce(|a, b| a.and(b))
+}
+
+fn location_contains_expr(location: &str) -> SimpleExpr {
+    sea_orm::ColumnTrait::contains(
+        &sigint_inbox_item::Column::LocationV2,
+        format_location(location),
+    )
+}
+
+fn peleng_location_freqs_query(locations: Vec<String>) -> SelectStatement {
+    Query::select()
+        .column(freq_location::Column::Freq)
+        .from(freq_location::Entity)
+        .and_where(freq_location::Column::Location.eq_any(locations))
+        .to_owned()
 }
 
 pub fn filter_selected_callsigns<Q>(

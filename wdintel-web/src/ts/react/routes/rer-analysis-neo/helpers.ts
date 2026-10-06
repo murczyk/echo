@@ -521,6 +521,7 @@ export function buildInboxReq(
     deniedUnits: null,
     deniedUnitIds: null,
     selectedLocations: req.selectedLocations,
+    deniedLocations: null,
     nolimit: null,
     orWithExtendedForm: req.orWithExtendedForm,
     loadLatest: null,

@@ -14,6 +14,10 @@ import {
 } from './useFeedFilterSavedFiltersViewModel';
 import { useFeedFilterSelectionState } from './useFeedFilterSelectionState';
 import { useDutyBulkCopy } from './useDutyBulkCopy';
+import {
+  useFeedFilterLocationsViewModel,
+  type FeedFilterLocationsViewModel,
+} from './useFeedFilterLocationsViewModel';
 
 type FeedFilterMode = 'include' | 'exclude';
 
@@ -63,6 +67,7 @@ export type FeedFilterPanelViewModel = {
     onAdjacentFreqsRangeChange?: (value: number) => void;
   };
   posts: FeedFilterSelectionViewModel<string>;
+  locations: FeedFilterLocationsViewModel;
   units: FeedFilterSelectionViewModel<string> & {
     showExactMatchControl: boolean;
     unitsExactMatchOnly: boolean;
@@ -335,6 +340,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       bulkCopyMenuLabel: 'Копіювати обрані пости',
       onBulkCopy: copyPosts,
     },
+    locations: useFeedFilterLocationsViewModel(panel),
     units: {
       mode: unitSelectionState.mode,
       value: unitSelectionState.localValue,

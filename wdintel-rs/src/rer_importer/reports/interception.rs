@@ -888,6 +888,12 @@ async fn build_inbox_messages_report_sql(
         &req.selected_locations,
         include_peleng_locations,
     )?;
+    let q = filter_denied_locations(
+        q,
+        &req.denied_locations,
+        include_peleng_locations,
+    )
+    .c(h!())?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let q = filter_selected_networks(
         q,

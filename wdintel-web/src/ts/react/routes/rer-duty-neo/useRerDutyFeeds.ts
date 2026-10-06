@@ -503,6 +503,14 @@ export function useRerDutyFeeds(
     () => mergePostsFromMessages(filterOpts.postsList, feedState.messageFeeds),
     [filterOpts.postsList, feedState.messageFeeds],
   );
+  const { reloadLocations } = filterOpts;
+  const loadLocations = useCallback(() => {
+    reloadLocations().catch((error: unknown) => {
+      const detail = error instanceof Error ? error.message : String(error);
+      setFeedError(`Не вдалося завантажити список локацій: ${detail}`);
+      console.error(error);
+    });
+  }, [reloadLocations, setFeedError]);
   return {
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,
@@ -575,6 +583,9 @@ export function useRerDutyFeeds(
     groupCatalogLoading: filterOpts.groupCatalogLoading,
     groupCatalogError: filterOpts.groupCatalogError,
     reloadGroupCatalog: filterOpts.reloadGroupCatalog,
+    locationsList: filterOpts.locationsList,
+    locationsLoading: filterOpts.locationsLoading,
+    loadLocations,
     networkDisplayMap: feedState.networkDisplayMap,
     networkMap: feedState.networkMap,
     unitsMap: feedState.unitsMap,

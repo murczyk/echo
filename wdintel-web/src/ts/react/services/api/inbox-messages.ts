@@ -417,6 +417,7 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
     denied_units: emptyArrToNull(req.deniedUnits),
     denied_unit_ids: emptyArrToNull(req.deniedUnitIds),
     selected_locations: emptyArrToNull(req.selectedLocations),
+    denied_locations: emptyArrToNull(req.deniedLocations),
     nolimit: req.nolimit,
     or_with_extended_form: req.orWithExtendedForm,
     load_latest: req.loadLatest,

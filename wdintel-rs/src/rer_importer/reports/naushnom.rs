@@ -441,6 +441,12 @@ async fn get_inbox_messages_report_network_chunk(
         include_peleng_locations,
     )
     .context(h!())?;
+    let q = filter_denied_locations(
+        q,
+        &req.denied_locations,
+        include_peleng_locations,
+    )
+    .context(h!())?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let q = q.order_by_desc(sigint_inbox_item::Column::Datetime);
 

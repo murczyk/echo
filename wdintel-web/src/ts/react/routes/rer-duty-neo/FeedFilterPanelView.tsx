@@ -11,6 +11,8 @@ import { FeedFilterAdvancedSection } from './FeedFilterAdvancedSection';
 import { FeedFilterFrequencySection } from './FeedFilterFrequencySection';
 import { FeedFilterSelectionSection } from './FeedFilterSelectionSection';
 import { FeedFilterDeviceNamesSection } from './FeedFilterDeviceNamesSection';
+import { FeedFilterLocationsSection } from './FeedFilterLocationsSection';
+import type { FeedFilterLocationsViewModel } from './useFeedFilterLocationsViewModel';
 import { dutyFeedPanelSurfaceSx } from './feed-panel-styles';
 
 type UnitsExactMatchSelectValue = 'exact' | 'not-exact';
@@ -91,6 +93,7 @@ export type FeedFilterPanelViewProps = {
     onAdjacentFreqsRangeChange?: (value: number) => void;
   };
   posts: FeedFilterSelectionConfig<string>;
+  locations: FeedFilterLocationsViewModel;
   units: FeedFilterSelectionConfig<string> & {
     showExactMatchControl: boolean;
     unitsExactMatchOnly: boolean;
@@ -119,6 +122,7 @@ export function FeedFilterPanelView({
   senders,
   freqs,
   posts,
+  locations,
   units,
   devices,
   advanced,
@@ -280,6 +284,11 @@ export function FeedFilterPanelView({
             getBulkCopyText={posts.getBulkCopyText}
           />
         ) : null}
+
+        <FeedFilterLocationsSection
+          locations={locations}
+          radioFeaturesAllowed={radioFeaturesAllowed}
+        />
 
         <Box>
           <FeedFilterSelectionSection

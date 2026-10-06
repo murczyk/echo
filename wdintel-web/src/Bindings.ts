@@ -530,6 +530,7 @@ export type InboxMessagesReq = {
   selectedUnitIds: Array<number> | null;
   deniedUnitIds: Array<number> | null;
   selectedLocations: Array<string> | null;
+  deniedLocations: Array<string> | null;
   selectedDeviceNames: Array<string> | null;
   deniedDeviceNames: Array<string> | null;
   nolimit: boolean | null;
@@ -1102,6 +1103,9 @@ export type RerDutyQueryStateWf = {
   selectedDeviceNames: Array<string> | null;
   deniedDeviceNames: Array<string> | null;
   unitsExactMatchOnly: boolean | null;
+  locationsSelected: Array<string> | null;
+  locationsDenied: Array<string> | null;
+  includePelengLocations: boolean | null;
   lastViewedMessageId: number | null;
   highlightKeywordsEnabled: boolean | null;
   highlightKeywordSetId: number | null;

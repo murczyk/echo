@@ -9,8 +9,9 @@ import type { FeedFilterPanelProps } from '.././FeedFilterPanel';
 import type { SignalGroupEntry } from '../../../../../Bindings';
 
 const selectionSpy = vi.hoisted(() => vi.fn());
+const radioFeatures = vi.hoisted(() => ({ allowed: true }));
 
-vi.mock('../../shared/RadioFeatures', () => ({ useRadioFeatures: () => true }));
+vi.mock('../../shared/RadioFeatures', () => ({ useRadioFeatures: () => radioFeatures.allowed }));
 
 vi.mock('.././FeedFilterSelectionSection', () => ({
   FeedFilterSelectionSection: (props: { title: string }) => {
@@ -110,6 +111,7 @@ describe('FeedFilterPanel', () => {
 
   beforeEach(() => {
     selectionSpy.mockClear();
+    radioFeatures.allowed = true;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -275,5 +277,180 @@ describe('FeedFilterPanel', () => {
     expect(onGroupsChange).toHaveBeenNthCalledWith(1, ['A']);
     expect(onGroupsChange).toHaveBeenNthCalledWith(2, ['A', 'B']);
     expect(onReloadGroupCatalog).not.toHaveBeenCalled();
+  });
+
+  type LocationSectionProps = {
+    title: string;
+    mode: 'include' | 'exclude';
+    value: string[];
+    options: string[];
+    placeholder?: string;
+    titleTooltip?: string;
+    bulkPasteSeparators?: string[];
+    bulkPasteMenuLabel?: string;
+    bulkCopyMenuLabel?: string;
+    loading?: boolean;
+    getOptionLabel: (option: string) => string;
+    onModeChange: (mode: 'include' | 'exclude') => void;
+    onInputChange?: (value: string) => void;
+    onOpen?: () => void;
+    resolveBulkPasteOptions?: (tokens: readonly string[]) => Promise<readonly string[]>;
+  };
+
+  function latestSectionProps(title: string): LocationSectionProps | undefined {
+    return selectionSpy.mock.calls
+      .map(([value]) => value as LocationSectionProps)
+      .filter((value) => value.title === title)
+      .at(-1);
+  }
+
+  function sectionTitles(): string[] {
+    const titles = selectionSpy.mock.calls.map(([value]) => (value as { title: string }).title);
+    return [...new Set(titles)];
+  }
+
+  function buildLocationProps(
+    filterState: Partial<FeedFilterPanelProps['panel']['filterState']> = {},
+    actions: Partial<FeedFilterPanelProps['panel']['actions']> = {},
+  ): FeedFilterPanelProps {
+    const base = buildProps().panel;
+    return buildProps({
+      filterState: { ...base.filterState, ...filterState },
+      sources: { ...base.sources, locationsList: ['', 'КИЇВ'] },
+      actions: { ...base.actions, ...actions },
+    });
+  }
+
+  function pelengCheckbox(): HTMLInputElement | null {
+    const label = Array.from(container.querySelectorAll('label')).find((node) =>
+      node.textContent?.includes('Включати пеленг-локації'),
+    );
+    return label?.querySelector('input[type="checkbox"]') ?? null;
+  }
+
+  it('renders the locations section between posts and units', async () => {
+    await act(async () => root.render(<FeedFilterPanel {...buildLocationProps()} />));
+
+    const titles = sectionTitles();
+    expect(titles.indexOf('Локації')).toBe(titles.indexOf('Пост') + 1);
+    expect(titles.indexOf('Підрозділи')).toBe(titles.indexOf('Локації') + 1);
+    const locations = latestSectionProps('Локації');
+    expect(locations?.options).toEqual(['', 'КИЇВ']);
+    expect(locations?.getOptionLabel('')).toBe('<Не вказано>');
+    expect(locations?.placeholder).toBe('всі');
+    expect(locations?.bulkPasteSeparators).toEqual(['\n']);
+    expect(locations?.bulkPasteMenuLabel).toBe('Додати кілька локацій');
+    expect(locations?.bulkCopyMenuLabel).toBe('Копіювати обрані локації');
+    expect(locations?.titleTooltip).toContain('після перезавантаження');
+  });
+
+  it('keeps the locations section without radio features', async () => {
+    radioFeatures.allowed = false;
+    await act(async () => root.render(<FeedFilterPanel {...buildLocationProps()} />));
+
+    expect(sectionTitles()).not.toContain('Пост');
+    expect(sectionTitles()).toContain('Локації');
+  });
+
+  it('merges saved and typed locations into the options', async () => {
+    await act(async () =>
+      root.render(
+        <FeedFilterPanel
+          {...buildLocationProps({ locationsSelected: ['ЛЬВІВ'], locationsDenied: [] })}
+        />,
+      ),
+    );
+    expect(latestSectionProps('Локації')?.options).toEqual(['', 'КИЇВ', 'ЛЬВІВ']);
+
+    act(() => latestSectionProps('Локації')?.onInputChange?.('  одеса '));
+    expect(latestSectionProps('Локації')?.options).toEqual(['', 'КИЇВ', 'ЛЬВІВ', 'ОДЕСА']);
+  });
+
+  it('resolves bulk-pasted locations as normalized free-entry values', async () => {
+    await act(async () => root.render(<FeedFilterPanel {...buildLocationProps()} />));
+
+    const resolved = await latestSectionProps('Локації')?.resolveBulkPasteOptions?.([
+      ' харків ',
+      '<не вказано>',
+    ]);
+    expect(resolved).toEqual(['ХАРКІВ', '']);
+  });
+
+  it('moves location values between include and exclude modes', async () => {
+    const onLocationsModeTransfer = vi.fn();
+    await act(async () =>
+      root.render(
+        <FeedFilterPanel
+          {...buildLocationProps({ locationsSelected: ['КИЇВ'] }, { onLocationsModeTransfer })}
+        />,
+      ),
+    );
+    expect(latestSectionProps('Локації')?.mode).toBe('include');
+
+    act(() => latestSectionProps('Локації')?.onModeChange('exclude'));
+    expect(onLocationsModeTransfer).toHaveBeenCalledWith({
+      includeValues: [],
+      excludeValues: ['КИЇВ'],
+    });
+    expect(latestSectionProps('Локації')?.mode).toBe('exclude');
+  });
+
+  it('starts in exclude mode for denied locations', async () => {
+    await act(async () =>
+      root.render(<FeedFilterPanel {...buildLocationProps({ locationsDenied: ['КИЇВ'] })} />),
+    );
+    expect(latestSectionProps('Локації')?.mode).toBe('exclude');
+    expect(latestSectionProps('Локації')?.value).toEqual(['КИЇВ']);
+  });
+
+  it('uses the exclude placeholder for an empty exclude mode', async () => {
+    await act(async () => root.render(<FeedFilterPanel {...buildLocationProps()} />));
+    act(() => latestSectionProps('Локації')?.onModeChange('exclude'));
+    expect(latestSectionProps('Локації')?.placeholder).toBe('жодна');
+  });
+
+  it('hides the peleng checkbox without selected or denied locations', async () => {
+    await act(async () => root.render(<FeedFilterPanel {...buildLocationProps()} />));
+    expect(pelengCheckbox()).toBeNull();
+  });
+
+  it('hides the peleng checkbox without radio features', async () => {
+    radioFeatures.allowed = false;
+    await act(async () =>
+      root.render(<FeedFilterPanel {...buildLocationProps({ locationsSelected: ['КИЇВ'] })} />),
+    );
+    expect(pelengCheckbox()).toBeNull();
+  });
+
+  it.each([
+    ['selected', { locationsSelected: ['КИЇВ'] }],
+    ['denied', { locationsDenied: ['КИЇВ'] }],
+  ])('shows an unchecked peleng checkbox for %s locations', async (_label, filterState) => {
+    const onIncludePelengLocationsChange = vi.fn();
+    await act(async () =>
+      root.render(
+        <FeedFilterPanel
+          {...buildLocationProps(filterState, { onIncludePelengLocationsChange })}
+        />,
+      ),
+    );
+
+    const checkbox = pelengCheckbox();
+    expect(checkbox).not.toBeNull();
+    expect(checkbox?.checked).toBe(false);
+    act(() => checkbox?.click());
+    expect(onIncludePelengLocationsChange).toHaveBeenCalledWith(true);
+  });
+
+  it('loads locations when the field is opened', async () => {
+    const onLoadLocations = vi.fn();
+    await act(async () =>
+      root.render(<FeedFilterPanel {...buildLocationProps({}, { onLoadLocations })} />),
+    );
+    expect(onLoadLocations).not.toHaveBeenCalled();
+
+    act(() => latestSectionProps('Локації')?.onOpen?.());
+    act(() => latestSectionProps('Локації')?.onOpen?.());
+    expect(onLoadLocations).toHaveBeenCalledTimes(2);
   });
 });

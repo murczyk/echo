@@ -50,6 +50,9 @@ function rerDutyQueryStateWfToSnake(
     selected_device_names: w.selectedDeviceNames,
     denied_device_names: w.deniedDeviceNames,
     units_exact_match_only: w.unitsExactMatchOnly,
+    locations_selected: w.locationsSelected,
+    locations_denied: w.locationsDenied,
+    include_peleng_locations: w.includePelengLocations,
     last_viewed_message_id: w.lastViewedMessageId,
   };
 }

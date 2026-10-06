@@ -744,11 +744,17 @@ where
     .context(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let mut q = filter_selected_locations(
+    let q = filter_selected_locations(
         q,
         &req.selected_locations,
         include_peleng_locations,
     )?;
+    let mut q = filter_denied_locations(
+        q,
+        &req.denied_locations,
+        include_peleng_locations,
+    )
+    .c(h!())?;
     q = filter_selected_metadata_for_inbox_messages(q, req)?;
     if req.only_with_media == Some(true) {
         q = q.filter(message_has_media_exists(scope));
