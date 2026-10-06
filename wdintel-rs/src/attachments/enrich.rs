@@ -75,6 +75,7 @@ pub async fn summarize(
     if let Some(chunk) = chunk {
         let (summary, _) =
             crate::media_summary::worker::summarize_attachment_text(
+                &env.ai_engine_client,
                 &engine,
                 &chunk.text,
             )
@@ -125,7 +126,9 @@ pub async fn summarize(
                 renew(&env.dbx, job).await.c(h!())?;
                 next.push(
                     crate::media_summary::worker::summarize_attachment_text(
-                        &engine, &batch,
+                        &env.ai_engine_client,
+                        &engine,
+                        &batch,
                     )
                     .await
                     .c(h!())?
@@ -140,7 +143,9 @@ pub async fn summarize(
             renew(&env.dbx, job).await.c(h!())?;
             next.push(
                 crate::media_summary::worker::summarize_attachment_text(
-                    &engine, &batch,
+                    &env.ai_engine_client,
+                    &engine,
+                    &batch,
                 )
                 .await
                 .c(h!())?

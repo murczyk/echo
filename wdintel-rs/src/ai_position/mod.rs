@@ -136,6 +136,7 @@ pub async fn test_ai_positions(
     .await
     .context(h!())?;
     let extraction = extract::extract(
+        &env.ai_engine_client,
         &engine,
         effective_prompt(req.prompt.trim()),
         &req.text,

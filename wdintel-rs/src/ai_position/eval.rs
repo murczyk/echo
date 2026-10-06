@@ -151,7 +151,7 @@ struct CaseResult {
 
 /// `wdintel-rs --mode=debug ai-position-eval --cases <jsonl> --engine <json>`
 pub async fn evaluate(
-    _mode: Mode,
+    mode: Mode,
     ps: &crate::AiPositionEvalPs,
 ) -> anyhow::Result<()> {
     let engine: EngineFile =
@@ -176,10 +176,25 @@ pub async fn evaluate(
         None => super::effective_prompt("").to_string(),
     };
     let cases = std::fs::read_to_string(&ps.cases).c(h!())?;
+    let ai_client = if crate::ai_engine::client::is_government_url(&engine.url)
+    {
+        let config = crate::config::read_config(mode).c(h!())?;
+        crate::ai_engine::AiEngineClient::new(
+            crate::new_pg_pool_from_mode(mode).await.c(h!())?,
+            config.totp_strongbox_key,
+        )
+        .c(h!())?
+    } else {
+        crate::ai_engine::AiEngineClient::new(
+            sea_orm::DatabaseConnection::default(),
+            None,
+        )
+        .c(h!())?
+    };
     let mut results = Vec::new();
     for line in cases.lines().filter(|line| !line.trim().is_empty()) {
         let case: FeedbackCase = serde_json::from_str(line).c(h!())?;
-        results.push(evaluate_case(&engine, &prompt, case).await);
+        results.push(evaluate_case(&ai_client, &engine, &prompt, case).await);
     }
     let mut summary: BTreeMap<String, (usize, usize, usize)> = BTreeMap::new();
     for result in &results {
@@ -204,6 +219,7 @@ pub async fn evaluate(
 }
 
 async fn evaluate_case(
+    ai_client: &crate::ai_engine::AiEngineClient,
     engine: &ai_engine::Model,
     prompt: &str,
     case: FeedbackCase,
@@ -224,7 +240,7 @@ async fn evaluate_case(
     if case.verdict == "other" {
         return skipped("free-form feedback");
     }
-    let extraction = match extract(engine, prompt, text, &[]).await {
+    let extraction = match extract(ai_client, engine, prompt, text, &[]).await {
         Ok(extraction) => extraction,
         Err(error) => {
             return CaseResult {

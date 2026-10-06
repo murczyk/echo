@@ -26,6 +26,7 @@ pub use super::ai_callsign_worker_job::Entity as AiCallsignWorkerJob;
 pub use super::ai_chat::Entity as AiChat;
 pub use super::ai_chat_message::Entity as AiChatMessage;
 pub use super::ai_engine::Entity as AiEngine;
+pub use super::ai_gov_ua_settings::Entity as AiGovUaSettings;
 pub use super::ai_intel_report_attempt::Entity as AiIntelReportAttempt;
 pub use super::ai_intel_report_settings::Entity as AiIntelReportSettings;
 pub use super::ai_position_coordinate::Entity as AiPositionCoordinate;

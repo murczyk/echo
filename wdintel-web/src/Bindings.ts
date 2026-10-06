@@ -4910,6 +4910,28 @@ export type RerDutyTestReplayStatusRsp = {
   nextEmitAtMs: number | null;
 };
 
+export type AiGovUaSettingsRsp = {
+  enabled: boolean;
+  tenantId: string;
+  clientId: string;
+  scope: string;
+  hasClientSecret: boolean;
+  updatedAt: number;
+};
+
+export type SaveAiGovUaSettingsReq = {
+  enabled: boolean;
+  tenantId: string;
+  clientId: string;
+  scope: string;
+  clientSecret: string | null;
+  clearClientSecret: boolean;
+};
+
+export type AiGovUaModelsRsp = {
+  models: Array<string>;
+};
+
 export type AiEngineItem = {
   id: string;
   name: string;

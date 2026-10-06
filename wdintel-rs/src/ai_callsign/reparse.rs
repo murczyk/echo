@@ -160,6 +160,7 @@ async fn process(
         return Ok("skipped");
     };
     let callsigns = super::parse_with_feedback(
+        &env.ai_engine_client,
         &env.dbx,
         &env.rq,
         &config.ai_engine,

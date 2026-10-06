@@ -2,8 +2,9 @@
 
 The quick path prepares a draft while an operator opens a new intelligence
 report. It is available to RER and Cyber users, is disabled by default, and
-makes one OpenAI-compatible structured-output request with no reducer, retry,
-or fallback model call. The selected system prompt is compiled from
+makes one logical OpenAI-compatible structured-output request with no reducer,
+content retry, or fallback model call. The [government transport](ai/government-inference.md)
+may renew authorization and retry an initial HTTP 401 once. The selected system prompt is compiled from
 `ai-eval/2026-08-19-intelligence-report-prompt/prompt.txt`.
 
 ## Access and data flow

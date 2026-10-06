@@ -303,6 +303,7 @@ async fn perform_review(
         })).collect::<Vec<_>>(),
     });
     let response = request_ai_response(
+        &env.ai_engine_client,
         &reviewer,
         vec![
             AiEngineMessage {
