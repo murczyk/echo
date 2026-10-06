@@ -3,6 +3,7 @@ pub(crate) const ROLE_DEVICE_SOURCE: &str = "DeviceSource";
 
 pub(crate) mod access;
 pub(crate) mod analytics;
+pub(crate) mod documents;
 
 #[allow(clippy::module_inception)]
 pub(crate) mod devices;

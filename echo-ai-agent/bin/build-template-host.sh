@@ -83,6 +83,7 @@ push_template_files() {
     "$BUNDLE_DIR/runner/runner.ts" \
     "$BUNDLE_DIR/runner/citations.ts" \
     "$BUNDLE_DIR/runner/attachments.ts" \
+    "$BUNDLE_DIR/runner/devices.ts" \
     "$BUNDLE_DIR/runner/maps.ts" \
     "$BUNDLE_DIR/runner/map-script.ts" \
     "$BUNDLE_DIR/runner/sidc-resolver.ts" \

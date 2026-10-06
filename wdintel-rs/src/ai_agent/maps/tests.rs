@@ -12,6 +12,7 @@ fn input(x: &str, y: &str) -> AiAgentMapRecordInput {
         y: y.to_string(),
         comments: vec!["Вантаж \"А\" & <B>\n новий рядок".to_string()],
         sources: Vec::new(),
+        file_sources: Vec::new(),
     }
 }
 
@@ -248,6 +249,7 @@ fn browser_rendered_icons_take_precedence_and_invalid_images_are_rejected() {
         y: "6548669".to_string(),
         comments: Vec::new(),
         sources: Vec::new(),
+        file_sources: Vec::new(),
     })
     .unwrap();
     record.id = "33333333-3333-4333-8333-333333333333".to_string();

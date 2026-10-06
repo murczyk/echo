@@ -67,6 +67,7 @@ pub mod delta_kv;
 pub mod delta_login;
 pub mod device;
 pub mod device_aor;
+pub mod device_document_settings;
 pub mod device_name;
 pub mod device_settings;
 pub mod echo_account;

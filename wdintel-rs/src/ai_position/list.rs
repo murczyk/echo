@@ -257,7 +257,7 @@ pub(crate) async fn resolve_near_filters(
 
 /// Rows whose `lat_expr`/`lng_expr` lie within the resolved `near` radius:
 /// a bounding box for the indexes, then the great-circle distance.
-fn near_condition(
+pub(crate) fn near_condition(
     lat_expr: &str,
     lng_expr: &str,
     value: &str,

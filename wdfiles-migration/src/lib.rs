@@ -23,6 +23,9 @@ mod m20260905_160446_device_file_content;
 mod m20260915_212032_reuse_verified_file_content;
 mod m20260921_122222_device_sync_session_history;
 
+mod m20261006_082251_device_documents;
+mod m20261006_082252_file_history_search;
+
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -67,6 +70,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260905_160446_device_file_content::Migration),
             Box::new(m20260915_212032_reuse_verified_file_content::Migration),
             Box::new(m20260921_122222_device_sync_session_history::Migration),
+            Box::new(m20261006_082251_device_documents::Migration),
+            Box::new(m20261006_082252_file_history_search::Migration),
         ]
     }
 }

@@ -54,6 +54,13 @@ context, and reads messages by ID before citing them. See
 
 ## Rollout
 
+Device/file retrieval was added in `2026.10.06.1`. It searches authorized device
+metadata, names, extracted contents and summaries, with pinned file citations
+and bounded section reads. All derived data is stored in `wd_files`. File times
+are not observation times; position lookup retains undated evidence and current
+AOR boundaries. See [device documents](../wdintel-rs/src/devices/documents/README.md)
+for permissions, search semantics, pipeline controls and rollout/recovery.
+
 Release `2026.10.04.1` requires the matching Echo build, including the AI
 position migrations. Release `2026.09.28.1` added no database migration.
 Deploy/restart Echo first, then upgrade only the intended namespace:

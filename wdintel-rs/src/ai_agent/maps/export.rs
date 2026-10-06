@@ -102,6 +102,12 @@ fn placemark(
             &format!("/rer-analysis-neo?{query}"),
         ));
     }
+    for (index, source) in record.file_sources.iter().enumerate() {
+        metadata.push_str(&data(
+            &format!("file source {}", index + 1),
+            &source.href(),
+        ));
+    }
     format!("<Placemark id=\"record-{index}\"><name>{}</name><styleUrl>#map-{}</styleUrl><description>{}</description><ExtendedData>{metadata}</ExtendedData><Point><coordinates>{longitude},{latitude},0</coordinates></Point></Placemark>",
         xml(&record.name), record.sidc, xml(&record.comments.join("\n")))
 }

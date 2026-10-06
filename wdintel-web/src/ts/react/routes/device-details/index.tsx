@@ -1,3 +1,4 @@
+import { DeviceDocumentDeepLink } from '../device-files/components/DeviceDocumentPreview';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
 import { Box, Skeleton, Tooltip } from '@mui/material';
@@ -258,6 +259,7 @@ export function DeviceDetailsPage({
         />
       )}
 
+      {device && <DeviceDocumentDeepLink key={deviceId} deviceId={deviceId} />}
       {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
       {device?.archived ? (
         <PowerAlert severity="warning" autoHideDuration={null}>

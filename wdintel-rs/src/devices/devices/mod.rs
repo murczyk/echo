@@ -119,9 +119,12 @@ pub(crate) async fn detail(
     } else {
         DeviceReadScope::ActiveOnly
     };
-    let login = access::resolve_current_login(&env.dbx, &user)
-        .await
-        .c(h!())?;
+    let login = crate::devices::documents::access::reader(
+        &env,
+        crate::users::login_id_from_identity(&user).c(h!())?,
+    )
+    .await
+    .c(h!())?;
     let device = bl::read(&env.dbx, &login, parse_uuid(&body.device_id), scope)
         .await
         .c(h!())?;

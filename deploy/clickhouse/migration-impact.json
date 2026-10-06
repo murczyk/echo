@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20261006_082251_device_document_settings": {
+      "changes": [{ "table": "public.device_document_settings", "strategy": "excluded" }]
+    },
     "echo:m20261005_044401_messenger_media_cache_settings": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_additive" }
