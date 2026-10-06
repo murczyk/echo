@@ -366,6 +366,8 @@ pub struct AiPositionLookupKnown {
     pub first_fact_at: String,
     pub last_fact_at: String,
     pub scope: String,
+    pub scope_kind: String,
+    pub scope_key: String,
 }
 
 #[derive(
@@ -392,6 +394,12 @@ pub struct AiPositionLookupMention {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AiPositionLookupRsp {
+    #[serde(default)]
+    pub evidence_groups:
+        Vec<crate::devices::documents::evidence::DevicePositionEvidenceGroup>,
+    #[serde(default)]
+    pub file_mentions:
+        Vec<crate::devices::documents::positions::DevicePositionEvidence>,
     pub known: Vec<AiPositionLookupKnown>,
     pub located: Vec<AiPositionLookupMention>,
     pub other: Vec<AiPositionLookupMention>,

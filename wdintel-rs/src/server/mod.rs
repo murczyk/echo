@@ -818,6 +818,23 @@ fn spawn_background_workers(
             .await;
         });
     }
+    for (name, kind) in [
+        ("device_document_worker", "extract"),
+        ("device_document_summary_worker", "summary"),
+        ("device_document_position_worker", "positions"),
+        ("device_document_inspection_worker", "inspect"),
+    ] {
+        let attachment_env = env.clone();
+        let attachment_cancel = cancel_token.clone();
+        spawn_named_worker(name, bg_set, async move {
+            crate::devices::documents::worker::run(
+                attachment_env,
+                attachment_cancel,
+                kind,
+            )
+            .await;
+        });
+    }
 
     let ocr_env = env.clone();
     let ocr_cancellation_token = cancel_token.clone();
@@ -1206,6 +1223,15 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_position::feedback::reparse_ai_position_feedback)
             .service(crate::ai_position::feedback::list_ai_position_feedback)
             .service(crate::ai_position::lookup::lookup_positions)
+            .service(crate::devices::documents::api::search)
+            .service(crate::devices::documents::api::get)
+            .service(crate::devices::documents::api::read)
+            .service(crate::devices::documents::api::inspect)
+            .service(crate::devices::documents::api::status)
+            .service(crate::devices::documents::api::retry)
+            .service(crate::devices::documents::discovery::search)
+            .service(crate::devices::documents::settings::page)
+            .service(crate::devices::documents::settings::save)
             .service(crate::attachments::api::search)
             .service(crate::attachments::api::get)
             .service(crate::attachments::api::read)

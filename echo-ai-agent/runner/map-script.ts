@@ -38,6 +38,7 @@ export interface ScriptMessage {
 }
 
 export interface MapScriptInputs {
+  files?: import("./devices.ts").FileSection[];
   prompt: string;
   messages: ScriptMessage[];
   map: unknown;

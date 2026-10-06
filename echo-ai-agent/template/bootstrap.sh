@@ -107,6 +107,7 @@ install -d -m 0755 /usr/local/sbin
 install -m 0644 "$STAGE/runner.ts" "$PI_ROOT/runner.ts"
 install -m 0644 "$STAGE/citations.ts" "$PI_ROOT/citations.ts"
 install -m 0644 "$STAGE/attachments.ts" "$PI_ROOT/attachments.ts"
+install -m 0644 "$STAGE/devices.ts" "$PI_ROOT/devices.ts"
 install -m 0644 "$STAGE/maps.ts" "$PI_ROOT/maps.ts"
 install -m 0644 "$STAGE/map-script.ts" "$PI_ROOT/map-script.ts"
 install -m 0644 "$STAGE/sidc-resolver.ts" "$PI_ROOT/sidc-resolver.ts"

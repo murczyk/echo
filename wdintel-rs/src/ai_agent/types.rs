@@ -99,6 +99,9 @@ pub struct AiAgentMessageItem {
     #[serde(default)]
     pub citations: Vec<AiAgentMessageCitation>,
     #[serde(default)]
+    pub file_citations:
+        Vec<crate::devices::documents::types::AiAgentFileCitation>,
+    #[serde(default)]
     pub maps: Vec<super::maps::types::AiAgentMapSummary>,
 }
 

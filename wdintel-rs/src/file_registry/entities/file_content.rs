@@ -43,6 +43,8 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     FileContentUpload,
+    #[sea_orm(has_one = "super::file_document::Entity")]
+    FileDocument,
     #[sea_orm(has_many = "super::file_entry::Entity")]
     FileEntry,
     #[sea_orm(
@@ -58,6 +60,12 @@ pub enum Relation {
 impl Related<super::file_content_upload::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileContentUpload.def()
+    }
+}
+
+impl Related<super::file_document::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileDocument.def()
     }
 }
 

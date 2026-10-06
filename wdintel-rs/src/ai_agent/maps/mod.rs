@@ -138,6 +138,17 @@ async fn check_sources(
     login_id: Uuid,
     document: &AiAgentMapDocument,
 ) -> Result<(), AppError> {
+    let file_sources = document
+        .records
+        .iter()
+        .flat_map(|record| record.file_sources.clone())
+        .collect::<Vec<_>>();
+    if !super::file_citations::readable(env, login_id, &file_sources)
+        .await
+        .c(h!())?
+    {
+        return Err(AppError::Forbidden("Джерело файлу недоступне".into()));
+    }
     let sources = document
         .records
         .iter()

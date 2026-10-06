@@ -646,6 +646,7 @@ async fn map_publication_replay_cancellation_and_access_follow_request_ownership
         x: "5215227".to_string(),
         y: "6548669".to_string(),
         comments: vec!["Коментар".to_string()],
+        file_sources: vec![],
         sources: vec![AiAgentMessageCitation {
             message_id: source.id,
             message_identifier: source.id_uuid.unwrap().to_string(),
@@ -994,6 +995,7 @@ async fn map_revisions_edit_undo_redo_and_replay_without_side_effects() {
         x: "5215227".to_string(),
         y: "6548669".to_string(),
         comments: Vec::new(),
+        file_sources: Vec::new(),
         sources: Vec::new(),
     })
     .unwrap();

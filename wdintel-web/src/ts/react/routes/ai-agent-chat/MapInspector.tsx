@@ -1,3 +1,4 @@
+import { fileCitationHref } from '../../services/api/device-documents';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
@@ -220,6 +221,11 @@ function RecordDetails({ record }: { record: AiAgentMapRecord }) {
           {comment}
         </p>
       ))}
+      {record.fileSources?.length ? (
+        <CitationMarkdown fileCitations={record.fileSources}>
+          {record.fileSources.map((source) => `[файл](${fileCitationHref(source)})`).join(' ')}
+        </CitationMarkdown>
+      ) : null}
       {record.sources.length ? (
         <CitationMarkdown citations={record.sources}>
           {record.sources
