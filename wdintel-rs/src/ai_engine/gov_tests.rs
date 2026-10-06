@@ -35,7 +35,8 @@ async fn provider_settings_and_discovery_require_admin() {
             .route("/test/login/{login}", web::post().to(sign_in))
             .service(gov::get_settings)
             .service(gov::save_settings)
-            .service(gov::list_models),
+            .service(gov::list_models)
+            .service(gov::check_models),
     )
     .await;
     let req = SaveAiGovUaSettingsReq {
@@ -63,7 +64,7 @@ async fn provider_settings_and_discovery_require_admin() {
     )
     .await;
     let cookie = response.response().cookies().next().unwrap().into_owned();
-    for path in ["settings", "save", "models"] {
+    for path in ["settings", "save", "models", "check"] {
         let uri = format!("/api/admin/ai-engines/gov/{path}");
         let response = test::call_service(
             &app,
@@ -106,7 +107,7 @@ async fn provider_settings_and_discovery_require_admin() {
         &app,
         test::TestRequest::post()
             .uri("/api/admin/ai-engines/gov/settings")
-            .cookie(cookie)
+            .cookie(cookie.clone())
             .to_request(),
     )
     .await;
@@ -114,4 +115,16 @@ async fn provider_settings_and_discovery_require_admin() {
     let body: serde_json::Value = test::read_body_json(response).await;
     assert!(body.get("clientSecret").is_none());
     assert!(body.get("clientSecretEncrypted").is_none());
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/admin/ai-engines/gov/check")
+            .cookie(cookie)
+            .set_json(&req)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let body = test::read_body(response).await;
+    assert!(std::str::from_utf8(&body).unwrap().contains("Tenant ID"));
 }

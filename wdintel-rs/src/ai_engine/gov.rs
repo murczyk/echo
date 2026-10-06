@@ -20,6 +20,10 @@ use sea_orm::{
 use strong_box::{StaticStrongBox, StrongBox};
 use uuid::Uuid;
 
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub(super) struct GovernmentCheckError(pub String);
+
 pub(super) async fn load(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<ai_gov_ua_settings::Model> {
@@ -64,8 +68,78 @@ pub async fn list_models(
 ) -> Result<web::Json<AiGovUaModelsRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     Ok(web::Json(AiGovUaModelsRsp {
-        models: env.ai_engine_client.government_models().await.c(h!())?,
+        models: env
+            .ai_engine_client
+            .government_models()
+            .await
+            .map_err(check_error)
+            .c(h!())?,
     }))
+}
+
+#[post("/api/admin/ai-engines/gov/check")]
+pub async fn check_models(
+    env: web::Data<Env>,
+    user: Identity,
+    req: web::Json<SaveAiGovUaSettingsReq>,
+) -> Result<web::Json<AiGovUaModelsRsp>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let settings = preview(
+        &env.dbx,
+        env.config.totp_strongbox_key.as_deref(),
+        req.into_inner(),
+    )
+    .await
+    .map_err(check_error)
+    .c(h!())?;
+    Ok(web::Json(AiGovUaModelsRsp {
+        models: env
+            .ai_engine_client
+            .preview(settings)
+            .government_models()
+            .await
+            .map_err(check_error)
+            .c(h!())?,
+    }))
+}
+
+fn check_error(error: anyhow::Error) -> AppError {
+    match error.downcast_ref::<GovernmentCheckError>() {
+        Some(error) => AppError::BL {
+            msg: error.to_string(),
+        },
+        None => error.into(),
+    }
+}
+
+pub(super) async fn preview(
+    dbx: &DatabaseConnection,
+    key: Option<&str>,
+    mut req: SaveAiGovUaSettingsReq,
+) -> anyhow::Result<ai_gov_ua_settings::Model> {
+    req.enabled = true;
+    validate(&req)
+        .map_err(|error| GovernmentCheckError(error.to_string()))
+        .c(h!())?;
+    let mut settings = load(dbx).await.c(h!())?;
+    settings.client_secret_encrypted = match req
+        .client_secret
+        .as_deref()
+        .filter(|secret| !secret.is_empty())
+    {
+        Some(secret) => Some(encrypt_secret(key, secret).c(h!())?),
+        None if req.clear_client_secret => None,
+        None => settings.client_secret_encrypted,
+    };
+    anyhow::ensure!(
+        settings.client_secret_encrypted.is_some(),
+        GovernmentCheckError("Вкажіть секрет застосунку Azure".into())
+    );
+    settings.enabled = Some(true);
+    settings.tenant_id = Some(req.tenant_id.trim().to_string());
+    settings.client_id = Some(req.client_id.trim().to_string());
+    settings.scope = Some(req.scope.trim().to_string());
+    Ok(settings)
 }
 
 pub(super) async fn save(
