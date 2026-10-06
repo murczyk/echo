@@ -27,7 +27,7 @@ import {
   MAX_IMAGE_EDITOR_SOURCE_BYTES,
   readBoundedImageEditorResponse,
 } from '../../image-editor/image-editor-source-validation';
-import { replacePendingImageFile } from '../../image-editor/image-editor-upload';
+import { renamePendingFile, replacePendingImageFile } from '../../image-editor/image-editor-upload';
 import { blurActiveElement } from '../../../../utils/focus';
 import { MAX_MESSAGE_ATTACHMENTS } from '../useMessageUppy';
 import { FormSectionWrapper } from './FormSectionWrapper';
@@ -72,18 +72,17 @@ function fileUploadPresentation(
   return null;
 }
 
+function replacementMediaId(file: UppyFile<any, any>, existingMediaIds: ReadonlySet<string>) {
+  const mediaId = file.meta?.replaces_media_id;
+  return typeof mediaId === 'string' && existingMediaIds.has(mediaId) ? mediaId : null;
+}
+
 function attachmentSortRank(contentType: string | undefined, fileName: string | undefined): number {
   const kind = mediaKind(contentType, fileName);
   if (kind === 'image') return 0;
   if (kind === 'video') return 1;
-  const type = (contentType ?? '').toLowerCase();
-  if (type.startsWith('audio/')) return 3;
+  if (kind === 'audio') return 3;
   return 2;
-}
-
-function replacementMediaId(file: UppyFile<any, any>, existingMediaIds: ReadonlySet<string>) {
-  const mediaId = file.meta?.replaces_media_id;
-  return typeof mediaId === 'string' && existingMediaIds.has(mediaId) ? mediaId : null;
 }
 
 export function AttachmentsSection({
@@ -100,6 +99,7 @@ export function AttachmentsSection({
 }: Props) {
   const { control, watch, setValue } = useFormContext<MessageFormData>();
   const deletedMediaIds = watch('deleted_media_ids') || [];
+  const attachmentFileNames = watch('attachment_file_names') || {};
   const reportTextValue =
     useWatch({ control, name: 'full_body', disabled: !textPreviewMode }) ?? '';
   const reportDraft = useMemo(
@@ -136,35 +136,22 @@ export function AttachmentsSection({
     (media) => !deletedMediaIds.includes(media.id) || replacementByMediaId.has(media.id),
   );
 
-  const sortedVisibleMedia = useMemo(() => {
-    return [...visibleMedia].sort((a, b) => {
-      const rawA = a as MessageMediaInfo & {
-        file_name?: string | null;
-        content_type?: string | null;
-      };
-      const rawB = b as MessageMediaInfo & {
-        file_name?: string | null;
-        content_type?: string | null;
-      };
-      const rankA = attachmentSortRank(
-        a.contentType ?? rawA.content_type ?? undefined,
-        a.fileName ?? rawA.file_name ?? undefined,
-      );
-      const rankB = attachmentSortRank(
-        b.contentType ?? rawB.content_type ?? undefined,
-        b.fileName ?? rawB.file_name ?? undefined,
-      );
-      return rankA - rankB;
-    });
-  }, [visibleMedia]);
-
-  const sortedUppyFiles = useMemo(() => {
-    return [...uppyFiles].sort((a, b) => {
-      const rankA = attachmentSortRank(a.type, a.name);
-      const rankB = attachmentSortRank(b.type, b.name);
-      return rankA - rankB;
-    });
-  }, [uppyFiles]);
+  const sortedVisibleMedia = useMemo(
+    () =>
+      [...visibleMedia].sort(
+        (a, b) =>
+          attachmentSortRank(a.contentType ?? undefined, a.fileName ?? undefined) -
+          attachmentSortRank(b.contentType ?? undefined, b.fileName ?? undefined),
+      ),
+    [visibleMedia],
+  );
+  const sortedUppyFiles = useMemo(
+    () =>
+      [...uppyFiles].sort(
+        (a, b) => attachmentSortRank(a.type, a.name) - attachmentSortRank(b.type, b.name),
+      ),
+    [uppyFiles],
+  );
   const replacementFiles = [...replacementByMediaId.values()];
 
   const previewFiles = useMemo(
@@ -259,9 +246,6 @@ export function AttachmentsSection({
               : 'Не вдалося додати заміну вкладення',
           );
         }
-        setValue('deleted_media_ids', Array.from(new Set([...deletedMediaIds, imageId])), {
-          shouldDirty: true,
-        });
       },
       addAsNew: async (_image, result) => {
         if (totalFiles >= MAX_MESSAGE_ATTACHMENTS)
@@ -336,6 +320,7 @@ export function AttachmentsSection({
           ocr: null,
           summary: null,
           kmzConversionStatus: null,
+          positions: [],
           href: previewUrl,
         });
         if (docKind !== 'unsupported') {
@@ -361,7 +346,7 @@ export function AttachmentsSection({
         size_bytes?: number | null;
       };
       const id = String(media.id ?? (rawMedia as any).id ?? '');
-      const fileName = media.fileName ?? rawMedia.file_name ?? null;
+      const fileName = attachmentFileNames[id] ?? media.fileName ?? rawMedia.file_name ?? null;
       const contentType = media.contentType ?? rawMedia.content_type ?? undefined;
       const sizeBytes = media.sizeBytes ?? rawMedia.size_bytes ?? undefined;
       const href = media.href || (id ? `/api/messenger/media/${id}` : undefined);
@@ -435,7 +420,14 @@ export function AttachmentsSection({
       if (!replacementFiles.includes(file)) appendUppyPreview(file);
 
     return items;
-  }, [sortedUppyFiles, urls, sortedVisibleMedia, failedExistingMediaIds, replacementByMediaId]);
+  }, [
+    attachmentFileNames,
+    sortedUppyFiles,
+    urls,
+    sortedVisibleMedia,
+    failedExistingMediaIds,
+    replacementByMediaId,
+  ]);
 
   const openPreviewForId = useCallback(
     (id: string, initialAction: 'edit-image' | null = null) => {
@@ -525,7 +517,8 @@ export function AttachmentsSection({
               size_bytes?: number | null;
             };
             const id = String(media.id ?? (rawMedia as any).id ?? '');
-            const fileName = media.fileName ?? rawMedia.file_name ?? 'Unnamed file';
+            const fileName =
+              attachmentFileNames[id] ?? media.fileName ?? rawMedia.file_name ?? 'Unnamed file';
             const contentType = media.contentType ?? rawMedia.content_type ?? undefined;
             const sizeBytes = media.sizeBytes ?? rawMedia.size_bytes ?? undefined;
             const href = media.href || (id ? `/api/messenger/media/${id}` : undefined);
@@ -570,6 +563,21 @@ export function AttachmentsSection({
                     ? () => openPreviewForId(replacement?.id ?? id, 'edit-image')
                     : undefined
                 }
+                onRename={(fileName) => {
+                  if (replacement) {
+                    return renamePendingFile({
+                      uppy,
+                      fileId: replacement.id,
+                      pending: replacement,
+                      fileName,
+                    });
+                  }
+                  setValue(
+                    'attachment_file_names',
+                    { ...attachmentFileNames, [id]: fileName },
+                    { shouldDirty: true },
+                  );
+                }}
                 upload={replacement ? fileUploadPresentation(replacement, busy) : undefined}
               />
             );
@@ -600,6 +608,9 @@ export function AttachmentsSection({
                     canEditPreviewAttachment(file.id)
                       ? () => openPreviewForId(file.id, 'edit-image')
                       : undefined
+                  }
+                  onRename={(fileName) =>
+                    renamePendingFile({ uppy, fileId: file.id, pending: file, fileName })
                   }
                   upload={fileUploadPresentation(file, busy)}
                 />

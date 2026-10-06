@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { minimalInboxMessage } from '../../src/ts/react/routes/rer-duty-neo/inbox-message-mocks';
 
 import {
+  buildMessageCardMediaPreviewInboxResponse,
   createDeferredMediaResponse,
   KML_PREVIEW_FIXTURE,
   MACOS_ZIP_MEMBER_NAMES,
@@ -170,6 +171,71 @@ async function verifyEscapeClose(page: Page, dialog: Locator, reopen: () => Prom
 
 // Regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke @regression', () => {
+  test('ECHO-3660 streams managed playback after readiness and retains original download controls', async ({
+    page,
+  }) => {
+    await openMessageCardPreviewHost(page, 'duty');
+    const fixture = await createPlayableVideoFixture(page);
+    const originalUrl = '/api/messenger/media/browser-cache-test';
+    const inbox = buildMessageCardMediaPreviewInboxResponse();
+    const attachment = inbox.inbox_items[0][1].media?.find((item) => item.id === 'e2e-video-1');
+    expect(attachment).toBeDefined();
+    if (!attachment) throw new Error('Missing video fixture');
+    attachment.href = originalUrl;
+    await page.route('**/api/rer-importer/get-inbox', (route) => route.fulfill({ json: inbox }));
+    let readinessRequests = 0;
+    let streamingRequests = 0;
+    await page.route('**/api/messenger/media/browser-cache-test**', async (route) => {
+      const request = route.request();
+      if (new URL(request.url()).pathname.endsWith('/playback')) {
+        if (request.headers()['x-echo-media-cache-preflight'] === '1') {
+          readinessRequests += 1;
+          expect(request.headers().range).toBe('bytes=0-0');
+          if (readinessRequests === 1) {
+            await route.fulfill({ status: 503, headers: { 'Retry-After': '2' } });
+            return;
+          }
+        } else {
+          streamingRequests += 1;
+        }
+        const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers().range ?? '');
+        const start = range ? Number(range[1]) : 0;
+        const end = range?.[2]
+          ? Math.min(Number(range[2]), fixture.length - 1)
+          : fixture.length - 1;
+        await route.fulfill({
+          status: range ? 206 : 200,
+          contentType: 'video/webm',
+          headers: {
+            'Accept-Ranges': 'bytes',
+            ...(range ? { 'Content-Range': `bytes ${start}-${end}/${fixture.length}` } : {}),
+          },
+          body: fixture.subarray(start, end + 1),
+        });
+        return;
+      }
+      await route.fulfill({ status: 404 });
+    });
+    await page.reload();
+    await page.getByRole('button', { name: /^Розгорнути медіа:/ }).click();
+    const dialog = await openVideoPreview(page);
+    const video = dialog.locator('video');
+    await expect(video).toHaveAttribute('src', resolveFixtureUrl(page, `${originalUrl}/playback`));
+    await video.evaluate(async (element) => {
+      element.muted = true;
+      element.loop = true;
+      await element.play();
+    });
+    await expect(video).toHaveJSProperty('paused', false);
+    expect(readinessRequests).toBe(2);
+    expect(streamingRequests).toBeGreaterThan(0);
+    await expect(dialog.getByRole('link', { name: 'Відкрити в новій вкладці' })).toHaveAttribute(
+      'href',
+      originalUrl,
+    );
+    await expect(dialog.getByRole('button', { name: 'Скачати' })).toBeVisible();
+  });
+
   for (const host of ['duty', 'analysis'] as const) {
     test(`${host} document, map, and other attachment tiles download inside their borders`, async ({
       page,
@@ -2139,6 +2205,14 @@ for (const width of [1280, 390]) {
         name: /Позиція «Береза 3».*Відкрити мапу повідомлення/,
       });
       await expect(position).toBeVisible();
+      await expect(position).not.toHaveAttribute('title');
+      await position.hover();
+      const hoverPreview = page.locator('[data-coordinate-hover-preview]');
+      await expect(hoverPreview).toBeVisible();
+      await expect(hoverPreview).toContainText('Позиція «Береза 3»');
+      await expect(hoverPreview.locator('.coordinate-hover-preview__map-region')).toHaveCount(2);
+      await page.keyboard.press('Escape');
+      await expect(hoverPreview).toHaveCount(0);
       for (const theme of ['light', 'dark']) {
         await page.evaluate(
           (value) => document.documentElement.setAttribute('data-bs-theme', value),
@@ -2216,5 +2290,75 @@ for (const width of [1280, 390]) {
       expect(link.searchParams.get('m')).toBe(uuid);
       expect(link.pathname).toBe('/rer-analysis-neo');
     }
+  });
+}
+
+for (const host of ['analysis', 'duty'] as const) {
+  test(`#3676 recognized document positions join the embedded ${host} message map @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: host === 'analysis' ? 1280 : 390, height: 900 });
+    const position = {
+      begin: 0,
+      end: 10,
+      etalon: 'северный 2',
+      text: 'Северный 2',
+      kind: 'position',
+      callsign: null,
+      mgrs: [],
+      knownMgrs: '36TXT8727176222',
+      knownAt: Date.UTC(2026, 7, 16, 16, 20),
+      knownConflicting: true,
+      coordinateSources: [],
+    };
+    await openMessageCardPreviewHost(page, host, {
+      messageOverrides: {
+        coords: null,
+        text: 'Документи з розпізнаними позиціями',
+        textMarked: [],
+        media: [
+          ...(buildMessageCardMediaPreviewInboxResponse().inbox_items[0][1].media ?? []),
+          {
+            id: 'e2e-coordinate-error',
+            contentType: 'application/pdf',
+            fileName: 'positions.pdf',
+            sizeBytes: 128,
+            href: '/test-assets/message-card-media-preview/e2e-preview.txt',
+            transcription: null,
+            ocr: null,
+            summary: { state: 'completed', lastError: null, hasCoordinates: false },
+            kmzConversionStatus: null,
+            positions: [
+              position,
+              position,
+              {
+                ...position,
+                text: 'Янсон 5',
+                etalon: 'янсон 5',
+                mgrs: ['37UCQ1111122222'],
+                knownMgrs: null,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const card = page.locator('.message-card-root').first();
+    const coordinates = card.getByRole('button', { name: /^(Розгорнути|Згорнути) координати:/ });
+    await expect(coordinates).toContainText('2');
+    if ((await coordinates.getAttribute('aria-expanded')) !== 'true') await coordinates.click();
+    await card
+      .locator('[data-coordinate-preview-tile]')
+      .getByRole('button', { name: /Open .* on map/ })
+      .click();
+    const dialog = page.getByRole('dialog', { name: 'Перегляд координат' });
+    await expect(dialog.locator('.coordinate-fullscreen-map')).toHaveAttribute(
+      'data-coordinate-marker-count',
+      '2',
+    );
+    await expect(dialog).toContainText('Северный 2');
+    await expect(dialog).toContainText('16.08.2026');
+    await expect(dialog).toContainText('є розбіжності');
+    await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
   });
 }

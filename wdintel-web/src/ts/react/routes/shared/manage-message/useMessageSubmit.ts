@@ -90,8 +90,15 @@ export function useMessageSubmit({
 
     // In edit mode, check if there are existing media files that are not deleted
     const deletedMediaIds = new Set(data.deleted_media_ids ?? []);
+    const existingMediaIds = new Set(existingMedia.map((media) => media.id));
+    const replacedMediaIds = new Set(
+      uppyFiles.flatMap((file) => {
+        const mediaId = file.meta?.replaces_media_id;
+        return typeof mediaId === 'string' && existingMediaIds.has(mediaId) ? [mediaId] : [];
+      }),
+    );
     const retainedMediaIds = existingMedia
-      .filter((media) => !deletedMediaIds.has(media.id))
+      .filter((media) => !deletedMediaIds.has(media.id) && !replacedMediaIds.has(media.id))
       .map((media) => media.id);
     const retainedMediaCount = isEditMode || isReportCreateMode ? retainedMediaIds.length : 0;
     const hasExistingMedia = retainedMediaCount > 0;
@@ -128,6 +135,7 @@ export function useMessageSubmit({
 
       const files = uppy.getFiles();
       const uploadUrls: string[] = [];
+      const replacementUploads: { media_id: string; upload_url: string }[] = [];
 
       if (files.length > 0) {
         const uploadResult = await uppy.upload();
@@ -144,7 +152,12 @@ export function useMessageSubmit({
         for (const file of uppy.getFiles()) {
           const url = file.tus?.uploadUrl || file.uploadURL || file.response?.uploadURL;
           if (url) {
-            uploadUrls.push(url);
+            const replacesMediaId = file.meta?.replaces_media_id;
+            if (isEditMode && typeof replacesMediaId === 'string') {
+              replacementUploads.push({ media_id: replacesMediaId, upload_url: url });
+            } else {
+              uploadUrls.push(url);
+            }
           } else {
             throw new Error(`Помилка: не знайдено URL для файлу ${file.name}`);
           }
@@ -202,7 +215,14 @@ export function useMessageSubmit({
             ? null
             : data.signalGroupMasterKey?.trim() || (isReportMode ? null : ''),
         device_name_id: deviceNameId,
-        upload_urls: uploadUrls.length > 0 ? uploadUrls : null,
+        upload_urls: uploadUrls.length ? uploadUrls : null,
+        attachment_updates: buildAttachmentUpdates(
+          existingMedia,
+          data.attachment_file_names ?? {},
+          replacementUploads,
+          isEditMode || isReportCreateMode,
+          replacedMediaIds,
+        ),
         freq: radioFeaturesAllowed
           ? data.freq || undefined
           : (editTarget?.message.freq ?? undefined),
@@ -322,6 +342,28 @@ export function formatMessageUploadError(
     return `Не вдалося завантажити ${target} (HTTP ${status}). Повторіть спробу.`;
   }
   return `Не вдалося завантажити ${target}. Перевірте з’єднання та повторіть спробу.`;
+}
+
+function buildAttachmentUpdates(
+  existingMedia: InboxMessage['media'],
+  fileNames: Record<string, string>,
+  replacements: { media_id: string; upload_url: string }[],
+  includeExisting: boolean,
+  excludedRenameIds: ReadonlySet<string>,
+) {
+  const replacementIds = new Set(replacements.map((replacement) => replacement.media_id));
+  const renames = includeExisting
+    ? existingMedia.flatMap((media) => {
+        const fileName = fileNames[media.id];
+        return fileName &&
+          fileName !== media.fileName &&
+          !replacementIds.has(media.id) &&
+          !excludedRenameIds.has(media.id)
+          ? [{ media_id: media.id, file_name: fileName }]
+          : [];
+      })
+    : [];
+  return replacements.length || renames.length ? { replacements, renames } : undefined;
 }
 
 function optionalInteger(value: string | null | undefined): number | undefined {

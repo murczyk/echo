@@ -924,6 +924,17 @@ pub async fn aggregate_to_inbox_messages(
     let highlight_points = req.highlight_points.unwrap_or(false);
     let highlight_positions =
         highlight_points || req.highlight_callsigns.unwrap_or(false);
+    let mut positions_by_media = crate::ai_position::list::positions_by_media(
+        &env.dbx,
+        media_by_message
+            .values()
+            .flatten()
+            .map(|media| media.id)
+            .collect(),
+        &sigint_groups.iter().cloned().collect(),
+    )
+    .await
+    .c(h!())?;
     let mut positions_by_message = if highlight_positions {
         crate::ai_position::list::positions_by_message(
             &env.dbx,
@@ -977,6 +988,7 @@ pub async fn aggregate_to_inbox_messages(
                 kmz_conversion_status: kmz_conversion_statuses
                     .get(&m.id)
                     .cloned(),
+                positions: positions_by_media.remove(&m.id).unwrap_or_default(),
             })
             .collect_vec();
         let images = media

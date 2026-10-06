@@ -639,6 +639,7 @@ async fn prepare_item_media(
     let staged = match linked_messages.first() {
         Some(source_message) => {
             crate::message_queue::stage_queue_media_for_active_edit(
+                &context.dbx,
                 &attachments,
                 &source_message.attachments_hash,
                 &context.config,
@@ -648,6 +649,7 @@ async fn prepare_item_media(
             .c(h!())?
         }
         None => crate::message_queue::stage_queue_media(
+            &context.dbx,
             &attachments,
             &context.config,
             &context.s3,

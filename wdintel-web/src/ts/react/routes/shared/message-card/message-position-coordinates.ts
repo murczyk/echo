@@ -41,9 +41,11 @@ export function resolvePositionCoordinatePreviewPoints(
 export function resolveMessagePositionCoordinatePreviewPoints(
   message: InboxMessage,
 ): CoordinatePreviewPoint[] {
-  return (message.textMarked ?? []).flatMap((node) =>
-    typeof node !== 'string' && 'CNPositionC' in node
-      ? resolvePositionCoordinatePreviewPoints(node.CNPositionC)
-      : [],
+  const bodyPositions = (message.textMarked ?? []).flatMap((node) =>
+    typeof node !== 'string' && 'CNPositionC' in node ? [node.CNPositionC] : [],
   );
+  return [
+    ...bodyPositions,
+    ...(message.media ?? []).flatMap((media) => media.positions ?? []),
+  ].flatMap(resolvePositionCoordinatePreviewPoints);
 }

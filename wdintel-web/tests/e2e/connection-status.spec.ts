@@ -104,3 +104,91 @@ for (const { width, theme } of [
     await expect(pollingBanner).toHaveCount(0);
   });
 }
+
+// Regression: https://github.com/echoua/echo/issues/3658
+for (const failure of ['gateway', 'offline'] as const) {
+  test(`analysis filters back off and recover after ${failure} failures @regression`, async ({
+    page,
+  }) => {
+    test.setTimeout(60000);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.clock.install();
+    await page.addInitScript(() => {
+      Math.random = () => 0;
+    });
+    await installAnalysisNeoApiMocks(page);
+    await page.route('**/api/event-stream/long-poll', () => {});
+    const attempts = { tags: 0, groups: 0, senders: 0 };
+    let unavailable = false;
+    for (const section of ['tags', 'groups', 'senders'] as const) {
+      await page.route(`**/api/rer/analysis/stats/${section}`, async (route) => {
+        attempts[section] += 1;
+        if (!unavailable) {
+          await route.fallback();
+        } else if (failure === 'offline') {
+          await route.abort('internetdisconnected');
+        } else {
+          await route.fulfill({ status: 502, body: 'Bad Gateway' });
+        }
+      });
+    }
+    await page.clock.pauseAt(new Date());
+    await page.goto('/rer-analysis-neo');
+    await expect(page.getByRole('textbox', { name: 'Пошук', exact: true })).toBeVisible();
+    await page.clock.runFor(500);
+    unavailable = true;
+    attempts.tags = 0;
+    attempts.groups = 0;
+    attempts.senders = 0;
+    await page.getByRole('textbox', { name: 'Пошук', exact: true }).fill('outage');
+    await page.clock.runFor(300);
+    await expect.poll(() => attempts).toEqual({ tags: 1, groups: 1, senders: 1 });
+    await page.clock.runFor(1500);
+    expect(attempts).toEqual({ tags: 1, groups: 1, senders: 1 });
+    await page.clock.runFor(500);
+    await expect.poll(() => attempts).toEqual({ tags: 2, groups: 2, senders: 2 });
+    await page.clock.runFor(3500);
+    expect(attempts).toEqual({ tags: 2, groups: 2, senders: 2 });
+    await page.clock.runFor(500);
+    await expect.poll(() => attempts).toEqual({ tags: 3, groups: 3, senders: 3 });
+    unavailable = false;
+    await page.clock.runFor(8100);
+    await expect.poll(() => attempts).toEqual({ tags: 4, groups: 4, senders: 4 });
+    await page.clock.runFor(1000);
+    expect(attempts).toEqual({ tags: 4, groups: 4, senders: 4 });
+    unavailable = true;
+    await page.getByRole('textbox', { name: 'Пошук', exact: true }).fill('another outage');
+    await page.clock.runFor(300);
+    await expect.poll(() => attempts).toEqual({ tags: 5, groups: 5, senders: 5 });
+    await page.goto('/login');
+    await page.clock.fastForward(60000);
+    expect(attempts).toEqual({ tags: 5, groups: 5, senders: 5 });
+  });
+}
+
+// Regression: https://github.com/echoua/echo/issues/3658
+test('unavailable analysis APIs at startup do not cause a request storm @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  let requests = 0;
+  await installAnalysisNeoApiMocks(page);
+  await page.route('**/api/**', async (route) => {
+    if (
+      !['fetch', 'xhr'].includes(route.request().resourceType()) ||
+      new URL(route.request().url()).pathname === '/api/user'
+    ) {
+      await route.fallback();
+      return;
+    }
+    requests += 1;
+    await route.fulfill({ status: 502, body: 'Bad Gateway' });
+  });
+  await page.goto('/rer-analysis-neo');
+  await expect(page.getByRole('heading', { name: 'Аналіз', exact: true })).toBeVisible();
+  await page.clock.runFor(5000);
+  expect(requests).toBeGreaterThan(0);
+  expect(requests).toBeLessThan(50);
+});

@@ -41,6 +41,7 @@ import {
   type PointBlacklistRequestSource,
 } from './point-highlight-blacklist';
 import { PowerMenu } from '../../../components/PowerMenu';
+import { PositionToken } from './PositionToken';
 
 const ORANGE_TOKEN_BG = '#fd884f';
 const ORANGE_TOKEN_FG = '#000';
@@ -708,7 +709,7 @@ export function renderMarkedText(
       // «Лиман-2»): keep the text around the pill.
       const callsignAt = callsign ? text.indexOf(callsign) : -1;
       const content = callsign ? (
-        <span className="content-token--position-callsign" title={title}>
+        <span className="content-token--position-callsign">
           {callsignAt > 0 ? text.slice(0, callsignAt) : null}
           <CallsignWithHint
             text={callsign}
@@ -726,9 +727,9 @@ export function renderMarkedText(
       ) : (
         text
       );
-      const interactive = located && options?.onOpenPositionOnMap != null;
       const positionContent = (
-        <span
+        <PositionToken
+          position={node.CNPositionC}
           className={[
             'content-token--position',
             `content-token--position-${kind}`,
@@ -738,31 +739,10 @@ export function renderMarkedText(
             .filter(Boolean)
             .join(' ')}
           title={title}
-          role={interactive ? 'button' : undefined}
-          tabIndex={interactive ? 0 : undefined}
-          aria-label={interactive ? `${title}. Відкрити мапу повідомлення` : undefined}
-          onClick={
-            interactive
-              ? (event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  options?.onOpenPositionOnMap?.(node.CNPositionC);
-                }
-              : undefined
-          }
-          onKeyDown={
-            interactive
-              ? (event) => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  options?.onOpenPositionOnMap?.(node.CNPositionC);
-                }
-              : undefined
-          }
+          onOpen={options?.onOpenPositionOnMap}
         >
           {content}
-        </span>
+        </PositionToken>
       );
       // A search match inside the position keeps its search highlight.
       renderedNodes.push(

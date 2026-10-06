@@ -785,6 +785,11 @@ pub const SIGNAL_RESTART_MAINTENANCE_TTL_SEC: u64 = 90;
 pub const SIGNAL_RESTART_COOLDOWN_TTL_SEC: u64 = 5 * 60;
 pub const SIGNAL_RESTART_MAINTENANCE_RETRY_SEC: u64 = 1;
 pub const MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR: &str = "/tmp";
+pub const MESSENGER_MEDIA_CACHE_RETENTION_HOURS_DEFAULT: i64 = 24;
+pub const MESSENGER_MEDIA_CACHE_MAX_SIZE_GIB_DEFAULT: i64 = 32;
+pub const MESSENGER_MEDIA_CACHE_MIN_FREE_GIB_DEFAULT: i64 = 10;
+pub const MESSENGER_MEDIA_CACHE_RETENTION_HOURS_MAX: i64 = 8760;
+pub const MESSENGER_MEDIA_CACHE_SIZE_GIB_MAX: i64 = 1_048_576;
 pub const MESSENGER_MEDIA_CACHE_DIR_NAME: &str = "messenger_media_cache";
 pub const MESSENGER_MEDIA_CACHE_PREFLIGHT_HEADER: &str =
     "x-echo-media-cache-preflight";
@@ -858,6 +863,26 @@ pub const MESSENGER_MEDIA_CACHE_TEMP_TTL_SECS: u64 = 2 * 60 * 60;
 pub const MESSENGER_MEDIA_CACHE_CLEANUP_INTERVAL_SECS: u64 = 15 * 60;
 pub const MESSENGER_MEDIA_CACHE_DIR_MODE: u32 = 0o700;
 pub const MESSENGER_MEDIA_CACHE_FILE_MODE: u32 = 0o600;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_DIR_NAME: &str = "local";
+pub const MESSENGER_MEDIA_LOCAL_CACHE_RETENTION_SECS: u64 = 24 * 60 * 60;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_MAX_TOTAL_SIZE_BYTES: u64 =
+    32 * 1024 * 1024 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_MIN_FREE_SPACE_BYTES: u64 =
+    10 * 1024 * 1024 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_LOCK_WAIT_MILLIS: u64 = 500;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_LOCK_RETRY_MILLIS: u64 = 25;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_WORKER_INTERVAL_SECS: u64 = 30;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_RECOVERY_BATCH_SIZE: u64 = 100;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_RECOVERY_CONCURRENCY: usize = 2;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_ORPHAN_TTL_SECS: i64 = 2 * 60 * 60;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_METADATA_MAX_BYTES: u64 = 16 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_TIMEOUT_SECS: u64 = 5 * 60;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_PROBE_TIMEOUT_SECS: u64 = 15;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_MP4_METADATA_MAX_BYTES: u64 =
+    16 * 1024 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_EXTRA_BYTES: u64 = 1024 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_FFMPEG_BIN: &str = "ffmpeg";
+pub const MESSENGER_MEDIA_LOCAL_CACHE_FFPROBE_BIN: &str = "ffprobe";
 pub const MESSENGER_MEDIA_THUMBNAIL_DIR_NAME: &str = "thumbnails";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_DIR_NAME: &str = "thumbnail_sources";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_BUDGET_LOCK_FILE_NAME: &str =
@@ -979,6 +1004,7 @@ pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
 pub const EVENT_STREAM_ORIGIN_HEADER: &str = "x-echo-event-origin";
 pub const EVENT_STREAM_ORIGIN_MAX_BYTES: usize = 128;
 pub const IDENTITY_SESSION_USER_ID_KEY: &str = "actix_identity.user_id";
+pub const DELTA_LOGIN_REDIRECT_SESSION_PREFIX: &str = "delta_login.redirect.";
 pub const SESSION_ACTIVITY_QUEUE_CAPACITY_DEFAULT: usize = 2048;
 pub const SESSION_ACTIVITY_PAYLOAD_MAX_BYTES_DEFAULT: usize = 4096;
 pub const SESSION_ACTIVITY_GREPTIME_BATCH_SIZE: usize = 100;
@@ -1463,6 +1489,8 @@ pub struct Config {
     #[serde(default)]
     pub totp_strongbox_key: Option<String>,
     pub storage_dir: String,
+    #[serde(skip)]
+    pub(crate) messenger_media_cache: Option<MessengerMediaCacheConfig>,
     pub signal_api_phone: String,
     pub signal_import_group_name: String,
     pub signal_import_fiven_name: String,
@@ -1532,6 +1560,28 @@ pub struct Config {
     pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
     pub ai_agent_dispatcher: Option<AiAgentDispatcherConfig>,
     pub ocr: Option<OcrConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[serde(default)]
+pub struct MessengerMediaCacheConfig {
+    pub enabled: bool,
+    pub retention_secs: u64,
+    pub max_total_size_bytes: u64,
+    pub min_free_space_bytes: u64,
+}
+
+impl Default for MessengerMediaCacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            retention_secs: MESSENGER_MEDIA_LOCAL_CACHE_RETENTION_SECS,
+            max_total_size_bytes:
+                MESSENGER_MEDIA_LOCAL_CACHE_MAX_TOTAL_SIZE_BYTES,
+            min_free_space_bytes:
+                MESSENGER_MEDIA_LOCAL_CACHE_MIN_FREE_SPACE_BYTES,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -2155,6 +2205,21 @@ pub fn check_is_worker_night_shift(config: &Config) -> bool {
     !(shift_end..shift_start).contains(&now.hour())
 }
 
+pub const ATTACHMENT_BATCH_SIZE: i64 = 50;
+pub const ATTACHMENT_CHUNK_CHARS: usize = 12_000;
+pub const ATTACHMENT_CHUNK_OVERLAP: usize = 1000;
+pub const ATTACHMENT_WORKER_SLEEP_SECS: u64 = 5;
+pub const ATTACHMENT_LEASE_SECS: i64 = 900;
+pub const ATTACHMENT_MAX_ATTEMPTS: i32 = 8;
+pub const ATTACHMENT_SEARCH_LIMIT: i64 = 20;
+pub const ATTACHMENT_READ_LIMIT: i64 = 4;
+pub const ATTACHMENT_MAX_QUERY_CHARS: usize = 1_000;
+pub const ATTACHMENT_MAX_RESULT_BYTES: usize = 250 * 1024 * 1024;
+
+pub const ATTACHMENT_MAX_INSPECTION_JOBS: i64 = 32;
+
+pub const ATTACHMENT_EXTRACTOR_URL_ENV: &str = "ATTACHMENT_EXTRACTOR_URL";
+
 #[cfg(test)]
 mod config_tests {
     use super::*;
@@ -2430,18 +2495,3 @@ fill_comp_freq_worker = false
         );
     }
 }
-
-pub const ATTACHMENT_BATCH_SIZE: i64 = 50;
-pub const ATTACHMENT_CHUNK_CHARS: usize = 12_000;
-pub const ATTACHMENT_CHUNK_OVERLAP: usize = 1000;
-pub const ATTACHMENT_WORKER_SLEEP_SECS: u64 = 5;
-pub const ATTACHMENT_LEASE_SECS: i64 = 900;
-pub const ATTACHMENT_MAX_ATTEMPTS: i32 = 8;
-pub const ATTACHMENT_SEARCH_LIMIT: i64 = 20;
-pub const ATTACHMENT_READ_LIMIT: i64 = 4;
-pub const ATTACHMENT_MAX_QUERY_CHARS: usize = 1_000;
-pub const ATTACHMENT_MAX_RESULT_BYTES: usize = 250 * 1024 * 1024;
-
-pub const ATTACHMENT_MAX_INSPECTION_JOBS: i64 = 32;
-
-pub const ATTACHMENT_EXTRACTOR_URL_ENV: &str = "ATTACHMENT_EXTRACTOR_URL";

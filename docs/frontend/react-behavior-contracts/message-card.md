@@ -136,6 +136,13 @@
 - **API endpoint and compatibility requirements:** document coordinate summaries retain title, description, planned means, and supported coordinate-system mapping.
 - **Responsive and keyboard requirements:** none at the parser boundary.
 - **Known race/idempotency constraints:** a failed document lookup must not overwrite already resolved coordinates.
+
+Named positions in message text and recognized document positions join this map
+with their names, source dates and accessible supporting messages (#3676).
+Hovering or focusing a located text position opens the shared overview/detail
+preview; clicking or pressing Enter/Space opens the full message map focused on
+that point. Positions without parseable coordinates remain textual. Regression:
+`wdintel-web/tests/e2e/message-card-media-preview.spec.ts`.
 - **Source implementation:** `message-coordinate-preview.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-coordinate-preview.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational coordinate parser coverage.
@@ -269,3 +276,17 @@
 - **Behavior ID:** `react-message-card-attachment-replacement`
 - **Expected observable result:** an attachment replacement is immediately visible without an outgoing animation layer.
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+
+## Video playback delivery
+
+- Managed messenger videos use the authenticated playback endpoint and stream
+  after a one-byte readiness request, including small attachments.
+- Each readiness request has a 30-second timeout and automatic retries stop after
+  two minutes. Errors expose a manual Retry while original Open/Download remain
+  available. A stalled player also leaves its loading state after 30 seconds.
+- A rejected autoplay request prompts an explicit tap; other playback failures
+  remain visible. Carousel navigation and Duty's creation-time contract are
+  unchanged.
+- Coverage: `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-card-video-loading.spec.ts`,
+  `wdintel-web/src/ts/react/routes/shared/message-card/renderers/__tests__/VideoAttachmentPreviewRenderer.spec.tsx`
+  and `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`.

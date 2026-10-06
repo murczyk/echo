@@ -429,6 +429,7 @@ export function useManageMessageDrawer({
         contentType,
         sizeBytes,
         href,
+        positions: m.positions ?? [],
         transcription: m.transcription ?? (raw as any).transcription ?? null,
         ocr: m.ocr ?? (raw as any).ocr ?? null,
         summary: m.summary ?? (raw as any).summary ?? null,
@@ -436,11 +437,12 @@ export function useManageMessageDrawer({
       };
     });
   }, [isEditMode, editTarget?.message.media, reportSource?.message.media]);
-  const retainedAttachmentCount =
+  const retainedAttachmentIds =
     isEditMode || isReportCreateMode
-      ? (existingMedia.filter((media) => !(formValues.deleted_media_ids ?? []).includes(media.id))
-          .length ?? 0)
-      : 0;
+      ? existingMedia
+          .filter((media) => !(formValues.deleted_media_ids ?? []).includes(media.id))
+          .map((media) => media.id)
+      : [];
   const {
     uppy,
     uppyFiles,
@@ -451,7 +453,7 @@ export function useManageMessageDrawer({
     handleDropzoneKeyDown,
     attachmentErrorMsg,
     setAttachmentErrorMsg,
-  } = useMessageUppy(busy, retainedAttachmentCount);
+  } = useMessageUppy(busy, retainedAttachmentIds);
   const hasUnsavedChanges = formState.isDirty || uppyFiles.length > 0;
 
   useEffect(() => {
@@ -629,6 +631,10 @@ export function useManageMessageDrawer({
       newAttachmentCount: uppyFiles.length,
       existingAttachmentIds: existingMedia.map((media) => media.id),
       deletedAttachmentIds: formValues.deleted_media_ids ?? [],
+      replacedAttachmentIds: uppyFiles.flatMap((file) => {
+        const mediaId = file.meta?.replaces_media_id;
+        return typeof mediaId === 'string' ? [mediaId] : [];
+      }),
       maxAttachmentCount: MAX_MESSAGE_ATTACHMENTS,
     });
   }, [
@@ -646,7 +652,7 @@ export function useManageMessageDrawer({
     parsing,
     reportCopyLoaded,
     signalGroups,
-    uppyFiles.length,
+    uppyFiles,
   ]);
 
   useEffect(() => {

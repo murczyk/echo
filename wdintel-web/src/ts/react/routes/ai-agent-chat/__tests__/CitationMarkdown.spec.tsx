@@ -57,7 +57,8 @@ describe('AI message citations', () => {
   it('keeps single newlines in answers as line breaks', async () => {
     await render('5271298, 6684479\n5278075, 6683751\n\n- список');
     const paragraph = container.querySelector('p');
-    expect(paragraph?.innerHTML).toBe('5271298, 6684479<br>\n5278075, 6683751');
+    expect(paragraph?.querySelectorAll('br')).toHaveLength(1);
+    expect(paragraph?.textContent).toBe('5271298, 6684479\n5278075, 6683751');
     expect(container.querySelectorAll('li')).toHaveLength(1);
   });
 

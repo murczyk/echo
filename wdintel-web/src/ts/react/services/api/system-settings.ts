@@ -1,4 +1,7 @@
-import type { SystemSettingsCurrentRsp } from '../../../../Bindings';
+import type {
+  SystemSettingsCurrentRsp,
+  SystemSettingsItem as BackendSystemSettingsItem,
+} from '../../../../Bindings';
 import { postJson } from './client';
 
 type SystemSettingsItemRaw = {
@@ -25,6 +28,10 @@ type SystemSettingsItemRaw = {
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   two_factor_auth_enabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'] | null;
   exclude_orbit_other_units?: boolean | null;
+  messenger_media_cache_min_free_gib?: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
+  messenger_media_cache_max_size_gib?: BackendSystemSettingsItem['messengerMediaCacheMaxSizeGib'];
+  messenger_media_cache_retention_hours?: BackendSystemSettingsItem['messengerMediaCacheRetentionHours'];
+  messenger_media_cache_enabled?: BackendSystemSettingsItem['messengerMediaCacheEnabled'];
   autofix_echoim_missing_messages?: boolean;
   devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
@@ -100,6 +107,10 @@ type CreateSystemSettingsReqRaw = {
   analysis_aor_filter_enabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   two_factor_auth_enabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   exclude_orbit_other_units: boolean;
+  messenger_media_cache_min_free_gib: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
+  messenger_media_cache_max_size_gib: BackendSystemSettingsItem['messengerMediaCacheMaxSizeGib'];
+  messenger_media_cache_retention_hours: BackendSystemSettingsItem['messengerMediaCacheRetentionHours'];
+  messenger_media_cache_enabled: BackendSystemSettingsItem['messengerMediaCacheEnabled'];
   autofix_echoim_missing_messages: boolean;
   devices_section_enabled: boolean;
   sigint_comment_parsing_enabled: boolean;
@@ -144,6 +155,10 @@ export type SystemSettingsItem = {
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   twoFactorAuthEnabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   excludeOrbitOtherUnits: boolean;
+  messengerMediaCacheMinFreeGib: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
+  messengerMediaCacheMaxSizeGib: BackendSystemSettingsItem['messengerMediaCacheMaxSizeGib'];
+  messengerMediaCacheRetentionHours: BackendSystemSettingsItem['messengerMediaCacheRetentionHours'];
+  messengerMediaCacheEnabled: BackendSystemSettingsItem['messengerMediaCacheEnabled'];
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -215,6 +230,10 @@ export type CreateSystemSettingsInput = {
   analysisAorFilterEnabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   twoFactorAuthEnabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   excludeOrbitOtherUnits?: boolean;
+  messengerMediaCacheMinFreeGib?: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
+  messengerMediaCacheMaxSizeGib?: BackendSystemSettingsItem['messengerMediaCacheMaxSizeGib'];
+  messengerMediaCacheRetentionHours?: BackendSystemSettingsItem['messengerMediaCacheRetentionHours'];
+  messengerMediaCacheEnabled?: BackendSystemSettingsItem['messengerMediaCacheEnabled'];
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -256,6 +275,10 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
     excludeOrbitOtherUnits: raw.exclude_orbit_other_units ?? true,
+    messengerMediaCacheMinFreeGib: raw.messenger_media_cache_min_free_gib ?? 10,
+    messengerMediaCacheMaxSizeGib: raw.messenger_media_cache_max_size_gib ?? 32,
+    messengerMediaCacheRetentionHours: raw.messenger_media_cache_retention_hours ?? 24,
+    messengerMediaCacheEnabled: raw.messenger_media_cache_enabled ?? false,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
@@ -338,6 +361,10 @@ export async function createSystemSettings(
     analysis_aor_filter_enabled: input.analysisAorFilterEnabled ?? true,
     two_factor_auth_enabled: input.twoFactorAuthEnabled ?? true,
     exclude_orbit_other_units: input.excludeOrbitOtherUnits ?? true,
+    messenger_media_cache_min_free_gib: input.messengerMediaCacheMinFreeGib ?? 10,
+    messenger_media_cache_max_size_gib: input.messengerMediaCacheMaxSizeGib ?? 32,
+    messenger_media_cache_retention_hours: input.messengerMediaCacheRetentionHours ?? 24,
+    messenger_media_cache_enabled: input.messengerMediaCacheEnabled ?? false,
     autofix_echoim_missing_messages: input.autofixEchoimMissingMessages,
     devices_section_enabled: input.devicesSectionEnabled,
     sigint_comment_parsing_enabled: input.sigintCommentParsingEnabled,

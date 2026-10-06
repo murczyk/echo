@@ -901,6 +901,15 @@ fn spawn_background_workers(
         }
     }
     spawn_palitra_conversion_worker(bg_set, env.clone());
+    let media_cache_env = env.clone();
+    spawn_named_worker(
+        "messenger_media_local_cache_worker",
+        bg_set,
+        async move {
+            crate::messenger::media_local_cache::run_nofail(media_cache_env)
+                .await;
+        },
+    );
     spawn_signal_media_conversion_worker(bg_set, env);
 }
 
@@ -945,6 +954,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::delta::login::fetch_redirect_url)
             .service(crate::delta::login::handle_redirect)
             .service(crate::rer_importer::messenger_media)
+            .service(crate::rer_importer::messenger_media_playback)
             .service(crate::sigint::media_conversion::status)
             .service(crate::sigint::media_conversion::preview)
             .service(crate::sigint::media_conversion::retry)
@@ -981,6 +991,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::latest_senders)
             .service(crate::rer_importer::senders)
             .service(crate::rer_importer::list_messages)
+            .service(crate::rer_importer::import_csv::rer_csv_import_options)
             .service(
                 crate::rer_importer::import_csv::rer_csv_import_preflight,
             )

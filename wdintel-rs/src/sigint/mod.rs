@@ -778,6 +778,12 @@ pub async fn save_attachment_restapi(
             .await
             .c(h!())?;
             txn.commit().await.c(h!())?;
+            crate::messenger::media_local_cache::pin_media_best_effort(
+                dbx,
+                config,
+                &upload_result.media,
+            )
+            .await;
             if delete_uploaded_attachment {
                 media::delete_uploaded_attachment_files(
                     &upload_result.uploaded_files_ready_for_deletion,

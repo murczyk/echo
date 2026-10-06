@@ -59,7 +59,7 @@ export function pastedFileName(file: File, now: Date = new Date()): string {
   return `screenshot-${stamp}.${ext}`;
 }
 
-export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
+export function useMessageUppy(busy: boolean, occupiedAttachmentIds: readonly string[] = []) {
   const [attachmentErrorMsg, setAttachmentErrorMsg] = useState<string | null>(null);
   const [uppy] = useState(() =>
     new Uppy({
@@ -90,8 +90,18 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
   const addFiles = (files: File[], getName: (file: File) => string) => {
     setAttachmentErrorMsg(null);
     files.forEach((file) => {
+      const pendingFiles = uppy.getFiles();
+      const replacedAttachmentIds = new Set(
+        pendingFiles.flatMap((pending) => {
+          const mediaId = pending.meta?.replaces_media_id;
+          return typeof mediaId === 'string' ? [mediaId] : [];
+        }),
+      );
+      const occupiedAttachmentCount = occupiedAttachmentIds.filter(
+        (id) => !replacedAttachmentIds.has(id),
+      ).length;
       const remainingCapacity =
-        MAX_MESSAGE_ATTACHMENTS - occupiedAttachmentCount - uppy.getFiles().length;
+        MAX_MESSAGE_ATTACHMENTS - occupiedAttachmentCount - pendingFiles.length;
       if (remainingCapacity <= 0) {
         setAttachmentErrorMsg(
           `Перевищено максимальну кількість файлів (${MAX_MESSAGE_ATTACHMENTS})`,
