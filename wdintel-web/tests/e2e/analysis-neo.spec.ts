@@ -60,6 +60,37 @@ test.describe('@smoke @regression', () => {
     await expect(summaryPanel.getByText('123.4', { exact: true })).toBeVisible();
   });
 
+  test('@regression browses bounded callsign pages and retains a selected group', async ({
+    page,
+  }) => {
+    await setupAnalysisNeoPage(page, {
+      callsignPageResponse: ({ cursor }) =>
+        cursor == null
+          ? {
+              entries: [{ value: 'Alpha', label: 'ALPHA', values: ['Alpha', 'alpha'], count: 2 }],
+              has_more: true,
+              next_cursor: 'next-page',
+            }
+          : {
+              entries: [{ value: 'Bravo', label: 'BRAVO', values: ['Bravo'], count: 1 }],
+              has_more: false,
+              next_cursor: null,
+            },
+    });
+    await page.goto('/rer-analysis-neo');
+
+    await page.getByRole('button', { name: 'Розгорнути праву панель' }).click();
+    const callsignsTab = page.getByRole('tab', { name: 'Позивні' });
+    await callsignsTab.click();
+    await expect(page.getByRole('button', { name: 'Додати ALPHA' })).toBeVisible();
+    await page.getByRole('button', { name: 'Додати ALPHA' }).click();
+    await expect(page.getByRole('button', { name: 'ALPHA ×' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Наступні 50' }).click();
+    await expect(page.getByRole('button', { name: 'Додати BRAVO' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'ALPHA ×' })).toBeVisible();
+  });
+
   test('analysis neo keeps narrow controls fixed while messages scroll', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 844 });
     await setupAnalysisNeoPage(page, { inboxResponse: createOverflowingInboxResponse() });

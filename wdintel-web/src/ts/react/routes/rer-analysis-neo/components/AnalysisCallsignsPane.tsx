@@ -5,13 +5,19 @@ import type {
 } from '../../../../../Bindings';
 import { AnalysisCallsignFrequencySearch } from './AnalysisCallsignFrequencySearch';
 import { Box, Button, Paper, Stack, TextField, Typography } from '@mui/material';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCallsignPage } from '../use-callsign-page';
+import {
+  normalizeCallsignFilterValues,
+  normalizeCallsignLookupValue,
+} from '../../../utils/callsign-normalization';
 
 type Props = {
   analysisReq: AnalysisStatsReq | null;
   onClearCallsign: () => void;
   onAddCallsign: (callsigns: string[]) => void;
   onAddFreq: (freq: string) => void;
+  onRemoveCallsign: (callsigns: string[]) => void;
   selectedCallsigns: readonly string[];
   selectedFreqs: readonly string[];
   onSearchFrequencyMatches: (
@@ -27,6 +33,7 @@ export function AnalysisCallsignsPane({
   onClearCallsign,
   onAddCallsign,
   onAddFreq,
+  onRemoveCallsign,
   selectedCallsigns,
   selectedFreqs,
   onSearchFrequencyMatches,
@@ -45,6 +52,32 @@ export function AnalysisCallsignsPane({
       : page.error
         ? 'Не вдалося завантажити позивні.'
         : null;
+  const selectedValues = useMemo(
+    () => new Set(normalizeCallsignFilterValues(selectedCallsigns)),
+    [selectedCallsigns],
+  );
+  const selectedMetadataRef = useRef<Record<string, { label: string; values: string[] }>>({});
+  const [selectedGroups, setSelectedGroups] = useState<Array<{ label: string; values: string[] }>>(
+    [],
+  );
+
+  useEffect(() => {
+    const next: Record<string, { label: string; values: string[] }> = {};
+    for (const selected of selectedValues) {
+      next[selected] = selectedMetadataRef.current[selected] ?? {
+        label: selected,
+        values: [selected],
+      };
+    }
+    for (const entry of page.entries) {
+      const key = normalizeCallsignLookupValue(entry.value);
+      if (selectedValues.has(key)) {
+        next[key] = { label: entry.label, values: entry.values };
+      }
+    }
+    selectedMetadataRef.current = next;
+    setSelectedGroups(Object.values(next));
+  }, [page.entries, selectedCallsigns, selectedValues]);
   return (
     <Stack spacing={0}>
       <Paper component="section" variant="outlined" sx={{ p: 2 }}>
@@ -59,14 +92,41 @@ export function AnalysisCallsignsPane({
           onChange={(event) => page.setQuery(event.target.value)}
           sx={{ mb: 1 }}
         />
-        {error ? <Typography color="error">{error}</Typography> : null}
+        {selectedGroups.length > 0 ? (
+          <Stack spacing={0.5} sx={{ mb: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Вибрані позивні
+            </Typography>
+            <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap">
+              {selectedGroups.map((group) => (
+                <Button
+                  key={normalizeCallsignLookupValue(group.values[0] ?? group.label)}
+                  size="small"
+                  onClick={() => onRemoveCallsign(group.values)}
+                >
+                  {group.label} ×
+                </Button>
+              ))}
+            </Stack>
+          </Stack>
+        ) : null}
+        {error ? (
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography color="error">{error}</Typography>
+            <Button disabled={!page.canRetry || page.loading} onClick={() => void page.retry()}>
+              Повторити
+            </Button>
+          </Stack>
+        ) : null}
         {page.loading && page.entries.length === 0 ? <Typography>Завантаження…</Typography> : null}
         {!page.loading && page.entries.length === 0 && !error ? (
           <Typography color="text.secondary">Нічого не знайдено</Typography>
         ) : null}
         <Stack spacing={0.5}>
           {page.entries.map((item) => {
-            const selected = item.values.every((value) => selectedCallsigns.includes(value));
+            const selected = item.values
+              .map(normalizeCallsignLookupValue)
+              .every((value) => selectedValues.has(value));
             return (
               <Stack key={item.label} direction="row" spacing={0.5}>
                 <Button
@@ -89,7 +149,7 @@ export function AnalysisCallsignsPane({
         </Stack>
         <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
           <Button
-            disabled={page.loading || !page.hasPrevious}
+            disabled={page.loading || page.pageIndex === 0}
             onClick={() => void page.loadFirstPage()}
           >
             Перша

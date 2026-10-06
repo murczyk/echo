@@ -157,9 +157,18 @@ function CallsignFilterField({
         </Button>
       </Stack>
       {error ? (
-        <Typography color="error" variant="caption">
-          {error}
-        </Typography>
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <Typography color="error" variant="caption">
+            {error}
+          </Typography>
+          <Button
+            size="small"
+            disabled={!page.canRetry || page.loading}
+            onClick={() => void page.retry()}
+          >
+            Повторити
+          </Button>
+        </Stack>
       ) : null}
     </Stack>
   );

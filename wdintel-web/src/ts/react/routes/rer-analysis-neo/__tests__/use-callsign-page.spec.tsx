@@ -149,9 +149,56 @@ describe('useCallsignPage', () => {
     expect(latest?.entries.map((entry) => entry.label)).toEqual(['ALPHA']);
     expect(latest?.error).toBeInstanceOf(Error);
 
-    await act(async () => latest?.loadNextPage());
+    await act(async () => latest?.retry());
     expect(latest?.entries.map((entry) => entry.label)).toEqual(['BRAVO']);
     expect(latest?.error).toBeNull();
+  });
+
+  it('retries an initial page failure without changing its scope', async () => {
+    api.fetchAnalysisCallsignPage
+      .mockRejectedValueOnce(new Error('initial page failed'))
+      .mockResolvedValueOnce({
+        entries: [{ value: 'alpha', label: 'ALPHA', values: ['alpha'], count: 1 }],
+        hasMore: false,
+        nextCursor: null,
+      });
+    await act(async () => root?.render(createElement(Harness)));
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+
+    expect(latest?.canRetry).toBe(true);
+    await act(async () => latest?.retry());
+    expect(api.fetchAnalysisCallsignPage).toHaveBeenCalledTimes(2);
+    expect(latest?.entries.map((entry) => entry.label)).toEqual(['ALPHA']);
+    expect(latest?.error).toBeNull();
+  });
+
+  it('bounds backward cursor history while retaining first-page access', async () => {
+    api.fetchAnalysisCallsignPage.mockImplementation(({ cursor }: { cursor: string | null }) => {
+      const index = cursor == null ? 0 : Number(cursor.slice(1));
+      return Promise.resolve({
+        entries: [{ value: `callsign-${index}`, label: `CALLSIGN-${index}`, values: [], count: 1 }],
+        hasMore: index < 24,
+        nextCursor: index < 24 ? `p${index + 1}` : null,
+      });
+    });
+    await act(async () => root?.render(createElement(Harness)));
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    for (let index = 0; index < 24; index += 1) {
+      await act(async () => latest?.loadNextPage());
+    }
+
+    expect(latest?.pageIndex).toBe(24);
+    for (let index = 24; index > 6; index -= 1) {
+      await act(async () => latest?.loadPreviousPage());
+    }
+    expect(latest?.pageIndex).toBe(6);
+    expect(latest?.hasPrevious).toBe(false);
+
+    await act(async () => latest?.loadNextPage());
+    expect(latest?.pageIndex).toBe(7);
+
+    await act(async () => latest?.loadFirstPage());
+    expect(latest?.pageIndex).toBe(0);
   });
 
   it('rejects a next-page response after the search scope changes', async () => {

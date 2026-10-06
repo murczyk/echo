@@ -10,6 +10,7 @@ import { isAbortError } from '../../services/api/client';
 
 const PAGE_SIZE = 50;
 const SEARCH_DELAY_MS = 250;
+const CURSOR_HISTORY_LIMIT = 20;
 
 type PageState = {
   entries: AnalysisCallsignPageEntry[];
@@ -17,7 +18,23 @@ type PageState = {
   nextCursor: string | null;
 };
 
+type CursorHistoryEntry = {
+  cursor: string | null;
+  index: number;
+};
+
+type PageRequest = CursorHistoryEntry;
+
 const emptyPage: PageState = { entries: [], hasMore: false, nextCursor: null };
+
+function retainCursorHistory(
+  history: CursorHistoryEntry[],
+  entry: CursorHistoryEntry,
+): CursorHistoryEntry[] {
+  const next = [...history.filter((item) => item.index < entry.index), entry];
+  if (next.length <= CURSOR_HISTORY_LIMIT) return next;
+  return [next[0], ...next.slice(-(CURSOR_HISTORY_LIMIT - 1))];
+}
 
 function pageOrder(query: string): AnalysisCallsignPageOrder {
   return query.trim() === '' ? 'count_desc' : 'match_then_name';
@@ -34,11 +51,14 @@ export function useCallsignPage({
 }) {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState<PageState>(emptyPage);
-  const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([null]);
+  const [cursorHistory, setCursorHistory] = useState<CursorHistoryEntry[]>([
+    { cursor: null, index: 0 },
+  ]);
   const [pageIndex, setPageIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [debouncing, setDebouncing] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [failedRequest, setFailedRequest] = useState<PageRequest | null>(null);
   const requestIdRef = useRef(0);
   const controllerRef = useRef<AbortController | null>(null);
   const onErrorRef = useRef(onError);
@@ -59,7 +79,7 @@ export function useCallsignPage({
   }, []);
 
   const requestPage = useCallback(
-    async (cursor: string | null, index: number, scope: string) => {
+    async (request: PageRequest, scope: string) => {
       const currentReq = analysisReqRef.current;
       if (!active || currentReq == null || scope !== effectiveScopeRef.current) return false;
       abortRequest();
@@ -74,7 +94,7 @@ export function useCallsignPage({
             req: currentReq,
             query: queryRef.current,
             pageSize: PAGE_SIZE,
-            cursor,
+            cursor: request.cursor,
             order: pageOrder(queryRef.current),
           },
           { signal: controller.signal },
@@ -91,8 +111,9 @@ export function useCallsignPage({
           hasMore: response.hasMore,
           nextCursor: response.nextCursor,
         });
-        setPageIndex(index);
+        setPageIndex(request.index);
         setError(null);
+        setFailedRequest(null);
         return true;
       } catch (loadError) {
         if (
@@ -101,6 +122,7 @@ export function useCallsignPage({
           scope === effectiveScopeRef.current
         ) {
           setError(loadError);
+          setFailedRequest(request);
           onErrorRef.current(loadError);
         }
         return false;
@@ -122,14 +144,15 @@ export function useCallsignPage({
     requestIdRef.current += 1;
     abortRequest();
     setPage(emptyPage);
-    setCursorHistory([null]);
+    setCursorHistory([{ cursor: null, index: 0 }]);
     setPageIndex(0);
     setError(null);
+    setFailedRequest(null);
     setDebouncing(true);
     const scope = effectiveScope;
     const timeout = window.setTimeout(() => {
       setDebouncing(false);
-      void requestPage(null, 0, scope);
+      void requestPage({ cursor: null, index: 0 }, scope);
     }, SEARCH_DELAY_MS);
     return () => {
       window.clearTimeout(timeout);
@@ -139,35 +162,46 @@ export function useCallsignPage({
 
   const loadNextPage = useCallback(async () => {
     if (loading || debouncing || !page.hasMore || page.nextCursor == null) return;
-    const nextIndex = pageIndex + 1;
-    const loaded = await requestPage(page.nextCursor, nextIndex, effectiveScope);
-    if (loaded) setCursorHistory((history) => [...history.slice(0, nextIndex), page.nextCursor]);
+    const request = { cursor: page.nextCursor, index: pageIndex + 1 };
+    const loaded = await requestPage(request, effectiveScope);
+    if (loaded) setCursorHistory((history) => retainCursorHistory(history, request));
   }, [debouncing, effectiveScope, loading, page.hasMore, page.nextCursor, pageIndex, requestPage]);
 
   const loadPreviousPage = useCallback(async () => {
-    if (loading || debouncing || pageIndex === 0) return;
-    const previousIndex = pageIndex - 1;
-    await requestPage(cursorHistory[previousIndex] ?? null, previousIndex, effectiveScope);
+    if (loading || debouncing) return;
+    const request = cursorHistory.find((item) => item.index === pageIndex - 1);
+    if (request == null) return;
+    await requestPage(request, effectiveScope);
   }, [cursorHistory, debouncing, effectiveScope, loading, pageIndex, requestPage]);
 
   const loadFirstPage = useCallback(async () => {
     if (loading || debouncing || pageIndex === 0) return;
-    await requestPage(null, 0, effectiveScope);
+    await requestPage({ cursor: null, index: 0 }, effectiveScope);
   }, [debouncing, effectiveScope, loading, pageIndex, requestPage]);
+
+  const retry = useCallback(async () => {
+    if (loading || debouncing || failedRequest == null) return;
+    const loaded = await requestPage(failedRequest, effectiveScope);
+    if (loaded && failedRequest.index > pageIndex) {
+      setCursorHistory((history) => retainCursorHistory(history, failedRequest));
+    }
+  }, [debouncing, effectiveScope, failedRequest, loading, pageIndex, requestPage]);
 
   useEffect(() => () => abortRequest(), [abortRequest]);
 
   return {
     entries: page.entries,
     error,
+    canRetry: failedRequest != null,
     hasMore: page.hasMore,
-    hasPrevious: pageIndex > 0,
+    hasPrevious: cursorHistory.some((item) => item.index === pageIndex - 1),
     loadFirstPage,
     loadNextPage,
     loadPreviousPage,
     loading,
     pageIndex,
     query,
+    retry,
     setQuery,
   };
 }

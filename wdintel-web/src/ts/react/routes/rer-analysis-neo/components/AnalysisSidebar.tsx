@@ -214,6 +214,14 @@ export function AnalysisSidebar({
       ),
     });
   };
+  const removeCallsign = (callsigns: string[]) => {
+    const removed = new Set(callsigns.map(normalizeCallsignLookupValue));
+    updateQueryState({
+      callsignsSelected: queryState.callsignsSelected.filter(
+        (callsign) => !removed.has(normalizeCallsignLookupValue(callsign)),
+      ),
+    });
+  };
   const clearCallsign = () => {
     updateQueryState({ callsignsSelected: [] });
   };
@@ -487,6 +495,7 @@ export function AnalysisSidebar({
             onClearCallsign={clearCallsign}
             onAddCallsign={addCallsign}
             onAddFreq={addFreq}
+            onRemoveCallsign={removeCallsign}
             selectedCallsigns={queryState.callsignsSelected}
             selectedFreqs={queryState.freqsSelected}
             onSearchFrequencyMatches={findCallsignFrequencyMatches}

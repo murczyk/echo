@@ -260,7 +260,18 @@ export function AnalysisCallsignFrequencySearch({
               setResults(null);
             }}
           />
-          {suggestionError ? <CompactText color="error">{suggestionError}</CompactText> : null}
+          {suggestionError ? (
+            <Stack direction="row" spacing={0.5} alignItems="center">
+              <CompactText color="error">{suggestionError}</CompactText>
+              <Button
+                size="small"
+                disabled={!suggestions.canRetry || suggestions.loading}
+                onClick={() => void suggestions.retry()}
+              >
+                Повторити
+              </Button>
+            </Stack>
+          ) : null}
           <Box
             sx={{
               display: 'grid',
