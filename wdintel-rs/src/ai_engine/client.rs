@@ -1,8 +1,9 @@
 use super::gov;
 use crate::config::{
     AI_AGENT_OPENAI_GPT_6_LUNA, AI_AGENT_OPENAI_GPT_6_SOL,
-    AI_ENGINE_REQUEST_TIMEOUT_SEC, AI_GOV_UA_API_BASE,
-    AI_GOV_UA_TOKEN_REFRESH_SKEW_SEC, AI_GOV_UA_TOKEN_REQUEST_TIMEOUT_SEC,
+    AI_ENGINE_REQUEST_TIMEOUT_SEC, AI_GOV_UA_API_BASE, AI_GOV_UA_API_HOST,
+    AI_GOV_UA_AUTH_BASE, AI_GOV_UA_TOKEN_REFRESH_SKEW_SEC,
+    AI_GOV_UA_TOKEN_REQUEST_TIMEOUT_SEC,
 };
 use crate::entities::{ai_engine, ai_gov_ua_settings};
 use crate::h;
@@ -69,7 +70,7 @@ impl AiEngineClient {
                 .c(h!());
         }
         anyhow::ensure!(
-            endpoint.host_str() != Some("inference.ai.mod.gov.ua"),
+            endpoint.host_str() != Some(AI_GOV_UA_API_HOST),
             "Некоректний URL державного шлюзу ШІ"
         );
         let mut request = self
@@ -196,7 +197,7 @@ impl AiEngineClient {
         let tenant = settings.tenant_id.as_deref().c(h!())?;
         let tenant = uuid::Uuid::parse_str(tenant).c(h!())?;
         let endpoint = Url::parse(&format!(
-            "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+            "{AI_GOV_UA_AUTH_BASE}/{tenant}/oauth2/v2.0/token"
         ))
         .c(h!())?;
         #[cfg(test)]
@@ -275,7 +276,7 @@ pub fn is_government_url(value: &str) -> bool {
         return false;
     };
     url.scheme() == "https"
-        && url.host_str() == Some("inference.ai.mod.gov.ua")
+        && url.host_str() == Some(AI_GOV_UA_API_HOST)
         && url.port().is_none_or(|port| port == 443)
         && url.username().is_empty()
         && url.password().is_none()

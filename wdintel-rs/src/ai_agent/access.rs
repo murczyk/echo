@@ -241,7 +241,7 @@ pub fn agent_provider_transport(
     if !common_valid {
         return None;
     }
-    if url.host_str() == Some("inference.ai.mod.gov.ua") {
+    if url.host_str() == Some(crate::config::AI_GOV_UA_API_HOST) {
         return crate::ai_engine::client::is_government_url(&ai_engine.url)
             .then_some(AgentProviderTransport::EchoGateway);
     }
