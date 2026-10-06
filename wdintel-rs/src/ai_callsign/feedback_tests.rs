@@ -239,6 +239,7 @@ async fn feedback_requests_are_conditional_contextual_and_bounded() {
     ])
     .await;
     let initial = super::extract_ai_callsigns(
+        &env.ai_engine_client,
         &engine,
         "extract",
         "Косой, в вашу сторону Фипка",
@@ -246,6 +247,7 @@ async fn feedback_requests_are_conditional_contextual_and_bounded() {
     .await
     .unwrap();
     let refined = refine(
+        &env.ai_engine_client,
         &env.dbx,
         &engine,
         "extract",
@@ -278,6 +280,7 @@ async fn feedback_requests_are_conditional_contextual_and_bounded() {
     let offline = engine_record_offline();
     assert_eq!(
         refine(
+            &env.ai_engine_client,
             &env.dbx,
             &offline,
             "extract",
@@ -290,6 +293,7 @@ async fn feedback_requests_are_conditional_contextual_and_bounded() {
         vec!["44408"]
     );
     assert!(refine(
+        &env.ai_engine_client,
         &env.dbx,
         &offline,
         "extract",

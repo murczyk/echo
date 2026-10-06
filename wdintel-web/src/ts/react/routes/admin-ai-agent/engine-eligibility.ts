@@ -132,6 +132,9 @@ export function getAiAgentEngineTransport(
     if (!isCleanProviderUrl(url)) {
       return null;
     }
+    if (url.hostname.toLowerCase() === 'inference.ai.mod.gov.ua') {
+      return isGovernmentAiUrl(url) ? 'echo_gateway' : null;
+    }
     if (isEchoGatewayUrl(url) && engine.hasToken) {
       return 'echo_gateway';
     }
@@ -147,6 +150,15 @@ export function getAiAgentEngineTransport(
 export function getAiAgentTokenNotice(
   engine: Pick<AiEngineItem, 'enabled' | 'hasToken' | 'url'>,
 ): AiAgentTokenNotice | null {
+  try {
+    if (engine.enabled && isGovernmentAiUrl(new URL(engine.url))) {
+      return {
+        message:
+          'Шлюз Echo додає токен Azure на сервері; секрет і токен не передаються до контейнера агента.',
+        severity: 'info',
+      };
+    }
+  } catch {}
   if (!engine.hasToken) {
     return null;
   }
@@ -174,6 +186,15 @@ function isEchoGatewayUrl(url: URL): boolean {
   return (
     url.protocol === 'https:' &&
     url.hostname.toLowerCase() === 'api.openai.com' &&
+    (url.port || '443') === '443'
+  );
+}
+
+export function isGovernmentAiUrl(url: URL): boolean {
+  return (
+    isCleanProviderUrl(url) &&
+    url.protocol === 'https:' &&
+    url.hostname.toLowerCase() === 'inference.ai.mod.gov.ua' &&
     (url.port || '443') === '443'
   );
 }

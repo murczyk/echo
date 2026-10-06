@@ -104,6 +104,7 @@ pub enum Mode {
 
 #[derive(Clone)]
 pub struct Env {
+    pub ai_engine_client: Arc<crate::ai_engine::AiEngineClient>,
     pub mode: Mode,
     pub config: crate::config::Config,
     pub s3: Option<opendal::Operator>,
