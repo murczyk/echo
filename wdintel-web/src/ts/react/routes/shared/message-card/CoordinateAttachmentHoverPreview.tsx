@@ -12,6 +12,7 @@ type Props = {
   id: string;
   onEnter: () => void;
   onLeave: () => void;
+  title?: string;
 };
 export function CoordinateAttachmentHoverPreview({
   anchorEl,
@@ -20,6 +21,7 @@ export function CoordinateAttachmentHoverPreview({
   id,
   onEnter,
   onLeave,
+  title,
 }: Props) {
   const [detailViewportBounds, setDetailViewportBounds] = useState<L.LatLngBounds | null>(null);
   if (!open || anchorEl == null) return null;
@@ -46,13 +48,16 @@ export function CoordinateAttachmentHoverPreview({
         role="tooltip"
         data-coordinate-hover-preview="true"
         elevation={8}
-        className="coordinate-hover-preview"
+        className={`coordinate-hover-preview${title != null ? ' flex flex-col' : ''}`}
         onPointerEnter={onEnter}
         onPointerLeave={onLeave}
         onFocus={onEnter}
         onBlur={onLeave}
       >
-        <div className="coordinate-hover-preview__maps">
+        {title != null ? (
+          <div className="shrink-0 px-echo-sm py-echo-xs text-echo-sm">{title}</div>
+        ) : null}
+        <div className={`coordinate-hover-preview__maps${title != null ? ' min-h-0 flex-1' : ''}`}>
           <CoordinatePreviewMapSurface
             points={points}
             mode="overview"

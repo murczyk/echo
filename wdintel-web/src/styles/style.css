@@ -567,7 +567,7 @@
 }
 
 .text-marked .content-token--position {
-  cursor: help;
+  cursor: default;
 }
 
 .text-marked .content-token--position[role='button'] {

@@ -7152,6 +7152,7 @@ type alias MessageMediaInfo =
     , ocr : Maybe (OcrMediaSummary)
     , summary : Maybe (MediaSummaryStatus)
     , kmzConversionStatus : Maybe (String)
+    , positions : List (CnPosition)
     }
 
 
@@ -7167,6 +7168,7 @@ messageMediaInfoEncoder struct =
         , ( "ocr", (Maybe.withDefault Json.Encode.null << Maybe.map (ocrMediaSummaryEncoder)) struct.ocr )
         , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (mediaSummaryStatusEncoder)) struct.summary )
         , ( "kmz_conversion_status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.kmzConversionStatus )
+        , ( "positions", (Json.Encode.list (cnPositionEncoder)) struct.positions )
         ]
 
 
@@ -21063,6 +21065,7 @@ messageMediaInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ocr" (Json.Decode.nullable (ocrMediaSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (mediaSummaryStatusDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kmz_conversion_status" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "positions" (Json.Decode.list (cnPositionDecoder))))
 
 
 signalMediaKmzConversionStatusRspDecoder : Json.Decode.Decoder SignalMediaKmzConversionStatusRsp
