@@ -2,17 +2,18 @@
 
 export PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}:/usr/local/sbin:/usr/sbin:/sbin"
 
-set -euo pipefail
+set -euxo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BUNDLE_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 HOST_CONFIG_FILE="$BUNDLE_DIR/config/host.env"
 VERSIONS_FILE="$BUNDLE_DIR/versions.env"
 # shellcheck disable=SC2034  # Consumed by scripts that source this library.
-DEFAULT_ADMIN_HOST=echo@echo-ai-agent-vm.eagle-atria.ts.net
+ADMIN_HOST_FULL=$(ssh -G echo-ai-agent-vm | awk '/^hostname / {print $2}')
+DEFAULT_ADMIN_HOST=echo@${ADMIN_HOST_FULL}
 # shellcheck disable=SC2034  # Consumed by scripts that source this library.
 DEFAULT_BOOTSTRAP_HOST=echo-ai-agent-vm
-ADMIN_HOST_KEY_ALIAS='[echo-ai-agent-vm.eagle-atria.ts.net]:22031'
+ADMIN_HOST_KEY_ALIAS="[${ADMIN_HOST_FULL}]:22031"
 
 log() {
   printf '[echo-ai-agent] %s\n' "$*"

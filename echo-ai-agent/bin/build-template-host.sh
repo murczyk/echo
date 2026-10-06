@@ -2,7 +2,7 @@
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-set -euo pipefail
+set -exuo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 BUNDLE_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
@@ -119,7 +119,7 @@ fi
 artifact_dir=$(mktemp -d /tmp/echo-ai-agent-template.XXXXXX)
 prepare_node
 prepare_pi
-incus launch "$DEBIAN_IMAGE" "$AGENT_TEMPLATE" --profile "$AGENT_PROFILE"
+incus launch "$DEBIAN_IMAGE" "$AGENT_TEMPLATE" --profile "$AGENT_PROFILE" < /dev/null
 template_created=1
 incus exec "$AGENT_TEMPLATE" -- cloud-init status --wait
 incus exec "$AGENT_TEMPLATE" -- test ! -S /dev/incus/sock \

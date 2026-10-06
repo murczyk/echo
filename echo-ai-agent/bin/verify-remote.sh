@@ -2,7 +2,7 @@
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-set -euo pipefail
+set -euxo pipefail
 
 EXPECTED_HOSTNAME=$1
 INCUS_DEBIAN_VERSION=$2
