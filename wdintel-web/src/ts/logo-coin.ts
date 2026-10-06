@@ -122,7 +122,7 @@ function controllerFromTrigger(trigger: HTMLElement): LogoCoinController | undef
   return coin ? registerCoin(coin) : undefined;
 }
 
-function triggerAtBoundary(event: MouseEvent | FocusEvent): HTMLElement | undefined {
+function triggerAtBoundary(event: PointerEvent | FocusEvent): HTMLElement | undefined {
   if (!(event.target instanceof Element)) return undefined;
 
   const trigger = event.target.closest<HTMLElement>('.logo-coin-trigger');
@@ -148,17 +148,19 @@ class LogoCoinElement extends HTMLElement {
 function initializeLogoCoins() {
   document.querySelectorAll<HTMLElement>('.logo-coin').forEach(registerCoin);
 
-  document.addEventListener('mouseover', (event) => {
+  document.addEventListener('pointerover', (event) => {
+    if (event.pointerType !== 'mouse') return;
     const trigger = triggerAtBoundary(event);
     if (trigger) controllerFromTrigger(trigger)?.setHovered(true);
   });
-  document.addEventListener('mouseout', (event) => {
+  document.addEventListener('pointerout', (event) => {
+    if (event.pointerType !== 'mouse') return;
     const trigger = triggerAtBoundary(event);
     if (trigger) controllerFromTrigger(trigger)?.setHovered(false);
   });
   document.addEventListener('focusin', (event) => {
     const trigger = triggerAtBoundary(event);
-    if (trigger) controllerFromTrigger(trigger)?.setFocused(true);
+    if (trigger?.matches(':focus-visible')) controllerFromTrigger(trigger)?.setFocused(true);
   });
   document.addEventListener('focusout', (event) => {
     const trigger = triggerAtBoundary(event);
