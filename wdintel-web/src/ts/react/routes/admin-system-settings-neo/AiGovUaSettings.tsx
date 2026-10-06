@@ -82,9 +82,19 @@ export function AiGovUaSettings() {
   }
 
   async function check() {
+    if (!settings) return;
     setBusy(true);
     try {
-      setModels(await listAiGovUaModels());
+      setModels(
+        await listAiGovUaModels({
+          enabled: settings.enabled,
+          tenantId: settings.tenantId,
+          clientId: settings.clientId,
+          scope: settings.scope,
+          clientSecret: secret || null,
+          clearClientSecret: clearSecret,
+        }),
+      );
       notify({ severity: 'success', message: 'Авторизація успішна. Список моделей отримано.' });
     } catch (error) {
       showError(error);
@@ -107,6 +117,7 @@ export function AiGovUaSettings() {
               <Typography variant="body2">
                 Спільна авторизація для движків з Base URL https://inference.ai.mod.gov.ua/v1.
                 Токени оновлюються автоматично. Звичайний токен у цих движках залиште порожнім.
+                Перевірка використовує введені дані без збереження. Зберегти їх потрібно окремо.
               </Typography>
               <FormControlLabel
                 control={
@@ -175,8 +186,8 @@ export function AiGovUaSettings() {
           <PowerButton disabled={busy} onClick={close}>
             Закрити
           </PowerButton>
-          <PowerButton disabled={busy || !settings?.enabled} onClick={() => void check()}>
-            Перевірити збережені налаштування
+          <PowerButton disabled={busy || !settings || clearSecret} onClick={() => void check()}>
+            Перевірити налаштування
           </PowerButton>
           <PowerButton variant="contained" disabled={busy || !settings} onClick={() => void save()}>
             Зберегти

@@ -19,6 +19,7 @@ pub struct AiEngineClient {
     dbx: DatabaseConnection,
     secret_key: Option<String>,
     token: Mutex<Option<CachedToken>>,
+    preview_settings: Option<ai_gov_ua_settings::Model>,
     #[cfg(test)]
     token_endpoint: Option<Url>,
 }
@@ -49,9 +50,22 @@ impl AiEngineClient {
             dbx,
             secret_key,
             token: Mutex::new(None),
+            preview_settings: None,
             #[cfg(test)]
             token_endpoint: None,
         })
+    }
+
+    pub(super) fn preview(&self, settings: ai_gov_ua_settings::Model) -> Self {
+        Self {
+            http: self.http.clone(),
+            dbx: self.dbx.clone(),
+            secret_key: self.secret_key.clone(),
+            token: Mutex::new(None),
+            preview_settings: Some(settings),
+            #[cfg(test)]
+            token_endpoint: self.token_endpoint.clone(),
+        }
     }
 
     pub async fn send(
@@ -88,8 +102,11 @@ impl AiEngineClient {
     async fn government_settings(
         &self,
     ) -> anyhow::Result<ai_gov_ua_settings::Model> {
-        let settings = gov::load(&self.dbx).await.c(h!())?;
-        anyhow::ensure!(settings.enabled == Some(true), "Налаштуйте та увімкніть державний шлюз ШІ в адміністративній панелі");
+        let settings = match &self.preview_settings {
+            Some(settings) => settings.clone(),
+            None => gov::load(&self.dbx).await.c(h!())?,
+        };
+        anyhow::ensure!(settings.enabled == Some(true), gov::GovernmentCheckError("Налаштуйте та увімкніть державний шлюз ШІ в адміністративній панелі".into()));
         Ok(settings)
     }
 
@@ -175,7 +192,10 @@ impl AiEngineClient {
             response.token_type.eq_ignore_ascii_case("bearer")
                 && !response.access_token.is_empty()
                 && response.expires_in > 0,
-            "Azure AI authentication returned an invalid access token"
+            gov::GovernmentCheckError(
+                "Azure AI authentication returned an invalid access token"
+                    .into()
+            )
         );
         let lifetime = response
             .expires_in
@@ -222,8 +242,10 @@ impl AiEngineClient {
             .c(h!())?;
         anyhow::ensure!(
             response.status().is_success(),
-            "Azure AI authentication returned HTTP {}",
-            response.status()
+            gov::GovernmentCheckError(format!(
+                "Azure AI authentication returned HTTP {}",
+                response.status()
+            ))
         );
         response.json().await.c(h!())
     }
@@ -241,8 +263,10 @@ impl AiEngineClient {
             .c(h!())?;
         anyhow::ensure!(
             response.status().is_success(),
-            "Державний шлюз ШІ повернув HTTP {}",
-            response.status()
+            gov::GovernmentCheckError(format!(
+                "Державний шлюз ШІ повернув HTTP {}",
+                response.status()
+            ))
         );
         let response: Value = response.json().await.c(h!())?;
         let models = response.get("data").and_then(Value::as_array).c(h!())?;

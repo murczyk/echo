@@ -60,7 +60,7 @@ export function saveAiGovUaSettings(req: SaveAiGovUaSettingsReq): Promise<AiGovU
   return postJson<AiGovUaSettingsRsp>('/api/admin/ai-engines/gov/save', req);
 }
 
-export async function listAiGovUaModels(): Promise<string[]> {
-  const response = await postJson<AiGovUaModelsRsp>('/api/admin/ai-engines/gov/models');
+export async function listAiGovUaModels(req: SaveAiGovUaSettingsReq): Promise<string[]> {
+  const response = await postJson<AiGovUaModelsRsp>('/api/admin/ai-engines/gov/check', req);
   return response.models;
 }
