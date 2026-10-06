@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../workers/worker-client.ts', () => ({
   runWorkerTask: vi.fn(async () => ({
     html: '<p>Docx preview</p>',
+    pageSize: { widthTwips: 16838, heightTwips: 11906 },
   })),
 }));
 
