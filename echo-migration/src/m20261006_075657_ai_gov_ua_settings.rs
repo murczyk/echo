@@ -1,5 +1,11 @@
 use sea_orm_migration::prelude::*;
 
+macro_rules! h {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -23,7 +29,8 @@ create table ai_gov_ua_settings (
 insert into ai_gov_ua_settings (id) values (1);
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 
@@ -31,7 +38,8 @@ insert into ai_gov_ua_settings (id) values (1);
         manager
             .get_connection()
             .execute_unprepared("drop table if exists ai_gov_ua_settings;")
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 }
