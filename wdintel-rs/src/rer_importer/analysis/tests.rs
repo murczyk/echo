@@ -9383,6 +9383,40 @@ async fn echo_3308_inbox_selected_and_denied_locations_combine() {
     assert!(!selected_empty_denied_peleng.contains(&messages.location_b));
 }
 
+#[tokio::test]
+#[serial]
+async fn echo_3308_location_wildcards_match_literally() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let messages = mk_location_filter_messages(&fixture).await;
+    let base_req = location_filter_base_req(&fixture);
+
+    let denied_wildcards = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_locations: strings(&["%", "_"]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert!(denied_wildcards.contains(&messages.location_a));
+    assert!(denied_wildcards.contains(&messages.location_b));
+
+    let selected_wildcards = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_locations: strings(&["%", "_"]),
+            ..base_req
+        },
+    )
+    .await;
+    assert!(!selected_wildcards.contains(&messages.location_a));
+    assert!(!selected_wildcards.contains(&messages.location_b));
+}
+
 #[test]
 fn echo_3308_denied_locations_sql_keeps_nulls() {
     let sql = filter_denied_locations(
@@ -9394,7 +9428,7 @@ fn echo_3308_denied_locations_sql_keeps_nulls() {
     .build(DbBackend::Postgres)
     .to_string();
     assert!(sql.contains(
-        r#"("sigint_inbox_item"."location_v2" IS NULL OR (NOT "sigint_inbox_item"."location_v2" LIKE '%|LOCATION A|%'))"#
+        r#"("sigint_inbox_item"."location_v2" IS NULL OR (NOT "sigint_inbox_item"."location_v2" LIKE '%|LOCATION A|%' ESCAPE E'\\'))"#
     ), "{sql}");
     assert!(sql.contains(
         r#"("sigint_inbox_item"."freq" IS NULL OR "sigint_inbox_item"."freq" NOT IN (SELECT "freq" FROM "freq_location" WHERE "freq_location"."location" = ANY(ARRAY ['Location A'])))"#
@@ -9406,7 +9440,7 @@ fn echo_3308_denied_locations_sql_keeps_nulls() {
 }
 
 #[test]
-fn echo_3308_selected_locations_sql_unchanged() {
+fn echo_3308_selected_locations_sql() {
     let sql = filter_selected_locations(
         sigint_inbox_item::Entity::find(),
         &strings(&["Location A", ""]),
@@ -9416,7 +9450,7 @@ fn echo_3308_selected_locations_sql_unchanged() {
     .build(DbBackend::Postgres)
     .to_string();
     assert!(sql.ends_with(
-        r#"WHERE "sigint_inbox_item"."location_v2" LIKE '%|LOCATION A|%' OR "sigint_inbox_item"."freq" IN (SELECT "freq" FROM "freq_location" WHERE "freq_location"."location" = ANY(ARRAY ['Location A'])) OR "sigint_inbox_item"."location_v2" IS NULL"#
+        r#"WHERE "sigint_inbox_item"."location_v2" LIKE '%|LOCATION A|%' ESCAPE E'\\' OR "sigint_inbox_item"."freq" IN (SELECT "freq" FROM "freq_location" WHERE "freq_location"."location" = ANY(ARRAY ['Location A'])) OR "sigint_inbox_item"."location_v2" IS NULL"#
     ), "{sql}");
 }
 

@@ -1877,10 +1877,19 @@ fn locations_denied_expr(
 }
 
 fn location_contains_expr(location: &str) -> SimpleExpr {
-    sea_orm::ColumnTrait::contains(
-        &sigint_inbox_item::Column::LocationV2,
-        format_location(location),
-    )
+    let pattern = format!("%{}%", escape_like(&format_location(location)));
+    Expr::col((
+        sigint_inbox_item::Entity,
+        sigint_inbox_item::Column::LocationV2,
+    ))
+    .like(LikeExpr::new(pattern).escape('\\'))
+}
+
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 fn peleng_location_freqs_query(locations: Vec<String>) -> SelectStatement {
