@@ -973,6 +973,8 @@ export function useAnalysisData({
       } finally {
         if (!isScopeStale() && shouldRefreshMessageCounts) {
           messageList.refreshMessageCounts();
+        } else if (!isScopeStale()) {
+          messageList.scheduleOverallMessageCountRefresh();
         }
       }
     },

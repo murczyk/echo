@@ -606,6 +606,11 @@ test.describe('@smoke @regression', () => {
     expect(targetedMessageRequests).toEqual(eventMessageIds.map((messageId) => [messageId]));
     expect(inboxRequestCount).toBe(inboxRequestsBeforeEvents);
     expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvents);
+    await expect
+      .poll(() => inboxCountRequestCount, { timeout: 10_000 })
+      .toBe(inboxCountRequestsBeforeEvents + 1);
+    await page.waitForTimeout(400);
+    expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvents + 1);
     await expect(page.locator('[data-message-id]')).toHaveCount(initialPage.inbox_items.length);
   });
 
