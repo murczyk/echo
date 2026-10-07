@@ -136,7 +136,9 @@ function normalizeReq(req: AnalysisStatsReq): AnalysisStatsReq {
   }
 
   if (normalized.withoutNetwork) {
-    normalized = { ...normalized, selectedNetworks: null };
+    normalized = { ...normalized, selectedNetworks: null, onlyWithNetwork: false };
+  } else if (normalized.onlyWithNetwork) {
+    normalized = { ...normalized, withoutNetwork: false };
   }
 
   return normalized;

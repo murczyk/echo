@@ -58,6 +58,7 @@ const GLOBAL_OPTION_QUERY_FIELDS: Array<keyof AnalysisQueryState> = [
   'includePelengLocations',
   'unitsExactMatchOnly',
   'withoutNetwork',
+  'onlyWithNetwork',
 ];
 
 const SECTION_QUERY_FIELDS: Array<{

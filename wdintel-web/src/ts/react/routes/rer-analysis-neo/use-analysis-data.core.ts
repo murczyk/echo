@@ -325,6 +325,7 @@ function requiresServerFilteredInboxRefresh(
     hasSelectedValues(queryState.postsSelected) ||
     hasSelectedValues(queryState.networksSelected) ||
     queryState.withoutNetwork ||
+    queryState.onlyWithNetwork ||
     queryState.orWithExtendedForm ||
     queryState.orBookmarked ||
     queryState.orImportant ||

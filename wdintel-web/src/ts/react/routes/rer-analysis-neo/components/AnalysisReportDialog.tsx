@@ -116,6 +116,7 @@ type Props = {
   taskRuns: AnalysisReportTaskRun[];
   open: boolean;
   currentUser: User | null;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   report: AnalysisReportState;
   queryState: AnalysisQueryState;
@@ -310,6 +311,7 @@ export function AnalysisReportDialog({
   taskRuns,
   open,
   currentUser,
+  rerReportEnabled,
   supportNonRerInterceptions,
   report,
   queryState,
@@ -327,21 +329,27 @@ export function AnalysisReportDialog({
   const appliedFilters = describeAppliedReportFilters(queryState, report);
   const builderMode = reportTemplateToMode(report.template);
   const hasAdvancedReportAccess = canUseAdvancedReports(currentUser);
-  const availableReportTemplateOptions = supportNonRerInterceptions
-    ? [
-        ...reportTemplateOptions,
-        {
-          id: 'rer_report' as const,
-          title: 'РЕР Звіт',
-          description: 'Документ по non-RER перехопленнях з привʼязаними машинами',
-        },
-        {
-          id: 'sposob' as const,
-          title: 'Способ',
-          description: 'Звіт із перехопленнями у форматі підрозділ дата час текст',
-        },
-      ]
-    : reportTemplateOptions;
+  const availableReportTemplateOptions = [
+    ...reportTemplateOptions,
+    ...(rerReportEnabled
+      ? [
+          {
+            id: 'rer_report' as const,
+            title: 'РЕР Звіт',
+            description: 'Документ за коментарями до перехоплень, привʼязаних до мереж',
+          },
+        ]
+      : []),
+    ...(supportNonRerInterceptions
+      ? [
+          {
+            id: 'sposob' as const,
+            title: 'Способ',
+            description: 'Звіт із перехопленнями у форматі підрозділ дата час текст',
+          },
+        ]
+      : []),
+  ];
   const visibleReportTemplateOptions = availableReportTemplateOptions.filter(
     (option) =>
       radioFeaturesAllowed ||

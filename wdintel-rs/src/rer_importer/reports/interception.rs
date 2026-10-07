@@ -893,6 +893,7 @@ async fn build_inbox_messages_report_sql(
         q,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
     )
     .context(h!())?;
     let q = filter_selected_metadata_for_inbox_messages(q, req)?;
