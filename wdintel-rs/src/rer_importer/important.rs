@@ -7,6 +7,7 @@ use crate::{entities::*, utils::*};
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
+use anyhow::Context;
 use chrono::prelude::*;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::{prelude::Expr, *};
@@ -30,7 +31,7 @@ pub struct ImportantMutationRsp {
 async fn important_state<C>(
     dbx: &C,
     message_ids: &[i64],
-) -> Result<bool, AppError>
+) -> anyhow::Result<bool>
 where
     C: ConnectionTrait,
 {
@@ -48,8 +49,120 @@ where
         .into_tuple::<i64>()
         .one(dbx)
         .await
-        .c(h!())?
+        .context(h!())?
         .is_some())
+}
+
+async fn add_missing_importants(
+    txn: &DatabaseTransaction,
+    login: Uuid,
+    affected_ids: &[i64],
+) -> anyhow::Result<()> {
+    let existing_ids = sigint_important::Entity::find()
+        .select_only()
+        .column(sigint_important::Column::SignalMessageId)
+        .filter(sigint_important::Column::LoginId.eq(Some(login)))
+        .filter(
+            sigint_important::Column::SignalMessageId
+                .is_in(affected_ids.to_vec()),
+        )
+        .filter(sigint_important::Column::Deleted.eq(false))
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+    let missing_ids = affected_ids
+        .iter()
+        .filter(|id| !existing_ids.contains(id))
+        .copied()
+        .collect::<Vec<_>>();
+    if missing_ids.is_empty() {
+        return Ok(());
+    }
+
+    let message_uuids = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::IdUuid)
+        .filter(signal_message::Column::Id.is_in(missing_ids.clone()))
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect::<std::collections::HashMap<_, _>>();
+    let importants = missing_ids
+        .into_iter()
+        .map(|id| sigint_important::ActiveModel {
+            id: NotSet,
+            login_id: Set(Some(login)),
+            signal_message_id: Set(id),
+            signal_message_uuid: Set(message_uuids.get(&id).copied().flatten()),
+            deleted: Set(false),
+            created_at: NotSet,
+        })
+        .collect::<Vec<_>>();
+    sigint_important::Entity::insert_many(importants)
+        .exec(txn)
+        .await
+        .context(h!())?;
+    Ok(())
+}
+
+async fn remove_importants(
+    txn: &DatabaseTransaction,
+    login: Uuid,
+    affected_ids: &[i64],
+) -> anyhow::Result<()> {
+    sigint_important::Entity::update_many()
+        .col_expr(sigint_important::Column::Deleted, Expr::value(true))
+        .filter(sigint_important::Column::LoginId.eq(Some(login)))
+        .filter(
+            sigint_important::Column::SignalMessageId
+                .eq_any(affected_ids.to_vec()),
+        )
+        .filter(sigint_important::Column::Deleted.eq(false))
+        .exec(txn)
+        .await
+        .context(h!())?;
+    Ok(())
+}
+
+async fn set_importance(
+    env: &Env,
+    login: Uuid,
+    message_id: i64,
+    important: bool,
+) -> anyhow::Result<bool> {
+    let txn = env.dbx.begin().await.context(h!())?;
+    let affected_ids =
+        crate::rer_importer::inbox::find_all_duplicates(&txn, message_id)
+            .await
+            .context(h!())?;
+    if important {
+        add_missing_importants(&txn, login, &affected_ids)
+            .await
+            .context(h!())?;
+    } else {
+        remove_importants(&txn, login, &affected_ids)
+            .await
+            .context(h!())?;
+    }
+    let important = important_state(&txn, &affected_ids).await.context(h!())?;
+    txn.commit().await.context(h!())?;
+
+    if let Err(error) =
+        crate::inbox::fanout_inbox_changes(&mut env.redis.clone(), affected_ids)
+            .await
+    {
+        log::error!(
+            "failed to fanout important changes after commit: {:?}",
+            error
+        );
+    }
+    Ok(important)
 }
 
 #[post("/api/rer/important/add")]
@@ -60,55 +173,14 @@ async fn important_add(
 ) -> Result<Json<ImportantMutationRsp>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    let txn = env.dbx.begin().await.c(h!())?;
-    let affected_ids =
-        crate::rer_importer::inbox::find_all_duplicates(&txn, req.message_id)
-            .await
-            .c(h!())?;
-    let message_uuids = signal_message::Entity::find()
-        .select_only()
-        .column(signal_message::Column::Id)
-        .column(signal_message::Column::IdUuid)
-        .filter(signal_message::Column::Id.is_in(affected_ids.clone()))
-        .into_tuple::<(i64, Option<Uuid>)>()
-        .all(&txn)
+    let important = set_importance(&env, login, req.message_id, true)
         .await
-        .c(h!())?
-        .into_iter()
-        .collect::<std::collections::HashMap<_, _>>();
-    let important_to_insert = affected_ids
-        .iter()
-        .map(|id| sigint_important::ActiveModel {
-            id: NotSet,
-            login_id: Set(Some(login)),
-            signal_message_id: Set(*id),
-            signal_message_uuid: Set(message_uuids.get(id).copied().flatten()),
-            deleted: Set(false),
-            created_at: NotSet,
-        })
-        .collect::<Vec<sigint_important::ActiveModel>>();
-    if !important_to_insert.is_empty() {
-        sigint_important::Entity::insert_many(important_to_insert)
-            .exec(&txn)
-            .await
-            .c(h!())?;
-    }
-    let important = important_state(&txn, &affected_ids).await.c(h!())?;
+        .c(h!())?;
 
     println!(
         "Message {} marked as important by {}",
         req.message_id, login
     );
-    txn.commit().await.c(h!())?;
-    if let Err(error) =
-        crate::inbox::fanout_inbox_changes(&mut env.redis.clone(), affected_ids)
-            .await
-    {
-        log::error!(
-            "failed to fanout important changes after commit: {:?}",
-            error
-        );
-    }
 
     Ok(Json(ImportantMutationRsp { important }))
 }
@@ -175,43 +247,15 @@ async fn important_rm(
     req: Json<ImportantRmReq>,
 ) -> Result<Json<ImportantMutationRsp>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    let txn = env.dbx.begin().await.c(h!())?;
-    let affected_ids =
-        crate::rer_importer::inbox::find_all_duplicates(&txn, req.message_id)
-            .await
-            .c(h!())?;
-
-    sigint_important::Entity::update_many()
-        .col_expr(sigint_important::Column::Deleted, Expr::value(true))
-        .filter(
-            sigint_important::Column::LoginId
-                .eq(login_id_from_identity(&user)?),
-        )
-        .filter(
-            sigint_important::Column::SignalMessageId
-                .eq_any(affected_ids.clone()),
-        )
-        .filter(sigint_important::Column::Deleted.eq(false))
-        .exec(&txn)
+    let login = login_id_from_identity(&user)?;
+    let important = set_importance(&env, login, req.message_id, false)
         .await
         .c(h!())?;
-    let important = important_state(&txn, &affected_ids).await.c(h!())?;
 
     println!(
         "Remove important sign for message {} by {}",
-        req.message_id,
-        login_id_from_identity(&user)?
+        req.message_id, login
     );
-    txn.commit().await.c(h!())?;
-    if let Err(error) =
-        crate::inbox::fanout_inbox_changes(&mut env.redis.clone(), affected_ids)
-            .await
-    {
-        log::error!(
-            "failed to fanout important changes after commit: {:?}",
-            error
-        );
-    }
 
     Ok(Json(ImportantMutationRsp { important }))
 }
@@ -336,7 +380,44 @@ mod tests {
         let add_body: serde_json::Value =
             test::read_body_json(add_response).await;
         assert_eq!(add_body["important"], true);
-        let add_events = event_types(&mut env.redis.clone(), &stream_id).await;
+        let mut redis = env.redis.clone();
+        let add_events = event_types(&mut redis, &stream_id).await;
+
+        redis.del::<_, ()>(&stream_id).await.unwrap();
+        crate::event_stream::create_redis_stream(&mut redis, session_id)
+            .await
+            .unwrap();
+
+        let repeated_add_response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/rer/important/add")
+                .cookie(session_cookie.clone())
+                .set_json(ImportantAddReq {
+                    message_id: inbox_item.id,
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(repeated_add_response.status(), StatusCode::OK);
+        let repeated_add_body: serde_json::Value =
+            test::read_body_json(repeated_add_response).await;
+        assert_eq!(repeated_add_body["important"], true);
+        assert_eq!(
+            sigint_important::Entity::find()
+                .filter(
+                    sigint_important::Column::LoginId.eq(Some(login_row.id)),
+                )
+                .filter(
+                    sigint_important::Column::SignalMessageId.eq(inbox_item.id),
+                )
+                .filter(sigint_important::Column::Deleted.eq(false))
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+        let repeated_add_events = event_types(&mut redis, &stream_id).await;
 
         let other_important =
             sigint_important::Entity::insert(sigint_important::ActiveModel {
@@ -351,7 +432,6 @@ mod tests {
             .unwrap()
             .last_insert_id;
 
-        let mut redis = env.redis.clone();
         redis.del::<_, ()>(&stream_id).await.unwrap();
         crate::event_stream::create_redis_stream(&mut redis, session_id)
             .await
@@ -415,8 +495,18 @@ mod tests {
 
         let expected = vec![EventType::ETInboxChanged(inbox_item.id)];
         assert_eq!(
-            (add_events, remove_events, empty_remove_events),
-            (expected.clone(), expected.clone(), expected)
+            (
+                add_events,
+                repeated_add_events,
+                remove_events,
+                empty_remove_events
+            ),
+            (
+                expected.clone(),
+                expected.clone(),
+                expected.clone(),
+                expected
+            )
         );
     }
 }

@@ -46,7 +46,10 @@ const api = vi.hoisted(() => ({
   inboxMessageTagsRm: vi.fn(),
 }));
 
-vi.mock('../../../services/api/analysis', () => api);
+vi.mock('../../../services/api/analysis', () => ({
+  ...api,
+  fetchMessagesByIdsMatchingFilters: api.fetchMessageIdsMatchingFilters,
+}));
 vi.mock('../../../services/api/units', () => ({
   getUnitsList: vi.fn().mockResolvedValue([]),
   getUnitsByIds: vi.fn().mockResolvedValue([]),
@@ -513,8 +516,7 @@ describe('useAnalysisData tag pagination', () => {
       .mockResolvedValueOnce({ inboxItems: [message(1, 7)], callsigns: [], pageLimit: 20 })
       .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 })
       .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 });
-    api.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([2]);
-    api.fetchMessagesByIds.mockResolvedValueOnce([
+    api.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([
       [2, { ...message(2, 7)[1], text: 'refreshed on page 2' }],
     ]);
 
@@ -533,7 +535,7 @@ describe('useAnalysisData tag pagination', () => {
           detail: { events: [{ messageId: 2, origin: 'foreign-tab.origin' }] },
         }),
       );
-      await vi.waitFor(() => expect(api.fetchMessagesByIds).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce());
     });
 
     expect(current!.pageIndex).toBe(1);
@@ -546,19 +548,15 @@ describe('useAnalysisData tag pagination', () => {
     expect(api.fetchMessageIdsMatchingFilters.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({ search: 'server-filtered', selectedTags: [7] }),
     );
-    expect(api.fetchMessagesByIds).toHaveBeenCalledWith(
-      [2],
-      expect.objectContaining({ search: 'server-filtered', selectedTags: [7] }),
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+    expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
   });
 
   it('does not mix a page-one realtime message into page 2 after navigation', async () => {
     api.fetchInboxMessages
       .mockResolvedValueOnce({ inboxItems: [message(1, 7)], callsigns: [], pageLimit: 20 })
       .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 });
-    let resolveFilterProbe: ((messageIds: number[]) => void) | undefined;
-    const filterProbe = new Promise<number[]>((resolve) => {
+    let resolveFilterProbe: ((messages: Array<[number, InboxMessage]>) => void) | undefined;
+    const filterProbe = new Promise<Array<[number, InboxMessage]>>((resolve) => {
       resolveFilterProbe = resolve;
     });
     api.fetchMessageIdsMatchingFilters.mockReturnValueOnce(filterProbe);
@@ -581,7 +579,7 @@ describe('useAnalysisData tag pagination', () => {
     const pageTwoMessages = current!.messages;
     api.fetchInboxMessages.mockClear();
     await act(async () => {
-      resolveFilterProbe?.([999]);
+      resolveFilterProbe?.([message(999, 7)]);
       await filterProbe;
       await new Promise((resolve) => window.setTimeout(resolve, 0));
     });
@@ -599,14 +597,13 @@ describe('useAnalysisData tag pagination', () => {
     api.fetchInboxMessages
       .mockResolvedValueOnce({ inboxItems: firstPage, callsigns: [], pageLimit: 20 })
       .mockResolvedValueOnce({ inboxItems: secondPage, callsigns: [], pageLimit: 20 });
-    let resolveFilterProbe: ((messageIds: number[]) => void) | undefined;
-    const filterProbe = new Promise<number[]>((resolve) => {
+    let resolveFilterProbe: ((messages: Array<[number, InboxMessage]>) => void) | undefined;
+    const filterProbe = new Promise<Array<[number, InboxMessage]>>((resolve) => {
       resolveFilterProbe = resolve;
     });
     api.fetchMessageIdsMatchingFilters
       .mockReturnValueOnce(filterProbe)
-      .mockResolvedValueOnce([999]);
-    api.fetchMessagesByIds.mockResolvedValueOnce([message(999, 7)]);
+      .mockResolvedValueOnce([message(999, 7)]);
 
     await renderAnalysisData();
     await act(async () => {
@@ -626,15 +623,16 @@ describe('useAnalysisData tag pagination', () => {
     expect(current!.messages).toHaveLength(40);
     api.fetchInboxMessages.mockClear();
     await act(async () => {
-      resolveFilterProbe?.([999]);
+      resolveFilterProbe?.([message(999, 7)]);
       await filterProbe;
       await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledTimes(2));
-      await vi.waitFor(() => expect(api.fetchMessagesByIds).toHaveBeenCalledOnce());
+      await Promise.resolve();
     });
 
     expect(current!.pageIndex).toBe(1);
     expect(current!.messages).toHaveLength(41);
     expect(current!.messages[0]?.[0]).toBe(999);
+    expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(api.fetchInboxMessages).not.toHaveBeenCalled();
   });
 
@@ -655,7 +653,7 @@ describe('useAnalysisData tag pagination', () => {
     const pageTwoMessages = current!.messages;
     api.fetchInboxMessages.mockClear();
     api.fetchInboxCount.mockClear();
-    api.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([999]);
+    api.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([message(999, 7)]);
     api.fetchInboxCount
       .mockResolvedValueOnce({ quantity: 3, firstElementTs: null })
       .mockResolvedValueOnce({ quantity: 4, firstElementTs: null });

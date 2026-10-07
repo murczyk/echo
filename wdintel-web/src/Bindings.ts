@@ -1369,10 +1369,6 @@ export type MessageIdsRsp = {
   messages: Array<[number, InboxMessage]>;
 };
 
-export type MatchingMessageIdsRsp = {
-  messageIds: Array<number>;
-};
-
 export type InboxItemContextReq = {
   messageUid: string;
 };

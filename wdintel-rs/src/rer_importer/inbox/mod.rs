@@ -740,11 +740,14 @@ async fn messages_by_id_matching_filters(
     user: Identity,
     env: actix_web::web::Data<Env>,
     req: Json<MessageIdsReq>,
-) -> Result<Json<MatchingMessageIdsRsp>, AppError> {
+) -> Result<Json<MessageIdsRsp>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
     has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
         .await
         .c(h!())?;
+    let logins = crate::users::get_organism_login_ids(&env.dbx, user)
+        .await
+        .context(h!())?;
     let req = req.into_inner();
     let default_req = InboxMessagesReq {
         highlight_points: Some(true),
@@ -756,19 +759,26 @@ async fn messages_by_id_matching_filters(
         .await
         .c(h!())?;
     if req.message_ids.is_empty() {
-        return Ok(Json(MatchingMessageIdsRsp {
-            message_ids: Vec::new(),
+        return Ok(Json(MessageIdsRsp {
+            messages: Vec::new(),
         }));
     }
-    let message_ids = matching_inbox_candidate_ids(
-        &env,
+    let query = build_inbox_query_for_candidate_ids(
+        &env.dbx,
         &login,
+        &env,
         &inbox_req,
         &req.message_ids,
+        false,
     )
     .await
     .c(h!())?;
-    Ok(Json(MatchingMessageIdsRsp { message_ids }))
+    let messages = fetch_inbox_messages_with_query(
+        &env.dbx, &login, &logins, &env, &inbox_req, &query,
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(MessageIdsRsp { messages }))
 }
 
 #[post("/api/rer-importer/messages-by-id-with-metadata")]
@@ -5033,7 +5043,7 @@ mod tests {
                 (
                     "/api/rer-importer/messages-by-id-matching-filters",
                     json!({"message_ids": [messages[0].0, messages[1].0], "inbox_req": filter}),
-                    "message_ids",
+                    "messages",
                 ),
                 (
                     "/api/rer-importer/messages-by-id-with-metadata",
@@ -5175,7 +5185,8 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let response: serde_json::Value =
             actix_test::read_body_json(response).await;
-        assert_eq!(response["message_ids"], json!([messages[0].0]));
+        assert_eq!(response["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(response["messages"][0][0], json!(messages[0].0));
         set_devices_section_enabled(&env.dbx, false).await;
         for filter in [
             InboxMessagesReq {

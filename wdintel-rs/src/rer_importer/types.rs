@@ -590,13 +590,6 @@ pub struct MessageIdsRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct MatchingMessageIdsRsp {
-    pub message_ids: Vec<i64>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
 pub struct InboxDeleteReq {
     pub id: i64,
 }

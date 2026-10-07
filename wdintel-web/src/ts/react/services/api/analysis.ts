@@ -29,7 +29,6 @@ import type {
   GroupStatsRsp,
   InboxMessagesReq,
   InboxMessage,
-  MatchingMessageIdsRsp,
   MessageIdsReq,
   MessageIdsRsp,
   MapSettlementMessagesReq,
@@ -407,11 +406,11 @@ export async function fetchMessagesByIds(
   return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
 }
 
-export async function fetchMessageIdsMatchingFilters(
+export async function fetchMessagesByIdsMatchingFilters(
   messageIds: number[],
   inboxReq?: Partial<InboxMessagesReq> | null,
   options?: RequestOptions,
-): Promise<number[]> {
+): Promise<Array<[number, InboxMessage]>> {
   const req: MessageIdsReq = {
     messageIds,
     inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
@@ -427,7 +426,7 @@ export async function fetchMessageIdsMatchingFilters(
           transformCamelToSnake(req),
           options,
         );
-  return transformSnakeToCamel<MatchingMessageIdsRsp>(raw).messageIds ?? [];
+  return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
 }
 
 export async function fetchMapSettlementMessages(

@@ -28,7 +28,7 @@ const hoisted = vi.hoisted(() => ({
 
 vi.mock('../../../services/api/analysis', () => ({
   fetchMessagesByIds: hoisted.fetchMessagesByIds,
-  fetchMessageIdsMatchingFilters: hoisted.fetchMessageIdsMatchingFilters,
+  fetchMessagesByIdsMatchingFilters: hoisted.fetchMessageIdsMatchingFilters,
 }));
 
 vi.mock('../../shared/useInboxChangedMessageIds', () => ({
@@ -360,8 +360,7 @@ describe('useAnalysisData inbox refreshes', () => {
     });
     hoisted.messages = [[1, currentMessage]];
     hoisted.mapOpenMessages = [[2, inboxMessage({ text: 'map' })]];
-    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([9]);
-    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[9, newMessage]]);
+    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([[9, newMessage]]);
 
     renderHook({
       fromDateTimeStr: '2026-01-16T00:00',
@@ -379,7 +378,7 @@ describe('useAnalysisData inbox refreshes', () => {
       [9],
       expect.objectContaining({ selectedTags: [3] }),
     );
-    expectFetchMessagesByIdsCalledWith([9]);
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([
       [9, newMessage],
       [1, currentMessage],
@@ -392,8 +391,7 @@ describe('useAnalysisData inbox refreshes', () => {
 
   it('inserts a newly created intelligence report that matches the current filters', async () => {
     const report = inboxMessage({ text: 'new report', groupMasterKey: 'group-2' });
-    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([91]);
-    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[91, report]]);
+    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([[91, report]]);
 
     renderHook({ groupsSelected: ['group-2'] });
     await act(async () => {
@@ -407,7 +405,7 @@ describe('useAnalysisData inbox refreshes', () => {
       [91],
       expect.objectContaining({ highlightPoints: true }),
     );
-    expectFetchMessagesByIdsCalledWith([91]);
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[91, report]]);
     expect(hoisted.refreshMessageCounts).toHaveBeenCalledTimes(1);
     expect(hoisted.reload).not.toHaveBeenCalled();
@@ -450,11 +448,10 @@ describe('useAnalysisData inbox refreshes', () => {
       ],
     });
     hoisted.messages = [[42, parent]];
-    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([91]);
-    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[42, updatedParent]]).mockResolvedValueOnce([
-      [42, updatedParent],
-      [91, report],
-    ]);
+    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([[91, report]]);
+    hoisted.fetchMessagesByIds
+      .mockResolvedValueOnce([[42, updatedParent]])
+      .mockResolvedValueOnce([[42, updatedParent]]);
 
     renderHook();
     await act(async () => {
@@ -474,7 +471,7 @@ describe('useAnalysisData inbox refreshes', () => {
       [91],
       expect.objectContaining({ highlightPoints: true }),
     );
-    expectFetchMessagesByIdsCalledWith([42, 91]);
+    expectFetchMessagesByIdsCalledWith([42]);
     expect(latest?.messages.map(([messageId]) => messageId)).toEqual([91, 42]);
     expect(latest?.messages[1]?.[1].intelligenceReports).toEqual([reportSummary]);
     expect(hoisted.reload).not.toHaveBeenCalled();
@@ -963,9 +960,8 @@ describe('useAnalysisData inbox refreshes', () => {
     const updatedMessage = inboxMessage({ text: 'map updated' });
     hoisted.mapOpenMessages = [[2, currentMessage]];
     hoisted.fetchMessageIdsMatchingFilters.mockImplementation(async (_messageIds, inboxReq) =>
-      inboxReq.onlyWithMedia ? [] : [2],
+      inboxReq.onlyWithMedia ? [] : [[2, updatedMessage]],
     );
-    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[2, updatedMessage]]);
 
     renderHook({ onlyWithMedia: true, search: 'map' });
     await act(async () => {
@@ -976,11 +972,7 @@ describe('useAnalysisData inbox refreshes', () => {
       [2],
       expect.objectContaining({ onlyWithMedia: false }),
     );
-    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith(
-      [2],
-      expect.objectContaining({ onlyWithMedia: false }),
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([]);
     expect(latest?.mapAttrs.messages).toEqual([[2, updatedMessage]]);
     expect(hoisted.reload).not.toHaveBeenCalled();
@@ -1058,8 +1050,7 @@ describe('useAnalysisData inbox refreshes', () => {
     const currentMessage = inboxMessage({ text: 'needle current' });
     const updatedMessage = inboxMessage({ text: 'needle updated' });
     hoisted.messages = [[1, currentMessage]];
-    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([1]);
-    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[1, updatedMessage]]);
+    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([[1, updatedMessage]]);
 
     renderHook({ search: 'needle' });
     await act(async () => {
@@ -1070,7 +1061,7 @@ describe('useAnalysisData inbox refreshes', () => {
       [1],
       expect.objectContaining({ search: 'needle' }),
     );
-    expectFetchMessagesByIdsCalledWith([1]);
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[1, updatedMessage]]);
     expect(hoisted.loadMissingNetworksForMessages).toHaveBeenCalledWith([[1, updatedMessage]]);
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[1, updatedMessage]], true);
@@ -1093,8 +1084,7 @@ describe('useAnalysisData inbox refreshes', () => {
       tags: [],
     });
     hoisted.messages = [[1, currentMessage]];
-    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([1]);
-    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[1, updatedMessage]]);
+    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([[1, updatedMessage]]);
 
     renderHook({
       fromDateTimeStr: '2026-01-16T00:00',
@@ -1110,6 +1100,7 @@ describe('useAnalysisData inbox refreshes', () => {
       [1],
       expect.objectContaining({ selectedTags: [7], orImportant: true }),
     );
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[1, updatedMessage]]);
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
@@ -1164,8 +1155,7 @@ describe('useAnalysisData inbox refreshes', () => {
     const currentMessage = inboxMessage({ text: 'current' });
     const newMessage = inboxMessage({ text: 'needle new' });
     hoisted.messages = [[1, currentMessage]];
-    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([9]);
-    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[9, newMessage]]);
+    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([[9, newMessage]]);
 
     renderHook({ search: 'needle' });
     await act(async () => {
@@ -1176,7 +1166,7 @@ describe('useAnalysisData inbox refreshes', () => {
       [9, 1, 10],
       expect.objectContaining({ search: 'needle' }),
     );
-    expectFetchMessagesByIdsCalledWith([9]);
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[9, newMessage]]);
     expect(hoisted.loadMissingNetworksForMessages).toHaveBeenCalledWith([[9, newMessage]]);
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[9, newMessage]], true);

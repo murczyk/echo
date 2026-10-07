@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { InboxMessage, InboxMessagesReq, InboxMessageTag } from '../../../../Bindings';
-import { fetchMessageIdsMatchingFilters, fetchMessagesByIds } from '../../services/api/analysis';
+import { fetchMessagesByIds, fetchMessagesByIdsMatchingFilters } from '../../services/api/analysis';
 import { combineDateTimeInputToMs, combineDateTimeToMs } from '../../utils/misc';
 import { buildInboxReq, getFirstLoadedMessagesPageIndex, queryStateReloadKey } from './helpers';
 import { useAnalysisFilterSections } from './use-analysis-data-filter-sections';
@@ -32,6 +32,24 @@ function normalizeMessageIds(messageIds: readonly unknown[]): number[] {
   return Array.from(
     new Set(messageIds.filter((messageId): messageId is number => Number.isInteger(messageId))),
   );
+}
+
+async function hydrateMissingMessages(
+  messageIds: number[],
+  prefetchedItems: Array<[number, InboxMessage]>,
+  inboxReq: Partial<InboxMessagesReq>,
+  signal: AbortSignal,
+): Promise<Array<[number, InboxMessage]>> {
+  const messagesById = new Map(prefetchedItems);
+  const missingMessageIds = messageIds.filter((messageId) => !messagesById.has(messageId));
+  if (missingMessageIds.length > 0) {
+    const hydratedItems = await fetchMessagesByIds(missingMessageIds, inboxReq, { signal });
+    hydratedItems.forEach(([messageId, message]) => messagesById.set(messageId, message));
+  }
+  return messageIds.flatMap((messageId) => {
+    const message = messagesById.get(messageId);
+    return message == null ? [] : ([[messageId, message]] as Array<[number, InboxMessage]>);
+  });
 }
 
 function relatedMessageIds(message: InboxMessage): number[] {
@@ -715,40 +733,44 @@ export function useAnalysisData({
         );
         const requestsCanBeShared =
           !queryState.onlyWithMedia && !hasActiveMapDateRange(requestMapWindow.mapDateRange);
-        let matchingMessageIds: number[];
-        let matchingMapMessageIds: number[];
+        let matchingMessageItems: Array<[number, InboxMessage]>;
+        let matchingMapMessageItems: Array<[number, InboxMessage]>;
         if (requestsCanBeShared) {
           const exactMessageIds = normalizeMessageIds([
             ...exactFilterMessageIds,
             ...exactMapFilterMessageIds,
           ]);
-          const matchingIds =
+          const matchingItems =
             exactMessageIds.length === 0
               ? []
-              : await fetchMessageIdsMatchingFilters(exactMessageIds, inboxReq);
-          matchingMessageIds = matchingIds;
-          matchingMapMessageIds = matchingIds;
+              : await fetchMessagesByIdsMatchingFilters(exactMessageIds, inboxReq);
+          matchingMessageItems = matchingItems;
+          matchingMapMessageItems = matchingItems;
         } else {
-          [matchingMessageIds, matchingMapMessageIds] = await Promise.all([
+          [matchingMessageItems, matchingMapMessageItems] = await Promise.all([
             exactFilterMessageIds.length === 0
               ? []
-              : fetchMessageIdsMatchingFilters(exactFilterMessageIds, inboxReq),
+              : fetchMessagesByIdsMatchingFilters(exactFilterMessageIds, inboxReq),
             exactMapFilterMessageIds.length === 0
               ? []
-              : fetchMessageIdsMatchingFilters(exactMapFilterMessageIds, mapInboxReq),
+              : fetchMessagesByIdsMatchingFilters(exactMapFilterMessageIds, mapInboxReq),
           ]);
         }
         if (isScopeStale() || retryForLatestMessageWindow()) return;
 
         const matchingMessageIdSet = new Set(
-          matchingMessageIds.filter(
-            (messageId) => exactFilterMessageIds.includes(messageId) && shouldApply(messageId),
-          ),
+          matchingMessageItems
+            .map(([messageId]) => messageId)
+            .filter(
+              (messageId) => exactFilterMessageIds.includes(messageId) && shouldApply(messageId),
+            ),
         );
         const matchingMapMessageIdSet = new Set(
-          matchingMapMessageIds.filter(
-            (messageId) => exactMapFilterMessageIds.includes(messageId) && shouldApply(messageId),
-          ),
+          matchingMapMessageItems
+            .map(([messageId]) => messageId)
+            .filter(
+              (messageId) => exactMapFilterMessageIds.includes(messageId) && shouldApply(messageId),
+            ),
         );
         const discoverUnseenMessages = canDiscoverUnseenMessages({
           focusedMessageActive,
@@ -779,10 +801,12 @@ export function useAnalysisData({
             ...messageIdsToHydrate,
             ...mapMessageIdsToHydrate,
           ]);
-          const refreshedItems =
-            messageIds.length === 0
-              ? []
-              : await fetchMessagesByIds(messageIds, inboxReq, { signal });
+          const refreshedItems = await hydrateMissingMessages(
+            messageIds,
+            matchingMessageItems,
+            inboxReq,
+            signal,
+          );
           const messageIdSet = new Set(messageIdsToHydrate);
           const mapMessageIdSet = new Set(mapMessageIdsToHydrate);
           refreshedMessageItems = refreshedItems.filter(([messageId]) =>
@@ -793,12 +817,13 @@ export function useAnalysisData({
           );
         } else {
           [refreshedMessageItems, refreshedMapMessageItems] = await Promise.all([
-            messageIdsToHydrate.length === 0
-              ? []
-              : fetchMessagesByIds(messageIdsToHydrate, inboxReq, { signal }),
-            mapMessageIdsToHydrate.length === 0
-              ? []
-              : fetchMessagesByIds(mapMessageIdsToHydrate, mapInboxReq, { signal }),
+            hydrateMissingMessages(messageIdsToHydrate, matchingMessageItems, inboxReq, signal),
+            hydrateMissingMessages(
+              mapMessageIdsToHydrate,
+              matchingMapMessageItems,
+              mapInboxReq,
+              signal,
+            ),
           ]);
         }
         if (isScopeStale() || retryForLatestMessageWindow()) return;

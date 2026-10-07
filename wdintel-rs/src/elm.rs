@@ -209,7 +209,6 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::battle_line::types::BattleLineNetworksRsp,
             crate::rer_importer::types::MessageIdsReq,
             crate::rer_importer::types::MessageIdsRsp,
-            crate::rer_importer::types::MatchingMessageIdsRsp,
             crate::rer_importer::types::InboxItemContextReq,
             crate::rer_importer::types::InboxItemContextRsp,
             crate::rer_importer::types::InboxWindowRsp,
@@ -1106,7 +1105,6 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::battle_line::types::BattleLineNetworksRsp,
             crate::rer_importer::types::MessageIdsReq,
             crate::rer_importer::types::MessageIdsRsp,
-            crate::rer_importer::types::MatchingMessageIdsRsp,
             crate::rer_importer::types::InboxGroupStatsByMinute,
             crate::rer_importer::types::InboxGroupStats,
 
