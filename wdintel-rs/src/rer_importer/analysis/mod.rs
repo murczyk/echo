@@ -9663,7 +9663,8 @@ async fn query_message_stats_count_raw(
         db,
         freshness_max_age_ms,
     )
-    .await?;
+    .await
+    .context(h!())?;
     let (count_overall, count_selected) = stats::fetch_counts_raw_with_db(
         req,
         user,
@@ -9710,7 +9711,8 @@ async fn query_unit_match_stats_count_raw(
         db,
         freshness_max_age_ms,
     )
-    .await?;
+    .await
+    .context(h!())?;
     let (exact_resolved_units, combined_resolved_units) =
         analytics_unit::resolve_analysis_unit_filter_variants_for_analytics(
             &env.dbx,

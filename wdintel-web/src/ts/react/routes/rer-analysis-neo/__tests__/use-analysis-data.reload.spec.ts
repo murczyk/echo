@@ -7,6 +7,7 @@ import {
   loadFilterSectionData,
   mergeSignalProfiles,
   reloadAnalysisData,
+  startAnalysisCountsLoad,
   transformMessagePageResponse,
 } from '../use-analysis-data.reload';
 import { buildSummaryCallsignsInfo } from '../use-analysis-data.callsigns';
@@ -367,7 +368,7 @@ describe('reloadAnalysisData', () => {
       [1, { networkIds: [] }],
     ]);
     expect(messagesLoadingTransitions).toContain(false);
-    expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(10);
+    await vi.waitFor(() => expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(10));
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(
       buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null),
     );
@@ -415,6 +416,7 @@ describe('reloadAnalysisData', () => {
         ...emptyQueryState(),
         fromDateTimeStr: '2026-04-01T00:00',
         toDateTimeStr: '2026-04-02T00:00',
+        unitsSelected: ['unit-id:17'],
       },
       reloadRequestRef: { current: 0 },
       setAorEntries: vi.fn(),
@@ -455,6 +457,10 @@ describe('reloadAnalysisData', () => {
     });
     await flushPromises();
 
+    expect(mocks.fetchAnalysisUnitMatchStatsCount).toHaveBeenCalledWith(
+      expect.objectContaining({ selectedUnits: null, selectedUnitIds: [17] }),
+      expect.anything(),
+    );
     expect(counts?.sendersCount).toBe(7);
     expect(counts?.groupsCount).toBe(0);
 
@@ -463,6 +469,57 @@ describe('reloadAnalysisData', () => {
     await flushPromises();
 
     expect(counts?.groupsCount).toBe(0);
+  });
+  it('#3001 limits concurrent counter requests while preserving progressive updates', async () => {
+    const req = buildAnalysisReq({
+      ...buildQueryState(),
+      unitsSelected: ['unit-id:17'],
+    })!;
+    const releases: Array<() => void> = [];
+    let activeRequests = 0;
+    let maxActiveRequests = 0;
+    const pendingResult = <T>(value: T) => {
+      activeRequests += 1;
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+      return new Promise<T>((resolve) => {
+        releases.push(() => {
+          activeRequests -= 1;
+          resolve(value);
+        });
+      });
+    };
+    mocks.fetchAnalysisStatsCount.mockImplementation(() => pendingResult(1));
+    mocks.fetchAnalysisUnitMatchStatsCount.mockImplementation(() =>
+      pendingResult({ exactMatchesCount: 2, nonExactMatchesCount: 3 }),
+    );
+    let counts: CountStatsRsp | null = null;
+    let countsLoading = false;
+
+    startAnalysisCountsLoad(req, {
+      isStale: () => false,
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      setCounts: (next) => {
+        counts = typeof next === 'function' ? next(counts) : next;
+      },
+      setCountsLoading: (next) => {
+        countsLoading = typeof next === 'function' ? next(countsLoading) : next;
+      },
+    });
+
+    expect(releases).toHaveLength(4);
+    expect(maxActiveRequests).toBe(4);
+    for (let index = 0; index < 11; index += 1) {
+      releases[index]?.();
+      await flushPromises();
+    }
+
+    expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(10);
+    expect(mocks.fetchAnalysisUnitMatchStatsCount).toHaveBeenCalledTimes(1);
+    expect(maxActiveRequests).toBe(4);
+    expect(counts?.groupsCount).toBe(1);
+    expect(counts?.unitsExactMatchesCount).toBe(2);
+    await vi.waitFor(() => expect(countsLoading).toBe(false));
   });
   it('refreshes summary callsign info after rebuilt inbox data arrives', async () => {
     const inboxDeferred = deferred<ReloadInboxRsp>();

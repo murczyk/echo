@@ -707,12 +707,13 @@ const ANALYSIS_COUNT_FIELDS: ReadonlyArray<
   ['aors', 'aorsCount'],
   ['networks', 'networksCount'],
 ];
+const ANALYSIS_COUNT_MAX_CONCURRENT = 4;
 
 type AnalysisCountsLoad = {
   abort: () => void;
 };
 
-function startAnalysisCountsLoad(
+export function startAnalysisCountsLoad(
   req: AnalysisStatsReq,
   context: {
     isStale: () => boolean;
@@ -744,9 +745,13 @@ function startAnalysisCountsLoad(
       ...patch,
     }));
   };
-  const load = async <T>(request: Promise<T>, toPatch: (value: T) => Partial<CountStatsRsp>) => {
+  const load = async <T>(
+    request: () => Promise<T>,
+    toPatch: (value: T) => Partial<CountStatsRsp>,
+  ) => {
+    if (isInactive()) return;
     try {
-      applyPatch(toPatch(await request));
+      applyPatch(toPatch(await request()));
     } catch (loadError) {
       if (isInactive() || isAbortError(loadError) || reportedError) return;
       reportedError = true;
@@ -757,23 +762,48 @@ function startAnalysisCountsLoad(
   context.setCounts((current) => current ?? EMPTY_ANALYSIS_COUNTS);
   context.setCountsLoading(true);
 
-  const requests = ANALYSIS_COUNT_FIELDS.map(([dimension, field]) =>
-    load(fetchAnalysisStatsCount(dimension, req, requestOptions), (count) => ({
-      [field]: count,
-    })),
-  );
-  if (req.selectedUnits?.length) {
-    requests.push(
-      load(fetchAnalysisUnitMatchStatsCount(req, requestOptions), (count) => ({
-        unitsExactMatchesCount: count.exactMatchesCount,
-        unitsNonExactMatchesCount: count.nonExactMatchesCount,
-      })),
+  const requests: Array<() => Promise<void>> = [];
+  if (req.selectedUnits?.length || req.selectedUnitIds?.length) {
+    requests.push(() =>
+      load(
+        () => fetchAnalysisUnitMatchStatsCount(req, requestOptions),
+        (count) => ({
+          unitsExactMatchesCount: count.exactMatchesCount,
+          unitsNonExactMatchesCount: count.nonExactMatchesCount,
+        }),
+      ),
     );
   } else {
     applyPatch({ unitsExactMatchesCount: 0, unitsNonExactMatchesCount: 0 });
   }
+  requests.push(
+    ...ANALYSIS_COUNT_FIELDS.map(
+      ([dimension, field]) =>
+        () =>
+          load(
+            () => fetchAnalysisStatsCount(dimension, req, requestOptions),
+            (count) => ({
+              [field]: count,
+            }),
+          ),
+    ),
+  );
 
-  void Promise.all(requests).then(() => {
+  let nextRequest = 0;
+  const worker = async () => {
+    while (!isInactive()) {
+      const request = requests[nextRequest];
+      nextRequest += 1;
+      if (request == null) return;
+      await request();
+    }
+  };
+  const workers = Array.from(
+    { length: Math.min(ANALYSIS_COUNT_MAX_CONCURRENT, requests.length) },
+    () => worker(),
+  );
+
+  void Promise.all(workers).then(() => {
     context.parentSignal?.removeEventListener('abort', abort);
     if (!isInactive()) context.setCountsLoading(false);
   });

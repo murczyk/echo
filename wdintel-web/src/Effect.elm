@@ -103,9 +103,9 @@ type Effect msg
     | GetSystemSettings (Result ApiError B.SystemSettingsCurrentRsp -> msg)
     | FocusHtmlElement { elemId : String }
     | GetInboxMessages (Maybe String) (Result ApiError B.InboxMessagesRsp -> msg) B.InboxMessagesReq
-    | GetAnalysisStatsCount AnalysisStatsCountEndpoint (Result ApiError Int -> msg) B.AnalysisStatsReq
-    | GetAnalysisMessageStatsCount (Result ApiError B.MessageStatsCountRsp -> msg) B.AnalysisStatsReq
-    | GetAnalysisUnitMatchStatsCount (Result ApiError B.UnitMatchStatsCountRsp -> msg) B.AnalysisStatsReq
+    | GetAnalysisStatsCount String AnalysisStatsCountEndpoint (Result ApiError Int -> msg) B.AnalysisStatsReq
+    | GetAnalysisMessageStatsCount String (Result ApiError B.MessageStatsCountRsp -> msg) B.AnalysisStatsReq
+    | GetAnalysisUnitMatchStatsCount String (Result ApiError B.UnitMatchStatsCountRsp -> msg) B.AnalysisStatsReq
     | GetTags (Result ApiError (List ( Int, B.Tag )) -> msg)
     | GetTags2 (Result ApiError B.TagStatsRsp -> msg) B.AnalysisStatsReq
     | GetFreqsSummaryTable (Result ApiError B.SummaryTableFreq -> msg) B.AnalysisStatsReq
@@ -435,69 +435,69 @@ getInboxMessages token toMsg payload =
     GetInboxMessages token toMsg payload
 
 
-getAnalysisStatsCount : AnalysisStatsCountEndpoint -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
-getAnalysisStatsCount endpoint toMsg payload =
-    GetAnalysisStatsCount endpoint toMsg payload
+getAnalysisStatsCount : AnalysisStatsCountEndpoint -> String -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisStatsCount endpoint tracker toMsg payload =
+    GetAnalysisStatsCount tracker endpoint toMsg payload
 
 
-getAnalysisGroupsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisGroupsCount : String -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
 getAnalysisGroupsCount =
     getAnalysisStatsCount GroupsCount
 
 
-getAnalysisSendersCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisSendersCount : String -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
 getAnalysisSendersCount =
     getAnalysisStatsCount SendersCount
 
 
-getAnalysisFreqsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisFreqsCount : String -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
 getAnalysisFreqsCount =
     getAnalysisStatsCount FreqsCount
 
 
-getAnalysisPostsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisPostsCount : String -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
 getAnalysisPostsCount =
     getAnalysisStatsCount PostsCount
 
 
-getAnalysisCallsignsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisCallsignsCount : String -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
 getAnalysisCallsignsCount =
     getAnalysisStatsCount CallsignsCount
 
 
-getAnalysisUnitsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisUnitsCount : String -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
 getAnalysisUnitsCount =
     getAnalysisStatsCount UnitsCount
 
 
-getAnalysisLocationsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisLocationsCount : String -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
 getAnalysisLocationsCount =
     getAnalysisStatsCount LocationsCount
 
 
-getAnalysisTagsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisTagsCount : String -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
 getAnalysisTagsCount =
     getAnalysisStatsCount TagsCount
 
 
-getAnalysisAorsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisAorsCount : String -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
 getAnalysisAorsCount =
     getAnalysisStatsCount AorsCount
 
 
-getAnalysisNetworksCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisNetworksCount : String -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
 getAnalysisNetworksCount =
     getAnalysisStatsCount NetworksCount
 
 
-getAnalysisMessageStatsCount : (Result ApiError B.MessageStatsCountRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
-getAnalysisMessageStatsCount toMsg payload =
-    GetAnalysisMessageStatsCount toMsg payload
+getAnalysisMessageStatsCount : String -> (Result ApiError B.MessageStatsCountRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisMessageStatsCount tracker toMsg payload =
+    GetAnalysisMessageStatsCount tracker toMsg payload
 
 
-getAnalysisUnitMatchStatsCount : (Result ApiError B.UnitMatchStatsCountRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
-getAnalysisUnitMatchStatsCount toMsg payload =
-    GetAnalysisUnitMatchStatsCount toMsg payload
+getAnalysisUnitMatchStatsCount : String -> (Result ApiError B.UnitMatchStatsCountRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisUnitMatchStatsCount tracker toMsg payload =
+    GetAnalysisUnitMatchStatsCount tracker toMsg payload
 
 
 analysisStatsCountEndpointPath : AnalysisStatsCountEndpoint -> String
@@ -1106,14 +1106,14 @@ map fn effect =
         GetInboxMessages token toMsg payload ->
             GetInboxMessages token (fn << toMsg) payload
 
-        GetAnalysisStatsCount endpoint toMsg payload ->
-            GetAnalysisStatsCount endpoint (fn << toMsg) payload
+        GetAnalysisStatsCount tracker endpoint toMsg payload ->
+            GetAnalysisStatsCount tracker endpoint (fn << toMsg) payload
 
-        GetAnalysisMessageStatsCount toMsg payload ->
-            GetAnalysisMessageStatsCount (fn << toMsg) payload
+        GetAnalysisMessageStatsCount tracker toMsg payload ->
+            GetAnalysisMessageStatsCount tracker (fn << toMsg) payload
 
-        GetAnalysisUnitMatchStatsCount toMsg payload ->
-            GetAnalysisUnitMatchStatsCount (fn << toMsg) payload
+        GetAnalysisUnitMatchStatsCount tracker toMsg payload ->
+            GetAnalysisUnitMatchStatsCount tracker (fn << toMsg) payload
 
         GetTags2 toMsg payload ->
             GetTags2 (fn << toMsg) payload
@@ -1495,25 +1495,37 @@ toCmd options effect =
                 , tracker = token
                 }
 
-        GetAnalysisStatsCount endpoint toMsg payload ->
-            Http.post
-                { url = "/api/rer/analysis/stats/" ++ analysisStatsCountEndpointPath endpoint ++ "/count"
+        GetAnalysisStatsCount tracker endpoint toMsg payload ->
+            Http.request
+                { method = "POST"
+                , url = "/api/rer/analysis/stats/" ++ analysisStatsCountEndpointPath endpoint ++ "/count"
                 , body = Http.jsonBody (B.analysisStatsReqEncoder payload)
                 , expect = leExpectJson toMsg Decode.int
+                , headers = []
+                , timeout = Nothing
+                , tracker = Just tracker
                 }
 
-        GetAnalysisMessageStatsCount toMsg payload ->
-            Http.post
-                { url = "/api/rer/analysis/stats/messages/count"
+        GetAnalysisMessageStatsCount tracker toMsg payload ->
+            Http.request
+                { method = "POST"
+                , url = "/api/rer/analysis/stats/messages/count"
                 , body = Http.jsonBody (B.analysisStatsReqEncoder payload)
                 , expect = leExpectJson toMsg B.messageStatsCountRspDecoder
+                , headers = []
+                , timeout = Nothing
+                , tracker = Just tracker
                 }
 
-        GetAnalysisUnitMatchStatsCount toMsg payload ->
-            Http.post
-                { url = "/api/rer/analysis/stats/units/matches/count"
+        GetAnalysisUnitMatchStatsCount tracker toMsg payload ->
+            Http.request
+                { method = "POST"
+                , url = "/api/rer/analysis/stats/units/matches/count"
                 , body = Http.jsonBody (B.analysisStatsReqEncoder payload)
                 , expect = leExpectJson toMsg B.unitMatchStatsCountRspDecoder
+                , headers = []
+                , timeout = Nothing
+                , tracker = Just tracker
                 }
 
         GetTags2 toMsg payload ->

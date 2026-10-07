@@ -1,4 +1,4 @@
-module Pages_.RerAnalysis.Msg exposing (Msg(..), StatsCountField(..))
+module Pages_.RerAnalysis.Msg exposing (Msg(..))
 
 import Bindings as B
 import Bytes exposing (Bytes)
@@ -10,19 +10,6 @@ import Shared.Components.DateRangePicker
 import Shared.Components.RerMessage
 import Shared.Components.Toast
 import Time exposing (Posix)
-
-
-type StatsCountField
-    = GroupsCountField
-    | SendersCountField
-    | FreqsCountField
-    | PostsCountField
-    | CallsignsCountField
-    | UnitsCountField
-    | LocationsCountField
-    | TagsCountField
-    | AorsCountField
-    | NetworksCountField
 
 
 type Msg
@@ -158,9 +145,9 @@ type Msg
     | DeleteMessageConfirm
     | DeleteMessageCancel
     | DeleteMessageDone Int (Result ApiError ())
-    | GotStatsCount B.AnalysisStatsReq StatsCountField (Result ApiError Int)
-    | GotMessageStatsCount B.AnalysisStatsReq (Result ApiError B.MessageStatsCountRsp)
-    | GotUnitMatchStatsCount B.AnalysisStatsReq (Result ApiError B.UnitMatchStatsCountRsp)
+    | GotStatsCount Int B.AnalysisStatsReq StatsCountField (Result ApiError Int)
+    | GotMessageStatsCount Int B.AnalysisStatsReq (Result ApiError B.MessageStatsCountRsp)
+    | GotUnitMatchStatsCount Int B.AnalysisStatsReq (Result ApiError B.UnitMatchStatsCountRsp)
     | GotSystemSettings (Result ApiError B.SystemSettingsCurrentRsp)
     | GotUserDutySettings (Result ApiError B.UserDutySettingsDto)
     | GotStatsAors (Result ApiError B.AreaOfResponsibilityStatsRsp)
