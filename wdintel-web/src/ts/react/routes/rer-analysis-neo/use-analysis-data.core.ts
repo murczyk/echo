@@ -725,6 +725,8 @@ export function useAnalysisData({
           (needsServerFilter && visibleMessageIdSet.has(messageId)),
       );
       const exactMapFilterMessageIds = mapNeedsServerFilter ? visibleMapMessageIds : [];
+      let shouldRefreshMessageCounts =
+        visibleMessageIds.length > 0 || visibleMapMessageIds.length > 0;
 
       try {
         const inboxReq = buildLiveRefreshInboxReq(queryState, optionsFreqValues, true);
@@ -773,6 +775,7 @@ export function useAnalysisData({
               (messageId) => exactMapFilterMessageIds.includes(messageId) && shouldApply(messageId),
             ),
         );
+        shouldRefreshMessageCounts ||= matchingMessageIdSet.size > 0;
         const discoverUnseenMessages = canDiscoverUnseenMessages({
           focusedMessageActive,
           messages: requestMessageWindow.messages,
@@ -968,7 +971,11 @@ export function useAnalysisData({
         if (signal.aborted) return;
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
       } finally {
-        if (!isScopeStale()) messageList.refreshMessageCounts();
+        if (!isScopeStale() && shouldRefreshMessageCounts) {
+          messageList.refreshMessageCounts();
+        } else if (!isScopeStale()) {
+          messageList.scheduleOverallMessageCountRefresh();
+        }
       }
     },
     [
