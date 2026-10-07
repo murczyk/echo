@@ -208,6 +208,8 @@ describe('useAnalysisDataMessageActions', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    hoisted.importantAdd.mockResolvedValue(true);
+    hoisted.importantRemove.mockResolvedValue(false);
     hoisted.inboxMessageTagsAdd.mockResolvedValue(undefined);
     hoisted.inboxMessageTagsRm.mockResolvedValue(undefined);
     hoisted.inboxMessageTagsModelError.mockResolvedValue(undefined);
@@ -260,6 +262,19 @@ describe('useAnalysisDataMessageActions', () => {
     });
     return apiRef;
   }
+
+  it('uses the authoritative aggregate importance returned by the server', async () => {
+    hoisted.importantRemove.mockResolvedValueOnce(true);
+    const apiRef = await renderHarness([[1, buildMessage({ important: true })]]);
+
+    await act(async () => {
+      await apiRef.current!.onToggleMessageImportant(1, true);
+    });
+
+    expect(hoisted.importantRemove).toHaveBeenCalledWith({ messageId: 1 });
+    expect(apiRef.current!.messages[0]?.[1].important).toBe(true);
+    expect(apiRef.current!.mapOpenMessages[0]?.[1].important).toBe(true);
+  });
 
   it('removes only the human contribution, keeps bot rows, and opens the prompt', async () => {
     const apiRef = await renderHarness([

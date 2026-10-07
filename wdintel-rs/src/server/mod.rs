@@ -1054,6 +1054,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::inbox_item_context)
             .service(crate::rer_importer::inbox::messages_by_id)
             .service(
+                crate::rer_importer::inbox::messages_by_id_matching_filters,
+            )
+            .service(
                 crate::rer_importer::inbox::messages_by_id_with_metadata,
             )
             .service(crate::rer_importer::inbox::messages_by_uuid)
@@ -1131,6 +1134,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::system_settings::current_system_settings)
             .service(crate::system_settings::list_system_settings)
             .service(crate::system_settings::create_system_settings)
+            .service(crate::system_settings::set_rer_report_enabled)
             .service(crate::system_settings::activate_system_settings)
             .service(crate::system_settings::rer_duty_test_replay_status)
             .service(crate::ai_engine::gov::get_settings)

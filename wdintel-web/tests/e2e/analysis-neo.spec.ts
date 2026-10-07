@@ -504,6 +504,243 @@ test.describe('@smoke @regression', () => {
       .toBe(offsetBefore);
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3694
+  test('analysis neo shows a newly prepended message after refreshing at the top', async ({
+    page,
+  }) => {
+    const initialPage = createOverflowingInboxResponse();
+    const [, template] = initialPage.inbox_items[0];
+    const newMessageId = 1000;
+    const refreshedPage = {
+      ...initialPage,
+      inbox_items: [
+        [
+          newMessageId,
+          {
+            ...template,
+            messageUid: 'analysis-refresh-e2e-new-message',
+            text: 'Newly received analysis message',
+          },
+        ],
+        ...initialPage.inbox_items,
+      ],
+    } as typeof initialPage;
+    let refreshRequested = false;
+    await setupAnalysisNeoPage(page, { inboxResponse: initialPage });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify(refreshRequested ? refreshedPage : initialPage),
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+
+    const messageList = page.locator('section[aria-labelledby] ul').first();
+    const scrollContainer = messageList.locator('..');
+    await expect(messageList.locator('li')).toHaveCount(20);
+    await expect.poll(() => scrollContainer.evaluate((element) => element.scrollTop)).toBe(0);
+
+    refreshRequested = true;
+    await page.getByRole('button', { name: 'Оновити', exact: true }).click();
+
+    const newMessage = page.locator(`[data-message-id="${newMessageId}"]`);
+    await expect(newMessage).toBeAttached();
+    await expect(newMessage).toBeInViewport();
+    await expect.poll(() => scrollContainer.evaluate((element) => element.scrollTop)).toBe(0);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3694
+  test('analysis neo inserts a matching realtime message without reloading the page', async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date('2026-07-13T13:00:00Z'));
+    const initialPage = createOverflowingInboxResponse();
+    const [, template] = initialPage.inbox_items[0];
+    const anchorMessage = initialPage.inbox_items.find(([messageId]) => messageId === 105)?.[1];
+    if (anchorMessage == null) throw new Error('Analysis anchor fixture message is missing');
+    const previewHref = '/test-assets/analysis-realtime-anchor.svg';
+    Object.assign(anchorMessage, {
+      media: [
+        {
+          id: 'analysis-realtime-anchor-image',
+          contentType: 'image/svg+xml',
+          fileName: 'analysis-realtime-anchor.svg',
+          sizeBytes: 128,
+          href: previewHref,
+          transcription: null,
+          ocr: null,
+          summary: null,
+          kmzConversionStatus: null,
+          positions: [],
+        },
+      ],
+      images: [previewHref],
+    });
+    const newMessageId = 1000;
+    const newMessage = {
+      ...template,
+      messageUid: 'analysis-realtime-e2e-new-message',
+      text: 'Realtime analysis message',
+      date: '13.07.2026',
+      time: '12:35',
+      timestamp: Date.parse('2026-07-13T09:35:00Z'),
+    };
+    const refreshedPage = {
+      ...initialPage,
+      inbox_items: [[newMessageId, newMessage], ...initialPage.inbox_items],
+    } as typeof initialPage;
+    let releaseInboxChangedEvent = false;
+    let inboxChangedEventSent = false;
+    let messageLookupCount = 0;
+    let postEventInboxRequestCount = 0;
+    const targetedMessageRequests: number[][] = [];
+    await setupAnalysisNeoPage(page, { inboxResponse: initialPage });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      if (inboxChangedEventSent) {
+        postEventInboxRequestCount += 1;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify(inboxChangedEventSent ? refreshedPage : initialPage),
+      });
+    });
+    await page.route('**/api/rer-importer/messages-by-id', async (route) => {
+      const body = route.request().postDataJSON() as { message_ids?: number[] };
+      targetedMessageRequests.push(body.message_ids ?? []);
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ messages: [[newMessageId, newMessage]] }),
+      });
+    });
+    await page.route('**/api/rer-importer/messages-by-id-matching-filters', async (route) => {
+      messageLookupCount += 1;
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ message_ids: [newMessageId] }),
+      });
+    });
+    await page.route('**/api/event-stream/long-poll', async (route) => {
+      const events =
+        releaseInboxChangedEvent && !inboxChangedEventSent
+          ? [
+              {
+                id: 'analysis-realtime-e2e-event',
+                event_type: { ETInboxChanged: newMessageId },
+                created_at: Date.now(),
+                origin: null,
+                intelligence_report: false,
+              },
+            ]
+          : [];
+      if (events.length > 0) inboxChangedEventSent = true;
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({
+          events,
+          last_event_id: inboxChangedEventSent ? 'analysis-realtime-e2e-event' : null,
+        }),
+      });
+    });
+    await page.route(`**${previewHref}`, async (route) => {
+      await route.fulfill({
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="navy"/></svg>',
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+
+    const messageList = page.locator('section[aria-labelledby] ul').first();
+    await expect(messageList.locator('[data-message-id]')).toHaveCount(20);
+    const anchor = page.locator('[data-message-id="105"]');
+    await expect(anchor).toContainText('Analysis narrow fixture message 4');
+    await anchor.evaluate((element) => {
+      const container = element.closest('ul')?.parentElement;
+      if (container == null) throw new Error('Message scroll container is missing');
+      container.scrollTop +=
+        element.getBoundingClientRect().top - container.getBoundingClientRect().top - 24;
+      container.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    const anchorOffset = () =>
+      anchor.evaluate((element) => {
+        const container = element.closest('ul')?.parentElement;
+        if (container == null) throw new Error('Message scroll container is missing');
+        return Math.round(
+          element.getBoundingClientRect().top -
+            container.getBoundingClientRect().top -
+            container.clientTop,
+        );
+      });
+    await anchor.getByRole('button', { name: 'Розгорнути медіа: 1' }).click();
+    await anchor.getByRole('button', { name: 'Відкрити зображення' }).click();
+    const previewDialog = page.getByRole('dialog', { name: 'Перегляд зображення' });
+    await expect(previewDialog).toBeVisible();
+    const offsetBefore = await anchorOffset();
+    await page.evaluate(() => {
+      const observedWindow = window as typeof window & {
+        __analysisRealtimeSkeletonSeen?: boolean;
+        __analysisRealtimeSkeletonObserver?: MutationObserver;
+      };
+      observedWindow.__analysisRealtimeSkeletonSeen = false;
+      observedWindow.__analysisRealtimeSkeletonObserver?.disconnect();
+      const markFullCenterSkeleton = () => {
+        if (
+          document.querySelector('section[aria-label="Центральна секція"][aria-disabled="true"]') !=
+          null
+        ) {
+          observedWindow.__analysisRealtimeSkeletonSeen = true;
+        }
+      };
+      observedWindow.__analysisRealtimeSkeletonObserver = new MutationObserver(
+        markFullCenterSkeleton,
+      );
+      observedWindow.__analysisRealtimeSkeletonObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+      });
+      markFullCenterSkeleton();
+    });
+
+    const messageLookupsBeforeEvent = messageLookupCount;
+    releaseInboxChangedEvent = true;
+    await expect.poll(() => inboxChangedEventSent).toBe(true);
+    await expect.poll(() => messageLookupCount).toBeGreaterThan(messageLookupsBeforeEvent);
+
+    const receivedMessage = page.locator(`[data-message-id="${newMessageId}"]`);
+    await expect(receivedMessage).toContainText('Realtime analysis message');
+    await expect(messageList.locator('[data-message-id]')).toHaveCount(21);
+    await expect(anchor).toContainText('Analysis narrow fixture message 4');
+    await expect
+      .poll(async () => ({
+        anchorOffset: await anchorOffset(),
+        fullCenterSkeletonSeen: await page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __analysisRealtimeSkeletonSeen?: boolean;
+              }
+            ).__analysisRealtimeSkeletonSeen ?? false,
+        ),
+        postEventInboxRequestCount,
+        previewOpen: await previewDialog.isVisible(),
+        targetedMessageRequests,
+      }))
+      .toEqual({
+        anchorOffset: offsetBefore,
+        fullCenterSkeletonSeen: false,
+        postEventInboxRequestCount: 0,
+        previewOpen: true,
+        targetedMessageRequests: [[newMessageId]],
+      });
+    await page.evaluate(() => {
+      (
+        window as typeof window & {
+          __analysisRealtimeSkeletonObserver?: MutationObserver;
+        }
+      ).__analysisRealtimeSkeletonObserver?.disconnect();
+    });
+  });
+
   test('analysis neo keeps the compact panel toggle available during initial loading', async ({
     page,
   }) => {

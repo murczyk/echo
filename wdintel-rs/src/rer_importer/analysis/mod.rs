@@ -2762,12 +2762,16 @@ pub fn filter_selected_networks<Q>(
     mut q: Q,
     selected_networks: &Option<Vec<i64>>,
     without_network: &Option<bool>,
+    only_with_network: &Option<bool>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter + QueryTrait,
 {
-    if let Some(expr) = network_filter_expr(selected_networks, without_network)
-    {
+    if let Some(expr) = network_filter_expr(
+        selected_networks,
+        without_network,
+        only_with_network,
+    ) {
         q = q.filter(expr);
     }
     Ok(q)
@@ -2777,6 +2781,7 @@ pub(super) fn filter_selected_networks_analytics<E>(
     q: Select<E>,
     selected_networks: &Option<Vec<i64>>,
     without_network: &Option<bool>,
+    only_with_network: &Option<bool>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<E>, AppError>
 where
@@ -2784,14 +2789,21 @@ where
 {
     let selected_network_ids =
         selected_networks.as_ref().filter(|ids| !ids.is_empty());
-    if without_network.unwrap_or(false) && selected_network_ids.is_some() {
+    let only_with_network = only_with_network.unwrap_or(false);
+    if without_network.unwrap_or(false)
+        && (selected_network_ids.is_some() || only_with_network)
+    {
         return Ok(q.filter(Expr::cust("FALSE")));
     }
     if without_network.unwrap_or(false) {
         return Ok(q.filter(without_network_filter_expr_with_scope(scope)));
     }
     if selected_network_ids.is_none() {
-        return Ok(q);
+        return if only_with_network {
+            Ok(q.filter(Expr::exists(network_exists_subquery(scope))))
+        } else {
+            Ok(q)
+        };
     }
 
     let inbox_network_alias = Alias::new("analytics_network_filter_link");
@@ -2833,9 +2845,13 @@ pub fn filter_selected_networks_stmt(
     mut q: SelectStatement,
     selected_networks: &Option<Vec<i64>>,
     without_network: &Option<bool>,
+    only_with_network: &Option<bool>,
 ) -> Result<SelectStatement, AppError> {
-    if let Some(expr) = network_filter_expr(selected_networks, without_network)
-    {
+    if let Some(expr) = network_filter_expr(
+        selected_networks,
+        without_network,
+        only_with_network,
+    ) {
         q.and_where(expr);
     }
     Ok(q)
@@ -2844,17 +2860,23 @@ pub fn filter_selected_networks_stmt(
 fn network_filter_expr(
     selected_networks: &Option<Vec<i64>>,
     without_network: &Option<bool>,
+    only_with_network: &Option<bool>,
 ) -> Option<SimpleExpr> {
     let without_network = without_network.unwrap_or(false);
+    let only_with_network = only_with_network.unwrap_or(false);
     let selected_networks =
         selected_networks.as_ref().filter(|v| !v.is_empty());
 
-    if without_network && selected_networks.is_some() {
+    if without_network && (selected_networks.is_some() || only_with_network) {
         return Some(Expr::cust("FALSE"));
     }
 
     if without_network {
         return Some(without_network_filter_expr());
+    }
+
+    if selected_networks.is_none() && only_with_network {
+        return Some(Expr::exists(network_exists_subquery(None)));
     }
 
     selected_networks.map(|ids| {
@@ -4412,12 +4434,14 @@ fn filter_summary_table_aors_and_networks_for_scope(
             query,
             &req.selected_networks,
             &req.without_network,
+            &req.only_with_network,
             scope,
         ),
         None => filter_selected_networks(
             query,
             &req.selected_networks,
             &req.without_network,
+            &req.only_with_network,
         ),
     }
 }
@@ -5689,6 +5713,7 @@ pub async fn edit_freq_unit_name(
         rows_res,
         &reqan.selected_networks,
         &reqan.without_network,
+        &reqan.only_with_network,
     )
     .context(h!())?;
     let rows_res =
@@ -6663,6 +6688,7 @@ fn build_new_callsign_filtered_items_query(
         query,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
     )
     .c(h!())?;
     let query = filter_selected_metadata_for_analysis_stats(query, req)?;

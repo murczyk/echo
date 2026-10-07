@@ -381,6 +381,7 @@ fn mk_analysis_stats_req(
         tag_presence: None,
         selected_networks: None,
         without_network: None,
+        only_with_network: None,
         metadata_cc: None,
         metadata_sender: None,
         metadata_receiver: None,
@@ -6382,7 +6383,7 @@ async fn rer_analysis_unit_filter_does_not_match_child_unit_name_suffix() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_freq_stats_follow_group_and_network_filters() {
+async fn issue_3598_rer_analysis_freq_stats_follow_group_and_network_filters() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let env = Data::from(fixture.env.clone());
 
@@ -6474,6 +6475,31 @@ async fn rer_analysis_freq_stats_follow_group_and_network_filters() {
         ])
     );
     assert!(!counts.contains_key("888.8"));
+
+    let test_identity = mk_test_identity().await.unwrap();
+    let mut req = analysis_stats_req0(&fixture);
+    req.only_with_network = Some(true);
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
+    let counts = freq_counts(
+        stats::fetch_freqs_for_login(
+            &req,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
+            &env,
+            master_keys,
+        )
+        .await
+        .unwrap(),
+    );
+
+    assert_eq!(
+        counts,
+        BTreeMap::from([("333.3".to_string(), 1), ("444.4".to_string(), 1),])
+    );
 }
 
 #[tokio::test]

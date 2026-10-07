@@ -92,6 +92,7 @@ export type AnalysisQueryState = Omit<
   tagsExcludeMode: boolean;
   includeOnlyNewFreqs: boolean;
   onlyWithMedia: boolean;
+  onlyWithNetwork: boolean;
   reportTagsOnlyThisUnit: boolean;
   deviceNamesSelected: string[];
   /** User preference; intentionally not saved in URLs or saved filters. */
@@ -261,6 +262,7 @@ export type AnalysisPageState = {
   newestFirst: boolean;
   unitsExactMatchOnlyDefault: boolean | null;
   analysisAorFilterEnabled: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   cyberEchoEnabled: boolean;
   options: AnalysisFilterOptions;

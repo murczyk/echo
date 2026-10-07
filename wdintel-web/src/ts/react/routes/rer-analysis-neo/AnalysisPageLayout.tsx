@@ -484,6 +484,7 @@ export function RerAnalysisNeoPage({
         <AnalysisReportDialog
           aors={page.aorEntries}
           currentUser={page.currentUser}
+          rerReportEnabled={page.rerReportEnabled}
           supportNonRerInterceptions={page.supportNonRerInterceptions}
           downloadInFlight={page.reportDownloadInFlight}
           progressExpanded={page.reportProgressExpanded}

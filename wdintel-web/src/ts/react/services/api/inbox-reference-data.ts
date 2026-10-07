@@ -133,6 +133,7 @@ export async function getPostsList(options?: RequestOptions): Promise<string[]> 
     tagPresence: null,
     selectedNetworks: null,
     withoutNetwork: null,
+    onlyWithNetwork: null,
     metadataCc: null,
     metadataSender: null,
     metadataReceiver: null,

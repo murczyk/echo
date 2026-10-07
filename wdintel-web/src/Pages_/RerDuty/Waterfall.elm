@@ -465,6 +465,7 @@ getBasicInboxParams model =
     , unitsExactMatchOnly = Nothing
     , selectedNetworks = Nothing
     , withoutNetwork = Nothing
+    , onlyWithNetwork = Nothing
     , withoutModelTags = Nothing
     }
 
