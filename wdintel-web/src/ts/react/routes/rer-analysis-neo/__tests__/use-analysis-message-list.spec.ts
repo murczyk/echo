@@ -469,6 +469,63 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesOverallCount).toBe(43);
   });
 
+  it('keeps a newer overall-only count when an older filtered request resolves later', async () => {
+    vi.useFakeTimers();
+    const selectedCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
+    const overallCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock
+      .mockReturnValueOnce(selectedCountRequest.promise)
+      .mockReturnValueOnce(overallCountRequest.promise);
+    const h = renderHook({ ...buildQueryState(), search: 'filtered' });
+    harnesses.push(h);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fetchInboxCountMock.mockResolvedValueOnce({ quantity: 138, firstElementTs: null });
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(h.latest.messagesOverallCount).toBe(138);
+
+    await act(async () => {
+      selectedCountRequest.resolve({ quantity: 42, firstElementTs: null });
+      overallCountRequest.resolve({ quantity: 137, firstElementTs: null });
+      await Promise.resolve();
+    });
+
+    expect(h.latest.messagesTotalCount).toBe(42);
+    expect(h.latest.messagesOverallCount).toBe(138);
+  });
+
+  it('keeps a newer shared count when an older shared request resolves later', async () => {
+    vi.useFakeTimers();
+    const initialCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock.mockReturnValueOnce(initialCountRequest.promise);
+    const h = renderHook();
+    harnesses.push(h);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fetchInboxCountMock.mockResolvedValueOnce({ quantity: 43, firstElementTs: null });
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(h.latest.messagesTotalCount).toBe(43);
+    expect(h.latest.messagesOverallCount).toBe(43);
+
+    await act(async () => {
+      initialCountRequest.resolve({ quantity: 42, firstElementTs: null });
+      await Promise.resolve();
+    });
+
+    expect(h.latest.messagesTotalCount).toBe(43);
+    expect(h.latest.messagesOverallCount).toBe(43);
+  });
+
   it('marks counts as loading synchronously when the date range changes', async () => {
     vi.useFakeTimers();
     const h = renderHook();

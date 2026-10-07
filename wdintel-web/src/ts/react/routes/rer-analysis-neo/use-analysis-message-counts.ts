@@ -37,6 +37,7 @@ export function useAnalysisMessageCounts({
   const onUnauthorizedRef = useRef(onUnauthorized);
   const overallRefreshTimeoutRef = useRef<number | null>(null);
   const overallRefreshAbortControllerRef = useRef<AbortController | null>(null);
+  const overallCountRequestGenerationRef = useRef(0);
   const messagesTotalRequestJson = JSON.stringify(
     buildInboxReq(queryState, optionsFreqValues, true),
   );
@@ -87,20 +88,25 @@ export function useAnalysisMessageCounts({
     const timeoutId = window.setTimeout(() => {
       abortController = new AbortController();
       const signal = abortController.signal;
+      const overallCountRequestGeneration = ++overallCountRequestGenerationRef.current;
+      const countRequestsAreShared = messagesTotalRequestJson === messagesOverallRequestJson;
       const selectedCountPromise = fetchInboxCount(
         { ...inboxReq, nolimit: true, newestFirst },
         { signal },
       );
-      const overallCountPromise =
-        messagesTotalRequestJson === messagesOverallRequestJson
-          ? selectedCountPromise
-          : fetchInboxCount({ ...overallInboxReq, nolimit: true, newestFirst }, { signal });
+      const overallCountPromise = countRequestsAreShared
+        ? selectedCountPromise
+        : fetchInboxCount({ ...overallInboxReq, nolimit: true, newestFirst }, { signal });
 
       void Promise.all([selectedCountPromise, overallCountPromise])
         .then(([selectedCount, overallCount]) => {
           if (signal.aborted) return;
-          setMessagesTotalCount(selectedCount.quantity);
-          setMessagesOverallCount(overallCount.quantity);
+          const canApplyOverallCount =
+            overallCountRequestGenerationRef.current === overallCountRequestGeneration;
+          if (!countRequestsAreShared || canApplyOverallCount) {
+            setMessagesTotalCount(selectedCount.quantity);
+          }
+          if (canApplyOverallCount) setMessagesOverallCount(overallCount.quantity);
         })
         .catch((loadError: unknown) => {
           if (signal.aborted || isAbortError(loadError)) return;
@@ -142,9 +148,15 @@ export function useAnalysisMessageCounts({
       const abortController = new AbortController();
       overallRefreshAbortControllerRef.current = abortController;
       const signal = abortController.signal;
+      const overallCountRequestGeneration = ++overallCountRequestGenerationRef.current;
       void fetchInboxCount({ ...overallInboxReq, nolimit: true, newestFirst }, { signal })
         .then((overallCount) => {
-          if (signal.aborted) return;
+          if (
+            signal.aborted ||
+            overallCountRequestGenerationRef.current !== overallCountRequestGeneration
+          ) {
+            return;
+          }
           setMessagesOverallCount(overallCount.quantity);
           if (messagesTotalRequestJson === messagesOverallRequestJson) {
             setMessagesTotalCount(overallCount.quantity);
