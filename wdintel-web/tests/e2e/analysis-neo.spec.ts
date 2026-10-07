@@ -608,9 +608,9 @@ test.describe('@smoke @regression', () => {
     expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvents);
     await expect
       .poll(() => inboxCountRequestCount, { timeout: 10_000 })
-      .toBe(inboxCountRequestsBeforeEvents + 1);
+      .toBe(inboxCountRequestsBeforeEvents + 2);
     await page.waitForTimeout(400);
-    expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvents + 1);
+    expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvents + 2);
     await expect(page.locator('[data-message-id]')).toHaveCount(initialPage.inbox_items.length);
   });
 

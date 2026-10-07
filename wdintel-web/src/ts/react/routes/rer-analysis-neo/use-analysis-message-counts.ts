@@ -37,7 +37,7 @@ export function useAnalysisMessageCounts({
   const onUnauthorizedRef = useRef(onUnauthorized);
   const overallRefreshTimeoutRef = useRef<number | null>(null);
   const overallRefreshAbortControllerRef = useRef<AbortController | null>(null);
-  const overallCountRequestGenerationRef = useRef(0);
+  const countRequestGenerationRef = useRef(0);
   const messagesTotalRequestJson = JSON.stringify(
     buildInboxReq(queryState, optionsFreqValues, true),
   );
@@ -88,7 +88,7 @@ export function useAnalysisMessageCounts({
     const timeoutId = window.setTimeout(() => {
       abortController = new AbortController();
       const signal = abortController.signal;
-      const overallCountRequestGeneration = ++overallCountRequestGenerationRef.current;
+      const countRequestGeneration = ++countRequestGenerationRef.current;
       const countRequestsAreShared = messagesTotalRequestJson === messagesOverallRequestJson;
       const selectedCountPromise = fetchInboxCount(
         { ...inboxReq, nolimit: true, newestFirst },
@@ -101,12 +101,9 @@ export function useAnalysisMessageCounts({
       void Promise.all([selectedCountPromise, overallCountPromise])
         .then(([selectedCount, overallCount]) => {
           if (signal.aborted) return;
-          const canApplyOverallCount =
-            overallCountRequestGenerationRef.current === overallCountRequestGeneration;
-          if (!countRequestsAreShared || canApplyOverallCount) {
-            setMessagesTotalCount(selectedCount.quantity);
-          }
-          if (canApplyOverallCount) setMessagesOverallCount(overallCount.quantity);
+          if (countRequestGenerationRef.current !== countRequestGeneration) return;
+          setMessagesTotalCount(selectedCount.quantity);
+          setMessagesOverallCount(overallCount.quantity);
         })
         .catch((loadError: unknown) => {
           if (signal.aborted || isAbortError(loadError)) return;
@@ -141,26 +138,30 @@ export function useAnalysisMessageCounts({
 
     overallRefreshTimeoutRef.current = window.setTimeout(() => {
       overallRefreshTimeoutRef.current = null;
+      const inboxReq = JSON.parse(messagesTotalRequestJson) as InboxMessagesReq | null;
       const overallInboxReq = JSON.parse(messagesOverallRequestJson) as InboxMessagesReq | null;
-      if (isNullOrUndefined(overallInboxReq)) return;
+      if (isNullOrUndefined(inboxReq) || isNullOrUndefined(overallInboxReq)) return;
 
       overallRefreshAbortControllerRef.current?.abort();
       const abortController = new AbortController();
       overallRefreshAbortControllerRef.current = abortController;
       const signal = abortController.signal;
-      const overallCountRequestGeneration = ++overallCountRequestGenerationRef.current;
-      void fetchInboxCount({ ...overallInboxReq, nolimit: true, newestFirst }, { signal })
-        .then((overallCount) => {
-          if (
-            signal.aborted ||
-            overallCountRequestGenerationRef.current !== overallCountRequestGeneration
-          ) {
+      const countRequestGeneration = ++countRequestGenerationRef.current;
+      const countRequestsAreShared = messagesTotalRequestJson === messagesOverallRequestJson;
+      const selectedCountPromise = fetchInboxCount(
+        { ...inboxReq, nolimit: true, newestFirst },
+        { signal },
+      );
+      const overallCountPromise = countRequestsAreShared
+        ? selectedCountPromise
+        : fetchInboxCount({ ...overallInboxReq, nolimit: true, newestFirst }, { signal });
+
+      void Promise.all([selectedCountPromise, overallCountPromise])
+        .then(([selectedCount, overallCount]) => {
+          if (signal.aborted || countRequestGenerationRef.current !== countRequestGeneration)
             return;
-          }
+          setMessagesTotalCount(selectedCount.quantity);
           setMessagesOverallCount(overallCount.quantity);
-          if (messagesTotalRequestJson === messagesOverallRequestJson) {
-            setMessagesTotalCount(overallCount.quantity);
-          }
         })
         .catch((loadError: unknown) => {
           if (signal.aborted || isAbortError(loadError)) return;

@@ -410,7 +410,7 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesOverallCount).toBe(137);
   });
 
-  it('coalesces rejected realtime events into one overall-only count refresh', async () => {
+  it('coalesces ambiguous rejected realtime events into one selected and overall count refresh', async () => {
     vi.useFakeTimers();
     fetchInboxCountMock
       .mockResolvedValueOnce({ quantity: 42, firstElementTs: null })
@@ -422,7 +422,9 @@ describe('useAnalysisMessageList pagination', () => {
       await vi.advanceTimersByTimeAsync(200);
     });
     fetchInboxCountMock.mockClear();
-    fetchInboxCountMock.mockResolvedValue({ quantity: 138, firstElementTs: null });
+    fetchInboxCountMock
+      .mockResolvedValueOnce({ quantity: 43, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 138, firstElementTs: null });
 
     for (let eventIndex = 0; eventIndex < 5; eventIndex += 1) {
       act(() => h.latest.scheduleOverallMessageCountRefresh());
@@ -436,12 +438,16 @@ describe('useAnalysisMessageList pagination', () => {
       await vi.advanceTimersByTimeAsync(5_200);
     });
 
-    expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
+    expect(fetchInboxCountMock).toHaveBeenCalledWith(
+      expect.objectContaining({ nolimit: true, search: 'filtered' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(fetchInboxCountMock).toHaveBeenCalledWith(
       expect.objectContaining({ nolimit: true, search: null }),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(h.latest.messagesTotalCount).toBe(42);
+    expect(h.latest.messagesTotalCount).toBe(43);
     expect(h.latest.messagesOverallCount).toBe(138);
   });
 
@@ -469,7 +475,7 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesOverallCount).toBe(43);
   });
 
-  it('keeps a newer overall-only count when an older filtered request resolves later', async () => {
+  it('keeps newer background counts when an older filtered request resolves later', async () => {
     vi.useFakeTimers();
     const selectedCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
     const overallCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
@@ -482,11 +488,14 @@ describe('useAnalysisMessageList pagination', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(200);
     });
-    fetchInboxCountMock.mockResolvedValueOnce({ quantity: 138, firstElementTs: null });
+    fetchInboxCountMock
+      .mockResolvedValueOnce({ quantity: 43, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 138, firstElementTs: null });
     act(() => h.latest.scheduleOverallMessageCountRefresh());
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_000);
     });
+    expect(h.latest.messagesTotalCount).toBe(43);
     expect(h.latest.messagesOverallCount).toBe(138);
 
     await act(async () => {
@@ -495,7 +504,7 @@ describe('useAnalysisMessageList pagination', () => {
       await Promise.resolve();
     });
 
-    expect(h.latest.messagesTotalCount).toBe(42);
+    expect(h.latest.messagesTotalCount).toBe(43);
     expect(h.latest.messagesOverallCount).toBe(138);
   });
 
