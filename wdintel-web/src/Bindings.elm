@@ -4139,6 +4139,18 @@ importantRmReqEncoder struct =
         ]
 
 
+type alias ImportantMutationRsp =
+    { important : Bool
+    }
+
+
+importantMutationRspEncoder : ImportantMutationRsp -> Json.Encode.Value
+importantMutationRspEncoder struct =
+    Json.Encode.object
+        [ ( "important", (Json.Encode.bool) struct.important )
+        ]
+
+
 type alias ImportantListReq =
     { sinceTsMillis : Maybe (Int)
     }
@@ -19581,6 +19593,12 @@ importantRmReqDecoder : Json.Decode.Decoder ImportantRmReq
 importantRmReqDecoder =
     Json.Decode.succeed ImportantRmReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.int)))
+
+
+importantMutationRspDecoder : Json.Decode.Decoder ImportantMutationRsp
+importantMutationRspDecoder =
+    Json.Decode.succeed ImportantMutationRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important" (Json.Decode.bool)))
 
 
 importantListReqDecoder : Json.Decode.Decoder ImportantListReq

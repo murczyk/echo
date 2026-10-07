@@ -1593,6 +1593,10 @@ export type ImportantRmReq = {
   messageId: number;
 };
 
+export type ImportantMutationRsp = {
+  important: boolean;
+};
+
 export type ImportantListReq = {
   sinceTsMillis: number | null;
 };

@@ -237,11 +237,11 @@ function setScrollMetrics(
   let scrollTop = metrics.scrollTop;
   Object.defineProperty(scrollBox, 'clientHeight', {
     configurable: true,
-    value: metrics.clientHeight,
+    get: () => metrics.clientHeight,
   });
   Object.defineProperty(scrollBox, 'scrollHeight', {
     configurable: true,
-    value: metrics.scrollHeight,
+    get: () => metrics.scrollHeight,
   });
   Object.defineProperty(scrollBox, 'scrollTop', {
     configurable: true,
@@ -552,6 +552,100 @@ describe('AnalysisMessagesPane', () => {
     });
 
     expect(scrollBox?.scrollTop).toBe(0);
+  });
+
+  it('keeps a prepended newest message visible during leading-edge viewport preservation', async () => {
+    let captureViewport: (() => void) | null = null;
+    const initialProps = buildProps({
+      messages: [[7, buildMessage({ text: 'previous newest' })]],
+      noMoreToLoad: true,
+      onViewportCaptureChange: (capture) => {
+        captureViewport = capture;
+      },
+    });
+    const view = await renderComponent(initialProps);
+    rendered.push(view);
+
+    const previousNewest = view.container.querySelector<HTMLElement>('[data-message-id="7"]');
+    const scrollBox = previousNewest?.closest('ul')?.parentElement as HTMLElement | null;
+    if (previousNewest == null || scrollBox == null) {
+      throw new Error('Message scroll box is missing');
+    }
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 1200, scrollTop: 0 });
+    scrollBox.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    let previousNewestLayoutTop = 0;
+    previousNewest.getBoundingClientRect = () =>
+      ({
+        top: previousNewestLayoutTop - scrollBox.scrollTop,
+        bottom: previousNewestLayoutTop - scrollBox.scrollTop + 100,
+      }) as DOMRect;
+    act(() => captureViewport?.());
+
+    previousNewestLayoutTop = 100;
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane
+          {...initialProps}
+          viewportPreservationKey={1}
+          messages={[
+            [8, buildMessage({ text: 'new newest' })],
+            [7, buildMessage({ text: 'previous newest' })],
+          ]}
+        />,
+      );
+    });
+
+    expect(view.container.querySelector('[data-message-id="8"]')).not.toBeNull();
+    expect(scrollBox.scrollTop).toBe(0);
+  });
+
+  it('keeps the viewport at the trailing edge when content appends during preservation', async () => {
+    let captureViewport: (() => void) | null = null;
+    const initialProps = buildProps({
+      messages: [
+        [8, buildMessage()],
+        [7, buildMessage()],
+      ],
+      noMoreToLoad: true,
+      onViewportCaptureChange: (capture) => {
+        captureViewport = capture;
+      },
+    });
+    const view = await renderComponent(initialProps);
+    rendered.push(view);
+
+    const messageElements = view.container.querySelectorAll<HTMLElement>('[data-message-id]');
+    const scrollBox = messageElements[0]?.closest('ul')?.parentElement as HTMLElement | null;
+    if (scrollBox == null) throw new Error('Message scroll box is missing');
+    const scrollMetrics = { clientHeight: 600, scrollHeight: 1200, scrollTop: 600 };
+    setScrollMetrics(scrollBox, scrollMetrics);
+    scrollBox.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    messageElements.forEach((element, index) => {
+      const layoutTop = index * 600;
+      element.getBoundingClientRect = () =>
+        ({
+          top: layoutTop - scrollBox.scrollTop,
+          bottom: layoutTop - scrollBox.scrollTop + 100,
+        }) as DOMRect;
+    });
+    act(() => captureViewport?.());
+
+    scrollMetrics.scrollHeight = 1400;
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane
+          {...initialProps}
+          viewportPreservationKey={1}
+          messages={[
+            [8, buildMessage()],
+            [7, buildMessage()],
+            [6, buildMessage()],
+          ]}
+        />,
+      );
+    });
+
+    expect(scrollBox.scrollTop).toBe(800);
   });
 
   it('keeps the first visible message anchored during viewport preservation', async () => {

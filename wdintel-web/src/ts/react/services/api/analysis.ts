@@ -406,6 +406,29 @@ export async function fetchMessagesByIds(
   return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
 }
 
+export async function fetchMessagesByIdsMatchingFilters(
+  messageIds: number[],
+  inboxReq?: Partial<InboxMessagesReq> | null,
+  options?: RequestOptions,
+): Promise<Array<[number, InboxMessage]>> {
+  const req: MessageIdsReq = {
+    messageIds,
+    inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
+  };
+  const raw =
+    options == null
+      ? await postJson<unknown>(
+          '/api/rer-importer/messages-by-id-matching-filters',
+          transformCamelToSnake(req),
+        )
+      : await postJson<unknown>(
+          '/api/rer-importer/messages-by-id-matching-filters',
+          transformCamelToSnake(req),
+          options,
+        );
+  return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
+}
+
 export async function fetchMapSettlementMessages(
   req: MapSettlementMessagesReq,
   options?: RequestOptions,

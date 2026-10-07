@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { InboxMessage, InboxMessagesReq, InboxMessageTag } from '../../../../Bindings';
-import { fetchMessagesByIds } from '../../services/api/analysis';
+import { fetchMessagesByIds, fetchMessagesByIdsMatchingFilters } from '../../services/api/analysis';
 import { combineDateTimeInputToMs, combineDateTimeToMs } from '../../utils/misc';
-import { buildInboxReq, queryStateReloadKey } from './helpers';
+import { buildInboxReq, getFirstLoadedMessagesPageIndex, queryStateReloadKey } from './helpers';
 import { useAnalysisFilterSections } from './use-analysis-data-filter-sections';
 import { useLoadMissingNetworksForMessages } from './use-analysis-data.support';
 import { useAnalysisReferenceState } from './use-analysis-reference-state';
@@ -34,6 +34,24 @@ function normalizeMessageIds(messageIds: readonly unknown[]): number[] {
   );
 }
 
+async function hydrateMissingMessages(
+  messageIds: number[],
+  prefetchedItems: Array<[number, InboxMessage]>,
+  inboxReq: Partial<InboxMessagesReq>,
+  signal: AbortSignal,
+): Promise<Array<[number, InboxMessage]>> {
+  const messagesById = new Map(prefetchedItems);
+  const missingMessageIds = messageIds.filter((messageId) => !messagesById.has(messageId));
+  if (missingMessageIds.length > 0) {
+    const hydratedItems = await fetchMessagesByIds(missingMessageIds, inboxReq, { signal });
+    hydratedItems.forEach(([messageId, message]) => messagesById.set(messageId, message));
+  }
+  return messageIds.flatMap((messageId) => {
+    const message = messagesById.get(messageId);
+    return message == null ? [] : ([[messageId, message]] as Array<[number, InboxMessage]>);
+  });
+}
+
 function relatedMessageIds(message: InboxMessage): number[] {
   return [
     ...(message.parentMessages ?? []).map(({ id }) => id),
@@ -50,6 +68,17 @@ function collectVisibleInboxEventIds(
       messageId,
       ...relatedMessageIds(message),
     ]),
+  );
+}
+
+function collectVisibleIntelligenceReportIds(
+  messages: Array<[number, InboxMessage]>,
+  mapOpenMessages: Array<[number, InboxMessage]>,
+): Set<number> {
+  return new Set(
+    [...messages, ...mapOpenMessages].flatMap(([, message]) =>
+      (message.intelligenceReports ?? []).map(({ id }) => id),
+    ),
   );
 }
 
@@ -167,26 +196,36 @@ function getClientCheckableDateRange(
   return { sinceDateInclusiveMs, tillDateNoninclusiveMs };
 }
 
-function messageInboxDateTimeMs(message: InboxMessage): number | null {
+function messageInboxDateTimeMs(
+  message: InboxMessage,
+  messageTimeBasis: AnalysisQueryState['messageTimeBasis'],
+): number | null {
+  if (messageTimeBasis === 'creation') {
+    return message.createdAt != null && Number.isFinite(message.createdAt)
+      ? message.createdAt
+      : null;
+  }
   if (message.date == null || message.time == null) return null;
 
-  const timeMatch = message.time.match(/^(\d{2}:\d{2})(?::(\d{2}))?$/);
+  const timeMatch = message.time.match(/^(\d{2}:\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?$/);
   if (timeMatch == null) return null;
 
-  const baseMs = combineDateTimeToMs(message.date, timeMatch[1]);
+  const date = message.date.replace(/^(\d{2})\.(\d{2})\.(\d{4})$/, '$3-$2-$1');
+  const baseMs = combineDateTimeToMs(date, timeMatch[1]);
   if (baseMs == null) return null;
 
   const seconds = timeMatch[2] == null ? 0 : Number(timeMatch[2]);
   if (!Number.isInteger(seconds) || seconds < 0 || seconds > 59) return null;
+  const fractionalMilliseconds = timeMatch[3] == null ? 0 : Number(`0.${timeMatch[3]}`) * 1000;
 
-  return baseMs + seconds * 1000;
+  return baseMs + seconds * 1000 + fractionalMilliseconds;
 }
 
 function messageMatchesDateRange(message: InboxMessage, queryState: AnalysisQueryState): boolean {
   const dateRange = getClientCheckableDateRange(queryState);
   if (dateRange === null) return true;
   if (dateRange === undefined) return false;
-  const inboxDateTimeMs = messageInboxDateTimeMs(message);
+  const inboxDateTimeMs = messageInboxDateTimeMs(message, queryState.messageTimeBasis);
   if (inboxDateTimeMs == null) return false;
 
   return (
@@ -195,11 +234,42 @@ function messageMatchesDateRange(message: InboxMessage, queryState: AnalysisQuer
   );
 }
 
+function hasActiveMapDateRange(dateRange: { startDate: number; endDate: number }): boolean {
+  return dateRange.startDate > 0 && dateRange.endDate > 0;
+}
+
+function applyMapDateRangeToInboxReq(
+  inboxReq: Partial<InboxMessagesReq>,
+  dateRange: { startDate: number; endDate: number },
+): Partial<InboxMessagesReq> {
+  if (!hasActiveMapDateRange(dateRange)) return inboxReq;
+  return {
+    ...inboxReq,
+    sinceDateInclusiveMs: dateRange.startDate,
+    tillDateInclusiveMs: dateRange.endDate,
+  };
+}
+
+function messageMatchesMapDateRange(
+  message: InboxMessage,
+  queryState: AnalysisQueryState,
+  dateRange: { startDate: number; endDate: number },
+): boolean {
+  if (!hasActiveMapDateRange(dateRange)) return messageMatchesDateRange(message, queryState);
+  const inboxDateTimeMs = messageInboxDateTimeMs(message, queryState.messageTimeBasis);
+  return (
+    inboxDateTimeMs != null &&
+    inboxDateTimeMs >= dateRange.startDate &&
+    inboxDateTimeMs <= dateRange.endDate
+  );
+}
+
 function buildLiveRefreshInboxReq(
   queryState: AnalysisQueryState,
   allFrequencies: string[],
+  includeOnlyWithMedia = true,
 ): Partial<InboxMessagesReq> {
-  const inboxReq = buildInboxReq(queryState, allFrequencies);
+  const inboxReq = buildInboxReq(queryState, allFrequencies, includeOnlyWithMedia);
   if (inboxReq != null) return inboxReq;
 
   return {
@@ -211,6 +281,7 @@ function buildLiveRefreshInboxReq(
     highlightPoints: true,
     search: hasSearchText(queryState.search) ? queryState.search.trim() : null,
     withoutModelTags: queryState.withoutModelTags,
+    onlyWithMedia: includeOnlyWithMedia && queryState.onlyWithMedia,
   };
 }
 
@@ -218,9 +289,12 @@ function messageMatchesLiveRefreshFilters(
   message: InboxMessage,
   queryState: AnalysisQueryState,
   allFrequencies: string[],
+  mapDateRange?: { startDate: number; endDate: number },
 ): boolean {
   return (
-    messageMatchesDateRange(message, queryState) &&
+    (mapDateRange == null
+      ? messageMatchesDateRange(message, queryState)
+      : messageMatchesMapDateRange(message, queryState, mapDateRange)) &&
     messageMatchesSelectedFreqs(message, expandSelectedFreqs(queryState, allFrequencies)) &&
     messageMatchesSelectedTags(message, queryState)
   );
@@ -234,7 +308,10 @@ function hasSearchText(value: string): boolean {
   return value.trim() !== '';
 }
 
-function requiresServerFilteredInboxRefresh(queryState: AnalysisQueryState): boolean {
+function requiresServerFilteredInboxRefresh(
+  queryState: AnalysisQueryState,
+  includeOnlyWithMedia = true,
+): boolean {
   return (
     getClientCheckableDateRange(queryState) === undefined ||
     queryState.includeOnlyNewFreqs ||
@@ -243,6 +320,7 @@ function requiresServerFilteredInboxRefresh(queryState: AnalysisQueryState): boo
     hasSelectedValues(queryState.sendersSelected) ||
     hasSelectedValues(queryState.callsignsSelected) ||
     hasSelectedValues(queryState.unitsSelected) ||
+    hasSelectedValues(queryState.deviceNamesSelected) ||
     hasSelectedValues(queryState.locationsSelected) ||
     hasSelectedValues(queryState.postsSelected) ||
     hasSelectedValues(queryState.networksSelected) ||
@@ -260,7 +338,7 @@ function requiresServerFilteredInboxRefresh(queryState: AnalysisQueryState): boo
     queryState.onlyWithMetadata ||
     queryState.withoutMetadata ||
     queryState.reportTagsOnlyThisUnit ||
-    queryState.onlyWithMedia
+    (includeOnlyWithMedia && queryState.onlyWithMedia)
   );
 }
 
@@ -276,7 +354,7 @@ function mergeRefreshedMessages(
   changedMessageIds: ReadonlySet<number>,
   refreshedMessages: Map<number, InboxMessage>,
   withoutModelTags: boolean,
-  shouldKeepRefreshedMessage: (message: InboxMessage) => boolean,
+  shouldKeepRefreshedMessage: (messageId: number, message: InboxMessage) => boolean,
 ): Array<[number, InboxMessage]> {
   const nextMessages: Array<[number, InboxMessage]> = [];
   for (const [messageId, currentMessage] of currentMessages) {
@@ -285,10 +363,149 @@ function mergeRefreshedMessages(
       if (!changedMessageIds.has(messageId)) nextMessages.push([messageId, currentMessage]);
     } else {
       const nextMessage = mergeRefreshedMessage(refreshedMessage, withoutModelTags);
-      if (shouldKeepRefreshedMessage(nextMessage)) nextMessages.push([messageId, nextMessage]);
+      if (shouldKeepRefreshedMessage(messageId, nextMessage)) {
+        nextMessages.push([messageId, nextMessage]);
+      }
     }
   }
   return nextMessages;
+}
+
+function messageRealtimeOrderValue(
+  message: InboxMessage,
+  messageTimeBasis: AnalysisQueryState['messageTimeBasis'],
+): number | null {
+  if (messageTimeBasis === 'creation') {
+    if (message.createdAtOrder != null && Number.isFinite(message.createdAtOrder)) {
+      return message.createdAtOrder;
+    }
+    return message.createdAt != null && Number.isFinite(message.createdAt)
+      ? message.createdAt * 1000
+      : null;
+  }
+
+  const dateTimeMs = messageInboxDateTimeMs(message, messageTimeBasis);
+  if (dateTimeMs != null) return dateTimeMs;
+  return message.timestamp != null && Number.isFinite(message.timestamp) ? message.timestamp : null;
+}
+
+function compareRealtimeMessageItems(
+  [leftId, leftMessage]: [number, InboxMessage],
+  [rightId, rightMessage]: [number, InboxMessage],
+  messageTimeBasis: AnalysisQueryState['messageTimeBasis'],
+  newestFirst: boolean,
+): number {
+  const leftOrder = messageRealtimeOrderValue(leftMessage, messageTimeBasis);
+  const rightOrder = messageRealtimeOrderValue(rightMessage, messageTimeBasis);
+  let comparison = 0;
+  if (leftOrder == null && rightOrder != null) comparison = 1;
+  else if (leftOrder != null && rightOrder == null) comparison = -1;
+  else if (leftOrder != null && rightOrder != null) comparison = leftOrder - rightOrder;
+  if (comparison === 0) comparison = leftId - rightId;
+  return newestFirst ? -comparison : comparison;
+}
+
+function hasRealtimeMessageOrderChanged(
+  currentMessage: InboxMessage,
+  refreshedMessage: InboxMessage,
+  messageTimeBasis: AnalysisQueryState['messageTimeBasis'],
+): boolean {
+  return (
+    messageRealtimeOrderValue(currentMessage, messageTimeBasis) !==
+    messageRealtimeOrderValue(refreshedMessage, messageTimeBasis)
+  );
+}
+
+function canDiscoverUnseenMessages({
+  focusedMessageActive,
+  messages,
+  newestFirst,
+  noMoreToLoad,
+  nolimitShown,
+  pageIndex,
+}: {
+  focusedMessageActive: boolean;
+  messages: Array<[number, InboxMessage]>;
+  newestFirst: boolean;
+  noMoreToLoad: boolean;
+  nolimitShown: boolean;
+  pageIndex: number;
+}): boolean {
+  if (focusedMessageActive) return false;
+  if (nolimitShown) return true;
+  if (!newestFirst) return noMoreToLoad;
+  return getFirstLoadedMessagesPageIndex(pageIndex, messages.length) === 0;
+}
+
+function insertDiscoveredMessages(
+  currentMessages: Array<[number, InboxMessage]>,
+  discoveredMessages: Array<[number, InboxMessage]>,
+  {
+    messageTimeBasis,
+    newestFirst,
+    noMoreToLoad,
+    nolimitShown,
+    pageIndex,
+    preserveMessageIds,
+  }: {
+    messageTimeBasis: AnalysisQueryState['messageTimeBasis'];
+    newestFirst: boolean;
+    noMoreToLoad: boolean;
+    nolimitShown: boolean;
+    pageIndex: number;
+    preserveMessageIds?: ReadonlySet<number>;
+  },
+): Array<[number, InboxMessage]> {
+  if (discoveredMessages.length === 0) return currentMessages;
+
+  const nextMessages = [...currentMessages];
+  const firstLoadedPageIndex = getFirstLoadedMessagesPageIndex(pageIndex, nextMessages.length);
+  const compareItems = (left: [number, InboxMessage], right: [number, InboxMessage]): number =>
+    compareRealtimeMessageItems(left, right, messageTimeBasis, newestFirst);
+
+  [...discoveredMessages].sort(compareItems).forEach((messageItem) => {
+    const preserveMessage = preserveMessageIds?.has(messageItem[0]) ?? false;
+    const existingIndex = nextMessages.findIndex(([messageId]) => messageId === messageItem[0]);
+    if (existingIndex >= 0) {
+      nextMessages[existingIndex] = messageItem;
+      return;
+    }
+
+    const orderedIndex = nextMessages.findIndex(
+      (currentItem) => compareItems(messageItem, currentItem) < 0,
+    );
+    const insertionIndex = orderedIndex < 0 ? nextMessages.length : orderedIndex;
+    if (nextMessages.length === 0) {
+      if (preserveMessage || pageIndex === 0 || noMoreToLoad || nolimitShown) {
+        nextMessages.push(messageItem);
+      }
+      return;
+    }
+    if (insertionIndex === 0 && firstLoadedPageIndex > 0 && !preserveMessage) return;
+    if (
+      insertionIndex === nextMessages.length &&
+      !noMoreToLoad &&
+      !nolimitShown &&
+      !preserveMessage
+    )
+      return;
+    nextMessages.splice(insertionIndex, 0, messageItem);
+  });
+
+  return nextMessages;
+}
+
+function sameMessageItems(
+  left: Array<[number, InboxMessage]>,
+  right: Array<[number, InboxMessage]>,
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      ([messageId, message], index) =>
+        right[index]?.[0] === messageId && right[index]?.[1] === message,
+    )
+  );
 }
 
 export function useAnalysisData({
@@ -300,6 +517,7 @@ export function useAnalysisData({
   centerTab,
   leftPanelOpen = true,
   newestFirst,
+  onBeforeRealtimeMessageListChange,
   onError,
   onUnauthorized,
   queryState,
@@ -324,6 +542,8 @@ export function useAnalysisData({
       `${queryStateReloadKey(queryState, optionsFreqValues) ?? 'invalid'}|${focusedMessageActive ? 'focused' : newestFirst ? 'desc' : 'asc'}|media=${queryState.onlyWithMedia ? 1 : 0}|focus=${focusedMessageActive ? (focusedMessage?.[0] ?? 'pending') : 'off'}`,
     [focusedMessage, focusedMessageActive, newestFirst, optionsFreqValues, queryState],
   );
+  const realtimeScopeKeyRef = useRef(reloadTriggerKey);
+  realtimeScopeKeyRef.current = reloadTriggerKey;
   const [filtersLoading, setFiltersLoading] = useState(false);
   const [countsLoading, setCountsLoading] = useState(false);
   const reloadRef = useRef<(options?: AnalysisReloadOptions) => Promise<void>>(
@@ -356,6 +576,21 @@ export function useAnalysisData({
     setProfiles: referenceState.setProfiles,
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
   });
+  const realtimeMessageWindowRef = useRef({
+    messages: messageList.messages,
+    noMoreToLoad: messageList.noMoreToLoad,
+    nolimitShown: messageList.nolimitShown,
+    pageIndex: messageList.pageIndex,
+  });
+  realtimeMessageWindowRef.current = {
+    messages: messageList.messages,
+    noMoreToLoad: messageList.noMoreToLoad,
+    nolimitShown: messageList.nolimitShown,
+    pageIndex: messageList.pageIndex,
+  };
+  const refreshChangedMessagesTargetedRef = useRef<(messageIds: number[]) => Promise<void>>(
+    async () => undefined,
+  );
 
   useEffect(() => {
     if (focusedWindow == null) return;
@@ -398,6 +633,14 @@ export function useAnalysisData({
     optionsFreqValues,
     queryState,
   });
+  const realtimeMapWindowRef = useRef({
+    mapDateRange: mapData.mapDateRange,
+    mapOpenMessages: mapData.mapOpenMessages,
+  });
+  realtimeMapWindowRef.current = {
+    mapDateRange: mapData.mapDateRange,
+    mapOpenMessages: mapData.mapOpenMessages,
+  };
 
   const sidebarData = useAnalysisSidebarData({
     onError,
@@ -408,135 +651,370 @@ export function useAnalysisData({
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
   });
 
-  const reconcileVisibleChangedMessagesBatch = useCallback(
+  const reconcileChangedMessagesBatch = useCallback(
     async (
       changedMessageIds: number[],
       shouldApply: (messageId: number) => boolean,
       signal: AbortSignal,
     ) => {
-      const messageIds = collectVisibleChangedMessageIds(
-        changedMessageIds,
-        messageList.messages,
-        mapData.mapOpenMessages,
+      const requestScopeKey = reloadTriggerKey;
+      const requestMessageWindow = realtimeMessageWindowRef.current;
+      const requestMapWindow = realtimeMapWindowRef.current;
+      const requestMapMessagesLoadVersion = mapData.mapMessagesLoadVersionRef.current;
+      const isScopeStale = () => signal.aborted || realtimeScopeKeyRef.current !== requestScopeKey;
+      const isMapWindowStale = () => {
+        const currentMapWindow = realtimeMapWindowRef.current;
+        return (
+          mapData.mapMessagesLoadVersionRef.current !== requestMapMessagesLoadVersion ||
+          currentMapWindow.mapDateRange.startDate !== requestMapWindow.mapDateRange.startDate ||
+          currentMapWindow.mapDateRange.endDate !== requestMapWindow.mapDateRange.endDate
+        );
+      };
+      const isMessageWindowStale = () => {
+        const currentMessageWindow = realtimeMessageWindowRef.current;
+        return (
+          currentMessageWindow.messages !== requestMessageWindow.messages ||
+          currentMessageWindow.noMoreToLoad !== requestMessageWindow.noMoreToLoad ||
+          currentMessageWindow.nolimitShown !== requestMessageWindow.nolimitShown ||
+          currentMessageWindow.pageIndex !== requestMessageWindow.pageIndex
+        );
+      };
+      const candidateMessageIds = normalizeMessageIds(changedMessageIds);
+      if (candidateMessageIds.length === 0) return;
+      const retryForLatestMessageWindow = () => {
+        if (!isMessageWindowStale()) return false;
+        const retryMessageIds = candidateMessageIds.filter(shouldApply);
+        if (!isScopeStale() && retryMessageIds.length > 0) {
+          void refreshChangedMessagesTargetedRef.current(retryMessageIds);
+        }
+        return true;
+      };
+
+      const visibleMessageIds = collectVisibleChangedMessageIds(
+        candidateMessageIds,
+        requestMessageWindow.messages,
+        [],
       );
-      if (messageIds.length === 0) return;
+      const visibleMapMessageIds = collectVisibleChangedMessageIds(
+        candidateMessageIds,
+        [],
+        requestMapWindow.mapOpenMessages,
+      );
+      const visibleInboxEventIds = collectVisibleInboxEventIds(requestMessageWindow.messages, []);
+      const visibleMessageIdsAtTopLevel = new Set(
+        requestMessageWindow.messages.map(([messageId]) => messageId),
+      );
+      const visibleIntelligenceReportIds = collectVisibleIntelligenceReportIds(
+        requestMessageWindow.messages,
+        [],
+      );
+      const undisplayedMessageIds = candidateMessageIds.filter(
+        (messageId) =>
+          !visibleInboxEventIds.has(messageId) ||
+          (visibleIntelligenceReportIds.has(messageId) &&
+            !visibleMessageIdsAtTopLevel.has(messageId)),
+      );
+      const needsServerFilter = requiresServerFilteredInboxRefresh(queryState, true);
+      const mapNeedsServerFilter = requiresServerFilteredInboxRefresh(queryState, false);
+      const visibleMessageIdSet = new Set(visibleMessageIds);
+      const undisplayedMessageIdSet = new Set(undisplayedMessageIds);
+      const exactFilterMessageIds = candidateMessageIds.filter(
+        (messageId) =>
+          undisplayedMessageIdSet.has(messageId) ||
+          (needsServerFilter && visibleMessageIdSet.has(messageId)),
+      );
+      const exactMapFilterMessageIds = mapNeedsServerFilter ? visibleMapMessageIds : [];
 
       try {
-        const refreshedMessageItems = await fetchMessagesByIds(
-          messageIds,
-          buildLiveRefreshInboxReq(queryState, optionsFreqValues),
-          { signal },
+        const inboxReq = buildLiveRefreshInboxReq(queryState, optionsFreqValues, true);
+        const mapInboxReq = applyMapDateRangeToInboxReq(
+          buildLiveRefreshInboxReq(queryState, optionsFreqValues, false),
+          requestMapWindow.mapDateRange,
         );
-        const applicableMessageIds = messageIds.filter(shouldApply);
-        if (applicableMessageIds.length === 0) return;
-        const refreshedMessages = new Map(
-          refreshedMessageItems
-            .filter(([messageId]) => shouldApply(messageId))
-            .map(([id, message]) => [id, message]),
+        const requestsCanBeShared =
+          !queryState.onlyWithMedia && !hasActiveMapDateRange(requestMapWindow.mapDateRange);
+        let matchingMessageItems: Array<[number, InboxMessage]>;
+        let matchingMapMessageItems: Array<[number, InboxMessage]>;
+        if (requestsCanBeShared) {
+          const exactMessageIds = normalizeMessageIds([
+            ...exactFilterMessageIds,
+            ...exactMapFilterMessageIds,
+          ]);
+          const matchingItems =
+            exactMessageIds.length === 0
+              ? []
+              : await fetchMessagesByIdsMatchingFilters(exactMessageIds, inboxReq);
+          matchingMessageItems = matchingItems;
+          matchingMapMessageItems = matchingItems;
+        } else {
+          [matchingMessageItems, matchingMapMessageItems] = await Promise.all([
+            exactFilterMessageIds.length === 0
+              ? []
+              : fetchMessagesByIdsMatchingFilters(exactFilterMessageIds, inboxReq),
+            exactMapFilterMessageIds.length === 0
+              ? []
+              : fetchMessagesByIdsMatchingFilters(exactMapFilterMessageIds, mapInboxReq),
+          ]);
+        }
+        if (isScopeStale() || retryForLatestMessageWindow()) return;
+
+        const matchingMessageIdSet = new Set(
+          matchingMessageItems
+            .map(([messageId]) => messageId)
+            .filter(
+              (messageId) => exactFilterMessageIds.includes(messageId) && shouldApply(messageId),
+            ),
         );
-        const changedMessageIdSet = new Set(applicableMessageIds);
-        const shouldKeepRefreshedMessage = (message: InboxMessage) =>
-          messageMatchesLiveRefreshFilters(message, queryState, optionsFreqValues);
-        messageList.setMessages((currentMessages) =>
-          mergeRefreshedMessages(
-            currentMessages,
-            changedMessageIdSet,
-            refreshedMessages,
-            queryState.withoutModelTags,
-            shouldKeepRefreshedMessage,
-          ),
+        const matchingMapMessageIdSet = new Set(
+          matchingMapMessageItems
+            .map(([messageId]) => messageId)
+            .filter(
+              (messageId) => exactMapFilterMessageIds.includes(messageId) && shouldApply(messageId),
+            ),
         );
-        mapData.setMapOpenMessages((currentMessages) =>
-          mergeRefreshedMessages(
-            currentMessages,
-            changedMessageIdSet,
-            refreshedMessages,
-            queryState.withoutModelTags,
-            shouldKeepRefreshedMessage,
-          ),
+        const discoverUnseenMessages = canDiscoverUnseenMessages({
+          focusedMessageActive,
+          messages: requestMessageWindow.messages,
+          newestFirst,
+          noMoreToLoad: requestMessageWindow.noMoreToLoad,
+          nolimitShown: requestMessageWindow.nolimitShown,
+          pageIndex: requestMessageWindow.pageIndex,
+        });
+        const messageIdsToHydrate = normalizeMessageIds([
+          ...(needsServerFilter
+            ? visibleMessageIds.filter((messageId) => matchingMessageIdSet.has(messageId))
+            : visibleMessageIds),
+          ...(discoverUnseenMessages
+            ? undisplayedMessageIds.filter((messageId) => matchingMessageIdSet.has(messageId))
+            : []),
+        ]).filter(shouldApply);
+        const mapMessageIdsToHydrate = isMapWindowStale()
+          ? []
+          : (mapNeedsServerFilter
+              ? visibleMapMessageIds.filter((messageId) => matchingMapMessageIdSet.has(messageId))
+              : visibleMapMessageIds
+            ).filter(shouldApply);
+        let refreshedMessageItems: Array<[number, InboxMessage]>;
+        let refreshedMapMessageItems: Array<[number, InboxMessage]>;
+        if (requestsCanBeShared) {
+          const messageIds = normalizeMessageIds([
+            ...messageIdsToHydrate,
+            ...mapMessageIdsToHydrate,
+          ]);
+          const refreshedItems = await hydrateMissingMessages(
+            messageIds,
+            matchingMessageItems,
+            inboxReq,
+            signal,
+          );
+          const messageIdSet = new Set(messageIdsToHydrate);
+          const mapMessageIdSet = new Set(mapMessageIdsToHydrate);
+          refreshedMessageItems = refreshedItems.filter(([messageId]) =>
+            messageIdSet.has(messageId),
+          );
+          refreshedMapMessageItems = refreshedItems.filter(([messageId]) =>
+            mapMessageIdSet.has(messageId),
+          );
+        } else {
+          [refreshedMessageItems, refreshedMapMessageItems] = await Promise.all([
+            hydrateMissingMessages(messageIdsToHydrate, matchingMessageItems, inboxReq, signal),
+            hydrateMissingMessages(
+              mapMessageIdsToHydrate,
+              matchingMapMessageItems,
+              mapInboxReq,
+              signal,
+            ),
+          ]);
+        }
+        if (isScopeStale() || retryForLatestMessageWindow()) return;
+
+        const applicableVisibleMessageIds = visibleMessageIds.filter(shouldApply);
+        const applicableVisibleMapMessageIds = isMapWindowStale()
+          ? []
+          : visibleMapMessageIds.filter(shouldApply);
+        const applicableUndisplayedMessageIdSet = new Set(
+          discoverUnseenMessages ? undisplayedMessageIds.filter(shouldApply) : [],
         );
+        const shouldKeepRefreshedMessage = (messageId: number, message: InboxMessage) =>
+          needsServerFilter
+            ? matchingMessageIdSet.has(messageId)
+            : messageMatchesLiveRefreshFilters(message, queryState, optionsFreqValues);
         const keptRefreshedMessageItems = refreshedMessageItems.filter(
           ([messageId, message]) =>
             shouldApply(messageId) &&
-            shouldKeepRefreshedMessage(applyModelTagFilter(message, queryState.withoutModelTags)),
+            shouldKeepRefreshedMessage(
+              messageId,
+              applyModelTagFilter(message, queryState.withoutModelTags),
+            ),
         );
-        if (signal.aborted) return;
-        await loadMissingNetworksForMessages(keptRefreshedMessageItems);
-        if (signal.aborted) return;
-        await messageList.loadMessageComments(keptRefreshedMessageItems, true);
+        const shouldKeepRefreshedMapMessage = (messageId: number, message: InboxMessage) =>
+          mapNeedsServerFilter
+            ? matchingMapMessageIdSet.has(messageId)
+            : messageMatchesLiveRefreshFilters(
+                message,
+                queryState,
+                optionsFreqValues,
+                requestMapWindow.mapDateRange,
+              );
+        const keptRefreshedMapMessageItems = isMapWindowStale()
+          ? []
+          : refreshedMapMessageItems.filter(
+              ([messageId, message]) =>
+                shouldApply(messageId) &&
+                shouldKeepRefreshedMapMessage(
+                  messageId,
+                  applyModelTagFilter(message, queryState.withoutModelTags),
+                ),
+            );
+        const refreshedMessages = new Map(
+          keptRefreshedMessageItems.map(([messageId, message]) => [messageId, message]),
+        );
+        const refreshedMapMessages = new Map(
+          keptRefreshedMapMessageItems.map(([messageId, message]) => [messageId, message]),
+        );
+        const changedMessageIdSet = new Set(applicableVisibleMessageIds);
+        const changedMapMessageIdSet = new Set(applicableVisibleMapMessageIds);
+        const discoveredMessageItems = keptRefreshedMessageItems
+          .filter(([messageId]) => applicableUndisplayedMessageIdSet.has(messageId))
+          .map(
+            ([messageId, message]) =>
+              [messageId, applyModelTagFilter(message, queryState.withoutModelTags)] as [
+                number,
+                InboxMessage,
+              ],
+          );
+        const reconcileListMessages = (currentMessages: Array<[number, InboxMessage]>) => {
+          const reorderedMessageIds = new Set(
+            currentMessages.flatMap(([messageId, currentMessage]) => {
+              const refreshedMessage = refreshedMessages.get(messageId);
+              return refreshedMessage != null &&
+                changedMessageIdSet.has(messageId) &&
+                hasRealtimeMessageOrderChanged(
+                  currentMessage,
+                  refreshedMessage,
+                  queryState.messageTimeBasis,
+                )
+                ? [messageId]
+                : [];
+            }),
+          );
+          const stationaryRefreshedMessages = new Map(
+            [...refreshedMessages].filter(([messageId]) => !reorderedMessageIds.has(messageId)),
+          );
+          const reorderedMessageItems = [...reorderedMessageIds].flatMap((messageId) => {
+            const refreshedMessage = refreshedMessages.get(messageId);
+            if (refreshedMessage == null) return [];
+            const nextMessage = applyModelTagFilter(refreshedMessage, queryState.withoutModelTags);
+            return shouldKeepRefreshedMessage(messageId, nextMessage)
+              ? ([[messageId, nextMessage]] as Array<[number, InboxMessage]>)
+              : [];
+          });
+
+          return insertDiscoveredMessages(
+            mergeRefreshedMessages(
+              currentMessages,
+              changedMessageIdSet,
+              stationaryRefreshedMessages,
+              queryState.withoutModelTags,
+              shouldKeepRefreshedMessage,
+            ),
+            [...discoveredMessageItems, ...reorderedMessageItems],
+            {
+              messageTimeBasis: queryState.messageTimeBasis,
+              newestFirst,
+              noMoreToLoad: requestMessageWindow.noMoreToLoad,
+              nolimitShown: requestMessageWindow.nolimitShown,
+              pageIndex: requestMessageWindow.pageIndex,
+              preserveMessageIds: reorderedMessageIds,
+            },
+          );
+        };
+        const currentMessageItems = requestMessageWindow.messages;
+        const nextMessageItems = reconcileListMessages(currentMessageItems);
+        if (!sameMessageItems(currentMessageItems, nextMessageItems)) {
+          onBeforeRealtimeMessageListChange?.();
+          messageList.setMessages((currentMessages) =>
+            currentMessages === currentMessageItems
+              ? nextMessageItems
+              : reconcileListMessages(currentMessages),
+          );
+        }
+        if (applicableVisibleMapMessageIds.length > 0 && !isMapWindowStale()) {
+          mapData.setMapOpenMessages((currentMessages) =>
+            isMapWindowStale()
+              ? currentMessages
+              : mergeRefreshedMessages(
+                  currentMessages,
+                  changedMapMessageIdSet,
+                  refreshedMapMessages,
+                  queryState.withoutModelTags,
+                  shouldKeepRefreshedMapMessage,
+                ),
+          );
+        }
+        if (messageIdsToHydrate.length === 0 && mapMessageIdsToHydrate.length === 0) return;
+        const keptMessageItems = [
+          ...new Map(
+            [...keptRefreshedMessageItems, ...keptRefreshedMapMessageItems].map(
+              ([messageId, message]) => [messageId, message],
+            ),
+          ),
+        ];
+        await loadMissingNetworksForMessages(keptMessageItems);
+        if (isScopeStale()) return;
+        await messageList.loadMessageComments(keptMessageItems, true);
       } catch (loadError) {
         if (signal.aborted) return;
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+      } finally {
+        if (!isScopeStale()) messageList.refreshMessageCounts();
       }
     },
     [
+      focusedMessageActive,
       loadMissingNetworksForMessages,
       mapData,
       messageList,
+      newestFirst,
+      onBeforeRealtimeMessageListChange,
       onError,
       onUnauthorized,
       optionsFreqValues,
       queryState,
+      reloadTriggerKey,
     ],
   );
-  const refreshVisibleChangedMessagesTargeted = useTargetedInboxReconciliation(
-    reconcileVisibleChangedMessagesBatch,
+  const refreshChangedMessagesTargeted = useTargetedInboxReconciliation(
+    reconcileChangedMessagesBatch,
   );
+  refreshChangedMessagesTargetedRef.current = refreshChangedMessagesTargeted;
 
-  const refreshVisibleChangedMessages = useCallback(
+  const refreshChangedMessages = useCallback(
     async (changedMessageIds: number[], events: InboxChangedEvent[] = []) => {
-      const visibleMessageIds = collectVisibleChangedMessageIds(
-        changedMessageIds,
+      const intelligenceReportEventIds = new Set(
+        events.filter((event) => event.intelligenceReport).map((event) => event.messageId),
+      );
+      const visibleIntelligenceReportIds = collectVisibleIntelligenceReportIds(
         messageList.messages,
         mapData.mapOpenMessages,
       );
-      const visibleInboxEventIds = collectVisibleInboxEventIds(
-        messageList.messages,
-        mapData.mapOpenMessages,
+      const reconciliationMessageIds = normalizeMessageIds(
+        normalizeMessageIds(changedMessageIds).flatMap((messageId) => {
+          const visibleMessageIds = collectVisibleChangedMessageIds(
+            [messageId],
+            messageList.messages,
+            mapData.mapOpenMessages,
+          );
+          if (visibleMessageIds.length === 0) return [messageId];
+          return intelligenceReportEventIds.has(messageId) &&
+            visibleIntelligenceReportIds.has(messageId)
+            ? [messageId, ...visibleMessageIds]
+            : visibleMessageIds;
+        }),
       );
-      const undisplayedReportIds = events
-        .filter((event) => event.intelligenceReport && !visibleInboxEventIds.has(event.messageId))
-        .map((event) => event.messageId);
-
-      if (visibleMessageIds.length > 0) {
-        if (requiresServerFilteredInboxRefresh(queryState)) {
-          try {
-            await reloadRef.current();
-          } catch (loadError) {
-            if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
-          }
-          return;
-        }
-
-        await refreshVisibleChangedMessagesTargeted(visibleMessageIds);
-      }
-
-      if (undisplayedReportIds.length === 0) return;
-
-      try {
-        const discoveredReports = await fetchMessagesByIds(
-          undisplayedReportIds,
-          buildLiveRefreshInboxReq(queryState, optionsFreqValues),
-        );
-        const shouldReload = requiresServerFilteredInboxRefresh(queryState)
-          ? discoveredReports.length > 0
-          : discoveredReports.some(([, message]) =>
-              messageMatchesLiveRefreshFilters(message, queryState, optionsFreqValues),
-            );
-        if (shouldReload) await reloadRef.current();
-      } catch (loadError) {
-        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
-      }
+      await refreshChangedMessagesTargeted(reconciliationMessageIds);
     },
-    [
-      mapData.mapOpenMessages,
-      messageList.messages,
-      onError,
-      onUnauthorized,
-      optionsFreqValues,
-      queryState,
-      refreshVisibleChangedMessagesTargeted,
-    ],
+    [mapData.mapOpenMessages, messageList.messages, refreshChangedMessagesTargeted],
   );
 
   const { clearAnalysisResults, onUpdateLocalMessage, messageActionState } = useAnalysisActions(
@@ -549,7 +1027,7 @@ export function useAnalysisData({
       queryState,
       completeLocalInboxChangeOrigin: localInboxChangeOrigins.completeOrigin,
       failLocalInboxChangeOrigin: localInboxChangeOrigins.failOrigin,
-      reconcileTagMutation: (messageId) => refreshVisibleChangedMessagesTargeted([messageId]),
+      reconcileTagMutation: (messageId) => refreshChangedMessagesTargeted([messageId]),
       registerLocalInboxChangeOrigin: localInboxChangeOrigins.registerOrigin,
       refreshTagFacet,
       reloadRef,
@@ -637,11 +1115,11 @@ export function useAnalysisData({
       if (event.origin == null) return false;
       const disposition = localInboxChangeOrigins.classifyOrigin(event.origin);
       if (disposition === 'reconcile') {
-        void refreshVisibleChangedMessagesTargeted([event.messageId]);
+        void refreshChangedMessagesTargeted([event.messageId]);
       }
       return disposition !== 'unmatched';
     },
-    onMessageIds: refreshVisibleChangedMessages,
+    onMessageIds: refreshChangedMessages,
   });
 
   reloadRef.current = reload;
