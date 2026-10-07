@@ -53,6 +53,17 @@ function collectVisibleInboxEventIds(
   );
 }
 
+function collectVisibleIntelligenceReportIds(
+  messages: Array<[number, InboxMessage]>,
+  mapOpenMessages: Array<[number, InboxMessage]>,
+): Set<number> {
+  return new Set(
+    [...messages, ...mapOpenMessages].flatMap(([, message]) =>
+      (message.intelligenceReports ?? []).map(({ id }) => id),
+    ),
+  );
+}
+
 function collectVisibleChangedMessageIds(
   changedMessageIds: readonly unknown[],
   messages: Array<[number, InboxMessage]>,
@@ -672,8 +683,18 @@ export function useAnalysisData({
         requestMapWindow.mapOpenMessages,
       );
       const visibleInboxEventIds = collectVisibleInboxEventIds(requestMessageWindow.messages, []);
+      const visibleMessageIdsAtTopLevel = new Set(
+        requestMessageWindow.messages.map(([messageId]) => messageId),
+      );
+      const visibleIntelligenceReportIds = collectVisibleIntelligenceReportIds(
+        requestMessageWindow.messages,
+        [],
+      );
       const undisplayedMessageIds = candidateMessageIds.filter(
-        (messageId) => !visibleInboxEventIds.has(messageId),
+        (messageId) =>
+          !visibleInboxEventIds.has(messageId) ||
+          (visibleIntelligenceReportIds.has(messageId) &&
+            !visibleMessageIdsAtTopLevel.has(messageId)),
       );
       const needsServerFilter = requiresServerFilteredInboxRefresh(queryState, true);
       const mapNeedsServerFilter = requiresServerFilteredInboxRefresh(queryState, false);
@@ -944,7 +965,14 @@ export function useAnalysisData({
   refreshChangedMessagesTargetedRef.current = refreshChangedMessagesTargeted;
 
   const refreshChangedMessages = useCallback(
-    async (changedMessageIds: number[], _events: InboxChangedEvent[] = []) => {
+    async (changedMessageIds: number[], events: InboxChangedEvent[] = []) => {
+      const intelligenceReportEventIds = new Set(
+        events.filter((event) => event.intelligenceReport).map((event) => event.messageId),
+      );
+      const visibleIntelligenceReportIds = collectVisibleIntelligenceReportIds(
+        messageList.messages,
+        mapData.mapOpenMessages,
+      );
       const reconciliationMessageIds = normalizeMessageIds(
         normalizeMessageIds(changedMessageIds).flatMap((messageId) => {
           const visibleMessageIds = collectVisibleChangedMessageIds(
@@ -952,7 +980,11 @@ export function useAnalysisData({
             messageList.messages,
             mapData.mapOpenMessages,
           );
-          return visibleMessageIds.length === 0 ? [messageId] : visibleMessageIds;
+          if (visibleMessageIds.length === 0) return [messageId];
+          return intelligenceReportEventIds.has(messageId) &&
+            visibleIntelligenceReportIds.has(messageId)
+            ? [messageId, ...visibleMessageIds]
+            : visibleMessageIds;
         }),
       );
       await refreshChangedMessagesTargeted(reconciliationMessageIds);

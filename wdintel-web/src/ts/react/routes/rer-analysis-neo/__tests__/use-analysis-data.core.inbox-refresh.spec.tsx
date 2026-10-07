@@ -413,6 +413,73 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
 
+  it('inserts a grouped report after its parent was refreshed first', async () => {
+    const reportSummary = {
+      id: 91,
+      isAccessible: true,
+      isDeleted: false,
+      text: 'new report',
+      attachmentsCount: 0,
+      timestamp: null,
+      date: null,
+      time: null,
+      groupName: 'Group 2',
+      groupMasterKey: 'group-2',
+    };
+    const parent = inboxMessage({ text: 'parent', intelligenceReports: [] });
+    const updatedParent = inboxMessage({
+      text: 'parent',
+      intelligenceReports: [reportSummary],
+    });
+    const report = inboxMessage({
+      text: 'new report',
+      groupMasterKey: 'group-2',
+      parentMessages: [
+        {
+          id: 42,
+          isAccessible: true,
+          isDeleted: false,
+          text: 'parent',
+          attachmentsCount: 0,
+          timestamp: null,
+          date: null,
+          time: null,
+          groupName: 'Group 2',
+          groupMasterKey: 'group-2',
+        },
+      ],
+    });
+    hoisted.messages = [[42, parent]];
+    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([91]);
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[42, updatedParent]]).mockResolvedValueOnce([
+      [42, updatedParent],
+      [91, report],
+    ]);
+
+    renderHook();
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds(
+        [42],
+        [{ messageId: 42, origin: null, intelligenceReport: true }],
+      );
+    });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds(
+        [91],
+        [{ messageId: 91, origin: null, intelligenceReport: true }],
+      );
+    });
+
+    expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
+      [91],
+      expect.objectContaining({ highlightPoints: true }),
+    );
+    expectFetchMessagesByIdsCalledWith([42, 91]);
+    expect(latest?.messages.map(([messageId]) => messageId)).toEqual([91, 42]);
+    expect(latest?.messages[1]?.[1].intelligenceReports).toEqual([reportSummary]);
+    expect(hoisted.reload).not.toHaveBeenCalled();
+  });
+
   it('does not reload for a new intelligence report the user cannot access', async () => {
     hoisted.fetchMessageIdsMatchingFilters.mockResolvedValueOnce([]);
 
