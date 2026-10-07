@@ -9650,6 +9650,247 @@ async fn query_count_stats_catalog_dimensions_postgres(
     })
 }
 
+async fn query_message_stats_count_raw(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    freshness_max_age_ms: u64,
+) -> Result<MessageStatsCountRsp, AppError> {
+    let message_id_scope = stats::resolve_analytics_message_id_scope(
+        &req.0,
+        db,
+        freshness_max_age_ms,
+    )
+    .await?;
+    let (count_overall, count_selected) = stats::fetch_counts_raw_with_db(
+        req,
+        user,
+        env,
+        db,
+        master_keys,
+        Some(&message_id_scope),
+        None,
+    )
+    .await
+    .context(h!())?;
+    Ok(MessageStatsCountRsp {
+        count_overall,
+        count_selected,
+    })
+}
+
+async fn query_message_stats_count_postgres(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<MessageStatsCountRsp, AppError> {
+    let (count_overall, count_selected) =
+        stats::fetch_counts(req, user, env, master_keys)
+            .await
+            .context(h!())?;
+    Ok(MessageStatsCountRsp {
+        count_overall,
+        count_selected,
+    })
+}
+
+async fn query_unit_match_stats_count_raw(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    freshness_max_age_ms: u64,
+) -> Result<UnitMatchStatsCountRsp, AppError> {
+    let message_id_scope = stats::resolve_analytics_message_id_scope(
+        &req.0,
+        db,
+        freshness_max_age_ms,
+    )
+    .await?;
+    let (exact_resolved_units, combined_resolved_units) =
+        analytics_unit::resolve_analysis_unit_filter_variants_for_analytics(
+            &env.dbx,
+            &req.selected_units,
+            Some(&message_id_scope),
+        )
+        .await
+        .context(h!())?;
+    let (resolved_units, alternate_resolved_units) =
+        if req.units_exact_match_only.unwrap_or(false) {
+            (exact_resolved_units, combined_resolved_units)
+        } else {
+            (combined_resolved_units, exact_resolved_units)
+        };
+    let (_, count_selected) = stats::fetch_counts_raw_with_db(
+        req,
+        user,
+        env,
+        db,
+        master_keys.clone(),
+        Some(&message_id_scope),
+        resolved_units.as_ref(),
+    )
+    .await
+    .context(h!())?;
+    let selected_units = req
+        .selected_units
+        .as_ref()
+        .filter(|selected_units| !selected_units.is_empty());
+    let (exact_matches_count, non_exact_matches_count) =
+        if selected_units.is_none() {
+            (count_selected, 0)
+        } else {
+            stats::count_unit_exact_match_breakdown_raw_with_db(
+                req,
+                user,
+                env,
+                db,
+                master_keys,
+                Some(&message_id_scope),
+                count_selected,
+                alternate_resolved_units.as_ref(),
+            )
+            .await
+            .context(h!())?
+        };
+    Ok(UnitMatchStatsCountRsp {
+        exact_matches_count,
+        non_exact_matches_count,
+    })
+}
+
+async fn query_unit_match_stats_count_postgres(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<UnitMatchStatsCountRsp, AppError> {
+    let (exact_matches_count, non_exact_matches_count) =
+        stats::count_unit_exact_match_breakdown(req, user, env, master_keys)
+            .await
+            .context(h!())?;
+    Ok(UnitMatchStatsCountRsp {
+        exact_matches_count,
+        non_exact_matches_count,
+    })
+}
+
+#[post("/api/rer/analysis/stats/messages/count")]
+async fn message_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<MessageStatsCountRsp>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
+    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let analytics_env = &env;
+    let postgres_env = &env;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let count = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats messages count",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            query_message_stats_count_raw(
+                analytics_req,
+                analytics_user,
+                analytics_env,
+                &db,
+                analytics_master_keys,
+                freshness_max_age_ms,
+            )
+            .await
+        },
+        |_db| {
+            query_message_stats_count_postgres(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+        },
+    )
+    .await
+    .context(h!())?;
+    Ok(Json(count))
+}
+
+#[post("/api/rer/analysis/stats/units/matches/count")]
+async fn unit_match_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<UnitMatchStatsCountRsp>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
+    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let analytics_env = &env;
+    let postgres_env = &env;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let count = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats unit matches count",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            query_unit_match_stats_count_raw(
+                analytics_req,
+                analytics_user,
+                analytics_env,
+                &db,
+                analytics_master_keys,
+                freshness_max_age_ms,
+            )
+            .await
+        },
+        |_db| {
+            query_unit_match_stats_count_postgres(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+        },
+    )
+    .await
+    .context(h!())?;
+    Ok(Json(count))
+}
+
 /// STATS
 #[post("/api/rer/analysis/stats/groups/count")]
 async fn group_stats_count(

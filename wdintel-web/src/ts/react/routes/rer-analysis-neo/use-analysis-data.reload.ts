@@ -14,7 +14,6 @@ import type {
 import type { AnalysisStatsReq } from '../../../../Bindings';
 import {
   fetchAnalysisAors,
-  fetchAnalysisCount,
   fetchAnalysisCallsignPage,
   fetchAnalysisFreqs,
   fetchAnalysisGroups,
@@ -24,12 +23,15 @@ import {
   fetchAnalysisNetworks,
   fetchAnalysisPosts,
   fetchAnalysisSenders,
+  fetchAnalysisStatsCount,
   fetchAnalysisTags,
+  fetchAnalysisUnitMatchStatsCount,
   fetchAnalysisUnits,
   fetchInboxMessages,
   fetchNetworksByIds,
   getTagsForDisplay,
 } from '../../services/api/analysis';
+import type { AnalysisStatsCountDimension } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { getGroupInfosBatch } from '../../services/api/inbox-reference-data';
 import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
@@ -674,6 +676,110 @@ export function transformMessagePageResponse<
   };
 }
 
+const EMPTY_ANALYSIS_COUNTS: CountStatsRsp = {
+  countOverall: 0,
+  countSelected: 0,
+  groupsCount: 0,
+  sendersCount: 0,
+  freqsCount: 0,
+  postsCount: 0,
+  callsignsCount: 0,
+  unitsCount: 0,
+  unitsExactMatchesCount: 0,
+  unitsNonExactMatchesCount: 0,
+  locationsCount: 0,
+  tagsCount: 0,
+  aorsCount: 0,
+  networksCount: 0,
+};
+
+const ANALYSIS_COUNT_FIELDS: ReadonlyArray<
+  readonly [AnalysisStatsCountDimension, keyof CountStatsRsp]
+> = [
+  ['groups', 'groupsCount'],
+  ['senders', 'sendersCount'],
+  ['freqs', 'freqsCount'],
+  ['posts', 'postsCount'],
+  ['callsigns', 'callsignsCount'],
+  ['units', 'unitsCount'],
+  ['locations', 'locationsCount'],
+  ['tags', 'tagsCount'],
+  ['aors', 'aorsCount'],
+  ['networks', 'networksCount'],
+];
+
+type AnalysisCountsLoad = {
+  abort: () => void;
+};
+
+function startAnalysisCountsLoad(
+  req: AnalysisStatsReq,
+  context: {
+    isStale: () => boolean;
+    onError: (message: string) => void;
+    onUnauthorized: (error: unknown) => boolean;
+    parentSignal?: AbortSignal;
+    setCounts: Setter<CountStatsRsp | null>;
+    setCountsLoading: Setter<boolean>;
+  },
+): AnalysisCountsLoad {
+  const abortController = new AbortController();
+  const abort = () => abortController.abort();
+  const signal = abortController.signal;
+  let reportedError = false;
+
+  if (context.parentSignal?.aborted) {
+    abort();
+  } else {
+    context.parentSignal?.addEventListener('abort', abort, { once: true });
+  }
+
+  const isInactive = () => signal.aborted || context.isStale();
+  const requestOptions = { signal };
+  const applyPatch = (patch: Partial<CountStatsRsp>) => {
+    if (isInactive()) return;
+    context.setCounts((current) => ({
+      ...EMPTY_ANALYSIS_COUNTS,
+      ...(current ?? {}),
+      ...patch,
+    }));
+  };
+  const load = async <T>(request: Promise<T>, toPatch: (value: T) => Partial<CountStatsRsp>) => {
+    try {
+      applyPatch(toPatch(await request));
+    } catch (loadError) {
+      if (isInactive() || isAbortError(loadError) || reportedError) return;
+      reportedError = true;
+      if (!context.onUnauthorized(loadError)) context.onError(toErrorMessage(loadError));
+    }
+  };
+
+  context.setCounts((current) => current ?? EMPTY_ANALYSIS_COUNTS);
+  context.setCountsLoading(true);
+
+  const requests = ANALYSIS_COUNT_FIELDS.map(([dimension, field]) =>
+    load(fetchAnalysisStatsCount(dimension, req, requestOptions), (count) => ({
+      [field]: count,
+    })),
+  );
+  if (req.selectedUnits?.length) {
+    requests.push(
+      load(fetchAnalysisUnitMatchStatsCount(req, requestOptions), (count) => ({
+        unitsExactMatchesCount: count.exactMatchesCount,
+        unitsNonExactMatchesCount: count.nonExactMatchesCount,
+      })),
+    );
+  } else {
+    applyPatch({ unitsExactMatchesCount: 0, unitsNonExactMatchesCount: 0 });
+  }
+
+  void Promise.all(requests).then(() => {
+    context.parentSignal?.removeEventListener('abort', abort);
+    if (!isInactive()) context.setCountsLoading(false);
+  });
+  return { abort };
+}
+
 type ReloadParams = {
   clearAnalysisResults: () => void;
   focusedWindow?: InboxWindowRsp | null;
@@ -756,6 +862,8 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   params.reloadRequestRef.current = requestId;
   const isStaleReload = () => requestId !== params.reloadRequestRef.current;
   let startedSecondaryLoads = false;
+  let activeCountsLoad: AnalysisCountsLoad | null = null;
+  const abortActiveCountsLoad = () => activeCountsLoad?.abort();
   const networkStatsCache = new Map<string, ReturnType<typeof fetchAnalysisNetworks>>();
   const targetedReloadSections = params.getReloadFilterSections?.();
   const shouldLoadMap =
@@ -776,11 +884,9 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     const loadCriticalData = async (
       allFrequencies: string[],
     ): Promise<{
-      originalAnalysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>;
       inboxReq: NonNullable<ReturnType<typeof buildInboxReq>>;
       inboxRsp: Awaited<ReturnType<typeof fetchInboxMessages>>;
       freqsRsp: Awaited<ReturnType<typeof fetchAnalysisFreqs>>;
-      countsPromise: Promise<CountStatsRsp>;
       resolvedAnalysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>;
     } | null> => {
       const analysisReq = buildAnalysisReq(params.queryState, allFrequencies);
@@ -811,11 +917,14 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         return null;
       }
 
-      const countsPromise = fetchAnalysisCount(
-        analysisReq,
-        params.signal ? { signal: params.signal } : undefined,
-      );
-      countsPromise.catch(() => undefined);
+      activeCountsLoad = startAnalysisCountsLoad(analysisReq, {
+        isStale: isStaleReload,
+        onError: params.onError,
+        onUnauthorized: params.onUnauthorized,
+        parentSignal: params.signal,
+        setCounts: params.setCounts,
+        setCountsLoading: params.setCountsLoading,
+      });
       const messagePageCursor = params.messagePageCursor;
       const inboxPromise = params.focusedMessageActive
         ? Promise.resolve(buildFocusedInboxResponse(params.focusedWindow))
@@ -948,6 +1057,15 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             resolvedInboxReq = rebuiltInboxReq;
             resolvedInboxRsp = rebuiltMessagePageRsp;
             resolvedFreqsRsp = rebuiltFreqsRsp;
+            activeCountsLoad?.abort();
+            activeCountsLoad = startAnalysisCountsLoad(rebuiltAnalysisReq, {
+              isStale: isStaleReload,
+              onError: params.onError,
+              onUnauthorized: params.onUnauthorized,
+              parentSignal: params.signal,
+              setCounts: params.setCounts,
+              setCountsLoading: params.setCountsLoading,
+            });
             void params.loadMessageComments?.(displayedRebuiltMessages, true);
           } catch (loadError) {
             if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return null;
@@ -1018,8 +1136,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       });
       params.invalidateCallsignGraph({ clearGraph: true });
       return {
-        originalAnalysisReq: analysisReq,
-        countsPromise,
         inboxReq: resolvedInboxReq,
         inboxRsp: resolvedInboxRsp,
         freqsRsp: resolvedFreqsRsp,
@@ -1035,29 +1151,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     params.optionsFreqsRef.current = criticalData.freqsRsp.freqs.map((item) => item.freq);
     params.setFiltersLoading(false);
     params.setMessagesLoading(false);
-
-    const loadCountsData = async () => {
-      try {
-        const countsPromise =
-          criticalData.resolvedAnalysisReq === criticalData.originalAnalysisReq
-            ? criticalData.countsPromise
-            : fetchAnalysisCount(
-                criticalData.resolvedAnalysisReq,
-                params.signal ? { signal: params.signal } : undefined,
-              );
-        if (criticalData.resolvedAnalysisReq !== criticalData.originalAnalysisReq) {
-          countsPromise.catch(() => undefined);
-        }
-        const countsRsp = await countsPromise;
-        if (isStaleReload() || params.signal?.aborted) return;
-        params.setCounts(countsRsp);
-      } catch (loadError) {
-        if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;
-        if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
-      } finally {
-        if (!isStaleReload() && !params.signal?.aborted) params.setCountsLoading(false);
-      }
-    };
 
     const loadReferenceData = async () => {
       try {
@@ -1181,7 +1274,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     startedSecondaryLoads = true;
     params.invalidateSummaryLoads?.();
     params.invalidateTopSidebarLoads?.();
-    const secondaryLoads = [loadCountsData(), loadReferenceData(), loadCardTagData()];
+    const secondaryLoads = [loadReferenceData(), loadCardTagData()];
     if (shouldLoadMap) {
       secondaryLoads.push(loadMapData());
     }
@@ -1196,6 +1289,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     if (isStaleReload() || params.signal?.aborted) {
       return;
     }
+    abortActiveCountsLoad();
     if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
     return;
   } finally {

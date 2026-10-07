@@ -6,7 +6,7 @@ port module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, loadExternalUrlForced, back
     , map, toCmd
-    , CallsignsByNetwork, ReportDownloadResult, addFreqToNetwork, addMultipleCallsignsToNetwork, createNetwork, createNetworkCallsign, deleteMessage, deleteNetwork, deleteNetworkCallsign, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getAors, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getMetadataStats, getEncryptions, getNetworkCallsigns, getNetworkCallsignsActivity, getNetworkCallsignsList, getNetworkFreqCallsigns, getNetworkFreqsActivity, getNetworkGoiReport, getNetworkPoints, getNetworkReportBatch, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getNetworks, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getSystemSettings, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, reactivateNetworkFreq, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, sendToastMsg, setThemeMode, showError, showErrorWithDetails, toggleDarkMode, triggerResize, updateNetwork, updateNetworkCallsign, updateNetworkFreq, updateNetworkPosts, updateNetworkUnits
+    , CallsignsByNetwork, ReportDownloadResult, addFreqToNetwork, addMultipleCallsignsToNetwork, createNetwork, createNetworkCallsign, deleteMessage, deleteNetwork, deleteNetworkCallsign, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisAorsCount, getAnalysisCallsignsCount, getAnalysisFreqsCount, getAnalysisGroupsCount, getAnalysisLocationsCount, getAnalysisMessageStatsCount, getAnalysisNetworksCount, getAnalysisPostsCount, getAnalysisSavedFilters, getAnalysisSendersCount, getAnalysisTagsCount, getAnalysisUnitMatchStatsCount, getAnalysisUnitsCount, getAors, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getMetadataStats, getEncryptions, getNetworkCallsigns, getNetworkCallsignsActivity, getNetworkCallsignsList, getNetworkFreqCallsigns, getNetworkFreqsActivity, getNetworkGoiReport, getNetworkPoints, getNetworkReportBatch, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getNetworks, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getSystemSettings, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, reactivateNetworkFreq, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, sendToastMsg, setThemeMode, showError, showErrorWithDetails, toggleDarkMode, triggerResize, updateNetwork, updateNetworkCallsign, updateNetworkFreq, updateNetworkPosts, updateNetworkUnits
     )
 
 {-|
@@ -55,6 +55,19 @@ import Utils.Time
 import Utils.Utils exposing (decodePair)
 
 
+type AnalysisStatsCountEndpoint
+    = GroupsCount
+    | SendersCount
+    | FreqsCount
+    | PostsCount
+    | CallsignsCount
+    | UnitsCount
+    | LocationsCount
+    | TagsCount
+    | AorsCount
+    | NetworksCount
+
+
 type Effect msg
     = -- BASICS
       None
@@ -90,7 +103,9 @@ type Effect msg
     | GetSystemSettings (Result ApiError B.SystemSettingsCurrentRsp -> msg)
     | FocusHtmlElement { elemId : String }
     | GetInboxMessages (Maybe String) (Result ApiError B.InboxMessagesRsp -> msg) B.InboxMessagesReq
-    | GetStatsCount (Result ApiError B.CountStatsRsp -> msg) B.AnalysisStatsReq
+    | GetAnalysisStatsCount AnalysisStatsCountEndpoint (Result ApiError Int -> msg) B.AnalysisStatsReq
+    | GetAnalysisMessageStatsCount (Result ApiError B.MessageStatsCountRsp -> msg) B.AnalysisStatsReq
+    | GetAnalysisUnitMatchStatsCount (Result ApiError B.UnitMatchStatsCountRsp -> msg) B.AnalysisStatsReq
     | GetTags (Result ApiError (List ( Int, B.Tag )) -> msg)
     | GetTags2 (Result ApiError B.TagStatsRsp -> msg) B.AnalysisStatsReq
     | GetFreqsSummaryTable (Result ApiError B.SummaryTableFreq -> msg) B.AnalysisStatsReq
@@ -420,9 +435,103 @@ getInboxMessages token toMsg payload =
     GetInboxMessages token toMsg payload
 
 
-getStatsCount : (Result ApiError B.CountStatsRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
-getStatsCount toMsg payload =
-    GetStatsCount toMsg payload
+getAnalysisStatsCount : AnalysisStatsCountEndpoint -> (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisStatsCount endpoint toMsg payload =
+    GetAnalysisStatsCount endpoint toMsg payload
+
+
+getAnalysisGroupsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisGroupsCount =
+    getAnalysisStatsCount GroupsCount
+
+
+getAnalysisSendersCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisSendersCount =
+    getAnalysisStatsCount SendersCount
+
+
+getAnalysisFreqsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisFreqsCount =
+    getAnalysisStatsCount FreqsCount
+
+
+getAnalysisPostsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisPostsCount =
+    getAnalysisStatsCount PostsCount
+
+
+getAnalysisCallsignsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisCallsignsCount =
+    getAnalysisStatsCount CallsignsCount
+
+
+getAnalysisUnitsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisUnitsCount =
+    getAnalysisStatsCount UnitsCount
+
+
+getAnalysisLocationsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisLocationsCount =
+    getAnalysisStatsCount LocationsCount
+
+
+getAnalysisTagsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisTagsCount =
+    getAnalysisStatsCount TagsCount
+
+
+getAnalysisAorsCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisAorsCount =
+    getAnalysisStatsCount AorsCount
+
+
+getAnalysisNetworksCount : (Result ApiError Int -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisNetworksCount =
+    getAnalysisStatsCount NetworksCount
+
+
+getAnalysisMessageStatsCount : (Result ApiError B.MessageStatsCountRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisMessageStatsCount toMsg payload =
+    GetAnalysisMessageStatsCount toMsg payload
+
+
+getAnalysisUnitMatchStatsCount : (Result ApiError B.UnitMatchStatsCountRsp -> msg) -> B.AnalysisStatsReq -> Effect msg
+getAnalysisUnitMatchStatsCount toMsg payload =
+    GetAnalysisUnitMatchStatsCount toMsg payload
+
+
+analysisStatsCountEndpointPath : AnalysisStatsCountEndpoint -> String
+analysisStatsCountEndpointPath endpoint =
+    case endpoint of
+        GroupsCount ->
+            "groups"
+
+        SendersCount ->
+            "senders"
+
+        FreqsCount ->
+            "freqs"
+
+        PostsCount ->
+            "posts"
+
+        CallsignsCount ->
+            "callsigns"
+
+        UnitsCount ->
+            "units"
+
+        LocationsCount ->
+            "locations"
+
+        TagsCount ->
+            "tags"
+
+        AorsCount ->
+            "aors"
+
+        NetworksCount ->
+            "networks"
 
 
 getCallsignsGraph : (Result ApiError B.NetJsonGraphAndMeta -> msg) -> B.CallsignsGraphReq -> Effect msg
@@ -997,8 +1106,14 @@ map fn effect =
         GetInboxMessages token toMsg payload ->
             GetInboxMessages token (fn << toMsg) payload
 
-        GetStatsCount toMsg payload ->
-            GetStatsCount (fn << toMsg) payload
+        GetAnalysisStatsCount endpoint toMsg payload ->
+            GetAnalysisStatsCount endpoint (fn << toMsg) payload
+
+        GetAnalysisMessageStatsCount toMsg payload ->
+            GetAnalysisMessageStatsCount (fn << toMsg) payload
+
+        GetAnalysisUnitMatchStatsCount toMsg payload ->
+            GetAnalysisUnitMatchStatsCount (fn << toMsg) payload
 
         GetTags2 toMsg payload ->
             GetTags2 (fn << toMsg) payload
@@ -1380,11 +1495,25 @@ toCmd options effect =
                 , tracker = token
                 }
 
-        GetStatsCount toMsg payload ->
+        GetAnalysisStatsCount endpoint toMsg payload ->
             Http.post
-                { url = "/api/rer/analysis/stats/count"
+                { url = "/api/rer/analysis/stats/" ++ analysisStatsCountEndpointPath endpoint ++ "/count"
                 , body = Http.jsonBody (B.analysisStatsReqEncoder payload)
-                , expect = leExpectJson toMsg B.countStatsRspDecoder
+                , expect = leExpectJson toMsg Decode.int
+                }
+
+        GetAnalysisMessageStatsCount toMsg payload ->
+            Http.post
+                { url = "/api/rer/analysis/stats/messages/count"
+                , body = Http.jsonBody (B.analysisStatsReqEncoder payload)
+                , expect = leExpectJson toMsg B.messageStatsCountRspDecoder
+                }
+
+        GetAnalysisUnitMatchStatsCount toMsg payload ->
+            Http.post
+                { url = "/api/rer/analysis/stats/units/matches/count"
+                , body = Http.jsonBody (B.analysisStatsReqEncoder payload)
+                , expect = leExpectJson toMsg B.unitMatchStatsCountRspDecoder
                 }
 
         GetTags2 toMsg payload ->

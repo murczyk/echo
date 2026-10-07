@@ -276,7 +276,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           signal: abortController.signal,
         });
       } finally {
-        if (reloadAbortControllerRef.current === abortController) {
+        if (
+          reloadAbortControllerRef.current === abortController &&
+          abortController.signal.aborted
+        ) {
           reloadAbortControllerRef.current = null;
         }
       }

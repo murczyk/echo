@@ -202,6 +202,23 @@ describe('useAnalysisReloadOrchestrator', () => {
     expect(params.refreshMessageCounts).not.toHaveBeenCalled();
   });
 
+  it('#3001 aborts the previous reload scope when filters change after its foreground work finishes', async () => {
+    vi.useFakeTimers();
+    const params = buildParams();
+
+    await renderHook(params);
+    const firstSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0].signal;
+    expect(firstSignal?.aborted).toBe(false);
+
+    await rerenderHook({
+      ...params,
+      reloadTriggerKey: 'reload-key-2',
+      queryState: { ...params.queryState, search: 'next-filter' },
+    });
+
+    expect(firstSignal?.aborted).toBe(true);
+  });
+
   it('reloads immediately when a filtered focused window arrives', async () => {
     vi.useFakeTimers();
     const params = buildParams({

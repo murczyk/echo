@@ -15,9 +15,8 @@ import {
   Typography,
 } from '@mui/material';
 import type { MouseEvent } from 'react';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import type { CountStatsRsp } from '../../../../../Bindings';
 
 import type { AnalysisFilterSectionId } from '../types';
 import {
@@ -43,7 +42,6 @@ import {
 type Props = Pick<
   AnalysisFiltersPanelPage,
   | 'counts'
-  | 'countsLoading'
   | 'cyberEchoEnabled'
   | 'includeOnlyNewFreqs'
   | 'options'
@@ -53,7 +51,6 @@ type Props = Pick<
 > & {
   derived: AnalysisFiltersPanelDerivedData;
   expandedSections: Record<FilterSectionId, boolean>;
-  countsLoading: boolean;
   filtersLoading: boolean;
   isFilterSectionLoading: (section: AnalysisFilterSectionId) => boolean;
   isFilterSectionEmptyLoading: (section: AnalysisFilterSectionId, optionCount: number) => boolean;
@@ -228,7 +225,6 @@ export function AnalysisFiltersPanelSections({
   counts,
   derived,
   expandedSections,
-  countsLoading,
   cyberEchoEnabled,
   includeOnlyNewFreqs,
   filtersLoading,
@@ -246,14 +242,6 @@ export function AnalysisFiltersPanelSections({
   updateQueryState,
 }: Props) {
   const loadingCountLabel = NO_DATA_LABEL;
-  const lastCountsRef = useRef<CountStatsRsp | null>(counts);
-  const countsSnapshot = countsLoading ? lastCountsRef.current : counts;
-
-  useEffect(() => {
-    if (!countsLoading && counts != null) {
-      lastCountsRef.current = counts;
-    }
-  }, [counts, countsLoading]);
 
   const isSectionLoading = (section: FilterSectionLoadTarget) =>
     section === 'freqs' ? false : isFilterSectionLoading(section);
@@ -302,10 +290,10 @@ export function AnalysisFiltersPanelSections({
     queryState.unitsExactMatchOnly ?? unitsExactMatchOnlyDefault ?? false;
   const unitsExactMatchLabel =
     queryState.unitsSelected.length > 0
-      ? countsSnapshot != null
+      ? counts != null
         ? effectiveUnitsExactMatchOnly
-          ? `неточних збігів: ${countsSnapshot.unitsNonExactMatchesCount}`
-          : `точних збігів: ${countsSnapshot.unitsExactMatchesCount}`
+          ? `неточних збігів: ${counts.unitsNonExactMatchesCount}`
+          : `точних збігів: ${counts.unitsExactMatchesCount}`
         : 'Точний збіг за еталонкою'
       : null;
 

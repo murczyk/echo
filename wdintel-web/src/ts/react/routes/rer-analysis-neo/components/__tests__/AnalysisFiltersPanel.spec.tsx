@@ -1322,7 +1322,7 @@ describe('AnalysisFiltersPanel', () => {
     expect(view.container.textContent).toContain('неточних збігів: 7');
   });
 
-  it('keeps the exact-match count stable while counts are still loading', async () => {
+  it('#3001 renders a newly loaded exact-match count without waiting for other counts', async () => {
     const view = await renderComponent(
       buildProps({
         counts: {
@@ -1387,7 +1387,7 @@ describe('AnalysisFiltersPanel', () => {
       );
     });
 
-    expect(view.container.textContent).toContain('точних збігів: 8');
+    expect(view.container.textContent).toContain('точних збігів: 0');
   });
 
   it('sends true when the exact-match checkbox is checked', async () => {

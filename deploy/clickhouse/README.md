@@ -682,6 +682,7 @@ The analysis result, facet, and dedicated facet-count endpoints use this path:
 - `/api/rer/analysis/stats/count`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks,metadata}`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}/count`
+- `/api/rer/analysis/stats/messages/count` and `/api/rer/analysis/stats/units/matches/count`
 
 The expensive replicated-data reads for the interception, sender, posts, REO,
 digest, RER, Sposob, active-network, network-frequency, 1.2.5, and 1.2.13

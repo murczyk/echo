@@ -663,6 +663,95 @@ loadSumTableOnly model =
             ( model, E.none )
 
 
+emptyCountStatsRsp : B.CountStatsRsp
+emptyCountStatsRsp =
+    { countOverall = 0
+    , countSelected = 0
+    , groupsCount = 0
+    , sendersCount = 0
+    , freqsCount = 0
+    , postsCount = 0
+    , callsignsCount = 0
+    , unitsCount = 0
+    , unitsExactMatchesCount = 0
+    , unitsNonExactMatchesCount = 0
+    , locationsCount = 0
+    , tagsCount = 0
+    , aorsCount = 0
+    , networksCount = 0
+    }
+
+
+loadAnalysisCountStats : B.AnalysisStatsReq -> List (Effect Msg)
+loadAnalysisCountStats req =
+    [ E.getAnalysisMessageStatsCount (GotMessageStatsCount req) req
+    , E.getAnalysisGroupsCount (GotStatsCount req GroupsCountField) req
+    , E.getAnalysisSendersCount (GotStatsCount req SendersCountField) req
+    , E.getAnalysisFreqsCount (GotStatsCount req FreqsCountField) req
+    , E.getAnalysisPostsCount (GotStatsCount req PostsCountField) req
+    , E.getAnalysisCallsignsCount (GotStatsCount req CallsignsCountField) req
+    , E.getAnalysisUnitsCount (GotStatsCount req UnitsCountField) req
+    , E.getAnalysisLocationsCount (GotStatsCount req LocationsCountField) req
+    , E.getAnalysisTagsCount (GotStatsCount req TagsCountField) req
+    , E.getAnalysisAorsCount (GotStatsCount req AorsCountField) req
+    , E.getAnalysisNetworksCount (GotStatsCount req NetworksCountField) req
+    , case req.selectedUnits of
+        Just selectedUnits ->
+            if List.isEmpty selectedUnits then
+                E.none
+
+            else
+                E.getAnalysisUnitMatchStatsCount (GotUnitMatchStatsCount req) req
+
+        Nothing ->
+            E.none
+    ]
+
+
+isCurrentStatsCountRequest : B.AnalysisStatsReq -> Model -> Bool
+isCurrentStatsCountRequest req model =
+    case ( model.from.datePosix, model.to.datePosix ) of
+        ( Just dtFromPosix, Just dtToPosix ) ->
+            req == Query.analysisStatsParams dtFromPosix dtToPosix model
+
+        _ ->
+            False
+
+
+updateStatsCountField : StatsCountField -> Int -> B.CountStatsRsp -> B.CountStatsRsp
+updateStatsCountField field count counts =
+    case field of
+        GroupsCountField ->
+            { counts | groupsCount = count }
+
+        SendersCountField ->
+            { counts | sendersCount = count }
+
+        FreqsCountField ->
+            { counts | freqsCount = count }
+
+        PostsCountField ->
+            { counts | postsCount = count }
+
+        CallsignsCountField ->
+            { counts | callsignsCount = count }
+
+        UnitsCountField ->
+            { counts | unitsCount = count }
+
+        LocationsCountField ->
+            { counts | locationsCount = count }
+
+        TagsCountField ->
+            { counts | tagsCount = count }
+
+        AorsCountField ->
+            { counts | aorsCount = count }
+
+        NetworksCountField ->
+            { counts | networksCount = count }
+
+
 loadCoreStats : Model -> ( Model, Effect Msg )
 loadCoreStats model =
     case ( model.from.datePosix, model.to.datePosix ) of
@@ -814,7 +903,7 @@ loadCoreStats model =
               }
             , E.batch
                 [ if loadingCounts then
-                    E.getStatsCount GotStatsCount analysisPs
+                    E.batch (loadAnalysisCountStats analysisPs)
 
                   else
                     E.none
@@ -1480,17 +1569,81 @@ update user shared route msg model =
             in
             ( { model | networksExtra = Dict.union newNetworks model.networksExtra }, E.none )
 
-        GotStatsCount (Err e) ->
-            ( { model | counts = Failure e }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики" e
-            )
+        GotStatsCount req field result ->
+            if not (isCurrentStatsCountRequest req model) then
+                ( model, E.none )
 
-        GotStatsCount (Ok counts) ->
-            ( { model
-                | counts = Success counts
-              }
-            , E.none
-            )
+            else
+                case result of
+                    Err e ->
+                        ( model
+                        , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики" e
+                        )
+
+                    Ok count ->
+                        ( { model
+                            | counts =
+                                model.counts
+                                    |> RD.withDefault emptyCountStatsRsp
+                                    |> updateStatsCountField field count
+                                    |> Success
+                          }
+                        , E.none
+                        )
+
+        GotMessageStatsCount req result ->
+            if not (isCurrentStatsCountRequest req model) then
+                ( model, E.none )
+
+            else
+                case result of
+                    Err e ->
+                        ( model
+                        , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження кількості повідомлень" e
+                        )
+
+                    Ok count ->
+                        let
+                            counts =
+                                RD.withDefault emptyCountStatsRsp model.counts
+                        in
+                        ( { model
+                            | counts =
+                                Success
+                                    { counts
+                                        | countOverall = count.countOverall
+                                        , countSelected = count.countSelected
+                                    }
+                          }
+                        , E.none
+                        )
+
+        GotUnitMatchStatsCount req result ->
+            if not (isCurrentStatsCountRequest req model) then
+                ( model, E.none )
+
+            else
+                case result of
+                    Err e ->
+                        ( model
+                        , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження збігів підрозділів" e
+                        )
+
+                    Ok count ->
+                        let
+                            counts =
+                                RD.withDefault emptyCountStatsRsp model.counts
+                        in
+                        ( { model
+                            | counts =
+                                Success
+                                    { counts
+                                        | unitsExactMatchesCount = count.exactMatchesCount
+                                        , unitsNonExactMatchesCount = count.nonExactMatchesCount
+                                    }
+                          }
+                        , E.none
+                        )
 
         GotStatsFreqs (Err e) ->
             ( model

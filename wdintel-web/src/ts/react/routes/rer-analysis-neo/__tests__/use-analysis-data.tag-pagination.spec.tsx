@@ -15,7 +15,6 @@ const api = vi.hoisted(() => ({
   fetchAnalysisCallsignRelations: vi.fn(),
   fetchAnalysisCallsignInfos: vi.fn(),
   fetchAnalysisCallsigns: vi.fn(),
-  fetchAnalysisCount: vi.fn(),
   fetchAnalysisCorrelatedFreqs: vi.fn(),
   fetchAnalysisFreqs: vi.fn(),
   fetchAnalysisGroups: vi.fn(),
@@ -27,9 +26,11 @@ const api = vi.hoisted(() => ({
   fetchAnalysisPosts: vi.fn(),
   fetchAnalysisReportTaskStatus: vi.fn(),
   fetchAnalysisSenders: vi.fn(),
+  fetchAnalysisStatsCount: vi.fn(),
   fetchAnalysisSummaryTable: vi.fn(),
   fetchAnalysisTags: vi.fn(),
   fetchAnalysisUnits: vi.fn(),
+  fetchAnalysisUnitMatchStatsCount: vi.fn(),
   fetchBgtaskStatusAndLogs: vi.fn(),
   fetchCurrentUser: vi.fn(),
   fetchFreqActivityDaily: vi.fn(),
@@ -166,7 +167,11 @@ describe('useAnalysisData tag pagination', () => {
     api.fetchAnalysisCallsignRelations.mockResolvedValue({ nodes: [], edges: [], freqs: [] });
     api.fetchAnalysisCallsignInfos.mockResolvedValue([]);
     api.fetchAnalysisCallsigns.mockResolvedValue({ callsigns: [] });
-    api.fetchAnalysisCount.mockResolvedValue({});
+    api.fetchAnalysisStatsCount.mockResolvedValue(0);
+    api.fetchAnalysisUnitMatchStatsCount.mockResolvedValue({
+      exactMatchesCount: 0,
+      nonExactMatchesCount: 0,
+    });
     api.fetchAnalysisCorrelatedFreqs.mockResolvedValue([]);
     api.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
     api.fetchAnalysisGroups.mockResolvedValue({ groups: [], groupNames: [] });
