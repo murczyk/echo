@@ -18,6 +18,7 @@ type Params = {
 };
 
 const MESSAGE_COUNTS_DEBOUNCE_MS = 200;
+const OVERALL_MESSAGE_COUNT_REFRESH_COALESCE_MS = 5_000;
 
 export function useAnalysisMessageCounts({
   deferInitialLoad,
@@ -34,6 +35,8 @@ export function useAnalysisMessageCounts({
   const [activeRequestKey, setActiveRequestKey] = useState<string | null>(null);
   const onErrorRef = useRef(onError);
   const onUnauthorizedRef = useRef(onUnauthorized);
+  const overallRefreshTimeoutRef = useRef<number | null>(null);
+  const overallRefreshAbortControllerRef = useRef<AbortController | null>(null);
   const messagesTotalRequestJson = JSON.stringify(
     buildInboxReq(queryState, optionsFreqValues, true),
   );
@@ -42,6 +45,26 @@ export function useAnalysisMessageCounts({
 
   onErrorRef.current = onError;
   onUnauthorizedRef.current = onUnauthorized;
+
+  const cancelScheduledOverallMessageCountRefresh = useCallback(() => {
+    if (overallRefreshTimeoutRef.current !== null) {
+      window.clearTimeout(overallRefreshTimeoutRef.current);
+      overallRefreshTimeoutRef.current = null;
+    }
+    overallRefreshAbortControllerRef.current?.abort();
+    overallRefreshAbortControllerRef.current = null;
+  }, []);
+
+  useEffect(
+    () => cancelScheduledOverallMessageCountRefresh,
+    [
+      cancelScheduledOverallMessageCountRefresh,
+      deferInitialLoad,
+      messagesOverallRequestJson,
+      messagesTotalRequestJson,
+      newestFirst,
+    ],
+  );
 
   useEffect(() => {
     if (deferInitialLoad) return;
@@ -102,8 +125,42 @@ export function useAnalysisMessageCounts({
   ]);
 
   const refreshMessageCounts = useCallback(() => {
+    cancelScheduledOverallMessageCountRefresh();
     setLoadVersion((current) => current + 1);
-  }, []);
+  }, [cancelScheduledOverallMessageCountRefresh]);
+  const scheduleOverallMessageCountRefresh = useCallback(() => {
+    if (deferInitialLoad || overallRefreshTimeoutRef.current !== null) {
+      return;
+    }
+
+    overallRefreshTimeoutRef.current = window.setTimeout(() => {
+      overallRefreshTimeoutRef.current = null;
+      const overallInboxReq = JSON.parse(messagesOverallRequestJson) as InboxMessagesReq | null;
+      if (isNullOrUndefined(overallInboxReq)) return;
+
+      overallRefreshAbortControllerRef.current?.abort();
+      const abortController = new AbortController();
+      overallRefreshAbortControllerRef.current = abortController;
+      const signal = abortController.signal;
+      void fetchInboxCount({ ...overallInboxReq, nolimit: true, newestFirst }, { signal })
+        .then((overallCount) => {
+          if (signal.aborted) return;
+          setMessagesOverallCount(overallCount.quantity);
+          if (messagesTotalRequestJson === messagesOverallRequestJson) {
+            setMessagesTotalCount(overallCount.quantity);
+          }
+        })
+        .catch((loadError: unknown) => {
+          if (signal.aborted || isAbortError(loadError)) return;
+          if (!onUnauthorizedRef.current(loadError)) onErrorRef.current(toErrorMessage(loadError));
+        })
+        .finally(() => {
+          if (overallRefreshAbortControllerRef.current === abortController) {
+            overallRefreshAbortControllerRef.current = null;
+          }
+        });
+    }, OVERALL_MESSAGE_COUNT_REFRESH_COALESCE_MS);
+  }, [deferInitialLoad, messagesOverallRequestJson, messagesTotalRequestJson, newestFirst]);
 
   return {
     messagesOverallCount,
@@ -111,5 +168,6 @@ export function useAnalysisMessageCounts({
     messagesTotalLoading:
       !deferInitialLoad && (messagesTotalLoading || activeRequestKey !== requestKey),
     refreshMessageCounts,
+    scheduleOverallMessageCountRefresh,
   };
 }

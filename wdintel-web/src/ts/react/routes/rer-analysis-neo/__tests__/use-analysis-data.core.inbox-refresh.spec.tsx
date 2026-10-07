@@ -21,6 +21,7 @@ const hoisted = vi.hoisted(() => ({
   loadMissingNetworksForMessages: vi.fn(),
   loadMessageComments: vi.fn(),
   refreshMessageCounts: vi.fn(),
+  scheduleOverallMessageCountRefresh: vi.fn(),
   reload: vi.fn(),
   onError: vi.fn(),
   onUnauthorized: vi.fn().mockReturnValue(false),
@@ -91,6 +92,7 @@ vi.mock('../use-analysis-message-list', () => ({
       messagesTotalCount: 0,
       messagesTotalLoading: false,
       refreshMessageCounts: hoisted.refreshMessageCounts,
+      scheduleOverallMessageCountRefresh: hoisted.scheduleOverallMessageCountRefresh,
       noMoreToLoad: false,
       nolimitShown: false,
       pageIndex: 0,
@@ -324,6 +326,7 @@ beforeEach(() => {
   hoisted.loadMessageComments.mockReset();
   hoisted.loadMessageComments.mockResolvedValue(undefined);
   hoisted.refreshMessageCounts.mockReset();
+  hoisted.scheduleOverallMessageCountRefresh.mockReset();
   hoisted.reload.mockReset();
   hoisted.reload.mockResolvedValue(undefined);
   hoisted.onInboxChangedMessageIds = vi.fn();
@@ -939,6 +942,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
     expect(hoisted.refreshMessageCounts).not.toHaveBeenCalled();
+    expect(hoisted.scheduleOverallMessageCountRefresh).toHaveBeenCalledTimes(1);
   });
 
   it('checks unseen ids against the messages-only media filter', async () => {
