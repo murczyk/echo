@@ -1,3 +1,5 @@
+import { FileCitationChip } from './FileCitationChip';
+import { fileCitationHref } from '../../services/api/device-documents';
 import dayjs from 'dayjs';
 import {
   createContext,
@@ -15,6 +17,7 @@ import remarkGfm from 'remark-gfm';
 import type {
   AiAgentMapSummary,
   AiAgentMessageCitation,
+  AiAgentFileCitation,
   InboxMessage,
   SignalGroupEntry,
 } from '../../../../Bindings';
@@ -76,6 +79,7 @@ function resolveMessages(
 
 const CitationContext = createContext<{
   registered: Map<string, AiAgentMessageCitation>;
+  files: Map<string, AiAgentFileCitation>;
   maps: Map<string, AiAgentMapSummary>;
   resolved: Map<number, ResolvedCitation>;
   failed: boolean;
@@ -95,6 +99,10 @@ function CitationAnchor({ href, children: label }: ComponentProps<'a'>) {
     );
   }
 
+  const file = context.files.get(href ?? '');
+  if (file) return <FileCitationChip source={file} />;
+  if (href?.startsWith('/devices/') && href.includes('?file='))
+    return <EchoChip label="Неперевірене джерело" />;
   const citation = registered.get(href ?? '');
   if (!citation) {
     if (href?.startsWith('/rer-analysis-neo?')) return <EchoChip label="Неперевірене джерело" />;
@@ -132,10 +140,12 @@ const MARKDOWN_COMPONENTS = { a: CitationAnchor };
 export function CitationMarkdown({
   children,
   citations = EMPTY_CITATIONS,
+  fileCitations = [],
   maps = [],
 }: {
   children: string;
   citations?: AiAgentMessageCitation[];
+  fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
 }) {
   const { notify } = usePowerSnackbar();
@@ -230,6 +240,7 @@ export function CitationMarkdown({
       <CitationContext.Provider
         value={{
           registered,
+          files: new Map(fileCitations.map((source) => [fileCitationHref(source), source])),
           resolved,
           failed,
           refresh,

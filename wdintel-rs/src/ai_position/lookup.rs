@@ -32,9 +32,24 @@ pub async fn lookup_positions(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    Ok(Json(
-        lookup(&env, req.into_inner(), groups).await.context(h!())?,
-    ))
+    let mut response =
+        lookup(&env, req.0.clone(), groups).await.context(h!())?;
+    match crate::devices::documents::positions::lookup(&env, login, &req).await
+    {
+        Ok(files) => response.file_mentions = files,
+        Err(error) => {
+            crate::types::error!("device position lookup: {error:#}");
+            response
+                .note
+                .push_str(" Пошук у файлах пристроїв тимчасово недоступний.");
+        }
+    }
+    response.evidence_groups =
+        crate::devices::documents::evidence::group(&response);
+    if !response.file_mentions.is_empty() {
+        response.note.push_str(" Файли пристроїв містять додаткові джерела; дата спостереження невідома. Групи доказів об’єднані за поточними РВ; приватні групи ізольовані. Невідомі дати не впливають на давність відомого розташування. Цитуйте файл і розділ.");
+    }
+    Ok(Json(response))
 }
 
 fn iso(millis: i64) -> String {
@@ -146,6 +161,8 @@ async fn lookup(
         (true, true, false) => "Координат немає; згадки без координат можуть дати контекст. Прочитайте їх за messageId.",
     };
     Ok(AiPositionLookupRsp {
+        evidence_groups: vec![],
+        file_mentions: vec![],
         known: known
             .into_iter()
             .map(|item| AiPositionLookupKnown {
@@ -159,6 +176,8 @@ async fn lookup(
                 fact_count: item.fact_count,
                 first_fact_at: iso(item.first_fact_at),
                 last_fact_at: iso(item.last_fact_at),
+                scope_kind: item.scope_kind.clone(),
+                scope_key: item.scope_key.clone(),
                 scope: format!(
                     "{} {}",
                     if item.scope_kind == "aor" {

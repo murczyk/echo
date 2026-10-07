@@ -1,5 +1,19 @@
 {
   "migrations": {
+    "echo:m20261006_164921_sigint_inbox_item_freq_datetime_index": {
+      "changes": []
+    },
+    "echo:m20261006_150248_network_freq_exact_count_index": {
+      "changes": []
+    },
+    "echo:m20261006_150705_ai_agent_chat_webhook": {
+      "changes": [
+        { "table": "public.ai_agent_settings", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261006_082251_device_document_settings": {
+      "changes": [{ "table": "public.device_document_settings", "strategy": "excluded" }]
+    },
     "echo:m20261006_075657_ai_gov_ua_settings": {
       "changes": [
         { "table": "public.ai_gov_ua_settings", "strategy": "excluded" }

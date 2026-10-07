@@ -362,10 +362,19 @@ impl<'p, 'a> PlaceGrid<'p, 'a> {
 }
 
 fn distance_m(a: &Fact, b: &Fact) -> f64 {
+    coordinate_distance_m(a.lat, a.lng, b.lat, b.lng)
+}
+
+pub(crate) fn coordinate_distance_m(
+    lat1: f64,
+    lng1: f64,
+    lat2: f64,
+    lng2: f64,
+) -> f64 {
     const EARTH_RADIUS_M: f64 = 6_371_000.0;
-    let (lat1, lat2) = (a.lat.to_radians(), b.lat.to_radians());
+    let (lat1, lat2) = (lat1.to_radians(), lat2.to_radians());
     let dlat = lat2 - lat1;
-    let dlng = (b.lng - a.lng).to_radians();
+    let dlng = (lng2 - lng1).to_radians();
     let h = (dlat / 2.0).sin().powi(2)
         + lat1.cos() * lat2.cos() * (dlng / 2.0).sin().powi(2);
     2.0 * EARTH_RADIUS_M * h.sqrt().asin()

@@ -385,7 +385,7 @@ pub fn html_package(name: &str, html: &str) -> anyhow::Result<Package> {
     Ok(package)
 }
 
-fn append_html(
+pub(crate) fn append_html(
     package: &mut Package,
     name: &str,
     locator: &str,
@@ -450,7 +450,7 @@ pub async fn source_bytes(
     Ok(bytes)
 }
 
-pub(super) async fn bounded_response(
+pub(crate) async fn bounded_response(
     response: reqwest::Response,
 ) -> anyhow::Result<Vec<u8>> {
     let mut stream = response.bytes_stream();
@@ -465,7 +465,7 @@ pub(super) async fn bounded_response(
     Ok(bytes)
 }
 
-pub(super) fn unpack(bytes: &[u8]) -> anyhow::Result<Package> {
+pub(crate) fn unpack(bytes: &[u8]) -> anyhow::Result<Package> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).c(h!())?;
     let manifest = read_entry(&mut archive, "manifest.json").c(h!())?;
     let manifest: serde_json::Value =

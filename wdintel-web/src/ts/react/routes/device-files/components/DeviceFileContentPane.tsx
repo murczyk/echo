@@ -1,3 +1,4 @@
+import { DeviceDocumentDetails } from './DeviceDocumentPreview';
 import FolderZipOutlinedIcon from '@mui/icons-material/FolderZipOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import PendingActionsOutlinedIcon from '@mui/icons-material/PendingActionsOutlined';
@@ -202,6 +203,17 @@ export function DeviceFileContentPane({
             mobile={mobile}
           />
           <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-echo-background/50">
+            {file.fileId && file.revision != null && (
+              <DeviceDocumentDetails
+                source={{
+                  deviceId,
+                  fileId: file.fileId,
+                  revision: file.revision,
+                  extractionRevision: null,
+                  section: null,
+                }}
+              />
+            )}
             <SelectedFileContent file={file} href={href} />
           </div>
         </PowerSnackbarProvider>

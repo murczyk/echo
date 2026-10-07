@@ -76,7 +76,7 @@ pub async fn discard_pending_in_transaction(
 pub async fn process_one(env: &Env) -> Result<bool, AppError> {
     let settings = access::settings(&env.dbx).await?;
     if !settings.mattermost_chat_enabled
-        || settings.mattermost_webhook_url.is_none()
+        || settings.mattermost_chat_webhook_url.is_none()
     {
         return Ok(false);
     }
@@ -84,7 +84,7 @@ pub async fn process_one(env: &Env) -> Result<bool, AppError> {
         return Ok(false);
     };
     let settings = access::settings(&env.dbx).await?;
-    let Some(webhook) = settings.mattermost_webhook_url else {
+    let Some(webhook) = settings.mattermost_chat_webhook_url else {
         discard_claim(env, notification).await?;
         return Ok(true);
     };
@@ -116,7 +116,7 @@ with candidate as (
           select 1 from ai_agent_settings settings
           where settings.id = 1
             and settings.mattermost_chat_enabled
-            and settings.mattermost_webhook_url is not null
+            and settings.mattermost_chat_webhook_url is not null
       )
     order by notification.next_attempt_at, notification.request_id
     for update skip locked
@@ -331,6 +331,116 @@ fn sanitize_character(character: char) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn issue_3682_chat_notifications_require_the_dialogue_hook() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let saved = access::settings(&env.dbx).await.unwrap();
+        let mut settings = saved.clone().into_active_model();
+        settings.mattermost_chat_enabled = Set(true);
+        settings.mattermost_webhook_url =
+            Set(Some("https://security.example/hooks/security".into()));
+        settings.mattermost_chat_webhook_url = Set(None);
+        settings.update(&env.dbx).await.unwrap();
+        let request = notification_request(&env).await;
+        let txn = env.dbx.begin().await.unwrap();
+        enqueue_in_transaction(&txn, request.id, true)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+        assert!(claim_notification(&env).await.unwrap().is_none());
+        let mut settings = access::settings(&env.dbx)
+            .await
+            .unwrap()
+            .into_active_model();
+        settings.mattermost_webhook_url = Set(None);
+        settings.mattermost_chat_webhook_url =
+            Set(Some("https://dialogues.example/hooks/chat".into()));
+        settings.update(&env.dbx).await.unwrap();
+        assert_eq!(
+            claim_notification(&env).await.unwrap().unwrap().request_id,
+            request.id,
+        );
+        remove_notification_request(&env, &request).await;
+        let mut settings = access::settings(&env.dbx)
+            .await
+            .unwrap()
+            .into_active_model();
+        settings.mattermost_chat_enabled = Set(saved.mattermost_chat_enabled);
+        settings.mattermost_webhook_url = Set(saved.mattermost_webhook_url);
+        settings.mattermost_chat_webhook_url =
+            Set(saved.mattermost_chat_webhook_url);
+        settings.update(&env.dbx).await.unwrap();
+    }
+
+    async fn notification_request(env: &Env) -> ai_agent_request::Model {
+        use crate::entities::ai_agent_conversation;
+        let human =
+            crate::functest::tests::mk_login(&env.dbx, Default::default())
+                .await
+                .unwrap();
+        let ai_engine = ai_engine::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            name: Set(format!("hook-isolation-{}", Uuid::now_v7())),
+            url: Set("https://inference.example/v1".into()),
+            model_name: Set("test".into()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let conversation = ai_agent_conversation::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            human_login_id: Set(human.id),
+            ai_engine_id: Set(ai_engine.id),
+            title: Set("Hook isolation regression".into()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        ai_agent_request::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            conversation_id: Set(conversation.id),
+            human_login_id: Set(human.id),
+            ai_engine_id: Set(ai_engine.id),
+            prompt: Set("Test".into()),
+            state: Set("completed".into()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn remove_notification_request(
+        env: &Env,
+        request: &ai_agent_request::Model,
+    ) {
+        use crate::entities::ai_agent_conversation;
+        ai_agent_chat_mattermost_notification::Entity::delete_by_id(request.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        ai_agent_request::Entity::delete_by_id(request.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        ai_agent_conversation::Entity::delete_by_id(request.conversation_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        ai_engine::Entity::delete_by_id(request.ai_engine_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        login::Entity::delete_by_id(request.human_login_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
 
     #[test]
     fn payload_includes_chat_prompt_and_audit_link() {

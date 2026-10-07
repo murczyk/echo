@@ -727,27 +727,28 @@ fn extract_generic_body_datetime_with_precision(
         return Ok(None);
     };
 
-    Ok(match lnow.timezone().from_local_datetime(&dt) {
+    let datetime = match lnow.timezone().from_local_datetime(&dt) {
         chrono::offset::LocalResult::None => {
             println!(
                 "> warning: couldn't convert datetime to configured timezone: {dt:?}; body: {body}"
             );
-            None
+            return Ok(None);
         }
-        chrono::offset::LocalResult::Single(datetime) => {
-            Some(ParsedMessageDatetime {
-                datetime,
-                has_time,
-                was_future_normalized,
-            })
-        }
+        chrono::offset::LocalResult::Single(datetime) => datetime,
         chrono::offset::LocalResult::Ambiguous(v1, v2) => {
-            println!(
-                "> warning: couldn't convert datetime to configured timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}"
-            );
-            None
+            let (older, newer) = if v1 < v2 { (v1, v2) } else { (v2, v1) };
+            if newer > lnow {
+                older
+            } else {
+                newer
+            }
         }
-    })
+    };
+    Ok(Some(ParsedMessageDatetime {
+        datetime,
+        has_time,
+        was_future_normalized,
+    }))
 }
 
 fn extract_far_future_datetime_with_current_date(

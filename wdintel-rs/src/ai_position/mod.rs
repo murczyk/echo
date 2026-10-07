@@ -2,7 +2,7 @@
 //! summaries, and the coordinates the text ties to them. See README.md.
 
 pub mod eval;
-mod extract;
+pub(crate) mod extract;
 pub mod feedback;
 pub mod knowledge;
 pub mod list;

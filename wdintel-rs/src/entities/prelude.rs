@@ -66,6 +66,7 @@ pub use super::delta_kv::Entity as DeltaKv;
 pub use super::delta_login::Entity as DeltaLogin;
 pub use super::device::Entity as Device;
 pub use super::device_aor::Entity as DeviceAor;
+pub use super::device_document_settings::Entity as DeviceDocumentSettings;
 pub use super::device_name::Entity as DeviceName;
 pub use super::device_settings::Entity as DeviceSettings;
 pub use super::echo_account::Entity as EchoAccount;
