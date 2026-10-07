@@ -4591,6 +4591,21 @@ async fn rer_analysis_callsign_page_paginates_full_order_and_escapes_literal_sea
     )
     .await
     .is_err());
+    for cursor in ["!", "e30"] {
+        let error = fetch_callsign_page_for_req(
+            &fixture.env,
+            AnalysisCallsignPageReq {
+                cursor: Some(cursor.to_owned()),
+                ..page.clone()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            crate::error::AppError::Form(errors) if errors.contains_key("cursor")
+        ));
+    }
 
     let count_page = AnalysisCallsignPageReq {
         order: AnalysisCallsignPageOrder::CountDesc,
@@ -4601,6 +4616,15 @@ async fn rer_analysis_callsign_page_paginates_full_order_and_escapes_literal_sea
             .await
             .unwrap();
     assert_eq!(count_first.entries[0].label, "PAGER-ALPHA");
+    assert_eq!(count_first.entries[0].count, 2);
+    assert_eq!(
+        count_first.entries[0]
+            .values
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["PAGER-ALPHA".to_string(), "pager-alpha".to_string()])
+    );
     let count_second = fetch_callsign_page_for_req(
         &fixture.env,
         AnalysisCallsignPageReq {
@@ -4611,6 +4635,8 @@ async fn rer_analysis_callsign_page_paginates_full_order_and_escapes_literal_sea
     .await
     .unwrap();
     assert_eq!(count_second.entries[0].label, "A-PAGER");
+    assert_eq!(count_second.entries[0].count, 1);
+    assert_eq!(count_second.entries[0].values, vec!["A-PAGER"]);
 
     let mut callsign_facet_changed = count_page;
     callsign_facet_changed.req.selected_callsigns =
@@ -4627,6 +4653,10 @@ async fn rer_analysis_callsign_page_paginates_full_order_and_escapes_literal_sea
     assert_eq!(
         count_second_with_callsign_facet_changed.entries[0].label,
         "A-PAGER"
+    );
+    assert_eq!(
+        count_second_with_callsign_facet_changed.entries,
+        count_second.entries
     );
 }
 

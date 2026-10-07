@@ -53,6 +53,8 @@ export function useAnalysisTopSidebarData({
   const loadTopSidebarData = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
     if (isNullOrUndefined(analysisReq)) {
+      rightSidebarAbortControllerRef.current?.abort();
+      rightSidebarAbortControllerRef.current = null;
       rightSidebarRequestRef.current += 1;
       rightSidebarRequestKeyRef.current = null;
       setTopCallsigns([]);
@@ -60,6 +62,7 @@ export function useAnalysisTopSidebarData({
       setTopLocations([]);
       setTopUnits([]);
       setRightSidebarLoading(false);
+      setRightSidebarOutdated(false);
       return;
     }
 

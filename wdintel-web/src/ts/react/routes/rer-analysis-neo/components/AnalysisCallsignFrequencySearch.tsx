@@ -14,7 +14,7 @@ import {
   Stack,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   AnalysisCallsignFrequencyMatch,
@@ -23,6 +23,7 @@ import type {
 } from '../../../../../Bindings';
 import { CompactText, CompactTitle } from '../../../components/CompactTypography';
 import { SearchableMultiOptionAutocomplete } from '../../../components/SearchableMultiOptionAutocomplete';
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import {
   normalizeCallsignFilterValues,
   normalizeCallsignLookupValue,
@@ -167,6 +168,7 @@ export function AnalysisCallsignFrequencySearch({
   onToggleFreq,
   selectedFreqs,
 }: Props) {
+  const { notify } = useOptionalPowerSnackbar();
   const headingId = useId().replace(/:/g, '-');
   const [collapsed, setCollapsed] = useState(true);
   const [selectedCallsigns, setSelectedCallsigns] = useState<string[]>([]);
@@ -177,10 +179,22 @@ export function AnalysisCallsignFrequencySearch({
   const [resultsScope, setResultsScope] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const requestAbortRef = useRef<AbortController | null>(null);
+  const notifyCallsignLoadError = useCallback(
+    (loadError: unknown) => {
+      notify({
+        severity: 'error',
+        message:
+          loadError instanceof Error && loadError.message
+            ? loadError.message
+            : 'Не вдалося завантажити позивні.',
+      });
+    },
+    [notify],
+  );
   const suggestions = useCallsignPage({
     active: !collapsed,
     analysisReq,
-    onError: () => undefined,
+    onError: notifyCallsignLoadError,
   });
   const suggestionError =
     suggestions.error instanceof Error

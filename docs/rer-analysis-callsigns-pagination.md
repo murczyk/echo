@@ -33,10 +33,14 @@ an exact match cannot cause later label-ordered results to be skipped.
 
 The server prepares the effective analysis scope with the callsign facet
 removed, then expands raw callsign variants, filters a nonempty search before
-grouping, and calculates each normalized label's exact message count. The
-cursor seek is applied to those grouped count/order keys. This keeps every
-returned label's count and raw variants complete, but `count_desc` necessarily
-aggregates the whole effective scope before it can rank a page. For later
+grouping, and calculates each normalized label's exact message count. For
+`count_desc`, it first aggregates exact `(normalized label, raw spelling)`
+pairs, then sums those pair counts and constructs the raw-variant array for
+each label. This shares the occurrence stream between counts and variants and
+avoids the former second full candidate scan. The cursor seek is applied to
+those grouped count/order keys. It keeps every returned label's count and raw
+variants complete, but `count_desc` necessarily aggregates the whole effective
+scope before it can rank a page. For later
 `match_then_name` pages, the builder can exclude whole normalized labels that
 sort before the cursor before grouping. That is safe because no excluded label
 can occur on a later page. It must not exclude individual raw callsign rows for
@@ -55,16 +59,25 @@ than bounded database work.
 ## Local plan evidence and remaining validation gap
 
 Production-builder measurements on an isolated synthetic fixture with
-1.2 million messages and 100,000 normalized labels took 3.43–3.61 seconds
-for broad first pages and 3.35–3.58 seconds for later pages. Both repeated
-aggregation over 2.28 million candidate rows. The loader refactor preserves
-this query shape; these measurements establish a baseline, not a first-page
-`count_desc` speedup. The later-search label boundary reduces only labels before
-the cursor before aggregation. It has not established a selective, bounded
-access path across the large message and callsign relations; current plans still
-scan the complete filtered message scope. The loader split into preparation,
-statement construction, execution, and response helpers improves
-maintainability, not this database-work bound.
+1.2 million messages and 100,000 normalized labels used alternating
+baseline/candidate runs with three observations per query and page. Broad
+first pages took 3.70–3.88 seconds before and 2.96–3.12 seconds after the
+two-stage aggregation; broad later pages took 3.50–3.65 and 3.12–3.20 seconds.
+Median execution time improved by 20% and 14%, respectively. These are
+synthetic measurements without resetting PostgreSQL buffers. The new broad
+plan still reads 2.28
+million candidate occurrences, but reduces temporary I/O from 10,825 read /
+10,836 written blocks to 2,025 / 3,140 by collapsing them to 120,570
+label/spelling pairs before array construction. `match_then_name` retains its
+previous shape: the label boundary excludes only labels that cannot occur on a
+later page, while complete counts and variants remain calculated for retained
+labels. It has not established a selective, bounded access path across the
+large message and callsign relations; current plans still scan the complete
+filtered message scope. Raw baseline and integrated captures remain outside the
+repository under `/tmp/echo-3452-callsign-plans-20261007T082548Z`,
+`/tmp/echo-3452-callsign-two-stage-integrated-20261007T135900Z`, and
+`/tmp/echo-3452-callsign-paired-20261007T142759Z`. The paired capture retains
+both an initial run with a sharp timing shift and the repeated comparison.
 Raw statements and plans are kept outside the repository.
 
 The ignored `capture_callsign_page_production_builder_plans` test captures

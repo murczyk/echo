@@ -15,7 +15,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { MouseEvent } from 'react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import type { CountStatsRsp } from '../../../../../Bindings';
 
@@ -27,6 +27,7 @@ import { AnalysisFilterField } from './AnalysisFilterField';
 import { AnalysisDeviceNamesFilter } from './AnalysisDeviceNamesFilter';
 import { buildAnalysisReq } from '../helpers';
 import { useCallsignPage } from '../use-callsign-page';
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import type { AnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
 import {
   compactCheckboxLabelSx,
@@ -100,6 +101,7 @@ function CallsignFilterField({
   value: string[];
   onChange: (callsigns: string[]) => void;
 }) {
+  const { notify } = useOptionalPowerSnackbar();
   const analysisReq = useMemo(
     () =>
       buildAnalysisReq(
@@ -108,10 +110,22 @@ function CallsignFilterField({
       ),
     [options.freqs, queryState],
   );
+  const notifyCallsignLoadError = useCallback(
+    (loadError: unknown) => {
+      notify({
+        severity: 'error',
+        message:
+          loadError instanceof Error && loadError.message
+            ? loadError.message
+            : 'Не вдалося завантажити позивні.',
+      });
+    },
+    [notify],
+  );
   const page = useCallsignPage({
     active,
     analysisReq,
-    onError: () => undefined,
+    onError: notifyCallsignLoadError,
   });
   const error =
     page.error instanceof Error

@@ -14,6 +14,7 @@ type SystemSettingsCurrentFixture = {
   rer_duty_poll_interval_sec: number;
   rer_duty_test_replay_interval_sec: number;
   short_url_enabled: boolean;
+  rer_report_enabled: boolean;
   support_non_rer_interceptions: boolean;
   default_neo_analysis: boolean;
   autofix_echoim_missing_messages: boolean;
@@ -61,6 +62,7 @@ export function systemSettingsCurrentResponse({
     rer_duty_poll_interval_sec: 1,
     rer_duty_test_replay_interval_sec: 1,
     short_url_enabled: shortUrlEnabled,
+    rer_report_enabled: false,
     support_non_rer_interceptions: false,
     default_neo_analysis: false,
     autofix_echoim_missing_messages: false,

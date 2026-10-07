@@ -51,6 +51,7 @@ const req: AnalysisStatsReq = {
 type Result = ReturnType<typeof useCallsignPage>;
 let root: Root | null = null;
 let latest: Result | null = null;
+let onError = vi.fn();
 
 function Harness({
   active = true,
@@ -64,7 +65,7 @@ function Harness({
   latest = useCallsignPage({
     active,
     analysisReq: { ...req, search, selectedCallsigns: callsigns },
-    onError: vi.fn(),
+    onError,
   });
   return null;
 }
@@ -77,6 +78,7 @@ beforeEach(() => {
     hasMore: true,
     nextCursor: 'next',
   });
+  onError = vi.fn();
   const container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -152,6 +154,19 @@ describe('useCallsignPage', () => {
     expect(latest?.entries).toEqual([]);
   });
 
+  it('does not notify for an aborted callsign request', async () => {
+    let rejectRequest!: (reason: unknown) => void;
+    api.fetchAnalysisCallsignPage.mockImplementationOnce(
+      () => new Promise((_, reject) => (rejectRequest = reject)),
+    );
+    await act(async () => root?.render(createElement(Harness)));
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    await act(async () => root?.render(createElement(Harness, { active: false })));
+    await act(async () => rejectRequest(new DOMException('Aborted', 'AbortError')));
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it('keeps the displayed page and permits retry after a next-page failure', async () => {
     api.fetchAnalysisCallsignPage
       .mockResolvedValueOnce({
@@ -171,6 +186,8 @@ describe('useCallsignPage', () => {
     await act(async () => latest?.loadNextPage());
     expect(latest?.entries.map((entry) => entry.label)).toEqual(['ALPHA']);
     expect(latest?.error).toBeInstanceOf(Error);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'next page failed' }));
 
     await act(async () => latest?.retry());
     expect(latest?.entries.map((entry) => entry.label)).toEqual(['BRAVO']);

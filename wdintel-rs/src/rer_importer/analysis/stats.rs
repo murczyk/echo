@@ -3537,19 +3537,23 @@ fn decode_callsign_page_cursor(
             "Некоректний курсор сторінки".to_owned(),
         )])));
     }
-    let bytes = URL_SAFE_NO_PAD.decode(cursor).map_err(|_| {
-        AppError::Form(BTreeMap::from([(
-            "cursor".to_owned(),
-            "Некоректний курсор сторінки".to_owned(),
-        )]))
-    })?;
-    let cursor: CallsignPageCursor =
-        serde_json::from_slice(&bytes).map_err(|_| {
+    let bytes = URL_SAFE_NO_PAD
+        .decode(cursor)
+        .map_err(|_| {
             AppError::Form(BTreeMap::from([(
                 "cursor".to_owned(),
                 "Некоректний курсор сторінки".to_owned(),
             )]))
-        })?;
+        })
+        .c(h!())?;
+    let cursor: CallsignPageCursor = serde_json::from_slice(&bytes)
+        .map_err(|_| {
+            AppError::Form(BTreeMap::from([(
+                "cursor".to_owned(),
+                "Некоректний курсор сторінки".to_owned(),
+            )]))
+        })
+        .c(h!())?;
     if cursor.scope != scope {
         return Err(AppError::Form(BTreeMap::from([(
             "cursor".to_owned(),
@@ -3706,7 +3710,79 @@ fn build_callsign_page_statement(
         crate::inbox::callsigns::postgres_effective_callsign_ctes(
             &filtered_items.sql,
         );
-    let sql = format!(
+    let sql = match page_req.order {
+        AnalysisCallsignPageOrder::CountDesc => {
+            build_count_desc_callsign_page_sql(
+                &callsign_ctes,
+                &candidate_filter,
+                &seek,
+                &order,
+                prepared.page_size + 1,
+            )
+        }
+        AnalysisCallsignPageOrder::MatchThenName => {
+            build_match_then_name_callsign_page_sql(
+                &callsign_ctes,
+                &candidate_filter,
+                &seek,
+                &order,
+                prepared.page_size + 1,
+            )
+        }
+    };
+    Ok(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        sql,
+        values,
+    ))
+}
+
+fn build_count_desc_callsign_page_sql(
+    callsign_ctes: &str,
+    candidate_filter: &str,
+    seek: &str,
+    order: &str,
+    page_limit: u64,
+) -> String {
+    format!(
+        r#"
+        {callsign_ctes}, candidate_callsigns AS (
+            SELECT * FROM all_callsigns
+            WHERE trim(callsign) <> '' {candidate_filter}
+        ), variant_counts AS (
+            SELECT upper(trim(callsign)) AS label,
+                   callsign,
+                   COUNT(*)::bigint AS variant_count
+            FROM candidate_callsigns
+            GROUP BY upper(trim(callsign)), callsign
+        ), label_results AS (
+            SELECT label,
+                   SUM(variant_count)::bigint AS count,
+                   array_agg(callsign ORDER BY callsign) AS callsign_values
+            FROM variant_counts
+            GROUP BY label
+        ), paged AS (
+            SELECT label, callsign_values, count FROM label_results
+            WHERE TRUE
+            {seek}
+            ORDER BY {order}
+            LIMIT {page_limit}
+        )
+        SELECT label, callsign_values, count
+        FROM paged
+        ORDER BY {order}
+        "#,
+    )
+}
+
+fn build_match_then_name_callsign_page_sql(
+    callsign_ctes: &str,
+    candidate_filter: &str,
+    seek: &str,
+    order: &str,
+    page_limit: u64,
+) -> String {
+    format!(
         r#"
         {callsign_ctes}, candidate_callsigns AS (
             SELECT * FROM all_callsigns
@@ -3721,7 +3797,7 @@ fn build_callsign_page_statement(
             WHERE TRUE
             {seek}
             ORDER BY {order}
-            LIMIT {}
+            LIMIT {page_limit}
         )
         SELECT paged.label,
                array_agg(DISTINCT candidate_callsigns.callsign ORDER BY candidate_callsigns.callsign) AS callsign_values,
@@ -3732,13 +3808,7 @@ fn build_callsign_page_statement(
         GROUP BY paged.label, paged.count
         ORDER BY {order}
         "#,
-        prepared.page_size + 1
-    );
-    Ok(Statement::from_sql_and_values(
-        DbBackend::Postgres,
-        sql,
-        values,
-    ))
+    )
 }
 
 #[cfg(test)]

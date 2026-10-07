@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const callsignPage = vi.hoisted(() => ({
+  onError: undefined as ((error: unknown) => void) | undefined,
   value: {
     canRetry: false,
     entries: [],
@@ -25,9 +26,18 @@ const callsignPage = vi.hoisted(() => ({
     stale: false,
   },
 }));
+const snackbar = vi.hoisted(() => ({ notify: vi.fn() }));
 
 vi.mock('../../shared/RadioFeatures', () => ({ useRadioFeatures: () => false }));
-vi.mock('../../use-callsign-page', () => ({ useCallsignPage: () => callsignPage.value }));
+vi.mock('../../use-callsign-page', () => ({
+  useCallsignPage: ({ onError }: { onError: (error: unknown) => void }) => {
+    callsignPage.onError = onError;
+    return callsignPage.value;
+  },
+}));
+vi.mock('../../../../components/PowerSnackbar', () => ({
+  useOptionalPowerSnackbar: () => snackbar,
+}));
 
 import { AnalysisCallsignsPane } from '../AnalysisCallsignsPane';
 
@@ -37,6 +47,35 @@ describe('AnalysisCallsignsPane', () => {
   afterEach(() => {
     act(() => root?.unmount());
     root = null;
+    snackbar.notify.mockReset();
+  });
+
+  it('forwards callsign loading failures to the snackbar once', async () => {
+    const container = document.createElement('div');
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(
+        <AnalysisCallsignsPane
+          analysisReq={null}
+          onAddCallsign={vi.fn()}
+          onAddFreq={vi.fn()}
+          onClearCallsign={vi.fn()}
+          onRemoveCallsign={vi.fn()}
+          onSearchFrequencyMatches={vi.fn()}
+          onToggleCallsign={vi.fn()}
+          onToggleFreq={vi.fn()}
+          selectedCallsigns={[]}
+          selectedFreqs={[]}
+        />,
+      ),
+    );
+
+    act(() => callsignPage.onError?.(new Error('callsign load failed')));
+    expect(snackbar.notify).toHaveBeenCalledTimes(1);
+    expect(snackbar.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'callsign load failed',
+    });
   });
 
   it('retains normalized selected groups outside the current page and removes one group only', async () => {

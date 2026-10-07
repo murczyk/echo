@@ -105,6 +105,41 @@ test.describe('@smoke @regression', () => {
     await page.screenshot({ path: test.info().outputPath('callsigns-populated-dark-narrow.png') });
   });
 
+  test('@regression shows callsign load failures in a toast and keeps retry available', async ({
+    page,
+  }) => {
+    let requests = 0;
+    await setupAnalysisNeoPage(page);
+    await page.route('**/api/rer/analysis/callsigns-page', async (route) => {
+      requests += 1;
+      if (requests === 1) {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'Помилка завантаження позивних.' }),
+        });
+        return;
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          entries: [{ value: 'Alpha', label: 'ALPHA', values: ['Alpha'], count: 1 }],
+          has_more: false,
+          next_cursor: null,
+        }),
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+    await page.getByRole('button', { name: 'Розгорнути праву панель' }).click();
+    await page.getByRole('tab', { name: 'Позивні' }).click();
+
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Помилка завантаження позивних.' }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Повторити' }).click();
+    await expect(page.getByRole('button', { name: 'ALPHA 1 повідомлень' })).toBeVisible();
+  });
+
   test('@regression keeps callsign pagination progress visible at the scrolled footer', async ({
     page,
   }, testInfo) => {

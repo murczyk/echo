@@ -19,10 +19,11 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCallsignPage } from '../use-callsign-page';
 import { PowerIconButton } from '../../../components/PowerIconButton';
 import { PowerChip } from '../../../components/PowerChip';
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import {
   normalizeCallsignFilterValues,
@@ -59,10 +60,23 @@ export function AnalysisCallsignsPane({
   onToggleFreq,
 }: Props) {
   const radioFeaturesAllowed = useRadioFeatures();
+  const { notify } = useOptionalPowerSnackbar();
+  const notifyCallsignLoadError = useCallback(
+    (loadError: unknown) => {
+      notify({
+        severity: 'error',
+        message:
+          loadError instanceof Error && loadError.message
+            ? loadError.message
+            : 'Не вдалося завантажити позивні.',
+      });
+    },
+    [notify],
+  );
   const page = useCallsignPage({
     active: true,
     analysisReq,
-    onError: () => undefined,
+    onError: notifyCallsignLoadError,
   });
   const error =
     page.error instanceof Error
