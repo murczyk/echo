@@ -140,6 +140,155 @@ test.describe('@smoke @regression', () => {
     await expect(page.getByRole('button', { name: 'ALPHA 1 повідомлень' })).toBeVisible();
   });
 
+  test('@regression completes empty left callsign searches and matches normalized selections', async ({
+    page,
+  }) => {
+    const requests: Array<{ query?: string }> = [];
+    await setupAnalysisNeoPage(page, {
+      callsignPageResponse: ({ query }) => {
+        requests.push({ query });
+        return query === 'alpha'
+          ? {
+              entries: [{ value: 'Alpha', label: 'ALPHA', values: ['Alpha', 'alpha'], count: 2 }],
+              has_more: false,
+              next_cursor: null,
+            }
+          : { entries: [], has_more: false, next_cursor: null };
+      },
+    });
+    await page.goto('/rer-analysis-neo');
+    await page.getByRole('button', { name: /^Позивні 0$/ }).click();
+    const callsignInput = page.getByRole('combobox', { name: 'Позивні' });
+
+    await callsignInput.fill('none');
+    await expect(page.getByText('Завантаження…')).toBeVisible();
+    await expect(page.getByText('Немає варіантів')).toBeVisible();
+
+    await callsignInput.press('Control+A');
+    await callsignInput.type('alpha');
+    await expect.poll(() => requests.some((request) => request.query === 'alpha')).toBe(true);
+    const alphaOption = page.getByRole('option', { name: /ALPHA/ });
+    await expect(alphaOption).toBeVisible();
+    await alphaOption.click();
+    await page.keyboard.press('Escape');
+    const selectedAlpha = page.locator('.MuiChip-root').filter({ hasText: 'ALPHA' });
+    await expect(selectedAlpha).toHaveCount(1);
+
+    await callsignInput.click();
+    await expect(alphaOption).toHaveAttribute('aria-selected', 'true');
+    await alphaOption.click();
+    await page.keyboard.press('Escape');
+    await expect(selectedAlpha).toHaveCount(0);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3452
+  test('@regression preserves left callsign search during keyboard pagination', async ({
+    page,
+  }) => {
+    const requests: Array<{ query?: string; cursor?: string | null }> = [];
+    await setupAnalysisNeoPage(page, {
+      callsignPageResponse: (request) => {
+        requests.push(request);
+        const index = request.cursor == null ? 0 : Number(request.cursor.slice(1));
+        return {
+          entries: [
+            { value: `left-${index}`, label: `LEFT-${index}`, values: [`left-${index}`], count: 1 },
+          ],
+          has_more: index < 3,
+          next_cursor: index < 3 ? `p${index + 1}` : null,
+        };
+      },
+    });
+    await page.goto('/rer-analysis-neo');
+    await page.getByRole('button', { name: /^Позивні 0$/ }).click();
+    const input = page.getByRole('combobox', { name: 'Позивні' });
+    await input.fill('left');
+    const next = page.getByRole('button', { name: 'Наступні', exact: true });
+    await expect(next).toBeEnabled();
+    await next.click();
+    await expect.poll(() => requests.at(-1)?.cursor).toBe('p1');
+    const first = page.getByRole('button', { name: 'Перша', exact: true });
+    await expect(first).toBeEnabled();
+    await input.focus();
+    for (let index = 0; index < 6; index += 1) {
+      await page.keyboard.press('Tab');
+      if (await first.evaluate((element) => document.activeElement === element)) break;
+    }
+    await expect(first).toBeFocused();
+    await expect(input).toHaveValue('left');
+    await expect(first).toBeEnabled();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => requests.at(-1)?.cursor).toBeNull();
+    await expect(first).toBeDisabled();
+    await expect(input).toHaveValue('left');
+    expect(requests.map(({ query, cursor }) => ({ query, cursor }))).toEqual([
+      { query: 'left', cursor: null },
+      { query: 'left', cursor: 'p1' },
+      { query: 'left', cursor: null },
+    ]);
+    await input.click();
+    await input.press('Control+A');
+    await input.press('Backspace');
+    await expect.poll(() => requests.at(-1)?.query).toBe('');
+  });
+
+  test('@regression exposes first-page recovery in the left callsign filter after cursor eviction', async ({
+    page,
+  }) => {
+    const requests: Array<{ cursor?: string | null; query?: string }> = [];
+    await setupAnalysisNeoPage(page, {
+      callsignPageResponse: (request) => {
+        requests.push(request);
+        const index = request.cursor == null ? 0 : Number(request.cursor.slice(1));
+        return {
+          entries: [
+            {
+              value: `left-${index}`,
+              label: `LEFT-${index}`,
+              values: [`left-${index}`],
+              count: 1,
+            },
+          ],
+          has_more: index < 24,
+          next_cursor: index < 24 ? `p${index + 1}` : null,
+        };
+      },
+    });
+    await page.goto('/rer-analysis-neo');
+    await page.getByRole('button', { name: /^Позивні 0$/ }).click();
+    const callsignInput = page.getByRole('combobox', { name: 'Позивні' });
+    await callsignInput.fill('left');
+    await expect.poll(() => requests.filter((request) => request.query === 'left').length).toBe(1);
+
+    const first = page.getByRole('button', { name: 'Перша' });
+    const previous = page.getByRole('button', { name: 'Попередні' });
+    const next = page.getByRole('button', { name: 'Наступні' });
+    for (let index = 1; index <= 21; index += 1) {
+      await expect(next).toBeEnabled();
+      await next.click();
+      await expect
+        .poll(() => requests.filter((request) => request.query === 'left').length)
+        .toBe(index + 1);
+    }
+    for (let index = 21; index > 3; index -= 1) {
+      await expect(previous).toBeEnabled();
+      await previous.click();
+      await expect
+        .poll(() => requests.filter((request) => request.query === 'left').length)
+        .toBe(44 - index);
+    }
+    await expect(previous).toBeDisabled();
+    await expect(first).toBeEnabled();
+    await first.click();
+    await expect
+      .poll(() => {
+        const { cursor, query } = requests.at(-1) ?? {};
+        return { cursor, query };
+      })
+      .toEqual({ cursor: null, query: 'left' });
+    await expect(first).toBeDisabled();
+  });
+
   test('@regression keeps callsign pagination progress visible at the scrolled footer', async ({
     page,
   }, testInfo) => {

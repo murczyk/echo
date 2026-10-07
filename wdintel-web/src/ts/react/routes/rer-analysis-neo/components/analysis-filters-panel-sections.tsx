@@ -20,7 +20,10 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import type { CountStatsRsp } from '../../../../../Bindings';
 
 import type { AnalysisFilterSectionId } from '../types';
-import { normalizeCallsignFilterValues } from '../../../utils/callsign-normalization';
+import {
+  normalizeCallsignFilterValues,
+  normalizeCallsignLookupValue,
+} from '../../../utils/callsign-normalization';
 import { NO_DATA_LABEL } from '../../../utils/misc';
 import { isCanonicalUnitIdValue } from '../../../utils/unit-search';
 import { AnalysisFilterField } from './AnalysisFilterField';
@@ -134,12 +137,16 @@ function CallsignFilterField({
         ? 'Не вдалося завантажити позивні.'
         : null;
   const callsignOptions = active
-    ? page.entries.map((entry) => ({
-        value: entry.value,
-        label: entry.label,
-        count: entry.count,
-        values: entry.values,
-      }))
+    ? page.entries.map((entry) => {
+        const values = normalizeCallsignFilterValues(entry.values);
+        const value = normalizeCallsignLookupValue(entry.value);
+        return {
+          value: values.includes(value) ? value : (values[0] ?? value),
+          label: entry.label,
+          count: entry.count,
+          values,
+        };
+      })
     : fallbackOptions;
 
   return (
@@ -147,25 +154,33 @@ function CallsignFilterField({
       <AnalysisFilterField
         label="Позивні"
         options={callsignOptions}
-        loading={page.loading}
-        emptyLoading={active && page.entries.length === 0}
+        loading={page.pending}
+        emptyLoading={active && page.pending && page.entries.length === 0}
         value={value}
         deferredCommit
         preserveInputOnSelect
+        preserveInputOnBlur
         onInputChange={page.setQuery}
         onChange={(callsignsSelected) => onChange(normalizeCallsignFilterValues(callsignsSelected))}
       />
       <Stack direction="row" spacing={0.5}>
         <Button
           size="small"
-          disabled={page.loading || !page.hasPrevious}
+          disabled={page.pending || page.stale || page.pageIndex === 0}
+          onClick={() => void page.loadFirstPage()}
+        >
+          Перша
+        </Button>
+        <Button
+          size="small"
+          disabled={page.pending || page.stale || !page.hasPrevious}
           onClick={() => void page.loadPreviousPage()}
         >
           Попередні
         </Button>
         <Button
           size="small"
-          disabled={page.loading || !page.hasMore}
+          disabled={page.pending || page.stale || !page.hasMore}
           onClick={() => void page.loadNextPage()}
         >
           Наступні
