@@ -104,6 +104,7 @@ pub enum Mode {
 
 #[derive(Clone)]
 pub struct Env {
+    pub ai_engine_client: Arc<crate::ai_engine::AiEngineClient>,
     pub mode: Mode,
     pub config: crate::config::Config,
     pub s3: Option<opendal::Operator>,
@@ -112,6 +113,7 @@ pub struct Env {
     pub(crate) unit_merge_guard_slots: Arc<tokio::sync::Semaphore>,
     pub echo_gpu_client: Arc<echo_gpu_client::EchoGpuClient>,
     pub file_registry_db: Option<FileRegistryDb>,
+    pub(crate) device_audio: Arc<crate::devices::audio::DeviceAudioRuntime>,
     pub(crate) device_file_content:
         Option<Arc<crate::devices::files::content::DeviceFileContentRuntime>>,
     /// GreptimeDB connection via Postgresql driver

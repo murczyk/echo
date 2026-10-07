@@ -98,6 +98,7 @@ const CONTENT_NODE_VARIANT_KEY_MAP: Record<string, string> = {
   _c_n_highlight_c: 'CNHighlightC',
   _c_n_signal_c: 'CNSignalC',
   _c_n_point_c: 'CNPointC',
+  _c_n_position_c: 'CNPositionC',
 };
 
 function restoreContentNodeVariantKeys<T>(value: T): T {
@@ -135,7 +136,9 @@ function normalizeReq(req: AnalysisStatsReq): AnalysisStatsReq {
   }
 
   if (normalized.withoutNetwork) {
-    normalized = { ...normalized, selectedNetworks: null };
+    normalized = { ...normalized, selectedNetworks: null, onlyWithNetwork: false };
+  } else if (normalized.onlyWithNetwork) {
+    normalized = { ...normalized, withoutNetwork: false };
   }
 
   return normalized;
@@ -399,6 +402,29 @@ export async function fetchMessagesByIds(
       ? await postJson<unknown>('/api/rer-importer/messages-by-id', transformCamelToSnake(req))
       : await postJson<unknown>(
           '/api/rer-importer/messages-by-id',
+          transformCamelToSnake(req),
+          options,
+        );
+  return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
+}
+
+export async function fetchMessagesByIdsMatchingFilters(
+  messageIds: number[],
+  inboxReq?: Partial<InboxMessagesReq> | null,
+  options?: RequestOptions,
+): Promise<Array<[number, InboxMessage]>> {
+  const req: MessageIdsReq = {
+    messageIds,
+    inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
+  };
+  const raw =
+    options == null
+      ? await postJson<unknown>(
+          '/api/rer-importer/messages-by-id-matching-filters',
+          transformCamelToSnake(req),
+        )
+      : await postJson<unknown>(
+          '/api/rer-importer/messages-by-id-matching-filters',
           transformCamelToSnake(req),
           options,
         );

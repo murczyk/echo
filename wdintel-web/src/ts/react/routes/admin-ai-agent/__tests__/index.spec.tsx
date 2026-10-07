@@ -71,6 +71,9 @@ const SETTINGS = {
   mattermostWebhookConfigured: false,
   mattermostWebhookUrl: '',
   clearMattermostWebhook: false,
+  mattermostChatWebhookConfigured: false,
+  mattermostChatWebhookUrl: '',
+  clearMattermostChatWebhook: false,
 };
 
 let container: HTMLDivElement;
@@ -182,6 +185,60 @@ describe('AdminAiAgentPage settings', () => {
     expect(mocks.saveSettings).toHaveBeenCalledWith({
       ...SETTINGS,
       mattermostChatEnabled: true,
+    });
+  });
+
+  it('keeps dialogue monitoring enabled when clearing only the security hook (#3682)', async () => {
+    const settings = {
+      ...SETTINGS,
+      mattermostChatEnabled: true,
+      mattermostWebhookConfigured: true,
+      mattermostChatWebhookConfigured: true,
+    };
+    mocks.getSettings.mockResolvedValueOnce(settings);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<AdminAiAgentPage section="settings" />));
+    await flush();
+
+    await act(async () =>
+      controlLabel('Очистити Mattermost webhook безпекових сповіщень')
+        .querySelector('input')
+        ?.click(),
+    );
+    await act(async () => clickSave());
+    await flush();
+
+    expect(mocks.saveSettings).toHaveBeenCalledWith({
+      ...settings,
+      clearMattermostWebhook: true,
+    });
+  });
+
+  it('clears only the dialogue hook and disables its monitoring (#3682)', async () => {
+    const settings = {
+      ...SETTINGS,
+      reviewEnabled: true,
+      mattermostChatEnabled: true,
+      mattermostWebhookConfigured: true,
+      mattermostChatWebhookConfigured: true,
+    };
+    mocks.getSettings.mockResolvedValueOnce(settings);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<AdminAiAgentPage section="settings" />));
+    await flush();
+
+    await act(async () =>
+      controlLabel('Очистити Mattermost webhook діалогів').querySelector('input')?.click(),
+    );
+    await act(async () => clickSave());
+    await flush();
+
+    expect(mocks.saveSettings).toHaveBeenCalledWith({
+      ...settings,
+      mattermostChatEnabled: false,
+      clearMattermostChatWebhook: true,
     });
   });
 

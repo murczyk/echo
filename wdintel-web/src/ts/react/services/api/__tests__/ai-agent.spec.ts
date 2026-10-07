@@ -105,6 +105,7 @@ describe('AI agent API mapping', () => {
       securityReviewEnabled: false,
       mattermostChatEnabled: false,
       hasMattermostWebhook: false,
+      hasMattermostChatWebhook: false,
     };
     mocks.getJson.mockResolvedValue(response);
     mocks.postJson.mockResolvedValue(response);
@@ -135,6 +136,8 @@ describe('AI agent API mapping', () => {
       mattermostChatEnabled: false,
       mattermostWebhookUrl: null,
       clearMattermostWebhook: false,
+      mattermostChatWebhookUrl: null,
+      clearMattermostChatWebhook: false,
     });
   });
   it('returns the authoritative state from cancellation', async () => {

@@ -99,6 +99,7 @@ export type ReportHistoryTableSectionProps = {
   loadReportHistory?: LoadReportHistory;
   loadReportHistoryBatch?: LoadReportHistoryBatch;
   allowSuccessfulRerun?: boolean;
+  showTitle?: boolean;
 };
 
 const DEFAULT_REPORTS_COLUMNS_VISIBILITY = {
@@ -453,6 +454,7 @@ export function ReportHistoryTableSection({
   loadReportHistory = listReportHistory,
   loadReportHistoryBatch,
   allowSuccessfulRerun = false,
+  showTitle = true,
 }: ReportHistoryTableSectionProps) {
   const [rows, setRows] = useState<ReportHistoryRow[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('idle');
@@ -973,7 +975,7 @@ export function ReportHistoryTableSection({
           useFlexGap={fullHeight}
           sx={fullHeight ? REPORTS_FULL_HEIGHT_STACK_SX : undefined}
         >
-          {!useBatchShell ? (
+          {!useBatchShell && showTitle ? (
             <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={2}>
               <Stack direction="row" alignItems="baseline" gap={1}>
                 <Typography
@@ -1015,14 +1017,21 @@ export function ReportHistoryTableSection({
           >
             {useBatchShell ? (
               <>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
-                  <Typography
-                    component="h1"
-                    variant="h5"
-                    sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}
-                  >
-                    {title}
-                  </Typography>
+                <Stack
+                  direction="row"
+                  justifyContent={showTitle ? 'space-between' : 'flex-end'}
+                  alignItems="center"
+                  gap={2}
+                >
+                  {showTitle ? (
+                    <Typography
+                      component="h1"
+                      variant="h5"
+                      sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}
+                    >
+                      {title}
+                    </Typography>
+                  ) : null}
                   <Stack direction="row" alignItems="center" gap={1}>
                     <AnalysisPaginationControl
                       centerTab="messages"

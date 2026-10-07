@@ -791,6 +791,7 @@ fn build_analysis_stats_req(
         tag_presence: None,
         selected_networks: None,
         without_network: None,
+        only_with_network: None,
         metadata_cc: None,
         metadata_sender: None,
         metadata_receiver: None,

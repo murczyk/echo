@@ -246,6 +246,8 @@ pub struct MessageMediaInfo {
     pub summary: Option<crate::media_summary::types::MediaSummaryStatus>,
     #[serde(default)]
     pub kmz_conversion_status: Option<String>,
+    #[serde(default)]
+    pub positions: Vec<crate::rer_importer::highlight::CNPosition>,
 }
 
 #[derive(
@@ -503,6 +505,8 @@ pub struct InboxMessagesReq {
     pub selected_aors: Option<Vec<i64>>,
     pub selected_networks: Option<Vec<i64>>,
     pub without_network: Option<bool>,
+    #[serde(default)]
+    pub only_with_network: Option<bool>,
     pub metadata_cc: Option<Vec<String>>,
     pub metadata_sender: Option<Vec<String>>,
     pub metadata_receiver: Option<Vec<String>>,
@@ -952,6 +956,8 @@ pub struct AnalysisStatsReq {
     pub tag_presence: Option<TagPresenceFilter>,
     pub selected_networks: Option<Vec<i64>>,
     pub without_network: Option<bool>,
+    #[serde(default)]
+    pub only_with_network: Option<bool>,
     pub metadata_cc: Option<Vec<String>>,
     pub metadata_sender: Option<Vec<String>>,
     pub metadata_receiver: Option<Vec<String>>,

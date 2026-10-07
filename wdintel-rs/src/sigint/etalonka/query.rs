@@ -2534,7 +2534,8 @@ pub async fn bl_get_network_points(
                 .is_null(),
         );
     }
-    q = filter_selected_networks(q, &Some(vec![network_id]), &None).c(h!())?;
+    q = filter_selected_networks(q, &Some(vec![network_id]), &None, &None)
+        .c(h!())?;
 
     // debug!(
     //     "> pelengs per unir sql: {}\n",

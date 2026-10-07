@@ -218,7 +218,14 @@ export function useAnalysisMessageList({
     async (messageItems: Array<[number, InboxMessage]>) => {
       const callsigns = messageItems.flatMap(([, message]) => {
         const markedCallsigns = (message.textMarked ?? []).flatMap((node) =>
-          typeof node !== 'string' && 'CNCallsignC' in node ? [node.CNCallsignC.text] : [],
+          typeof node === 'string'
+            ? []
+            : 'CNCallsignC' in node
+              ? [node.CNCallsignC.text]
+              : // A located position keeps the callsign token it replaced.
+                'CNPositionC' in node && node.CNPositionC.callsign
+                ? [node.CNPositionC.callsign]
+                : [],
         );
         return (markedCallsigns.length > 0 ? markedCallsigns : message.callsigns).map((callsign) =>
           callsign.trim(),

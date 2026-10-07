@@ -409,7 +409,10 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
       if (!permissions.canEdit || editDevice === null || editDevice.archived || editSubmitting) {
         return;
       }
-      if (validateDeviceUpsertForm(form, permissions.fieldPermissions) !== null) {
+      if (
+        validateDeviceUpsertForm(form, permissions.fieldPermissions, editDevice.name !== null) !==
+        null
+      ) {
         setEditError('Перевірте поля форми.');
         return;
       }
@@ -489,6 +492,7 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     editServerFieldErrors,
     editSubmitting,
     editHasChanges,
+    editNameRequired: editDevice?.name !== null,
     editLoadingDeviceId,
     busyDeviceId,
     aorOptions,

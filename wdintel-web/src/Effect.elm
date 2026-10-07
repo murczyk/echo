@@ -4,7 +4,7 @@ port module Effect exposing
     , sendCmd, sendMsg, sendSharedMsg
     , pushRoute, replaceRoute
     , pushRoutePath, replaceRoutePath
-    , loadExternalUrl, back
+    , loadExternalUrl, loadExternalUrlForced, back
     , map, toCmd
     , CallsignsByNetwork, ReportDownloadResult, addFreqToNetwork, addMultipleCallsignsToNetwork, createNetwork, createNetworkCallsign, deleteMessage, deleteNetwork, deleteNetworkCallsign, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getAors, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getMetadataStats, getEncryptions, getNetworkCallsigns, getNetworkCallsignsActivity, getNetworkCallsignsList, getNetworkFreqCallsigns, getNetworkFreqsActivity, getNetworkGoiReport, getNetworkPoints, getNetworkReportBatch, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getNetworks, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getSystemSettings, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, reactivateNetworkFreq, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, sendToastMsg, setThemeMode, showError, showErrorWithDetails, toggleDarkMode, triggerResize, updateNetwork, updateNetworkCallsign, updateNetworkFreq, updateNetworkPosts, updateNetworkUnits
     )
@@ -35,6 +35,7 @@ import File.Download
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
+import PagePorts.SharedPorts as NavigationPorts
 import Process
 import Route
 import Route.Path
@@ -63,6 +64,7 @@ type Effect msg
     | PushUrl String
     | ReplaceUrl String
     | LoadExternalUrl String
+    | LoadExternalUrlForced String
     | Back
       -- SHARED
     | SendSharedMsg Shared.Msg.Msg
@@ -246,6 +248,11 @@ replaceRoutePath path =
 loadExternalUrl : String -> Effect msg
 loadExternalUrl =
     LoadExternalUrl
+
+
+loadExternalUrlForced : String -> Effect msg
+loadExternalUrlForced =
+    LoadExternalUrlForced
 
 
 {-| Navigate back one page
@@ -918,6 +925,9 @@ map fn effect =
         LoadExternalUrl url ->
             LoadExternalUrl url
 
+        LoadExternalUrlForced url ->
+            LoadExternalUrlForced url
+
         SendSharedMsg sharedMsg ->
             SendSharedMsg sharedMsg
 
@@ -1216,16 +1226,19 @@ toCmd options effect =
             cmd
 
         PushUrl url ->
-            Browser.Navigation.pushUrl options.key url
+            NavigationPorts.shared_requestNavigation { kind = "push", url = url, forced = False }
 
         ReplaceUrl url ->
-            Browser.Navigation.replaceUrl options.key url
+            NavigationPorts.shared_requestNavigation { kind = "replace", url = url, forced = False }
 
         Back ->
-            Browser.Navigation.back options.key 1
+            NavigationPorts.shared_requestNavigation { kind = "back", url = "", forced = False }
 
         LoadExternalUrl url ->
             Browser.Navigation.load url
+
+        LoadExternalUrlForced url ->
+            NavigationPorts.shared_requestNavigation { kind = "load", url = url, forced = True }
 
         SendSharedMsg sharedMsg ->
             Task.succeed sharedMsg

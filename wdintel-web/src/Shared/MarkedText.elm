@@ -142,6 +142,13 @@ viewWithResults renderCallsign signals networks mFreq bodyText pointTokenClickUr
                                     currentMetadataLinks
                                     rest
 
+                        B.CnPositionC obj ->
+                            renderContentNode cn
+                                :: renderContentNodes
+                                    obj.end
+                                    currentMetadataLinks
+                                    rest
+
         renderContentNode cn =
             case cn of
                 B.CnTextC obj ->
@@ -212,6 +219,52 @@ viewWithResults renderCallsign signals networks mFreq bodyText pointTokenClickUr
 
                         Nothing ->
                             text sliceText
+
+                B.CnPositionC obj ->
+                    let
+                        label =
+                            (case obj.kind of
+                                "crew" ->
+                                    "Розрахунок «"
+
+                                "callsign" ->
+                                    "Позивний «"
+
+                                _ ->
+                                    "Позиція «"
+                            )
+                                ++ obj.text
+                                ++ "»"
+
+                        positionTitle =
+                            case ( obj.mgrs, obj.knownMgrs ) of
+                                ( [], Just known ) ->
+                                    label ++ ": відомо з інших повідомлень " ++ known
+
+                                ( [], Nothing ) ->
+                                    label ++ " (ШІ)"
+
+                                ( own, _ ) ->
+                                    label ++ ": " ++ String.join ", " own
+                    in
+                    span [ class ("content-token--position content-token--position-" ++ obj.kind), title positionTitle ]
+                        (case obj.callsign of
+                            -- The callsign this located mention replaced keeps
+                            -- its hint inside the position.
+                            Just callsign ->
+                                case String.indexes callsign obj.text of
+                                    index :: _ ->
+                                        [ text (String.left index obj.text)
+                                        , renderCallsign callsign
+                                        , text (String.dropLeft (index + String.length callsign) obj.text)
+                                        ]
+
+                                    [] ->
+                                        [ renderCallsign obj.text ]
+
+                            Nothing ->
+                                [ text obj.text ]
+                        )
     in
     [ div [ class "text-marked" ] <|
         renderContentNodes 0 sortedMetadataLinks config.contentNodes

@@ -237,7 +237,7 @@ update req msg model =
 
                 else
                     ( stoppedModel
-                    , E.replaceRoute { path = Route.Path.Login, query = Utils.LoginRedirect.loginQuery req.url, hash = Nothing }
+                    , E.sendCmd <| Ports.shared_requestNavigation { kind = "replace", url = Route.toString { path = Route.Path.Login, query = Utils.LoginRedirect.loginQuery req.url, hash = Nothing }, forced = True }
                     )
 
             else
@@ -383,7 +383,7 @@ update req msg model =
                 E.none
 
               else
-                E.loadExternalUrl
+                E.loadExternalUrlForced
                     (Url.Builder.absolute [ "api", "user", "logout" ]
                         [ Url.Builder.string "redirect"
                             (if req.path == Route.Path.Login then

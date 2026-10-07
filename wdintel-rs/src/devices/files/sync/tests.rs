@@ -7,7 +7,7 @@ use super::{
     automatic, automatic_with_metrics, complete, items, start_explicit, status,
 };
 use crate::config::ROLE_ADMIN;
-use crate::devices::{access, ROLE_DEVICE_SOURCE};
+use crate::devices::{access, ROLE_CYBER};
 use crate::entities::{device, login, organism};
 use crate::error::AppError;
 use crate::file_registry::entities::{
@@ -73,10 +73,7 @@ async fn insert_device(db: &DatabaseConnection, owner: &login::Model) -> Uuid {
 async fn sync_fixture(env: &Arc<Env>, prefix: &str) -> (login::Model, Uuid) {
     let owner = insert_owner(&env.dbx, prefix).await;
     let device_id = insert_device(&env.dbx, &owner).await;
-    (
-        access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]),
-        device_id,
-    )
+    (access::login_with_roles(&owner, &[ROLE_CYBER]), device_id)
 }
 
 fn raw_item(absolute_path: &str) -> RawSyncDeviceFileItem {
@@ -1105,7 +1102,7 @@ async fn authorization_precedes_file_mutation_and_infrastructure_failure_rolls_b
         .await
         .unwrap();
 
-    let actor = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
+    let actor = access::login_with_roles(&owner, &[ROLE_CYBER]);
     let result = automatic(
         &env.dbx,
         file_registry,

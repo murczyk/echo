@@ -14,6 +14,7 @@ pub struct SystemSettingsCurrentRsp {
     pub rer_duty_poll_interval_sec: i64,
     pub rer_duty_test_replay_interval_sec: i64,
     pub short_url_enabled: bool,
+    pub rer_report_enabled: bool,
     pub support_non_rer_interceptions: bool,
     pub default_neo_analysis: bool,
     pub autofix_echoim_missing_messages: bool,
@@ -60,6 +61,7 @@ pub struct SystemSettingsItem {
     pub updated_by_login_id: Option<String>,
     pub deleted: bool,
     pub short_url_enabled: bool,
+    pub rer_report_enabled: bool,
     pub support_non_rer_interceptions: bool,
     pub default_neo_analysis: bool,
     pub autofix_echoim_missing_messages: bool,
@@ -117,6 +119,8 @@ pub struct CreateSystemSettingsReq {
     #[serde(default = "default_rer_duty_test_replay_interval_sec")]
     pub rer_duty_test_replay_interval_sec: i64,
     pub short_url_enabled: bool,
+    #[serde(default)]
+    pub rer_report_enabled: bool,
     #[serde(default)]
     pub support_non_rer_interceptions: bool,
     #[serde(default)]
@@ -207,6 +211,11 @@ fn default_report_chunking_hours() -> i64 {
 )]
 pub struct ActivateSystemSettingsReq {
     pub id: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct SetRerReportEnabledReq {
+    pub enabled: bool,
 }
 
 fn default_media_cache_retention_hours() -> i64 {

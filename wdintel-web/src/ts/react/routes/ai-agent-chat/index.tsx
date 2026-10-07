@@ -24,6 +24,7 @@ import type {
   AiAgentMapEditTarget,
   AiAgentMapSummary,
   AiAgentMessageCitation,
+  AiAgentFileCitation,
 } from '../../../../Bindings';
 import { CitationMarkdown } from './CitationMarkdown';
 import { MapEditContext } from './MapEditContext';
@@ -89,6 +90,7 @@ export type LiveRequest = {
   activity?: RequestActivityItem[];
   sources: Source[];
   citations?: AiAgentMessageCitation[];
+  fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
   lastSequence: number;
   streamError: string | null;
@@ -230,6 +232,7 @@ export function activeRequestsFromConversation(
       state: message.requestState,
       assistantText: assistantByRequestId.get(message.requestId)?.content ?? '',
       citations: assistantByRequestId.get(message.requestId)?.citations ?? [],
+      fileCitations: assistantByRequestId.get(message.requestId)?.fileCitations ?? [],
       maps: assistantByRequestId.get(message.requestId)?.maps ?? [],
       progress: [],
       tools: [],
@@ -336,6 +339,13 @@ export function applyAiAgentEvent(request: LiveRequest, event: AiAgentEvent): Li
         ? finishRequest(updated, updated.state, updated.finishedAt ?? event.createdAt)
         : updated;
     }
+    case 'file_citations': {
+      const files = new Map(
+        (request.fileCitations ?? []).map((source) => [JSON.stringify(source), source]),
+      );
+      for (const source of event.fileCitations ?? []) files.set(JSON.stringify(source), source);
+      return { ...next, fileCitations: [...files.values()] };
+    }
     case 'message_citations': {
       const citations = new Map(
         (request.citations ?? []).map((item) => [item.messageIdentifier, item]),
@@ -384,10 +394,12 @@ export function shouldIgnoreStreamError(
 function MarkdownContent({
   children,
   citations,
+  fileCitations = [],
   maps,
 }: {
   children: string;
   citations: AiAgentMessageCitation[];
+  fileCitations?: AiAgentFileCitation[];
   maps: AiAgentMapSummary[];
 }) {
   return (
@@ -415,7 +427,7 @@ function MarkdownContent({
         '& th, & td': { border: 1, borderColor: 'divider', px: 1, py: 0.75, textAlign: 'left' },
       }}
     >
-      <CitationMarkdown citations={citations} maps={maps}>
+      <CitationMarkdown citations={citations} fileCitations={fileCitations} maps={maps}>
         {children}
       </CitationMarkdown>
     </Box>
@@ -425,10 +437,12 @@ function MarkdownContent({
 function AssistantMessage({
   content,
   citations = [],
+  fileCitations = [],
   maps = [],
 }: {
   content: string;
   citations?: AiAgentMessageCitation[];
+  fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
 }) {
   const mainMap = [...maps].reverse().find((summary) => summary.isMain);
@@ -452,7 +466,7 @@ function AssistantMessage({
       <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
         ЕХО Агент
       </Typography>
-      <MarkdownContent citations={citations} maps={maps}>
+      <MarkdownContent citations={citations} fileCitations={fileCitations} maps={maps}>
         {content}
       </MarkdownContent>
       {unreferencedMaps.length ? (
@@ -481,6 +495,7 @@ function ConversationMessage({
       <AssistantMessage
         content={message.content}
         citations={message.citations}
+        fileCitations={message.fileCitations}
         maps={message.maps}
       />
     );
@@ -546,6 +561,7 @@ function LiveResponse({ request }: { request: LiveRequest }) {
         <AssistantMessage
           content={request.assistantText}
           citations={request.citations}
+          fileCitations={request.fileCitations}
           maps={request.maps}
         />
       ) : null}
@@ -648,6 +664,7 @@ function LiveRequestView({
     requestState: request.state,
     role: 'user',
     citations: [],
+    fileCitations: [],
     maps: [],
     content: request.prompt,
     createdAt: request.createdAt,
@@ -965,6 +982,7 @@ export function AiAgentChat({
           state: userMessage.requestState,
           assistantText: assistantMessage?.content ?? request.assistantText,
           citations: assistantMessage?.citations ?? request.citations,
+          fileCitations: assistantMessage?.fileCitations ?? request.fileCitations,
           maps: assistantMessage?.maps ?? request.maps,
         };
       }),
@@ -1425,6 +1443,7 @@ export function AiAgentChat({
                       requestState: 'queued',
                       role: 'user',
                       citations: [],
+                      fileCitations: [],
                       maps: [],
                       content: pendingSubmission.prompt,
                       createdAt: pendingSubmission.createdAt,

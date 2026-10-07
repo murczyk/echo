@@ -155,6 +155,7 @@ export function validateDeviceCustomFields(
 export function validateDeviceUpsertForm(
   form: DeviceUpsertForm | null,
   permissions: DeviceFieldPermissions,
+  nameRequired = true,
 ): DeviceUpsertValidationErrors | null {
   const errors: DeviceUpsertValidationErrors = { customFieldRows: {} };
   if (form === null) return errors;
@@ -168,7 +169,7 @@ export function validateDeviceUpsertForm(
     errors.customFieldRows = customFieldErrors.customFieldRows;
   }
 
-  if (permissions.analyticalData) {
+  if (permissions.analyticalData && (nameRequired || form.name.trim() !== '')) {
     const nameError = validateName(form.name);
     if (nameError) errors.name = nameError;
   }

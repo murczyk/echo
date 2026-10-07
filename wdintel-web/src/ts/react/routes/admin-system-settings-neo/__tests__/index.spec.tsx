@@ -84,6 +84,14 @@ function botTagsSwitch(container: HTMLElement): HTMLInputElement | null {
   );
 }
 
+function dutyTestSwitch(container: HTMLElement): HTMLInputElement | null {
+  return (
+    Array.from(container.querySelectorAll('label'))
+      .find((label) => label.textContent?.includes('Увімкнути тестове надходження повідомлень'))
+      ?.querySelector('input') ?? null
+  );
+}
+
 describe('AdminSystemSettingsNeoPage success notifications', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/admin/system-settings-neo');
@@ -175,6 +183,35 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ disableBotTags: true }));
     await act(async () => root.unmount());
   });
+  it('persists disabling test message replay immediately', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
+    mocks.list.mockResolvedValue([{ id: 1, deleted: false, rerDutyTestEnabled: true }]);
+    const { container, root } = await renderPage();
+    const checkbox = dutyTestSwitch(container);
+    expect(checkbox?.checked).toBe(true);
+
+    await act(async () => checkbox?.click());
+    await act(async () => Promise.resolve());
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ rerDutyTestEnabled: false }));
+    await act(async () => root.unmount());
+  });
+  it('saves the Orbit exclusion setting', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#integrations');
+    const { container, root } = await renderPage();
+    const checkbox = Array.from(container.querySelectorAll('label'))
+      .find((label) => label.textContent?.includes('Не імпортувати підрозділи управління'))
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(checkbox?.checked).toBe(true);
+
+    await act(async () => checkbox?.click());
+    await act(async () => button(container, 'зберегти')?.click());
+
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({ excludeOrbitOtherUnits: false }),
+    );
+    await act(async () => root.unmount());
+  });
   it('keeps the enablement warning until transcription is saved', async () => {
     const { container, root } = await renderPage();
     const checkbox = audioSwitch(container);
@@ -195,7 +232,7 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     const first = await renderPage();
     const menuToggle = (container: HTMLElement) =>
       Array.from(container.querySelectorAll('label'))
-        .find((label) => label.textContent?.includes('Меню - (мінус) в оперативному'))
+        .find((label) => label.textContent?.includes('Меню «—» (мінус) в оперативному'))
         ?.querySelector<HTMLInputElement>('input');
     expect(menuToggle(first.container)?.checked).toBe(true);
     await act(async () => menuToggle(first.container)?.click());

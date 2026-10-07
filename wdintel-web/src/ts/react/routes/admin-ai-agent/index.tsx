@@ -83,9 +83,11 @@ import {
 } from '../../services/api/ai-agent';
 import { listAiEngines } from '../../services/api/ai-engines';
 import { AdminAiCallsignsPage } from '../admin-ai-callsigns';
+import { AdminAiPositionPage, AdminAiPositionsPage } from '../admin-ai-positions';
 import { AdminAiSettlementsPage } from '../admin-ai-settlements';
 import { AdminAiIntelReportsPage } from '../admin-ai-intel-reports';
 import { AdminOcrPage } from '../admin-ocr';
+import { AdminDocumentsPage } from '../admin-documents';
 import { AiEnginesSection } from '../admin-system-settings-neo/AiEnginesSection';
 import {
   type AiAgentEngineCompatibility,
@@ -93,6 +95,7 @@ import {
   getAiAgentTokenNotice,
   getAiReviewerEngineCompatibility,
 } from './engine-eligibility';
+import { MattermostWebhookField } from './MattermostWebhookField';
 import { readAiAgentRequestDeepLink } from './url-state';
 
 export type AiAgentAdminSection =
@@ -103,7 +106,10 @@ export type AiAgentAdminSection =
   | 'echo-proxies'
   | 'callsigns'
   | 'settlements'
+  | 'positions'
+  | 'position'
   | 'intelligence-reports'
+  | 'documents'
   | 'ocr'
   | 'settings';
 
@@ -1735,10 +1741,13 @@ function SettingsPage() {
     );
 
   const showMattermostWebhook =
-    settings.mattermostChatEnabled ||
     settings.reviewEnabled ||
     settings.mattermostWebhookConfigured ||
     settings.mattermostWebhookUrl.length > 0;
+  const showMattermostChatWebhook =
+    settings.mattermostChatEnabled ||
+    settings.mattermostChatWebhookConfigured ||
+    settings.mattermostChatWebhookUrl.length > 0;
 
   return (
     <Stack spacing={2}>
@@ -1867,37 +1876,11 @@ function SettingsPage() {
                 )}
               </Select>
             </FormControl>
-            {settings.mattermostWebhookConfigured ? (
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={settings.clearMattermostWebhook}
-                    onChange={(event) =>
-                      setSettings((current) =>
-                        current
-                          ? {
-                              ...current,
-                              clearMattermostWebhook: event.target.checked,
-                              mattermostChatEnabled: event.target.checked
-                                ? false
-                                : current.mattermostChatEnabled,
-                              mattermostWebhookUrl: event.target.checked
-                                ? ''
-                                : current.mattermostWebhookUrl,
-                            }
-                          : current,
-                      )
-                    }
-                  />
-                }
-                label="Очистити налаштований Mattermost webhook"
-              />
-            ) : null}
             <FormControlLabel
               control={
                 <Switch
                   checked={settings.mattermostChatEnabled}
-                  disabled={settings.clearMattermostWebhook}
+                  disabled={settings.clearMattermostChatWebhook}
                   onChange={(event) =>
                     setSettings((current) =>
                       current
@@ -1913,22 +1896,56 @@ function SettingsPage() {
               Надсилає текст кожного запиту користувача, провайдера та посилання на аудит.
             </Typography>
             {showMattermostWebhook ? (
-              <TextField
-                type="url"
-                label="Mattermost webhook"
+              <MattermostWebhookField
+                label="Mattermost webhook безпекових сповіщень"
+                configured={settings.mattermostWebhookConfigured}
                 value={settings.mattermostWebhookUrl}
-                disabled={settings.clearMattermostWebhook}
-                placeholder={
-                  settings.mattermostWebhookConfigured ? 'Налаштовано (введіть для заміни)' : ''
+                clear={settings.clearMattermostWebhook}
+                onChange={(value) =>
+                  setSettings((current) =>
+                    current
+                      ? { ...current, mattermostWebhookUrl: value, clearMattermostWebhook: false }
+                      : current,
+                  )
                 }
-                helperText="Порожнє поле зберігає наявний секрет без змін"
-                onChange={(event) =>
+                onClear={(clear) =>
                   setSettings((current) =>
                     current
                       ? {
                           ...current,
-                          mattermostWebhookUrl: event.target.value,
-                          clearMattermostWebhook: false,
+                          clearMattermostWebhook: clear,
+                          mattermostWebhookUrl: clear ? '' : current.mattermostWebhookUrl,
+                        }
+                      : current,
+                  )
+                }
+              />
+            ) : null}
+            {showMattermostChatWebhook ? (
+              <MattermostWebhookField
+                label="Mattermost webhook діалогів"
+                configured={settings.mattermostChatWebhookConfigured}
+                value={settings.mattermostChatWebhookUrl}
+                clear={settings.clearMattermostChatWebhook}
+                onChange={(value) =>
+                  setSettings((current) =>
+                    current
+                      ? {
+                          ...current,
+                          mattermostChatWebhookUrl: value,
+                          clearMattermostChatWebhook: false,
+                        }
+                      : current,
+                  )
+                }
+                onClear={(clear) =>
+                  setSettings((current) =>
+                    current
+                      ? {
+                          ...current,
+                          clearMattermostChatWebhook: clear,
+                          mattermostChatEnabled: clear ? false : current.mattermostChatEnabled,
+                          mattermostChatWebhookUrl: clear ? '' : current.mattermostChatWebhookUrl,
                         }
                       : current,
                   )
@@ -1952,7 +1969,15 @@ function SettingsPage() {
   );
 }
 
-export function AdminAiAgentPage({ section }: { section: AiAgentAdminSection }) {
+export function AdminAiAgentPage({
+  section,
+  itemId = null,
+  tab = null,
+}: {
+  section: AiAgentAdminSection;
+  itemId?: string | null;
+  tab?: string | null;
+}) {
   switch (section) {
     case 'providers':
       return <ProvidersPage />;
@@ -1968,8 +1993,14 @@ export function AdminAiAgentPage({ section }: { section: AiAgentAdminSection }) 
       return <AdminAiCallsignsPage />;
     case 'settlements':
       return <AdminAiSettlementsPage />;
+    case 'positions':
+      return <AdminAiPositionsPage tab={tab} />;
+    case 'position':
+      return <AdminAiPositionPage id={itemId} />;
     case 'intelligence-reports':
       return <AdminAiIntelReportsPage />;
+    case 'documents':
+      return <AdminDocumentsPage />;
     case 'ocr':
       return <AdminOcrPage />;
     case 'settings':

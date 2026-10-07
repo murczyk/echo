@@ -1166,6 +1166,13 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 displayFileName =
                     withDefault "<файл без назви>" attachment.fileName
 
+                nativePreview =
+                    String.endsWith ".kml" (String.toLower displayFileName)
+                        || String.endsWith ".kmz" (String.toLower displayFileName)
+                        || String.contains "kml" (String.toLower attachment.contentType)
+                        || String.contains "kmz" (String.toLower attachment.contentType)
+                        || String.contains "google-earth" (String.toLower attachment.contentType)
+
                 transcriptionBesidePlayer =
                     Config.featureAudioTranscriptionBesidePlayer
                         && vps.audioTranscriptionEnabled
@@ -1175,18 +1182,19 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                            )
 
                 downloadLink =
-                    case attachment.kmzConversionStatus of
-                        Just conversionStatus ->
-                            node "kmz-attachment-preview"
-                                [ class "shrink-0"
-                                , attribute "media-id" attachment.id
-                                , attribute "original-href" attachment.href
-                                , attribute "file-name" displayFileName
-                                , attribute "conversion-status" conversionStatus
-                                ]
-                                []
+                    if nativePreview || attachment.kmzConversionStatus /= Nothing then
+                        node "kmz-attachment-preview"
+                            [ class "shrink-0"
+                            , attribute "media-id" attachment.id
+                            , attribute "original-href" attachment.href
+                            , attribute "file-name" displayFileName
+                            , attribute "conversion-status" (Maybe.withDefault "" attachment.kmzConversionStatus)
+                            , attribute "size-bytes" (String.fromInt attachment.sizeBytes)
+                            , attribute "content-type" attachment.contentType
+                            ]
+                            []
 
-                        Nothing ->
+                    else
                             a
                                 [ class "btn btn-outline-secondary btn-sm shrink-0"
                                 , href attachment.href
@@ -1196,6 +1204,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                 [ i [ class "bi bi-download me-2" ] []
                                 , text displayFileName
                                 ]
+
             in
             if transcriptionBesidePlayer then
                 div [ class "mb-2 flex w-full items-start gap-2" ] <|

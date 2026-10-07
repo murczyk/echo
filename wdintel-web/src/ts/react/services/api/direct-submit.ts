@@ -224,6 +224,10 @@ export type DirectSubmitRequest = {
   signal_group_master_key: string | null;
   device_name_id?: number | null;
   upload_urls?: string[] | null;
+  attachment_updates?: {
+    replacements: { media_id: string; upload_url: string }[];
+    renames: { media_id: string; file_name: string }[];
+  };
   deleted_media_ids?: string[];
   retained_media_ids?: string[];
   parent_signal_message_ids?: number[];

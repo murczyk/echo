@@ -741,10 +741,9 @@ fn non_empty_comment_exists() -> SimpleExpr {
     let subquery = intel_product::Entity::find()
         .select_only()
         .expr(Expr::value(1))
-        .filter(intel_product::relation_kind_is_in([
+        .filter(intel_product::relation_kind_eq(
             intel_product::RELATION_KIND_COMMENT,
-            intel_product::RELATION_KIND_REPORT,
-        ]))
+        ))
         .join_as(
             JoinType::InnerJoin,
             intel_product::Relation::SignalMessage1.def(),
@@ -792,7 +791,7 @@ async fn load_non_empty_comments(
     blacklist: &[String],
 ) -> Result<Vec<String>, AppError> {
     let comments =
-        crate::sigint::comments::find_report_comments(dbx, &[item_id], None)
+        crate::sigint::comments::find_linked_message_comments(dbx, &[item_id])
             .await
             .c(h!())?
             .into_iter()
@@ -1576,10 +1575,112 @@ fn default_run(text: &str, bold: bool, italic: bool) -> Run {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::*;
     use chrono::{NaiveDate, TimeZone};
+    use sea_orm::ActiveValue::Set;
+    use serial_test::serial;
     use std::io::Read;
     use tempfile::NamedTempFile;
     use zip::ZipArchive;
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3598_rer_uses_comments_not_reports_sent_to_groups() {
+        let env = cleanup().await.unwrap();
+        let source_with_comment = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("source with comment".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let source_with_report = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("source with report".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let comment = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("unsent comment".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let report = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("report sent to a group".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(report.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        intel_product::ActiveModel {
+            intel_message_id: Set(comment.id),
+            source_message_id: Set(source_with_comment.id),
+            relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        for source_message_id in [source_with_comment.id, source_with_report.id]
+        {
+            intel_product::ActiveModel {
+                intel_message_id: Set(report.id),
+                source_message_id: Set(source_message_id),
+                relation_kind: Set(intel_product::RELATION_KIND_REPORT),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
+        let candidate_ids = apply_candidate_item_filters(
+            signal_message::Entity::find().filter(
+                signal_message::Column::Id
+                    .is_in([source_with_comment.id, source_with_report.id]),
+            ),
+            None,
+            None,
+            ReportPeriodEnd::Inclusive,
+            None,
+            false,
+            true,
+        )
+        .unwrap()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .into_tuple::<i64>()
+        .all(&env.dbx)
+        .await
+        .unwrap();
+        let comments =
+            load_non_empty_comments(&env.dbx, source_with_comment.id, &[])
+                .await
+                .unwrap();
+
+        assert_eq!(candidate_ids, vec![source_with_comment.id]);
+        assert_eq!(comments, vec!["unsent comment"]);
+    }
 
     fn dt(hour: u32, minute: u32) -> NaiveDateTime {
         NaiveDate::from_ymd_opt(2026, 6, 27)

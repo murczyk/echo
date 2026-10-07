@@ -387,6 +387,7 @@ describe('device analytics API service routes', () => {
       .mockResolvedValueOnce(
         jsonResponse({
           total_file_count: 20,
+          files_with_content_count: 8,
           analyzed_file_count: 12,
           items: [
             {
@@ -407,6 +408,7 @@ describe('device analytics API service routes', () => {
     expect(fetchMock().mock.calls[1][0]).toBe('/api/device/analytics/summary');
     expect(requestBody(1)).toEqual({ device_id: DEVICE_ID });
     expect(summary.totalFileCount).toBe(20);
+    expect(summary.filesWithContentCount).toBe(8);
     expect(summary.analyzedFileCount).toBe(12);
     expect(summary.items).toEqual([
       {

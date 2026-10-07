@@ -19,7 +19,8 @@ fn validate_record(input: &AiAgentMapRecordInput) -> anyhow::Result<()> {
             && input.observation_datetime.as_deref().is_none_or(bounded)
             && input.comments.len() <= AI_AGENT_MAP_MAX_COMMENTS
             && input.comments.iter().all(|value| bounded(value))
-            && input.sources.len() <= AI_AGENT_MAP_MAX_SOURCES,
+            && input.sources.len() <= AI_AGENT_MAP_MAX_SOURCES
+            && input.file_sources.len() <= AI_AGENT_MAP_MAX_SOURCES,
         "Map record exceeds field limits"
     );
     anyhow::ensure!(
@@ -30,6 +31,13 @@ fn validate_record(input: &AiAgentMapRecordInput) -> anyhow::Result<()> {
                 && source.message_identifier.len() <= 512
         }),
         "Invalid map source"
+    );
+    anyhow::ensure!(
+        super::super::file_citations::parse(
+            &serde_json::json!({"citations":input.file_sources})
+        )
+        .is_some(),
+        "Invalid file source"
     );
     Ok(())
 }
@@ -83,6 +91,7 @@ pub fn prepare_record(
             })
             .collect(),
         sources: input.sources,
+        file_sources: input.file_sources,
         warnings,
     })
 }
@@ -313,6 +322,7 @@ pub fn canonicalize(
                 y: record.original_y,
                 comments: record.comments,
                 sources: record.sources,
+                file_sources: record.file_sources,
             })
         })
         .collect::<anyhow::Result<Vec<_>>>()

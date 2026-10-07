@@ -601,6 +601,19 @@ pub async fn remove_uncommitted_media_thumbnail_files_best_effort(
     remove_media_thumbnail_files(config, media_id, false).await;
 }
 
+pub async fn remove_media_thumbnail_preview_best_effort(
+    config: &Config,
+    media_id: Uuid,
+) {
+    let thumbnail_path = media_thumbnail_path(config, media_id);
+    remove_thumbnail_paths_best_effort(
+        media_id,
+        std::slice::from_ref(&thumbnail_path),
+        "messenger media thumbnail",
+    )
+    .await;
+}
+
 async fn remove_media_thumbnail_files(
     config: &Config,
     media_id: Uuid,

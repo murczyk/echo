@@ -11,7 +11,7 @@ use crate::config::{
     ROLE_ADMIN,
 };
 use crate::devices::access;
-use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
+use crate::devices::ROLE_CYBER;
 use crate::entities::{device, login, organism};
 use crate::file_registry::entities::file_entry;
 use crate::file_registry::{connect_runtime, run_migrations, FileRegistryDb};
@@ -195,6 +195,12 @@ async fn clear_file_entries(db: &DatabaseConnection) {
             file_device_source_state,
             file_sync_item,
             file_sync_batch,
+            file_document_revision_generation,
+            file_document_position,
+            file_document_chunk,
+            file_document_job,
+            file_document_generation,
+            file_document,
             file_content,
             file_content_upload,
             file_revision,
@@ -347,12 +353,12 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
         .await;
     }
 
-    let source = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
+    let basic = access::login_with_roles(&owner, &["Basic"]);
     assert!(matches!(
         bl::list_roots(
             &env.dbx,
             env.file_registry_db().unwrap(),
-            &source,
+            &basic,
             tree.device_id,
         )
         .await

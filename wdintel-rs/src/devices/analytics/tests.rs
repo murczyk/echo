@@ -8,7 +8,7 @@ use super::types::{
 };
 use super::{bl, query, queue, worker};
 use crate::devices::files::types::RawSyncDeviceFileItem;
-use crate::devices::{access, ROLE_CYBER, ROLE_DEVICE_SOURCE};
+use crate::devices::{access, ROLE_CYBER};
 use crate::entities::{device, login, organism};
 use crate::file_registry::entities::{
     device_file_tag, file_analysis_definition, file_analysis_run,
@@ -398,7 +398,7 @@ async fn insert_analytics_test_device(env: &Env) -> Uuid {
         login::ActiveModel {
             login: Set(format!("analytics-worker-{}", Uuid::now_v7())),
             organism_id: Set(Some(organism.id)),
-            roles: Set(json!([ROLE_DEVICE_SOURCE])),
+            roles: Set(json!([ROLE_CYBER])),
             ..Default::default()
         },
     )
@@ -533,7 +533,7 @@ async fn sync_file_extension(
         .await
         .unwrap()
         .unwrap();
-    let actor = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
+    let actor = access::login_with_roles(&owner, &[ROLE_CYBER]);
     let response = crate::devices::files::sync::automatic(
         &env.dbx,
         env.file_registry_db().unwrap(),
@@ -1547,7 +1547,7 @@ async fn metadata_only_sync_preserves_current_analysis_projection() {
         .await
         .unwrap()
         .unwrap();
-    let actor = access::login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let actor = access::login_with_roles(&source_login, &[ROLE_CYBER]);
     let response = crate::devices::files::sync::automatic(
         &env.dbx,
         env.file_registry_db().unwrap(),

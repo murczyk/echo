@@ -3934,6 +3934,7 @@ mod tests {
             tag_presence: None,
             selected_networks: None,
             without_network: None,
+            only_with_network: None,
             metadata_cc: None,
             metadata_sender: None,
             metadata_receiver: None,
@@ -5249,19 +5250,32 @@ mod tests {
             idle_in_transaction_session_timeout_ms:
                 POSTGRES_RUNTIME_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS_DEFAULT,
         });
-        let retry_db = crate::new_pg_runtime_pool_from_config(
-            &config,
-            crate::PgRuntimePoolRole::Bgworker,
+        let retry_db = crate::new_pg_pool_from_conn_string_with_runtime_config(
+            crate::mk_conn_string(&config),
+            1,
+            config.postgres_runtime.as_ref(),
+            Some(crate::PgRuntimePoolRole::Bgworker),
         )
         .await
         .unwrap();
+        let finalizer_pid: i32 = retry_db
+            .query_one_raw(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "select pg_backend_pid()",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get_by_index(0)
+            .unwrap();
         let finalizer = tokio::spawn(async move {
             finalize_claimed_group_stats_day_with_retry(
                 &retry_db, &claimed, true,
             )
             .await
         });
-        tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+        wait_for_finalization_retry(&env.dbx, finalizer_pid).await;
+        assert!(!finalizer.is_finished());
         blocker.rollback().await.unwrap();
 
         let retry_count =
@@ -5278,6 +5292,36 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    async fn wait_for_finalization_retry(dbx: &DatabaseConnection, pid: i32) {
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let idle_after_attempt: bool = dbx
+                    .query_one_raw(Statement::from_sql_and_values(
+                        DatabaseBackend::Postgres,
+                        r#"
+                            select exists (
+                                select 1 from pg_stat_activity
+                                where pid = $1 and state = 'idle'
+                                  and query like '%delete from group_stats_recalculation_day%'
+                            )
+                        "#,
+                        vec![pid.into()],
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .try_get_by_index(0)
+                    .unwrap();
+                if idle_after_attempt {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("finalization must retry while the row remains locked");
     }
 
     #[serial]

@@ -58,6 +58,7 @@ pub struct Model {
     pub messenger_media_cache_retention_hours: Option<i64>,
     pub messenger_media_cache_max_size_gib: Option<i64>,
     pub messenger_media_cache_min_free_gib: Option<i64>,
+    pub rer_report_enabled: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

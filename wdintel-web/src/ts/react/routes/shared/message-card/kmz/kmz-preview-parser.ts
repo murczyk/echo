@@ -1,0 +1,316 @@
+import { DOMParser } from '@xmldom/xmldom';
+import { kml } from '@tmcw/togeojson';
+import { Unzip, UnzipInflate } from 'fflate';
+import type { Feature, Geometry, Position } from 'geojson';
+
+import {
+  MAX_KMZ_PREVIEW_COORDINATES,
+  MAX_KMZ_PREVIEW_ENTRIES,
+  MAX_KMZ_PREVIEW_EXPANDED_BYTES,
+  MAX_KMZ_PREVIEW_INFERRED_AREA_GROUPS,
+  MAX_KMZ_PREVIEW_INFERRED_AREA_VERTICES,
+  MAX_KMZ_PREVIEW_SOURCE_BYTES,
+  MIN_KMZ_PREVIEW_INFERRED_AREA_POINTS,
+} from './kmz-preview-utils';
+import type { KmzPreview, KmzPreviewCoords } from './kmz-preview-types';
+
+const decoder = new TextDecoder();
+const KMZ_INPUT_CHUNK_BYTES = 1024;
+
+function fail(code: string): never {
+  throw new Error(code);
+}
+function number(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+function color(value: unknown): string | null {
+  return typeof value === 'string' && /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(value) ? value : null;
+}
+function nonblankLabel(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+function coord(value: Position): KmzPreviewCoords | null {
+  const [lng, lat] = value;
+  return typeof lat === 'number' &&
+    typeof lng === 'number' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+    ? { lat, lng }
+    : null;
+}
+function appendCoords(values: Position[], coordinates: KmzPreviewCoords[]): KmzPreviewCoords[] {
+  const result: KmzPreviewCoords[] = [];
+  for (const value of values) {
+    const parsed = coord(value);
+    if (parsed == null) continue;
+    if (coordinates.length + result.length >= MAX_KMZ_PREVIEW_COORDINATES)
+      fail('KMZ_TOO_MANY_COORDINATES');
+    result.push(parsed);
+  }
+  coordinates.push(...result);
+  return result;
+}
+type PointGroup = { color: string | null; coords: KmzPreviewCoords[] };
+
+function placemarkGroups(document: Document, member: number): Map<string, string> {
+  const folders = new WeakMap<Element, string>();
+  Array.from(document.getElementsByTagNameNS('*', 'Folder')).forEach((folder, index) => {
+    folders.set(folder, `${member}:${index}`);
+  });
+  const groups = new Map<string, string>();
+  Array.from(document.getElementsByTagNameNS('*', 'Placemark')).forEach((placemark, index) => {
+    const id = `preview-placemark-${index}`;
+    placemark.setAttribute('id', id);
+    let parent = placemark.parentNode;
+    while (parent != null && parent.nodeType === 1 && !folders.has(parent as Element))
+      parent = parent.parentNode;
+    groups.set(
+      id,
+      parent != null && folders.has(parent as Element)
+        ? folders.get(parent as Element)!
+        : `${member}:root`,
+    );
+  });
+  return groups;
+}
+
+function convexHull(points: KmzPreviewCoords[]): KmzPreviewCoords[] {
+  const sorted = [...points]
+    .sort((a, b) => a.lng - b.lng || a.lat - b.lat)
+    .filter(
+      (point, index, values) =>
+        index === 0 || point.lng !== values[index - 1].lng || point.lat !== values[index - 1].lat,
+    );
+  if (sorted.length < 3) return [];
+  const cross = (a: KmzPreviewCoords, b: KmzPreviewCoords, c: KmzPreviewCoords) =>
+    (b.lng - a.lng) * (c.lat - a.lat) - (b.lat - a.lat) * (c.lng - a.lng);
+  const half = (values: KmzPreviewCoords[]) => {
+    const hull: KmzPreviewCoords[] = [];
+    for (const point of values) {
+      while (hull.length > 1 && cross(hull[hull.length - 2], hull[hull.length - 1], point) <= 0)
+        hull.pop();
+      hull.push(point);
+    }
+    return hull;
+  };
+  const ring = [...half(sorted).slice(0, -1), ...half(sorted.reverse()).slice(0, -1)];
+  if (ring.length < 3) return [];
+  if (ring.length <= MAX_KMZ_PREVIEW_INFERRED_AREA_VERTICES) return ring;
+  return Array.from(
+    { length: MAX_KMZ_PREVIEW_INFERRED_AREA_VERTICES },
+    (_, index) => ring[Math.floor((index * ring.length) / MAX_KMZ_PREVIEW_INFERRED_AREA_VERTICES)],
+  );
+}
+
+function addFeature(
+  preview: KmzPreview,
+  feature: Feature<Geometry | null>,
+  coordinates: KmzPreviewCoords[],
+  group: string,
+  pointGroups: Map<string, PointGroup>,
+) {
+  if (feature.geometry == null) return;
+  const properties = feature.properties ?? {};
+  const label = nonblankLabel(properties.name) ?? nonblankLabel(properties.description);
+  const strokeColor = color(properties.stroke);
+  const fillColor = color(properties.fill);
+  const strokeOpacity = number(properties['stroke-opacity'], 1);
+  const fillOpacity = number(properties['fill-opacity'], 0.2);
+  const pointColor = color(properties['icon-color']) ?? color(properties['marker-color']);
+  const addGeometry = (geometry: Geometry) => {
+    if (geometry.type === 'Point') {
+      const value = coord(geometry.coordinates);
+      if (value == null) return;
+      coordinates.push(value);
+      if (coordinates.length > MAX_KMZ_PREVIEW_COORDINATES) fail('KMZ_TOO_MANY_COORDINATES');
+      preview.points.push({
+        coords: value,
+        label,
+        color: pointColor,
+        opacity: number(properties['icon-opacity'] ?? properties['marker-opacity'], 1),
+      });
+      const key = `${group}:${pointColor ?? ''}`;
+      const points = pointGroups.get(key) ?? { color: pointColor, coords: [] };
+      points.coords.push(value);
+      pointGroups.set(key, points);
+    } else if (geometry.type === 'LineString') {
+      const values = appendCoords(geometry.coordinates, coordinates);
+      if (values.length >= 2)
+        preview.lineStrings.push({
+          coords: values,
+          label,
+          color: strokeColor,
+          opacity: strokeOpacity,
+        });
+    } else if (geometry.type === 'Polygon') {
+      const coordinateCount = coordinates.length;
+      const [outer, ...inner] = geometry.coordinates;
+      if (outer == null) return;
+      const exterior = appendCoords(outer, coordinates);
+      if (exterior.length < 3) {
+        coordinates.length = coordinateCount;
+        return;
+      }
+      const rings = [exterior];
+      for (const ring of inner) {
+        const beforeRing = coordinates.length;
+        const values = appendCoords(ring, coordinates);
+        if (values.length >= 3) rings.push(values);
+        else coordinates.length = beforeRing;
+      }
+      preview.polygons.push({ rings, label, strokeColor, strokeOpacity, fillColor, fillOpacity });
+    } else if (
+      geometry.type === 'MultiPoint' ||
+      geometry.type === 'MultiLineString' ||
+      geometry.type === 'MultiPolygon' ||
+      geometry.type === 'GeometryCollection'
+    ) {
+      const geometries: Geometry[] =
+        geometry.type === 'GeometryCollection'
+          ? geometry.geometries
+          : geometry.type === 'MultiPoint'
+            ? geometry.coordinates.map((coordinates) => ({ type: 'Point', coordinates }))
+            : geometry.type === 'MultiLineString'
+              ? geometry.coordinates.map((coordinates) => ({ type: 'LineString', coordinates }))
+              : geometry.coordinates.map((coordinates) => ({ type: 'Polygon', coordinates }));
+      geometries.forEach(addGeometry);
+    }
+  };
+  addGeometry(feature.geometry);
+}
+function parseKml(
+  text: string,
+  preview: KmzPreview,
+  coordinates: KmzPreviewCoords[],
+  pointGroups: Map<string, PointGroup>,
+  member: number,
+) {
+  let document: Document;
+  try {
+    document = new DOMParser().parseFromString(text, 'application/xml');
+  } catch {
+    fail('KML_MALFORMED');
+  }
+  if (document.getElementsByTagName('parsererror').length > 0) fail('KML_MALFORMED');
+  const groups = placemarkGroups(document, member);
+  for (const feature of kml(document, { skipNullGeometry: true }).features)
+    addFeature(
+      preview,
+      feature,
+      coordinates,
+      groups.get(String(feature.id)) ?? `${member}:root`,
+      pointGroups,
+    );
+}
+function concat(chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+function kmzKmlTexts(bytes: Uint8Array): string[] {
+  if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) fail('KMZ_MALFORMED');
+  let entries = 0;
+  let expanded = 0;
+  let limitError: 'KMZ_TOO_MANY_ENTRIES' | 'KMZ_EXPANDED_TOO_LARGE' | null = null;
+  const files: Array<{ name: string; chunks: Uint8Array[] }> = [];
+  const activeFiles = new Set<{ terminate: () => void; chunks: Uint8Array[] }>();
+  const stop = (error: 'KMZ_TOO_MANY_ENTRIES' | 'KMZ_EXPANDED_TOO_LARGE') => {
+    limitError ??= error;
+    for (const file of activeFiles) {
+      file.chunks.length = 0;
+      file.terminate();
+    }
+    activeFiles.clear();
+    for (const file of files) file.chunks.length = 0;
+  };
+  const unzip = new Unzip((file) => {
+    if (limitError != null) return;
+    entries += 1;
+    if (entries > MAX_KMZ_PREVIEW_ENTRIES) {
+      stop('KMZ_TOO_MANY_ENTRIES');
+      return;
+    }
+    if (!/\.kml$/i.test(file.name)) return;
+    const remaining = MAX_KMZ_PREVIEW_EXPANDED_BYTES - expanded;
+    if (file.originalSize != null && file.originalSize > remaining) {
+      stop('KMZ_EXPANDED_TOO_LARGE');
+      return;
+    }
+    const chunks: Uint8Array[] = [];
+    const activeFile = { terminate: () => file.terminate(), chunks };
+    activeFiles.add(activeFile);
+    file.ondata = (error, data, final) => {
+      if (limitError != null) return;
+      if (error != null) fail('KMZ_MALFORMED');
+      if (expanded + data.length > MAX_KMZ_PREVIEW_EXPANDED_BYTES) {
+        stop('KMZ_EXPANDED_TOO_LARGE');
+        return;
+      }
+      expanded += data.length;
+      chunks.push(data);
+      if (final) {
+        activeFiles.delete(activeFile);
+        files.push({ name: file.name, chunks });
+      }
+    };
+    file.start();
+  });
+  unzip.register(UnzipInflate);
+  try {
+    for (
+      let offset = 0;
+      offset < bytes.length && limitError == null;
+      offset += KMZ_INPUT_CHUNK_BYTES
+    ) {
+      const end = Math.min(offset + KMZ_INPUT_CHUNK_BYTES, bytes.length);
+      unzip.push(bytes.subarray(offset, end), end === bytes.length);
+    }
+  } catch (error) {
+    if (error instanceof Error && /^KMZ_(TOO_MANY_ENTRIES|EXPANDED_TOO_LARGE)$/.test(error.message))
+      throw error;
+    fail('KMZ_MALFORMED');
+  }
+  if (limitError != null) fail(limitError);
+  if (files.length === 0) fail('KMZ_NO_KML');
+  return files
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(({ chunks }) => decoder.decode(concat(chunks)));
+}
+
+export function parseKmzPreview(buffer: ArrayBuffer, format: 'kml' | 'kmz'): KmzPreview {
+  if (buffer.byteLength > MAX_KMZ_PREVIEW_SOURCE_BYTES) fail('KMZ_SOURCE_TOO_LARGE');
+  const preview: KmzPreview = { points: [], lineStrings: [], polygons: [] };
+  const coordinates: KmzPreviewCoords[] = [];
+  const pointGroups = new Map<string, PointGroup>();
+  const texts = format === 'kml' ? [decoder.decode(buffer)] : kmzKmlTexts(new Uint8Array(buffer));
+  texts.forEach((text, member) => parseKml(text, preview, coordinates, pointGroups, member));
+  if (
+    preview.polygons.length === 0 &&
+    preview.lineStrings.length === 0 &&
+    pointGroups.size <= MAX_KMZ_PREVIEW_INFERRED_AREA_GROUPS
+  )
+    for (const group of pointGroups.values()) {
+      if (group.coords.length < MIN_KMZ_PREVIEW_INFERRED_AREA_POINTS) continue;
+      const ring = convexHull(group.coords);
+      if (ring.length < 3) continue;
+      preview.polygons.push({
+        rings: [ring],
+        label: null,
+        strokeColor: group.color,
+        strokeOpacity: 1,
+        fillColor: group.color,
+        fillOpacity: 0.14,
+        inferredFromPoints: true,
+      });
+    }
+  return preview;
+}

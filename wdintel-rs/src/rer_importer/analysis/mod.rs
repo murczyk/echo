@@ -2762,12 +2762,16 @@ pub fn filter_selected_networks<Q>(
     mut q: Q,
     selected_networks: &Option<Vec<i64>>,
     without_network: &Option<bool>,
+    only_with_network: &Option<bool>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter + QueryTrait,
 {
-    if let Some(expr) = network_filter_expr(selected_networks, without_network)
-    {
+    if let Some(expr) = network_filter_expr(
+        selected_networks,
+        without_network,
+        only_with_network,
+    ) {
         q = q.filter(expr);
     }
     Ok(q)
@@ -2777,6 +2781,7 @@ pub(super) fn filter_selected_networks_analytics<E>(
     q: Select<E>,
     selected_networks: &Option<Vec<i64>>,
     without_network: &Option<bool>,
+    only_with_network: &Option<bool>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<E>, AppError>
 where
@@ -2784,14 +2789,21 @@ where
 {
     let selected_network_ids =
         selected_networks.as_ref().filter(|ids| !ids.is_empty());
-    if without_network.unwrap_or(false) && selected_network_ids.is_some() {
+    let only_with_network = only_with_network.unwrap_or(false);
+    if without_network.unwrap_or(false)
+        && (selected_network_ids.is_some() || only_with_network)
+    {
         return Ok(q.filter(Expr::cust("FALSE")));
     }
     if without_network.unwrap_or(false) {
         return Ok(q.filter(without_network_filter_expr_with_scope(scope)));
     }
     if selected_network_ids.is_none() {
-        return Ok(q);
+        return if only_with_network {
+            Ok(q.filter(Expr::exists(network_exists_subquery(scope))))
+        } else {
+            Ok(q)
+        };
     }
 
     let inbox_network_alias = Alias::new("analytics_network_filter_link");
@@ -2833,9 +2845,13 @@ pub fn filter_selected_networks_stmt(
     mut q: SelectStatement,
     selected_networks: &Option<Vec<i64>>,
     without_network: &Option<bool>,
+    only_with_network: &Option<bool>,
 ) -> Result<SelectStatement, AppError> {
-    if let Some(expr) = network_filter_expr(selected_networks, without_network)
-    {
+    if let Some(expr) = network_filter_expr(
+        selected_networks,
+        without_network,
+        only_with_network,
+    ) {
         q.and_where(expr);
     }
     Ok(q)
@@ -2844,17 +2860,23 @@ pub fn filter_selected_networks_stmt(
 fn network_filter_expr(
     selected_networks: &Option<Vec<i64>>,
     without_network: &Option<bool>,
+    only_with_network: &Option<bool>,
 ) -> Option<SimpleExpr> {
     let without_network = without_network.unwrap_or(false);
+    let only_with_network = only_with_network.unwrap_or(false);
     let selected_networks =
         selected_networks.as_ref().filter(|v| !v.is_empty());
 
-    if without_network && selected_networks.is_some() {
+    if without_network && (selected_networks.is_some() || only_with_network) {
         return Some(Expr::cust("FALSE"));
     }
 
     if without_network {
         return Some(without_network_filter_expr());
+    }
+
+    if selected_networks.is_none() && only_with_network {
+        return Some(Expr::exists(network_exists_subquery(None)));
     }
 
     selected_networks.map(|ids| {
@@ -3395,43 +3417,10 @@ where
     let mut q2 = q;
     if let Some(ref search) = m_str_trim(search) {
         let search_parts = search::parse_search_parts(search).context(h!())?;
-        if !search_parts.ts_query.is_empty() {
-            let search_tsv = Expr::cust("sigint_search.search_tsv");
-            let search_filter =
-                sea_orm::sea_query::extension::postgres::PgExpr::matches(
-                    search_tsv.clone(),
-                    Expr::cust_with_values(
-                        "websearch_to_tsquery('russian', $1)",
-                        vec![search_parts.ts_query.clone()],
-                    ),
-                );
-            let search_filter = match search::ts_prefix_query(
-                &search_parts.ts_query,
-            ) {
-                Some(ts_prefix_query) => search_filter.or(
-                    sea_orm::sea_query::extension::postgres::PgExpr::matches(
-                        search_tsv,
-                        Expr::cust_with_values(
-                            "to_tsquery('russian', $1)",
-                            vec![ts_prefix_query],
-                        ),
-                    ),
-                ),
-                None => search_filter,
-            };
-            q2 = q2
-                .join(
-                    JoinType::InnerJoin,
-                    sigint_inbox_item::Relation::SigintSearch.def(),
-                )
-                .filter(search_filter);
-        }
-        for ilike in search_parts.ilike {
-            q2 = q2.filter(body_noheader_body_ilike(ilike));
-        }
-        for not_ilike in search_parts.not_ilike {
-            q2 = q2.filter(body_noheader_body_not_ilike(not_ilike));
-        }
+        q2 = q2.filter(
+            crate::attachments::search::message_filter(search, "all")
+                .c(h!())?,
+        );
 
         if !search_parts.freq.is_empty() {
             q2 = filter_selected_freqs(q2, &Some(search_parts.freq))?;
@@ -3451,20 +3440,6 @@ where
         return Ok(q2);
     }
     Ok(q2)
-}
-
-fn body_noheader_body_ilike(pattern: String) -> SimpleExpr {
-    Expr::cust_with_values(
-        "coalesce(jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body'), '') ILIKE $1 ESCAPE '\\'",
-        vec![pattern],
-    )
-}
-
-fn body_noheader_body_not_ilike(pattern: String) -> SimpleExpr {
-    Expr::cust_with_values(
-        "coalesce(jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body'), '') NOT ILIKE $1 ESCAPE '\\'",
-        vec![pattern],
-    )
 }
 
 /// Summary table showing row-per-frequency
@@ -4459,12 +4434,14 @@ fn filter_summary_table_aors_and_networks_for_scope(
             query,
             &req.selected_networks,
             &req.without_network,
+            &req.only_with_network,
             scope,
         ),
         None => filter_selected_networks(
             query,
             &req.selected_networks,
             &req.without_network,
+            &req.only_with_network,
         ),
     }
 }
@@ -5736,6 +5713,7 @@ pub async fn edit_freq_unit_name(
         rows_res,
         &reqan.selected_networks,
         &reqan.without_network,
+        &reqan.only_with_network,
     )
     .context(h!())?;
     let rows_res =
@@ -6710,6 +6688,7 @@ fn build_new_callsign_filtered_items_query(
         query,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
     )
     .c(h!())?;
     let query = filter_selected_metadata_for_analysis_stats(query, req)?;
@@ -7790,7 +7769,7 @@ async fn freq_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<FreqStatsRsp>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "Api"])
         .await
         .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
@@ -8514,6 +8493,9 @@ async fn count_stats(
 }
 
 fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
+    if req.search.as_ref().is_some_and(|s| !s.trim().is_empty()) {
+        return false;
+    }
     // Analytics scopes are materialized from interception-time partitions. Until
     // their creation-time equivalent is available, route creation-basis requests
     // through PostgreSQL so every panel describes the same message set.
@@ -8554,6 +8536,9 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
+    if req.search.as_ref().is_some_and(|s| !s.trim().is_empty()) {
+        return false;
+    }
     !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
         || (req.load_latest == Some(true) && req.nolimit != Some(true))
 }
@@ -9841,7 +9826,7 @@ async fn freq_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "Api"])
         .await
         .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)

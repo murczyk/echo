@@ -241,6 +241,7 @@ fn mk_analysis_stats_req(
         tag_presence: None,
         selected_networks: None,
         without_network: None,
+        only_with_network: None,
         metadata_cc: None,
         metadata_sender: None,
         metadata_receiver: None,
@@ -5989,7 +5990,7 @@ async fn rer_analysis_unit_filter_does_not_match_child_unit_name_suffix() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_freq_stats_follow_group_and_network_filters() {
+async fn issue_3598_rer_analysis_freq_stats_follow_group_and_network_filters() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let env = Data::from(fixture.env.clone());
 
@@ -6081,6 +6082,31 @@ async fn rer_analysis_freq_stats_follow_group_and_network_filters() {
         ])
     );
     assert!(!counts.contains_key("888.8"));
+
+    let test_identity = mk_test_identity().await.unwrap();
+    let mut req = analysis_stats_req0(&fixture);
+    req.only_with_network = Some(true);
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
+    let counts = freq_counts(
+        stats::fetch_freqs_for_login(
+            &req,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
+            &env,
+            master_keys,
+        )
+        .await
+        .unwrap(),
+    );
+
+    assert_eq!(
+        counts,
+        BTreeMap::from([("333.3".to_string(), 1), ("444.4".to_string(), 1),])
+    );
 }
 
 #[tokio::test]
@@ -8009,11 +8035,11 @@ fn creation_time_requests_bypass_interception_scoped_analytics() {
 }
 
 #[test]
-fn count_stats_analytics_supports_callsign_and_search_filters() {
+fn count_stats_analytics_supports_callsigns_but_bypasses_text_search() {
     let mut req = mk_analysis_stats_req(0, 1);
 
     req.search = Some("callsign".to_string());
-    assert!(analytics_count_request_supported(&req));
+    assert!(!analytics_count_request_supported(&req));
 
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
@@ -8028,7 +8054,7 @@ fn count_stats_analytics_supports_unit_filters() {
 }
 
 #[test]
-fn summary_table_analytics_supports_unit_filters_and_supports_search() {
+fn summary_table_analytics_supports_units_but_bypasses_text_search() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
     assert!(analytics_summary_table_request_supported(&req));
@@ -8036,11 +8062,11 @@ fn summary_table_analytics_supports_unit_filters_and_supports_search() {
 
     req.selected_units = None;
     req.search = Some("message".to_string());
-    assert!(analytics_summary_table_request_supported(&req));
+    assert!(!analytics_summary_table_request_supported(&req));
 }
 
 #[test]
-fn analytical_inbox_reads_support_callsign_and_search_filters() {
+fn analytical_inbox_reads_support_callsigns_but_bypass_text_search() {
     let mut req = InboxMessagesReq::default();
     assert!(!analytics_inbox_request_supported(&req));
 
@@ -8052,7 +8078,7 @@ fn analytical_inbox_reads_support_callsign_and_search_filters() {
     assert!(analytics_inbox_request_supported(&req));
 
     req.search = Some("callsign".to_string());
-    assert!(analytics_inbox_request_supported(&req));
+    assert!(!analytics_inbox_request_supported(&req));
 
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
@@ -8090,7 +8116,7 @@ fn analytical_inbox_candidates_reject_unbounded_and_support_bounded_media_and_no
 
     req.only_with_media = None;
     req.search = Some("message".to_string());
-    assert!(analytics_inbox_candidates_supported(&req));
+    assert!(!analytics_inbox_candidates_supported(&req));
 
     req.search = None;
     req.nolimit = Some(true);
@@ -9312,12 +9338,8 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
         Some(destructive_device.id)
     );
 
-    set_login_roles(
-        &fixture.env.dbx,
-        login_id,
-        serde_json::json!(["Rer", "DeviceSource"]),
-    )
-    .await;
+    set_login_roles(&fixture.env.dbx, login_id, serde_json::json!(["Rer"]))
+        .await;
     assert_eq!(
         call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
             .await

@@ -18,6 +18,8 @@ use sea_orm_migration::MigratorTrait;
 use sqlx::migrate::MigrateDatabase;
 use std::{collections::BTreeMap, error::Error as StdError, future::Future};
 
+mod device_audio;
+
 #[tokio::test]
 async fn missing_configuration_skips_connection_and_migrations() {
     let config: Config = toml::from_str(
@@ -653,6 +655,9 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260905_160446_device_file_content".to_string(),
             "m20260915_212032_reuse_verified_file_content".to_string(),
             "m20260921_122222_device_sync_session_history".to_string(),
+            "m20261003_152726_create_device_audio".to_string(),
+            "m20261006_082251_device_documents".to_string(),
+            "m20261006_082252_file_history_search".to_string(),
         ]
     );
 }
@@ -1185,6 +1190,7 @@ order by tablename, indexname
             ),
             ("file_revision", "file_metadata_revision_sync_file_idx",),
             ("file_revision", "file_revision_device_file_revision_key",),
+            ("file_revision", "file_revision_name_trgm_idx"),
             ("file_revision", "file_revision_session_journal_idx"),
             ("file_sync_batch", "file_sync_batch_pkey"),
             ("file_sync_item", "file_sync_item_accepted_path_uidx"),
@@ -1525,6 +1531,7 @@ order by relation.relname, trigger.tgname
         [
             ("file_content", "file_content_immutable_trg"),
             ("file_content", "file_content_verify_reuse_trg"),
+            ("file_content", "file_document_content_published"),
             ("file_content_upload", "file_content_upload_mutation_trg",),
         ]
         .into_iter()

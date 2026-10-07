@@ -42,6 +42,30 @@ describe('getPointPopupTemplate', () => {
     expect(html).toContain('badge-highlighed-token--callsign');
   });
 
+  it('keeps AI position text in the popup', () => {
+    const message = buildMessage({
+      text_marked: [
+        { CNTextC: { text: 'до ' } },
+        {
+          CNPositionC: {
+            text: 'Циркон <9>',
+            etalon: 'циркон 9',
+            begin: 3,
+            end: 13,
+            mgrs: [],
+            knownMgrs: null,
+            knownAt: null,
+            knownConflicting: false,
+          },
+        },
+      ] as unknown as Message[1]['text_marked'],
+    });
+
+    const html = getPointPopupTemplate([message], []);
+
+    expect(html).toContain('<span class="content-token--position">Циркон &lt;9&gt;</span>');
+  });
+
   it('prefers the message unit over a network-unit guess', () => {
     const message = buildMessage({
       freq: '145.5',

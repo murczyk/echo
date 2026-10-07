@@ -118,9 +118,13 @@ async fn sync_integration(
     let first_destination = destinations.first().c(h!())?;
     let destination = destinations.last().c(h!())?;
     let started_at = Utc::now().naive_utc();
-    let pending_events = load_pending_events(&env.dbx, api_integration.id)
-        .await
-        .c(h!())?;
+    let pending_events = load_pending_events_with_batch_size(
+        &env.dbx,
+        api_integration.id,
+        env.config.api_integration_iggy_event_batch_size(),
+    )
+    .await
+    .c(h!())?;
     let pending_events = pending_events
         .into_iter()
         .filter(|event| event.created_at <= started_at)
@@ -581,9 +585,10 @@ async fn has_visible_linked_inbox_item(
     }
 }
 
-async fn load_pending_events(
+async fn load_pending_events_with_batch_size(
     dbx: &DatabaseConnection,
     api_integration_id: i64,
+    event_batch_size: u64,
 ) -> Result<Vec<api_integration_iggy_event::Model>, AppError> {
     api_integration_iggy_event::Entity::find()
         .filter(
@@ -591,11 +596,24 @@ async fn load_pending_events(
                 .eq(api_integration_id),
         )
         .order_by_asc(api_integration_iggy_event::Column::Id)
-        .limit(crate::config::API_INTEGRATION_IGGY_EVENT_BATCH_SIZE)
+        .limit(event_batch_size)
         .all(dbx)
         .await
         .c(h!())
         .map_err(AppError::from)
+}
+
+#[cfg(test)]
+async fn load_pending_events(
+    dbx: &DatabaseConnection,
+    api_integration_id: i64,
+) -> Result<Vec<api_integration_iggy_event::Model>, AppError> {
+    load_pending_events_with_batch_size(
+        dbx,
+        api_integration_id,
+        crate::config::API_INTEGRATION_IGGY_EVENT_BATCH_SIZE,
+    )
+    .await
 }
 
 async fn maybe_log_analytics_entries(

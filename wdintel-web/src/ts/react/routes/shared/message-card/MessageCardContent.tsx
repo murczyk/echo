@@ -1,5 +1,6 @@
 import type {
   CallsignInfoRes,
+  CnPosition,
   ContentNode,
   InboxMessage,
   MediaSummaryStatus,
@@ -51,8 +52,11 @@ import {
   hasCoordinatePreviewCandidate,
   resolveMessageCoordinatePreviewSummaryCount,
   resolveUnpreviewableRawMessageCoordinates,
+  resolveMessageCoordinatePreview,
+  coordinatePointKey,
   type CoordinatePreviewPoint,
 } from './message-coordinate-preview';
+import { resolvePositionCoordinatePreviewPoints } from './message-position-coordinates';
 import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../../hooks/duty-settings-defaults';
 import {
   isAudioMediaAttachment,
@@ -71,6 +75,7 @@ import { MessageCardTags } from './MessageCardTags';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import { MessageMediaDocumentLink } from './MessageMediaDocumentLink';
 import { KmzAttachmentPreviewLink } from './KmzAttachmentPreviewLink';
+import { isNativeKmlOrKmz } from './kmz/kmz-preview-utils';
 import { collectMessageDocuments } from './message-card-document-utils';
 import { blurActiveElement } from '../../../utils/focus';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -350,6 +355,10 @@ export function MessageCardMessageBody({
   const [coordinatePreviewPoints, setCoordinatePreviewPoints] = useState<CoordinatePreviewPoint[]>(
     [],
   );
+  const [coordinateFocusIndex, setCoordinateFocusIndex] = useState<number | undefined>();
+  const coordinateOpenRequestRef = useRef(0);
+  const coordinateMessageRef = useRef(msg);
+  coordinateMessageRef.current = msg;
   const [pointBlacklistDialog, setPointBlacklistDialog] =
     useState<PointBlacklistDialogState | null>(null);
   const [pointBlacklistPalitraNames, setPointBlacklistPalitraNames] = useState<PalitraName[]>([]);
@@ -511,7 +520,14 @@ export function MessageCardMessageBody({
   );
   const kmzConversionHrefSet = new Set(
     (msg.media ?? [])
-      .filter((attachment) => attachment.kmzConversionStatus != null)
+      .filter(
+        (attachment) =>
+          attachment.kmzConversionStatus != null ||
+          isNativeKmlOrKmz(
+            mediaAttachmentDisplayName(attachment),
+            mediaAttachmentContentType(attachment),
+          ) != null,
+      )
       .map((attachment) => normalizeAttachmentHref(attachment.href)),
   );
   const documents = collectMessageDocuments(msg).filter(
@@ -538,7 +554,12 @@ export function MessageCardMessageBody({
     (attachment) => !isAudioMediaAttachment(attachment) && !isVideoMediaAttachment(attachment),
   );
   const kmzPreviewAttachments = downloadAttachments.filter(
-    (attachment) => attachment.kmzConversionStatus != null,
+    (attachment) =>
+      attachment.kmzConversionStatus != null ||
+      isNativeKmlOrKmz(
+        mediaAttachmentDisplayName(attachment),
+        mediaAttachmentContentType(attachment),
+      ) != null,
   );
   const mediaAttachmentCount = images.length + videoAttachments.length;
   const documentAttachmentCount = documents.length + downloadAttachments.length;
@@ -662,17 +683,30 @@ export function MessageCardMessageBody({
           mediaId: resolveMediaAttachmentId(attachment),
           originalHref: String(attachment.href ?? ''),
           fileName: mediaAttachmentDisplayName(attachment),
+          sizeBytes: attachment.sizeBytes ?? null,
+          contentType: mediaAttachmentContentType(attachment),
           initialStatus: attachment.kmzConversionStatus ?? 'pending',
+          nativeFormat: isNativeKmlOrKmz(
+            mediaAttachmentDisplayName(attachment),
+            mediaAttachmentContentType(attachment),
+          ),
         },
       })),
       ...audioPreviewSources.map((audio) => ({ type: 'audio' as const, value: audio })),
       ...(coordinatePreviewPoints.length > 0
-        ? [{ type: 'coordinate' as const, points: coordinatePreviewPoints }]
+        ? [
+            {
+              type: 'coordinate' as const,
+              points: coordinatePreviewPoints,
+              initialPointIndex: coordinateFocusIndex,
+            },
+          ]
         : []),
     ],
     [
       audioPreviewSources,
       coordinatePreviewPoints,
+      coordinateFocusIndex,
       images,
       kmzPreviewAttachments,
       previewableDocuments,
@@ -683,6 +717,50 @@ export function MessageCardMessageBody({
     images.length + videoPreviewSources.length + previewableDocuments.length;
   const coordinatePreviewStartIndex =
     kmzPreviewStartIndex + kmzPreviewAttachments.length + audioPreviewSources.length;
+
+  const openPositionOnMap = useCallback(
+    async (position: CnPosition) => {
+      const target = resolvePositionCoordinatePreviewPoints(position)[0];
+      if (target == null) return;
+      const requestId = ++coordinateOpenRequestRef.current;
+      try {
+        const preview = await resolveMessageCoordinatePreview({ message: msg, tagsMap });
+        if (
+          !mountedRef.current ||
+          coordinateMessageRef.current !== msg ||
+          coordinateOpenRequestRef.current !== requestId
+        )
+          return;
+        if (preview?.lookupError != null) {
+          notify({
+            severity: 'error',
+            message: 'Не вдалося завантажити всі точки мапи повідомлення.',
+          });
+        }
+        const index =
+          preview?.points.findIndex(
+            (point) => coordinatePointKey(point) === coordinatePointKey(target),
+          ) ?? -1;
+        if (preview == null || index < 0) return;
+        blurActiveElement();
+        setCoordinatePreviewPoints(preview.points);
+        setCoordinateFocusIndex(index);
+        setAttachmentPreviewIndex(coordinatePreviewStartIndex);
+      } catch (error) {
+        if (
+          !mountedRef.current ||
+          coordinateMessageRef.current !== msg ||
+          coordinateOpenRequestRef.current !== requestId
+        )
+          return;
+        notify({
+          severity: 'error',
+          message: `Не вдалося відкрити мапу повідомлення: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    },
+    [coordinatePreviewStartIndex, msg, notify, tagsMap],
+  );
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const hasCoordinateMapPreview = hasCoordinatePreviewCandidate(msg, tagsMap);
@@ -713,6 +791,7 @@ export function MessageCardMessageBody({
     hasMessageTextOverflow && !isMessageTextExpanded,
     messageTextPreviewLines,
     reportGroupInfos,
+    openPositionOnMap,
   );
   const hasTextPrimary = Array.isArray(textPrimary)
     ? textPrimary.some((node) => isPresent(node))
@@ -869,6 +948,8 @@ export function MessageCardMessageBody({
         tagsMap={tagsMap}
         onPointsChange={setCoordinatePreviewPoints}
         onOpen={() => {
+          coordinateOpenRequestRef.current += 1;
+          setCoordinateFocusIndex(undefined);
           blurActiveElement();
           setAttachmentPreviewIndex(coordinatePreviewStartIndex);
         }}
@@ -1001,6 +1082,8 @@ export function MessageCardMessageBody({
                     mediaId={resolveMediaAttachmentId(attachment)}
                     originalHref={String(attachment.href ?? '')}
                     fileName={mediaAttachmentDisplayName(attachment)}
+                    sizeBytes={attachment.sizeBytes ?? null}
+                    contentType={mediaAttachmentContentType(attachment)}
                     initialStatus={attachment.kmzConversionStatus ?? 'pending'}
                     selected={selected}
                     onPreview={() => {
@@ -1110,6 +1193,7 @@ function useMemoText(
   showTextPreview = false,
   messageTextPreviewLines: 20 | 40 | null = 20,
   messageLinkGroupInfos: Record<string, SignalGroupEntry> = {},
+  onOpenPositionOnMap?: (position: CnPosition) => void,
 ) {
   const messageText = msg.text ?? '';
   const visibleText =
@@ -1128,6 +1212,7 @@ function useMemoText(
           message: msg,
           messageId,
           onOpenPointsOnMap,
+          onOpenPositionOnMap,
           onRequestPointBlacklist,
           pendingBlacklistKeys,
           callsignInfoMap,

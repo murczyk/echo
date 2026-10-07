@@ -111,6 +111,7 @@ export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaI
     transcription: (m.transcription ?? raw.transcription ?? null) as string | null,
     ocr: m.ocr ?? null,
     summary: m.summary ?? null,
+    positions: transformSnakeToCamel<MessageMediaInfo['positions']>(m.positions ?? []),
     kmzConversionStatus: (m.kmzConversionStatus ?? raw.kmz_conversion_status ?? null) as
       string | null,
   };
@@ -438,6 +439,7 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
     selected_aors: emptyArrToNull(req.selectedAors),
     selected_networks: emptyArrToNull(req.selectedNetworks),
     without_network: req.withoutNetwork,
+    only_with_network: req.onlyWithNetwork,
     metadata_cc: req.metadataCc,
     metadata_sender: req.metadataSender,
     metadata_receiver: req.metadataReceiver,

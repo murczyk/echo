@@ -50,6 +50,7 @@ import {
 
 type SystemSettingsForm = {
   exactMatchOnlyDefault: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
@@ -90,6 +91,7 @@ type PatchSystemSettingsForm = (patch: Partial<SystemSettingsForm>) => void;
 
 type SystemSettingsPayload = {
   exactMatchOnlyDefault: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
@@ -130,6 +132,7 @@ const DUTY_POLL_INTERVAL_SEC_MIN = 5;
 
 const EMPTY_FORM: SystemSettingsForm = {
   exactMatchOnlyDefault: true,
+  rerReportEnabled: false,
   supportNonRerInterceptions: false,
   defaultNeoAnalysis: false,
   showClassicDuty: true,
@@ -220,6 +223,7 @@ function InfoLabel({ label, tooltip }: { label: string; tooltip: string }) {
 function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsForm {
   return {
     exactMatchOnlyDefault: item?.rerAnalysisUnitsExactMatchOnlyDefault ?? true,
+    rerReportEnabled: item?.rerReportEnabled ?? false,
     supportNonRerInterceptions: item?.supportNonRerInterceptions ?? false,
     defaultNeoAnalysis: item?.defaultNeoAnalysis ?? false,
     showClassicDuty: item?.showClassicDuty ?? true,
@@ -263,6 +267,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
 function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
   return (
     a.exactMatchOnlyDefault === b.exactMatchOnlyDefault &&
+    a.rerReportEnabled === b.rerReportEnabled &&
     a.supportNonRerInterceptions === b.supportNonRerInterceptions &&
     a.defaultNeoAnalysis === b.defaultNeoAnalysis &&
     a.showClassicDuty === b.showClassicDuty &&
@@ -362,6 +367,7 @@ function normalizeForm(form: SystemSettingsForm): SystemSettingsForm {
 function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
   return {
     exactMatchOnlyDefault: form.exactMatchOnlyDefault,
+    rerReportEnabled: form.rerReportEnabled,
     supportNonRerInterceptions: form.supportNonRerInterceptions,
     defaultNeoAnalysis: form.defaultNeoAnalysis,
     showClassicDuty: form.showClassicDuty,
@@ -642,11 +648,17 @@ function MainSettingsSection({
 function DutySettingsSection({
   form,
   patchForm,
+  onDutyTestEnabledChange,
+  loading,
+  saving,
   replayStatus,
   replayStatusError,
 }: {
   form: SystemSettingsForm;
   patchForm: PatchSystemSettingsForm;
+  onDutyTestEnabledChange: (enabled: boolean) => void;
+  loading: boolean;
+  saving: boolean;
   replayStatus: RerDutyTestReplayStatus | null;
   replayStatusError: string | null;
 }) {
@@ -662,7 +674,7 @@ function DutySettingsSection({
             onChange={(_, checked) => patchForm({ dutyExcludeMenuEnabled: checked })}
           />
         }
-        label="Меню - (мінус) в оперативному"
+        label="Меню «—» (мінус) в оперативному"
       />
       <FormControlLabel
         control={
@@ -683,8 +695,9 @@ function DutySettingsSection({
         control={
           <Switch
             checked={form.dutyTestEnabled}
+            disabled={loading || saving}
             onChange={(_, checked) => {
-              patchForm({ dutyTestEnabled: checked });
+              onDutyTestEnabledChange(checked);
             }}
           />
         }
@@ -1207,6 +1220,75 @@ export function AdminSystemSettingsNeoPage() {
     setForm((prev) => ({ ...prev, ...patch }));
   }
 
+  async function saveSystemSettings(nextForm: SystemSettingsForm) {
+    const payload = formToPayload(nextForm);
+    await createSystemSettings({
+      rerAnalysisUnitsExactMatchOnlyDefault: payload.exactMatchOnlyDefault,
+      rerDutyTestEnabled: payload.dutyTestEnabled,
+      rerDutyInsertHistoricalInterceptions: payload.dutyTestEnabled,
+      rerDutyTestSinceMs: payload.dutyTestSinceMs,
+      rerDutyTestLimit: payload.dutyTestLimit,
+      rerDutyPollIntervalSec: payload.dutyPollIntervalSec,
+      rerDutyTestReplayIntervalSec: payload.dutyTestReplayIntervalSec,
+      rerDutyShortUrl: payload.shortUrlEnabled,
+      rerReportEnabled: payload.rerReportEnabled,
+      supportNonRerInterceptions: payload.supportNonRerInterceptions,
+      defaultNeoAnalysis: payload.defaultNeoAnalysis,
+      showClassicDuty: payload.showClassicDuty,
+      showClassicAnalysis: payload.showClassicAnalysis,
+      showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
+      disableBotTags: payload.disableBotTags,
+      dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
+      analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
+      twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
+      excludeOrbitOtherUnits: payload.excludeOrbitOtherUnits,
+      messengerMediaCacheMinFreeGib: payload.messengerMediaCacheMinFreeGib,
+      messengerMediaCacheMaxSizeGib: payload.messengerMediaCacheMaxSizeGib,
+      messengerMediaCacheRetentionHours: payload.messengerMediaCacheRetentionHours,
+      messengerMediaCacheEnabled: payload.messengerMediaCacheEnabled,
+      autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
+      devicesSectionEnabled: payload.devicesSectionEnabled,
+      sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
+      doNotStoreDuplicateEchoimFailures: payload.doNotStoreDuplicateEchoimFailures,
+      goiAssociationMessageUidWorkerEnabled: payload.goiAssociationMessageUidWorkerEnabled,
+      reportChunkingHours: payload.reportChunkingHours,
+      limitBigReports: payload.limitBigReports,
+      enableAudioTranscription: payload.enableAudioTranscription,
+      pelengBoundsEnabled: payload.pelengBoundsEnabled,
+      pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
+      pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,
+      pelengBoundsBottomRightLat: payload.pelengBoundsBottomRightLat,
+      pelengBoundsBottomRightLng: payload.pelengBoundsBottomRightLng,
+      echoRestapiErrorDiscordWebhookUrl: payload.echoRestapiErrorDiscordWebhookUrl,
+    });
+  }
+
+  async function handleDutyTestEnabledChange(enabled: boolean) {
+    if (saveInProgress || loadInProgress) return;
+
+    if (enabled) {
+      patchForm({ dutyTestEnabled: true });
+      return;
+    }
+
+    const nextForm = { ...saved, dutyTestEnabled: enabled };
+    patchForm({ dutyTestEnabled: enabled });
+    setSaveInProgress(true);
+    setSaveError(null);
+
+    try {
+      await saveSystemSettings(nextForm);
+      setSaved(nextForm);
+      notify({ severity: 'success', message: 'Налаштування тестових повідомлень збережено.' });
+      window.dispatchEvent(new Event('system-settings-saved'));
+    } catch (error) {
+      patchForm({ dutyTestEnabled: saved.dutyTestEnabled });
+      setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
+    } finally {
+      setSaveInProgress(false);
+    }
+  }
+
   async function handleSaveSystemSettings(event?: FormEvent) {
     event?.preventDefault();
     if (saveInProgress) return;
@@ -1224,45 +1306,7 @@ export function AdminSystemSettingsNeoPage() {
     setSaveError(null);
 
     try {
-      const payload = formToPayload(nextForm);
-      await createSystemSettings({
-        rerAnalysisUnitsExactMatchOnlyDefault: payload.exactMatchOnlyDefault,
-        rerDutyTestEnabled: payload.dutyTestEnabled,
-        rerDutyInsertHistoricalInterceptions: payload.dutyTestEnabled,
-        rerDutyTestSinceMs: payload.dutyTestSinceMs,
-        rerDutyTestLimit: payload.dutyTestLimit,
-        rerDutyPollIntervalSec: payload.dutyPollIntervalSec,
-        rerDutyTestReplayIntervalSec: payload.dutyTestReplayIntervalSec,
-        rerDutyShortUrl: payload.shortUrlEnabled,
-        supportNonRerInterceptions: payload.supportNonRerInterceptions,
-        defaultNeoAnalysis: payload.defaultNeoAnalysis,
-        showClassicDuty: payload.showClassicDuty,
-        showClassicAnalysis: payload.showClassicAnalysis,
-        showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
-        disableBotTags: payload.disableBotTags,
-        dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
-        analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
-        twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
-        excludeOrbitOtherUnits: payload.excludeOrbitOtherUnits,
-        messengerMediaCacheMinFreeGib: payload.messengerMediaCacheMinFreeGib,
-        messengerMediaCacheMaxSizeGib: payload.messengerMediaCacheMaxSizeGib,
-        messengerMediaCacheRetentionHours: payload.messengerMediaCacheRetentionHours,
-        messengerMediaCacheEnabled: payload.messengerMediaCacheEnabled,
-        autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
-        devicesSectionEnabled: payload.devicesSectionEnabled,
-        sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
-        doNotStoreDuplicateEchoimFailures: payload.doNotStoreDuplicateEchoimFailures,
-        goiAssociationMessageUidWorkerEnabled: payload.goiAssociationMessageUidWorkerEnabled,
-        reportChunkingHours: payload.reportChunkingHours,
-        limitBigReports: payload.limitBigReports,
-        enableAudioTranscription: payload.enableAudioTranscription,
-        pelengBoundsEnabled: payload.pelengBoundsEnabled,
-        pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
-        pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,
-        pelengBoundsBottomRightLat: payload.pelengBoundsBottomRightLat,
-        pelengBoundsBottomRightLng: payload.pelengBoundsBottomRightLng,
-        echoRestapiErrorDiscordWebhookUrl: payload.echoRestapiErrorDiscordWebhookUrl,
-      });
+      await saveSystemSettings(nextForm);
       setForm(nextForm);
       setSaved(nextForm);
       notify({
@@ -1405,6 +1449,9 @@ export function AdminSystemSettingsNeoPage() {
                         <DutySettingsSection
                           form={form}
                           patchForm={patchForm}
+                          onDutyTestEnabledChange={handleDutyTestEnabledChange}
+                          loading={loadInProgress}
+                          saving={saveInProgress}
                           replayStatus={replayStatus}
                           replayStatusError={replayStatusError}
                         />

@@ -136,14 +136,12 @@ export function useAnalysisDataMessageActions(params: Params) {
     async (messageId: number, currentlyImportant: boolean) => {
       setMessageActionCount((current) => current + 1);
       try {
-        if (currentlyImportant) {
-          await importantRemove({ messageId });
-        } else {
-          await importantAdd({ messageId });
-        }
+        const important = currentlyImportant
+          ? await importantRemove({ messageId })
+          : await importantAdd({ messageId });
 
         params.patchMessages((id, message) =>
-          id === messageId ? { ...message, important: !currentlyImportant } : message,
+          id === messageId ? { ...message, important } : message,
         );
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {

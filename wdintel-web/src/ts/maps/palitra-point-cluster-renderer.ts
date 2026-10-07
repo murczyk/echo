@@ -1,5 +1,6 @@
 import { L } from './leaflet-markercluster';
 import type * as Leaflet from 'leaflet';
+import './palitra-point-label.css';
 
 import { Palitra, PalitraPoint } from './palitra-types';
 import { buildPalitraPopupContent } from './palitra-popup-content';

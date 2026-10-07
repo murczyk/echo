@@ -375,6 +375,24 @@ export type AlpineDownloadResultReq = {
   bgtaskId: number;
 };
 
+export type RerCsvPreflightMetadata = {
+  referenceTimestampMs: number;
+  total: number;
+  valid: number;
+  missingTimestamp: number;
+  invalidMessageSize: number;
+};
+
+export type RerCsvImportSignalGroup = {
+  masterKey: string;
+  name: string;
+};
+
+export type RerCsvImportOptions = {
+  signalGroups: Array<RerCsvImportSignalGroup>;
+  defaultTargetSignalGroupMasterKey: string | null;
+};
+
 export type AreaOfResponsibilityEntry = {
   id: number;
   name: string;
@@ -546,6 +564,7 @@ export type InboxMessagesReq = {
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
   withoutNetwork: boolean | null;
+  onlyWithNetwork: boolean | null;
   metadataCc: Array<string> | null;
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
@@ -777,6 +796,7 @@ export type AnalysisStatsReq = {
   tagPresence: TagPresenceFilter | null;
   selectedNetworks: Array<number> | null;
   withoutNetwork: boolean | null;
+  onlyWithNetwork: boolean | null;
   metadataCc: Array<string> | null;
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
@@ -1575,6 +1595,10 @@ export type ImportantRmReq = {
   messageId: number;
 };
 
+export type ImportantMutationRsp = {
+  important: boolean;
+};
+
 export type ImportantListReq = {
   sinceTsMillis: number | null;
 };
@@ -1602,6 +1626,27 @@ export type CnPoint = {
   palitraIds: Array<number>;
 };
 
+export type CnPosition = {
+  begin: number;
+  end: number;
+  etalon: string;
+  text: string;
+  mgrs: Array<string>;
+  knownMgrs: string | null;
+  knownAt: number | null;
+  knownConflicting: boolean;
+  coordinateSources: Array<CnPositionCoordinateSource>;
+  kind: string;
+  callsign: string | null;
+};
+
+export type CnPositionCoordinateSource = {
+  mgrs: string;
+  messageUuid: string;
+  groupName: string;
+  messageAt: number;
+};
+
 export type CnHighlight = {
   text: string;
   begin: number;
@@ -1615,6 +1660,7 @@ export type ContentNode =
   | { CNHighlightC: CnHighlight }
   | { CNSignalC: CnSignal }
   | { CNPointC: CnPoint }
+  | { CNPositionC: CnPosition }
 ;
 
 export type CnSignal = {
@@ -2201,6 +2247,80 @@ export type DeviceSyncSessionSummariesRsp = {
   summaries: Array<DeviceSyncSessionSummary>;
 };
 
+export type DeviceAudio = {
+  id: string;
+  deviceId: string;
+  recordingStartedAt: string;
+  recordingEndedAt: string;
+  durationSeconds: number;
+  processed: boolean;
+  processingVersion: string;
+};
+
+export type DeviceAudioTranscription = {
+  text: string;
+  textVersion: string;
+};
+
+export type DeviceAudioDetails = {
+  audio: DeviceAudio;
+  transcription: DeviceAudioTranscription;
+  canEdit: boolean;
+};
+
+export type ReceiveDeviceAudioReq = {
+  deviceId: string;
+  uploadUrl: string;
+  name: string;
+  recordingStartedAt: string;
+};
+
+export type ReceiveDeviceAudioRsp = {
+  audio: DeviceAudio;
+};
+
+export type ListDeviceAudioReq = {
+  deviceId: string;
+  unprocessedOnly: boolean;
+  limit: number;
+  cursor: string | null;
+};
+
+export type ListDeviceAudioRsp = {
+  audio: Array<DeviceAudio>;
+  nextCursor: string | null;
+};
+
+export type DeviceAudioDetailReq = {
+  deviceId: string;
+  audioId: string;
+};
+
+export type SaveDeviceAudioTranscriptionReq = {
+  deviceId: string;
+  audioId: string;
+  text: string;
+  expectedTextVersion: string;
+};
+
+export type SaveDeviceAudioTranscriptionRsp = {
+  audioId: string;
+  transcription: DeviceAudioTranscription;
+};
+
+export type SetDeviceAudioProcessingReq = {
+  deviceId: string;
+  audioId: string;
+  processed: boolean;
+  expectedProcessingVersion: string;
+};
+
+export type SetDeviceAudioProcessingRsp = {
+  audioId: string;
+  processed: boolean;
+  processingVersion: string;
+};
+
 export type BatchSummary = {
   syncId: string;
   batchIndex: number;
@@ -2446,6 +2566,7 @@ export type DeviceAnalyticsSummaryItem = {
 
 export type DeviceAnalyticsSummaryRsp = {
   totalFileCount: number;
+  filesWithContentCount: number;
   analyzedFileCount: number;
   items: Array<DeviceAnalyticsSummaryItem>;
 };
@@ -2723,6 +2844,7 @@ export type MessageMediaInfo = {
   ocr: OcrMediaSummary | null;
   summary: MediaSummaryStatus | null;
   kmzConversionStatus: string | null;
+  positions: Array<CnPosition>;
 };
 
 export type SignalMediaKmzConversionStatusRsp = {
@@ -4744,6 +4866,7 @@ export type SystemSettingsCurrentRsp = {
   rerDutyPollIntervalSec: number;
   rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
@@ -4784,6 +4907,7 @@ export type SystemSettingsItem = {
   updatedByLoginId: string | null;
   deleted: boolean;
   shortUrlEnabled: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
@@ -4827,6 +4951,7 @@ export type CreateSystemSettingsReq = {
   rerDutyPollIntervalSec: number;
   rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
@@ -4867,6 +4992,28 @@ export type RerDutyTestReplayStatusRsp = {
   nextSourcePosition: number | null;
   generatedCount: number;
   nextEmitAtMs: number | null;
+};
+
+export type AiGovUaSettingsRsp = {
+  enabled: boolean;
+  tenantId: string;
+  clientId: string;
+  scope: string;
+  hasClientSecret: boolean;
+  updatedAt: number;
+};
+
+export type SaveAiGovUaSettingsReq = {
+  enabled: boolean;
+  tenantId: string;
+  clientId: string;
+  scope: string;
+  clientSecret: string | null;
+  clearClientSecret: boolean;
+};
+
+export type AiGovUaModelsRsp = {
+  models: Array<string>;
 };
 
 export type AiEngineItem = {
@@ -5052,6 +5199,7 @@ export type AiAgentMapRecordInput = {
   y: string;
   comments: Array<string>;
   sources: Array<AiAgentMessageCitation>;
+  fileSources: Array<AiAgentFileCitation>;
 };
 
 export type AiAgentMapRecord = {
@@ -5069,6 +5217,7 @@ export type AiAgentMapRecord = {
   longitude: number | null;
   comments: Array<string>;
   sources: Array<AiAgentMessageCitation>;
+  fileSources: Array<AiAgentFileCitation>;
   warnings: Array<string>;
 };
 
@@ -5247,6 +5396,7 @@ export type AiAgentMessageItem = {
   content: string;
   createdAt: number;
   citations: Array<AiAgentMessageCitation>;
+  fileCitations: Array<AiAgentFileCitation>;
   maps: Array<AiAgentMapSummary>;
 };
 
@@ -5296,6 +5446,7 @@ export type AiAgentAdminSettingsItem = {
   securityReviewEnabled: boolean;
   mattermostChatEnabled: boolean;
   hasMattermostWebhook: boolean;
+  hasMattermostChatWebhook: boolean;
   allowedAiEngineIds: Array<string>;
   providerRuntimeProfiles: Array<AiAgentProviderRuntimeProfileItem>;
 };
@@ -5309,6 +5460,8 @@ export type AiAgentAdminSettingsUpdateReq = {
   mattermostChatEnabled: boolean;
   mattermostWebhookUrl: string | null;
   clearMattermostWebhook: boolean;
+  mattermostChatWebhookUrl: string | null;
+  clearMattermostChatWebhook: boolean;
   allowedAiEngineIds: Array<string>;
   providerRuntimeProfiles: Array<AiAgentProviderRuntimeProfileItem>;
 };
@@ -5673,6 +5826,495 @@ export type SaveAiSettlementParsingReq = {
 export type SaveAiSettlementWorkerSettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
+};
+
+export type AiPositionEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type AiPositionWorkerSettingsItem = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
+export type AiPositionPageRsp = {
+  prompt: string;
+  promptOverridden: boolean;
+  engines: Array<AiPositionEngineItem>;
+  worker: AiPositionWorkerSettingsItem;
+  pendingJobs: number;
+  openFeedback: number;
+};
+
+export type SaveAiPositionPromptReq = {
+  prompt: string;
+};
+
+export type AiPositionPromptState = {
+  prompt: string;
+  promptOverridden: boolean;
+};
+
+export type SaveAiPositionWorkerSettingsReq = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
+export type TestAiPositionReq = {
+  prompt: string;
+  aiEngineId: string;
+  text: string;
+};
+
+export type TestAiPositionRsp = {
+  positions: Array<AiPositionFound>;
+  responseText: string;
+};
+
+export type AiPositionSpan = {
+  begin: number;
+  end: number;
+};
+
+export type AiPositionFound = {
+  name: string;
+  nameKey: string;
+  kind: string;
+  spans: Array<AiPositionSpan>;
+  coordinates: Array<AiPositionCoordinateItem>;
+};
+
+export type AiPositionCoordinateItem = {
+  text: string;
+  system: string;
+  mgrs: string;
+  lat: number;
+  lng: number;
+  certainty: string;
+  evidence: string;
+  span: AiPositionSpan | null;
+};
+
+export type EnqueueAiPositionBackfillReq = {
+  days: number;
+};
+
+export type EnqueueAiPositionBackfillRsp = {
+  started: boolean;
+};
+
+export type AiPositionColumnFilter = {
+  id: string;
+  value: string;
+};
+
+export type AiPositionListCursor = {
+  atMicros: number;
+  id: string;
+};
+
+export type AiPositionMentionListReq = {
+  limit: number | null;
+  after: AiPositionListCursor | null;
+  globalFilter: string | null;
+  columnFilters: Array<AiPositionColumnFilter>;
+};
+
+export type AiPositionMentionItem = {
+  id: string;
+  sourceKind: string;
+  messageId: number | null;
+  messageUuid: string | null;
+  mediaId: string | null;
+  mediaName: string | null;
+  name: string;
+  nameKey: string;
+  kind: string;
+  contextBefore: string;
+  contextMatch: string;
+  contextAfter: string;
+  messageAt: number;
+  modelName: string;
+  groupIsSecret: boolean;
+  coordinates: Array<AiPositionCoordinateItem>;
+  feedback: Array<AiPositionFeedbackItem>;
+};
+
+export type AiPositionMentionListRsp = {
+  items: Array<AiPositionMentionItem>;
+  nextCursor: AiPositionListCursor | null;
+};
+
+export type AiPositionKnowledgeListReq = {
+  limit: number | null;
+  after: AiPositionListCursor | null;
+  globalFilter: string | null;
+  columnFilters: Array<AiPositionColumnFilter>;
+};
+
+export type AiPositionKnowledgeItem = {
+  id: string;
+  scopeKind: string;
+  scopeKey: string;
+  scopeName: string;
+  scopeIsSecret: boolean;
+  name: string;
+  nameKey: string;
+  kind: string;
+  mgrs: string;
+  lat: number;
+  lng: number;
+  certainty: string;
+  factCount: number;
+  conflicting: boolean;
+  firstFactAt: number;
+  lastFactAt: number;
+  feedback: Array<AiPositionFeedbackItem>;
+};
+
+export type AiPositionKnowledgeListRsp = {
+  items: Array<AiPositionKnowledgeItem>;
+  nextCursor: AiPositionListCursor | null;
+};
+
+export type AiPositionFeedbackItem = {
+  id: string;
+  targetKind: string;
+  verdict: string;
+  expected: string;
+  comment: string;
+  createdBy: string | null;
+  createdAt: number;
+  reparsedAt: number | null;
+};
+
+export type SaveAiPositionFeedbackReq = {
+  mentionId: string | null;
+  knowledgeId: string | null;
+  verdict: string;
+  expected: string;
+  comment: string;
+};
+
+export type AiPositionIdReq = {
+  id: string;
+};
+
+export type AiPositionReparseReq = {
+  mentionId: string | null;
+};
+
+export type AiPositionReparseRsp = {
+  queued: number;
+};
+
+export type AiPositionLookupReq = {
+  name: string | null;
+  coordinates: string | null;
+  radiusMeters: number | null;
+  days: number | null;
+  kind: string | null;
+  limit: number | null;
+};
+
+export type AiPositionLookupKnown = {
+  name: string;
+  kind: string;
+  mgrs: string;
+  lat: number;
+  lng: number;
+  certainty: string;
+  conflicting: boolean;
+  factCount: number;
+  firstFactAt: string;
+  lastFactAt: string;
+  scope: string;
+  scopeKind: string;
+  scopeKey: string;
+};
+
+export type AiPositionLookupMention = {
+  messageId: number | null;
+  messageUuid: string | null;
+  source: string;
+  at: string;
+  name: string;
+  kind: string;
+  coordinates: Array<string>;
+  context: string;
+};
+
+export type AiPositionLookupRsp = {
+  evidenceGroups: Array<DevicePositionEvidenceGroup>;
+  fileMentions: Array<DevicePositionEvidence>;
+  known: Array<AiPositionLookupKnown>;
+  located: Array<AiPositionLookupMention>;
+  other: Array<AiPositionLookupMention>;
+  note: string;
+};
+
+export type AiPositionFeedbackListReq = {
+  verdict: string | null;
+  limit: number | null;
+};
+
+export type AiPositionFeedbackListItem = {
+  feedback: AiPositionFeedbackItem;
+  name: string;
+  nameKey: string;
+  kind: string | null;
+  messageId: number | null;
+  messageUuid: string | null;
+};
+
+export type AiPositionFeedbackListRsp = {
+  items: Array<AiPositionFeedbackListItem>;
+};
+
+export type DeviceDocumentSearchReq = {
+  query: string | null;
+  deviceIds: Array<string> | null;
+  includeArchived: boolean | null;
+  history: boolean | null;
+  scope: string | null;
+  pathPrefix: string | null;
+  format: string | null;
+  from: number | null;
+  to: number | null;
+  cursor: string | null;
+  limit: number | null;
+};
+
+export type DeviceDocumentReadReq = {
+  deviceId: string;
+  fileId: string;
+  revision: number;
+  extractionRevision: string | null;
+  member: string | null;
+  query: string | null;
+  after: number | null;
+  limit: number | null;
+};
+
+export type DeviceDocumentItem = {
+  deviceId: string;
+  fileId: string;
+  revision: number;
+  fileName: string;
+  path: string;
+  format: string | null;
+  modifiedAt: number | null;
+  current: boolean;
+  hasContent: boolean;
+  state: string;
+  extractionRevision: string | null;
+  complete: boolean;
+  summary: string | null;
+  summaryState: string;
+  positionState: string;
+  snippet: string | null;
+  citation: string;
+};
+
+export type DeviceDocumentSearchRsp = {
+  documents: Array<DeviceDocumentItem>;
+  nextCursor: string | null;
+};
+
+export type DeviceDocumentReadRsp = {
+  document: DeviceDocumentItem;
+  sections: Array<AttachmentSection>;
+  nextAfter: number | null;
+  warnings: Array<string>;
+  coordinates: Array<MediaSummaryCoordinate>;
+  positions: Array<AiPositionFound>;
+};
+
+export type DeviceDocumentInspectionReq = {
+  deviceId: string;
+  fileId: string;
+  revision: number;
+  operation: string;
+  member: string | null;
+  locator: string | null;
+};
+
+export type DeviceDocumentInspectionRsp = {
+  id: string;
+  state: string;
+  result: DeviceDocumentReadRsp | null;
+  error: string | null;
+};
+
+export type DeviceDocumentSettings = {
+  enabled: boolean;
+  summariesEnabled: boolean;
+  positionsEnabled: boolean;
+  aiEngineId: string | null;
+  positionEngineId: string | null;
+};
+
+export type DeviceDocumentAdminRsp = {
+  available: boolean;
+  settings: DeviceDocumentSettings;
+  backfillComplete: boolean;
+  discovered: number;
+  counts: Array<AttachmentQueueCount>;
+  documents: Array<DeviceDocumentItem>;
+  engines: Array<AiPositionEngineItem>;
+};
+
+export type AgentDeviceSearchReq = {
+  query: string | null;
+  includeArchived: boolean | null;
+  aorIds: Array<number> | null;
+  unitIds: Array<number> | null;
+  cursor: string | null;
+  limit: number | null;
+};
+
+export type AgentDeviceItem = {
+  id: string;
+  name: string | null;
+  archived: boolean;
+  unitId: number | null;
+  aorIds: Array<number>;
+};
+
+export type AgentDeviceSearchRsp = {
+  devices: Array<AgentDeviceItem>;
+  nextCursor: string | null;
+};
+
+export type AiAgentFileCitation = {
+  deviceId: string;
+  fileId: string;
+  revision: number;
+  extractionRevision: string | null;
+  section: number | null;
+};
+
+export type DevicePositionEvidence = {
+  position: AiPositionFound;
+  source: AiAgentFileCitation;
+  citation: string;
+  fileName: string;
+  locator: string;
+  context: string;
+  aorIds: Array<number>;
+  observationAt: string | null;
+};
+
+export type DevicePositionEvidenceGroup = {
+  scopeKind: string;
+  scopeKey: string;
+  nameKey: string;
+  kind: string;
+  knownIndexes: Array<number>;
+  fileIndexes: Array<number>;
+  certainty: string;
+  conflicting: boolean;
+};
+
+export type AttachmentSearchReq = {
+  query: string | null;
+  selectedGroups: Array<string> | null;
+  messageIds: Array<number> | null;
+  from: number | null;
+  to: number | null;
+  format: string | null;
+  cursor: string | null;
+  limit: number | null;
+};
+
+export type AttachmentItem = {
+  mediaId: string;
+  messageId: number;
+  messageUuid: string | null;
+  fileName: string;
+  contentType: string;
+  state: string;
+  quality: string | null;
+  complete: boolean;
+  revision: string | null;
+  summary: string | null;
+  summaryState: string;
+  positionState: string;
+  chunkCount: number;
+  lastError: string | null;
+  snippet: string | null;
+  citation: string;
+};
+
+export type AttachmentSearchRsp = {
+  documents: Array<AttachmentItem>;
+  nextCursor: string | null;
+};
+
+export type AttachmentReadReq = {
+  mediaId: string;
+  revision: string | null;
+  member: string | null;
+  after: number | null;
+  limit: number | null;
+  query: string | null;
+};
+
+export type AttachmentSection = {
+  id: string;
+  ordinal: number;
+  member: string;
+  locator: string;
+  text: string;
+  markdown: string;
+  html: string;
+  summary: string | null;
+};
+
+export type AttachmentReadRsp = {
+  document: AttachmentItem;
+  sections: Array<AttachmentSection>;
+  nextAfter: number | null;
+  warnings: Array<string>;
+  coordinates: Array<MediaSummaryCoordinate>;
+};
+
+export type AttachmentSettings = {
+  enabled: boolean;
+  positionsEnabled: boolean;
+  summariesEnabled: boolean;
+  aiEngineId: string | null;
+  positionEngineId: string | null;
+  backfillComplete: boolean;
+};
+
+export type AttachmentQueueCount = {
+  kind: string;
+  state: string;
+  count: number;
+};
+
+export type AttachmentAdminRsp = {
+  settings: AttachmentSettings;
+  counts: Array<AttachmentQueueCount>;
+  documents: Array<AttachmentItem>;
+  engines: Array<AiPositionEngineItem>;
+};
+
+export type AttachmentInspectionReq = {
+  mediaId: string;
+  member: string | null;
+  operation: string;
+  locator: string | null;
+};
+
+export type AttachmentInspectionRsp = {
+  id: string;
+  state: string;
+  result: AttachmentReadRsp | null;
+  error: string | null;
 };
 
 export type OcrStatusLogItem = {

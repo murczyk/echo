@@ -61,6 +61,7 @@ public.orbit_sync
 
 # AI engine secrets, admin-only history, callsign tests, and worker queue.
 public.ai_engine
+public.ai_gov_ua_settings
 public.ai_chat
 public.ai_chat_message
 public.ai_callsign_settings
@@ -112,3 +113,21 @@ public.ai_callsign_action
 public.ai_callsign_reparse_run
 public.ai_callsign_reparse_target
 public.ai_callsign_reparse_job
+
+# AI positions: worker state, and points that may come from private groups.
+public.ai_position_settings
+public.ai_position_worker_job
+public.ai_position_mention
+public.ai_position_coordinate
+public.ai_position_knowledge
+public.ai_position_knowledge_job
+public.ai_position_link_job
+public.ai_position_feedback
+
+# Private message attachment content and processing state.
+public.attachment_settings
+public.attachment_document
+public.attachment_chunk
+public.attachment_job
+
+public.device_document_settings

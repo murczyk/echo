@@ -3,12 +3,51 @@ import { createRoot, type Root } from 'react-dom/client';
 import { NeoMuiThemeProvider } from './mui-theme';
 import { PowerSnackbarProvider } from './components/PowerSnackbar';
 import { KmzAttachmentPreviewLink } from './routes/shared/message-card/KmzAttachmentPreviewLink';
+import { useMessageCardDownloadGuard } from './routes/shared/message-card/MessageCardMedia';
+
+function KmzAttachmentPreviewElementContent({
+  mediaId,
+  originalHref,
+  fileName,
+  initialStatus,
+  sizeBytes,
+  contentType,
+}: {
+  mediaId: string;
+  originalHref: string;
+  fileName: string;
+  initialStatus: string;
+  sizeBytes: number | null;
+  contentType: string | null;
+}) {
+  const downloadGuard = useMessageCardDownloadGuard();
+
+  return (
+    <KmzAttachmentPreviewLink
+      mediaId={mediaId}
+      originalHref={originalHref}
+      fileName={fileName}
+      initialStatus={initialStatus}
+      sizeBytes={sizeBytes}
+      contentType={contentType}
+      isDownloadStarting={downloadGuard.isDownloadStarting}
+      onDownloadStart={downloadGuard.onDownloadStart}
+    />
+  );
+}
 
 class KmzAttachmentPreviewElement extends HTMLElement {
   private root: Root | null = null;
 
   static get observedAttributes() {
-    return ['media-id', 'original-href', 'file-name', 'conversion-status'];
+    return [
+      'media-id',
+      'original-href',
+      'file-name',
+      'size-bytes',
+      'content-type',
+      'conversion-status',
+    ];
   }
 
   connectedCallback() {
@@ -39,11 +78,13 @@ class KmzAttachmentPreviewElement extends HTMLElement {
     this.root.render(
       <NeoMuiThemeProvider>
         <PowerSnackbarProvider>
-          <KmzAttachmentPreviewLink
+          <KmzAttachmentPreviewElementContent
             mediaId={mediaId}
             originalHref={this.getAttribute('original-href') ?? ''}
             fileName={this.getAttribute('file-name') || '<файл без назви>'}
             initialStatus={this.getAttribute('conversion-status') ?? 'pending'}
+            sizeBytes={Number(this.getAttribute('size-bytes')) || null}
+            contentType={this.getAttribute('content-type') || null}
           />
         </PowerSnackbarProvider>
       </NeoMuiThemeProvider>,

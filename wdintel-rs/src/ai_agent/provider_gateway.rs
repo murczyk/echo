@@ -1,7 +1,7 @@
 use super::auth;
 use crate::config::{
-    AI_AGENT_OPENAI_API_BASE, AI_AGENT_OPENAI_GPT_6_LUNA,
-    AI_AGENT_OPENAI_GPT_6_SOL, AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
+    AI_AGENT_OPENAI_GPT_6_LUNA, AI_AGENT_OPENAI_GPT_6_SOL,
+    AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
     AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE, AI_AGENT_PROVIDER_ERROR_MAX_BYTES,
     AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS, AI_AGENT_PROVIDER_GATEWAY_PATH,
     AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE,
@@ -9,8 +9,7 @@ use crate::config::{
     AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES,
 };
 use crate::error::AppError;
-use crate::h;
-use crate::types::{info, warn, Env, ShortContext};
+use crate::types::{info, warn, Env};
 use actix_web::http::{header, StatusCode};
 use actix_web::{post, web, HttpRequest, HttpResponse};
 use bytes::Bytes;
@@ -51,7 +50,8 @@ pub async fn chat_completions(
             "Provider request is invalid",
         ));
     };
-    proxy_openai_request(ai_engine, body, streamed).await
+    proxy_provider_request(&env.ai_engine_client, ai_engine, body, streamed)
+        .await
 }
 
 fn bearer_capability(http_req: &HttpRequest) -> Option<&str> {
@@ -126,7 +126,8 @@ fn normalize_reasoning_effort(
     }
 }
 
-async fn proxy_openai_request(
+async fn proxy_provider_request(
+    client: &crate::ai_engine::AiEngineClient,
     ai_engine: crate::entities::ai_engine::Model,
     body: Value,
     streamed: bool,
@@ -142,37 +143,20 @@ async fn proxy_openai_request(
         .or_else(|| body.get("max_tokens"))
         .and_then(Value::as_u64);
     let request_bytes = body.to_string().len();
-    let client = reqwest::Client::builder()
-        .https_only(true)
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC))
-        .build()
-        .c(h!())?;
-    let token = ai_engine
-        .token
-        .as_deref()
-        .ok_or(AppError::Unauthenticated)?;
     let response = client
-        .post(format!("{AI_AGENT_OPENAI_API_BASE}/chat/completions"))
-        .bearer_auth(token)
-        .header(
-            reqwest::header::ACCEPT,
-            if streamed {
-                "text/event-stream"
-            } else {
-                "application/json"
-            },
+        .send(
+            &ai_engine,
+            body,
+            Duration::from_secs(AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC),
         )
-        .json(&body)
-        .send()
         .await;
     let response = match response {
         Ok(response) => response,
         Err(err) => {
             warn!(
                 "AI agent provider gateway transport failure timeout={} connect={} duration_ms={}",
-                err.is_timeout(),
-                err.is_connect(),
+                err.downcast_ref::<reqwest::Error>().is_some_and(reqwest::Error::is_timeout),
+                err.downcast_ref::<reqwest::Error>().is_some_and(reqwest::Error::is_connect),
                 started_at.elapsed().as_millis()
             );
             return Ok(provider_error(

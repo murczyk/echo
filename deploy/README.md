@@ -32,6 +32,10 @@ For CI/testing, use `just setup-test-db [branch_name]` to create branch-specific
 
 ### File registry database
 
+Device audio uses the same optional database and private encrypted storage;
+see the [audio upload and recovery runbook](../wdintel-rs/src/devices/audio/README.md)
+for its access, nginx, worker and rollback requirements.
+
 The file registry uses an independent, optional PostgreSQL database: `wd_files`
 in live/debug mode. Enable it with a
 `[file_registry]` section in the selected `deploy/config*.toml`:

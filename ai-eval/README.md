@@ -39,5 +39,7 @@ so write such a revision under a new filename.
 
 Exported `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` take precedence. If
 only one or both are missing, `ai-eval/sync.sh` fills only the missing values
-from the repository `.env`. The commands require `s5cmd` and use the shared B2
+from the repository `.env`. Downloads also accept the read-only
+`ECHOUASTORAGE_LFS_RO_AWS_ACCESS_KEY_ID`/`ECHOUASTORAGE_LFS_RO_AWS_SECRET_ACCESS_KEY`;
+uploads need the write keys (`ECHOUASTORAGE_LFS_AWS_*`). The commands require `s5cmd` and use the shared B2
 S3 endpoint.

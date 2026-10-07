@@ -9,7 +9,7 @@ import {
   messageTusFingerprint,
   type MessageTusUrlStorage,
 } from '../../message-tus-resume';
-import { replacePendingImageFile } from '../image-editor-upload';
+import { renamePendingFile, replacePendingImageFile } from '../image-editor-upload';
 
 function pendingFile() {
   return {
@@ -136,5 +136,51 @@ describe('replacePendingImageFile', () => {
         endpoint: MESSAGE_TUS_ENDPOINT,
       } as never),
     ).resolves.toBe(messageTusFingerprint(fileId));
+  });
+});
+
+describe('renamePendingFile', () => {
+  it('resets the upload and updates every filename metadata field #3321', async () => {
+    const setFileState = vi.fn();
+    const data = new File(['document'], 'original.pdf', {
+      type: 'application/pdf',
+      lastModified: 123,
+    });
+
+    await renamePendingFile({
+      uppy: { setFileState } as never,
+      fileId: 'pending-document',
+      pending: {
+        id: 'pending-document',
+        name: 'original.pdf',
+        type: 'application/pdf',
+        size: data.size,
+        data,
+        meta: { retained: 'value' },
+      } as never,
+      fileName: 'renamed.pdf',
+    });
+
+    expect(setFileState).toHaveBeenCalledWith(
+      'pending-document',
+      expect.objectContaining({
+        data: expect.objectContaining({ name: 'renamed.pdf' }),
+        name: 'renamed.pdf',
+        extension: 'pdf',
+        tus: undefined,
+        uploadURL: undefined,
+        response: undefined,
+        meta: expect.objectContaining({
+          retained: 'value',
+          name: 'renamed.pdf',
+          filename: 'renamed.pdf',
+          fileName: 'renamed.pdf',
+          type: 'application/pdf',
+          file_type: 'application/pdf',
+          fileType: 'application/pdf',
+          extension: 'pdf',
+        }),
+      }),
+    );
   });
 });

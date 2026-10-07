@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import socket
+import sys
 import threading
 import time
 import uuid
@@ -19,7 +20,7 @@ from .ocr import PaddleEvidenceProvider
 from .package_archive import create_package_zip
 from .pipeline import ExtractionCancelled, Extractor, InputManifest
 from .service_config import RuntimeConfig
-from .storage import StoragePressureError, directory_size, ensure_capacity, remove_job_directory
+from .storage import StoragePressureError, count_pages, directory_size, ensure_capacity, remove_job_directory
 
 
 class InfrastructureFailure(RuntimeError):
@@ -109,8 +110,7 @@ class Worker:
             )
             for dependency in statuses:
                 self.metrics.dependency_up.labels(dependency=dependency.name).set(dependency.healthy)
-            if all(dependency.healthy for dependency in statuses):
-                self._start_jobs()
+            self._start_jobs(native_only=not all(item.healthy for item in statuses))
             self._update_runtime_state()
             if self.active_tasks:
                 await asyncio.wait(
@@ -127,13 +127,14 @@ class Worker:
         for task in completed:
             task.result()
 
-    def _start_jobs(self) -> None:
+    def _start_jobs(self, native_only: bool = False) -> None:
         settings = self.service.worker
         while len(self.active_tasks) < settings.max_active_jobs:
             job = self.queue.claim(
                 self.owner,
                 settings.lease_seconds,
                 settings.max_active_jobs,
+                native_only=native_only,
             )
             if not job:
                 return
@@ -215,6 +216,14 @@ class Worker:
         result_path = root / "result.zip"
         _reset_work_directories(root, work, package)
         inputs, manifest = _job_inputs(root)
+        metadata = json.loads(manifest.read_text()).get("metadata", {}) if manifest else {}
+        if metadata.get("attachment_native"):
+            return await self._extract_native(job, inputs, work, package, result_path)
+        statuses = await self.dependencies.check_all(
+            include_gemma=manifest is None or manifest_uses_legacy_gemma(manifest)
+        )
+        if not all(dependency.healthy for dependency in statuses):
+            raise InfrastructureFailure("required OCR router is unavailable")
 
         async def page_boundary(processed: int, _: int | None) -> None:
             self.metrics.pages.inc()
@@ -266,6 +275,101 @@ class Worker:
             result_path.stat().st_size,
         )
         return result.status.value
+
+    async def _extract_native(
+        self, job: Job, inputs: list[Path], work: Path, package: Path, result_path: Path
+    ) -> str:
+        from lxml import html
+
+        from .documents import load
+
+        if len(inputs) != 1:
+            raise ValueError("native document jobs require exactly one attachment")
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-m",
+            "echo_document_extractor.documents",
+            str(inputs[0]),
+            str(package),
+            env={
+                key: value
+                for key, value in os.environ.items()
+                if key in {"PATH", "PYTHONPATH", "LANG", "LC_ALL", "HOME", "TMPDIR"}
+            },
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            _, errors = await asyncio.wait_for(process.communicate(), timeout=180)
+        except BaseException:
+            process.kill()
+            await process.wait()
+            raise
+        if process.returncode:
+            raise ValueError(f"native extraction failed: {errors.decode(errors='replace')[-500:]}")
+        document = load(package)
+        manifest_path = Path(job.spool_path) / "manifest.json"
+        metadata = json.loads(manifest_path.read_text()).get("metadata", {})
+        processed_pages = 0
+        for index, embedded in enumerate(document.images):
+            source_path = package / embedded["path"]
+            try:
+                source_path, page_offset = _inspection_page(source_path, work, metadata)
+                pages = count_pages(source_path)
+            except ValueError as error:
+                document.warnings.append(f"{embedded['member']}: {embedded['locator']}: {error}")
+                continue
+            if processed_pages + pages > self.service.limits.max_pages:
+                document.warnings.append("embedded OCR page limit; inspect a specific original page")
+                continue
+            processed_pages += pages
+            if self.queue.update_progress(job.id, self.owner, index):
+                raise ExtractionCancelled("native document job cancelled")
+            markup, status = await self._native_image(job, source_path, work, index)
+            if status != "accepted":
+                document.warnings.append(f'{embedded["member"]}: {embedded["locator"]}: OCR {status}')
+            root = html.fromstring(markup)
+            pages = root.xpath("//section") or [root]
+            for number, page in enumerate(pages, 1):
+                document.add(
+                    embedded["member"],
+                    f"{embedded['locator']}; page {number + page_offset}",
+                    "\n".join(page.itertext()),
+                    html.tostring(page, encoding="unicode"),
+                )
+        document.images.clear()
+        document.write(package)
+        create_package_zip(package, result_path, native=True)
+        ensure_capacity(
+            self.service.spool_dir, self.service.limits.max_spool_bytes, self.service.limits.min_free_bytes
+        )
+        quality = "degraded" if document.warnings else "accepted"
+        self.queue.complete(job.id, self.owner, quality, result_path, result_path.stat().st_size)
+        return quality
+
+    async def _native_image(self, job: Job, source: Path, work: Path, index: int) -> tuple[str, str]:
+        from .native_ocr import extract
+
+        manifest = json.loads((Path(job.spool_path) / "manifest.json").read_text())
+        import httpx
+        try:
+            remote = await extract(source, f"native-{job.id}-{index}", manifest)
+        except httpx.TransportError as error:
+            raise InfrastructureFailure("embedded OCR transport unavailable") from error
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code in {429, 502, 503, 504}:
+                raise InfrastructureFailure("embedded OCR service busy") from error
+            raise
+        if remote is not None:
+            return remote
+        statuses = await self.dependencies.check_all(include_gemma=True)
+        if not all(item.healthy for item in statuses):
+            raise InfrastructureFailure("embedded image OCR dependencies unavailable")
+        extractor = Extractor(self.config.extraction, adapters=self._adapters_for_manifest(
+            Path(job.spool_path) / "manifest.json"), artifact_dir=work / f"image-{index}",
+            metrics=self.metrics, ocr=self.ocr, paddle_semaphore=self.paddle_semaphore)
+        result = await extractor.extract([source], None)
+        return result.canonical_html, result.status.value
 
     def _adapters_for_manifest(self, manifest: Path | None):
         if manifest is None:
@@ -345,3 +449,23 @@ def _is_infrastructure(error: Exception) -> bool:
 
 def run_worker(config_path: str | Path) -> None:
     asyncio.run(Worker(RuntimeConfig.from_yaml(config_path)).run())
+
+
+def _inspection_page(path: Path, work: Path, metadata: dict) -> tuple[Path, int]:
+    import re
+    from contextlib import closing
+
+    import pypdfium2 as pdfium
+
+    locator = metadata.get("inspection_locator") or ""
+    match = re.fullmatch(r"page\s+(\d+)", locator, re.IGNORECASE)
+    if not match or path.suffix.lower() != ".pdf":
+        return path, 0
+    number = int(match.group(1))
+    target = work / f"inspection-{path.stem}-{number}.pdf"
+    with closing(pdfium.PdfDocument(str(path))) as source, closing(pdfium.PdfDocument.new()) as selected:
+        if not 1 <= number <= len(source):
+            raise ValueError("requested page is outside the original PDF")
+        selected.import_pages(source, pages=[number - 1])
+        selected.save(str(target))
+    return target, number - 1

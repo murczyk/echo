@@ -110,17 +110,16 @@ export function useRerDutyMessageItemActions(params: Params) {
   const handleMessageImportant = useCallback(
     async (feedId: string, id: number, currentlyImportant: boolean) => {
       try {
-        if (currentlyImportant) await importantRemove({ messageId: id });
-        else await importantAdd({ messageId: id });
+        const important = currentlyImportant
+          ? await importantRemove({ messageId: id })
+          : await importantAdd({ messageId: id });
         setMessageFeeds((prev) =>
           prev.map((w) =>
             w.id === feedId
               ? {
                   ...w,
                   items: w.items.map(([msgId, msg]) =>
-                    msgId === id
-                      ? [msgId, { ...msg, important: !currentlyImportant }]
-                      : [msgId, msg],
+                    msgId === id ? [msgId, { ...msg, important }] : [msgId, msg],
                   ),
                 }
               : w,

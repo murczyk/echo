@@ -19,6 +19,8 @@ pub struct Model {
     pub mattermost_webhook_url: Option<String>,
     pub updated_at: DateTime,
     pub mattermost_chat_enabled: bool,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub mattermost_chat_webhook_url: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

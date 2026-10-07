@@ -2,6 +2,8 @@
 
 pub use super::analytics_tag::Entity as AnalyticsTag;
 pub use super::analytics_tag_test_file::Entity as AnalyticsTagTestFile;
+pub use super::device_audio::Entity as DeviceAudio;
+pub use super::device_audio_ingest::Entity as DeviceAudioIngest;
 pub use super::device_file_tag::Entity as DeviceFileTag;
 pub use super::file_analysis_definition::Entity as FileAnalysisDefinition;
 pub use super::file_analysis_run::Entity as FileAnalysisRun;
@@ -9,6 +11,13 @@ pub use super::file_analysis_run_item::Entity as FileAnalysisRunItem;
 pub use super::file_content::Entity as FileContent;
 pub use super::file_content_upload::Entity as FileContentUpload;
 pub use super::file_device_source_state::Entity as FileDeviceSourceState;
+pub use super::file_document::Entity as FileDocument;
+pub use super::file_document_backfill::Entity as FileDocumentBackfill;
+pub use super::file_document_chunk::Entity as FileDocumentChunk;
+pub use super::file_document_generation::Entity as FileDocumentGeneration;
+pub use super::file_document_job::Entity as FileDocumentJob;
+pub use super::file_document_position::Entity as FileDocumentPosition;
+pub use super::file_document_revision_generation::Entity as FileDocumentRevisionGeneration;
 pub use super::file_entry::Entity as FileEntry;
 pub use super::file_revision::Entity as FileRevision;
 pub use super::file_sync_batch::Entity as FileSyncBatch;

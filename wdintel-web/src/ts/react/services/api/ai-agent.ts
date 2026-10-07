@@ -28,6 +28,7 @@ import type {
   AiAgentIdReq,
   AiAgentMessageItem,
   AiAgentMessageCitation,
+  AiAgentFileCitation,
   AiAgentMapDocument,
   AiAgentMapEditReq,
   AiAgentMapEditRsp,
@@ -87,6 +88,7 @@ export type AiAgentEventType =
   | 'tool_end'
   | 'source'
   | 'message_citations'
+  | 'file_citations'
   | 'map_artifact'
   | 'completion'
   | 'cancellation'
@@ -104,6 +106,7 @@ export type AiAgentEvent = {
   activityPresentation?: AiAgentActivityPresentation | null;
   activityOnly?: boolean;
   citations?: AiAgentMessageCitation[];
+  fileCitations?: AiAgentFileCitation[];
   map?: AiAgentMapSummary | null;
   sourceTitle: string | null;
   sourceUrl: string | null;
@@ -189,6 +192,9 @@ export type AiAgentSettings = {
   mattermostWebhookConfigured: boolean;
   mattermostWebhookUrl: string;
   clearMattermostWebhook: boolean;
+  mattermostChatWebhookConfigured: boolean;
+  mattermostChatWebhookUrl: string;
+  clearMattermostChatWebhook: boolean;
 };
 
 export type AiAgentUserStatus = {
@@ -356,6 +362,7 @@ function normalizeMessage(value: AiAgentMessageItem): AiAgentMessage {
     requestState: requestState(value.requestState),
     role: value.role,
     maps: value.maps ?? [],
+    fileCitations: value.fileCitations ?? [],
   };
 }
 
@@ -390,6 +397,20 @@ export function normalizeAiAgentEvent(
     activityPresentation: value.activityPresentation ?? null,
     activityOnly: value.activityOnly ?? false,
     map: value.eventType === 'map_artifact' ? mapSummary(payload.document, requestId) : null,
+    fileCitations:
+      value.eventType === 'file_citations' && Array.isArray(payload.citations)
+        ? payload.citations.filter(
+            (item): item is AiAgentFileCitation =>
+              item != null &&
+              typeof item === 'object' &&
+              'deviceId' in item &&
+              typeof item.deviceId === 'string' &&
+              'fileId' in item &&
+              typeof item.fileId === 'string' &&
+              'revision' in item &&
+              Number.isSafeInteger(item.revision),
+          )
+        : [],
     citations: Array.isArray(payload.citations)
       ? payload.citations.filter(
           (item): item is AiAgentMessageCitation =>
@@ -511,6 +532,9 @@ function normalizeSettings(value: AiAgentAdminSettingsItem): AiAgentSettings {
     mattermostWebhookConfigured: value.hasMattermostWebhook,
     mattermostWebhookUrl: '',
     clearMattermostWebhook: false,
+    mattermostChatWebhookConfigured: value.hasMattermostChatWebhook,
+    mattermostChatWebhookUrl: '',
+    clearMattermostChatWebhook: false,
   };
 }
 
@@ -886,6 +910,8 @@ export async function saveAiAgentSettings(settings: AiAgentSettings): Promise<Ai
     mattermostChatEnabled: settings.mattermostChatEnabled,
     mattermostWebhookUrl: settings.mattermostWebhookUrl.trim() || null,
     clearMattermostWebhook: settings.clearMattermostWebhook,
+    mattermostChatWebhookUrl: settings.mattermostChatWebhookUrl.trim() || null,
+    clearMattermostChatWebhook: settings.clearMattermostChatWebhook,
   };
   return normalizeSettings(
     await postJson<AiAgentAdminSettingsItem>('/api/admin/ai-agent/settings', req),

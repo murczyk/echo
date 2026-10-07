@@ -1,0 +1,1112 @@
+{
+  "date": "2026-10-03",
+  "engine": "google/gemma-4-26B-A4B-it (vLLM router)",
+  "cases": "cases.synthetic.jsonl",
+  "runs": [
+    {
+      "prompt": "previous prompt (before kinds and exclusions)",
+      "passed": 6,
+      "of": 12,
+      "results": [
+        {
+          "id": "019a48dd-a800-7000-8000-000000000001",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» (Some(\"position\")) with its coordinates, found kind Some(\"position\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000002",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "«Гудок» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000003",
+          "verdict": "wrong_coordinates",
+          "passed": false,
+          "found": [],
+          "note": "extraction failed: malformed JSON from the model"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000004",
+          "verdict": "missed",
+          "passed": false,
+          "found": [
+            "лиман 2"
+          ],
+          "note": "missed [\"береза 3\", \"оп лиман 2\"]"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000005",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Буран» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000006",
+          "verdict": "wrong_name",
+          "passed": false,
+          "found": [],
+          "note": "extraction failed: malformed JSON from the model"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000007",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«МОЛНИЯ» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000008",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Молния» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000009",
+          "verdict": "correct",
+          "passed": false,
+          "found": [],
+          "note": "expected «Рикки» (Some(\"crew\")) with its coordinates, found kind None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000a",
+          "verdict": "correct",
+          "passed": false,
+          "found": [],
+          "note": "expected «Сова» (Some(\"callsign\")) with its coordinates, found kind None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000b",
+          "verdict": "missed",
+          "passed": false,
+          "found": [
+            "снт",
+            "ромб"
+          ],
+          "note": "missed [\"магатэ\"]"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000c",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Ланцет» is not a position"
+        }
+      ]
+    },
+    {
+      "prompt": "ai-eval/2026-10-02-position-prompt/prompt.txt (kinds, UAV/weapon exclusions, code names, JSON repair)",
+      "passed": 11,
+      "of": 12,
+      "results": [
+        {
+          "id": "019a48dd-a800-7000-8000-000000000001",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» (Some(\"position\")) with its coordinates, found kind Some(\"position\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000002",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "«Гудок» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000003",
+          "verdict": "wrong_coordinates",
+          "passed": true,
+          "found": [
+            "сокіл 4"
+          ],
+          "note": "wrong coordinates [\"37UCQ1234567890\"], expected «»"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000004",
+          "verdict": "missed",
+          "passed": false,
+          "found": [
+            "циркон 9",
+            "береза 3",
+            "лиман 2"
+          ],
+          "note": "missed [\"оп лиман 2\"]"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000005",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Буран» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000006",
+          "verdict": "wrong_name",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» instead of «Цирконі 9»"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000007",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«МОЛНИЯ» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000008",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "«Молния» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000009",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "expected «Рикки» (Some(\"crew\")) with its coordinates, found kind Some(\"crew\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000a",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "сова"
+          ],
+          "note": "expected «Сова» (Some(\"callsign\")) with its coordinates, found kind Some(\"callsign\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000b",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "магатэ",
+            "снт",
+            "ромб"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000c",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Ланцет» is not a position"
+        }
+      ]
+    },
+    {
+      "prompt": "ai-eval/2026-10-02-position-prompt/prompt.txt (plus settlements in capitals, crew callsigns, settlement hints) on 16 cases",
+      "passed": 16,
+      "of": 16,
+      "results": [
+        {
+          "id": "019a48dd-a800-7000-8000-000000000001",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» (Some(\"position\")) with its coordinates, found kind Some(\"position\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000002",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "«Гудок» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000003",
+          "verdict": "wrong_coordinates",
+          "passed": true,
+          "found": [
+            "сокіл 4"
+          ],
+          "note": "wrong coordinates [\"37UCQ1234567890\"], expected «»"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000004",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "циркон 9",
+            "береза 3",
+            "лиман 2"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000005",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Буран» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000006",
+          "verdict": "wrong_name",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» instead of «Цирконі 9»"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000007",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "аза",
+            "миха"
+          ],
+          "note": "«МОЛНИЯ» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000008",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "«Молния» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000009",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "expected «Рикки» (Some(\"crew\")) with its coordinates, found kind Some(\"crew\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000a",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "сова"
+          ],
+          "note": "expected «Сова» (Some(\"callsign\")) with its coordinates, found kind Some(\"callsign\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000b",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "магатэ",
+            "снт",
+            "ромб"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000c",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Ланцет» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000d",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«СКЕЛЬКИ» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000e",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«ДНЕПРОРУДНОЕ» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000f",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000010",
+          "verdict": "wrong_kind",
+          "passed": true,
+          "found": [
+            "36 т хт 78500 51000",
+            "аза",
+            "миха",
+            "камыш"
+          ],
+          "note": "expected kind callsign, found Some(\"callsign\")"
+        }
+      ]
+    },
+    {
+      "prompt": "plus generic objects (дамба, міст, посадка) excluded; 17 cases",
+      "passed": 16,
+      "of": 17,
+      "results": [
+        {
+          "id": "019a48dd-a800-7000-8000-000000000001",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» (Some(\"position\")) with its coordinates, found kind Some(\"position\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000002",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "«Гудок» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000003",
+          "verdict": "wrong_coordinates",
+          "passed": true,
+          "found": [
+            "сокіл 4"
+          ],
+          "note": "wrong coordinates [\"37UCQ1234567890\"], expected «»"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000004",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "циркон 9",
+            "береза 3",
+            "лиман 2"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000005",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Буран» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000006",
+          "verdict": "wrong_name",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» instead of «Цирконі 9»"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000007",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«МОЛНИЯ» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000008",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "«Молния» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000009",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "expected «Рикки» (Some(\"crew\")) with its coordinates, found kind Some(\"crew\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000a",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "сова"
+          ],
+          "note": "expected «Сова» (Some(\"callsign\")) with its coordinates, found kind Some(\"callsign\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000b",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "магатэ",
+            "снт",
+            "ромб"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000c",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Ланцет» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000d",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«СКЕЛЬКИ» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000e",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«ДНЕПРОРУДНОЕ» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000f",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000010",
+          "verdict": "wrong_kind",
+          "passed": false,
+          "found": [
+            "аза",
+            "миха",
+            "камыш"
+          ],
+          "note": "expected kind callsign, found Some(\"crew\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000011",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«дамба» is not a position"
+        }
+      ],
+      "note": "#16 (crew members' quoted callsigns) is ambiguous between crew and callsign"
+    },
+    {
+      "prompt": "plus unnamed crews excluded; 18 cases",
+      "passed": 17,
+      "of": 18,
+      "results": [
+        {
+          "id": "019a48dd-a800-7000-8000-000000000001",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» (Some(\"position\")) with its coordinates, found kind Some(\"position\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000002",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "«Гудок» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000003",
+          "verdict": "wrong_coordinates",
+          "passed": false,
+          "found": [
+            "сокіл 4"
+          ],
+          "note": "wrong coordinates [\"37UCQ1234567890\"], expected «»"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000004",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "циркон 9",
+            "береза 3",
+            "лиман 2"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000005",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Буран» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000006",
+          "verdict": "wrong_name",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» instead of «Цирконі 9»"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000007",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«МОЛНИЯ» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000008",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "«Молния» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000009",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "expected «Рикки» (Some(\"crew\")) with its coordinates, found kind Some(\"crew\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000a",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "сова"
+          ],
+          "note": "expected «Сова» (Some(\"callsign\")) with its coordinates, found kind Some(\"callsign\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000b",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "магатэ",
+            "снт",
+            "ромб"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000c",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Ланцет» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000d",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«СКЕЛЬКИ» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000e",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«ДНЕПРОРУДНОЕ» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000f",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000010",
+          "verdict": "wrong_kind",
+          "passed": true,
+          "found": [
+            "36 т хт 78500 51000",
+            "аза",
+            "миха",
+            "камыш"
+          ],
+          "note": "expected kind callsign, found Some(\"callsign\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000011",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«дамба» is not a position"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000012",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«расчет БпЛА» is not a position"
+        }
+      ],
+      "note": "two reruns passed 18/18; #3 (target coordinates attached to a position) failed in 1 of 3 runs"
+    },
+    {
+      "prompt": "before the descriptive-label rule; 22 cases",
+      "passed": 20,
+      "of": 22,
+      "results": [
+        {
+          "id": "019a48dd-a800-7000-8000-000000000001",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» (Some(\"position\")) with its coordinates, found kind Some(\"position\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000002",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "«Гудок» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000003",
+          "verdict": "wrong_coordinates",
+          "passed": true,
+          "found": [
+            "сокіл 4"
+          ],
+          "note": "wrong coordinates [\"37UCQ1234567890\"], expected «»"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000004",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "циркон 9",
+            "береза 3",
+            "лиман 2"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000005",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Буран» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000006",
+          "verdict": "wrong_name",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» instead of «Цирконі 9»"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000007",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "аза",
+            "миха"
+          ],
+          "note": "«МОЛНИЯ» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000008",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "«Молния» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000009",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "expected «Рикки» (Some(\"crew\")) with its coordinates, found kind Some(\"crew\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000a",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "сова"
+          ],
+          "note": "expected «Сова» (Some(\"callsign\")) with its coordinates, found kind Some(\"callsign\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000b",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "магатэ",
+            "снт",
+            "ромб"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000c",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Ланцет» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000d",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«СКЕЛЬКИ» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000e",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«ДНЕПРОРУДНОЕ» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000f",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000010",
+          "verdict": "wrong_kind",
+          "passed": true,
+          "found": [
+            "36 т хт 78500 51000",
+            "аза",
+            "миха",
+            "камыш"
+          ],
+          "note": "expected kind callsign, found Some(\"callsign\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000011",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«дамба» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000012",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«расчет БпЛА» is not a position, found None"
+        },
+        {
+          "id": "19",
+          "verdict": "not_position",
+          "passed": false,
+          "found": [
+            "куди везти",
+            "звідки забрати"
+          ],
+          "note": "«Куди везти» is not a position, found Some(\"position\")"
+        },
+        {
+          "id": "20",
+          "verdict": "not_position",
+          "passed": false,
+          "found": [
+            "куди везти",
+            "звідки забрати"
+          ],
+          "note": "«звідки забрати» is not a position, found Some(\"position\")"
+        },
+        {
+          "id": "21",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Миха» is not a position, found None"
+        },
+        {
+          "id": "22",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Камыш» is not a position, found None"
+        }
+      ]
+    },
+    {
+      "prompt": "plus descriptive point labels («Куда везти», «откуда забрать») excluded; 22 cases",
+      "passed": 22,
+      "of": 22,
+      "results": [
+        {
+          "id": "019a48dd-a800-7000-8000-000000000001",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» (Some(\"position\")) with its coordinates, found kind Some(\"position\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000002",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "«Гудок» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000003",
+          "verdict": "wrong_coordinates",
+          "passed": true,
+          "found": [
+            "сокіл 4"
+          ],
+          "note": "wrong coordinates [\"37UCQ1234567890\"], expected «»"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000004",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "циркон 9",
+            "береза 3",
+            "лиман 2"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000005",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Буран» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000006",
+          "verdict": "wrong_name",
+          "passed": true,
+          "found": [
+            "циркон 9"
+          ],
+          "note": "expected «Циркон 9» instead of «Цирконі 9»"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000007",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«МОЛНИЯ» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000008",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "«Молния» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000009",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "рикки"
+          ],
+          "note": "expected «Рикки» (Some(\"crew\")) with its coordinates, found kind Some(\"crew\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000a",
+          "verdict": "correct",
+          "passed": true,
+          "found": [
+            "сова"
+          ],
+          "note": "expected «Сова» (Some(\"callsign\")) with its coordinates, found kind Some(\"callsign\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000b",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "магатэ",
+            "снт",
+            "ромб"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000c",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Ланцет» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000d",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«СКЕЛЬКИ» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000e",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«ДНЕПРОРУДНОЕ» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-00000000000f",
+          "verdict": "missed",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "missed []"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000010",
+          "verdict": "wrong_kind",
+          "passed": true,
+          "found": [
+            "аза",
+            "миха",
+            "камыш"
+          ],
+          "note": "expected kind callsign, found Some(\"callsign\")"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000011",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«дамба» is not a position, found None"
+        },
+        {
+          "id": "019a48dd-a800-7000-8000-000000000012",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [
+            "трамплин"
+          ],
+          "note": "«расчет БпЛА» is not a position, found None"
+        },
+        {
+          "id": "19",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Куди везти» is not a position, found None"
+        },
+        {
+          "id": "20",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«звідки забрати» is not a position, found None"
+        },
+        {
+          "id": "21",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Миха» is not a position, found None"
+        },
+        {
+          "id": "22",
+          "verdict": "not_position",
+          "passed": true,
+          "found": [],
+          "note": "«Камыш» is not a position, found None"
+        }
+      ],
+      "note": "3 of 3 runs passed; real cases 6/6 (2026-10-04 export) and 2/2 (2026-10-03)"
+    }
+  ]
+}

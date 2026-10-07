@@ -44,6 +44,7 @@ import { LegacyOfficeDocumentPreview } from './LegacyOfficeDocumentPreview';
 import { PdfDocumentPreview } from './PdfDocumentPreview';
 import { UnsupportedDocumentPreview } from './UnsupportedDocumentPreview';
 import { XlsxDocumentPreview } from './XlsxDocumentPreview';
+import { ZipDocumentPreview } from './ZipDocumentPreview';
 
 function DocumentPreview({ document, zoom }: { document: MessageCardDocument; zoom: number }) {
   return (
@@ -92,7 +93,7 @@ function DocumentPreview({ document, zoom }: { document: MessageCardDocument; zo
   );
 }
 
-export function DocumentAttachmentPreviewRenderer({
+function NonZipDocumentAttachmentPreviewRenderer({
   document,
   onClose,
   navigation,
@@ -420,4 +421,17 @@ export function DocumentAttachmentPreviewRenderer({
       swipeEnabled={canSwipeCarousel && dialogZoom <= 100}
     />
   );
+}
+
+export function DocumentAttachmentPreviewRenderer(
+  props: {
+    document: MessageCardDocument;
+    onClose: () => void;
+    navigation: MessageCardPreviewNavigation;
+    reportDraft?: AttachmentPreviewReportDraft;
+  } & MessageCardDownloadGuardProps &
+    AttachmentPreviewReportVisibility,
+) {
+  if (props.document.kind === 'zip') return <ZipDocumentPreview {...props} />;
+  return <NonZipDocumentAttachmentPreviewRenderer {...props} />;
 }

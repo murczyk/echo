@@ -7,6 +7,7 @@ mod citations;
 pub(crate) mod dispatcher;
 pub mod evaluation;
 mod events;
+pub(crate) mod file_citations;
 pub(crate) mod lifecycle;
 pub mod maps;
 pub mod middleware;
@@ -755,6 +756,8 @@ pub(super) async fn conversation_detail(
         .map(|request| request.id)
         .collect::<Vec<_>>();
     let mut citations = citations::load(dbx, &request_ids).await.c(h!())?;
+    let mut file_citations =
+        file_citations::load(dbx, &request_ids).await.c(h!())?;
     let mut maps = maps::load_summaries(dbx, &request_ids).await.c(h!())?;
     let mut messages = Vec::new();
     for request in requests {
@@ -765,6 +768,7 @@ pub(super) async fn conversation_detail(
             role: "user".to_string(),
             content: request.prompt,
             citations: Vec::new(),
+            file_citations: Vec::new(),
             maps: Vec::new(),
             created_at: request.queued_at.and_utc().timestamp_millis(),
         });
@@ -779,6 +783,9 @@ pub(super) async fn conversation_detail(
                     citations.remove(&request.id).unwrap_or_default(),
                     &response,
                 ),
+                file_citations: file_citations
+                    .remove(&request.id)
+                    .unwrap_or_default(),
                 content: response,
                 maps: request_maps,
                 created_at: request

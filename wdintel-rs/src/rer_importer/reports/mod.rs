@@ -167,6 +167,24 @@ async fn ensure_report_launch_permissions(
     Ok(())
 }
 
+async fn ensure_report_kind_enabled(
+    dbx: &DatabaseConnection,
+    kind: &str,
+) -> Result<(), AppError> {
+    if kind == kinds::RER_REPORT {
+        crate::system_settings::ensure_rer_report_enabled(dbx)
+            .await
+            .c(h!())?;
+    } else if kind == kinds::SPOSOB {
+        crate::system_settings::ensure_support_non_rer_interceptions_enabled(
+            dbx,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn report_docx_generate_file(
     user_login: uuid::Uuid,
     env: &Env,
@@ -186,13 +204,9 @@ pub(crate) async fn report_docx_generate_file(
     ensure_report_launch_permissions(&env.dbx, &user_login, &req.kind)
         .await
         .c(h!())?;
-    if req.kind == kinds::RER_REPORT || req.kind == kinds::SPOSOB {
-        crate::system_settings::ensure_support_non_rer_interceptions_enabled(
-            &env.dbx,
-        )
+    ensure_report_kind_enabled(&env.dbx, &req.kind)
         .await
         .c(h!())?;
-    }
     ensure_report_request_valid(&req)?;
 
     let storage_dir =
@@ -378,6 +392,9 @@ pub async fn report_docx_task_launch(
         &report_kind,
     )
     .await?;
+    ensure_report_kind_enabled(&env.dbx, &report_kind)
+        .await
+        .c(h!())?;
     ensure_report_request_valid(&req_inner)?;
     let report_history = crate::report_history::enqueue_report(
         &env.dbx,
@@ -833,12 +850,7 @@ mod tests {
             history_count
         );
 
-        set_roles(
-            &env.dbx,
-            login_id,
-            serde_json::json!(["Rer", "DeviceSource"]),
-        )
-        .await;
+        set_roles(&env.dbx, login_id, serde_json::json!(["Rer"])).await;
         assert_eq!(
             launch(report_request(None, Some(vec!["ECHO-3461".to_string()])))
                 .await

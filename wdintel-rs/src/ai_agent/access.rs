@@ -147,7 +147,7 @@ fn has_rer_or_cyber_role(roles: &serde_json::Value) -> bool {
     let Ok(roles) = serde_json::from_value::<Vec<String>>(roles.clone()) else {
         return false;
     };
-    [AI_AGENT_ROLE_RER, crate::config::ROLE_CYBER_VIEWER]
+    [AI_AGENT_ROLE_RER, crate::config::ROLE_CYBER]
         .iter()
         .any(|role| crate::users::role_matches(&roles, role).unwrap_or(false))
 }
@@ -240,6 +240,10 @@ pub fn agent_provider_transport(
         && url.path().trim_end_matches('/') == "/v1";
     if !common_valid {
         return None;
+    }
+    if url.host_str() == Some(crate::config::AI_GOV_UA_API_HOST) {
+        return crate::ai_engine::client::is_government_url(&ai_engine.url)
+            .then_some(AgentProviderTransport::EchoGateway);
     }
     if url.scheme() == "http"
         && url.host_str().is_some_and(is_dispatcher_upstream_host)

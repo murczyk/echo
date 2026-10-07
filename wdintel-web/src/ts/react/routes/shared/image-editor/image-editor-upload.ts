@@ -7,6 +7,55 @@ import {
 
 type PendingImageFile = Pick<UppyFile<any, any>, 'meta'>;
 
+export async function renamePendingFile({
+  uppy,
+  fileId,
+  pending,
+  fileName,
+  urlStorage,
+}: {
+  uppy: Pick<Uppy, 'setFileState'>;
+  fileId: string;
+  pending: UppyFile<any, any>;
+  fileName: string;
+  urlStorage?: MessageTusUrlStorage;
+}): Promise<void> {
+  await invalidateMessageTusResumeRecords(fileId, urlStorage);
+  const extension = fileName.split('.').pop() ?? '';
+  const data =
+    pending.data instanceof File
+      ? new File([pending.data], fileName, {
+          type: pending.data.type,
+          lastModified: pending.data.lastModified,
+        })
+      : pending.data;
+  uppy.setFileState(fileId, {
+    data,
+    name: fileName,
+    extension,
+    meta: {
+      ...pending.meta,
+      name: fileName,
+      filename: fileName,
+      fileName,
+      type: pending.type,
+      file_type: pending.type,
+      fileType: pending.type,
+      extension,
+    },
+    tus: undefined,
+    uploadURL: undefined,
+    response: undefined,
+    progress: {
+      percentage: 0,
+      bytesTotal: pending.size ?? null,
+      bytesUploaded: 0,
+      uploadComplete: false,
+      uploadStarted: null,
+    } as unknown as UppyFile<any, any>['progress'],
+  });
+}
+
 export async function replacePendingImageFile({
   uppy,
   fileId,

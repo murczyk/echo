@@ -239,7 +239,7 @@ gen-seaorm-files mode="debug":
     fi
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     rm -rf wdintel-rs/src/file_registry/entities
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_test_file,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_content,file_content_upload,file_device_source_state,file_entry,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
     python3 deploy/patch_seaorm_files.py
     rustfmt --config-path wdintel-rs wdintel-rs/src/file_registry/entities/*.rs
 
@@ -265,7 +265,7 @@ check-seaorm-files mode="debug":
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     entity_dir="$(mktemp -d)"
     trap 'rm -rf "$entity_dir"' EXIT
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_test_file,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_content,file_content_upload,file_device_source_state,file_entry,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
     python3 deploy/patch_seaorm_files.py --entity-dir "$entity_dir"
     rustfmt --config-path wdintel-rs "$entity_dir"/*.rs
     diff -ru "$entity_dir" wdintel-rs/src/file_registry/entities
@@ -1705,6 +1705,34 @@ ai-eval-sync-from-cloud evaluation="":
 # Upload all local evaluation corpora, or one: just ai-eval-sync-to-cloud [2026-08-09-document-ocr-evaluation]
 ai-eval-sync-to-cloud evaluation="":
     bash ai-eval/sync.sh to-cloud "{{ evaluation }}"
+
+# Export AI position feedback from a server into the evaluation set and upload it to Backblaze:
+
+# just ai-position-feedback-pull --server echo-cbr-staging
+[arg('server', long='server')]
+ai-position-feedback-pull server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    evaluation=2026-10-03-position-feedback
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    remote_file="/tmp/ai-position-feedback-${stamp}.jsonl"
+    local_file="ai-eval/${evaluation}/raw/{{ server }}-${stamp}.jsonl"
+    mkdir -p "ai-eval/${evaluation}/raw"
+    # The export holds message text: keep it private and remove it after copying.
+    ssh "{{ server }}" "umask 077 && sudo /usr/bin/wdintel-rs --mode=live ai-position-feedback-export --output '${remote_file}' && sudo chown \"\$(id -u)\" '${remote_file}'"
+    scp "{{ server }}:${remote_file}" "${local_file}"
+    ssh "{{ server }}" "rm -f '${remote_file}'"
+    echo "Saved $(wc -l < "${local_file}") cases to ${local_file}"
+    bash ai-eval/sync.sh to-cloud "${evaluation}"
+
+# Replay AI position evaluation cases: just ai-position-eval /path/to/private-engine.json [cases.jsonl]
+ai-position-eval engine cases="ai-eval/2026-10-03-position-feedback/cases.synthetic.jsonl" *args="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    engine="$(realpath "{{ engine }}")"
+    cases="$(realpath "{{ cases }}")"
+    cd wdintel-rs
+    cargo run --quiet -- --mode=debug ai-position-eval --engine "${engine}" --cases "${cases}" {{ args }}
 
 # run like `just copy-db-backup echo-zp2`
 [arg('server', long='server')]
