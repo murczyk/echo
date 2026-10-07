@@ -3500,9 +3500,15 @@ fn callsign_page_scope(
     req: &AnalysisCallsignPageReq,
     page_size: u64,
 ) -> Result<String, AppError> {
-    let bytes =
-        serde_json::to_vec(&(&req.req, &req.query, &req.order, page_size))
-            .c(h!())?;
+    let effective_req =
+        request_without_facet_filter(&req.req, AnalysisFacet::Callsigns);
+    let bytes = serde_json::to_vec(&(
+        &effective_req,
+        &req.query,
+        &req.order,
+        page_size,
+    ))
+    .c(h!())?;
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
@@ -3547,30 +3553,49 @@ pub(super) async fn fetch_callsigns_page_for_login(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
 ) -> Result<AnalysisCallsignPageRsp, AppError> {
+    let prepared = prepare_callsign_page(page_req).c(h!())?;
+    let statement = build_callsign_page_statement(
+        page_req,
+        login_str,
+        master_keys,
+        &prepared,
+    )
+    .c(h!())?;
+    let rows = execute_callsign_page_statement(db, statement)
+        .await
+        .c(h!())?;
+    Ok(callsign_page_response(page_req, prepared, rows))
+}
+
+struct PreparedCallsignPage {
+    page_size: u64,
+    scope: String,
+    cursor: Option<CallsignPageCursor>,
+    req: AnalysisStatsReq,
+    normalized_query: String,
+    substring_pattern: String,
+}
+
+#[derive(FromQueryResult)]
+struct CallsignPageRow {
+    label: String,
+    callsign_values: Vec<String>,
+    count: i64,
+}
+
+fn prepare_callsign_page(
+    page_req: &AnalysisCallsignPageReq,
+) -> Result<PreparedCallsignPage, AppError> {
     let page_size = page_req
         .page_size
         .unwrap_or(ANALYSIS_CALLSIGN_PAGE_SIZE_DEFAULT)
         .clamp(1, ANALYSIS_CALLSIGN_PAGE_SIZE_MAX);
-    let scope = callsign_page_scope(page_req, page_size)?;
+    let scope = callsign_page_scope(page_req, page_size).c(h!())?;
     let cursor =
-        decode_callsign_page_cursor(page_req.cursor.as_deref(), &scope)?;
+        decode_callsign_page_cursor(page_req.cursor.as_deref(), &scope)
+            .c(h!())?;
     let req =
         request_without_facet_filter(&page_req.req, AnalysisFacet::Callsigns);
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
-    let dt_till =
-        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let filtered_items = build_callsign_inbox_item_ids_query(
-        &req,
-        login_str,
-        dt_since,
-        dt_till,
-        master_keys,
-    )?
-    .build(DbBackend::Postgres);
-    let mut values = filtered_items
-        .values
-        .map(|values| values.0)
-        .unwrap_or_default();
     let normalized_query = page_req.query.trim().to_uppercase();
     let substring_pattern = format!(
         "%{}%",
@@ -3582,55 +3607,82 @@ pub(super) async fn fetch_callsigns_page_for_login(
             .replace('_', "\\_")
             .to_uppercase(),
     );
-    let next_placeholder = |values: &mut Vec<Value>, value: Value| {
-        values.push(value);
-        format!("${}", values.len())
-    };
-    let candidate_filter = if normalized_query.is_empty() {
-        String::new()
-    } else {
-        let pattern = next_placeholder(
-            &mut values,
-            Value::String(Some(substring_pattern)),
-        );
-        format!("AND upper(trim(callsign)) LIKE {pattern} ESCAPE chr(92)")
-    };
+    Ok(PreparedCallsignPage {
+        page_size,
+        scope,
+        cursor,
+        req,
+        normalized_query,
+        substring_pattern,
+    })
+}
+
+fn build_callsign_page_statement(
+    page_req: &AnalysisCallsignPageReq,
+    login_str: &uuid::Uuid,
+    master_keys: Vec<String>,
+    prepared: &PreparedCallsignPage,
+) -> Result<Statement, AppError> {
+    let dt_since =
+        dt_from_millis(prepared.req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(prepared.req.till_date_noninclusive_ms).context(h!())?;
+    let filtered_items = build_callsign_inbox_item_ids_query(
+        &prepared.req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+    )
+    .c(h!())?
+    .build(DbBackend::Postgres);
+    let mut values = filtered_items
+        .values
+        .map(|values| values.0)
+        .unwrap_or_default();
+    let candidate_filter =
+        callsign_page_candidate_filter(page_req, prepared, &mut values);
     let order = match page_req.order {
         AnalysisCallsignPageOrder::CountDesc => {
             "count DESC, label ASC".to_owned()
         }
         AnalysisCallsignPageOrder::MatchThenName => {
-            let exact = next_placeholder(
+            let exact = callsign_page_placeholder(
                 &mut values,
-                Value::String(Some(normalized_query.clone())),
+                Value::String(Some(prepared.normalized_query.clone())),
             );
             format!(
                 "CASE WHEN label = {exact} THEN 0 ELSE 1 END ASC, label ASC"
             )
         }
     };
-    let seek = cursor
+    let seek = prepared
+        .cursor
+        .as_ref()
         .map(|cursor| match page_req.order {
             AnalysisCallsignPageOrder::CountDesc => {
-                let count = next_placeholder(&mut values, Value::BigInt(Some(cursor.count)));
-                let label = next_placeholder(
+                let count = callsign_page_placeholder(
                     &mut values,
-                    Value::String(Some(cursor.label)),
+                    Value::BigInt(Some(cursor.count)),
+                );
+                let label = callsign_page_placeholder(
+                    &mut values,
+                    Value::String(Some(cursor.label.clone())),
                 );
                 format!("AND (count < {count} OR (count = {count} AND label > {label}))")
             }
             AnalysisCallsignPageOrder::MatchThenName => {
-                let exact = next_placeholder(
+                let exact = callsign_page_placeholder(
                     &mut values,
-                    Value::String(Some(normalized_query.clone())),
+                    Value::String(Some(prepared.normalized_query.clone())),
                 );
-                let rank = next_placeholder(
+                let rank = callsign_page_placeholder(
                     &mut values,
                     Value::Int(Some(i32::from(cursor.exact_rank))),
                 );
-                let label = next_placeholder(
+                let label = callsign_page_placeholder(
                     &mut values,
-                    Value::String(Some(cursor.label)),
+                    Value::String(Some(cursor.label.clone())),
                 );
                 format!(
                     "AND (CASE WHEN label = {exact} THEN 0 ELSE 1 END > {rank} OR (CASE WHEN label = {exact} THEN 0 ELSE 1 END = {rank} AND label > {label}))"
@@ -3668,24 +3720,82 @@ pub(super) async fn fetch_callsigns_page_for_login(
         GROUP BY paged.label, paged.count
         ORDER BY {order}
         "#,
-        page_size + 1
+        prepared.page_size + 1
     );
-    #[derive(FromQueryResult)]
-    struct Row {
-        label: String,
-        callsign_values: Vec<String>,
-        count: i64,
+    Ok(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        sql,
+        values,
+    ))
+}
+
+#[cfg(test)]
+pub(super) fn callsign_page_statement_for_test(
+    page_req: &AnalysisCallsignPageReq,
+    login_str: &uuid::Uuid,
+    master_keys: Vec<String>,
+) -> Result<Statement, AppError> {
+    let prepared = prepare_callsign_page(page_req).c(h!())?;
+    Ok(build_callsign_page_statement(
+        page_req,
+        login_str,
+        master_keys,
+        &prepared,
+    )
+    .c(h!())?)
+}
+fn callsign_page_placeholder(values: &mut Vec<Value>, value: Value) -> String {
+    values.push(value);
+    format!("${}", values.len())
+}
+
+fn callsign_page_candidate_filter(
+    page_req: &AnalysisCallsignPageReq,
+    prepared: &PreparedCallsignPage,
+    values: &mut Vec<Value>,
+) -> String {
+    let mut conditions = Vec::new();
+    if !prepared.normalized_query.is_empty() {
+        let pattern = callsign_page_placeholder(
+            values,
+            Value::String(Some(prepared.substring_pattern.clone())),
+        );
+        conditions.push(format!(
+            "upper(trim(callsign)) LIKE {pattern} ESCAPE chr(92)"
+        ));
     }
-    let statement =
-        Statement::from_sql_and_values(DbBackend::Postgres, sql, values);
-    let rows = Row::find_by_statement(statement)
+    if page_req.order == AnalysisCallsignPageOrder::MatchThenName {
+        if let Some(cursor) = &prepared.cursor {
+            let label = callsign_page_placeholder(
+                values,
+                Value::String(Some(cursor.label.clone())),
+            );
+            let operator = if cursor.exact_rank == 0 { "<>" } else { ">" };
+            conditions
+                .push(format!("upper(trim(callsign)) {operator} {label}"));
+        }
+    }
+    conditions
+        .into_iter()
+        .map(|condition| format!("AND {condition}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+async fn execute_callsign_page_statement(
+    db: &DatabaseConnection,
+    statement: Statement,
+) -> Result<Vec<CallsignPageRow>, AppError> {
+    Ok(CallsignPageRow::find_by_statement(statement)
         .all(db)
         .await
-        .context(h!())?;
-    let has_more = rows.len() > page_size as usize;
-    let entries = rows
-        .into_iter()
-        .take(page_size as usize)
+        .context(h!())?)
+}
+
+fn callsign_page_entries(
+    rows: Vec<CallsignPageRow>,
+) -> Vec<AnalysisCallsignPageEntry> {
+    rows.into_iter()
         .map(|row| AnalysisCallsignPageEntry {
             value: row
                 .callsign_values
@@ -3696,31 +3806,50 @@ pub(super) async fn fetch_callsigns_page_for_login(
             values: row.callsign_values,
             count: row.count,
         })
+        .collect()
+}
+
+fn callsign_page_response(
+    page_req: &AnalysisCallsignPageReq,
+    prepared: PreparedCallsignPage,
+    rows: Vec<CallsignPageRow>,
+) -> AnalysisCallsignPageRsp {
+    let has_more = rows.len() > prepared.page_size as usize;
+    let entries = callsign_page_entries(rows)
+        .into_iter()
+        .take(prepared.page_size as usize)
         .collect::<Vec<_>>();
     let next_cursor = has_more
         .then(|| {
-            entries.last().map(|entry| {
-                URL_SAFE_NO_PAD.encode(
-                    serde_json::to_vec(&CallsignPageCursor {
-                        scope,
-                        count: entry.count,
-                        exact_rank: i8::from(
-                            page_req.order
-                                == AnalysisCallsignPageOrder::MatchThenName
-                                && entry.label != normalized_query,
-                        ),
-                        label: entry.label.clone(),
-                    })
-                    .expect("cursor serialization"),
-                )
-            })
+            entries
+                .last()
+                .map(|entry| callsign_page_cursor(page_req, &prepared, entry))
         })
         .flatten();
-    Ok(AnalysisCallsignPageRsp {
+    AnalysisCallsignPageRsp {
         entries,
         has_more,
         next_cursor,
-    })
+    }
+}
+
+fn callsign_page_cursor(
+    page_req: &AnalysisCallsignPageReq,
+    prepared: &PreparedCallsignPage,
+    entry: &AnalysisCallsignPageEntry,
+) -> String {
+    URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(&CallsignPageCursor {
+            scope: prepared.scope.clone(),
+            count: entry.count,
+            exact_rank: i8::from(
+                page_req.order == AnalysisCallsignPageOrder::MatchThenName
+                    && entry.label != prepared.normalized_query,
+            ),
+            label: entry.label.clone(),
+        })
+        .expect("cursor serialization"),
+    )
 }
 
 fn build_callsigns_filtered_query(

@@ -427,13 +427,25 @@ async fn assert_bytewise_names(
 #[serial_test::serial]
 async fn device_audio_down_refuses_data() {
     let (config, database_url) = isolated_file_registry_config().await;
-    run_migrations(&config, Mode::Debug).await.unwrap();
     {
         let db = connect_runtime(&config, Mode::Debug)
             .await
             .unwrap()
             .unwrap();
         let connection = db.connection();
+        let migrations = wdfiles_migration::Migrator::migrations();
+        let audio_migration_index = migrations
+            .iter()
+            .position(|migration| {
+                migration.name() == "m20261003_152726_create_device_audio"
+            })
+            .unwrap();
+        wdfiles_migration::Migrator::up(
+            connection,
+            Some(u32::try_from(audio_migration_index + 1).unwrap()),
+        )
+        .await
+        .unwrap();
         assert!(table_exists(connection, "device_audio").await);
         let transaction = connection.begin().await.unwrap();
         let fixture = AudioFixture::new();

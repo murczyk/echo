@@ -29,7 +29,48 @@ uses `match_then_name`: an exact normalized-label match first, then normalized
 label. The cursor stores the full order key, including exact-match priority, so
 an exact match cannot cause later label-ordered results to be skipped.
 
+## Exact-order work per page
+
+The server prepares the effective analysis scope with the callsign facet
+removed, then expands raw callsign variants, filters a nonempty search before
+grouping, and calculates each normalized label's exact message count. The
+cursor seek is applied to those grouped count/order keys. This keeps every
+returned label's count and raw variants complete, but `count_desc` necessarily
+aggregates the whole effective scope before it can rank a page. For later
+`match_then_name` pages, the builder can exclude whole normalized labels that
+sort before the cursor before grouping. That is safe because no excluded label
+can occur on a later page. It must not exclude individual raw callsign rows for
+a retained label: doing so would corrupt that label's count or raw variants.
+
+There is no cross-request stored-result cache yet. A rejected ephemeral
+label/count snapshot prototype remains external experiment evidence only; it is
+not deployed or integrated. A cache that made later
+count-ordered pages seekable would need to key results by every effective
+filter and authorization scope, handle permission and data changes, coordinate
+concurrent computation and cancellation, bound storage, expire safely, and
+make expiry/recomputation explicit to callers. Until that lifecycle is
+implemented, pages remain exact live keyset pages with bounded responses rather
+than bounded database work.
+
 ## Local plan evidence and remaining validation gap
+
+Production-builder measurements on an isolated synthetic fixture with
+1.2 million messages and 100,000 normalized labels took 3.43–3.61 seconds
+for broad first pages and 3.35–3.58 seconds for later pages. Both repeated
+aggregation over 2.28 million candidate rows. The loader refactor preserves
+this query shape; these measurements establish a baseline, not a first-page
+`count_desc` speedup. The later-search label boundary reduces only labels before
+the cursor before aggregation. It has not established a selective, bounded
+access path across the large message and callsign relations; current plans still
+scan the complete filtered message scope. The loader split into preparation,
+statement construction, execution, and response helpers improves
+maintainability, not this database-work bound.
+Raw statements and plans are kept outside the repository.
+
+The ignored `capture_callsign_page_production_builder_plans` test captures
+statements through the production builder. It requires the dedicated benchmark
+database and `CALLSIGN_PLAN_OUTPUT` set to an output directory outside the
+checkout; run it with the benchmark database selected through `TEST_DB_NAME`.
 
 On 2026-10-06, the locally restored PostgreSQL 18 dataset contained 504,198
 messages and 326,758 active callsign rows. A 60-day sample (2026-08-03 through
