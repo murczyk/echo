@@ -938,6 +938,7 @@ describe('useAnalysisData inbox refreshes', () => {
     );
     expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
+    expect(hoisted.refreshMessageCounts).not.toHaveBeenCalled();
   });
 
   it('checks unseen ids against the messages-only media filter', async () => {
