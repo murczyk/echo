@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
   AttachmentAdminRsp,
@@ -26,7 +26,11 @@ export function useMessageDocuments() {
   const [page, setPage] = useState<AttachmentAdminRsp | null>(null);
   const [settings, setSettings] = useState<AttachmentSettings | null>(null);
   const [query, setQuery] = useState('');
+  const [hasMore, setHasMore] = useState(false);
   const [busy, setBusy] = useState(false);
+  // query that produced the currently shown rows; pagination must keep using it
+  const submittedQuery = useRef('');
+  const loadingMore = useRef(false);
   const { notify } = usePowerSnackbar();
   const fail = useCallback(
     (message: string, error: unknown) =>
@@ -36,8 +40,13 @@ export function useMessageDocuments() {
 
   const load = useCallback(
     async (cursor: string | null = null) => {
+      if (cursor && loadingMore.current) return;
+      const requestQuery = cursor ? submittedQuery.current : query;
+      loadingMore.current = cursor !== null;
       try {
-        const response = await getAttachmentsPage(query, cursor);
+        const response = await getAttachmentsPage(requestQuery, cursor);
+        submittedQuery.current = requestQuery;
+        setHasMore(response.documents.length === PAGE_SIZE);
         setPage((current) =>
           cursor && current
             ? { ...response, documents: [...current.documents, ...response.documents] }
@@ -46,6 +55,8 @@ export function useMessageDocuments() {
         setSettings((current) => (cursor && current ? current : response.settings));
       } catch (error) {
         fail('Не вдалося завантажити документи', error);
+      } finally {
+        loadingMore.current = false;
       }
     },
     [query, fail],
@@ -82,8 +93,7 @@ export function useMessageDocuments() {
   );
 
   const lastId = page?.documents.at(-1)?.mediaId ?? null;
-  const loadMore =
-    page && page.documents.length % PAGE_SIZE === 0 && lastId ? () => load(lastId) : null;
+  const loadMore = hasMore && lastId ? () => load(lastId) : null;
   return { page, settings, setSettings, query, setQuery, busy, load, save, retry, loadMore };
 }
 
