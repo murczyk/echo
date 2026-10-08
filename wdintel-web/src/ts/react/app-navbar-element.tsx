@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { AppNavbar, AppNavbarProps } from './components/app-navbar/AppNavbar';
+import { clearBrowserDebugRecording } from '../debug-recorder';
 
 type ParsedNavbarProps = Omit<
   AppNavbarProps,
@@ -17,6 +18,7 @@ function AppNavbarRoot({
   const callbacks = React.useMemo(() => {
     return {
       onLogout: () => {
+        clearBrowserDebugRecording();
         host.dispatchEvent(new CustomEvent('navbar-logout'));
       },
       onThemeChange: (theme: string) => {

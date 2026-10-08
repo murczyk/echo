@@ -22,6 +22,7 @@ import { shouldHandleAsSpaClick } from '../../utils/browser';
 import { requestNavigation } from '../../../browser/navigation-guard';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../../routes/ai-agent-chat/conversation-url';
 import { mountLogoCoin } from '../../../logo-coin';
+import { configureBrowserDebugRecorder } from '../../../debug-recorder';
 
 function filterTranscriptionSettings(items: Menu[], enabled: boolean): Menu[] {
   return items.flatMap<Menu>((item): Menu[] => {
@@ -88,7 +89,7 @@ export interface AppNavbarProps {
   };
   shared: {
     themeMode: string;
-    serverInfo: { mode: string } | null;
+    serverInfo: { mode: string; version: string } | null;
     changelogPreview: any;
     userLoaded: boolean;
     changelogLastSeenLoaded: boolean;
@@ -124,6 +125,17 @@ export function AppNavbar({
   onNavbarVisibilityChange,
   onOpenChangelog,
 }: AppNavbarProps) {
+  useEffect(() => {
+    const serverInfo = shared?.serverInfo;
+    if (!serverInfo) return;
+    const deploymentMode = serverInfo.mode
+      ? `${serverInfo.mode[0]!.toUpperCase()}${serverInfo.mode.slice(1)}`
+      : 'Unknown';
+    configureBrowserDebugRecorder({
+      deploymentMode,
+      echoVersion: serverInfo.version,
+    });
+  }, [shared?.serverInfo?.mode, shared?.serverInfo?.version]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [loadedNeoAnalysis, setLoadedNeoAnalysis] = useState<boolean | null>(
