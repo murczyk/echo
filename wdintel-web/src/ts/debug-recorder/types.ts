@@ -65,6 +65,7 @@ export type PersistedDebugSession = {
   schemaVersion: typeof DEBUG_SCHEMA_VERSION;
   state: 'recording' | 'ready';
   recordingId: string;
+  aliasSalt: string;
   startedAt: number;
   deadlineAt: number;
   readyAt?: number;

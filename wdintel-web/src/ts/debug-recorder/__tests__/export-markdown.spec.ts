@@ -16,6 +16,7 @@ function buildSession(): PersistedDebugSession {
     schemaVersion: DEBUG_SCHEMA_VERSION,
     state: 'ready',
     recordingId: 'debug-recording-1',
+    aliasSalt: 'private-alias-salt',
     startedAt: Date.UTC(2026, 9, 8, 12, 34, 56, 789),
     deadlineAt: Date.UTC(2026, 9, 8, 12, 35, 56, 789),
     readyAt: Date.UTC(2026, 9, 8, 12, 35, 16, 789),
@@ -43,7 +44,7 @@ function buildSession(): PersistedDebugSession {
     rejectedEvents: 2,
     truncatedValues: 1,
     persistenceFailed: false,
-    aliases: { id: { '42': '{id_1}' } },
+    aliases: { id: { a1b2c3: '{id_1}' } },
     environment: {
       echoVersion: '2026.10.8',
       deploymentMode: 'Live',

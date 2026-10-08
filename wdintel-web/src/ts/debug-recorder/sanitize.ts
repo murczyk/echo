@@ -62,18 +62,38 @@ function copyAliases(aliases: DebugAliasTable): DebugAliasTable {
   );
 }
 
-export function createDebugSanitizer(recordingId: string): DebugSanitizer {
-  const aliases: DebugAliasTable = {};
+type DebugSanitizerOptions = {
+  aliasSalt?: string;
+  aliases?: DebugAliasTable;
+};
+
+function aliasFingerprint(salt: string, scope: string, value: string): string {
+  let hash = 0xcbf29ce484222325n;
+  const input = `${salt}\u0000${scope}\u0000${value}`;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= BigInt(input.charCodeAt(index));
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+  }
+  return hash.toString(16).padStart(16, '0');
+}
+
+export function createDebugSanitizer(
+  recordingId: string,
+  options: DebugSanitizerOptions = {},
+): DebugSanitizer {
+  const aliases: DebugAliasTable = copyAliases(options.aliases ?? {});
+  const aliasSalt = options.aliasSalt ?? recordingId;
   let truncatedValues = 0;
 
   const alias = (scopeValue: string, rawValue: string | number): string => {
     const scope = normalizeToken(scopeValue, 'id').replace(/[.:]/g, '_');
     const raw = String(rawValue);
     const scopeAliases = (aliases[scope] ??= {});
-    const existing = scopeAliases[raw];
+    const fingerprint = aliasFingerprint(aliasSalt, scope, raw);
+    const existing = scopeAliases[fingerprint];
     if (existing) return existing;
     const next = `{${scope}_${Object.keys(scopeAliases).length + 1}}`;
-    scopeAliases[raw] = next;
+    scopeAliases[fingerprint] = next;
     return next;
   };
 
