@@ -179,6 +179,7 @@ export function createBrowserDebugRecorderRuntime(
   const initialize = () => {
     if (initialized) return;
     initialized = true;
+    recorder.setBeforeFinish(detachCollectors);
     unsubscribe = recorder.subscribe(syncLifecycle);
     syncLifecycle();
   };
@@ -257,6 +258,7 @@ export function createBrowserDebugRecorderRuntime(
       unsubscribe?.();
       unsubscribe = null;
       initialized = false;
+      recorder.setBeforeFinish(null);
       detachCollectors();
       detachPagehideListener();
       detachAuthListener();

@@ -138,7 +138,6 @@ export function requestTraversal(delta: number): Promise<boolean> {
     : undefined;
   const destination = entry?.url ?? knownEntries.get(position.index + delta);
   const traverse = () => {
-    publishNavigation({ kind: 'traverse', forced: false });
     if (delta === -1) window.history.back();
     else window.history.go(delta);
   };

@@ -43,6 +43,7 @@ export type BrowserDebugRecorder = {
   download: () => boolean;
   record: (input: DebugEventInput) => void;
   setCollectorSupport: (support: PersistedDebugSession['collectorSupport']) => void;
+  setBeforeFinish: (callback: (() => void) | null) => void;
   flush: () => void;
   aliasIdentifier: (scope: string, value: string | number) => string | null;
   clear: () => void;
@@ -98,6 +99,8 @@ export function createBrowserDebugRecorder(
   let persistenceTimer: ReturnType<typeof setTimeout> | null = null;
   let downloadError = false;
   let snapshotCache: DebugRecorderSnapshot | null = null;
+  let beforeFinish: (() => void) | null = null;
+  let finalizing = false;
 
   const emit = () => {
     snapshotCache = null;
@@ -229,20 +232,31 @@ export function createBrowserDebugRecorder(
   };
 
   const transitionReady = (readyAt: number) => {
-    if (!session || session.state !== 'recording') return;
-    clearTimer(deadlineTimer);
-    deadlineTimer = null;
-    if (anomalyDetector) {
-      for (const anomalyInput of anomalyDetector.finish(readyAt - session.startedAt)) {
-        appendInput(anomalyInput, readyAt, false);
+    if (!session || session.state !== 'recording' || finalizing) return;
+    finalizing = true;
+    try {
+      try {
+        beforeFinish?.();
+      } catch {
+        // Final collector output is best-effort and cannot block completion.
       }
-      syncAnomalySummary();
+      if (!session || session.state !== 'recording') return;
+      clearTimer(deadlineTimer);
+      deadlineTimer = null;
+      if (anomalyDetector) {
+        for (const anomalyInput of anomalyDetector.finish(readyAt - session.startedAt)) {
+          appendInput(anomalyInput, readyAt, false);
+        }
+        syncAnomalySummary();
+      }
+      session.state = 'ready';
+      session.readyAt = readyAt;
+      flush();
+      scheduleReadyExpiry();
+      emit();
+    } finally {
+      finalizing = false;
     }
-    session.state = 'ready';
-    session.readyAt = readyAt;
-    flush();
-    scheduleReadyExpiry();
-    emit();
   };
 
   const scheduleDeadline = () => {
@@ -319,11 +333,12 @@ export function createBrowserDebugRecorder(
   const record = (input: DebugEventInput) => {
     if (!session || session.state !== 'recording' || !sanitizer) return;
     const atMs = now();
-    if (atMs >= session.deadlineAt) {
+    if (atMs >= session.deadlineAt && !finalizing) {
       transitionReady(session.deadlineAt);
       return;
     }
-    appendInput(input, atMs, true);
+    appendInput(input, finalizing ? Math.min(atMs, session.deadlineAt) : atMs, true);
+    if (finalizing) return;
     schedulePersistence();
     emit();
   };
@@ -403,6 +418,9 @@ export function createBrowserDebugRecorder(
       };
       schedulePersistence();
       emit();
+    },
+    setBeforeFinish: (callback) => {
+      beforeFinish = callback;
     },
     flush,
     aliasIdentifier: (scope, value) => {

@@ -151,6 +151,29 @@ describe('debug anomaly detector', () => {
     ).toEqual([]);
   });
 
+  it('does not report coalesced polling as duplicate or storming HTTP', () => {
+    const detector = createDebugAnomalyDetector();
+
+    for (let index = 0; index < 20; index += 1) {
+      expect(
+        detector.observe(
+          event(
+            'http.started',
+            index,
+            {
+              requestId: `poll-${index}`,
+              method: 'GET',
+              kind: 'event-stream-long-poll',
+            },
+            '/api/event-stream/long-poll',
+          ),
+        ),
+      ).toEqual([]);
+    }
+
+    expect(detector.getSummary()).toEqual({ total: 0, counts: {} });
+  });
+
   it('detects repeated logs, long tasks, timer stalls and render storms', () => {
     const detector = createDebugAnomalyDetector();
     for (let index = 0; index < 3; index += 1) {

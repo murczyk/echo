@@ -35,6 +35,11 @@ type ActiveRequest = { key: string; startedAt: number };
 type ScrollCandidate = { atMs: number; delta: number; clientHeight: number };
 
 const SLOW_REQUEST_EXEMPT_ROUTES = new Set(['/api/event-stream/long-poll']);
+const COALESCED_HTTP_RULES = new Set([
+  'event-stream-long-poll',
+  'background-task-status',
+  'messenger-media-status',
+]);
 const FAILED_HTTP_OUTCOMES = new Set(['aborted', 'error', 'http-error', 'network-error', 'failed']);
 const SCROLL_CORRELATION_KINDS = new Set(['performance.layout-shift', 'interaction.focus']);
 const RENDER_KINDS = new Set(['semantic.render', 'semantic.commit', 'duty.render', 'duty.commit']);
@@ -285,6 +290,7 @@ export function createDebugAnomalyDetector(): DebugAnomalyDetector {
   };
 
   const observeHttpStarted = (event: DebugEvent): DebugEventInput[] => {
+    if (COALESCED_HTTP_RULES.has(detailString(event, 'kind') ?? '')) return [];
     const requestId = detailString(event, 'requestId');
     const method = detailString(event, 'method') ?? 'GET';
     const key = `${method}:${event.route}`;

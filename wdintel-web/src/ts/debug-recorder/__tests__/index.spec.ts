@@ -173,6 +173,43 @@ describe('browser debug recorder runtime', () => {
     first.clear();
   });
 
+  it('records collector cleanup output before the automatic deadline transition', () => {
+    let clock = 0;
+    let collectorSink: DebugEventSink = () => {};
+    const storage = new MemoryStorage();
+    const recorder = createBrowserDebugRecorder(recorderDependencies(storage, () => clock));
+    const runtime = createBrowserDebugRecorderRuntime({
+      recorder,
+      attachCollectors: (sink) => {
+        collectorSink = sink;
+        return {
+          cleanup: () =>
+            collectorSink({
+              kind: 'http.coalesced',
+              route: '/api/event-stream/long-poll',
+              details: { kind: 'event-stream-long-poll', suppressedCount: 4 },
+            }),
+          support: { supported: [], unsupported: [], failed: [] },
+        };
+      },
+      mountPanel: () => {},
+      unmountPanel: () => {},
+      eventTarget: new EventTarget(),
+    });
+    runtime.initialize();
+    for (let index = 0; index < 8; index += 1) runtime.registerPress(index);
+
+    clock = 60_000;
+    vi.advanceTimersByTime(60_000);
+
+    const persisted = JSON.parse(storage.values.get(DEBUG_STORAGE_KEY)!);
+    expect(persisted.state).toBe('ready');
+    expect(persisted.events).toContainEqual(
+      expect.objectContaining({ kind: 'http.coalesced', tMs: 60_000 }),
+    );
+    runtime.destroy();
+  });
+
   it('clears synchronously on unauthorized and same-origin HTTP 401 signals', () => {
     const storage = new MemoryStorage();
     const eventTarget = new EventTarget();
