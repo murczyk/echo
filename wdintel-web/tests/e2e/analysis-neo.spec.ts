@@ -95,11 +95,17 @@ test.describe('@smoke @regression', () => {
     await expect(
       page.getByRole('button', { name: 'Додати BRAVO до поточного фільтра' }),
     ).toBeVisible();
+    await page.getByRole('button', { name: 'Додати BRAVO до поточного фільтра' }).click();
     await expect(page.getByRole('button', { name: 'Прибрати ALPHA з фільтра' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Прибрати BRAVO з фільтра' })).toBeVisible();
+    await page.getByRole('button', { name: 'Попередня сторінка позивних' }).click();
+    await page.getByRole('button', { name: 'ALPHA 2 повідомлень' }).click();
+    await expect(page.getByRole('button', { name: 'Прибрати ALPHA з фільтра' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Прибрати BRAVO з фільтра' })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('callsigns-pagination.png') });
     await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.getByRole('button', { name: 'Прибрати ALPHA з фільтра' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Прибрати BRAVO з фільтра' })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('callsigns-pagination-dark-narrow.png') });
     await expect(page.getByRole('button', { name: 'ALPHA 2 повідомлень' })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('callsigns-populated-dark-narrow.png') });

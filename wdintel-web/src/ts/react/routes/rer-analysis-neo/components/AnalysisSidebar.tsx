@@ -28,7 +28,10 @@ import {
   toggleExclusiveAnalysisSelection,
 } from '../../shared/analysis-filter-selection';
 import { analysisCompactTabsSx } from '../analysis-tab-styles';
-import { normalizeCallsignLookupValue } from '../../../utils/callsign-normalization';
+import {
+  normalizeCallsignFilterValues,
+  normalizeCallsignLookupValue,
+} from '../../../utils/callsign-normalization';
 import { buildAnalysisReq } from '../helpers';
 
 type Props = Pick<
@@ -195,13 +198,16 @@ export function AnalysisSidebar({
     updateQueryState({ groupsSelected: [] });
   };
   const selectCallsign = (callsigns: string[] | string) => {
-    const values = (Array.isArray(callsigns) ? callsigns : [callsigns])
-      .map(normalizeCallsignLookupValue)
-      .filter((value) => value !== '');
+    const values = normalizeCallsignFilterValues(
+      Array.isArray(callsigns) ? callsigns : [callsigns],
+    );
     if (values.length === 0) return;
+    const selected = new Set(queryState.callsignsSelected.map(normalizeCallsignLookupValue));
     updateQueryState({
-      callsignsSelected: values.every((value) => queryState.callsignsSelected.includes(value))
-        ? []
+      callsignsSelected: values.every((value) => selected.has(value))
+        ? queryState.callsignsSelected.filter(
+            (callsign) => !values.includes(normalizeCallsignLookupValue(callsign)),
+          )
         : values,
     });
   };
