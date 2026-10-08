@@ -548,8 +548,13 @@ pub async fn publish(
     let result = publish_chunks(env, job, &key, revision, &mut package).await;
     match result {
         Ok(previous) => {
-            if let Some(previous) = previous {
-                super::store::delete_artifact(env, &previous).await;
+            if let Some(published) = previous {
+                if let Some(previous) = published.previous_artifact {
+                    super::store::delete_artifact(env, &previous).await;
+                }
+                crate::media_summary::publish_inbox_change(env, job.media_id)
+                    .await
+                    .c(h!())?;
             }
             Ok(())
         }
@@ -560,13 +565,17 @@ pub async fn publish(
     }
 }
 
+struct PublishedRevision {
+    previous_artifact: Option<String>,
+}
+
 async fn publish_chunks(
     env: &Env,
     job: &Job,
     key: &str,
     revision: Uuid,
     package: &mut Package,
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<Option<PublishedRevision>> {
     if !package.images.is_empty() {
         package.complete = false;
         package.warnings.push(format!(
@@ -634,5 +643,7 @@ async fn publish_chunks(
         .await
         .c(h!())?;
     tx.commit().await.c(h!())?;
-    Ok(previous.artifact_key)
+    Ok(Some(PublishedRevision {
+        previous_artifact: previous.artifact_key,
+    }))
 }

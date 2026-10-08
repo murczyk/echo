@@ -2362,3 +2362,50 @@ for (const host of ['analysis', 'duty'] as const) {
     await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
   });
 }
+
+for (const host of ['analysis', 'duty'] as const) {
+  test(`#3714 extracted OCR coordinates mount the ${host} map without a summary @regression`, async ({
+    page,
+  }) => {
+    await openMessageCardPreviewHost(page, host, {
+      coordinateLabel: 'Stored OCR',
+      messageOverrides: {
+        coords: null,
+        coordsWithLocality: [],
+        text: 'OCR attachment',
+        textMarked: [],
+        pointTokens: [],
+        media: [
+          ...(buildMessageCardMediaPreviewInboxResponse().inbox_items[0][1].media ?? []),
+          {
+            id: 'e2e-coordinate-error',
+            contentType: 'application/pdf',
+            fileName: 'scan.pdf',
+            sizeBytes: 128,
+            href: '/test-assets/message-card-media-preview/e2e-preview.txt',
+            transcription: null,
+            ocr: null,
+            summary: null,
+            kmzConversionStatus: null,
+            positions: [],
+            coordinateStatus: { revision: 'ocr-extracted', hasCoordinates: true },
+          },
+        ],
+      },
+    });
+    const card = page.locator('.message-card-root').first();
+    const coordinates = card.getByRole('button', { name: /^(Розгорнути|Згорнути) координати:/ });
+    await expect(coordinates).toContainText('1');
+    if ((await coordinates.getAttribute('aria-expanded')) !== 'true') await coordinates.click();
+    await card
+      .locator('[data-coordinate-preview-tile]')
+      .getByRole('button', { name: /Open .* on map/ })
+      .click();
+    const dialog = page.getByRole('dialog', { name: 'Перегляд координат' });
+    await expect(dialog.locator('.coordinate-fullscreen-map')).toHaveAttribute(
+      'data-coordinate-marker-count',
+      '1',
+    );
+    await expect(dialog).toContainText('Stored OCR');
+  });
+}

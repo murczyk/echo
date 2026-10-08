@@ -360,15 +360,29 @@ pub async fn messenger_media_summary_coordinates(
     let media = crate::ocr::authorized_media(env.as_ref(), &user, path.0)
         .await
         .c(h!())?;
-    let summary = media_summary_entity::Entity::find_by_id(media.id)
-        .one(&env.dbx)
+    let coordinates =
+        coordinates_for_media(&env.dbx, media.id).await.c(h!())?;
+    Ok(Json(MediaSummaryCoordinatesResult { coordinates }))
+}
+
+pub(crate) async fn coordinates_for_media(
+    db: &DatabaseConnection,
+    media_id: Uuid,
+) -> anyhow::Result<Vec<types::MediaSummaryCoordinate>> {
+    if let Some(coordinates) =
+        crate::attachments::coordinates::read(db, media_id)
+            .await
+            .c(h!())?
+    {
+        return Ok(coordinates);
+    }
+    let summary = media_summary_entity::Entity::find_by_id(media_id)
+        .one(db)
         .await
         .c(h!())?
         .ok_or(crate::error::AppError::NotFound)
         .c(h!())?;
-    Ok(Json(MediaSummaryCoordinatesResult {
-        coordinates: decode_coordinates(summary.coordinates).c(h!())?,
-    }))
+    decode_coordinates(summary.coordinates).c(h!())
 }
 
 pub async fn load_settings(
@@ -444,7 +458,7 @@ fn visible_last_error(
     }
 }
 
-fn decode_coordinates(
+pub(crate) fn decode_coordinates(
     coordinates: serde_json::Value,
 ) -> anyhow::Result<Vec<MediaSummaryCoordinate>> {
     serde_json::from_value(coordinates).c(h!())

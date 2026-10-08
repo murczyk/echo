@@ -98,6 +98,7 @@ export type MessageMediaInfoRaw = Partial<MessageMediaInfo> & {
   file_name?: string | null;
   size_bytes?: number;
   kmz_conversion_status?: string | null;
+  coordinate_status?: MessageMediaInfo['coordinateStatus'];
 };
 
 export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaInfo {
@@ -111,6 +112,7 @@ export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaI
     transcription: (m.transcription ?? raw.transcription ?? null) as string | null,
     ocr: m.ocr ?? null,
     summary: m.summary ?? null,
+    coordinateStatus: m.coordinateStatus ?? m.coordinate_status ?? null,
     positions: transformSnakeToCamel<MessageMediaInfo['positions']>(m.positions ?? []),
     kmzConversionStatus: (m.kmzConversionStatus ?? raw.kmz_conversion_status ?? null) as
       string | null,

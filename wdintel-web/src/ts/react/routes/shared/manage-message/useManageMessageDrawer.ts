@@ -417,6 +417,7 @@ export function useManageMessageDrawer({
         file_name?: string | null;
         content_type?: string | null;
         size_bytes?: number | null;
+        coordinate_status?: MessageMediaInfo['coordinateStatus'];
       };
       const id = String(m.id ?? (raw as any).id ?? '');
       const fileName = m.fileName ?? raw.file_name ?? null;
@@ -433,6 +434,7 @@ export function useManageMessageDrawer({
         transcription: m.transcription ?? (raw as any).transcription ?? null,
         ocr: m.ocr ?? (raw as any).ocr ?? null,
         summary: m.summary ?? (raw as any).summary ?? null,
+        coordinateStatus: m.coordinateStatus ?? raw.coordinate_status ?? null,
         kmzConversionStatus: m.kmzConversionStatus ?? (raw as any).kmz_conversion_status ?? null,
       };
     });

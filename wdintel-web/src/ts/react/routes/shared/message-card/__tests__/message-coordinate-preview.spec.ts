@@ -17,6 +17,7 @@ import {
   primeCoordinatePreviewPalitraIds,
   resetCoordinatePreviewStateForTests,
   hasCoordinatePreviewCandidate,
+  resolveMessageCoordinatePreviewSummaryCount,
   resolveMessageCoordinatePreview,
 } from '../message-coordinate-preview.ts';
 
@@ -177,6 +178,53 @@ describe('message coordinate preview resolver', () => {
     });
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it.each(['queued', 'failed', null])(
+    '#3714 loads extracted coordinates with summary %s',
+    async (state) => {
+      const message = createMessage({
+        media: [
+          {
+            id: 'scan',
+            coordinateStatus: { revision: 'first', hasCoordinates: true },
+            summary: state == null ? null : { state, lastError: null, hasCoordinates: false },
+          },
+        ] as InboxMessage['media'],
+      });
+      vi.mocked(getMediaSummaryCoordinates).mockResolvedValue({
+        coordinates: [
+          {
+            title: 'scan',
+            description: '',
+            plannedMeans: null,
+            coordinateSystem: 'wgs84',
+            value: '48.469429, 37.315640',
+          },
+        ],
+      });
+      expect(hasCoordinatePreviewCandidate(message)).toBe(true);
+      expect(resolveMessageCoordinatePreviewSummaryCount(message)).toBe(1);
+      const result = await resolveMessageCoordinatePreview({ message });
+      expect(result?.points[0]).toMatchObject({ lat: 48.469429, lng: 37.31564 });
+      expect(getMediaSummaryCoordinates).toHaveBeenCalledWith('scan');
+    },
+  );
+
+  it('#3714 hides stale legacy coordinates when the published revision is empty', async () => {
+    const message = createMessage({
+      media: [
+        {
+          id: 'scan',
+          coordinateStatus: { revision: 'empty', hasCoordinates: false },
+          summary: { state: 'completed', lastError: null, hasCoordinates: true },
+        },
+      ] as InboxMessage['media'],
+    });
+    expect(hasCoordinatePreviewCandidate(message)).toBe(false);
+    expect(resolveMessageCoordinatePreviewSummaryCount(message)).toBe(0);
+    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
+    expect(getMediaSummaryCoordinates).not.toHaveBeenCalled();
   });
 
   it('appends and deduplicates coordinates from every completed document', async () => {
