@@ -268,6 +268,29 @@ path. In automatic mode, guarded radio-network and location-only labels that do
 not contain a valid parsed hierarchy are archived. Archived labels and labels
 that changed during review remain untouched.
 
+Inbox unit resolution checks the complete stored `unit_v2` text before
+splitting it into parser fragments. An exact synonym, an exact unit name, or
+an unambiguous single hierarchy preserves the complete match without creating
+unresolved child fragments. Successfully resolved `unit_v2` values, including
+multiple units, take precedence over matches in the original extracted text.
+Exact unit names take precedence over conflicting synonyms.
+The original text is a recovery fallback when `unit_v2` remains unresolved.
+If some parsed units already match, recovery requires both texts to describe
+the same single hierarchy. Separate unmatched units remain unresolved. The
+backfill refreshes automatic links without rewriting `unit` or `unit_v2`.
+
+After updating the resolver, reprocess historical inbox unit links with:
+
+```sh
+sudo wdintel-rs --mode=live oneoff-backfill-inbox-unit-links \
+  --start-ts 2026-07-01T00:00:00
+```
+
+The range uses UTC message creation time. `--start-ts` is inclusive;
+`--till-ts` is exclusive and defaults to the command's start time. The backfill
+retries stored unit text, refreshes unit links, and clears resolved failure
+references; it does not re-extract message bodies.
+
 ### Remove invalid army/corps and higher echelons from SIGINT unit names
 
 This workflow finds blacklisted army and corps values `УВ(с)`, `УВ`, and `ТН`,

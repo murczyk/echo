@@ -78,6 +78,17 @@ struct UnitTextResolution {
     is_fallback: bool,
 }
 
+impl UnitTextResolution {
+    fn resolved(text: &str, unit_id: i64) -> Self {
+        Self {
+            text: text.to_string(),
+            source_text: normalize_unit_label(text),
+            sigint_unit_id: Some(unit_id),
+            is_fallback: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct UnitTextResolutionCacheKey {
     unit_v2: Option<String>,
@@ -627,7 +638,135 @@ where
     }
 }
 
+fn is_single_unit_hierarchy(value: &str) -> bool {
+    let segments =
+        crate::unit::parse_library_unit_typed_segments_any_order(value);
+    let echelons = segments
+        .iter()
+        .map(|(echelon, _)| *echelon)
+        .collect::<BTreeSet<_>>();
+    !segments.is_empty()
+        && echelons.len() == segments.len()
+        && value.split(',').all(|text| {
+            !crate::unit::parse_library_unit_typed_segments_any_order(text)
+                .is_empty()
+        })
+}
+
+async fn resolve_exact_unit_text<C>(
+    db: &C,
+    value: &str,
+) -> anyhow::Result<Option<i64>>
+where
+    C: ConnectionTrait,
+{
+    if let Some(unit_id) = resolve_by_exact_sigint_unit_name(db, value)
+        .await
+        .context(h!())?
+    {
+        return Ok(Some(unit_id));
+    }
+    resolve_by_label(db, value).await.context(h!())
+}
+
+async fn resolve_complete_unit_text<C>(
+    db: &C,
+    value: &str,
+) -> anyhow::Result<Option<i64>>
+where
+    C: ConnectionTrait,
+{
+    if !is_single_unit_hierarchy(value) {
+        return Ok(None);
+    }
+    match resolve_structurally(db, value).await.context(h!())? {
+        StructuralResolution::Resolved(unit_id) => Ok(Some(unit_id)),
+        StructuralResolution::NoMatch | StructuralResolution::Blocked(_) => {
+            Ok(None)
+        }
+    }
+}
+
+async fn resolve_complete_source_unit<C>(
+    db: &C,
+    value: Option<&str>,
+) -> anyhow::Result<Option<UnitTextResolution>>
+where
+    C: ConnectionTrait,
+{
+    let Some(text) = nonempty(value) else {
+        return Ok(None);
+    };
+    if let Some(unit_id) =
+        resolve_exact_unit_text(db, text).await.context(h!())?
+    {
+        return Ok(Some(UnitTextResolution::resolved(text, unit_id)));
+    }
+    if let Some(unit_id) =
+        resolve_complete_unit_text(db, text).await.context(h!())?
+    {
+        return Ok(Some(UnitTextResolution::resolved(text, unit_id)));
+    }
+    Ok(None)
+}
+
+fn original_unit_can_recover_fragments(
+    resolved: &[UnitTextResolution],
+    unit_v2: &str,
+    unit: &str,
+) -> bool {
+    if !resolved
+        .iter()
+        .any(|resolution| resolution.sigint_unit_id.is_some())
+    {
+        return true;
+    }
+    is_single_unit_hierarchy(unit_v2)
+        && is_single_unit_hierarchy(unit)
+        && crate::unit::parse_library_unit_segments(unit_v2)
+            .iter()
+            .all(|segment| contains_structural_segment(unit, segment))
+}
+
 async fn resolve_unit_text_candidates<C>(
+    db: &C,
+    unit_v2: Option<&str>,
+    unit: Option<&str>,
+) -> anyhow::Result<Vec<UnitTextResolution>>
+where
+    C: ConnectionTrait,
+{
+    let primary_text = nonempty(unit_v2).or_else(|| nonempty(unit));
+    if let Some(resolved) = resolve_complete_source_unit(db, primary_text)
+        .await
+        .context(h!())?
+    {
+        return Ok(vec![resolved]);
+    }
+    let resolved = resolve_unit_text_fragments(db, unit_v2, unit)
+        .await
+        .context(h!())?;
+    let has_unresolved = resolved.iter().any(|resolution| {
+        resolution.sigint_unit_id.is_none() && !resolution.is_fallback
+    });
+    if has_unresolved {
+        if let (Some(unit_v2), Some(unit)) = (nonempty(unit_v2), nonempty(unit))
+        {
+            if original_unit_can_recover_fragments(&resolved, unit_v2, unit) {
+                if let Some(recovered) =
+                    resolve_complete_source_unit(db, Some(unit))
+                        .await
+                        .context(h!())?
+                {
+                    return Ok(vec![recovered]);
+                }
+            }
+        }
+    }
+    Ok(resolved)
+}
+
+async fn resolve_unit_text_fragments<C>(
     db: &C,
     unit_v2: Option<&str>,
     unit: Option<&str>,
@@ -701,10 +840,7 @@ where
     C: ConnectionTrait,
 {
     let unit_v2 = nonempty(unit_v2).map(str::to_owned);
-    let unit = unit_v2
-        .is_none()
-        .then(|| nonempty(unit).map(str::to_owned))
-        .flatten();
+    let unit = nonempty(unit).map(str::to_owned);
     let key = UnitTextResolutionCacheKey { unit_v2, unit };
     if let Some(resolutions) = cache.unit_text_resolutions.get(&key) {
         return Ok(resolutions.clone());
@@ -1717,6 +1853,104 @@ mod tests {
             .unwrap()
     }
 
+    async fn assert_resolved_item_units(
+        db: &DatabaseConnection,
+        item_id: i64,
+        unit_ids: &[i64],
+    ) {
+        assert_eq!(
+            unit_ids_for_kind(db, item_id, SigintInboxItemUnitKind::Parsed)
+                .await,
+            unit_ids
+        );
+        assert!(failure_rows(db, item_id)
+            .await
+            .iter()
+            .all(|(link, _)| link.deleted));
+    }
+
+    async fn assert_preserved_unit_v2(
+        db: &DatabaseConnection,
+        item_id: i64,
+        original: &str,
+        parsed: &str,
+        unit_ids: &[i64],
+        missing: Option<&str>,
+    ) {
+        assert_eq!(
+            unit_ids_for_kind(db, item_id, SigintInboxItemUnitKind::Parsed)
+                .await,
+            unit_ids
+        );
+        let failures = failure_rows(db, item_id).await;
+        let active = failures
+            .iter()
+            .filter(|(link, _)| !link.deleted)
+            .collect_vec();
+        assert_eq!(active.len(), usize::from(missing.is_some()));
+        if let Some(missing) = missing {
+            assert_eq!(active[0].1.unit_txt, missing);
+        }
+        let item = sigint_inbox_item::Entity::find_by_id(item_id)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(item.unit_v2.as_deref(), Some(parsed));
+        assert_eq!(item.unit.as_deref(), Some(original));
+    }
+
+    async fn insert_named_unit_with_label(
+        db: &DatabaseConnection,
+        name: &str,
+        label: &str,
+    ) -> sigint_unit::Model {
+        let unit = crate::functest::tests::mk_sigint_unit(
+            db,
+            sigint_unit::ActiveModel {
+                name: Set(name.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sigint_unit_label::ActiveModel {
+            sigint_unit_id: Set(unit.id),
+            label: Set(label.to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        unit
+    }
+
+    async fn conflicting_unit_match_fixtures(
+        db: &DatabaseConnection,
+    ) -> ([String; 3], [String; 3], Vec<i64>) {
+        let [first_label, second_label] = unique_unit_labels();
+        let labels = [
+            first_label,
+            second_label,
+            format!("original-{}", Uuid::new_v4()),
+        ];
+        let names = labels.each_ref().map(|label| format!("unit-name-{label}"));
+        let mut unit_ids = Vec::new();
+        for (label, name) in labels.iter().zip(&names) {
+            let unit = insert_named_unit_with_label(db, name, label).await;
+            unit_ids.push(unit.id);
+        }
+        sigint_unit_label::ActiveModel {
+            sigint_unit_id: Set(unit_ids[2]),
+            label: Set(names[0].clone()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        (labels, names, unit_ids)
+    }
+
     #[test]
     fn normalizes_case_and_whitespace() {
         assert_eq!(
@@ -2081,6 +2315,227 @@ mod tests {
         let failures = failure_rows(&env.dbx, item.id).await;
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].1.unit_txt, "УКХ р/м НВ підрозділу 448.500 МГц");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn original_synonyms_clear_stale_failures_in_backfill_3113() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        insert_named_unit_with_label(&env.dbx, "65 одшб", "65 одшб").await;
+        let mut expected = Vec::new();
+        for (label, parsed) in [
+            ("1 пдб 108 дшп", "1"),
+            ("1 пдб 247 дшп", "1"),
+            ("65 одшб 2 дшр", "65 одшб, 2 дшр"),
+            ("247 дшп, 4 пдб, 11 пдр", "247 дшп, 4 пдб, 11 пдр"),
+        ] {
+            let unit = crate::functest::tests::mk_sigint_unit(
+                &env.dbx,
+                Default::default(),
+            )
+            .await
+            .unwrap();
+            sigint_unit_label::ActiveModel {
+                sigint_unit_id: Set(unit.id),
+                label: Set(label.to_string()),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            let item =
+                insert_inbox_item(&env.dbx, Some(parsed), Some(label), None)
+                    .await;
+            upsert_failure(&env.dbx, item.id, item.id_uuid, "1")
+                .await
+                .unwrap();
+            expected.push((item.id, unit.id));
+        }
+        let missing = insert_inbox_item(
+            &env.dbx,
+            Some("1"),
+            Some("unresolved original"),
+            None,
+        )
+        .await;
+        let now = Utc::now().naive_utc();
+        backfill_inbox_unit_links(
+            &env.dbx,
+            now - Duration::minutes(1),
+            now + Duration::minutes(1),
+            0,
+            None,
+        )
+        .await
+        .unwrap();
+
+        for (item_id, unit_id) in expected {
+            assert_resolved_item_units(&env.dbx, item_id, &[unit_id]).await;
+        }
+        let failures = failure_rows(&env.dbx, missing.id).await;
+        assert_eq!(failures.len(), 1);
+        assert!(!failures[0].0.deleted);
+        assert_eq!(failures[0].1.unit_txt, "1");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn backfill_preserves_valid_unit_v2_matches_3113() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let (labels, names, unit_ids) =
+            conflicting_unit_match_fixtures(&env.dbx).await;
+        let orbit_id = insert_orbit_unit(
+            &env.dbx,
+            &format!("3 пдб / {}", labels[0]),
+            None,
+            "battalion",
+            &[unit_ids[0]],
+        )
+        .await;
+        let missing = format!("missing-{}", Uuid::new_v4());
+        let missing_battalion =
+            format!("{} пдб", labels[1].split_whitespace().next().unwrap());
+        let cases = [
+            (names[0].clone(), vec![unit_ids[0]], None),
+            (labels[1].clone(), vec![unit_ids[1]], None),
+            (
+                format!("{}, {}", labels[0], labels[1]),
+                unit_ids[..2].to_vec(),
+                None,
+            ),
+            (
+                format!("{} та {}", labels[0], labels[1]),
+                unit_ids[..2].to_vec(),
+                None,
+            ),
+            (format!("3 пдб {}", labels[0]), vec![unit_ids[0]], None),
+            (
+                format!("{}, {missing}", labels[0]),
+                vec![unit_ids[0]],
+                Some(missing.as_str()),
+            ),
+            (
+                format!("{}, {missing_battalion}", labels[1]),
+                vec![unit_ids[1]],
+                Some(missing_battalion.as_str()),
+            ),
+        ];
+        let mut expected = Vec::new();
+        for original in [&labels[2], &names[2], &labels[0]] {
+            for (parsed, ids, missing) in &cases {
+                let item = insert_inbox_item(
+                    &env.dbx,
+                    Some(parsed),
+                    Some(original),
+                    Some(ids[0]),
+                )
+                .await;
+                expected.push((item.id, parsed, original, ids, missing));
+            }
+        }
+        let now = Utc::now().naive_utc();
+        backfill_inbox_unit_links(
+            &env.dbx,
+            now - Duration::minutes(1),
+            now + Duration::minutes(1),
+            0,
+            None,
+        )
+        .await
+        .unwrap();
+
+        for (item_id, parsed, original, ids, missing) in expected {
+            assert_preserved_unit_v2(
+                &env.dbx, item_id, original, parsed, ids, *missing,
+            )
+            .await;
+        }
+        delete_orbit_units(&env.dbx, vec![orbit_id]).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn complete_hierarchy_matches_prevent_unparsed_fragments_3113() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let parent = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let child = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let hierarchy = unique_unit_label();
+        let parent_orbit = insert_orbit_unit(
+            &env.dbx,
+            &hierarchy,
+            None,
+            "brigade",
+            &[parent.id],
+        )
+        .await;
+        let child_orbit = insert_orbit_unit(
+            &env.dbx,
+            &format!("3 пдб / {hierarchy}"),
+            None,
+            "battalion",
+            &[child.id],
+        )
+        .await;
+        let unrelated_orbit = insert_orbit_unit(
+            &env.dbx,
+            &format!("3 пдб / {}", unique_unit_label()),
+            None,
+            "battalion",
+            &[parent.id],
+        )
+        .await;
+        let source = format!("{hierarchy} 3 пдб");
+        let item =
+            insert_inbox_item(&env.dbx, Some(&source), Some(&source), None)
+                .await;
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            item.id,
+            item.id_uuid,
+            item.unit_v2.as_deref(),
+            item.unit.as_deref(),
+        )
+        .await
+        .unwrap();
+
+        assert_resolved_item_units(&env.dbx, item.id, &[child.id]).await;
+        let canonical = format!("3 пдб {hierarchy}");
+        sigint_unit_label::ActiveModel {
+            sigint_unit_id: Set(parent.id),
+            label: Set(canonical.clone()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            item.id,
+            item.id_uuid,
+            Some(&canonical),
+            Some(&source),
+        )
+        .await
+        .unwrap();
+        assert_resolved_item_units(&env.dbx, item.id, &[parent.id]).await;
+        delete_orbit_units(
+            &env.dbx,
+            vec![parent_orbit, child_orbit, unrelated_orbit],
+        )
+        .await;
     }
 
     #[tokio::test]
