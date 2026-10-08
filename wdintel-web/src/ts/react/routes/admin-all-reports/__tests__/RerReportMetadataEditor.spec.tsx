@@ -66,7 +66,7 @@ afterEach(() => {
 
 describe('RER metadata editor', () => {
   // Regression: https://github.com/echoua/echo/issues/3598
-  it('keeps the selected unit text and its default label aligned when changing units', async () => {
+  it('keeps the selected unit text and its default label aligned when changing or clearing units', async () => {
     searchUnits.mockResolvedValue([
       { id: 1, name: 'Unit A' },
       { id: 2, name: 'Unit B' },
@@ -88,6 +88,19 @@ describe('RER metadata editor', () => {
     );
     expect(document.querySelector('[data-testid="CancelIcon"]')?.parentElement?.textContent).toBe(
       'Unit B',
+    );
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>('button[title="Clear"]')!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    expect(document.querySelector('[data-testid="CancelIcon"]')).toBeNull();
+    await selectUnit('Unit A');
+    expect(document.querySelector<HTMLInputElement>('input[role="combobox"]')?.value).toBe(
+      'Unit A',
+    );
+    expect(document.querySelector('[data-testid="CancelIcon"]')?.parentElement?.textContent).toBe(
+      'Unit A',
     );
   });
 });

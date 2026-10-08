@@ -131,10 +131,11 @@ export function MetadataEditor({
                   unit,
                   labels:
                     state.id === null &&
-                    unit &&
                     (state.labels.length === 0 ||
                       (state.labels.length === 1 && state.labels[0] === state.unit?.name))
-                      ? [unit.name]
+                      ? unit
+                        ? [unit.name]
+                        : []
                       : state.labels,
                 })
               }
