@@ -54,7 +54,7 @@ type Props = Pick<
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   unitsExactMatchOnlyDefault: boolean | null;
   analysisAorFilterEnabled: boolean;
-  rerReportEnabled: boolean;
+  rerReportFilterEnabled: boolean;
   toggleSection: (section: FilterSectionId) => void;
 };
 
@@ -118,7 +118,7 @@ export function AnalysisFiltersPanelSections({
   queryState,
   unitsExactMatchOnlyDefault,
   analysisAorFilterEnabled,
-  rerReportEnabled,
+  rerReportFilterEnabled,
   setIncludeOnlyNewFreqs,
   toggleSection,
   updateQueryState,
@@ -571,7 +571,7 @@ export function AnalysisFiltersPanelSections({
             label="Важливі"
             sx={compactCheckboxLabelSx}
           />
-          {rerReportEnabled ? (
+          {rerReportFilterEnabled ? (
             <FormControlLabel
               control={
                 <Checkbox

@@ -404,6 +404,42 @@ describe('useRerAnalysisNeoPage', () => {
     );
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it.each([
+    { eligible: true, globallyEnabled: true, expected: true },
+    { eligible: false, globallyEnabled: true, expected: false },
+    { eligible: true, globallyEnabled: false, expected: false },
+  ])(
+    'gates the RER report filter for $eligible eligibility and $globallyEnabled global setting',
+    async ({ eligible, globallyEnabled, expected }) => {
+      window.history.replaceState({}, '', `${window.location.pathname}?onlyWithNetwork=true`);
+      currentUserMock.fetchCurrentUser.mockResolvedValue({
+        name: 'tester',
+        roles: ['Rer'],
+        rerReportEligible: eligible,
+      } as User);
+      systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
+        id: 7,
+        rerAnalysisUnitsExactMatchOnlyDefault: false,
+        rerDutyTestEnabled: false,
+        rerDutyInsertHistoricalInterceptions: false,
+        rerDutyTestSinceMs: 0,
+        rerDutyTestLimit: 1,
+        rerDutyPollIntervalSec: 1,
+        rerShortUrlEnabled: false,
+        enableAudioTranscription: true,
+        rerReportEnabled: globallyEnabled,
+      });
+
+      renderHook(['Rer']);
+      await flushEffects();
+
+      expect(latest?.rerReportFilterEnabled).toBe(expected);
+      expect(latest?.queryState.onlyWithNetwork).toBe(expected);
+      expect(new URLSearchParams(window.location.search).has('onlyWithNetwork')).toBe(expected);
+    },
+  );
+
   // Regression: https://github.com/echoua/echo/issues/3568
   it.each([['Cyber'], ['Cyber', 'UnitsEditor', 'NetworkEditor', 'CallsignsEditor']])(
     'ignores restored radio filters and hidden tabs for %j',

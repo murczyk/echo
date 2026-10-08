@@ -43,6 +43,8 @@ public.failed_unit_label
 public.sigint_inbox_item_failed_unit_label
 public.sigint_unit_label
 public.sigint_unit_change
+public.sigint_unit_rer_report_metadata
+public.rer_report_access_login
 public.battle_line_version
 public.battle_line_aor_geometry
 

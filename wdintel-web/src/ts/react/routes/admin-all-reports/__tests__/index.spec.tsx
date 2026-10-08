@@ -9,6 +9,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const currentSystemSettings = vi.hoisted(() => vi.fn());
 const setRerReportEnabled = vi.hoisted(() => vi.fn());
 const notify = vi.hoisted(() => vi.fn());
+const listLogins = vi.hoisted(() => vi.fn());
+const rerReportApi = vi.hoisted(() => ({
+  getAccessList: vi.fn(),
+  listMetadata: vi.fn(),
+  replaceAccessList: vi.fn(),
+}));
 
 vi.mock('../../../components/PageHeader', () => ({
   PageHeader: ({ title, titleActions }: { title: string; titleActions: ReactNode }) => (
@@ -27,6 +33,15 @@ vi.mock('../../../components/PowerSnackbar', () => ({
 vi.mock('../../../services/api/system-settings', () => ({
   currentSystemSettings,
   setRerReportEnabled,
+}));
+vi.mock('../../../services/api/logins', () => ({ listLogins }));
+vi.mock('../../../services/api/rer-report-admin', () => ({
+  getRerReportAccessList: rerReportApi.getAccessList,
+  listRerReportMetadata: rerReportApi.listMetadata,
+  replaceRerReportAccessList: rerReportApi.replaceAccessList,
+}));
+vi.mock('../RerReportMetadataTable', () => ({
+  RerReportMetadataTable: () => <div data-testid="metadata-table" />,
 }));
 vi.mock('../../settings-neo/SettingsMyReportsSection', () => ({
   ReportHistoryTableSection: ({ showTitle }: { showTitle: boolean }) => (
@@ -55,6 +70,9 @@ describe('AdminAllReportsPage', () => {
   it('renders tabs without a duplicate report title and saves the RER toggle', async () => {
     currentSystemSettings.mockResolvedValue({ rerReportEnabled: false });
     setRerReportEnabled.mockResolvedValue({ rerReportEnabled: true });
+    listLogins.mockResolvedValue({ users: [] });
+    rerReportApi.getAccessList.mockResolvedValue({ loginIds: [] });
+    rerReportApi.listMetadata.mockResolvedValue([]);
     const container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -72,6 +90,8 @@ describe('AdminAllReportsPage', () => {
 
     const toggle = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
     expect(toggle?.checked).toBe(false);
+    expect(container.textContent).toContain('Працює над звітом РЕР');
+    expect(container.querySelector('[data-testid="metadata-table"]')).not.toBeNull();
     await act(async () => toggle?.click());
 
     expect(setRerReportEnabled).toHaveBeenCalledWith(true);
