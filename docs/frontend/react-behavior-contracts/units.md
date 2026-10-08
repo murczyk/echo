@@ -44,3 +44,15 @@
 - **Affected route/component:** RER Unit form drawer.
 - **Expected observable result:** a unit can be absent from ORBIT, present but unlinked, or linked to an ORBIT record. Creating an ORBIT-linked unit waits for the operator to explicitly select an offered duplicate association, so the resulting unit retains that relationship.
 - **Source implementation:** `src/ts/react/routes/rer-units-neo/components/UnitFormDrawer.tsx`.
+
+## SIGINT combat types
+
+- **Status:** normative
+- **Behavior ID:** `react-units-combat-type`
+- **Affected route/component:** `/rer-units-neo`, `/rer-units/{id}`, shared `UnitFormDrawer`.
+- **Expected observable result:** the default-visible «Види та роди ЗС» column follows «Регіон/ТВД/Збройні Сили» and displays the retained SIGINT dictionary name. Text filtering and ascending/descending sorting use that name. Both editing routes assign, change, and clear the nullable dictionary reference; unassigned units display an empty table value.
+- **Loading/empty/error/success behavior:** selectors wait for dictionary loading, display load failures, retain existing assignments, and offer «Не визначено» to clear them. Unit writes retain existing authorization and error handling.
+- **API endpoint and compatibility requirements:** `/api/sigint/unit/combat-types` returns the copied dictionary; omission of `combat_type_id` preserves an assignment and explicit null clears it. ORBIT sync only inserts missing dictionary entries; it does not overwrite local names or unit assignments.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/rer-units-neo/components/UnitsTable.tsx`, `wdintel-web/src/ts/react/routes/rer-units-neo/components/UnitFormDrawer.tsx`, `wdintel-web/src/Pages/RerUnits/Id_.elm`.
+- **Existing test(s):** `wdintel-web/tests/e2e/units-combat-type.spec.ts`, `wdintel-web/src/ts/react/routes/rer-units-neo/__tests__/index.spec.tsx`, `wdintel-rs/src/sigint/unit/combat_type.rs`, `wdintel-rs/src/orbit/combat_type.rs`.
+- **Original Echo issue/PR:** [#3113](https://github.com/echoua/echo/issues/3113).

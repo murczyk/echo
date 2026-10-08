@@ -103,6 +103,9 @@ function inboxWindowMatchesMessages(
 type DeviceAccess =
   { status: 'loading' } | { status: 'allowed' } | { status: 'denied' } | { status: 'error' };
 
+type RerReportFilterAccess =
+  { status: 'loading' } | { status: 'allowed' } | { status: 'denied' } | { status: 'error' };
+
 export function useRerAnalysisNeoPage(
   authUserName: string | null,
   authUserRoles: readonly string[] = [],
@@ -214,6 +217,17 @@ export function useRerAnalysisNeoPage(
           ? { status: 'allowed' }
           : { status: 'denied' };
   const canUseDevices = deviceAccess.status === 'allowed';
+  const rerReportFilterAccess: RerReportFilterAccess =
+    currentUserStatus === 'error' || systemSettingsStatus === 'error'
+      ? { status: 'error' }
+      : currentUserStatus === 'loading' || systemSettingsStatus === 'loading'
+        ? { status: 'loading' }
+        : rerReportEnabled && currentUser?.rerReportEligible === true
+          ? { status: 'allowed' }
+          : { status: 'denied' };
+  const rerReportFilterEnabled = rerReportFilterAccess.status === 'allowed';
+  const rerReportFilterAccessPending =
+    rerReportFilterAccess.status === 'loading' || rerReportFilterAccess.status === 'error';
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles ?? authUserRoles);
   const directQueryBoundaryRef = useRef({
     fromDateTimeStr: initialQueryState.fromDateTimeStr,
@@ -256,12 +270,25 @@ export function useRerAnalysisNeoPage(
   const effectiveQueryState = useMemo(
     () =>
       effectiveRadioQuery(
-        deviceAccess.status === 'denied'
-          ? { ...queryStateWithResolvedRoleDate, deviceNamesSelected: [] }
-          : queryStateWithResolvedRoleDate,
+        {
+          ...queryStateWithResolvedRoleDate,
+          deviceNamesSelected:
+            deviceAccess.status === 'denied'
+              ? []
+              : queryStateWithResolvedRoleDate.deviceNamesSelected,
+          onlyWithNetwork:
+            rerReportFilterAccess.status === 'denied'
+              ? false
+              : queryStateWithResolvedRoleDate.onlyWithNetwork,
+        },
         radioFeaturesAllowed,
       ),
-    [deviceAccess.status, queryStateWithResolvedRoleDate, radioFeaturesAllowed],
+    [
+      deviceAccess.status,
+      queryStateWithResolvedRoleDate,
+      radioFeaturesAllowed,
+      rerReportFilterAccess.status,
+    ],
   );
   useEffect(() => {
     if (dutySettings.loadInProgress) return;
@@ -278,6 +305,8 @@ export function useRerAnalysisNeoPage(
           ...initialQueryState,
           deviceNamesSelected:
             deviceAccess.status === 'denied' ? [] : initialQueryState.deviceNamesSelected,
+          onlyWithNetwork:
+            rerReportFilterAccess.status === 'denied' ? false : initialQueryState.onlyWithNetwork,
           groupsSelected: queryState.groupsSelected,
           freqsSelected: queryState.freqsSelected,
           networksSelected: queryState.networksSelected,
@@ -290,6 +319,7 @@ export function useRerAnalysisNeoPage(
       initialQueryState,
       radioFeaturesAllowed,
       deviceAccess.status,
+      rerReportFilterAccess.status,
       queryState.freqsSelected,
       queryState.groupsSelected,
       queryState.networksSelected,
@@ -300,6 +330,7 @@ export function useRerAnalysisNeoPage(
 
   const directMessageDefaultsPending =
     currentUserStatus === 'loading' ||
+    (rerReportFilterAccessPending && initialQueryState.onlyWithNetwork) ||
     queryStateWithResolvedRoleDate !== queryState ||
     queryState.messageTimeBasis !== dutySettings.messageSortBy;
 
@@ -442,6 +473,7 @@ export function useRerAnalysisNeoPage(
     currentUser,
     deferInitialLoad:
       deviceAccess.status === 'loading' ||
+      (rerReportFilterAccessPending && queryState.onlyWithNetwork) ||
       (deviceAccess.status === 'error' && queryState.deviceNamesSelected.length > 0) ||
       targetMessageContextResponsePending,
     focusedWindow: targetMessageWindow,
@@ -762,11 +794,6 @@ export function useRerAnalysisNeoPage(
         setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
         setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
         setRerReportEnabled(settings.rerReportEnabled);
-        if (!settings.rerReportEnabled) {
-          setQueryState((current) =>
-            current.onlyWithNetwork ? { ...current, onlyWithNetwork: false } : current,
-          );
-        }
         setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
         setShowPelengDistanceToBattleline(settings.showPelengDistanceToBattleline);
@@ -812,6 +839,13 @@ export function useRerAnalysisNeoPage(
       current.deviceNamesSelected.length === 0 ? current : { ...current, deviceNamesSelected: [] },
     );
   }, [deviceAccess.status, queryState.deviceNamesSelected]);
+
+  useEffect(() => {
+    if (rerReportFilterAccess.status !== 'denied') return;
+    setQueryState((current) =>
+      current.onlyWithNetwork ? { ...current, onlyWithNetwork: false } : current,
+    );
+  }, [rerReportFilterAccess.status, queryState.onlyWithNetwork]);
 
   useEffect(() => {
     if (rightPanelOpen && isNullOrUndefined(rightSidebarTab)) {
@@ -1321,6 +1355,7 @@ export function useRerAnalysisNeoPage(
     unitsExactMatchOnlyDefault,
     analysisAorFilterEnabled,
     rerReportEnabled,
+    rerReportFilterEnabled,
     supportNonRerInterceptions,
     cyberEchoEnabled: canUseDevices,
     updateReport: report.updateReport,

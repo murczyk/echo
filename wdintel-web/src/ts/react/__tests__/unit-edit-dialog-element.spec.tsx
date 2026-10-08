@@ -2,8 +2,13 @@
  * @vitest-environment happy-dom
  */
 import { act } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../unit-edit-dialog-element';
+
+vi.mock('../services/api/units', async () => ({
+  ...(await vi.importActual('../services/api/units')),
+  getUnitCombatTypes: vi.fn().mockResolvedValue({ combatTypes: [] }),
+}));
 
 const UNIT = {
   id: 1,

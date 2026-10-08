@@ -300,7 +300,7 @@ function buildProps(
       queryState: emptyQueryState(),
       unitsExactMatchOnlyDefault: false,
       analysisAorFilterEnabled: true,
-      rerReportEnabled: false,
+      rerReportFilterEnabled: false,
       saveInFlight: false,
       savedFilterName: '',
       savedFilters: [],
@@ -1061,7 +1061,9 @@ describe('AnalysisFiltersPanel', () => {
     expect(hidden.container.textContent).not.toContain('для звіту РЕР');
 
     const updateQueryState = vi.fn();
-    const visible = await renderComponent(buildProps({ rerReportEnabled: true, updateQueryState }));
+    const visible = await renderComponent(
+      buildProps({ rerReportFilterEnabled: true, updateQueryState }),
+    );
     rendered.push(visible);
     await setChecked(findLabelInput(visible.container, 'для звіту РЕР'), true);
 

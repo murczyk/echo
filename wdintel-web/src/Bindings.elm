@@ -4400,6 +4400,7 @@ type alias User =
     , goiHost : Maybe (String)
     , goiIntegrations : List (GoiUserIntegration)
     , lastReleaseSeen : Maybe (String)
+    , rerReportEligible : Bool
     }
 
 
@@ -4418,6 +4419,7 @@ userEncoder struct =
         , ( "goi_host", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.goiHost )
         , ( "goi_integrations", (Json.Encode.list (goiUserIntegrationEncoder)) struct.goiIntegrations )
         , ( "last_release_seen", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastReleaseSeen )
+        , ( "rer_report_eligible", (Json.Encode.bool) struct.rerReportEligible )
         ]
 
 
@@ -8198,6 +8200,8 @@ type ListUnitsSortBy
     | UnitMilitaryDistrictDesc
     | UnitArmyRegionAsc
     | UnitArmyRegionDesc
+    | UnitCombatTypeAsc
+    | UnitCombatTypeDesc
     | UnitCommentAsc
     | UnitCommentDesc
     | UnitOrbitNoteAsc
@@ -8277,6 +8281,10 @@ listUnitsSortByEncoder enum =
             Json.Encode.string "UnitArmyRegionAsc"
         UnitArmyRegionDesc ->
             Json.Encode.string "UnitArmyRegionDesc"
+        UnitCombatTypeAsc ->
+            Json.Encode.string "UnitCombatTypeAsc"
+        UnitCombatTypeDesc ->
+            Json.Encode.string "UnitCombatTypeDesc"
         UnitCommentAsc ->
             Json.Encode.string "UnitCommentAsc"
         UnitCommentDesc ->
@@ -8319,6 +8327,8 @@ type alias Unit =
     , army : String
     , militaryDistrict : String
     , armyRegion : String
+    , combatTypeId : Maybe (String)
+    , combatTypeName : Maybe (String)
     , comment : String
     , orbitNote : Maybe (String)
     , presentInOrbit : Maybe (Bool)
@@ -8351,6 +8361,8 @@ unitEncoder struct =
         , ( "army", (Json.Encode.string) struct.army )
         , ( "military_district", (Json.Encode.string) struct.militaryDistrict )
         , ( "army_region", (Json.Encode.string) struct.armyRegion )
+        , ( "combat_type_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.combatTypeId )
+        , ( "combat_type_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.combatTypeName )
         , ( "comment", (Json.Encode.string) struct.comment )
         , ( "orbit_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.orbitNote )
         , ( "present_in_orbit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.presentInOrbit )
@@ -8362,6 +8374,32 @@ unitEncoder struct =
         , ( "has_orbit", (Json.Encode.bool) struct.hasOrbit )
         , ( "orbit_unit_ids", (Json.Encode.list (Json.Encode.string)) struct.orbitUnitIds )
         , ( "orbit_unit_generative_names", (Json.Encode.list (Json.Encode.string)) struct.orbitUnitGenerativeNames )
+        ]
+
+
+type alias UnitCombatType =
+    { id : String
+    , name : String
+    }
+
+
+unitCombatTypeEncoder : UnitCombatType -> Json.Encode.Value
+unitCombatTypeEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias UnitCombatTypesRsp =
+    { combatTypes : List (UnitCombatType)
+    }
+
+
+unitCombatTypesRspEncoder : UnitCombatTypesRsp -> Json.Encode.Value
+unitCombatTypesRspEncoder struct =
+    Json.Encode.object
+        [ ( "combat_types", (Json.Encode.list (unitCombatTypeEncoder)) struct.combatTypes )
         ]
 
 
@@ -8387,6 +8425,7 @@ type alias ListUnitsReq =
     , filterArmy : Maybe (String)
     , filterMilitaryDistrict : Maybe (String)
     , filterArmyRegion : Maybe (String)
+    , filterCombatType : Maybe (String)
     , filterComment : Maybe (String)
     , filterOrbitNote : Maybe (String)
     , filterIsDeduplicateCandidate : Maybe (Bool)
@@ -8422,6 +8461,7 @@ listUnitsReqEncoder struct =
         , ( "filter_army", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterArmy )
         , ( "filter_military_district", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterMilitaryDistrict )
         , ( "filter_army_region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterArmyRegion )
+        , ( "filter_combat_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterCombatType )
         , ( "filter_comment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterComment )
         , ( "filter_orbit_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterOrbitNote )
         , ( "filter_is_deduplicate_candidate", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.filterIsDeduplicateCandidate )
@@ -8563,6 +8603,7 @@ type alias CreateUnitReq =
     , army : String
     , militaryDistrict : String
     , armyRegion : String
+    , combatTypeId : Maybe (String)
     , active : Bool
     , isDeduplicateCandidate : Maybe (Bool)
     , comment : String
@@ -8590,6 +8631,7 @@ createUnitReqEncoder struct =
         , ( "army", (Json.Encode.string) struct.army )
         , ( "military_district", (Json.Encode.string) struct.militaryDistrict )
         , ( "army_region", (Json.Encode.string) struct.armyRegion )
+        , ( "combat_type_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.combatTypeId )
         , ( "active", (Json.Encode.bool) struct.active )
         , ( "is_deduplicate_candidate", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeduplicateCandidate )
         , ( "comment", (Json.Encode.string) struct.comment )
@@ -12896,6 +12938,108 @@ rerDutyTestReplayStatusRspEncoder struct =
         , ( "next_source_position", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.nextSourcePosition )
         , ( "generated_count", (Json.Encode.int) struct.generatedCount )
         , ( "next_emit_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.nextEmitAtMs )
+        ]
+
+
+type alias RerReportAccessListRsp =
+    { loginIds : List (String)
+    }
+
+
+rerReportAccessListRspEncoder : RerReportAccessListRsp -> Json.Encode.Value
+rerReportAccessListRspEncoder struct =
+    Json.Encode.object
+        [ ( "login_ids", (Json.Encode.list (Json.Encode.string)) struct.loginIds )
+        ]
+
+
+type alias ReplaceRerReportAccessListReq =
+    { loginIds : List (String)
+    }
+
+
+replaceRerReportAccessListReqEncoder : ReplaceRerReportAccessListReq -> Json.Encode.Value
+replaceRerReportAccessListReqEncoder struct =
+    Json.Encode.object
+        [ ( "login_ids", (Json.Encode.list (Json.Encode.string)) struct.loginIds )
+        ]
+
+
+type alias RerReportMetadataItem =
+    { id : Int
+    , sigintUnitId : Int
+    , sigintUnitName : String
+    , locations : List (String)
+    , labels : List (String)
+    }
+
+
+rerReportMetadataItemEncoder : RerReportMetadataItem -> Json.Encode.Value
+rerReportMetadataItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "sigint_unit_name", (Json.Encode.string) struct.sigintUnitName )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "labels", (Json.Encode.list (Json.Encode.string)) struct.labels )
+        ]
+
+
+type alias RerReportMetadataListRsp =
+    { items : List (RerReportMetadataItem)
+    }
+
+
+rerReportMetadataListRspEncoder : RerReportMetadataListRsp -> Json.Encode.Value
+rerReportMetadataListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (rerReportMetadataItemEncoder)) struct.items )
+        ]
+
+
+type alias CreateRerReportMetadataReq =
+    { sigintUnitId : Int
+    , locations : List (String)
+    , labels : List (String)
+    }
+
+
+createRerReportMetadataReqEncoder : CreateRerReportMetadataReq -> Json.Encode.Value
+createRerReportMetadataReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "labels", (Json.Encode.list (Json.Encode.string)) struct.labels )
+        ]
+
+
+type alias UpdateRerReportMetadataReq =
+    { id : Int
+    , sigintUnitId : Int
+    , locations : List (String)
+    , labels : List (String)
+    }
+
+
+updateRerReportMetadataReqEncoder : UpdateRerReportMetadataReq -> Json.Encode.Value
+updateRerReportMetadataReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "labels", (Json.Encode.list (Json.Encode.string)) struct.labels )
+        ]
+
+
+type alias DeleteRerReportMetadataReq =
+    { id : Int
+    }
+
+
+deleteRerReportMetadataReqEncoder : DeleteRerReportMetadataReq -> Json.Encode.Value
+deleteRerReportMetadataReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
         ]
 
 
@@ -19786,6 +19930,7 @@ userDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_host" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_integrations" (Json.Decode.list (goiUserIntegrationDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_release_seen" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_report_eligible" (Json.Decode.bool)))
 
 
 authorIdentityDecoder : Json.Decode.Decoder AuthorIdentity
@@ -22620,6 +22765,24 @@ listUnitsSortByDecoder =
             |> Json.Decode.andThen
                 (\x ->
                     case x of
+                        "UnitCombatTypeAsc" ->
+                            Json.Decode.succeed UnitCombatTypeAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitCombatTypeDesc" ->
+                            Json.Decode.succeed UnitCombatTypeDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
                         "UnitCommentAsc" ->
                             Json.Decode.succeed UnitCommentAsc
                         unexpected ->
@@ -22713,6 +22876,8 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "military_district" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army_region" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "combat_type_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "combat_type_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "present_in_orbit" (Json.Decode.nullable (Json.Decode.bool))))
@@ -22724,6 +22889,19 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_orbit" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_ids" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_generative_names" (Json.Decode.list (Json.Decode.string))))
+
+
+unitCombatTypeDecoder : Json.Decode.Decoder UnitCombatType
+unitCombatTypeDecoder =
+    Json.Decode.succeed UnitCombatType
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+unitCombatTypesRspDecoder : Json.Decode.Decoder UnitCombatTypesRsp
+unitCombatTypesRspDecoder =
+    Json.Decode.succeed UnitCombatTypesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "combat_types" (Json.Decode.list (unitCombatTypeDecoder))))
 
 
 listUnitsReqDecoder : Json.Decode.Decoder ListUnitsReq
@@ -22750,6 +22928,7 @@ listUnitsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_army" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_military_district" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_army_region" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_combat_type" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_comment" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_orbit_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_is_deduplicate_candidate" (Json.Decode.nullable (Json.Decode.bool))))
@@ -22835,6 +23014,7 @@ createUnitReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "military_district" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army_region" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "combat_type_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_deduplicate_candidate" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
@@ -25416,6 +25596,57 @@ rerDutyTestReplayStatusRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_source_position" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generated_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_emit_at_ms" (Json.Decode.nullable (Json.Decode.int))))
+
+
+rerReportAccessListRspDecoder : Json.Decode.Decoder RerReportAccessListRsp
+rerReportAccessListRspDecoder =
+    Json.Decode.succeed RerReportAccessListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_ids" (Json.Decode.list (Json.Decode.string))))
+
+
+replaceRerReportAccessListReqDecoder : Json.Decode.Decoder ReplaceRerReportAccessListReq
+replaceRerReportAccessListReqDecoder =
+    Json.Decode.succeed ReplaceRerReportAccessListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_ids" (Json.Decode.list (Json.Decode.string))))
+
+
+rerReportMetadataItemDecoder : Json.Decode.Decoder RerReportMetadataItem
+rerReportMetadataItemDecoder =
+    Json.Decode.succeed RerReportMetadataItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (Json.Decode.string))))
+
+
+rerReportMetadataListRspDecoder : Json.Decode.Decoder RerReportMetadataListRsp
+rerReportMetadataListRspDecoder =
+    Json.Decode.succeed RerReportMetadataListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (rerReportMetadataItemDecoder))))
+
+
+createRerReportMetadataReqDecoder : Json.Decode.Decoder CreateRerReportMetadataReq
+createRerReportMetadataReqDecoder =
+    Json.Decode.succeed CreateRerReportMetadataReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (Json.Decode.string))))
+
+
+updateRerReportMetadataReqDecoder : Json.Decode.Decoder UpdateRerReportMetadataReq
+updateRerReportMetadataReqDecoder =
+    Json.Decode.succeed UpdateRerReportMetadataReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (Json.Decode.string))))
+
+
+deleteRerReportMetadataReqDecoder : Json.Decode.Decoder DeleteRerReportMetadataReq
+deleteRerReportMetadataReqDecoder =
+    Json.Decode.succeed DeleteRerReportMetadataReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
 
 
 aiGovUaSettingsRspDecoder : Json.Decode.Decoder AiGovUaSettingsRsp

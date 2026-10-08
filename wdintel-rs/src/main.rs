@@ -65,6 +65,7 @@ pub mod organism;
 pub mod palitra;
 pub mod report_history;
 pub mod rer_importer;
+pub mod rer_report_admin;
 pub mod secret;
 pub mod server;
 pub mod session;

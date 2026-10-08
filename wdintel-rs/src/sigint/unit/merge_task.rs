@@ -648,6 +648,7 @@ where
         ("sigint_network_callsign", "unit_id"),
         ("sigint_unit_attachment", "unit_id"),
         ("sigint_unit_label", "sigint_unit_id"),
+        ("sigint_unit_rer_report_metadata", "sigint_unit_id"),
         ("sigint_inbox_item_unit", "unit_id"),
         ("orbit_unit_sigint_unit", "sigint_unit_id"),
         ("device", "unit_id"),
@@ -691,6 +692,48 @@ mod tests {
     use super::*;
     use crate::functest::tests::{cleanup, mk_sigint_network, mk_sigint_unit};
     use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn staged_merge_moves_rer_report_metadata_to_survivor() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let duplicate =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let survivor =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let metadata = sigint_unit_rer_report_metadata::ActiveModel {
+            sigint_unit_id: Set(duplicate.id),
+            locations: Set(serde_json::json!(["location"])),
+            labels: Set(serde_json::json!(["label"])),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        move_step(
+            &env.dbx,
+            login,
+            duplicate.id,
+            survivor.id,
+            UnitReferenceStep::RerReportMetadata,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            sigint_unit_rer_report_metadata::Entity::find_by_id(metadata.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .sigint_unit_id,
+            survivor.id
+        );
+    }
 
     #[tokio::test]
     #[serial]

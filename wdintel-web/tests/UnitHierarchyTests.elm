@@ -34,6 +34,8 @@ createUnit id army militaryDistrict armyRegion name active =
     , hasOrbit = False
     , orbitUnitIds = []
     , orbitUnitGenerativeNames = []
+    , combatTypeId = Nothing
+    , combatTypeName = Nothing
     }
 
 

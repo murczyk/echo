@@ -231,6 +231,7 @@ where
     )
     .await
     .c(h!())?;
+    copy_sigint_combat_types(db).await.c(h!())?;
     ensure_unit_echelons(
         db,
         entries
@@ -240,6 +241,16 @@ where
     )
     .await
     .c(h!())?;
+    Ok(())
+}
+
+pub(super) async fn copy_sigint_combat_types<C>(db: &C) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    db.execute_unprepared(
+        "insert into sigint_unit_orbit_combat_type (id, name) select id, name from orbit_combat_unit_type on conflict (id) do nothing",
+    ).await.c(h!())?;
     Ok(())
 }
 
