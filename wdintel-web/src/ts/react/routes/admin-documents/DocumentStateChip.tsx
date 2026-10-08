@@ -8,6 +8,11 @@ const STATE_LABELS: Record<string, string> = {
   done: 'Готово',
   ready: 'Готово',
   complete: 'Готово',
+  completed: 'Готово',
+  extracting: 'Обробка',
+  superseded: 'Замінено',
+  unsupported: 'Не підтримується',
+  content_unavailable: 'Вміст недоступний',
   failed: 'Помилка',
   error: 'Помилка',
   skipped: 'Пропущено',
@@ -15,9 +20,10 @@ const STATE_LABELS: Record<string, string> = {
 };
 
 function stateColor(state: string): 'success' | 'error' | 'warning' | 'default' {
-  if (['done', 'ready', 'complete'].includes(state)) return 'success';
+  if (['done', 'ready', 'complete', 'completed'].includes(state)) return 'success';
   if (['failed', 'error'].includes(state)) return 'error';
-  if (['pending', 'queued', 'running', 'processing'].includes(state)) return 'warning';
+  if (['pending', 'queued', 'running', 'processing', 'extracting'].includes(state))
+    return 'warning';
   return 'default';
 }
 

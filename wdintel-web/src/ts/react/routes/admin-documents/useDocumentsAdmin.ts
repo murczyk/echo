@@ -31,6 +31,8 @@ export function useMessageDocuments() {
   // query that produced the currently shown rows; pagination must keep using it
   const submittedQuery = useRef('');
   const loadingMore = useRef(false);
+  // bumped by every fresh search so older pagination responses are discarded
+  const generation = useRef(0);
   const { notify } = usePowerSnackbar();
   const fail = useCallback(
     (message: string, error: unknown) =>
@@ -42,9 +44,12 @@ export function useMessageDocuments() {
     async (cursor: string | null = null) => {
       if (cursor && loadingMore.current) return;
       const requestQuery = cursor ? submittedQuery.current : query;
+      if (!cursor) generation.current += 1;
+      const requestGeneration = generation.current;
       loadingMore.current = cursor !== null;
       try {
         const response = await getAttachmentsPage(requestQuery, cursor);
+        if (requestGeneration !== generation.current) return;
         submittedQuery.current = requestQuery;
         setHasMore(response.documents.length === PAGE_SIZE);
         setPage((current) =>
@@ -54,9 +59,10 @@ export function useMessageDocuments() {
         );
         setSettings((current) => (cursor && current ? current : response.settings));
       } catch (error) {
-        fail('Не вдалося завантажити документи', error);
+        if (requestGeneration === generation.current)
+          fail('Не вдалося завантажити документи', error);
       } finally {
-        loadingMore.current = false;
+        if (requestGeneration === generation.current) loadingMore.current = false;
       }
     },
     [query, fail],

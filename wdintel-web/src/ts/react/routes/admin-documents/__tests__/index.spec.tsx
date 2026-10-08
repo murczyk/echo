@@ -124,6 +124,22 @@ describe('AdminDocumentsPage pagination', () => {
     expect(loadMoreButton(container)).toBeUndefined();
   });
 
+  it('discards a pending load-more response after a new search', async () => {
+    let resolveMore: (value: ReturnType<typeof attachmentsPage>) => void = () => {};
+    mocks.messages
+      .mockResolvedValueOnce(attachmentsPage(0, 50))
+      .mockReturnValueOnce(new Promise((resolve) => (resolveMore = resolve)))
+      .mockResolvedValueOnce(attachmentsPage(100, 1));
+    const container = await mount();
+    await act(async () => loadMoreButton(container)?.click());
+    const search = container.querySelector<HTMLButtonElement>('button[type="submit"]');
+    await act(async () => search?.click());
+    await act(async () => resolveMore(attachmentsPage(50, 50)));
+
+    expect(container.textContent).toContain('file-100.pdf');
+    expect(container.textContent).not.toContain('file-50.pdf');
+  });
+
   it('shows the device registry notice on the devices tab', async () => {
     mocks.messages.mockResolvedValue(attachmentsPage(0, 1));
     const container = await mount();

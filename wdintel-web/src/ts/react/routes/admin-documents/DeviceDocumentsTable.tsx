@@ -46,7 +46,7 @@ export function DeviceDocumentsTable({
         Cell: ({ row }) =>
           row.original.modifiedAt == null
             ? null
-            : new Date(row.original.modifiedAt * 1000).toLocaleString('uk-UA'),
+            : new Date(row.original.modifiedAt).toLocaleString('uk-UA'),
       },
       {
         header: 'Стан',
