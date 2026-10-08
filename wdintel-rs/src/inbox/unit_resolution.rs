@@ -642,6 +642,20 @@ where
     }
 }
 
+fn ends_with_numbered_army_segment(value: &str) -> bool {
+    let segments =
+        crate::unit::parse_library_unit_typed_segments_any_order(value);
+    let parsed_text = segments
+        .iter()
+        .map(|(_, segment)| segment.as_str())
+        .join(" ");
+    segments
+        .last()
+        .is_some_and(|(echelon, _)| *echelon == crate::unit::UnitType::ARMY)
+        && normalize_structural_text(value).replace(' ', "")
+            == normalize_structural_text(&parsed_text).replace(' ', "")
+}
+
 fn split_unit_list(value: &str) -> Vec<&str> {
     lazy_static! {
         static ref UNIT_LIST_SEPARATOR_RE: regex::Regex =
@@ -653,12 +667,8 @@ fn split_unit_list(value: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut start = 0;
     for separator in UNIT_LIST_SEPARATOR_RE.find_iter(value) {
-        let follows_unit_number = value[..separator.start()]
-            .split_whitespace()
-            .next_back()
-            .is_some_and(|word| word.chars().all(|c| c.is_ascii_digit()));
         if separator.as_str().trim().to_lowercase() == "та"
-            && follows_unit_number
+            && ends_with_numbered_army_segment(&value[start..separator.end()])
         {
             continue;
         }
@@ -710,7 +720,7 @@ async fn resolve_complete_unit_text<C>(
 where
     C: ConnectionTrait,
 {
-    if !is_single_unit_hierarchy(value) {
+    if value.contains(',') || !is_single_unit_hierarchy(value) {
         return Ok(None);
     }
     match resolve_structurally(db, value).await.context(h!())? {
@@ -2544,17 +2554,23 @@ mod tests {
         let item =
             insert_inbox_item(&env.dbx, Some(&source), Some(&source), None)
                 .await;
-        resolve_and_sync_inbox_item(
-            &env.dbx,
-            item.id,
-            item.id_uuid,
-            item.unit_v2.as_deref(),
-            item.unit.as_deref(),
-        )
-        .await
-        .unwrap();
+        for source in [
+            source.clone(),
+            source.to_lowercase(),
+            source.replace(" омсбр", "омсбр"),
+        ] {
+            resolve_and_sync_inbox_item(
+                &env.dbx,
+                item.id,
+                item.id_uuid,
+                Some(&source),
+                Some(&source),
+            )
+            .await
+            .unwrap();
 
-        assert_resolved_item_units(&env.dbx, item.id, &[child.id]).await;
+            assert_resolved_item_units(&env.dbx, item.id, &[child.id]).await;
+        }
         for (label, unit_id) in
             [(&hierarchy[..], parent.id), ("3 пдб", child.id)]
         {
@@ -2628,6 +2644,8 @@ mod tests {
             insert_named_unit_with_label(&env.dbx, "3 пдб", "3 пдб").await;
         let named =
             insert_named_unit_with_label(&env.dbx, "БАРС-08", "БАРС-08").await;
+        let group =
+            insert_named_unit_with_label(&env.dbx, "Група 1", "Група 1").await;
         let orbit_id = insert_orbit_unit(
             &env.dbx,
             &format!("3 пдб / {brigade_label}"),
@@ -2637,7 +2655,7 @@ mod tests {
         )
         .await;
         let mut expected = Vec::new();
-        for separator in ["та", "ТА", "і", "й", "и", "and", ";", "&", "+"]
+        for separator in [",", "та", "ТА", "і", "й", "и", "and", ";", "&", "+"]
         {
             for (left, right, ids) in [
                 (
@@ -2645,7 +2663,13 @@ mod tests {
                     brigade_label.as_str(),
                     vec![brigade.id, battalion.id],
                 ),
+                (
+                    brigade_label.as_str(),
+                    "3 пдб",
+                    vec![brigade.id, battalion.id],
+                ),
                 ("БАРС-08", "3 пдб", vec![battalion.id, named.id]),
+                ("Група 1", "3 пдб", vec![battalion.id, group.id]),
             ] {
                 let source = format!("{left} {separator} {right}");
                 let item = insert_inbox_item(
