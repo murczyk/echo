@@ -6,6 +6,7 @@ import {
   DEBUG_RECORDING_MS,
   DEBUG_SCHEMA_VERSION,
 } from './config';
+import { createDebugAnomalyDetector } from './anomalies';
 import {
   buildDebugMarkdown,
   collectDebugEnvironment,
@@ -15,6 +16,8 @@ import { createDebugSanitizer } from './sanitize';
 import { clearDebugSession, loadDebugSession, saveDebugSession } from './storage';
 import type {
   DebugBuildMetadata,
+  DebugAnomalyDetector,
+  DebugAnomalySummary,
   DebugEnvironment,
   DebugEventInput,
   DebugRecorderSnapshot,
@@ -87,6 +90,8 @@ export function createBrowserDebugRecorder(
   let metadata: DebugBuildMetadata = { echoVersion: 'unknown', deploymentMode: 'unknown' };
   let session: PersistedDebugSession | null = null;
   let sanitizer: DebugSanitizer | null = null;
+  let anomalyDetector: DebugAnomalyDetector | null = null;
+  let anomalySummaryBase: DebugAnomalySummary = { total: 0, counts: {} };
   let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
   let readyExpiryTimer: ReturnType<typeof setTimeout> | null = null;
   let persistenceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -162,11 +167,47 @@ export function createBrowserDebugRecorder(
     persistenceTimer = setTimeout(flush, DEBUG_PERSIST_DEBOUNCE_MS);
   };
 
+  const syncAnomalySummary = () => {
+    if (!session || !anomalyDetector) return;
+    const current = anomalyDetector.getSummary();
+    const counts = { ...anomalySummaryBase.counts };
+    for (const [kind, count] of Object.entries(current.counts)) {
+      counts[kind] = (counts[kind] ?? 0) + count;
+    }
+    session.anomalies = { total: anomalySummaryBase.total + current.total, counts };
+  };
+
+  const appendInput = (input: DebugEventInput, atMs: number, observe: boolean) => {
+    if (!session || session.state !== 'recording' || !sanitizer) return false;
+    const event = sanitizer.sanitizeInput(input, {
+      seq: session.nextSeq,
+      tMs: atMs - session.startedAt,
+      route: getRoute(),
+    });
+    if (!event) {
+      session.rejectedEvents += 1;
+      return false;
+    }
+    session.nextSeq += 1;
+    session.events.push(event);
+    session.aliases = sanitizer.getAliases();
+    enforceEventCount();
+    if (observe && anomalyDetector) {
+      for (const anomalyInput of anomalyDetector.observe(event)) {
+        appendInput(anomalyInput, atMs, false);
+      }
+      syncAnomalySummary();
+    }
+    return true;
+  };
+
   const clear = () => {
     const changed = session !== null || downloadError;
     clearTimers();
     session = null;
     sanitizer = null;
+    anomalyDetector = null;
+    anomalySummaryBase = { total: 0, counts: {} };
     downloadError = false;
     if (storage) clearDebugSession(storage);
     if (changed) emit();
@@ -188,6 +229,12 @@ export function createBrowserDebugRecorder(
     if (!session || session.state !== 'recording') return;
     clearTimer(deadlineTimer);
     deadlineTimer = null;
+    if (anomalyDetector) {
+      for (const anomalyInput of anomalyDetector.finish(readyAt - session.startedAt)) {
+        appendInput(anomalyInput, readyAt, false);
+      }
+      syncAnomalySummary();
+    }
     session.state = 'ready';
     session.readyAt = readyAt;
     flush();
@@ -217,6 +264,11 @@ export function createBrowserDebugRecorder(
       aliasSalt: session.aliasSalt,
       aliases: session.aliases,
     });
+    anomalySummaryBase = {
+      total: session.anomalies.total,
+      counts: { ...session.anomalies.counts },
+    };
+    anomalyDetector = session.state === 'recording' ? createDebugAnomalyDetector() : null;
     if (session.state === 'recording') {
       if (now() >= session.deadlineAt) transitionReady(session.deadlineAt);
       else scheduleDeadline();
@@ -233,6 +285,8 @@ export function createBrowserDebugRecorder(
     const recordingId = createRecordingId();
     const aliasSalt = createAliasSalt();
     sanitizer = createDebugSanitizer(recordingId, { aliasSalt });
+    anomalyDetector = createDebugAnomalyDetector();
+    anomalySummaryBase = { total: 0, counts: {} };
     session = {
       schemaVersion: DEBUG_SCHEMA_VERSION,
       state: 'recording',
@@ -266,21 +320,7 @@ export function createBrowserDebugRecorder(
       transitionReady(session.deadlineAt);
       return;
     }
-    const event = sanitizer.sanitizeInput(input, {
-      seq: session.nextSeq,
-      tMs: atMs - session.startedAt,
-      route: getRoute(),
-    });
-    if (!event) {
-      session.rejectedEvents += 1;
-      schedulePersistence();
-      emit();
-      return;
-    }
-    session.nextSeq += 1;
-    session.events.push(event);
-    session.aliases = sanitizer.getAliases();
-    enforceEventCount();
+    appendInput(input, atMs, true);
     schedulePersistence();
     emit();
   };

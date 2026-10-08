@@ -98,6 +98,13 @@ export type DebugRecorderSnapshot = {
 export type DebugEventSink = (input: DebugEventInput) => void;
 export type DebugCollectorCleanup = () => void;
 
+export type DebugAnomalyDetector = {
+  observe: (event: DebugEvent) => DebugEventInput[];
+  finish: (atMs: number) => DebugEventInput[];
+  getSummary: () => DebugAnomalySummary;
+  getBufferedEventCount: () => number;
+};
+
 export type DebugSanitizer = {
   safeRoute: (value: string | URL) => string;
   safeTarget: (value: DebugTarget | EventTarget | null | undefined) => DebugTarget | undefined;

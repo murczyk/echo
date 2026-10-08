@@ -194,6 +194,30 @@ describe('browser debug recorder store', () => {
     });
   });
 
+  it('persists detector events and the final anomaly summary without recursion', () => {
+    const storage = new MemoryStorage();
+    const recorder = createBrowserDebugRecorder(dependencies(storage));
+    recorder.configure(metadata);
+    recorder.start();
+
+    recorder.record({ kind: 'dom.replacement' });
+    recorder.record({ kind: 'dom.replacement' });
+    recorder.record({ kind: 'dom.replacement' });
+    recorder.finish();
+
+    const session = loadDebugSession(storage, Date.now());
+    expect(session?.events.map((item) => item.kind)).toEqual([
+      'dom.replacement',
+      'dom.replacement',
+      'dom.replacement',
+      'anomaly.dom-replacement-storm',
+    ]);
+    expect(session?.anomalies).toEqual({
+      total: 1,
+      counts: { 'anomaly.dom-replacement-storm': 1 },
+    });
+  });
+
   it('keeps ready data after a failed download and clears it after a successful retry', () => {
     const storage = new MemoryStorage();
     const downloadMarkdown = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
