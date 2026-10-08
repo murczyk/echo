@@ -235,9 +235,11 @@ async fn update_metadata(
         lock_metadata_for_write(dbx, req.id, Some(req.sigint_unit_id))
             .await
             .c(h!())?;
-    validate_unit(&transaction, req.sigint_unit_id)
-        .await
-        .c(h!())?;
+    if row.sigint_unit_id != req.sigint_unit_id {
+        validate_unit(&transaction, req.sigint_unit_id)
+            .await
+            .c(h!())?;
+    }
     ensure_unit_is_unused(&transaction, req.sigint_unit_id, Some(req.id))
         .await
         .c(h!())?;

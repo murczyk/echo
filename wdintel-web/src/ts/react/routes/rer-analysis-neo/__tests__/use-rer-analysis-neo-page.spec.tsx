@@ -406,6 +406,52 @@ describe('useRerAnalysisNeoPage', () => {
 
   // Regression: https://github.com/echoua/echo/issues/3598
   it.each([
+    { request: 'user', directLink: false },
+    { request: 'settings', directLink: false },
+    { request: 'user', directLink: true },
+    { request: 'settings', directLink: true },
+  ])(
+    'preserves report filters while $request access is pending or fails (direct link: $directLink)',
+    async ({ request, directLink }) => {
+      currentUserMock.fetchCurrentUser.mockResolvedValue({
+        name: 'tester',
+        roles: ['Rer'],
+        rerReportEligible: true,
+      } as User);
+      systemSettingsMock.currentSystemSettings.mockResolvedValue({ rerReportEnabled: true });
+      const accessRequest = deferred<never>();
+      const lookup =
+        request === 'user'
+          ? currentUserMock.fetchCurrentUser
+          : systemSettingsMock.currentSystemSettings;
+      lookup.mockReturnValueOnce(accessRequest.promise);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?onlyWithNetwork=true${directLink ? '&m=target-uid' : ''}`,
+      );
+      renderHook(['Rer']);
+      await flushEffects();
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+        queryState: { onlyWithNetwork: true },
+        deferInitialLoad: true,
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      await act(async () => accessRequest.reject(new Error('access unavailable')));
+      await flushEffects();
+      expect(latest?.queryState.onlyWithNetwork).toBe(true);
+      expect(new URLSearchParams(window.location.search).get('onlyWithNetwork')).toBe('true');
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+        queryState: { onlyWithNetwork: true },
+        deferInitialLoad: true,
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      expect(latest?.error).not.toBeNull();
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it.each([
     { eligible: true, globallyEnabled: true, expected: true },
     { eligible: false, globallyEnabled: true, expected: false },
     { eligible: true, globallyEnabled: false, expected: false },

@@ -9,6 +9,8 @@ global `rer_report_enabled` setting and explicit current-login membership are
 required, including for administrators. Report templates and generation retain
 the existing system-switch gate. When access is denied, Analysis clears the
 hidden `onlyWithNetwork` filter from requests and the URL.
+Failed access checks preserve a requested filter and defer message loading,
+including direct-message links, until access can be determined.
 
 The selector offers active human accounts, including Delta-authenticated users,
 and excludes API/service accounts. Previously selected inactive or unavailable
@@ -21,6 +23,8 @@ entries are rejected; at least one list must contain a value. Selecting a unit
 for a new row seeds its name as a label; changing that selection updates the
 seeded label while preserving custom labels. Creation and reassignment require
 an active, non-deleted unit without another metadata row.
+Existing rows remain editable when their unchanged unit becomes inactive or
+soft-deleted.
 
 Synchronous and staged unit merges move a lone source row to the survivor or
 union both lists with survivor values first. Remaining-reference checks include

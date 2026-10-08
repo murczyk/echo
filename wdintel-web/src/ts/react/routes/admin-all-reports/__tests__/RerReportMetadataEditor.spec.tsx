@@ -18,12 +18,12 @@ import { MetadataEditor, type EditorState } from '../RerReportMetadataEditor';
 let root: Root | null = null;
 const rows: [] = [];
 
-function Editor() {
+function Editor({ initialLabels = [] }: { initialLabels?: string[] }) {
   const [state, setState] = useState<EditorState>({
     id: null,
     unit: null,
     locations: [],
-    labels: [],
+    labels: initialLabels,
   });
   return (
     <MetadataEditor
@@ -102,5 +102,33 @@ describe('RER metadata editor', () => {
     expect(document.querySelector('[data-testid="CancelIcon"]')?.parentElement?.textContent).toBe(
       'Unit A',
     );
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('replaces and clears the seeded label while preserving custom labels', async () => {
+    searchUnits.mockResolvedValue([
+      { id: 1, name: 'Unit A' },
+      { id: 2, name: 'Unit B' },
+    ]);
+    const container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<Editor initialLabels={['custom', 'Unit B']} />));
+    const labels = () =>
+      Array.from(document.querySelectorAll('[data-testid="CancelIcon"]')).map(
+        (icon) => icon.parentElement?.textContent,
+      );
+    await selectUnit('Unit A');
+    expect(labels()).toEqual(['Unit A', 'custom', 'Unit B']);
+    await selectUnit('Unit B');
+    expect(labels()).toEqual(['Unit B', 'custom']);
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>('button[title="Clear"]')!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    expect(labels()).toEqual(['custom']);
+    await selectUnit('Unit A');
+    expect(labels()).toEqual(['Unit A', 'custom']);
   });
 });

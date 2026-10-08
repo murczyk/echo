@@ -173,6 +173,71 @@ async fn metadata_crud_preserves_rows_when_reassignment_conflicts() {
 
 #[tokio::test]
 #[serial]
+async fn metadata_edits_preserve_unavailable_units_without_allowing_reassignment(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+    let target = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+    let metadata = create_metadata(
+        &env.dbx,
+        &CreateRerReportMetadataReq {
+            sigint_unit_id: unit.id,
+            locations: vec!["original".into()],
+            labels: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    for (active, deleted) in [(false, false), (true, true)] {
+        for unit_id in [unit.id, target.id] {
+            sigint_unit::ActiveModel {
+                id: Set(unit_id),
+                active: Set(active),
+                deleted: Set(deleted),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+        }
+        assert_eq!(list_metadata(&env.dbx).await.unwrap().len(), 1);
+        let update = UpdateRerReportMetadataReq {
+            id: metadata.id,
+            sigint_unit_id: unit.id,
+            locations: vec!["updated".into()],
+            labels: vec!["label".into()],
+        };
+        let saved = update_metadata(&env.dbx, &update).await.unwrap();
+        assert_eq!(saved.locations, update.locations);
+        assert_eq!(saved.labels, update.labels);
+        assert!(create_metadata(
+            &env.dbx,
+            &CreateRerReportMetadataReq {
+                sigint_unit_id: target.id,
+                locations: vec!["new".into()],
+                labels: vec![],
+            },
+        )
+        .await
+        .is_err());
+        assert!(update_metadata(
+            &env.dbx,
+            &UpdateRerReportMetadataReq {
+                sigint_unit_id: target.id,
+                ..update
+            },
+        )
+        .await
+        .is_err());
+        assert_eq!(
+            metadata_item_by_id(&env.dbx, metadata.id).await.unwrap(),
+            saved
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
 async fn metadata_creation_waits_for_merge_and_rejects_deleted_source() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();

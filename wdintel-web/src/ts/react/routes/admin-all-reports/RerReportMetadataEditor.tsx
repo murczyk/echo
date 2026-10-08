@@ -31,6 +31,18 @@ function normalizeValues(values: readonly string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+function labelsForUnit(state: EditorState, unit: UnitOption | null): string[] {
+  if (state.id !== null) return state.labels;
+  if (state.labels.length === 0 || state.unit === null) {
+    return normalizeValues([...(unit ? [unit.name] : []), ...state.labels]);
+  }
+  return normalizeValues(
+    state.labels.flatMap((label) =>
+      label === state.unit?.name ? (unit ? [unit.name] : []) : [label],
+    ),
+  );
+}
+
 export function MetadataEditor({
   state,
   rows,
@@ -129,14 +141,7 @@ export function MetadataEditor({
                 onChange({
                   ...state,
                   unit,
-                  labels:
-                    state.id === null &&
-                    (state.labels.length === 0 ||
-                      (state.labels.length === 1 && state.labels[0] === state.unit?.name))
-                      ? unit
-                        ? [unit.name]
-                        : []
-                      : state.labels,
+                  labels: labelsForUnit(state, unit),
                 })
               }
               noOptionsText="Підрозділів не знайдено"

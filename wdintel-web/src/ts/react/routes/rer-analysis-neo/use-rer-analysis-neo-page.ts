@@ -103,7 +103,8 @@ function inboxWindowMatchesMessages(
 type DeviceAccess =
   { status: 'loading' } | { status: 'allowed' } | { status: 'denied' } | { status: 'error' };
 
-type RerReportFilterAccess = { status: 'loading' } | { status: 'allowed' } | { status: 'denied' };
+type RerReportFilterAccess =
+  { status: 'loading' } | { status: 'allowed' } | { status: 'denied' } | { status: 'error' };
 
 export function useRerAnalysisNeoPage(
   authUserName: string | null,
@@ -217,15 +218,16 @@ export function useRerAnalysisNeoPage(
           : { status: 'denied' };
   const canUseDevices = deviceAccess.status === 'allowed';
   const rerReportFilterAccess: RerReportFilterAccess =
-    currentUserStatus === 'loading' || systemSettingsStatus === 'loading'
-      ? { status: 'loading' }
-      : currentUserStatus === 'success' &&
-          systemSettingsStatus === 'success' &&
-          rerReportEnabled &&
-          currentUser?.rerReportEligible === true
-        ? { status: 'allowed' }
-        : { status: 'denied' };
+    currentUserStatus === 'error' || systemSettingsStatus === 'error'
+      ? { status: 'error' }
+      : currentUserStatus === 'loading' || systemSettingsStatus === 'loading'
+        ? { status: 'loading' }
+        : rerReportEnabled && currentUser?.rerReportEligible === true
+          ? { status: 'allowed' }
+          : { status: 'denied' };
   const rerReportFilterEnabled = rerReportFilterAccess.status === 'allowed';
+  const rerReportFilterAccessPending =
+    rerReportFilterAccess.status === 'loading' || rerReportFilterAccess.status === 'error';
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles ?? authUserRoles);
   const directQueryBoundaryRef = useRef({
     fromDateTimeStr: initialQueryState.fromDateTimeStr,
@@ -328,7 +330,7 @@ export function useRerAnalysisNeoPage(
 
   const directMessageDefaultsPending =
     currentUserStatus === 'loading' ||
-    (rerReportFilterAccess.status === 'loading' && initialQueryState.onlyWithNetwork) ||
+    (rerReportFilterAccessPending && initialQueryState.onlyWithNetwork) ||
     queryStateWithResolvedRoleDate !== queryState ||
     queryState.messageTimeBasis !== dutySettings.messageSortBy;
 
@@ -471,7 +473,7 @@ export function useRerAnalysisNeoPage(
     currentUser,
     deferInitialLoad:
       deviceAccess.status === 'loading' ||
-      (rerReportFilterAccess.status === 'loading' && queryState.onlyWithNetwork) ||
+      (rerReportFilterAccessPending && queryState.onlyWithNetwork) ||
       (deviceAccess.status === 'error' && queryState.deviceNamesSelected.length > 0) ||
       targetMessageContextResponsePending,
     focusedWindow: targetMessageWindow,
@@ -792,11 +794,6 @@ export function useRerAnalysisNeoPage(
         setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
         setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
         setRerReportEnabled(settings.rerReportEnabled);
-        if (!settings.rerReportEnabled) {
-          setQueryState((current) =>
-            current.onlyWithNetwork ? { ...current, onlyWithNetwork: false } : current,
-          );
-        }
         setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
         setShowPelengDistanceToBattleline(settings.showPelengDistanceToBattleline);
