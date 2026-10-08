@@ -4976,7 +4976,7 @@ export type CreateSystemSettingsReq = {
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
-  aiPositionHighlightsEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheEnabled: boolean;

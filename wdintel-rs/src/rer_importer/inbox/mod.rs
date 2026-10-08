@@ -7905,6 +7905,12 @@ mod tests {
         use crate::rer_importer::highlight::ContentNode;
 
         let env = cleanup().await.unwrap();
+        system_settings::ActiveModel {
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let group = find_test_datasource_group(&env.dbx).await.unwrap();
         let (message, media) =
