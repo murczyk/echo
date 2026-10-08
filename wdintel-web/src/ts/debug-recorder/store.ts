@@ -42,6 +42,7 @@ export type BrowserDebugRecorder = {
   finish: () => void;
   download: () => boolean;
   record: (input: DebugEventInput) => void;
+  setCollectorSupport: (support: PersistedDebugSession['collectorSupport']) => void;
   flush: () => void;
   aliasIdentifier: (scope: string, value: string | number) => string | null;
   clear: () => void;
@@ -379,6 +380,16 @@ export function createBrowserDebugRecorder(
       }
     },
     record,
+    setCollectorSupport: (support) => {
+      if (!session || session.state !== 'recording') return;
+      session.collectorSupport = {
+        supported: [...support.supported],
+        unsupported: [...support.unsupported],
+        failed: [...support.failed],
+      };
+      schedulePersistence();
+      emit();
+    },
     flush,
     aliasIdentifier: (scope, value) => {
       if (!session || !sanitizer) return null;
