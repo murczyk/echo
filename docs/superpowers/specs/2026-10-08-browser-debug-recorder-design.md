@@ -1,7 +1,9 @@
 # Browser Debug Recorder Design
 
-**Status:** Proposed for written review  
-**Issue:** [#3709](https://github.com/echoua/echo/issues/3709)  
+**Status:** Approved
+
+**Issue:** [#3709](https://github.com/echoua/echo/issues/3709)
+
 **Base branch:** `main`
 
 ## Context
@@ -480,4 +482,3 @@ frontend checks. Browser test discovery alone is not sufficient.
    recorder failures do not alter application behavior.
 7. The old Duty-specific hidden activation and panel are removed only after
    parity tests demonstrate equivalent trace evidence.
-
