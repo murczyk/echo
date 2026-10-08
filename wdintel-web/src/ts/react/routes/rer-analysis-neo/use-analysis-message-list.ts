@@ -125,15 +125,20 @@ export function useAnalysisMessageList({
   focusedMessageIdRef.current = focusedMessageId;
   focusedMessageActiveRef.current = focusedMessageActive;
   focusedQueryStateRef.current = queryState;
-  const { messagesOverallCount, messagesTotalCount, messagesTotalLoading, refreshMessageCounts } =
-    useAnalysisMessageCounts({
-      deferInitialLoad: deferInitialLoad || focusedMessageActive,
-      newestFirst,
-      onError,
-      onUnauthorized,
-      optionsFreqValues,
-      queryState,
-    });
+  const {
+    messagesOverallCount,
+    messagesTotalCount,
+    messagesTotalLoading,
+    refreshMessageCounts,
+    scheduleOverallMessageCountRefresh,
+  } = useAnalysisMessageCounts({
+    deferInitialLoad: deferInitialLoad || focusedMessageActive,
+    newestFirst,
+    onError,
+    onUnauthorized,
+    optionsFreqValues,
+    queryState,
+  });
 
   const mergeMessageReferences = useCallback(
     (rsp: Pick<InboxMessagesRsp, 'signalGroups' | 'signalProfiles'>) => {
@@ -652,6 +657,7 @@ export function useAnalysisMessageList({
     pageIndex,
     refreshMessageCounts,
     replaceCurrentMessagePage,
+    scheduleOverallMessageCountRefresh,
     setAorEntries,
     setCounts,
     setHasLoadedInitialMessages,

@@ -410,6 +410,131 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesOverallCount).toBe(137);
   });
 
+  it('coalesces ambiguous rejected realtime events into one selected and overall count refresh', async () => {
+    vi.useFakeTimers();
+    fetchInboxCountMock
+      .mockResolvedValueOnce({ quantity: 42, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 137, firstElementTs: null });
+    const h = renderHook({ ...buildQueryState(), search: 'filtered' });
+    harnesses.push(h);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fetchInboxCountMock.mockClear();
+    fetchInboxCountMock
+      .mockResolvedValueOnce({ quantity: 43, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 138, firstElementTs: null });
+
+    for (let eventIndex = 0; eventIndex < 5; eventIndex += 1) {
+      act(() => h.latest.scheduleOverallMessageCountRefresh());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(550);
+      });
+    }
+    expect(fetchInboxCountMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_200);
+    });
+
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
+    expect(fetchInboxCountMock).toHaveBeenCalledWith(
+      expect.objectContaining({ nolimit: true, search: 'filtered' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(fetchInboxCountMock).toHaveBeenCalledWith(
+      expect.objectContaining({ nolimit: true, search: null }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(h.latest.messagesTotalCount).toBe(43);
+    expect(h.latest.messagesOverallCount).toBe(138);
+  });
+
+  it('refreshes the shared selected and overall count once when no filters are active', async () => {
+    vi.useFakeTimers();
+    const h = renderHook();
+    harnesses.push(h);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fetchInboxCountMock.mockClear();
+    fetchInboxCountMock.mockResolvedValue({ quantity: 43, firstElementTs: null });
+
+    act(() => {
+      h.latest.scheduleOverallMessageCountRefresh();
+      h.latest.scheduleOverallMessageCountRefresh();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_200);
+    });
+
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
+    expect(h.latest.messagesTotalCount).toBe(43);
+    expect(h.latest.messagesOverallCount).toBe(43);
+  });
+
+  it('keeps newer background counts when an older filtered request resolves later', async () => {
+    vi.useFakeTimers();
+    const selectedCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
+    const overallCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock
+      .mockReturnValueOnce(selectedCountRequest.promise)
+      .mockReturnValueOnce(overallCountRequest.promise);
+    const h = renderHook({ ...buildQueryState(), search: 'filtered' });
+    harnesses.push(h);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fetchInboxCountMock
+      .mockResolvedValueOnce({ quantity: 43, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 138, firstElementTs: null });
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(h.latest.messagesTotalCount).toBe(43);
+    expect(h.latest.messagesOverallCount).toBe(138);
+
+    await act(async () => {
+      selectedCountRequest.resolve({ quantity: 42, firstElementTs: null });
+      overallCountRequest.resolve({ quantity: 137, firstElementTs: null });
+      await Promise.resolve();
+    });
+
+    expect(h.latest.messagesTotalCount).toBe(43);
+    expect(h.latest.messagesOverallCount).toBe(138);
+  });
+
+  it('keeps a newer shared count when an older shared request resolves later', async () => {
+    vi.useFakeTimers();
+    const initialCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock.mockReturnValueOnce(initialCountRequest.promise);
+    const h = renderHook();
+    harnesses.push(h);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fetchInboxCountMock.mockResolvedValueOnce({ quantity: 43, firstElementTs: null });
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(h.latest.messagesTotalCount).toBe(43);
+    expect(h.latest.messagesOverallCount).toBe(43);
+
+    await act(async () => {
+      initialCountRequest.resolve({ quantity: 42, firstElementTs: null });
+      await Promise.resolve();
+    });
+
+    expect(h.latest.messagesTotalCount).toBe(43);
+    expect(h.latest.messagesOverallCount).toBe(43);
+  });
+
   it('marks counts as loading synchronously when the date range changes', async () => {
     vi.useFakeTimers();
     const h = renderHook();

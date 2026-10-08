@@ -931,6 +931,93 @@ test.describe('@smoke @regression', () => {
     });
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3694
+  test('@regression analysis neo ignores repeated realtime events rejected by its filters', async ({
+    page,
+  }) => {
+    const initialPage = createLoadedInboxResponse();
+    const eventMessageIds = [9001, 9002, 9003, 9004, 9005];
+    const targetedMessageRequests: number[][] = [];
+    let releaseInboxChangedEvents = false;
+    let deliveredEventCount = 0;
+    let inboxRequestCount = 0;
+    let inboxCountRequestCount = 0;
+
+    await setupAnalysisNeoPage(page, { inboxResponse: initialPage });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      inboxRequestCount += 1;
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify(initialPage),
+      });
+    });
+    await page.route('**/api/rer-importer/get-inbox-count', async (route) => {
+      inboxCountRequestCount += 1;
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ quantity: initialPage.inbox_items.length, first_element_ts: null }),
+      });
+    });
+    await page.route('**/api/rer-importer/messages-by-id-matching-filters', async (route) => {
+      const body = route.request().postDataJSON() as { message_ids?: number[] };
+      targetedMessageRequests.push(body.message_ids ?? []);
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({ messages: [] }),
+      });
+    });
+    await page.route('**/api/event-stream/long-poll', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 550));
+      const messageId = releaseInboxChangedEvents
+        ? eventMessageIds[deliveredEventCount]
+        : undefined;
+      const eventId = messageId == null ? null : `analysis-prod-storm-${deliveredEventCount + 1}`;
+      if (messageId != null) deliveredEventCount += 1;
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({
+          events:
+            messageId == null
+              ? []
+              : [
+                  {
+                    id: eventId,
+                    event_type: { ETInboxChanged: messageId },
+                    created_at: Date.now(),
+                    origin: null,
+                    intelligence_report: false,
+                  },
+                ],
+          last_event_id: eventId,
+        }),
+      });
+    });
+    await page.goto('/rer-analysis-neo?search=needle');
+
+    await expect(page.locator('[data-message-id="101"]')).toContainText(
+      'Analysis summary fixture message',
+    );
+    await expect.poll(() => inboxCountRequestCount).toBeGreaterThan(0);
+    await page.waitForTimeout(400);
+    const inboxRequestsBeforeEvents = inboxRequestCount;
+    const inboxCountRequestsBeforeEvents = inboxCountRequestCount;
+
+    releaseInboxChangedEvents = true;
+    await expect.poll(() => deliveredEventCount).toBe(eventMessageIds.length);
+    await expect.poll(() => targetedMessageRequests.length).toBe(eventMessageIds.length);
+    await page.waitForTimeout(400);
+
+    expect(targetedMessageRequests).toEqual(eventMessageIds.map((messageId) => [messageId]));
+    expect(inboxRequestCount).toBe(inboxRequestsBeforeEvents);
+    expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvents);
+    await expect
+      .poll(() => inboxCountRequestCount, { timeout: 10_000 })
+      .toBe(inboxCountRequestsBeforeEvents + 2);
+    await page.waitForTimeout(400);
+    expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvents + 2);
+    await expect(page.locator('[data-message-id]')).toHaveCount(initialPage.inbox_items.length);
+  });
+
   test('analysis neo keeps the compact panel toggle available during initial loading', async ({
     page,
   }) => {
