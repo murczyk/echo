@@ -19,6 +19,7 @@ type Params = {
 
 const MESSAGE_COUNTS_DEBOUNCE_MS = 200;
 const OVERALL_MESSAGE_COUNT_REFRESH_COALESCE_MS = 5_000;
+type MessageCountRefreshMode = 'immediate' | 'deferred';
 
 export function useAnalysisMessageCounts({
   deferInitialLoad,
@@ -37,7 +38,10 @@ export function useAnalysisMessageCounts({
   const onUnauthorizedRef = useRef(onUnauthorized);
   const overallRefreshTimeoutRef = useRef<number | null>(null);
   const overallRefreshAbortControllerRef = useRef<AbortController | null>(null);
+  const overallRefreshPendingRef = useRef(false);
+  const overallRefreshStartedInWindowRef = useRef(false);
   const countRequestGenerationRef = useRef(0);
+  const countLoadingGenerationRef = useRef<number | null>(null);
   const messagesTotalRequestJson = JSON.stringify(
     buildInboxReq(queryState, optionsFreqValues, true),
   );
@@ -48,6 +52,8 @@ export function useAnalysisMessageCounts({
   onUnauthorizedRef.current = onUnauthorized;
 
   const cancelScheduledOverallMessageCountRefresh = useCallback(() => {
+    overallRefreshPendingRef.current = false;
+    overallRefreshStartedInWindowRef.current = false;
     if (overallRefreshTimeoutRef.current !== null) {
       window.clearTimeout(overallRefreshTimeoutRef.current);
       overallRefreshTimeoutRef.current = null;
@@ -71,6 +77,7 @@ export function useAnalysisMessageCounts({
     if (deferInitialLoad) return;
 
     setActiveRequestKey(requestKey);
+    countLoadingGenerationRef.current = null;
     const inboxReq = JSON.parse(messagesTotalRequestJson) as InboxMessagesReq | null;
     const overallInboxReq = JSON.parse(messagesOverallRequestJson) as InboxMessagesReq | null;
     if (isNullOrUndefined(inboxReq) || isNullOrUndefined(overallInboxReq)) {
@@ -89,6 +96,7 @@ export function useAnalysisMessageCounts({
       abortController = new AbortController();
       const signal = abortController.signal;
       const countRequestGeneration = ++countRequestGenerationRef.current;
+      countLoadingGenerationRef.current = countRequestGeneration;
       const countRequestsAreShared = messagesTotalRequestJson === messagesOverallRequestJson;
       const selectedCountPromise = fetchInboxCount(
         { ...inboxReq, nolimit: true, newestFirst },
@@ -106,11 +114,19 @@ export function useAnalysisMessageCounts({
           setMessagesOverallCount(overallCount.quantity);
         })
         .catch((loadError: unknown) => {
-          if (signal.aborted || isAbortError(loadError)) return;
+          if (
+            signal.aborted ||
+            countRequestGenerationRef.current !== countRequestGeneration ||
+            isAbortError(loadError)
+          )
+            return;
           if (!onUnauthorizedRef.current(loadError)) onErrorRef.current(toErrorMessage(loadError));
         })
         .finally(() => {
-          if (!signal.aborted) setMessagesTotalLoading(false);
+          if (!signal.aborted && countLoadingGenerationRef.current === countRequestGeneration) {
+            countLoadingGenerationRef.current = null;
+            setMessagesTotalLoading(false);
+          }
         });
     }, MESSAGE_COUNTS_DEBOUNCE_MS);
 
@@ -131,49 +147,94 @@ export function useAnalysisMessageCounts({
     cancelScheduledOverallMessageCountRefresh();
     setLoadVersion((current) => current + 1);
   }, [cancelScheduledOverallMessageCountRefresh]);
-  const scheduleOverallMessageCountRefresh = useCallback(() => {
-    if (deferInitialLoad || overallRefreshTimeoutRef.current !== null) {
-      return;
+  const refreshMessageCountsInBackground = useCallback(() => {
+    const inboxReq = JSON.parse(messagesTotalRequestJson) as InboxMessagesReq | null;
+    const overallInboxReq = JSON.parse(messagesOverallRequestJson) as InboxMessagesReq | null;
+    if (isNullOrUndefined(inboxReq) || isNullOrUndefined(overallInboxReq)) return;
+
+    overallRefreshAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    overallRefreshAbortControllerRef.current = abortController;
+    const signal = abortController.signal;
+    const previousCountRequestGeneration = countRequestGenerationRef.current;
+    const countRequestGeneration = ++countRequestGenerationRef.current;
+    if (countLoadingGenerationRef.current === previousCountRequestGeneration) {
+      countLoadingGenerationRef.current = countRequestGeneration;
     }
+    const countRequestsAreShared = messagesTotalRequestJson === messagesOverallRequestJson;
+    const selectedCountPromise = fetchInboxCount(
+      { ...inboxReq, nolimit: true, newestFirst },
+      { signal },
+    );
+    const overallCountPromise = countRequestsAreShared
+      ? selectedCountPromise
+      : fetchInboxCount({ ...overallInboxReq, nolimit: true, newestFirst }, { signal });
 
-    overallRefreshTimeoutRef.current = window.setTimeout(() => {
-      overallRefreshTimeoutRef.current = null;
-      const inboxReq = JSON.parse(messagesTotalRequestJson) as InboxMessagesReq | null;
-      const overallInboxReq = JSON.parse(messagesOverallRequestJson) as InboxMessagesReq | null;
-      if (isNullOrUndefined(inboxReq) || isNullOrUndefined(overallInboxReq)) return;
-
-      overallRefreshAbortControllerRef.current?.abort();
-      const abortController = new AbortController();
-      overallRefreshAbortControllerRef.current = abortController;
-      const signal = abortController.signal;
-      const countRequestGeneration = ++countRequestGenerationRef.current;
-      const countRequestsAreShared = messagesTotalRequestJson === messagesOverallRequestJson;
-      const selectedCountPromise = fetchInboxCount(
-        { ...inboxReq, nolimit: true, newestFirst },
-        { signal },
-      );
-      const overallCountPromise = countRequestsAreShared
-        ? selectedCountPromise
-        : fetchInboxCount({ ...overallInboxReq, nolimit: true, newestFirst }, { signal });
-
-      void Promise.all([selectedCountPromise, overallCountPromise])
-        .then(([selectedCount, overallCount]) => {
-          if (signal.aborted || countRequestGenerationRef.current !== countRequestGeneration)
-            return;
-          setMessagesTotalCount(selectedCount.quantity);
-          setMessagesOverallCount(overallCount.quantity);
-        })
-        .catch((loadError: unknown) => {
-          if (signal.aborted || isAbortError(loadError)) return;
-          if (!onUnauthorizedRef.current(loadError)) onErrorRef.current(toErrorMessage(loadError));
-        })
-        .finally(() => {
-          if (overallRefreshAbortControllerRef.current === abortController) {
-            overallRefreshAbortControllerRef.current = null;
+    void Promise.all([selectedCountPromise, overallCountPromise])
+      .then(([selectedCount, overallCount]) => {
+        if (signal.aborted || countRequestGenerationRef.current !== countRequestGeneration) return;
+        setMessagesTotalCount(selectedCount.quantity);
+        setMessagesOverallCount(overallCount.quantity);
+      })
+      .catch((loadError: unknown) => {
+        if (
+          signal.aborted ||
+          countRequestGenerationRef.current !== countRequestGeneration ||
+          isAbortError(loadError)
+        )
+          return;
+        if (!onUnauthorizedRef.current(loadError)) onErrorRef.current(toErrorMessage(loadError));
+      })
+      .finally(() => {
+        if (overallRefreshAbortControllerRef.current === abortController) {
+          overallRefreshAbortControllerRef.current = null;
+          if (!signal.aborted && countLoadingGenerationRef.current === countRequestGeneration) {
+            countLoadingGenerationRef.current = null;
+            setMessagesTotalLoading(false);
           }
-        });
-    }, OVERALL_MESSAGE_COUNT_REFRESH_COALESCE_MS);
-  }, [deferInitialLoad, messagesOverallRequestJson, messagesTotalRequestJson, newestFirst]);
+        }
+      });
+  }, [messagesOverallRequestJson, messagesTotalRequestJson, newestFirst]);
+  const scheduleOverallMessageCountRefresh = useCallback(
+    (mode: MessageCountRefreshMode = 'immediate') => {
+      if (deferInitialLoad) return;
+
+      const startCoalescingWindow = () => {
+        overallRefreshTimeoutRef.current = window.setTimeout(() => {
+          overallRefreshTimeoutRef.current = null;
+          overallRefreshStartedInWindowRef.current = false;
+          if (!overallRefreshPendingRef.current) return;
+          overallRefreshPendingRef.current = false;
+          overallRefreshStartedInWindowRef.current = true;
+          refreshMessageCountsInBackground();
+          startCoalescingWindow();
+        }, OVERALL_MESSAGE_COUNT_REFRESH_COALESCE_MS);
+      };
+
+      if (overallRefreshTimeoutRef.current !== null) {
+        if (mode === 'deferred' || overallRefreshStartedInWindowRef.current) {
+          overallRefreshPendingRef.current = true;
+          return;
+        }
+
+        overallRefreshPendingRef.current = false;
+        overallRefreshStartedInWindowRef.current = true;
+        refreshMessageCountsInBackground();
+        return;
+      }
+
+      if (mode === 'deferred') {
+        overallRefreshPendingRef.current = true;
+        startCoalescingWindow();
+        return;
+      }
+
+      overallRefreshStartedInWindowRef.current = true;
+      refreshMessageCountsInBackground();
+      startCoalescingWindow();
+    },
+    [deferInitialLoad, refreshMessageCountsInBackground],
+  );
 
   return {
     messagesOverallCount,

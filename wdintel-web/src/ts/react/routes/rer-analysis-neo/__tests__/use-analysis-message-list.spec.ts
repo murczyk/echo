@@ -410,7 +410,7 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesOverallCount).toBe(137);
   });
 
-  it('coalesces ambiguous rejected realtime events into one selected and overall count refresh', async () => {
+  it('defers and coalesces ambiguous realtime events', async () => {
     vi.useFakeTimers();
     fetchInboxCountMock
       .mockResolvedValueOnce({ quantity: 42, firstElementTs: null })
@@ -424,15 +424,20 @@ describe('useAnalysisMessageList pagination', () => {
     fetchInboxCountMock.mockClear();
     fetchInboxCountMock
       .mockResolvedValueOnce({ quantity: 43, firstElementTs: null })
-      .mockResolvedValueOnce({ quantity: 138, firstElementTs: null });
+      .mockResolvedValueOnce({ quantity: 138, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 47, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 142, firstElementTs: null });
 
     for (let eventIndex = 0; eventIndex < 5; eventIndex += 1) {
-      act(() => h.latest.scheduleOverallMessageCountRefresh());
+      act(() => h.latest.scheduleOverallMessageCountRefresh('deferred'));
       await act(async () => {
         await vi.advanceTimersByTimeAsync(550);
       });
     }
     expect(fetchInboxCountMock).not.toHaveBeenCalled();
+    expect(h.latest.messagesTotalCount).toBe(42);
+    expect(h.latest.messagesOverallCount).toBe(137);
+    expect(h.latest.messagesTotalLoading).toBe(false);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_200);
@@ -451,7 +456,7 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesOverallCount).toBe(138);
   });
 
-  it('refreshes the shared selected and overall count once when no filters are active', async () => {
+  it('shares each immediate and trailing count request when no filters are active', async () => {
     vi.useFakeTimers();
     const h = renderHook();
     harnesses.push(h);
@@ -460,7 +465,9 @@ describe('useAnalysisMessageList pagination', () => {
       await vi.advanceTimersByTimeAsync(200);
     });
     fetchInboxCountMock.mockClear();
-    fetchInboxCountMock.mockResolvedValue({ quantity: 43, firstElementTs: null });
+    fetchInboxCountMock
+      .mockResolvedValueOnce({ quantity: 43, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 44, firstElementTs: null });
 
     act(() => {
       h.latest.scheduleOverallMessageCountRefresh();
@@ -470,9 +477,9 @@ describe('useAnalysisMessageList pagination', () => {
       await vi.advanceTimersByTimeAsync(5_200);
     });
 
-    expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
-    expect(h.latest.messagesTotalCount).toBe(43);
-    expect(h.latest.messagesOverallCount).toBe(43);
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
+    expect(h.latest.messagesTotalCount).toBe(44);
+    expect(h.latest.messagesOverallCount).toBe(44);
   });
 
   it('keeps newer background counts when an older filtered request resolves later', async () => {
@@ -533,6 +540,106 @@ describe('useAnalysisMessageList pagination', () => {
 
     expect(h.latest.messagesTotalCount).toBe(43);
     expect(h.latest.messagesOverallCount).toBe(43);
+  });
+
+  it('ignores a stale initial count failure while a newer background request is pending', async () => {
+    vi.useFakeTimers();
+    let rejectInitialCountRequest!: (reason?: unknown) => void;
+    const initialCountRequest = new Promise<{ quantity: number; firstElementTs: null }>(
+      (_, reject) => {
+        rejectInitialCountRequest = reject;
+      },
+    );
+    const backgroundCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock
+      .mockReturnValueOnce(initialCountRequest)
+      .mockReturnValueOnce(backgroundCountRequest.promise);
+    const h = renderHook();
+    harnesses.push(h);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+
+    await act(async () => {
+      rejectInitialCountRequest(new Error('stale failure'));
+      await Promise.resolve();
+    });
+
+    expect(h.onError).not.toHaveBeenCalled();
+    expect(h.latest.messagesTotalLoading).toBe(true);
+
+    await act(async () => {
+      backgroundCountRequest.resolve({ quantity: 43, firstElementTs: null });
+      await Promise.resolve();
+    });
+
+    expect(h.latest.messagesTotalCount).toBe(43);
+    expect(h.latest.messagesOverallCount).toBe(43);
+    expect(h.latest.messagesTotalLoading).toBe(false);
+  });
+
+  it('keeps counts loading when a background refresh finishes before the initial request starts', async () => {
+    vi.useFakeTimers();
+    const backgroundCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
+    const initialCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock
+      .mockReturnValueOnce(backgroundCountRequest.promise)
+      .mockReturnValueOnce(initialCountRequest.promise);
+    const h = renderHook();
+    harnesses.push(h);
+
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    await act(async () => {
+      backgroundCountRequest.resolve({ quantity: 43, firstElementTs: null });
+      await Promise.resolve();
+    });
+
+    expect(h.latest.messagesTotalCount).toBe(43);
+    expect(h.latest.messagesTotalLoading).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+      initialCountRequest.resolve({ quantity: 44, firstElementTs: null });
+      await Promise.resolve();
+    });
+
+    expect(h.latest.messagesTotalCount).toBe(44);
+    expect(h.latest.messagesOverallCount).toBe(44);
+    expect(h.latest.messagesTotalLoading).toBe(false);
+  });
+
+  it('ignores a stale background count failure after the initial request starts', async () => {
+    vi.useFakeTimers();
+    let rejectBackgroundCountRequest!: (reason?: unknown) => void;
+    const backgroundCountRequest = new Promise<{ quantity: number; firstElementTs: null }>(
+      (_, reject) => {
+        rejectBackgroundCountRequest = reject;
+      },
+    );
+    const initialCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock
+      .mockReturnValueOnce(backgroundCountRequest)
+      .mockReturnValueOnce(initialCountRequest.promise);
+    const h = renderHook();
+    harnesses.push(h);
+
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+      initialCountRequest.resolve({ quantity: 44, firstElementTs: null });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      rejectBackgroundCountRequest(new Error('stale background failure'));
+      await Promise.resolve();
+    });
+
+    expect(h.onError).not.toHaveBeenCalled();
+    expect(h.latest.messagesTotalCount).toBe(44);
+    expect(h.latest.messagesOverallCount).toBe(44);
+    expect(h.latest.messagesTotalLoading).toBe(false);
   });
 
   it('marks counts as loading synchronously when the date range changes', async () => {

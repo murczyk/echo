@@ -388,7 +388,8 @@ describe('useAnalysisData inbox refreshes', () => {
     ]);
     expect(hoisted.loadMissingNetworksForMessages).toHaveBeenCalledWith([[9, newMessage]]);
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[9, newMessage]], true);
-    expect(hoisted.refreshMessageCounts).toHaveBeenCalledTimes(1);
+    expect(hoisted.refreshMessageCounts).not.toHaveBeenCalled();
+    expect(hoisted.scheduleOverallMessageCountRefresh).toHaveBeenCalledTimes(1);
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
 
@@ -410,7 +411,8 @@ describe('useAnalysisData inbox refreshes', () => {
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[91, report]]);
-    expect(hoisted.refreshMessageCounts).toHaveBeenCalledTimes(1);
+    expect(hoisted.refreshMessageCounts).not.toHaveBeenCalled();
+    expect(hoisted.scheduleOverallMessageCountRefresh).toHaveBeenCalledTimes(1);
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
 
@@ -942,7 +944,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
     expect(hoisted.refreshMessageCounts).not.toHaveBeenCalled();
-    expect(hoisted.scheduleOverallMessageCountRefresh).toHaveBeenCalledTimes(1);
+    expect(hoisted.scheduleOverallMessageCountRefresh).toHaveBeenCalledWith('deferred');
   });
 
   it('checks unseen ids against the messages-only media filter', async () => {
@@ -1070,7 +1072,8 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(latest?.messages).toEqual([[1, updatedMessage]]);
     expect(hoisted.loadMissingNetworksForMessages).toHaveBeenCalledWith([[1, updatedMessage]]);
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[1, updatedMessage]], true);
-    expect(hoisted.refreshMessageCounts).toHaveBeenCalledTimes(1);
+    expect(hoisted.refreshMessageCounts).not.toHaveBeenCalled();
+    expect(hoisted.scheduleOverallMessageCountRefresh).not.toHaveBeenCalled();
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
 
@@ -1131,7 +1134,8 @@ describe('useAnalysisData inbox refreshes', () => {
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([]);
-    expect(hoisted.refreshMessageCounts).toHaveBeenCalledTimes(1);
+    expect(hoisted.refreshMessageCounts).not.toHaveBeenCalled();
+    expect(hoisted.scheduleOverallMessageCountRefresh).toHaveBeenCalledTimes(1);
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
 
@@ -1152,7 +1156,8 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(latest?.mapAttrs.messages).toEqual([]);
     expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
-    expect(hoisted.refreshMessageCounts).toHaveBeenCalledTimes(1);
+    expect(hoisted.refreshMessageCounts).not.toHaveBeenCalled();
+    expect(hoisted.scheduleOverallMessageCountRefresh).toHaveBeenCalledWith('deferred');
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
 
@@ -1175,7 +1180,8 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(latest?.messages).toEqual([[9, newMessage]]);
     expect(hoisted.loadMissingNetworksForMessages).toHaveBeenCalledWith([[9, newMessage]]);
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[9, newMessage]], true);
-    expect(hoisted.refreshMessageCounts).toHaveBeenCalledTimes(1);
+    expect(hoisted.refreshMessageCounts).not.toHaveBeenCalled();
+    expect(hoisted.scheduleOverallMessageCountRefresh).toHaveBeenCalledTimes(1);
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
 

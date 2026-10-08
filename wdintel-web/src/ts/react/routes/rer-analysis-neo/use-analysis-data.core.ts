@@ -509,6 +509,15 @@ function sameMessageItems(
   );
 }
 
+function sameMessageMembership(
+  left: Array<[number, InboxMessage]>,
+  right: Array<[number, InboxMessage]>,
+): boolean {
+  if (left.length !== right.length) return false;
+  const rightMessageIds = new Set(right.map(([messageId]) => messageId));
+  return left.every(([messageId]) => rightMessageIds.has(messageId));
+}
+
 export function useAnalysisData({
   authUserName,
   currentUser,
@@ -725,9 +734,7 @@ export function useAnalysisData({
           (needsServerFilter && visibleMessageIdSet.has(messageId)),
       );
       const exactMapFilterMessageIds = mapNeedsServerFilter ? visibleMapMessageIds : [];
-      let shouldRefreshMessageCounts =
-        visibleMessageIds.length > 0 || visibleMapMessageIds.length > 0;
-
+      let messageMembershipChanged = false;
       try {
         const inboxReq = buildLiveRefreshInboxReq(queryState, optionsFreqValues, true);
         const mapInboxReq = applyMapDateRangeToInboxReq(
@@ -775,7 +782,6 @@ export function useAnalysisData({
               (messageId) => exactMapFilterMessageIds.includes(messageId) && shouldApply(messageId),
             ),
         );
-        shouldRefreshMessageCounts ||= matchingMessageIdSet.size > 0;
         const discoverUnseenMessages = canDiscoverUnseenMessages({
           focusedMessageActive,
           messages: requestMessageWindow.messages,
@@ -935,6 +941,7 @@ export function useAnalysisData({
         };
         const currentMessageItems = requestMessageWindow.messages;
         const nextMessageItems = reconcileListMessages(currentMessageItems);
+        messageMembershipChanged = !sameMessageMembership(currentMessageItems, nextMessageItems);
         if (!sameMessageItems(currentMessageItems, nextMessageItems)) {
           onBeforeRealtimeMessageListChange?.();
           messageList.setMessages((currentMessages) =>
@@ -971,10 +978,12 @@ export function useAnalysisData({
         if (signal.aborted) return;
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
       } finally {
-        if (!isScopeStale() && shouldRefreshMessageCounts) {
-          messageList.refreshMessageCounts();
-        } else if (!isScopeStale()) {
-          messageList.scheduleOverallMessageCountRefresh();
+        if (!isScopeStale()) {
+          if (messageMembershipChanged) {
+            messageList.scheduleOverallMessageCountRefresh();
+          } else if (undisplayedMessageIds.length > 0) {
+            messageList.scheduleOverallMessageCountRefresh('deferred');
+          }
         }
       }
     },
