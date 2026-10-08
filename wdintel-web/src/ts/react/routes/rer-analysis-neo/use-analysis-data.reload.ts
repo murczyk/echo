@@ -676,23 +676,6 @@ export function transformMessagePageResponse<
   };
 }
 
-const EMPTY_ANALYSIS_COUNTS: CountStatsRsp = {
-  countOverall: 0,
-  countSelected: 0,
-  groupsCount: 0,
-  sendersCount: 0,
-  freqsCount: 0,
-  postsCount: 0,
-  callsignsCount: 0,
-  unitsCount: 0,
-  unitsExactMatchesCount: 0,
-  unitsNonExactMatchesCount: 0,
-  locationsCount: 0,
-  tagsCount: 0,
-  aorsCount: 0,
-  networksCount: 0,
-};
-
 const ANALYSIS_COUNT_FIELDS: ReadonlyArray<
   readonly [AnalysisStatsCountDimension, keyof CountStatsRsp]
 > = [
@@ -720,7 +703,7 @@ export function startAnalysisCountsLoad(
     onError: (message: string) => void;
     onUnauthorized: (error: unknown) => boolean;
     parentSignal?: AbortSignal;
-    setCounts: Setter<CountStatsRsp | null>;
+    setCounts: Setter<Partial<CountStatsRsp> | null>;
     setCountsLoading: Setter<boolean>;
   },
 ): AnalysisCountsLoad {
@@ -740,7 +723,6 @@ export function startAnalysisCountsLoad(
   const applyPatch = (patch: Partial<CountStatsRsp>) => {
     if (isInactive()) return;
     context.setCounts((current) => ({
-      ...EMPTY_ANALYSIS_COUNTS,
       ...(current ?? {}),
       ...patch,
     }));
@@ -759,7 +741,7 @@ export function startAnalysisCountsLoad(
     }
   };
 
-  context.setCounts((current) => current ?? EMPTY_ANALYSIS_COUNTS);
+  context.setCounts({});
   context.setCountsLoading(true);
 
   const requests: Array<() => Promise<void>> = [];
@@ -832,7 +814,7 @@ type ReloadParams = {
   newCallsignsLoadedKeyRef?: React.MutableRefObject<string | null>;
   newCallsignsPendingKeyRef?: React.MutableRefObject<string | null>;
   setAorEntries: Setter<AnalysisAorEntry[]>;
-  setCounts: Setter<CountStatsRsp | null>;
+  setCounts: Setter<Partial<CountStatsRsp> | null>;
   setCountsLoading: Setter<boolean>;
   setFiltersLoading: Setter<boolean>;
   setGroupInfos: Setter<Record<string, SignalGroupEntry>>;

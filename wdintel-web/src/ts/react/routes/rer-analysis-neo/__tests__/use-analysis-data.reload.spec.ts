@@ -397,8 +397,8 @@ describe('reloadAnalysisData', () => {
     mocks.fetchNetworksByIds.mockResolvedValue([]);
     mocks.getUnitsList.mockResolvedValue([]);
 
-    let counts: CountStatsRsp | null = null;
-    const setCounts = vi.fn((next: SetStateAction<CountStatsRsp | null>) => {
+    let counts: Partial<CountStatsRsp> | null = null;
+    const setCounts = vi.fn((next: SetStateAction<Partial<CountStatsRsp> | null>) => {
       counts = typeof next === 'function' ? next(counts) : next;
     });
     const abortController = new AbortController();
@@ -462,13 +462,58 @@ describe('reloadAnalysisData', () => {
       expect.anything(),
     );
     expect(counts?.sendersCount).toBe(7);
-    expect(counts?.groupsCount).toBe(0);
+    expect(counts?.groupsCount).toBeUndefined();
 
     abortController.abort();
     groupsCount.resolve(99);
     await flushPromises();
 
-    expect(counts?.groupsCount).toBe(0);
+    expect(counts?.groupsCount).toBeUndefined();
+  });
+  it('#3001 clears stale counters and leaves pending or failed dimensions absent', async () => {
+    const groupsCount = deferred<number>();
+    const unitMatches = deferred<{ exactMatchesCount: number; nonExactMatchesCount: number }>();
+    mocks.fetchAnalysisStatsCount.mockImplementation((dimension) =>
+      dimension === 'groups' ? groupsCount.promise : Promise.resolve(0),
+    );
+    mocks.fetchAnalysisUnitMatchStatsCount.mockReturnValueOnce(unitMatches.promise);
+    let counts: Partial<CountStatsRsp> | null = {
+      groupsCount: 91,
+      sendersCount: 83,
+      unitsExactMatchesCount: 19,
+      unitsNonExactMatchesCount: 17,
+    };
+    const setCountsLoading = vi.fn();
+    const onError = vi.fn();
+
+    startAnalysisCountsLoad(
+      buildAnalysisReq({ ...buildQueryState(), unitsSelected: ['unit-id:17'] })!,
+      {
+        isStale: () => false,
+        onError,
+        onUnauthorized: vi.fn().mockReturnValue(false),
+        setCounts: (next) => {
+          counts = typeof next === 'function' ? next(counts) : next;
+        },
+        setCountsLoading,
+      },
+    );
+
+    expect(counts).toEqual({});
+    await vi.waitFor(() => expect(counts?.sendersCount).toBe(0));
+    expect(counts?.groupsCount).toBeUndefined();
+    expect(counts?.unitsExactMatchesCount).toBeUndefined();
+    expect(setCountsLoading).not.toHaveBeenCalledWith(false);
+
+    groupsCount.resolve(8);
+    unitMatches.reject(new Error('Unit counters unavailable'));
+    await vi.waitFor(() => expect(setCountsLoading).toHaveBeenCalledWith(false));
+
+    expect(counts?.groupsCount).toBe(8);
+    expect(counts?.sendersCount).toBe(0);
+    expect(counts?.unitsExactMatchesCount).toBeUndefined();
+    expect(counts?.unitsNonExactMatchesCount).toBeUndefined();
+    expect(onError).toHaveBeenCalledExactlyOnceWith('Unit counters unavailable');
   });
   it('#3001 limits concurrent counter requests while preserving progressive updates', async () => {
     const req = buildAnalysisReq({
@@ -492,7 +537,7 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisUnitMatchStatsCount.mockImplementation(() =>
       pendingResult({ exactMatchesCount: 2, nonExactMatchesCount: 3 }),
     );
-    let counts: CountStatsRsp | null = null;
+    let counts: Partial<CountStatsRsp> | null = null;
     let countsLoading = false;
 
     startAnalysisCountsLoad(req, {

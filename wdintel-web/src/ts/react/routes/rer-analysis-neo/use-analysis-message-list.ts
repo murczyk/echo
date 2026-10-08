@@ -93,7 +93,7 @@ export function useAnalysisMessageList({
   setProfiles,
   setSummaryCallsignsInfo,
 }: Params) {
-  const [counts, setCounts] = useState<CountStatsRsp | null>(null);
+  const [counts, setCounts] = useState<Partial<CountStatsRsp> | null>(null);
   const [aorEntries, setAorEntries] = useState<AnalysisAorEntry[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [hasLoadedInitialMessages, setHasLoadedInitialMessages] = useState(false);

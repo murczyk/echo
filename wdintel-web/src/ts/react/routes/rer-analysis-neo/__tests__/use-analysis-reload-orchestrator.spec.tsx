@@ -108,7 +108,7 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
     refreshMessageCounts: vi.fn(),
     setAorEntries: noopSetter as Dispatch<SetStateAction<AnalysisAorEntry[]>>,
     setCounts: noopSetter as Dispatch<
-      SetStateAction<import('../../../../../Bindings').CountStatsRsp | null>
+      SetStateAction<Partial<import('../../../../../Bindings').CountStatsRsp> | null>
     >,
     setCountsLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
     setFiltersLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
