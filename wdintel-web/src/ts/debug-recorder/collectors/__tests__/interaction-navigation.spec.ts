@@ -68,26 +68,40 @@ describe('interaction and navigation collector', () => {
     cleanup();
   });
 
-  it('records scroll intent categories without reading key contents', () => {
+  it('records only interactions that can actually initiate scrolling', () => {
     const events: DebugEventInput[] = [];
     const cleanup = attachInteractionNavigationCollector((input) => events.push(input));
     window.dispatchEvent(new WheelEvent('wheel'));
-    window.dispatchEvent(new TouchEvent('touchstart'));
+    window.dispatchEvent(new TouchEvent('touchmove'));
     window.dispatchEvent(new PointerEvent('pointerdown'));
-    const keyboard = new Event('keydown');
-    Object.defineProperty(keyboard, 'key', {
+    const typing = new KeyboardEvent('keydown', { code: 'KeyA' });
+    Object.defineProperty(typing, 'key', {
       get: () => {
         throw new Error('key read');
       },
     });
-    window.dispatchEvent(keyboard);
+    window.dispatchEvent(typing);
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowDown' }));
 
     expect(events).toEqual([
       { kind: 'scroll.intent', source: 'collector', details: { kind: 'wheel' } },
       { kind: 'scroll.intent', source: 'collector', details: { kind: 'touch' } },
-      { kind: 'scroll.intent', source: 'collector', details: { kind: 'pointer' } },
       { kind: 'scroll.intent', source: 'collector', details: { kind: 'keyboard' } },
     ]);
+    cleanup();
+  });
+
+  it('ignores navigation timing that predates the recording', () => {
+    vi.spyOn(performance, 'getEntriesByType').mockImplementation((type) =>
+      type === 'navigation' ? ([{ type: 'reload' }] as PerformanceEntry[]) : [],
+    );
+    vi.spyOn(performance, 'timeOrigin', 'get').mockReturnValue(1_000);
+    const events: DebugEventInput[] = [];
+    const cleanup = attachInteractionNavigationCollector((input) => events.push(input), {
+      recordingStartedAt: 2_000,
+    });
+
+    expect(events.some((event) => event.kind === 'navigation.reload')).toBe(false);
     cleanup();
   });
 
@@ -96,7 +110,10 @@ describe('interaction and navigation collector', () => {
       type === 'navigation' ? ([{ type: 'reload' }] as PerformanceEntry[]) : [],
     );
     const events: DebugEventInput[] = [];
-    const cleanup = attachInteractionNavigationCollector((input) => events.push(input));
+    vi.spyOn(performance, 'timeOrigin', 'get').mockReturnValue(1_000);
+    const cleanup = attachInteractionNavigationCollector((input) => events.push(input), {
+      recordingStartedAt: 500,
+    });
 
     window.history.pushState({}, '', `/next?token=${SECRET}#private`);
     await tick();

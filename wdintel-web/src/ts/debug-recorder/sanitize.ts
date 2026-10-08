@@ -1,5 +1,6 @@
 import {
   DEBUG_IDENTIFIER_DETAIL_KEYS,
+  DEBUG_MAX_ALIASES,
   DEBUG_MAX_ARRAY_LENGTH,
   DEBUG_MAX_OBJECT_DEPTH,
   DEBUG_MAX_OBJECT_KEYS,
@@ -57,9 +58,19 @@ function isElement(value: unknown): value is Element {
 }
 
 function copyAliases(aliases: DebugAliasTable): DebugAliasTable {
-  return Object.fromEntries(
-    Object.entries(aliases).map(([scope, entries]) => [scope, { ...entries }]),
-  );
+  const copy: DebugAliasTable = {};
+  let copied = 0;
+  for (const [scope, entries] of Object.entries(aliases)) {
+    if (copied >= DEBUG_MAX_ALIASES) break;
+    const scopeCopy: Record<string, string> = {};
+    for (const [fingerprint, alias] of Object.entries(entries)) {
+      if (copied >= DEBUG_MAX_ALIASES) break;
+      scopeCopy[fingerprint] = alias;
+      copied += 1;
+    }
+    if (Object.keys(scopeCopy).length > 0) copy[scope] = scopeCopy;
+  }
+  return copy;
 }
 
 function dataPropertyValue(value: object, key: string): unknown {
@@ -93,6 +104,10 @@ export function createDebugSanitizer(
 ): DebugSanitizer {
   const aliases: DebugAliasTable = copyAliases(options.aliases ?? {});
   const aliasSalt = options.aliasSalt ?? recordingId;
+  let aliasCount = Object.values(aliases).reduce(
+    (count, scopeAliases) => count + Object.keys(scopeAliases).length,
+    0,
+  );
   let truncatedValues = 0;
 
   const alias = (scopeValue: string, rawValue: string | number): string => {
@@ -102,8 +117,10 @@ export function createDebugSanitizer(
     const fingerprint = aliasFingerprint(aliasSalt, scope, raw);
     const existing = scopeAliases[fingerprint];
     if (existing) return existing;
+    if (aliasCount >= DEBUG_MAX_ALIASES) return `{${scope}_x${fingerprint}}`;
     const next = `{${scope}_${Object.keys(scopeAliases).length + 1}}`;
     scopeAliases[fingerprint] = next;
+    aliasCount += 1;
     return next;
   };
 
@@ -219,10 +236,8 @@ export function createDebugSanitizer(
     const result: Record<string, DebugSafeValue> = { errorClass: name };
     const code = descriptors.code?.value;
     if (typeof code === 'string' || typeof code === 'number') {
-      result.code = normalizeString(String(code)).value;
+      result.code = normalizeToken(String(code));
     }
-    const message = descriptors.message?.value;
-    if (typeof message === 'string') result.message = normalizeString(message).value;
     const stack = descriptors.stack?.value;
     if (typeof stack === 'string') {
       const frames = stack

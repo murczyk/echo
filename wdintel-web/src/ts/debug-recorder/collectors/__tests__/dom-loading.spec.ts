@@ -17,6 +17,22 @@ const mutationTick = async () => {
 };
 
 describe('DOM and loading collector', () => {
+  it('reports a skeleton that is already visible when recording starts', () => {
+    const skeleton = document.createElement('div');
+    skeleton.dataset.debugSkeleton = '';
+    document.body.append(skeleton);
+    const events: DebugEventInput[] = [];
+
+    const cleanup = attachDomLoadingCollector((input) => events.push(input));
+
+    expect(events).toContainEqual({
+      kind: 'skeleton.visibility',
+      source: 'collector',
+      details: { visible: true, count: 1 },
+    });
+    cleanup();
+  });
+
   it('coalesces structural replacement, custom-element and allowlisted loading signals', async () => {
     const callbacks: FrameRequestCallback[] = [];
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
@@ -111,5 +127,28 @@ describe('DOM and loading collector', () => {
     cleanup();
     cleanup();
     expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('bounds descendant inspection inside one large added subtree', async () => {
+    const callbacks: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    const events: DebugEventInput[] = [];
+    const cleanup = attachDomLoadingCollector((input) => events.push(input));
+    const subtree = document.createElement('section');
+    for (let index = 0; index < 2_000; index += 1) {
+      subtree.append(document.createElement('span'));
+    }
+
+    document.body.append(subtree);
+    await mutationTick();
+    callbacks.splice(0).forEach((callback) => callback(16));
+
+    expect(events.find((event) => event.kind === 'dom.replacement')?.details?.itemCount).toBe(
+      1_000,
+    );
+    cleanup();
   });
 });

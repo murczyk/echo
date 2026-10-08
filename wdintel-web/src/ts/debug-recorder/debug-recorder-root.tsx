@@ -1,5 +1,6 @@
 import { createRoot, type Root } from 'react-dom/client';
 
+import { DEBUG_RECORDER_SLOT_ID } from './config';
 import { DebugRecorderPanel, type DebugRecorderPanelController } from './DebugRecorderPanel';
 
 const ROOT_ID = 'echo-debug-recorder-root';
@@ -9,6 +10,7 @@ let host: HTMLElement | null = null;
 
 export function mountDebugRecorderPanel(controller: DebugRecorderPanelController): void {
   if (typeof document === 'undefined' || !document.body) return;
+  const target = document.getElementById(DEBUG_RECORDER_SLOT_ID) ?? document.body;
   if (host && !host.isConnected) {
     reactRoot?.unmount();
     reactRoot = null;
@@ -23,6 +25,7 @@ export function mountDebugRecorderPanel(controller: DebugRecorderPanelController
     }
     host.dataset.debugRecorderHost = '';
   }
+  if (host.parentElement !== target) target.append(host);
   if (!reactRoot) reactRoot = createRoot(host);
   reactRoot.render(<DebugRecorderPanel controller={controller} />);
 }

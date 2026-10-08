@@ -7,16 +7,17 @@ function isRecorderElement(element: Element): boolean {
   return element.closest('[data-debug-recorder-host], [data-debug-recorder-root]') !== null;
 }
 
-function subtreeSize(element: Element): number {
-  return 1 + element.querySelectorAll('*').length;
-}
-
-function customElementCount(element: Element): number {
-  let count = element.localName.includes('-') ? 1 : 0;
-  for (const child of element.querySelectorAll('*')) {
-    if (child.localName.includes('-')) count += 1;
+function inspectSubtree(element: Element, limit: number): { size: number; customCount: number } {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_ELEMENT);
+  let current: Node | null = walker.currentNode;
+  let size = 0;
+  let customCount = 0;
+  while (current && size < limit) {
+    size += 1;
+    if (current instanceof Element && current.localName.includes('-')) customCount += 1;
+    current = walker.nextNode();
   }
-  return count;
+  return { size, customCount };
 }
 
 function loadingCount(): number {
@@ -50,6 +51,14 @@ export function attachDomLoadingCollector(sink: DebugEventSink): DebugCollectorC
       // The orchestrator owns collector failure reporting.
     }
   };
+
+  if (lastLoadingCount > 0) {
+    emit({
+      kind: 'skeleton.visibility',
+      source: 'collector',
+      details: { visible: true, count: lastLoadingCount },
+    });
+  }
 
   const resetBatch = () => {
     mutationCount = 0;
@@ -107,16 +116,16 @@ export function attachDomLoadingCollector(sink: DebugEventSink): DebugCollectorC
   const inspectNodes = (nodes: NodeList, connected: boolean) => {
     for (const node of nodes) {
       if (inspectedNodes >= DEBUG_DOM_MUTATION_INSPECTION_LIMIT) return;
-      inspectedNodes += 1;
       if (!(node instanceof Element) || isRecorderElement(node)) continue;
-      const size = subtreeSize(node);
+      const inspection = inspectSubtree(node, DEBUG_DOM_MUTATION_INSPECTION_LIMIT - inspectedNodes);
+      inspectedNodes += inspection.size;
+      const size = inspection.size;
       if (size >= DEBUG_DOM_SUBSTANTIAL_SUBTREE_SIZE) {
         replacementCount += 1;
         replacementItems += size;
       }
-      const customCount = customElementCount(node);
-      if (connected) connectedCustomElements += customCount;
-      else disconnectedCustomElements += customCount;
+      if (connected) connectedCustomElements += inspection.customCount;
+      else disconnectedCustomElements += inspection.customCount;
     }
   };
 

@@ -99,6 +99,9 @@ describe('browser debug recorder runtime', () => {
     expect(runtime.registerPress(3_600)).toBe(false);
     expect(runtime.getSnapshot().state).toBe('recording');
     expect(attachCollectors).toHaveBeenCalledOnce();
+    expect(attachCollectors).toHaveBeenCalledWith(expect.any(Function), {
+      recordingStartedAt: 0,
+    });
     expect(mountPanel).toHaveBeenCalledOnce();
     expect(runtime.aliasIdentifier('message', 42)).toBe('{message_1}');
     runtime.record({ kind: 'semantic.render' });

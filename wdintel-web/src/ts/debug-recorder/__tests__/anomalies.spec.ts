@@ -47,6 +47,24 @@ describe('debug anomaly detector', () => {
     ]);
   });
 
+  it.each(['interaction.click', 'dom.replacement'])(
+    'correlates a large scroll jump with %s',
+    (correlationKind) => {
+      const detector = createDebugAnomalyDetector();
+
+      detector.observe(event(correlationKind, 100));
+
+      expect(
+        detector.observe(event('scroll.sample', 200, { delta: 400, clientHeight: 600 })),
+      ).toMatchObject([
+        {
+          kind: 'anomaly.scroll-jump',
+          details: { delta: 400, clientHeight: 600, reason: correlationKind },
+        },
+      ]);
+    },
+  );
+
   it('detects DOM replacement storms and opens one episode until recovery', () => {
     const detector = createDebugAnomalyDetector();
     expect(detector.observe(event('dom.replacement', 0))).toEqual([]);

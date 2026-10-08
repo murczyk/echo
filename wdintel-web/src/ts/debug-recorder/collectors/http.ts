@@ -60,6 +60,14 @@ function abortName(reason: unknown): string | null {
   return null;
 }
 
+function requestNamespace(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
 export function attachHttpCollector(sink: DebugEventSink): DebugCollectorCleanup {
   const sanitizer = createDebugSanitizer('http-collector');
   const nativeFetch = window.fetch;
@@ -74,6 +82,7 @@ export function attachHttpCollector(sink: DebugEventSink): DebugCollectorCleanup
   let wrappedSend: typeof XMLHttpRequest.prototype.send | null = null;
   let wrappedAbort: typeof XMLHttpRequest.prototype.abort | null = null;
   let nextRequestId = 1;
+  const namespace = requestNamespace();
   let active = true;
 
   const emit = (input: DebugEventInput) => {
@@ -94,7 +103,7 @@ export function attachHttpCollector(sink: DebugEventSink): DebugCollectorCleanup
     }
     const route = sanitizer.safeRoute(parsed);
     return {
-      requestId: `http-${nextRequestId++}`,
+      requestId: `http-${namespace}-${nextRequestId++}`,
       method,
       route,
       sameOrigin: parsed.origin === window.location.origin,

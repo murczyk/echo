@@ -6,17 +6,40 @@ import type {
   DebugSafeValue,
 } from '../types';
 
-function fingerprint(value: string): string {
+function fingerprint(value: string, salt: string): string {
   let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
+  const saltedValue = `${salt}\u0000${value}`;
+  for (let index = 0; index < saltedValue.length; index += 1) {
+    hash ^= saltedValue.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
   }
   return `error-${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
+function fingerprintSalt(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now()}-${Math.random()}`;
+  }
+}
+
+function fingerprintSource(value: unknown, details: Record<string, DebugSafeValue>): string {
+  if (typeof value === 'string') return value;
+  if (!(value instanceof Error)) return JSON.stringify(details);
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const message = descriptors.message?.value;
+  const code = descriptors.code?.value;
+  return JSON.stringify([
+    details.errorClass,
+    typeof code === 'string' || typeof code === 'number' ? code : null,
+    typeof message === 'string' ? message : null,
+  ]);
+}
+
 export function attachErrorCollector(sink: DebugEventSink): DebugCollectorCleanup {
   const sanitizer = createDebugSanitizer('error-collector');
+  const salt = fingerprintSalt();
   const nativeWarn = console.warn;
   const nativeError = console.error;
   let active = true;
@@ -41,7 +64,7 @@ export function attachErrorCollector(sink: DebugEventSink): DebugCollectorCleanu
 
   const withFingerprint = (value: unknown) => {
     const details = safeDetails(value);
-    return { ...details, fingerprint: fingerprint(JSON.stringify(details)) };
+    return { ...details, fingerprint: fingerprint(fingerprintSource(value, details), salt) };
   };
 
   const onError = (event: Event) => {
@@ -86,7 +109,10 @@ export function attachErrorCollector(sink: DebugEventSink): DebugCollectorCleanu
       details: {
         errorClass: 'SecurityPolicyViolation',
         code: typeof directive === 'string' ? directive : 'unknown-directive',
-        fingerprint: fingerprint(typeof directive === 'string' ? directive : 'unknown-directive'),
+        fingerprint: fingerprint(
+          typeof directive === 'string' ? directive : 'unknown-directive',
+          salt,
+        ),
       },
     });
   };

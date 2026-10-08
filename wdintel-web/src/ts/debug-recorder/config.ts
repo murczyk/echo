@@ -1,9 +1,11 @@
 export const DEBUG_SCHEMA_VERSION = 1 as const;
 export const DEBUG_STORAGE_KEY = 'echo-browser-debug-recorder-v1';
+export const DEBUG_RECORDER_SLOT_ID = 'echo-debug-recorder-slot';
 export const DEBUG_RECORDING_MS = 60_000;
 export const DEBUG_READY_TTL_MS = 600_000;
 export const DEBUG_MAX_EVENTS = 1_000;
 export const DEBUG_MAX_BYTES = 1_048_576;
+export const DEBUG_MAX_ALIASES = 2_048;
 export const DEBUG_PERSIST_DEBOUNCE_MS = 250;
 export const DEBUG_ACTIVATOR_PRESSES = 8;
 export const DEBUG_ACTIVATOR_WINDOW_MS = 4_000;
@@ -31,6 +33,7 @@ export const DEBUG_ANOMALY_RENDER_STORM_WINDOW_MS = 1_000;
 export const DEBUG_ANOMALY_MAX_KEYS = 256;
 export const DEBUG_ANOMALY_MAX_TIMESTAMPS_PER_KEY = 64;
 export const DEBUG_SCROLL_HEARTBEAT_MS = 250;
+export const DEBUG_SCROLL_BASELINE_INSPECTION_LIMIT = 1_000;
 export const DEBUG_DOM_SUBSTANTIAL_SUBTREE_SIZE = 50;
 export const DEBUG_DOM_MUTATION_INSPECTION_LIMIT = 1_000;
 
@@ -76,7 +79,6 @@ export const DEBUG_SAFE_DETAIL_KEYS = new Set([
   'loadNewerTriggered',
   'loadOlderTriggered',
   'loading',
-  'message',
   'method',
   'navigationType',
   'nearBottom',

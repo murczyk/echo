@@ -43,6 +43,17 @@ export function DebugRecorderPanel({ controller }: DebugRecorderPanelProps) {
     controller.finish();
     controller.download();
   };
+  const issue = snapshot.downloadError
+    ? {
+        label: 'Помилка завантаження',
+        description: 'Не вдалося завантажити файл. Спробуйте ще раз.',
+      }
+    : snapshot.persistenceFailed
+      ? {
+          label: 'Не збережено',
+          description: 'Не вдалося зберегти запис у сесії браузера.',
+        }
+      : null;
 
   return (
     <section
@@ -50,32 +61,45 @@ export function DebugRecorderPanel({ controller }: DebugRecorderPanelProps) {
       data-debug-recorder-root=""
       style={{
         position: 'fixed',
-        top: 'calc(var(--app-shell-navbar-height, 58px) + 8px)',
-        insetInlineEnd: '8px',
+        top: '8px',
+        left: '50%',
+        transform: 'translateX(-50%)',
         zIndex: 2500,
-        width: '360px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '8px',
+        width: 'max-content',
         maxWidth: 'calc(100vw - 16px)',
-        maxHeight: 'calc(100vh - var(--app-shell-navbar-height, 58px) - 24px)',
-        overflow: 'auto',
         boxSizing: 'border-box',
-        padding: '12px',
-        borderRadius: '12px',
-        background: '#ffffff',
-        color: '#0f172a',
-        boxShadow: '0 12px 28px rgba(15, 23, 42, 0.2)',
-        fontFamily: 'inherit',
+        padding: '4px',
+        paddingInlineStart: '8px',
+        borderRadius: 'var(--echo-radius-lg)',
+        backgroundColor: 'var(--echo-color-surface-raised)',
+        color: 'var(--echo-color-text)',
+        boxShadow: 'var(--echo-shadow-md)',
+        fontFamily: 'var(--echo-typography-font-family)',
+        fontSize: 'var(--echo-typography-font-size-xs)',
+        lineHeight: 1,
       }}
     >
       <style>{`
         .echo-debug-recorder-panel button {
-          transition: background-color 140ms ease-out, box-shadow 140ms ease-out;
+          transition: filter 140ms ease-out;
         }
         .echo-debug-recorder-panel button:hover {
           filter: brightness(0.92);
         }
         .echo-debug-recorder-panel button:focus-visible {
-          outline: 3px solid #60a5fa !important;
-          outline-offset: 3px !important;
+          outline: 2px solid var(--echo-color-focus, #2c6c91) !important;
+          outline-offset: 2px !important;
+        }
+        @media (min-width: 1024px) {
+          [data-debug-recorder-slot] .echo-debug-recorder-panel {
+            position: static !important;
+            top: auto !important;
+            left: auto !important;
+            transform: none !important;
+          }
         }
         @media (forced-colors: active) {
           .echo-debug-recorder-panel button:focus-visible {
@@ -86,66 +110,77 @@ export function DebugRecorderPanel({ controller }: DebugRecorderPanelProps) {
       <div
         role="status"
         aria-live="polite"
-        style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}
+        aria-label={snapshot.state === 'recording' ? 'Запис діагностики' : 'Запис готовий'}
+        style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}
       >
         <span
           aria-hidden="true"
           style={{
-            width: '10px',
-            height: '10px',
+            width: '8px',
+            height: '8px',
             flex: '0 0 auto',
-            borderRadius: '999px',
-            background: snapshot.state === 'recording' ? '#dc2626' : '#16a34a',
+            borderRadius: 'var(--echo-radius-pill)',
+            background:
+              snapshot.state === 'recording'
+                ? 'var(--echo-color-error)'
+                : 'var(--echo-color-success)',
           }}
         />
-        <strong>{snapshot.state === 'recording' ? 'Запис діагностики' : 'Запис готовий'}</strong>
-        <span style={{ marginInlineStart: 'auto', fontVariantNumeric: 'tabular-nums' }}>
-          {formatTime(elapsed)} / 01:00
-        </span>
+        <strong style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+          {snapshot.state === 'recording' ? 'Запис' : 'Готово'}
+        </strong>
+        {snapshot.state === 'recording' && (
+          <time style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+            {formatTime(elapsed)}
+          </time>
+        )}
       </div>
 
-      {snapshot.state === 'ready' && (
-        <p style={{ margin: '8px 0 0', fontSize: '14px' }}>
-          {snapshot.eventCount} подій · {snapshot.anomalyCount} аномалії · {snapshot.droppedEvents}{' '}
-          пропущено
-        </p>
-      )}
-      {snapshot.persistenceFailed && (
-        <p style={{ margin: '8px 0 0', color: '#b45309', fontSize: '14px' }}>
-          Не вдалося зберегти запис у сесії браузера.
-        </p>
-      )}
-      {snapshot.downloadError && (
-        <p style={{ margin: '8px 0 0', color: '#b91c1c', fontSize: '14px' }}>
-          Не вдалося завантажити файл. Спробуйте ще раз.
-        </p>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-        <button
-          type="button"
-          onClick={snapshot.state === 'recording' ? finishAndDownload : controller.download}
+      {issue && (
+        <span
+          role="alert"
+          aria-label={issue.description}
+          title={issue.description}
           style={{
-            minHeight: '36px',
-            maxWidth: '100%',
-            padding: '7px 12px',
-            border: 0,
-            borderRadius: '7px',
-            outline: '2px solid transparent',
-            outlineOffset: '2px',
-            background: snapshot.state === 'recording' ? '#b91c1c' : '#1d4ed8',
-            color: '#ffffff',
-            cursor: 'pointer',
-            fontWeight: 600,
+            maxWidth: '112px',
+            overflow: 'hidden',
+            color: snapshot.downloadError ? 'var(--echo-color-error)' : 'var(--echo-color-warning)',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}
         >
-          {snapshot.state === 'recording'
-            ? 'Завершити'
-            : snapshot.downloadError
-              ? 'Повторити завантаження'
-              : 'Завантажити'}
-        </button>
-      </div>
+          {issue.label}
+        </span>
+      )}
+
+      <button
+        type="button"
+        onClick={snapshot.state === 'recording' ? finishAndDownload : controller.download}
+        style={{
+          minHeight: '28px',
+          flex: '0 0 auto',
+          padding: '4px 10px',
+          border: 0,
+          borderRadius: 'var(--echo-radius-md)',
+          background:
+            snapshot.state === 'recording'
+              ? 'var(--echo-color-error)'
+              : 'var(--echo-color-primary)',
+          color:
+            snapshot.state === 'recording' ? 'var(--bs-white)' : 'var(--echo-color-on-primary)',
+          cursor: 'pointer',
+          font: 'inherit',
+          fontWeight: 600,
+          lineHeight: 1,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {snapshot.state === 'recording'
+          ? 'Завершити'
+          : snapshot.downloadError
+            ? 'Повторити'
+            : 'Завантажити'}
+      </button>
     </section>
   );
 }

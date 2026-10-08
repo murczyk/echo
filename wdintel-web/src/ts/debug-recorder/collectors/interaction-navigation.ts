@@ -8,6 +8,10 @@ import type { DebugCollectorCleanup, DebugEventInput, DebugEventSink } from '../
 type NavigationKind = EchoNavigationEventDetail['kind'];
 type PendingHistoryEvent = { kind: 'push' | 'replace'; route: string; cancelled: boolean };
 
+export type InteractionNavigationCollectorOptions = {
+  recordingStartedAt?: number;
+};
+
 const INTERACTION_EVENTS = new Map<string, string>([
   ['click', 'interaction.click'],
   ['submit', 'interaction.submit'],
@@ -16,9 +20,16 @@ const INTERACTION_EVENTS = new Map<string, string>([
 
 const INTENT_EVENTS = new Map<string, string>([
   ['wheel', 'wheel'],
-  ['touchstart', 'touch'],
-  ['pointerdown', 'pointer'],
-  ['keydown', 'keyboard'],
+  ['touchmove', 'touch'],
+]);
+const SCROLL_KEY_CODES = new Set([
+  'ArrowDown',
+  'ArrowUp',
+  'End',
+  'Home',
+  'PageDown',
+  'PageUp',
+  'Space',
 ]);
 
 function isRecorderTarget(target: EventTarget | null): boolean {
@@ -35,7 +46,10 @@ function isPersistedPageTransition(event: Event): boolean {
   return Object.getOwnPropertyDescriptor(event, 'persisted')?.value === true;
 }
 
-export function attachInteractionNavigationCollector(sink: DebugEventSink): DebugCollectorCleanup {
+export function attachInteractionNavigationCollector(
+  sink: DebugEventSink,
+  options: InteractionNavigationCollectorOptions = {},
+): DebugCollectorCleanup {
   const sanitizer = createDebugSanitizer('interaction-navigation-collector');
   const nativePush = window.history.pushState;
   const nativeReplace = window.history.replaceState;
@@ -80,13 +94,24 @@ export function attachInteractionNavigationCollector(sink: DebugEventSink): Debu
 
   const onIntent = (event: Event) => {
     if (isRecorderTarget(event.target)) return;
-    const kind = INTENT_EVENTS.get(event.type);
+    let kind = INTENT_EVENTS.get(event.type);
+    if (event.type === 'keydown') {
+      let code: string;
+      try {
+        code = event instanceof KeyboardEvent ? event.code : '';
+      } catch {
+        return;
+      }
+      if (!SCROLL_KEY_CODES.has(code)) return;
+      kind = 'keyboard';
+    }
     if (!kind) return;
     emit({ kind: 'scroll.intent', source: 'collector', details: { kind } });
   };
 
   for (const type of INTERACTION_EVENTS.keys()) listen(document, type, onInteraction, true);
   for (const type of INTENT_EVENTS.keys()) listen(window, type, onIntent, true);
+  listen(window, 'keydown', onIntent, true);
 
   const scheduleHistoryEvent = (kind: PendingHistoryEvent['kind']) => {
     const pending = { kind, route: currentRoute(), cancelled: false };
@@ -161,7 +186,13 @@ export function attachInteractionNavigationCollector(sink: DebugEventSink): Debu
           : navigation?.type === 'navigate'
             ? 'navigation.load'
             : null;
-    if (kind) emitNavigation(kind, { navigationType: navigation!.type });
+    if (
+      kind &&
+      options.recordingStartedAt !== undefined &&
+      performance.timeOrigin > options.recordingStartedAt
+    ) {
+      emitNavigation(kind, { navigationType: navigation!.type });
+    }
   } catch {
     // Navigation timing is optional in hardened and older browsers.
   }

@@ -66,22 +66,28 @@ function controller(initial: DebugRecorderSnapshot) {
 }
 
 describe('DebugRecorderPanel', () => {
-  it('shows accessible recording status, capped elapsed time and reachable controls', () => {
+  it('renders a compact, centered recording control with themed styles', () => {
     const state = controller(recordingSnapshot());
     act(() => root.render(<DebugRecorderPanel controller={state.value} />));
 
     const panel = container.querySelector<HTMLElement>('[data-debug-recorder-root]')!;
     const button = container.querySelector<HTMLButtonElement>('button')!;
-    expect(panel.textContent).toContain('Запис діагностики');
-    expect(panel.textContent).toContain('00:00 / 01:00');
+    expect(panel.textContent).toContain('Запис');
+    expect(panel.textContent).toContain('00:00');
+    expect(panel.textContent).not.toContain('/ 01:00');
     expect(panel.querySelector('[role="status"]')?.getAttribute('aria-live')).toBe('polite');
-    expect(panel.style.maxWidth).toBe('calc(100vw - 16px)');
-    expect(panel.style.overflow).toBe('auto');
+    expect(panel.style.top).toBe('8px');
+    expect(panel.style.left).toBe('50%');
+    expect(panel.style.transform).toBe('translateX(-50%)');
+    expect(panel.style.width).toBe('max-content');
+    expect(panel.style.backgroundColor).toBe('var(--echo-color-surface-raised)');
+    expect(panel.style.color).toBe('var(--echo-color-text)');
     expect(button.textContent).toBe('Завершити');
+    expect(button.style.minHeight).toBe('28px');
     expect(panel.querySelector('style')?.textContent).toContain('button:focus-visible');
 
     act(() => vi.advanceTimersByTime(61_000));
-    expect(panel.textContent).toContain('01:00 / 01:00');
+    expect(panel.textContent).toContain('01:00');
     act(() => button.click());
     expect(state.finish).toHaveBeenCalledOnce();
     expect(state.download).toHaveBeenCalledOnce();
@@ -103,15 +109,13 @@ describe('DebugRecorderPanel', () => {
     });
     act(() => root.render(<DebugRecorderPanel controller={state.value} />));
 
-    expect(container.textContent).toContain('Запис готовий');
-    expect(container.textContent).toContain('42 подій');
-    expect(container.textContent).toContain('4 аномалії');
-    expect(container.textContent).toContain('2 пропущено');
+    expect(container.textContent).toContain('Готово');
+    expect(container.textContent).not.toContain('42 подій');
     const button = container.querySelector<HTMLButtonElement>('button')!;
     expect(button.textContent).toBe('Завантажити');
     act(() => button.click());
-    expect(container.textContent).toContain('Не вдалося завантажити');
-    expect(button.textContent).toBe('Повторити завантаження');
+    expect(container.textContent).toContain('Помилка завантаження');
+    expect(button.textContent).toBe('Повторити');
 
     state.download.mockReturnValueOnce(true);
     act(() => button.click());

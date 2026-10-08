@@ -99,6 +99,29 @@ describe('browser error collector', () => {
     console.error = originalError;
   });
 
+  it('fingerprints repeated failures without retaining free-form error text', () => {
+    const originalError = console.error;
+    console.error = () => {};
+    const events: DebugEventInput[] = [];
+    const cleanup = attachErrorCollector((input) => events.push(input));
+    const operationalText = 'ALPHA-7 reported 149.500 with secret-token';
+
+    console.error(operationalText);
+    console.error(operationalText);
+    console.error('BRAVO-2 reported 151.250 with another-token');
+
+    expect(events).toHaveLength(3);
+    expect(events[0]?.details?.message).toBeUndefined();
+    expect(JSON.stringify(events)).not.toContain('ALPHA-7');
+    expect(JSON.stringify(events)).not.toContain('149.500');
+    expect(JSON.stringify(events)).not.toContain('secret-token');
+    expect(events[0]?.details?.fingerprint).toBe(events[1]?.details?.fingerprint);
+    expect(events[0]?.details?.fingerprint).not.toBe(events[2]?.details?.fingerprint);
+
+    cleanup();
+    console.error = originalError;
+  });
+
   it('restores exact console functions after repeated attach cycles', () => {
     const originalWarn = console.warn;
     const originalError = console.error;

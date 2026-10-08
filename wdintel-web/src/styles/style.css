@@ -1164,6 +1164,10 @@ sl-tooltip {
   width: 100%;
 }
 
+.app-navbar-row > .app-navbar-debug-recorder-slot {
+  display: contents;
+}
+
 .app-navbar-row > .app-navbar-toolbar {
   order: 2;
   margin-left: auto;
@@ -1266,8 +1270,8 @@ sl-tooltip {
   /* One header row: flex could wrap toolbar under a multi-line link strip; grid pins three columns. */
   .app-navbar-row {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas: 'brand links toolbar';
+    grid-template-columns: auto minmax(0, max-content) minmax(13.5rem, 1fr) auto;
+    grid-template-areas: 'brand links recorder toolbar';
     /* start: logo, first menu line, and toolbar share one top edge (baseline centered the logo in a tall row). */
     align-items: start;
     column-gap: 0.75rem;
@@ -1296,6 +1300,14 @@ sl-tooltip {
     justify-self: stretch;
     align-items: flex-start;
     margin-left: calc(80px - 0.75rem);
+  }
+
+  .app-navbar-row > .app-navbar-debug-recorder-slot {
+    grid-area: recorder;
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: center;
   }
 
   .app-navbar-row > .app-navbar-toolbar {

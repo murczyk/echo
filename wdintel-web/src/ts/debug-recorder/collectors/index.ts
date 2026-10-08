@@ -15,10 +15,14 @@ export type DebugCollectorFactory = (
 
 export type GlobalCollectorOptions = {
   collectors?: Array<[name: string, factory: DebugCollectorFactory]>;
+  recordingStartedAt?: number;
 };
 
-const defaultCollectors = (): Array<[string, DebugCollectorFactory]> => [
-  ['interaction-navigation', attachInteractionNavigationCollector],
+const defaultCollectors = (recordingStartedAt?: number): Array<[string, DebugCollectorFactory]> => [
+  [
+    'interaction-navigation',
+    (sink) => attachInteractionNavigationCollector(sink, { recordingStartedAt }),
+  ],
   ['http', attachHttpCollector],
   ['errors', attachErrorCollector],
   [
@@ -42,19 +46,34 @@ export function attachGlobalCollectors(
   options: GlobalCollectorOptions = {},
 ): { cleanup: DebugCollectorCleanup; support: DebugCollectorSupport } {
   const support: DebugCollectorSupport = { supported: [], unsupported: [], failed: [] };
-  const attached: Array<{ name: string; cleanup: DebugCollectorCleanup; active: boolean }> = [];
+  const attached: Array<{
+    name: string;
+    cleanup: DebugCollectorCleanup;
+    active: boolean;
+    cleaning: boolean;
+  }> = [];
   let cleaned = false;
 
-  for (const [name, factory] of options.collectors ?? defaultCollectors()) {
-    const entry = { name, cleanup: (() => {}) as DebugCollectorCleanup, active: true };
+  for (const [name, factory] of options.collectors ??
+    defaultCollectors(options.recordingStartedAt)) {
+    const entry = {
+      name,
+      cleanup: (() => {}) as DebugCollectorCleanup,
+      active: true,
+      cleaning: false,
+    };
     const detach = () => {
       if (!entry.active) return;
       entry.active = false;
+      if (entry.cleaning) return;
+      entry.cleaning = true;
       try {
         entry.cleanup();
       } catch {
         remove(support.supported, name);
         addUnique(support.failed, name);
+      } finally {
+        entry.cleaning = false;
       }
     };
     const collectorSink: DebugEventSink = (input) => {
@@ -93,12 +112,15 @@ export function attachGlobalCollectors(
       cleaned = true;
       for (const entry of [...attached].reverse()) {
         if (!entry.active) continue;
-        entry.active = false;
+        entry.cleaning = true;
         try {
           entry.cleanup();
         } catch {
           remove(support.supported, entry.name);
           addUnique(support.failed, entry.name);
+        } finally {
+          entry.cleaning = false;
+          entry.active = false;
         }
       }
     },

@@ -10,6 +10,7 @@ const currentSettingsMock = vi.hoisted(() => vi.fn());
 const fetchUserSettingsMock = vi.hoisted(() => vi.fn());
 const configureDebugRecorderMock = vi.hoisted(() => vi.fn());
 const clearDebugRecorderMock = vi.hoisted(() => vi.fn());
+const mountDebugRecorderPanelMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../services/api/system-settings', () => ({
   currentSystemSettings: currentSettingsMock,
@@ -19,8 +20,10 @@ vi.mock('../../../services/api/user-settings', () => ({
   fetchUserSettings: fetchUserSettingsMock,
 }));
 vi.mock('../../../../debug-recorder', () => ({
+  DEBUG_RECORDER_SLOT_ID: 'echo-debug-recorder-slot',
   configureBrowserDebugRecorder: configureDebugRecorderMock,
   clearBrowserDebugRecording: clearDebugRecorderMock,
+  mountDebugRecorderPanelIfNeeded: mountDebugRecorderPanelMock,
 }));
 
 type Rendered = {
@@ -113,6 +116,17 @@ describe('AppNavbar', () => {
     );
     expect(logoImg).not.toBeUndefined();
     expect(hoverLogoImg).not.toBeUndefined();
+  });
+
+  it('reserves a debug recorder slot immediately before the toolbar', async () => {
+    const { container } = renderComponent(defaultProps);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const slot = container.querySelector('#echo-debug-recorder-slot');
+
+    expect(slot).not.toBeNull();
+    expect(slot?.nextElementSibling?.classList.contains('app-navbar-toolbar')).toBe(true);
   });
 
   it.each([

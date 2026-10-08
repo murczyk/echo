@@ -25,6 +25,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  document.documentElement.scrollTop = 0;
   window.scroll = originalWindowScroll;
   window.scrollTo = originalWindowScrollTo;
   window.scrollBy = originalWindowScrollBy;
@@ -90,6 +92,55 @@ describe('scroll and performance collector', () => {
         details: { scrollTop: 500, scrollHeight: 1_200, clientHeight: 600, delta: 500 },
       },
     ]);
+    cleanup();
+  });
+
+  it('uses the current window offset as the initial scroll baseline', () => {
+    const callbacks: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    const originalScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY');
+    let scrollY = 5_000;
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => scrollY });
+    const events: DebugEventInput[] = [];
+    const cleanup = attachScrollPerformanceCollector((input) => events.push(input));
+
+    try {
+      scrollY = 5_400;
+      document.dispatchEvent(new Event('scroll'));
+      callbacks.splice(0).forEach((callback) => callback(16));
+
+      expect(events.find((event) => event.kind === 'scroll.sample')?.details?.delta).toBe(400);
+    } finally {
+      cleanup();
+      if (originalScrollY) Object.defineProperty(window, 'scrollY', originalScrollY);
+      else Reflect.deleteProperty(window, 'scrollY');
+    }
+  });
+
+  it('captures initial offsets for element scroll containers present at attachment', () => {
+    const callbacks: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    const scroller = document.createElement('div');
+    Object.defineProperties(scroller, {
+      scrollTop: { value: 400, writable: true },
+      scrollHeight: { value: 1_200 },
+      clientHeight: { value: 600 },
+    });
+    document.body.append(scroller);
+    const events: DebugEventInput[] = [];
+    const cleanup = attachScrollPerformanceCollector((input) => events.push(input));
+
+    scroller.scrollTop = 500;
+    scroller.dispatchEvent(new Event('scroll'));
+    callbacks.splice(0).forEach((callback) => callback(16));
+
+    expect(events.find((event) => event.kind === 'scroll.sample')?.details?.delta).toBe(100);
     cleanup();
   });
 

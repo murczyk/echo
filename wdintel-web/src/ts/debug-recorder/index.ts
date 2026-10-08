@@ -12,10 +12,11 @@ import type {
 import type { DebugRecorderPanelController } from './DebugRecorderPanel';
 
 type CollectorAttachment = ReturnType<typeof attachGlobalCollectors>;
+type CollectorContext = { recordingStartedAt: number };
 
 export type BrowserDebugRecorderRuntimeDependencies = {
   recorder: BrowserDebugRecorder;
-  attachCollectors?: (sink: DebugEventSink) => CollectorAttachment;
+  attachCollectors?: (sink: DebugEventSink, context: CollectorContext) => CollectorAttachment;
   mountPanel?: (controller: DebugRecorderPanelController) => void;
   unmountPanel?: () => void;
   eventTarget?: EventTarget;
@@ -103,7 +104,12 @@ export function createBrowserDebugRecorderRuntime(
     if (collectorsAttached) return;
     collectorsAttached = true;
     try {
-      const attachment = collectorAttacher(collectorSink);
+      const recordingStartedAt = recorder.getSnapshot().startedAt;
+      if (recordingStartedAt === null) {
+        collectorsAttached = false;
+        return;
+      }
+      const attachment = collectorAttacher(collectorSink, { recordingStartedAt });
       if (!collectorsAttached) {
         attachment.cleanup();
         return;
@@ -289,3 +295,4 @@ export const getBrowserDebugRecorderSnapshot = runtime.getSnapshot;
 export const finishBrowserDebugRecording = runtime.finish;
 export const downloadBrowserDebugRecording = runtime.download;
 export const clearBrowserDebugRecording = runtime.clear;
+export { DEBUG_RECORDER_SLOT_ID } from './config';

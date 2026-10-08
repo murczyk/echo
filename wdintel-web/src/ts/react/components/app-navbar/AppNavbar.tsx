@@ -22,7 +22,11 @@ import { shouldHandleAsSpaClick } from '../../utils/browser';
 import { requestNavigation } from '../../../browser/navigation-guard';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../../routes/ai-agent-chat/conversation-url';
 import { mountLogoCoin } from '../../../logo-coin';
-import { configureBrowserDebugRecorder } from '../../../debug-recorder';
+import {
+  DEBUG_RECORDER_SLOT_ID,
+  configureBrowserDebugRecorder,
+  mountDebugRecorderPanelIfNeeded,
+} from '../../../debug-recorder';
 
 function filterTranscriptionSettings(items: Menu[], enabled: boolean): Menu[] {
   return items.flatMap<Menu>((item): Menu[] => {
@@ -135,6 +139,7 @@ export function AppNavbar({
       deploymentMode,
       echoVersion: serverInfo.version,
     });
+    mountDebugRecorderPanelIfNeeded();
   }, [shared?.serverInfo?.mode, shared?.serverInfo?.version]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -630,6 +635,12 @@ export function AppNavbar({
               {isAdminMenuVisible && renderDropdownMenu('admin', 'Адмін', visibleAdminSubs)}
             </ul>
           </div>
+
+          <div
+            id={DEBUG_RECORDER_SLOT_ID}
+            className="app-navbar-debug-recorder-slot"
+            data-debug-recorder-slot=""
+          />
 
           <div className="app-navbar-toolbar ml-auto flex shrink-0 items-center gap-2">
             {isReconnecting && (

@@ -3,6 +3,24 @@ import { describe, expect, it, vi } from 'vitest';
 import { attachGlobalCollectors, type DebugCollectorFactory } from '../index';
 
 describe('global collector orchestration', () => {
+  it('forwards collector cleanup output before detaching it', () => {
+    const sink = vi.fn();
+    const result = attachGlobalCollectors(sink, {
+      collectors: [
+        [
+          'flush-on-cleanup',
+          (collectorSink) => () => collectorSink({ kind: 'collector.final-summary' }),
+        ],
+      ],
+    });
+
+    result.cleanup();
+    result.cleanup();
+
+    expect(sink).toHaveBeenCalledOnce();
+    expect(sink).toHaveBeenCalledWith({ kind: 'collector.final-summary' });
+  });
+
   it('isolates attach and sink failures and cleans up successful collectors in reverse order', () => {
     const cleanupOrder: string[] = [];
     const emissions = new Map<string, () => void>();

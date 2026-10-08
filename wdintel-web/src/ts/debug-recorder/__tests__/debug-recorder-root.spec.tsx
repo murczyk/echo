@@ -33,6 +33,30 @@ afterEach(() => {
 });
 
 describe('debug recorder root', () => {
+  it('mounts the panel into the navbar slot when it is available', () => {
+    const slot = document.createElement('div');
+    slot.id = 'echo-debug-recorder-slot';
+    document.body.append(slot);
+
+    act(() => mountDebugRecorderPanel(controller));
+
+    expect(document.getElementById('echo-debug-recorder-root')?.parentElement).toBe(slot);
+  });
+
+  it('moves an existing panel host into a navbar slot mounted later', () => {
+    act(() => mountDebugRecorderPanel(controller));
+    const panelHost = document.getElementById('echo-debug-recorder-root')!;
+    expect(panelHost.parentElement).toBe(document.body);
+    const slot = document.createElement('div');
+    slot.id = 'echo-debug-recorder-slot';
+    document.body.append(slot);
+
+    act(() => mountDebugRecorderPanel(controller));
+
+    expect(document.getElementById('echo-debug-recorder-root')).toBe(panelHost);
+    expect(panelHost.parentElement).toBe(slot);
+  });
+
   it('keeps the panel marker on the rendered panel only', () => {
     act(() => mountDebugRecorderPanel(controller));
 

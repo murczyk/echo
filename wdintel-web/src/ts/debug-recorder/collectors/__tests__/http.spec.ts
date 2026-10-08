@@ -174,6 +174,10 @@ describe('HTTP collector', () => {
     expect(events.filter((event) => event.kind === 'http.coalesced')[0]).toMatchObject({
       details: { kind: 'event-stream-long-poll', suppressedCount: 1 },
     });
+    const requestIds = events
+      .filter((event) => event.kind === 'http.started')
+      .map((event) => event.details?.requestId);
+    expect(new Set(requestIds)).toHaveLength(requestIds.length);
     window.fetch = nativeFetch;
   });
 });

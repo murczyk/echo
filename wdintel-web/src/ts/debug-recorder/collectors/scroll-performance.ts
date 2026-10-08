@@ -1,4 +1,8 @@
-import { DEBUG_ANOMALY_MAIN_THREAD_STALL_MS, DEBUG_SCROLL_HEARTBEAT_MS } from '../config';
+import {
+  DEBUG_ANOMALY_MAIN_THREAD_STALL_MS,
+  DEBUG_SCROLL_BASELINE_INSPECTION_LIMIT,
+  DEBUG_SCROLL_HEARTBEAT_MS,
+} from '../config';
 import { createDebugSanitizer } from '../sanitize';
 import type { DebugCollectorCleanup, DebugEventInput, DebugEventSink } from '../types';
 
@@ -57,6 +61,28 @@ export function attachScrollPerformanceCollector(
   const previousScrollTop = new WeakMap<object, number>();
   let frame: number | null = null;
   let active = true;
+
+  const scrollKey = (container: EventTarget): object =>
+    container === window || container === document ? window : (container as object);
+
+  const readScrollTop = (container: EventTarget): number =>
+    container === window || container === document
+      ? window.scrollY || document.documentElement.scrollTop || 0
+      : container instanceof Element
+        ? container.scrollTop
+        : 0;
+
+  previousScrollTop.set(window, readScrollTop(window));
+  const baselineWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+  let baselineNode: Node | null = baselineWalker.currentNode;
+  let baselineCount = 0;
+  while (baselineNode && baselineCount < DEBUG_SCROLL_BASELINE_INSPECTION_LIMIT) {
+    if (baselineNode instanceof Element && baselineNode.scrollTop !== 0) {
+      previousScrollTop.set(baselineNode, baselineNode.scrollTop);
+    }
+    baselineCount += 1;
+    baselineNode = baselineWalker.nextNode();
+  }
 
   const emit = (input: DebugEventInput) => {
     if (!active) return;
@@ -120,11 +146,7 @@ export function attachScrollPerformanceCollector(
 
   const geometry = (container: EventTarget) => {
     const isWindow = container === window || container === document;
-    const scrollTop = isWindow
-      ? window.scrollY || document.documentElement.scrollTop || 0
-      : container instanceof Element
-        ? container.scrollTop
-        : 0;
+    const scrollTop = readScrollTop(container);
     const scrollHeight = isWindow
       ? document.documentElement.scrollHeight
       : container instanceof Element
@@ -135,7 +157,7 @@ export function attachScrollPerformanceCollector(
       : container instanceof Element
         ? container.clientHeight
         : 0;
-    const key = isWindow ? window : (container as object);
+    const key = scrollKey(container);
     const previous = previousScrollTop.get(key) ?? 0;
     previousScrollTop.set(key, scrollTop);
     return { scrollTop, scrollHeight, clientHeight, delta: scrollTop - previous };
@@ -151,7 +173,8 @@ export function attachScrollPerformanceCollector(
 
   const onScroll = (event: Event) => {
     if (isRecorderTarget(event.target)) return;
-    pendingContainers.add(event.target ?? window);
+    const container = event.target ?? window;
+    pendingContainers.add(container);
     if (frame === null) frame = window.requestAnimationFrame(flushScroll);
   };
   listen(document, 'scroll', onScroll, true);

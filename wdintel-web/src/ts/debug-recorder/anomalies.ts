@@ -41,7 +41,12 @@ const COALESCED_HTTP_RULES = new Set([
   'messenger-media-status',
 ]);
 const FAILED_HTTP_OUTCOMES = new Set(['aborted', 'error', 'http-error', 'network-error', 'failed']);
-const SCROLL_CORRELATION_KINDS = new Set(['performance.layout-shift', 'interaction.focus']);
+const SCROLL_CORRELATION_KINDS = new Set([
+  'performance.layout-shift',
+  'interaction.focus',
+  'interaction.click',
+  'dom.replacement',
+]);
 const RENDER_KINDS = new Set(['semantic.render', 'semantic.commit', 'duty.render', 'duty.commit']);
 
 function detailString(event: DebugEvent, key: string): string | null {

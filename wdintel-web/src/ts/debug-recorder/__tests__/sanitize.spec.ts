@@ -107,4 +107,16 @@ describe('debug recorder sanitizer', () => {
     expect(JSON.stringify(event).length).toBeLessThan(5_000);
     expect(Object.keys(event?.details ?? {}).length).toBeLessThanOrEqual(32);
   });
+
+  it('bounds the persisted alias dictionary while keeping overflow aliases stable', () => {
+    const sanitizer = createDebugSanitizer('recording-1');
+    let overflowAlias = '';
+
+    for (let index = 0; index < 3_000; index += 1) {
+      overflowAlias = sanitizer.alias('request', `request-${index}`);
+    }
+
+    expect(Object.keys(sanitizer.getAliases().request ?? {})).toHaveLength(2_048);
+    expect(sanitizer.alias('request', 'request-2999')).toBe(overflowAlias);
+  });
 });

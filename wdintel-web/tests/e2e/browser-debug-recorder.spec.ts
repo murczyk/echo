@@ -121,8 +121,8 @@ test('user records and exports safe browser diagnostics in Live mode @regression
     await page.evaluate(() => document.getElementById('echo-debug-recorder-root')?.outerHTML),
   ).toContain('data-debug-recorder-host');
   await expect(panel).toHaveCount(1);
-  await expect(panel).toContainText('Запис діагностики');
-  await expect(panel).toContainText('00:00 / 01:00');
+  await expect(panel).toContainText('Запис');
+  await expect(panel).toContainText('00:00');
 
   await page.evaluate(
     async ({ secrets, rawId }) => {
@@ -199,7 +199,7 @@ test('user records and exports safe browser diagnostics in Live mode @regression
   expect(afterReload?.startedAt).toBe(beforeReload?.startedAt);
   expect(afterReload?.deadlineAt).toBe(beforeReload?.deadlineAt);
   expect(pageErrors).toEqual([]);
-  await expect(page.locator('[data-debug-recorder-root]')).toContainText('Запис діагностики');
+  await expect(page.locator('[data-debug-recorder-root]')).toContainText('Запис');
 
   const secondPage = await context.newPage();
   await installLiveDutyMocks(secondPage);
