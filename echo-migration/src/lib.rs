@@ -465,6 +465,7 @@ mod m20261006_164921_sigint_inbox_item_freq_datetime_index;
 pub struct Migrator;
 
 mod m20261008_051638_ai_position_highlight_flags;
+mod m20261008_113430_sigint_unit_orbit_combat_type;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1096,6 +1097,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261006_160533_rer_report_enabled::Migration),
             Box::new(m20261006_164921_sigint_inbox_item_freq_datetime_index::Migration),
             Box::new(m20261008_051638_ai_position_highlight_flags::Migration),
+            Box::new(m20261008_113430_sigint_unit_orbit_combat_type::Migration),
         ]
     }
 }

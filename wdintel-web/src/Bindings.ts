@@ -3210,6 +3210,8 @@ export type ListUnitsSortBy =
   | 'UnitMilitaryDistrictDesc'
   | 'UnitArmyRegionAsc'
   | 'UnitArmyRegionDesc'
+  | 'UnitCombatTypeAsc'
+  | 'UnitCombatTypeDesc'
   | 'UnitCommentAsc'
   | 'UnitCommentDesc'
   | 'UnitOrbitNoteAsc'
@@ -3239,6 +3241,8 @@ export type Unit = {
   army: string;
   militaryDistrict: string;
   armyRegion: string;
+  combatTypeId: string | null;
+  combatTypeName: string | null;
   comment: string;
   orbitNote: string | null;
   presentInOrbit: boolean | null;
@@ -3250,6 +3254,15 @@ export type Unit = {
   hasOrbit: boolean;
   orbitUnitIds: Array<string>;
   orbitUnitGenerativeNames: Array<string>;
+};
+
+export type UnitCombatType = {
+  id: string;
+  name: string;
+};
+
+export type UnitCombatTypesRsp = {
+  combatTypes: Array<UnitCombatType>;
 };
 
 export type ListUnitsReq = {
@@ -3274,6 +3287,7 @@ export type ListUnitsReq = {
   filterArmy: string | null;
   filterMilitaryDistrict: string | null;
   filterArmyRegion: string | null;
+  filterCombatType: string | null;
   filterComment: string | null;
   filterOrbitNote: string | null;
   filterIsDeduplicateCandidate: boolean | null;
@@ -3341,6 +3355,7 @@ export type CreateUnitReq = {
   army: string;
   militaryDistrict: string;
   armyRegion: string;
+  combatTypeId: string | null;
   active: boolean;
   isDeduplicateCandidate: boolean | null;
   comment: string;
