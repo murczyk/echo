@@ -9,10 +9,11 @@ import { RerReportSettings } from './RerReportSettings';
 
 type AdminAllReportsTab = 'all' | 'rer-report';
 
-const TAB_PATHS: Record<AdminAllReportsTab, string> = {
-  all: '/admin/all-reports?tab=all',
-  'rer-report': '/admin/all-reports?tab=rer-report',
-};
+function tabUrl(tab: AdminAllReportsTab): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set('tab', tab);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
 
 export function readAdminAllReportsTab(search = window.location.search): AdminAllReportsTab {
   return new URLSearchParams(search).get('tab') === 'rer-report' ? 'rer-report' : 'all';
@@ -24,9 +25,7 @@ export function AdminAllReportsPage() {
   useEffect(() => {
     const rawTab = new URLSearchParams(window.location.search).get('tab');
     if (rawTab !== null && rawTab !== 'all' && rawTab !== 'rer-report') {
-      window.history.replaceState(null, '', TAB_PATHS.all);
-    } else if (rawTab !== null && window.location.search !== `?tab=${rawTab}`) {
-      window.history.replaceState(null, '', TAB_PATHS[readAdminAllReportsTab()]);
+      window.history.replaceState(null, '', tabUrl('all'));
     }
     const onPopState = () => setTab(readAdminAllReportsTab());
     window.addEventListener('popstate', onPopState);
@@ -35,7 +34,7 @@ export function AdminAllReportsPage() {
 
   function selectTab(value: AdminAllReportsTab) {
     setTab(value);
-    window.history.pushState(null, '', TAB_PATHS[value]);
+    window.history.pushState(null, '', tabUrl(value));
   }
 
   return (

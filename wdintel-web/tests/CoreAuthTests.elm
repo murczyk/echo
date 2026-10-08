@@ -23,6 +23,7 @@ user roles =
     , goiHost = Nothing
     , goiIntegrations = []
     , lastReleaseSeen = Nothing
+    , rerReportEligible = False
     }
 
 

@@ -2,16 +2,6 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import {
-  Autocomplete,
-  Box,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Stack,
-  TextField,
-} from '@mui/material';
 import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -31,6 +21,7 @@ import {
 } from '../../components/mui-customized/table/custom-styles';
 import {
   type AppMrtColumnDef,
+  buildDefaultColumnOrder,
   mrtItemsCell,
   renderColumnActionsMenuItems,
   useAppMaterialReactTable,
@@ -44,30 +35,19 @@ import {
   deleteRerReportMetadata,
   updateRerReportMetadata,
 } from '../../services/api/rer-report-admin';
-import { isAbortError } from '../../services/api/client';
-import { DEFAULT_LIST_UNITS_REQ, searchUnitsStrictThenRelaxed } from '../../services/api/units';
+import { MetadataEditor, type EditorState } from './RerReportMetadataEditor';
 
-const DEFAULT_COLUMN_ORDER = [
-  'mrt-row-numbers',
-  'mrt-row-actions',
-  'sigintUnitName',
-  'locations',
-  'labels',
-];
+const DEFAULT_COLUMN_ORDER = buildDefaultColumnOrder({
+  dataColumnIds: ['sigintUnitName', 'locations', 'labels'],
+  withRowNumbers: true,
+  withRowActions: true,
+});
 const DEFAULT_COLUMN_VISIBILITY = {
   sigintUnitName: true,
   locations: true,
   labels: true,
 };
 const ROW_ACTIONS_COLUMN_SIZE = 56;
-
-type UnitOption = { id: number; name: string };
-type EditorState = {
-  id: number | null;
-  unit: UnitOption | null;
-  locations: string[];
-  labels: string[];
-};
 
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim() ? error.message : String(error);
@@ -218,166 +198,17 @@ function MetadataTable({
   return <MaterialReactTable table={table} />;
 }
 
-function MetadataEditor({
-  state,
-  rows,
-  saving,
-  error,
-  onChange,
-  onClose,
-  onSave,
-}: {
-  state: EditorState | null;
-  rows: RerReportMetadataItem[];
-  saving: boolean;
-  error: string | null;
-  onChange: (state: EditorState) => void;
-  onClose: () => void;
-  onSave: () => void;
-}) {
-  const { notify } = usePowerSnackbar();
-  const [unitInput, setUnitInput] = useState('');
-  const [unitOptions, setUnitOptions] = useState<UnitOption[]>([]);
-  const [unitLoading, setUnitLoading] = useState(false);
-
-  useEffect(() => {
-    if (!state) return;
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(async () => {
-      setUnitLoading(true);
-      try {
-        const units = await searchUnitsStrictThenRelaxed(
-          {
-            ...DEFAULT_LIST_UNITS_REQ,
-            filterText: unitInput.trim() || null,
-            limit: 50,
-          },
-          { signal: controller.signal },
-        );
-        const usedUnitIds = new Set(
-          rows.filter((row) => row.id !== state.id).map((row) => row.sigintUnitId),
-        );
-        const options = units
-          .filter((unit) => !usedUnitIds.has(unit.id))
-          .map((unit) => ({ id: unit.id, name: unit.name }));
-        if (state.unit && !options.some((option) => option.id === state.unit?.id)) {
-          options.unshift(state.unit);
-        }
-        setUnitOptions(options);
-      } catch (nextError) {
-        if (!isAbortError(nextError)) {
-          setUnitOptions(state.unit ? [state.unit] : []);
-          notify({
-            severity: 'error',
-            message: `Не вдалося знайти підрозділи: ${errorMessage(nextError)}`,
-          });
-        }
-      } finally {
-        if (!controller.signal.aborted) setUnitLoading(false);
-      }
-    }, 250);
-    return () => {
-      window.clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [state?.id, state?.unit?.id, unitInput, rows, notify]);
-
-  useEffect(() => {
-    if (state) setUnitInput(state.unit?.name ?? '');
-  }, [state?.id]);
-
-  return (
-    <Dialog open={state !== null} onClose={saving ? undefined : onClose} fullWidth maxWidth="sm">
-      <DialogTitle>
-        {state?.id === null ? 'Додати метадані РЕР' : 'Редагувати метадані РЕР'}
-      </DialogTitle>
-      <DialogContent>
-        {state ? (
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
-            <Autocomplete<UnitOption>
-              options={unitOptions}
-              value={state.unit}
-              inputValue={unitInput}
-              loading={unitLoading}
-              filterOptions={(options) => options}
-              getOptionLabel={(option) => option.name}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-              onInputChange={(_, value, reason) => {
-                if (reason === 'input' || reason === 'clear') setUnitInput(value);
-              }}
-              onChange={(_, unit) =>
-                onChange({
-                  ...state,
-                  unit,
-                  labels:
-                    state.id === null && state.labels.length === 0 && unit
-                      ? [unit.name]
-                      : state.labels,
-                })
-              }
-              noOptionsText="Підрозділів не знайдено"
-              loadingText="Пошук…"
-              renderInput={(params) => <TextField {...params} label="Підрозділ" required />}
-            />
-            <Autocomplete<string, true, false, true>
-              multiple
-              freeSolo
-              autoSelect
-              options={[]}
-              value={state.locations}
-              onChange={(_, values) =>
-                onChange({ ...state, locations: normalizeValues(values.map(String)) })
-              }
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="locations"
-                  helperText="Введіть значення та натисніть Enter"
-                />
-              )}
-            />
-            <Autocomplete<string, true, false, true>
-              multiple
-              freeSolo
-              autoSelect
-              options={[]}
-              value={state.labels}
-              onChange={(_, values) =>
-                onChange({ ...state, labels: normalizeValues(values.map(String)) })
-              }
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="labels"
-                  helperText="Введіть значення та натисніть Enter"
-                />
-              )}
-            />
-          </Stack>
-        ) : null}
-      </DialogContent>
-      <DialogActions>
-        <PowerButton variant="outlined" onClick={onClose} disabled={saving}>
-          Скасувати
-        </PowerButton>
-        <PowerButton variant="contained" onClick={onSave} disabled={saving || !state?.unit}>
-          {saving ? 'Збереження…' : 'Зберегти'}
-        </PowerButton>
-      </DialogActions>
-    </Dialog>
-  );
-}
-
 function RerReportMetadataTableBody({
   rows,
   setRows,
   loading,
+  disabled,
   onReload,
 }: {
   rows: RerReportMetadataItem[];
   setRows: (rows: RerReportMetadataItem[]) => void;
   loading: boolean;
+  disabled: boolean;
   onReload: () => void;
 }) {
   const { notify } = usePowerSnackbar();
@@ -453,18 +284,18 @@ function RerReportMetadataTableBody({
   }
 
   return (
-    <Stack spacing={2} sx={{ height: '100%', minHeight: 0 }}>
+    <div className="flex h-full min-h-0 flex-col gap-echo-lg">
       <TablePageToolbar
         title="Метадані підрозділів для звіту РЕР"
         withGlobalTextFilter
-        internalActionsDisabled={loading}
+        internalActionsDisabled={loading || disabled}
         actions={
           <>
             <PowerButton
               variant="contained"
               startIcon={<AddIcon />}
               onClick={openCreate}
-              disabled={loading || saving}
+              disabled={loading || disabled || saving}
             >
               Додати новий
             </PowerButton>
@@ -479,14 +310,14 @@ function RerReportMetadataTableBody({
           </>
         }
       />
-      <Box sx={{ flex: 1, minHeight: 320, minWidth: 0, display: 'flex' }}>
+      <div className="flex min-h-[320px] min-w-0 flex-1">
         <MetadataTable
           rows={rows}
-          loading={loading || saving}
+          loading={loading || disabled || saving}
           onEdit={openEdit}
           onDelete={setDeleting}
         />
-      </Box>
+      </div>
       <MetadataEditor
         state={editor}
         rows={rows}
@@ -506,7 +337,7 @@ function RerReportMetadataTableBody({
           deleting ? `Метадані підрозділу «${deleting.sigintUnitName}» буде видалено.` : undefined
         }
       />
-    </Stack>
+    </div>
   );
 }
 
@@ -514,6 +345,7 @@ export function RerReportMetadataTable(props: {
   rows: RerReportMetadataItem[];
   setRows: (rows: RerReportMetadataItem[]) => void;
   loading: boolean;
+  disabled: boolean;
   onReload: () => void;
 }) {
   return (
