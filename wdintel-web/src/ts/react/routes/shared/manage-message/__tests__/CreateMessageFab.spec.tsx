@@ -37,6 +37,9 @@ it('blurs the launcher before opening the drawer', async () => {
 it.each([
   { roles: ['Basic'], allowed: false },
   { roles: ['Cyber'], allowed: true },
+  { roles: ['CyberViewer'], allowed: false },
+  { roles: ['CyberViewer', 'Cyber'], allowed: true },
+  { roles: ['CyberViewer', 'Rer'], allowed: true },
   { roles: ['Admin'], allowed: true },
   { roles: ['Basic', 'Cyber'], allowed: true },
   { roles: ['Basic', 'Admin'], allowed: true },

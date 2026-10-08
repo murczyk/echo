@@ -147,7 +147,7 @@ fn has_rer_or_cyber_role(roles: &serde_json::Value) -> bool {
     let Ok(roles) = serde_json::from_value::<Vec<String>>(roles.clone()) else {
         return false;
     };
-    [AI_AGENT_ROLE_RER, crate::config::ROLE_CYBER]
+    [AI_AGENT_ROLE_RER, crate::config::ROLE_CYBER_VIEWER]
         .iter()
         .any(|role| crate::users::role_matches(&roles, role).unwrap_or(false))
 }
@@ -295,6 +295,7 @@ mod tests {
         ])));
         assert!(has_rer_or_cyber_role(&serde_json::json!(["Full"])));
         assert!(has_rer_or_cyber_role(&serde_json::json!(["Cyber"])));
+        assert!(has_rer_or_cyber_role(&serde_json::json!(["CyberViewer"])));
         assert!(has_rer_or_cyber_role(&serde_json::json!(["Rer"])));
         assert!(!has_rer_or_cyber_role(&serde_json::json!(["Basic"])));
         assert!(!has_rer_or_cyber_role(&serde_json::json!(["ApiAgent"])));

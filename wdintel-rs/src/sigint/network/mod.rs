@@ -75,7 +75,7 @@ pub async fn network_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api", "ApiAgent"],
+        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -113,9 +113,13 @@ pub async fn network_last_activity(
     req: Json<NetworkLastActivityReq>,
 ) -> Result<Json<Vec<NetworkLastActivityRow>>, AppError> {
     let user_id = login_id_from_identity(&user).context(h!())?;
-    has_any_role(&env.dbx, &user_id, vec!["Rer", "Cyber", "Api", "ApiAgent"])
-        .await
-        .context(h!())?;
+    has_any_role(
+        &env.dbx,
+        &user_id,
+        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
+    )
+    .await
+    .context(h!())?;
     if req.network_ids.len() > NETWORK_LAST_ACTIVITY_BATCH_MAX_NETWORKS {
         return Err(AppError::BL {
             msg: "Too many network IDs".to_string(),
@@ -410,7 +414,7 @@ pub async fn restore_network(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -555,7 +559,7 @@ pub async fn network_info_batch_freq(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api", "ApiAgent"],
+        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -576,7 +580,7 @@ pub async fn network_info_batch_id(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api", "ApiAgent"],
+        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -605,7 +609,7 @@ pub async fn find_live_networks(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api", "ApiAgent"],
+        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -1050,7 +1054,7 @@ pub async fn network_info_one(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -4755,7 +4759,7 @@ pub async fn network_callsigns_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
 
@@ -4900,7 +4904,7 @@ pub async fn network_freqs_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -4982,7 +4986,7 @@ pub async fn network_freq_callsigns(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
 
@@ -5021,7 +5025,7 @@ pub async fn network_freq_callsigns_batch(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
 
@@ -5100,7 +5104,7 @@ pub async fn encryptions_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
     let encryptions = encryption::Entity::find()
@@ -5128,7 +5132,7 @@ pub async fn network_signals_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
 
@@ -5894,7 +5898,7 @@ pub async fn network_search(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber"],
+        vec!["Rer", "CyberViewer"],
     )
     .await
     .c(h!())?;

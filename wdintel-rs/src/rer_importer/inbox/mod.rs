@@ -288,7 +288,7 @@ async fn inbox_item_context(
     req: Json<InboxItemContextReq>,
 ) -> Result<Json<InboxItemContextRsp>, AppError> {
     let login = login_id_from_identity(&user).context(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
         .await
         .c(h!())?;
     let Some(message_uid) =
@@ -712,7 +712,7 @@ async fn messages_by_id(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "ApiAgent"],
+        vec!["Rer", "CyberViewer", "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -742,7 +742,7 @@ async fn messages_by_id_matching_filters(
     req: Json<MessageIdsReq>,
 ) -> Result<Json<MessageIdsRsp>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
         .await
         .c(h!())?;
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
@@ -788,7 +788,7 @@ async fn messages_by_id_with_metadata(
     req: Json<MessageIdsReq>,
 ) -> Result<Json<InboxMessagesRsp>, AppError> {
     let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
         .await
         .c(h!())?;
     let is_admin = has_role(&env.dbx, &login, "Admin").await.is_ok();
@@ -840,7 +840,7 @@ async fn messages_by_uuid(
 ) -> Result<Json<MessageIdsRsp>, AppError> {
     let req = req.into_inner();
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
         .await
         .c(h!())?;
     let default_req = InboxMessagesReq {
@@ -1191,7 +1191,7 @@ async fn inbox_messages(
     req: Json<InboxMessagesReq>,
 ) -> Result<Json<InboxMessagesApiRsp>, AppError> {
     let user_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &user_id, vec!["Rer", "Cyber", "ApiAgent"])
+    has_any_role(&env.dbx, &user_id, vec!["Rer", "CyberViewer", "ApiAgent"])
         .await
         .c(h!())?;
     let is_admin = has_role(&env.dbx, &user_id, "Admin").await.is_ok();
@@ -1962,7 +1962,7 @@ async fn inbox_messages_count(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "ApiAgent"],
+        vec!["Rer", "CyberViewer", "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -5102,7 +5102,7 @@ mod tests {
         }
         let mut login = login.into_active_model();
         login.roles = Set(json!(["Rer", ROLE_CYBER]));
-        login.update(&env.dbx).await.unwrap();
+        let login = login.update(&env.dbx).await.unwrap();
         for (filter, expected) in [
             (
                 Some(InboxMessagesReq {
@@ -5187,6 +5187,35 @@ mod tests {
             actix_test::read_body_json(response).await;
         assert_eq!(response["messages"].as_array().unwrap().len(), 1);
         assert_eq!(response["messages"][0][0], json!(messages[0].0));
+        let mut login = login.into_active_model();
+        login.roles = Set(json!([crate::config::ROLE_CYBER_VIEWER]));
+        login.update(&env.dbx).await.unwrap();
+        let filter = InboxMessagesReq {
+            selected_device_names: Some(vec![
+                "ECHO-3461 allowed device".to_string()
+            ]),
+            ..Default::default()
+        };
+        for (endpoint, body, field) in endpoint_bodies(Some(filter)) {
+            let response = actix_test::call_service(
+                &app,
+                actix_test::TestRequest::post()
+                    .uri(endpoint)
+                    .cookie(session_cookie.clone())
+                    .set_json(body)
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK, "{endpoint}");
+            let response: serde_json::Value =
+                actix_test::read_body_json(response).await;
+            assert_eq!(response[field].as_array().unwrap().len(), 1);
+            let row = &response[field][0];
+            assert_eq!(
+                row.as_i64().or_else(|| row[0].as_i64()),
+                Some(messages[0].0),
+            );
+        }
         set_devices_section_enabled(&env.dbx, false).await;
         for filter in [
             InboxMessagesReq {

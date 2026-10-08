@@ -88,6 +88,8 @@ const ROLE_OPTIONS = [
   'UnitsEditor',
   'NetworkEditor',
   'CallsignsEditor',
+  'Cyber',
+  'CyberViewer',
   'AdvancedReports',
 ];
 const ENABLED_FILTER_OPTIONS = withExplicitSelectAllOption([

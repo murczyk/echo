@@ -80,6 +80,7 @@ const ROLE_OPTIONS = [
   'NetworkEditor',
   'CallsignsEditor',
   'Cyber',
+  'CyberViewer',
   'AdvancedReports',
   'DeleteMsg',
   'NoAutoLogout',
