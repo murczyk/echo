@@ -32,6 +32,7 @@ const UNIT_FIELDS: &[&str] = &[
     "army",
     "military_district",
     "army_region",
+    "combat_type_id",
     "active",
     "comment",
     "orbit_note",

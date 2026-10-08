@@ -216,6 +216,7 @@ pub use super::sigint_unit_attachment_aor::Entity as SigintUnitAttachmentAor;
 pub use super::sigint_unit_change::Entity as SigintUnitChange;
 pub use super::sigint_unit_changelog::Entity as SigintUnitChangelog;
 pub use super::sigint_unit_label::Entity as SigintUnitLabel;
+pub use super::sigint_unit_orbit_combat_type::Entity as SigintUnitOrbitCombatType;
 pub use super::sigint_zone::Entity as SigintZone;
 pub use super::sigint_zone_aor::Entity as SigintZoneAor;
 pub use super::sigint_zone_datasource::Entity as SigintZoneDatasource;

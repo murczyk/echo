@@ -220,6 +220,7 @@ pub mod sigint_unit_attachment_aor;
 pub mod sigint_unit_change;
 pub mod sigint_unit_changelog;
 pub mod sigint_unit_label;
+pub mod sigint_unit_orbit_combat_type;
 pub mod sigint_zone;
 pub mod sigint_zone_aor;
 pub mod sigint_zone_datasource;

@@ -1100,6 +1100,7 @@ where
             is_inconsistent: NotSet,
             updated_at: Set(rec.updated_at),
             present_in_orbit: NotSet,
+            combat_type_id: NotSet,
         };
 
         let new_rec = if new_record {

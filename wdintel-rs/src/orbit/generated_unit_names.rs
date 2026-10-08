@@ -524,6 +524,7 @@ mod tests {
 
     fn sigint_unit(name: &str) -> sigint_unit::Model {
         sigint_unit::Model {
+            combat_type_id: None,
             id: 1,
             other: String::new(),
             team_or_crew: String::new(),
