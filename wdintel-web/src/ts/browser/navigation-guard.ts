@@ -1,6 +1,11 @@
 import { getNavigationApi, type NavigationNavigateEvent } from './navigation-api';
 
 export const FORCED_NAVIGATION_EVENT = 'echo:forced-navigation';
+export const ECHO_NAVIGATION_EVENT = 'echo:navigation';
+export type EchoNavigationEventDetail = {
+  kind: 'push' | 'replace' | 'traverse' | 'load';
+  forced: boolean;
+};
 const HISTORY_INDEX = '__echoNavigationIndex';
 type Position = { index: number; url: string; state: unknown };
 type Pending = { cancel: () => void };
@@ -41,6 +46,10 @@ function finishTraversal(value: boolean) {
     clearTimeout(traversal.timeout);
     traversal.resolve(value);
   }
+}
+
+function publishNavigation(detail: EchoNavigationEventDetail) {
+  window.dispatchEvent(new CustomEvent(ECHO_NAVIGATION_EVENT, { detail }));
 }
 
 function runIntent(action: () => void | Promise<unknown>, destination?: string): Promise<boolean> {
@@ -84,12 +93,13 @@ export function prepareForcedNavigation() {
   window.dispatchEvent(new Event(FORCED_NAVIGATION_EVENT));
 }
 
-function commitNavigation(url: string, replace = false) {
+function commitNavigation(url: string, replace = false, forced = false) {
   const data = stateObject(window.history.state);
   if (!sameContext(url)) delete data.__echoBrowserBackOverlayIds;
   if (replace) window.history.replaceState(data, '', url);
   else window.history.pushState(data, '', url);
   window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
+  publishNavigation({ kind: replace ? 'replace' : 'push', forced });
 }
 
 export function requestNavigation(
@@ -100,13 +110,14 @@ export function requestNavigation(
   const destination = new URL(url, window.location.href);
   if (destination.origin !== window.location.origin) {
     if (options?.forced) prepareForcedNavigation();
+    publishNavigation({ kind: 'load', forced: options?.forced === true });
     if (options?.replace) window.location.replace(destination.href);
     else window.location.assign(destination.href);
     return Promise.resolve(true);
   }
   if (options?.forced) {
     prepareForcedNavigation();
-    commitNavigation(destination.href, options.replace);
+    commitNavigation(destination.href, options.replace, true);
     return Promise.resolve(true);
   }
   return runIntent(() => commitNavigation(destination.href, options?.replace), destination.href);
@@ -127,6 +138,7 @@ export function requestTraversal(delta: number): Promise<boolean> {
     : undefined;
   const destination = entry?.url ?? knownEntries.get(position.index + delta);
   const traverse = () => {
+    publishNavigation({ kind: 'traverse', forced: false });
     if (delta === -1) window.history.back();
     else window.history.go(delta);
   };

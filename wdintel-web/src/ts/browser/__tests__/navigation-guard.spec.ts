@@ -60,6 +60,22 @@ it('confirmed_navigation emits one normal popstate and preserves unrelated state
   expect(routes).toEqual(['/accepted']);
   expect(window.history.state.unrelated).toBe(7);
 });
+it('publishes structural navigation decisions without destination URLs', async () => {
+  const details: unknown[] = [];
+  const listener = (event: Event) => details.push((event as CustomEvent).detail);
+  window.addEventListener(navigation.ECHO_NAVIGATION_EVENT, listener);
+  disposers.push(() => window.removeEventListener(navigation.ECHO_NAVIGATION_EVENT, listener));
+
+  expect(await navigation.requestNavigation('/accepted?token=secret')).toBe(true);
+  expect(await navigation.requestNavigation('/forced', { forced: true, replace: true })).toBe(true);
+
+  expect(details).toEqual([
+    { kind: 'push', forced: false },
+    { kind: 'replace', forced: true },
+  ]);
+  expect(JSON.stringify(details)).not.toContain('accepted');
+  expect(JSON.stringify(details)).not.toContain('secret');
+});
 it('fallback restores Back and Forward before asking and replays accepted traversal once', async () => {
   await navigation.requestNavigation('/middle');
   await navigation.requestNavigation('/current');
