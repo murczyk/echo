@@ -34,6 +34,7 @@ export type DutySettingsHook = DutySettingsValue & {
   setShowClassicAnalysis: (value: boolean) => void;
   setDutyCollapseMediaPreviews: (value: boolean) => void;
   setMediaSummaryEnabled: (value: boolean) => void;
+  setAiPositionHighlightsEnabled: (value: boolean) => void;
   setMessageTextPreviewLines: (value: MessageTextPreviewLineLimit) => void;
   setMessageSortBy: (value: MessageTimeBasis) => void;
   setMessageAutoParseEnabled: (value: boolean) => void;
@@ -60,6 +61,7 @@ function normalizeDutySettings(
     dutyCollapseMediaPreviews:
       settings?.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
     mediaSummaryEnabled: settings?.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED,
+    aiPositionHighlightsEnabled: settings?.aiPositionHighlightsEnabled ?? false,
     messageAutoParseEnabled:
       settings?.messageAutoParseEnabled ?? DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
   };
@@ -188,6 +190,8 @@ export function useDutySettings(): DutySettingsHook {
       setSettings((current) => ({ ...current, showClassicAnalysis: value })),
     setDutyCollapseMediaPreviews: (value) =>
       setSettings((current) => ({ ...current, dutyCollapseMediaPreviews: value })),
+    setAiPositionHighlightsEnabled: (value) =>
+      setSettings((current) => ({ ...current, aiPositionHighlightsEnabled: value })),
     setMediaSummaryEnabled: (value) =>
       setSettings((current) => ({ ...current, mediaSummaryEnabled: value })),
     setMessageTextPreviewLines: (value) =>

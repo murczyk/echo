@@ -20,7 +20,7 @@ use actix_web::{get, put};
 use chrono::Utc;
 use sea_orm::{
     sea_query::OnConflict, ActiveValue::NotSet, ActiveValue::Set, ColumnTrait,
-    DatabaseConnection, EntityTrait, QueryFilter,
+    ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
 };
 
 fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
@@ -48,6 +48,9 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
         show_classic_analysis: m.show_classic_analysis,
         duty_collapse_media_previews: m.duty_collapse_media_previews,
         media_summary_enabled: m.media_summary_enabled,
+        ai_position_highlights_enabled: m
+            .ai_position_highlights_enabled
+            .unwrap_or(false),
         message_sort_by: match m.message_sort_by.as_deref() {
             Some("creation") => MessageTimeBasis::MessageCreation,
             _ => MessageTimeBasis::MessageInterception,
@@ -65,6 +68,10 @@ fn preserve_omitted_compatibility_fields(
 ) {
     if body.get("messageSortBy").is_none() {
         incoming.message_sort_by = existing.message_sort_by;
+    }
+    if body.get("aiPositionHighlightsEnabled").is_none() {
+        incoming.ai_position_highlights_enabled =
+            existing.ai_position_highlights_enabled;
     }
     if body.get("messageAutoParseEnabled").is_none() {
         incoming.message_auto_parse_enabled =
@@ -101,7 +108,8 @@ pub async fn user_settings_put(
     load_login(&env.dbx, &login_id).await.c(h!())?;
     let body = req.into_inner();
     let needs_existing = body.get("messageSortBy").is_none()
-        || body.get("messageAutoParseEnabled").is_none();
+        || body.get("messageAutoParseEnabled").is_none()
+        || body.get("aiPositionHighlightsEnabled").is_none();
     let mut dto: UserDutySettingsDto =
         serde_json::from_value(body.clone()).c(h!())?;
     if needs_existing {
@@ -145,6 +153,9 @@ pub async fn user_settings_put(
         show_classic_analysis: Set(dto.show_classic_analysis),
         duty_collapse_media_previews: Set(dto.duty_collapse_media_previews),
         media_summary_enabled: Set(dto.media_summary_enabled),
+        ai_position_highlights_enabled: Set(Some(
+            dto.ai_position_highlights_enabled,
+        )),
         message_sort_by: Set(Some(match dto.message_sort_by {
             MessageTimeBasis::MessageInterception => "interception".to_owned(),
             MessageTimeBasis::MessageCreation => "creation".to_owned(),
@@ -166,6 +177,7 @@ pub async fn user_settings_put(
                 user_settings::Column::ShowClassicAnalysis,
                 user_settings::Column::DutyCollapseMediaPreviews,
                 user_settings::Column::MediaSummaryEnabled,
+                user_settings::Column::AiPositionHighlightsEnabled,
                 user_settings::Column::MessageSortBy,
                 user_settings::Column::MessageAutoParseEnabled,
                 user_settings::Column::UpdatedAt,
@@ -176,6 +188,33 @@ pub async fn user_settings_put(
     .await
     .c(h!())?;
     Ok(Json(dto))
+}
+
+pub async fn ai_position_highlights_enabled<C>(
+    dbx: &C,
+    login_id: uuid::Uuid,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    if crate::system_settings::get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| settings.ai_position_highlights_enabled)
+        .unwrap_or(false)
+    {
+        return Ok(true);
+    }
+    Ok(user_settings::Entity::find()
+        .select_only()
+        .column(user_settings::Column::AiPositionHighlightsEnabled)
+        .filter(user_settings::Column::LoginId.eq(login_id))
+        .into_tuple::<Option<bool>>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .flatten()
+        .unwrap_or(false))
 }
 
 async fn load_login(

@@ -29,6 +29,7 @@ pub struct Model {
     pub media_summary_enabled: bool,
     pub message_sort_by: Option<String>,
     pub message_auto_parse_enabled: Option<bool>,
+    pub ai_position_highlights_enabled: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

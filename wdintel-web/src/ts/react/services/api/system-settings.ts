@@ -27,6 +27,7 @@ type SystemSettingsItemRaw = {
   disable_bot_tags?: boolean | null;
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
+  ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
   two_factor_auth_enabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'] | null;
   exclude_orbit_other_units?: boolean | null;
   messenger_media_cache_min_free_gib?: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -69,6 +70,7 @@ type SystemSettingsCurrentRspRaw = {
   disable_bot_tags?: boolean | null;
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
+  ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
   two_factor_auth_enabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'] | null;
   exclude_orbit_other_units?: boolean | null;
   autofix_echoim_missing_messages?: boolean;
@@ -108,6 +110,7 @@ type CreateSystemSettingsReqRaw = {
   disable_bot_tags: boolean;
   duty_exclude_menu_enabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysis_aor_filter_enabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
+  ai_position_highlights_enabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   two_factor_auth_enabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   exclude_orbit_other_units: boolean;
   messenger_media_cache_min_free_gib: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -157,6 +160,7 @@ export type SystemSettingsItem = {
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
+  aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   twoFactorAuthEnabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheMinFreeGib: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -199,6 +203,7 @@ export type SystemSettingsCurrent = {
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
+  aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   twoFactorAuthEnabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   excludeOrbitOtherUnits: boolean;
   autofixEchoimMissingMessages: boolean;
@@ -234,6 +239,7 @@ export type CreateSystemSettingsInput = {
   disableBotTags: boolean;
   dutyExcludeMenuEnabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
+  aiPositionHighlightsEnabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
   twoFactorAuthEnabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   excludeOrbitOtherUnits?: boolean;
   messengerMediaCacheMinFreeGib?: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -280,6 +286,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     disableBotTags: raw.disable_bot_tags ?? false,
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
+    aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
     twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
     excludeOrbitOtherUnits: raw.exclude_orbit_other_units ?? true,
     messengerMediaCacheMinFreeGib: raw.messenger_media_cache_min_free_gib ?? 10,
@@ -324,6 +331,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     disableBotTags: raw.disable_bot_tags ?? false,
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
+    aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
     twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
     excludeOrbitOtherUnits: raw.exclude_orbit_other_units ?? true,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
@@ -368,6 +376,7 @@ export async function createSystemSettings(
     disable_bot_tags: input.disableBotTags,
     duty_exclude_menu_enabled: input.dutyExcludeMenuEnabled ?? true,
     analysis_aor_filter_enabled: input.analysisAorFilterEnabled ?? true,
+    ai_position_highlights_enabled: input.aiPositionHighlightsEnabled ?? false,
     two_factor_auth_enabled: input.twoFactorAuthEnabled ?? true,
     exclude_orbit_other_units: input.excludeOrbitOtherUnits ?? true,
     messenger_media_cache_min_free_gib: input.messengerMediaCacheMinFreeGib ?? 10,

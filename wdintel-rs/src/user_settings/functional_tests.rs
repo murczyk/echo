@@ -148,3 +148,90 @@ async fn issue_3620_migration_enables_existing_users_and_preserves_later_opt_out
         .unwrap();
     assert!(model_to_dto(&row).message_auto_parse_enabled);
 }
+
+#[actix_web::test]
+#[serial]
+async fn ai_position_opt_in_survives_older_clients_3064() {
+    let env = crate::functest::tests::cleanup().await.unwrap();
+    let login = crate::functest::tests::find_test_login(&env.dbx)
+        .await
+        .unwrap();
+    let sessions =
+        RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
+            .await
+            .unwrap();
+    let app = test::init_service(
+        App::new()
+            .app_data(Data::from(env.clone()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(sessions, Key::generate()))
+            .route("/test/login/{login}", web::post().to(sign_in))
+            .service(user_settings_get)
+            .service(user_settings_put),
+    )
+    .await;
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/test/login/{}", login.id))
+            .to_request(),
+    )
+    .await;
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let settings: UserDutySettingsDto = test::call_and_read_body_json(
+        &app,
+        test::TestRequest::get()
+            .uri("/api/user/settings")
+            .cookie(cookie.clone())
+            .to_request(),
+    )
+    .await;
+    assert!(!settings.ai_position_highlights_enabled);
+    let mut settings = serde_json::to_value(settings).unwrap();
+    settings["aiPositionHighlightsEnabled"] = true.into();
+    let saved: UserDutySettingsDto = test::call_and_read_body_json(
+        &app,
+        test::TestRequest::put()
+            .uri("/api/user/settings")
+            .cookie(cookie.clone())
+            .set_json(&settings)
+            .to_request(),
+    )
+    .await;
+    assert!(saved.ai_position_highlights_enabled);
+    settings
+        .as_object_mut()
+        .unwrap()
+        .remove("aiPositionHighlightsEnabled");
+    settings["tagsLayout"] = "hidden".into();
+    let saved: UserDutySettingsDto = test::call_and_read_body_json(
+        &app,
+        test::TestRequest::put()
+            .uri("/api/user/settings")
+            .cookie(cookie.clone())
+            .set_json(&settings)
+            .to_request(),
+    )
+    .await;
+    assert!(saved.ai_position_highlights_enabled);
+    assert_eq!(saved.tags_layout, DutyTagsLayout::Hidden);
+    settings["aiPositionHighlightsEnabled"] = false.into();
+    let _: UserDutySettingsDto = test::call_and_read_body_json(
+        &app,
+        test::TestRequest::put()
+            .uri("/api/user/settings")
+            .cookie(cookie.clone())
+            .set_json(&settings)
+            .to_request(),
+    )
+    .await;
+    let settings: UserDutySettingsDto = test::call_and_read_body_json(
+        &app,
+        test::TestRequest::get()
+            .uri("/api/user/settings")
+            .cookie(cookie)
+            .to_request(),
+    )
+    .await;
+    assert!(!settings.ai_position_highlights_enabled);
+}
