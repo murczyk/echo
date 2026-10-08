@@ -218,6 +218,26 @@ describe('browser debug recorder store', () => {
     });
   });
 
+  it('sanitizes collector-provided routes before persistence', () => {
+    const storage = new MemoryStorage();
+    const recorder = createBrowserDebugRecorder(dependencies(storage));
+    recorder.configure(metadata);
+    recorder.start();
+    recorder.record({
+      kind: 'http.started',
+      route: 'https://secret.example/api/messages/42?token=ECHO_SECRET_SENTINEL#private',
+      details: { requestId: 'request-42', method: 'GET' },
+    });
+    recorder.flush();
+
+    const raw = storage.values.get(DEBUG_STORAGE_KEY)!;
+    const session = loadDebugSession(storage, Date.now());
+    expect(session?.events[0]?.route).toBe('/api/messages/{id_1}');
+    expect(raw).not.toContain('secret.example');
+    expect(raw).not.toContain('ECHO_SECRET_SENTINEL');
+    expect(raw).not.toContain('request-42');
+  });
+
   it('keeps ready data after a failed download and clears it after a successful retry', () => {
     const storage = new MemoryStorage();
     const downloadMarkdown = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);

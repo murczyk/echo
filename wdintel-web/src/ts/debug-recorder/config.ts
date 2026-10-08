@@ -63,6 +63,7 @@ export const DEBUG_SAFE_DETAIL_KEYS = new Set([
   'kind',
   'layoutShiftValue',
   'loading',
+  'message',
   'method',
   'navigationType',
   'nearBottom',
@@ -83,6 +84,7 @@ export const DEBUG_SAFE_DETAIL_KEYS = new Set([
   'visible',
   'visibleCount',
   'width',
+  'frames',
 ]);
 
 export const DEBUG_IDENTIFIER_DETAIL_KEYS = new Set([

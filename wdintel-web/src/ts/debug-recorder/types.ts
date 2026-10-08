@@ -14,6 +14,7 @@ export type DebugTarget = {
 export type DebugEventInput = {
   kind: string;
   source?: string;
+  route?: string | URL;
   target?: DebugTarget | EventTarget | null;
   details?: Record<string, unknown>;
 };
@@ -21,7 +22,7 @@ export type DebugEventInput = {
 export type DebugEventContext = {
   seq: number;
   tMs: number;
-  route: string;
+  route: string | URL;
 };
 
 export type DebugEvent = {

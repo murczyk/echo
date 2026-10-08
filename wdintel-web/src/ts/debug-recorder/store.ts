@@ -182,7 +182,7 @@ export function createBrowserDebugRecorder(
     const event = sanitizer.sanitizeInput(input, {
       seq: session.nextSeq,
       tMs: atMs - session.startedAt,
-      route: getRoute(),
+      route: input.route ?? getRoute(),
     });
     if (!event) {
       session.rejectedEvents += 1;

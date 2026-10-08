@@ -22,7 +22,7 @@ const DYNAMIC_PATH_PATTERN = /^(?:\d+|[0-9a-f]{16,})$/i;
 const SAFE_TOKEN_PATTERN = /^[a-z0-9][a-z0-9._:-]*$/i;
 const SAFE_TEST_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
 const DYNAMIC_TEST_ID_PATTERN = /(?:\d{4,}|[0-9a-f]{8}-[0-9a-f-]{20,})/i;
-const URL_PATTERN = /(?:https?:\/\/|www\.)\S+/gi;
+const URL_PATTERN = /(?:(?:https?|wss?|file|blob|chrome-extension|moz-extension):\/\/|www\.)\S+/gi;
 const UUID_IN_TEXT_PATTERN = /\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/gi;
 const IP_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
 const COORDINATE_PATTERN = /\b-?\d{1,3}\.\d{3,}\s*[,;]\s*-?\d{1,3}\.\d{3,}\b/g;
@@ -60,6 +60,16 @@ function copyAliases(aliases: DebugAliasTable): DebugAliasTable {
   return Object.fromEntries(
     Object.entries(aliases).map(([scope, entries]) => [scope, { ...entries }]),
   );
+}
+
+function dataPropertyValue(value: object, key: string): unknown {
+  let current: object | null = value;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(current, key);
+    if (descriptor && 'value' in descriptor) return descriptor.value;
+    current = Object.getPrototypeOf(current);
+  }
+  return undefined;
 }
 
 type DebugSanitizerOptions = {
@@ -205,7 +215,7 @@ export function createDebugSanitizer(
   const safeError = (value: unknown): Record<string, DebugSafeValue> => {
     if (typeof value !== 'object' || value === null) return { errorClass: typeof value };
     const descriptors = Object.getOwnPropertyDescriptors(value);
-    const name = normalizeToken(descriptors.name?.value, 'Error');
+    const name = normalizeToken(dataPropertyValue(value, 'name'), 'Error');
     const result: Record<string, DebugSafeValue> = { errorClass: name };
     const code = descriptors.code?.value;
     if (typeof code === 'string' || typeof code === 'number') {
