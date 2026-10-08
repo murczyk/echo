@@ -281,7 +281,7 @@ init user route _ =
             , statsCountGeneration = 0
             , statsCountPending = []
             , statsCountRemaining = 0
-            , statsCountHadSuccess = False
+            , statsCountPartial = emptyCountStatsRsp
             , statsCountError = Nothing
             , networksStats = NotAsked
             , metadataStats = NotAsked
@@ -880,7 +880,7 @@ startAnalysisCountStats req model =
         | statsCountGeneration = generation
         , statsCountPending = List.drop analysisCountMaxConcurrent requests
         , statsCountRemaining = List.length requests
-        , statsCountHadSuccess = False
+        , statsCountPartial = emptyCountStatsRsp
         , statsCountError = Nothing
       }
     , E.batch
@@ -896,7 +896,7 @@ cancelAnalysisCountStats model =
         | statsCountGeneration = model.statsCountGeneration + 1
         , statsCountPending = []
         , statsCountRemaining = 0
-        , statsCountHadSuccess = False
+        , statsCountPartial = emptyCountStatsRsp
         , statsCountError = Nothing
       }
     , cancelPreviousAnalysisCountStats model
@@ -918,47 +918,36 @@ finishAnalysisCountRequest generation req result model =
                     _ ->
                         model.statsCountError
 
-            hadSuccess =
-                case result of
-                    Ok _ ->
-                        True
-
-                    Err _ ->
-                        model.statsCountHadSuccess
-
-            counts =
+            partialCounts =
                 case result of
                     Ok updateCounts ->
-                        model.counts
-                            |> RD.withDefault emptyCountStatsRsp
-                            |> updateCounts
-                            |> Success
+                        updateCounts model.statsCountPartial
 
                     Err _ ->
-                        model.counts
+                        model.statsCountPartial
 
             remaining =
                 Basics.max 0 (model.statsCountRemaining - 1)
 
-            completedModel =
+            counts =
+                if remaining == 0 then
+                    case firstError of
+                        Just error ->
+                            Failure error
+
+                        Nothing ->
+                            Success partialCounts
+
+                else
+                    model.counts
+
+            finalModel =
                 { model
                     | counts = counts
                     , statsCountRemaining = remaining
-                    , statsCountHadSuccess = hadSuccess
+                    , statsCountPartial = partialCounts
                     , statsCountError = firstError
                 }
-
-            finalModel =
-                if remaining == 0 && not hadSuccess then
-                    case firstError of
-                        Just error ->
-                            { completedModel | counts = Failure error }
-
-                        Nothing ->
-                            completedModel
-
-                else
-                    completedModel
 
             ( nextModel, nextEffect ) =
                 case finalModel.statsCountPending of

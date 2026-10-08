@@ -36,7 +36,7 @@ type alias Model =
     , statsCountGeneration : Int
     , statsCountPending : List StatsCountRequest
     , statsCountRemaining : Int
-    , statsCountHadSuccess : Bool
+    , statsCountPartial : B.CountStatsRsp
     , statsCountError : Maybe ApiError
     , profiles : Dict String (Maybe B.SignalProfileRsp)
     , aorsSelected : List String

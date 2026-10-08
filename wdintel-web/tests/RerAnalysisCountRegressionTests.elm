@@ -67,6 +67,22 @@ withDateRange since till model =
     }
 
 
+withCountContext testFn =
+    withContext <|
+        \shared route initial ->
+            let
+                dated =
+                    withDateRange 0 1000 initial
+
+                req =
+                    Query.analysisStatsParams (Time.millisToPosix 0) (Time.millisToPosix 1000) dated
+
+                pending =
+                    { dated | counts = Loading, statsCountGeneration = 1, statsCountRemaining = 2 }
+            in
+            testFn shared route req pending
+
+
 suite : Test
 suite =
     describe "RerAnalysis count regressions"
@@ -173,6 +189,87 @@ suite =
                                         Expect.fail "failed generation remained loading"
                             ]
                             ()
+        , test "#3001 keeps unfinished counts loading and publishes successful zeroes only at completion" <|
+            \_ ->
+                withCountContext <|
+                    \shared route req pending ->
+                        let
+                            ( firstResponse, _ ) =
+                                RerAnalysis.update user shared route (GotStatsCount 1 req GroupsCountField (Ok 42)) pending
+
+                            ( completed, _ ) =
+                                RerAnalysis.update user shared route (GotStatsCount 1 req SendersCountField (Ok 0)) firstResponse
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal Loading firstResponse.counts
+                            , \_ -> Expect.equal 1 firstResponse.statsCountRemaining
+                            , \_ -> Expect.equal 0 completed.statsCountRemaining
+                            , \_ ->
+                                case completed.counts of
+                                    Success counts ->
+                                        Expect.equal ( 42, 0 ) ( counts.groupsCount, counts.sendersCount )
+
+                                    _ ->
+                                        Expect.fail "successful counts were not published at completion"
+                            ]
+                            ()
+        , test "#3001 never publishes mixed successful and failed counts as complete in either response order" <|
+            \_ ->
+                withCountContext <|
+                    \shared route req pending ->
+                        let
+                            error =
+                                { httpError = Http.NetworkError
+                                , formErrors = Dict.empty
+                                , errors = [ "failure" ]
+                                }
+
+                            checkResponses ( firstResult, lastResult ) _ =
+                                let
+                                    ( firstResponse, _ ) =
+                                        RerAnalysis.update user shared route (GotStatsCount 1 req GroupsCountField firstResult) pending
+
+                                    ( completed, _ ) =
+                                        RerAnalysis.update user shared route (GotStatsCount 1 req SendersCountField lastResult) firstResponse
+                                in
+                                Expect.all
+                                    [ \_ -> Expect.equal Loading firstResponse.counts
+                                    , \_ -> Expect.equal 0 completed.statsCountRemaining
+                                    , \_ -> Expect.equal (Failure error) completed.counts
+                                    ]
+                                    ()
+                        in
+                        Expect.all
+                            (List.map checkResponses [ ( Ok 42, Err error ), ( Err error, Ok 42 ) ])
+                            ()
+        , test "#3001 keeps previous complete counts marked for reload while new counts are unfinished" <|
+            \_ ->
+                withCountContext <|
+                    \shared route req pending ->
+                        let
+                            ( firstResponse, _ ) =
+                                RerAnalysis.update user shared route (GotStatsCount 1 req GroupsCountField (Ok 42)) pending
+
+                            ( completed, _ ) =
+                                RerAnalysis.update user shared route (GotStatsCount 1 req SendersCountField (Ok 9)) firstResponse
+
+                            ( reloading, _ ) =
+                                RerAnalysis.update user shared route Refresh completed
+
+                            ( partialReload, _ ) =
+                                RerAnalysis.update user shared route (GotStatsCount reloading.statsCountGeneration req GroupsCountField (Ok 43)) reloading
+                        in
+                        case completed.counts of
+                            Success counts ->
+                                Expect.all
+                                    [ \_ -> Expect.equal (NeedsReload counts) reloading.counts
+                                    , \_ -> Expect.equal (NeedsReload counts) partialReload.counts
+                                    , \_ -> Expect.equal 10 partialReload.statsCountRemaining
+                                    ]
+                                    ()
+
+                            _ ->
+                                Expect.fail "initial counts were not completed"
         , test "#3001 queues canonical unit-match counts with bounded concurrency" <|
             \_ ->
                 withContext <|
