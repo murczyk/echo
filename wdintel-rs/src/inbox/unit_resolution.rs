@@ -9,6 +9,7 @@ use crate::config::{
     INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE,
     INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE,
     INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT,
+    INBOX_UNIT_LIST_SEPARATOR_PATTERN,
     INBOX_UNIT_STRUCTURAL_PREFILTER_MIN_TRIGRAM_CHARS,
 };
 use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
@@ -639,6 +640,16 @@ where
 }
 
 fn is_single_unit_hierarchy(value: &str) -> bool {
+    lazy_static! {
+        static ref UNIT_LIST_SEPARATOR_RE: regex::Regex =
+            RegexBuilder::new(INBOX_UNIT_LIST_SEPARATOR_PATTERN)
+                .case_insensitive(true)
+                .build()
+                .expect("invalid inbox unit list separator regex");
+    }
+    if UNIT_LIST_SEPARATOR_RE.is_match(value) {
+        return false;
+    }
     let segments =
         crate::unit::parse_library_unit_typed_segments_any_order(value);
     let echelons = segments
@@ -2472,7 +2483,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let hierarchy = unique_unit_label();
+        let hierarchy = format!("{} 1 ТА", unique_unit_label());
         let parent_orbit = insert_orbit_unit(
             &env.dbx,
             &hierarchy,
@@ -2512,6 +2523,37 @@ mod tests {
         .unwrap();
 
         assert_resolved_item_units(&env.dbx, item.id, &[child.id]).await;
+        for (label, unit_id) in
+            [(&hierarchy[..], parent.id), ("3 пдб", child.id)]
+        {
+            sigint_unit_label::ActiveModel {
+                sigint_unit_id: Set(unit_id),
+                label: Set(label.to_string()),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        for separator in ["та", "ТА", "і", "й", "и", "and", ";", "&", "+"]
+        {
+            let source = format!("{hierarchy} {separator} 3 пдб");
+            resolve_and_sync_inbox_item(
+                &env.dbx,
+                item.id,
+                item.id_uuid,
+                Some(&source),
+                Some(&source),
+            )
+            .await
+            .unwrap();
+            assert_resolved_item_units(
+                &env.dbx,
+                item.id,
+                &[parent.id, child.id],
+            )
+            .await;
+        }
         let canonical = format!("3 пдб {hierarchy}");
         sigint_unit_label::ActiveModel {
             sigint_unit_id: Set(parent.id),
