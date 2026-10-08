@@ -1386,7 +1386,7 @@ pub const INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE: usize = 5_000;
 pub const INBOX_ITEM_UNIT_REPROCESS_BATCH_SIZE: u64 = 500;
 pub const INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT: usize = 128;
 pub const INBOX_UNIT_LIST_SEPARATOR_PATTERN: &str =
-    r"\p{L}\s+(?:та|і|й|и|and)\b|[;&+]";
+    r"\s+(?:та|і|й|и|and)\b|[;&+]";
 pub const INBOX_UNIT_STRUCTURAL_PREFILTER_MIN_TRIGRAM_CHARS: usize = 3;
 pub const SIGINT_INBOX_NETWORK_CHECK_SLEEP_SECS: u64 = 2 * 60 * 60;
 pub const SIGINT_INBOX_NETWORK_CHECK_BATCH_SIZE: u64 = 500;

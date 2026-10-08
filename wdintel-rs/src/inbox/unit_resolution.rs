@@ -168,7 +168,10 @@ fn unit_text_candidates(
 ) -> Vec<UnitTextCandidate> {
     let (source, source_texts): (UnitTextSource, Vec<&str>) =
         if let Some(unit_v2) = nonempty(unit_v2) {
-            (UnitTextSource::UnitV2, unit_v2.split(',').collect_vec())
+            (
+                UnitTextSource::UnitV2,
+                unit_v2.split(',').flat_map(split_unit_list).collect_vec(),
+            )
         } else if let Some(unit) = nonempty(unit) {
             (UnitTextSource::Unit, vec![unit])
         } else {
@@ -639,7 +642,7 @@ where
     }
 }
 
-fn is_single_unit_hierarchy(value: &str) -> bool {
+fn split_unit_list(value: &str) -> Vec<&str> {
     lazy_static! {
         static ref UNIT_LIST_SEPARATOR_RE: regex::Regex =
             RegexBuilder::new(INBOX_UNIT_LIST_SEPARATOR_PATTERN)
@@ -647,7 +650,27 @@ fn is_single_unit_hierarchy(value: &str) -> bool {
                 .build()
                 .expect("invalid inbox unit list separator regex");
     }
-    if UNIT_LIST_SEPARATOR_RE.is_match(value) {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    for separator in UNIT_LIST_SEPARATOR_RE.find_iter(value) {
+        let follows_unit_number = value[..separator.start()]
+            .split_whitespace()
+            .next_back()
+            .is_some_and(|word| word.chars().all(|c| c.is_ascii_digit()));
+        if separator.as_str().trim().to_lowercase() == "та"
+            && follows_unit_number
+        {
+            continue;
+        }
+        parts.push(&value[start..separator.start()]);
+        start = separator.end();
+    }
+    parts.push(&value[start..]);
+    parts
+}
+
+fn is_single_unit_hierarchy(value: &str) -> bool {
+    if split_unit_list(value).len() > 1 {
         return false;
     }
     let segments =
@@ -1619,7 +1642,8 @@ pub(crate) async fn backfill_inbox_unit_links(
     let mut last_id = after_inbox_item_id;
     let mut processed = 0_u64;
     loop {
-        let items = sigint_inbox_item::Entity::find()
+        let transaction = db.begin().await.context(h!())?;
+        let mut items = sigint_inbox_item::Entity::find()
             .join(
                 JoinType::InnerJoin,
                 sigint_inbox_item::Relation::SignalMessage.def(),
@@ -1629,17 +1653,18 @@ pub(crate) async fn backfill_inbox_unit_links(
             .filter(signal_message::Column::CreatedAt.gte(start_ts))
             .filter(signal_message::Column::CreatedAt.lt(till_ts))
             .order_by_asc(sigint_inbox_item::Column::Id)
-            .limit(FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE)
-            .all(db)
-            .await
-            .context(h!())?;
+            .limit(FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE);
+        QueryTrait::query(&mut items).lock_with_tables(
+            LockType::NoKeyUpdate,
+            [sigint_inbox_item::Entity],
+        );
+        let items = items.all(&transaction).await.context(h!())?;
         if items.is_empty() {
             break;
         }
         let item_ids = items.iter().map(|item| item.id).collect_vec();
         let last_item_id = items.last().unwrap().id;
         let mut cache = InboxUnitBackfillCache::default();
-        let transaction = db.begin().await.context(h!())?;
         for item in &items {
             resolve_and_sync_inbox_item_cached(
                 &transaction,
@@ -1655,6 +1680,13 @@ pub(crate) async fn backfill_inbox_unit_links(
         sync_network_unit_links(&transaction, &item_ids)
             .await
             .context(h!())?;
+        crate::stats::enqueue_group_stats_recalculation_for_messages(
+            &transaction,
+            &item_ids,
+            "backfilled inbox unit links",
+        )
+        .await
+        .context(h!())?;
         transaction.commit().await.context(h!())?;
         let batch_size = u64::try_from(items.len()).context(h!())?;
         processed += batch_size;
@@ -2582,6 +2614,94 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn explicit_unit_lists_preserve_fragments_3113() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let brigade_label = unique_unit_label();
+        let brigade = insert_named_unit_with_label(
+            &env.dbx,
+            &brigade_label,
+            &brigade_label,
+        )
+        .await;
+        let battalion =
+            insert_named_unit_with_label(&env.dbx, "3 пдб", "3 пдб").await;
+        let named =
+            insert_named_unit_with_label(&env.dbx, "БАРС-08", "БАРС-08").await;
+        let orbit_id = insert_orbit_unit(
+            &env.dbx,
+            &format!("3 пдб / {brigade_label}"),
+            None,
+            "battalion",
+            &[battalion.id],
+        )
+        .await;
+        let mut expected = Vec::new();
+        for separator in ["та", "ТА", "і", "й", "и", "and", ";", "&", "+"]
+        {
+            for (left, right, ids) in [
+                (
+                    "3 пдб",
+                    brigade_label.as_str(),
+                    vec![brigade.id, battalion.id],
+                ),
+                ("БАРС-08", "3 пдб", vec![battalion.id, named.id]),
+            ] {
+                let source = format!("{left} {separator} {right}");
+                let item = insert_inbox_item(
+                    &env.dbx,
+                    Some(&source),
+                    Some(&brigade_label),
+                    None,
+                )
+                .await;
+                resolve_and_sync_inbox_item(
+                    &env.dbx,
+                    item.id,
+                    item.id_uuid,
+                    item.unit_v2.as_deref(),
+                    item.unit.as_deref(),
+                )
+                .await
+                .unwrap();
+                assert_preserved_unit_v2(
+                    &env.dbx,
+                    item.id,
+                    &brigade_label,
+                    &source,
+                    &ids,
+                    None,
+                )
+                .await;
+                expected.push((item.id, source, ids));
+            }
+        }
+        let now = Utc::now().naive_utc();
+        backfill_inbox_unit_links(
+            &env.dbx,
+            now - Duration::minutes(1),
+            now + Duration::minutes(1),
+            0,
+            None,
+        )
+        .await
+        .unwrap();
+        for (item_id, source, ids) in expected {
+            assert_preserved_unit_v2(
+                &env.dbx,
+                item_id,
+                &brigade_label,
+                &source,
+                &ids,
+                None,
+            )
+            .await;
+        }
+        delete_orbit_units(&env.dbx, vec![orbit_id]).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn resolved_parser_texts_do_not_queue_unresolved_fallback() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
@@ -3399,6 +3519,15 @@ mod tests {
         .unwrap();
         let skipped_item = insert_inbox_item(&env.dbx, None, None, None).await;
         let resumed_item = insert_inbox_item(&env.dbx, None, None, None).await;
+        crate::functest::tests::mk_signal_message_group(
+            &env.dbx,
+            crate::entities::signal_message_group::ActiveModel {
+                signal_message_id: Set(resumed_item.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         for inbox_item_id in [skipped_item.id, resumed_item.id] {
             sigint_inbox_item_network::ActiveModel {
                 sigint_inbox_item_id: Set(inbox_item_id),
@@ -3441,6 +3570,58 @@ mod tests {
             .await,
             vec![unit.id]
         );
+        let tasks =
+            crate::entities::group_stats_recalculation_task::Entity::find()
+                .all(&env.dbx)
+                .await
+                .unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert!(tasks[0].started_at.is_none());
+        assert!(tasks[0].completed_at.is_none());
+        assert!(tasks[0].since_ts <= now);
+        assert!(tasks[0].till_ts > now);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn backfill_reconciles_committed_source_edits_3113() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let (labels, _, unit_ids) =
+            conflicting_unit_match_fixtures(&env.dbx).await;
+        let item = insert_inbox_item(
+            &env.dbx,
+            Some(&labels[0]),
+            None,
+            Some(unit_ids[0]),
+        )
+        .await;
+        let writer = env.dbx.begin().await.unwrap();
+        sigint_inbox_item::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item::Column::UnitV2,
+                Expr::value(labels[1].clone()),
+            )
+            .filter(sigint_inbox_item::Column::Id.eq(item.id))
+            .exec(&writer)
+            .await
+            .unwrap();
+        let now = Utc::now().naive_utc();
+        let backfill = backfill_inbox_unit_links(
+            &env.dbx,
+            now - Duration::minutes(1),
+            now + Duration::minutes(1),
+            0,
+            None,
+        );
+        tokio::pin!(backfill);
+        let result =
+            tokio::time::timeout(StdDuration::from_millis(100), &mut backfill)
+                .await;
+        writer.commit().await.unwrap();
+        assert!(result.is_err(), "backfill must wait for the source edit");
+        assert_eq!(backfill.await.unwrap(), 1);
+        assert_resolved_item_units(&env.dbx, item.id, &[unit_ids[1]]).await;
     }
 
     #[tokio::test]
