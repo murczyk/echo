@@ -21,11 +21,13 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let latest: HookResult | null = null;
 let queryState = emptyQueryState();
+let onError = vi.fn();
+let onUnauthorized = vi.fn(() => false);
 
 function Harness() {
   latest = useAnalysisTopSidebarData({
-    onError: vi.fn(),
-    onUnauthorized: vi.fn(() => false),
+    onError,
+    onUnauthorized,
     optionsFreqValues: ['100.0000'],
     queryState,
   });
@@ -48,6 +50,8 @@ beforeEach(() => {
   document.body.appendChild(container);
   latest = null;
   queryState = emptyQueryState();
+  onError = vi.fn();
+  onUnauthorized = vi.fn(() => false);
 });
 
 afterEach(() => {
@@ -64,10 +68,12 @@ afterEach(() => {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, reject, resolve };
 }
 
 function validQueryState() {
@@ -167,5 +173,105 @@ describe('useAnalysisTopSidebarData', () => {
     });
     expect(latest?.topUnits).toEqual([{ key: 'Unit 2', count: 2, value: 'unit-id:2' }]);
     expect(latest?.rightSidebarOutdated).toBe(false);
+  });
+
+  it.each(['units', 'locations'] as const)(
+    'keeps stale rows and clears loading after a failed %s refresh',
+    async (failedFacet) => {
+      queryState = validQueryState();
+      api.fetchAnalysisUnits.mockResolvedValue({
+        units: [{ name: 'Unit 1', count: 5, unitId: 1 }],
+      });
+      api.fetchAnalysisLocations.mockResolvedValue({
+        locations: [{ location: 'Kyiv', count: 4 }],
+      });
+      renderHook();
+
+      await act(async () => {
+        await latest?.loadTopSidebarData();
+      });
+      act(() => {
+        latest?.invalidateRightSidebarData();
+      });
+      if (failedFacet === 'units') {
+        api.fetchAnalysisUnits.mockRejectedValueOnce(new Error('units refresh failed'));
+      } else {
+        api.fetchAnalysisLocations.mockRejectedValueOnce(new Error('locations refresh failed'));
+      }
+
+      await act(async () => {
+        await latest?.loadTopSidebarData();
+      });
+
+      expect(latest?.rightSidebarLoading).toBe(false);
+      expect(latest?.rightSidebarOutdated).toBe(true);
+      expect(latest?.topUnits).toEqual([{ key: 'Unit 1', count: 5, value: 'unit-id:1' }]);
+      expect(latest?.topLocations).toEqual([{ key: 'Kyiv', count: 4 }]);
+      expect(onError).toHaveBeenCalledWith(
+        failedFacet === 'units' ? 'units refresh failed' : 'locations refresh failed',
+      );
+
+      api.fetchAnalysisUnits.mockResolvedValue({
+        units: [{ name: 'Unit 2', count: 2, unitId: 2 }],
+      });
+      api.fetchAnalysisLocations.mockResolvedValue({
+        locations: [{ location: 'Lviv', count: 2 }],
+      });
+      await act(async () => {
+        await latest?.loadTopSidebarData();
+      });
+
+      expect(latest?.rightSidebarLoading).toBe(false);
+      expect(latest?.rightSidebarOutdated).toBe(false);
+      expect(latest?.topUnits).toEqual([{ key: 'Unit 2', count: 2, value: 'unit-id:2' }]);
+      expect(latest?.topLocations).toEqual([{ key: 'Lviv', count: 2 }]);
+    },
+  );
+
+  it('ignores an obsolete refresh failure while a newer refresh succeeds', async () => {
+    queryState = validQueryState();
+    api.fetchAnalysisUnits.mockResolvedValue({
+      units: [{ name: 'Unit 1', count: 5, unitId: 1 }],
+    });
+    api.fetchAnalysisLocations.mockResolvedValue({
+      locations: [{ location: 'Kyiv', count: 4 }],
+    });
+    renderHook();
+    await act(async () => {
+      await latest?.loadTopSidebarData();
+    });
+
+    const staleUnits = deferred<{
+      units: Array<{ name: string; count: number; unitId: number }>;
+    }>();
+    const staleLocations = deferred<{ locations: Array<{ location: string; count: number }> }>();
+    api.fetchAnalysisUnits.mockReturnValueOnce(staleUnits.promise).mockResolvedValueOnce({
+      units: [{ name: 'Unit 2', count: 2, unitId: 2 }],
+    });
+    api.fetchAnalysisLocations.mockReturnValueOnce(staleLocations.promise).mockResolvedValueOnce({
+      locations: [{ location: 'Lviv', count: 2 }],
+    });
+    act(() => {
+      latest?.invalidateRightSidebarData();
+      void latest?.loadTopSidebarData();
+      latest?.invalidateRightSidebarData();
+      void latest?.loadTopSidebarData();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(latest?.rightSidebarLoading).toBe(false);
+    expect(latest?.rightSidebarOutdated).toBe(false);
+    expect(latest?.topUnits).toEqual([{ key: 'Unit 2', count: 2, value: 'unit-id:2' }]);
+
+    await act(async () => {
+      staleUnits.reject(new Error('obsolete refresh failed'));
+      staleLocations.resolve({ locations: [{ location: 'Obsolete', count: 1 }] });
+      await Promise.resolve();
+    });
+    expect(onError).not.toHaveBeenCalled();
+    expect(latest?.rightSidebarOutdated).toBe(false);
+    expect(latest?.topLocations).toEqual([{ key: 'Lviv', count: 2 }]);
   });
 });

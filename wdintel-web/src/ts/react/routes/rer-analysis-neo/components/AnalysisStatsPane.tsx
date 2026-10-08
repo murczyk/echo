@@ -71,9 +71,13 @@ export function AnalysisStatsPane({
 
   return (
     <Stack spacing={0}>
-      {rightSidebarOutdated ? (
+      {rightSidebarLoading ? (
         <Alert severity="info" sx={{ borderRadius: 0 }}>
           Дані зведення оновлюються для поточних фільтрів.
+        </Alert>
+      ) : rightSidebarOutdated ? (
+        <Alert severity="info" sx={{ borderRadius: 0 }}>
+          Дані зведення відповідають попереднім фільтрам.
         </Alert>
       ) : null}
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>

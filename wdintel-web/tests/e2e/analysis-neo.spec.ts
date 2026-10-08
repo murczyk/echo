@@ -60,6 +60,41 @@ test.describe('@smoke @regression', () => {
     await expect(summaryPanel.getByText('123.4', { exact: true })).toBeVisible();
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3452
+  test('@regression marks retained summary data as stale after a sidebar refresh failure', async ({
+    page,
+  }) => {
+    let failRefresh = false;
+    await setupAnalysisNeoPage(page);
+    await page.route('**/api/rer/analysis/stats/units', async (route) => {
+      if (failRefresh) {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+        return;
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ units: [{ unit_id: 1, name: 'Старий підрозділ', count: 3 }] }),
+      });
+    });
+    await page.route('**/api/rer/analysis/stats/locations', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ locations: [{ location: 'Київ', count: 2 }] }),
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+    await page.getByRole('button', { name: 'Розгорнути праву панель' }).click();
+    await page.getByRole('tab', { name: 'Зведення' }).click();
+    await expect(page.getByText('Старий підрозділ', { exact: true })).toBeVisible();
+
+    failRefresh = true;
+    await page.getByRole('button', { name: 'Оновити' }).click();
+
+    await expect(page.getByText('Дані зведення відповідають попереднім фільтрам.')).toBeVisible();
+    await expect(page.getByText('Дані зведення оновлюються для поточних фільтрів.')).toHaveCount(0);
+    await expect(page.getByText('Старий підрозділ', { exact: true })).toBeVisible();
+  });
+
   test('@regression browses bounded callsign pages and retains a selected group', async ({
     page,
   }) => {
