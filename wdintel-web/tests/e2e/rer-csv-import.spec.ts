@@ -46,6 +46,7 @@ test('@regression #3650 historical CSV import requires preflight', async ({ page
         goi_host: null,
         goi_integrations: [],
         last_release_seen: null,
+        rer_report_eligible: false,
       });
       return;
     }

@@ -24,6 +24,8 @@ type UserLike = {
   goi_integrations?: unknown[] | null;
   lastReleaseSeen?: string | null;
   last_release_seen?: string | null;
+  rerReportEligible?: boolean;
+  rer_report_eligible?: boolean;
 };
 
 type SettingsSaveReqBody = {
@@ -48,6 +50,7 @@ function normalizeUser(raw: UserLike | null | undefined): User {
       raw?.goi_integrations ??
       []) as User['goiIntegrations'],
     lastReleaseSeen: raw?.lastReleaseSeen ?? raw?.last_release_seen ?? null,
+    rerReportEligible: raw?.rerReportEligible ?? raw?.rer_report_eligible ?? false,
   };
 }
 

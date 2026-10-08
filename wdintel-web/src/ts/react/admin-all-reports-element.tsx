@@ -1,12 +1,15 @@
 import { createRoot, Root } from 'react-dom/client';
 
 import { NeoMuiThemeProvider } from './mui-theme';
+import { PowerSnackbarProvider } from './components/PowerSnackbar';
 import { AdminAllReportsPage } from './routes/admin-all-reports';
 
 function AdminAllReportsRoot() {
   return (
     <NeoMuiThemeProvider>
-      <AdminAllReportsPage />
+      <PowerSnackbarProvider>
+        <AdminAllReportsPage />
+      </PowerSnackbarProvider>
     </NeoMuiThemeProvider>
   );
 }

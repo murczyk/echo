@@ -4400,6 +4400,7 @@ type alias User =
     , goiHost : Maybe (String)
     , goiIntegrations : List (GoiUserIntegration)
     , lastReleaseSeen : Maybe (String)
+    , rerReportEligible : Bool
     }
 
 
@@ -4418,6 +4419,7 @@ userEncoder struct =
         , ( "goi_host", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.goiHost )
         , ( "goi_integrations", (Json.Encode.list (goiUserIntegrationEncoder)) struct.goiIntegrations )
         , ( "last_release_seen", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastReleaseSeen )
+        , ( "rer_report_eligible", (Json.Encode.bool) struct.rerReportEligible )
         ]
 
 
@@ -12939,6 +12941,108 @@ rerDutyTestReplayStatusRspEncoder struct =
         ]
 
 
+type alias RerReportAccessListRsp =
+    { loginIds : List (String)
+    }
+
+
+rerReportAccessListRspEncoder : RerReportAccessListRsp -> Json.Encode.Value
+rerReportAccessListRspEncoder struct =
+    Json.Encode.object
+        [ ( "login_ids", (Json.Encode.list (Json.Encode.string)) struct.loginIds )
+        ]
+
+
+type alias ReplaceRerReportAccessListReq =
+    { loginIds : List (String)
+    }
+
+
+replaceRerReportAccessListReqEncoder : ReplaceRerReportAccessListReq -> Json.Encode.Value
+replaceRerReportAccessListReqEncoder struct =
+    Json.Encode.object
+        [ ( "login_ids", (Json.Encode.list (Json.Encode.string)) struct.loginIds )
+        ]
+
+
+type alias RerReportMetadataItem =
+    { id : Int
+    , sigintUnitId : Int
+    , sigintUnitName : String
+    , locations : List (String)
+    , labels : List (String)
+    }
+
+
+rerReportMetadataItemEncoder : RerReportMetadataItem -> Json.Encode.Value
+rerReportMetadataItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "sigint_unit_name", (Json.Encode.string) struct.sigintUnitName )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "labels", (Json.Encode.list (Json.Encode.string)) struct.labels )
+        ]
+
+
+type alias RerReportMetadataListRsp =
+    { items : List (RerReportMetadataItem)
+    }
+
+
+rerReportMetadataListRspEncoder : RerReportMetadataListRsp -> Json.Encode.Value
+rerReportMetadataListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (rerReportMetadataItemEncoder)) struct.items )
+        ]
+
+
+type alias CreateRerReportMetadataReq =
+    { sigintUnitId : Int
+    , locations : List (String)
+    , labels : List (String)
+    }
+
+
+createRerReportMetadataReqEncoder : CreateRerReportMetadataReq -> Json.Encode.Value
+createRerReportMetadataReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "labels", (Json.Encode.list (Json.Encode.string)) struct.labels )
+        ]
+
+
+type alias UpdateRerReportMetadataReq =
+    { id : Int
+    , sigintUnitId : Int
+    , locations : List (String)
+    , labels : List (String)
+    }
+
+
+updateRerReportMetadataReqEncoder : UpdateRerReportMetadataReq -> Json.Encode.Value
+updateRerReportMetadataReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "labels", (Json.Encode.list (Json.Encode.string)) struct.labels )
+        ]
+
+
+type alias DeleteRerReportMetadataReq =
+    { id : Int
+    }
+
+
+deleteRerReportMetadataReqEncoder : DeleteRerReportMetadataReq -> Json.Encode.Value
+deleteRerReportMetadataReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        ]
+
+
 type alias AiGovUaSettingsRsp =
     { enabled : Bool
     , tenantId : String
@@ -19826,6 +19930,7 @@ userDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_host" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_integrations" (Json.Decode.list (goiUserIntegrationDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_release_seen" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_report_eligible" (Json.Decode.bool)))
 
 
 authorIdentityDecoder : Json.Decode.Decoder AuthorIdentity
@@ -25491,6 +25596,57 @@ rerDutyTestReplayStatusRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_source_position" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generated_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_emit_at_ms" (Json.Decode.nullable (Json.Decode.int))))
+
+
+rerReportAccessListRspDecoder : Json.Decode.Decoder RerReportAccessListRsp
+rerReportAccessListRspDecoder =
+    Json.Decode.succeed RerReportAccessListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_ids" (Json.Decode.list (Json.Decode.string))))
+
+
+replaceRerReportAccessListReqDecoder : Json.Decode.Decoder ReplaceRerReportAccessListReq
+replaceRerReportAccessListReqDecoder =
+    Json.Decode.succeed ReplaceRerReportAccessListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_ids" (Json.Decode.list (Json.Decode.string))))
+
+
+rerReportMetadataItemDecoder : Json.Decode.Decoder RerReportMetadataItem
+rerReportMetadataItemDecoder =
+    Json.Decode.succeed RerReportMetadataItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (Json.Decode.string))))
+
+
+rerReportMetadataListRspDecoder : Json.Decode.Decoder RerReportMetadataListRsp
+rerReportMetadataListRspDecoder =
+    Json.Decode.succeed RerReportMetadataListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (rerReportMetadataItemDecoder))))
+
+
+createRerReportMetadataReqDecoder : Json.Decode.Decoder CreateRerReportMetadataReq
+createRerReportMetadataReqDecoder =
+    Json.Decode.succeed CreateRerReportMetadataReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (Json.Decode.string))))
+
+
+updateRerReportMetadataReqDecoder : Json.Decode.Decoder UpdateRerReportMetadataReq
+updateRerReportMetadataReqDecoder =
+    Json.Decode.succeed UpdateRerReportMetadataReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (Json.Decode.string))))
+
+
+deleteRerReportMetadataReqDecoder : Json.Decode.Decoder DeleteRerReportMetadataReq
+deleteRerReportMetadataReqDecoder =
+    Json.Decode.succeed DeleteRerReportMetadataReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
 
 
 aiGovUaSettingsRspDecoder : Json.Decode.Decoder AiGovUaSettingsRsp
