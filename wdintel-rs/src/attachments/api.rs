@@ -324,13 +324,7 @@ pub async fn retry(
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let id = Uuid::parse_str(&req.media_id).c(h!())?;
     authorize(&env, &user, id).await.c(h!())?;
-    use sea_orm::TransactionTrait;
-    let tx = env.dbx.begin().await.c(h!())?;
-    let generation = Uuid::now_v7();
-    execute(&tx,"update attachment_document set generation=$2,state='queued',extractor_job_id=null,last_error=null where media_id=$1",vec![id.into(),generation.into()]).await.c(h!())?;
-    execute(&tx,"update attachment_job set state='superseded',lease=null,lease_until=null where media_id=$1 and generation<>$2 and state<>'completed'",vec![id.into(),generation.into()]).await.c(h!())?;
-    queue(&tx, id, generation, "extract").await.c(h!())?;
-    tx.commit().await.c(h!())?;
+    retry_document(&env.dbx, id).await.c(h!())?;
     Ok(Json(read_document(&env, &req).await.c(h!())?))
 }
 
@@ -411,4 +405,24 @@ pub async fn inspection_status(
         result: row.result.map(serde_json::from_value).transpose().c(h!())?,
         error: row.last_error,
     }))
+}
+
+pub(crate) async fn retry_document(
+    db: &sea_orm::DatabaseConnection,
+    id: Uuid,
+) -> anyhow::Result<()> {
+    use sea_orm::{QuerySelect, TransactionTrait};
+    let tx = db.begin().await.c(h!())?;
+    attachment_document::Entity::find_by_id(id)
+        .lock_exclusive()
+        .one(&tx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let generation = Uuid::now_v7();
+    execute(&tx,"update attachment_document set generation=$2,state='queued',extractor_job_id=null,last_error=null where media_id=$1",vec![id.into(),generation.into()]).await.c(h!())?;
+    execute(&tx,"update attachment_job set state='superseded',lease=null,lease_until=null where media_id=$1 and generation<>$2 and state<>'completed'",vec![id.into(),generation.into()]).await.c(h!())?;
+    queue(&tx, id, generation, "extract").await.c(h!())?;
+    tx.commit().await.c(h!())?;
+    Ok(())
 }

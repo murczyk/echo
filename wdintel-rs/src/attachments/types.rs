@@ -192,3 +192,12 @@ pub struct AttachmentInspectionRsp {
     pub result: Option<AttachmentReadRsp>,
     pub error: Option<String>,
 }
+
+#[derive(
+    Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode, PartialEq,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentCoordinateStatus {
+    pub revision: String,
+    pub has_coordinates: bool,
+}

@@ -36,7 +36,8 @@ function coordinatePreviewInputKey(message: InboxMessage, tagsMap: Record<number
     etalons: collectCoordinatePreviewEtalons(message, tagsMap),
     media: (message.media ?? []).map((media) => ({
       id: media.id,
-      summary: media.summary,
+      coordinateStatus: media.coordinateStatus,
+      summary: media.coordinateStatus == null ? media.summary : null,
       positions: media.positions,
     })),
     text: message.text,

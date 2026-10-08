@@ -244,3 +244,244 @@ async fn attachment_search_visibility_and_revision_3064() {
         .unwrap()
         .is_none());
 }
+
+#[tokio::test]
+async fn ocr_coordinate_boundaries_and_precision_3714() {
+    let package = super::worker::html_package("scan.pdf",
+        "<section><p>X=5291456 Y=6662340<br>48.469429° <span>N</span> 37.315640° E</p><div>48.46942912345, <b>37.31564012345</b></div><table><tr><td>Grid</td><td>52-91456 66-62340<br>48.469429° N 37.315640° E</td></tr></table></section>").unwrap();
+    let text = &package.sections[0].text;
+    assert!(text.contains("6662340\n48.469429"), "{text}");
+    assert!(text.contains("48.46942912345, 37.31564012345"), "{text}");
+    assert!(text.contains("| Grid |"), "{text}");
+    let fragments = crate::media_summary::plain_text_from_sanitized_html(
+        "<span>48.</span><b>469429° N</b> <span>37.315640° E</span><div>52-91456 66-62340</div><div>48.469429° N 37.315640° E</div>").unwrap();
+    assert!(
+        fragments.contains("48.469429° N 37.315640° E"),
+        "{fragments}"
+    );
+    assert!(fragments.contains("66-62340\n48.469429"), "{fragments}");
+
+    let coordinates = super::enrich::coordinates(text, "page 1").await.unwrap();
+    assert!(
+        coordinates
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|coordinate| coordinate["coordinateSystem"] == "wgs84"
+                && coordinate["value"] == "48.469429, 37.315640"),
+        "{coordinates}"
+    );
+    let coordinates =
+        super::enrich::coordinates("48.46942912345, 37.31564012345", "page 1")
+            .await
+            .unwrap();
+    assert_eq!(coordinates[0]["value"], "48.46942912345, 37.31564012345");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn attachment_coordinates_without_summary_and_revisions_3714() {
+    let (env, _, message) = fixture().await;
+    let job = attachment(&env, message, "coordinates.txt").await;
+    publish(&env, &job, package("48.469429° N 37.315640° E"), vec![1])
+        .await
+        .unwrap();
+    let media = signal_message_media::Entity::find_by_id(job.media_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let login = crate::functest::tests::find_test_login(&env.dbx)
+        .await
+        .unwrap();
+    crate::messenger::media::ensure_media_access(&env.dbx, &login.id, message)
+        .await
+        .unwrap();
+    let initial = super::coordinates::load_statuses(
+        &env.dbx,
+        std::slice::from_ref(&media),
+    )
+    .await
+    .unwrap();
+    assert!(initial[&job.media_id].has_coordinates);
+    for (state, enabled) in
+        [("queued", true), ("queued", false), ("failed", true)]
+    {
+        execute(
+            &env.dbx,
+            "update attachment_settings set summaries_enabled=$1 where id=1",
+            vec![enabled.into()],
+        )
+        .await
+        .unwrap();
+        execute(
+            &env.dbx,
+            "update attachment_document set summary_state=$2 where media_id=$1",
+            vec![job.media_id.into(), state.into()],
+        )
+        .await
+        .unwrap();
+        let coordinates =
+            crate::media_summary::coordinates_for_media(&env.dbx, job.media_id)
+                .await
+                .unwrap();
+        assert_eq!(coordinates[0].coordinate_system, "wgs84");
+        assert_eq!(coordinates[0].value, "48.469429, 37.315640");
+    }
+    publish(&env, &job, package("48.479429, 37.325640"), vec![2])
+        .await
+        .unwrap();
+    let updated = super::coordinates::load_statuses(
+        &env.dbx,
+        std::slice::from_ref(&media),
+    )
+    .await
+    .unwrap();
+    assert_ne!(
+        initial[&job.media_id].revision,
+        updated[&job.media_id].revision
+    );
+    assert_eq!(
+        crate::media_summary::coordinates_for_media(&env.dbx, job.media_id)
+            .await
+            .unwrap()[0]
+            .value,
+        "48.479429, 37.325640"
+    );
+    publish(&env, &job, Package::default(), vec![3])
+        .await
+        .unwrap();
+    execute(&env.dbx,"insert into media_summary(media_id,source_kind,source_digest,source_char_count,state,coordinates,ai_engine_name,model_name,summary) values($1,'ocr_text',$2,10,'completed',$3,'legacy','legacy','legacy summary')",vec![job.media_id.into(),"a".repeat(64).into(),serde_json::json!([{"title":"legacy","coordinateSystem":"wgs84","value":"48.469429, 37.315640"}]).into()]).await.unwrap();
+    assert!(crate::media_summary::coordinates_for_media(
+        &env.dbx,
+        job.media_id
+    )
+    .await
+    .unwrap()
+    .is_empty());
+    let empty = super::coordinates::load_statuses(
+        &env.dbx,
+        std::slice::from_ref(&media),
+    )
+    .await
+    .unwrap();
+    assert!(!empty[&job.media_id].has_coordinates);
+    execute(
+        &env.dbx,
+        "update attachment_document set revision=null where media_id=$1",
+        vec![job.media_id.into()],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        crate::media_summary::coordinates_for_media(&env.dbx, job.media_id)
+            .await
+            .unwrap()[0]
+            .title,
+        "legacy"
+    );
+    execute(
+        &env.dbx,
+        "delete from signal_message_group where signal_message_id=$1",
+        vec![message.into()],
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        crate::messenger::media::ensure_media_access(
+            &env.dbx, &login.id, message
+        )
+        .await,
+        Err(crate::error::AppError::Forbidden(_))
+    ));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stored_ocr_recovery_is_scoped_and_dry_by_default_3714() {
+    let (env, _, message) = fixture().await;
+    let job = attachment(&env, message, "scan.pdf").await;
+    let other = attachment(&env, message, "untouched.txt").await;
+    execute(&env.dbx, "update signal_message_media set content_type='application/pdf',file_ext='pdf' where id=$1", vec![job.media_id.into()]).await.unwrap();
+    let html = "<p>X=5291456 Y=6662340<br>48.469429° N 37.315640° E</p>";
+    crate::storage::upload_encrypted_to_s3_with_operator(
+        &env.s3,
+        env.s3_config.as_ref().unwrap(),
+        &env.config.s3_config.as_ref().unwrap().strongbox_key,
+        "stored-ocr",
+        html.as_bytes().to_vec().into(),
+    )
+    .await
+    .unwrap();
+    execute(&env.dbx,"insert into ocr_job(media_id,state,quality_status,html_s3_key) values($1,'completed','accepted','stored-ocr')",vec![job.media_id.into()]).await.unwrap();
+    let original_generation =
+        attachment_document::Entity::find_by_id(job.media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .generation;
+    let mut params = crate::OneoffReindexStoredOcrPs {
+        media_id: job.media_id,
+        dry_run: false,
+        yes: false,
+    };
+    super::recovery::reindex(&env, &params).await.unwrap();
+    let document = attachment_document::Entity::find_by_id(job.media_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(document.generation, original_generation);
+    params.yes = true;
+    params.dry_run = true;
+    super::recovery::reindex(&env, &params).await.unwrap();
+    assert_eq!(
+        attachment_document::Entity::find_by_id(job.media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .generation,
+        original_generation
+    );
+    params.dry_run = false;
+    super::recovery::reindex(&env, &params).await.unwrap();
+    let document = attachment_document::Entity::find_by_id(job.media_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_ne!(document.generation, original_generation);
+    execute(&env.dbx,"update attachment_job set state='running',lease=gen_random_uuid(),lease_until=now()+interval '15 minutes' where media_id=$1 and generation=$2",vec![job.media_id.into(),document.generation.into()]).await.unwrap();
+    let replacement: Job = rows(&env.dbx,"select * from attachment_job where media_id=$1 and generation=$2 and kind='extract'",vec![job.media_id.into(),document.generation.into()]).await.unwrap().pop().unwrap();
+    assert!(super::worker::extract_ocr(&env, &replacement, "scan.pdf")
+        .await
+        .unwrap());
+    assert!(crate::media_summary::coordinates_for_media(
+        &env.dbx,
+        job.media_id
+    )
+    .await
+    .unwrap()
+    .iter()
+    .any(|coordinate| coordinate.value == "48.469429, 37.315640"));
+    let ocr = crate::entities::ocr_job::Entity::find_by_id(job.media_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(ocr.state, "completed");
+    assert_eq!(ocr.html_s3_key.as_deref(), Some("stored-ocr"));
+    assert_eq!(
+        attachment_document::Entity::find_by_id(other.media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .generation,
+        other.generation
+    );
+    params.media_id = other.media_id;
+    assert!(super::recovery::reindex(&env, &params).await.is_err());
+}

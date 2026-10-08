@@ -2843,6 +2843,7 @@ export type MessageMediaInfo = {
   transcription: string | null;
   ocr: OcrMediaSummary | null;
   summary: MediaSummaryStatus | null;
+  coordinateStatus: AttachmentCoordinateStatus | null;
   kmzConversionStatus: string | null;
   positions: Array<CnPosition>;
 };
@@ -6410,6 +6411,11 @@ export type ReprocessMediaOcrReq = {
 export type MediaSummaryStatus = {
   state: string;
   lastError: string | null;
+  hasCoordinates: boolean;
+};
+
+export type AttachmentCoordinateStatus = {
+  revision: string;
   hasCoordinates: boolean;
 };
 

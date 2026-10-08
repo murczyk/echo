@@ -900,6 +900,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::ocr::types::SaveOcrSettingsReq,
             crate::ocr::types::ReprocessMediaOcrReq,
             crate::media_summary::types::MediaSummaryStatus,
+            crate::attachments::types::AttachmentCoordinateStatus,
             crate::media_summary::types::MediaSummaryCoordinate,
             crate::media_summary::types::MediaSummaryCoordinatesResult,
             crate::media_summary::types::MediaSummaryResult,
@@ -1765,6 +1766,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::ocr::types::SaveOcrSettingsReq,
             crate::ocr::types::ReprocessMediaOcrReq,
             crate::media_summary::types::MediaSummaryStatus,
+            crate::attachments::types::AttachmentCoordinateStatus,
             crate::media_summary::types::MediaSummaryCoordinate,
             crate::media_summary::types::MediaSummaryCoordinatesResult,
             crate::media_summary::types::MediaSummaryResult,
@@ -1997,6 +1999,10 @@ fn patch_backward_compatible_decoders(
 ) -> Result<String, AppError> {
     let output = patch_rer_duty_query_state_wf_decoder(output).context(h!())?;
     Ok(output
+        .replace(
+            r#"Json.Decode.field "coordinate_status" (Json.Decode.nullable (attachmentCoordinateStatusDecoder))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "coordinate_status" (Json.Decode.nullable (attachmentCoordinateStatusDecoder)), Json.Decode.succeed Nothing ]"#,
+        )
         .replacen(
             r#"Json.Decode.field "display_name" (Json.Decode.nullable (Json.Decode.string))"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "display_name" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]"#,

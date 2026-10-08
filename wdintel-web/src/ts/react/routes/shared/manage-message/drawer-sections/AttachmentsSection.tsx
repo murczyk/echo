@@ -319,6 +319,7 @@ export function AttachmentsSection({
           transcription: null,
           ocr: null,
           summary: null,
+          coordinateStatus: null,
           kmzConversionStatus: null,
           positions: [],
           href: previewUrl,

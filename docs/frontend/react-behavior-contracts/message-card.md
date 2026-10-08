@@ -290,3 +290,11 @@ that point. Positions without parseable coordinates remain textual. Regression:
 - Coverage: `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-card-video-loading.spec.ts`,
   `wdintel-web/src/ts/react/routes/shared/message-card/renderers/__tests__/VideoAttachmentPreviewRenderer.spec.tsx`
   and `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`.
+
+Attachment map readiness uses `coordinateStatus.hasCoordinates` when a published
+attachment revision is present, regardless of the AI summary state. Revision
+changes reload points; an empty revision clears stale coordinates. Legacy summary
+readiness applies only when coordinate status is absent. Maps retain lazy mounting
+and visible lookup errors. Regression coverage:
+`wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-coordinate-preview.spec.ts`
+and `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardCoordinateAttachment.spec.tsx`.

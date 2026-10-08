@@ -875,6 +875,12 @@ pub async fn aggregate_to_inbox_messages(
         crate::media_summary::load_statuses(&env.dbx, &media_entries)
             .await
             .c(h!())?;
+    let coordinates_by_media = crate::attachments::coordinates::load_statuses(
+        &env.dbx,
+        &media_entries,
+    )
+    .await
+    .c(h!())?;
     let kmz_conversion_statuses =
         crate::sigint::media_conversion::load_statuses(
             &env.dbx,
@@ -993,6 +999,7 @@ pub async fn aggregate_to_inbox_messages(
                 transcription: transcriptions_by_media.get(&m.id).cloned(),
                 ocr: ocr_by_media.get(&m.id).cloned(),
                 summary: summaries_by_media.get(&m.id).cloned(),
+                coordinate_status: coordinates_by_media.get(&m.id).cloned(),
                 kmz_conversion_status: kmz_conversion_statuses
                     .get(&m.id)
                     .cloned(),
