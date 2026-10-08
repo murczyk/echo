@@ -919,6 +919,7 @@ pub async fn reconcile_active_message(
     .await
     .c(h!())?;
     let staged_media = crate::message_queue::stage_queue_media_for_active_edit(
+        txn,
         &snapshot_attachments,
         &source_message.attachments_hash,
         config,
@@ -4433,6 +4434,9 @@ mod tests {
     #[tokio::test]
     async fn active_edit_prefers_non_empty_snapshot_attachments() {
         let (env, _guard) = cleanup_locked().await.unwrap();
+        let attachments_dir = tempfile::tempdir().unwrap();
+        let current_attachment = attachments_dir.path().join("current-b.jpg");
+        tokio::fs::write(&current_attachment, b"jpg").await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
         let mut redis = env.redis.clone();
         let group_id = format!("edit-current-media-{}", Uuid::new_v4());
@@ -4514,7 +4518,7 @@ mod tests {
             sender_phone_number: None,
             group_id: Some(group_id),
             attachments: vec![MessageAttachmentF1 {
-                path: "/tmp/current-b.jpg".to_string(),
+                path: current_attachment.display().to_string(),
                 name: Some("b.jpg".to_string()),
             }],
             message_source: echo_im::types::MessageSource::Signal,

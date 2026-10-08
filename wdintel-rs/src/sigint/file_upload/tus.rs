@@ -182,6 +182,14 @@ impl Default for TusConfig {
 
 impl TusHandler {
     pub fn new(storage_dir: String, path_base: &str) -> TusHandler {
+        Self::with_config(storage_dir, path_base, TusConfig::default())
+    }
+
+    pub(crate) fn with_config(
+        storage_dir: String,
+        path_base: &str,
+        config: TusConfig,
+    ) -> TusHandler {
         let mut upload_dir = if storage_dir.trim().is_empty() {
             std::env::temp_dir()
         } else {
@@ -194,7 +202,7 @@ impl TusHandler {
 
         TusHandler {
             upload_dir,
-            config: TusConfig::default(),
+            config,
             prefix,
         }
     }
@@ -1332,7 +1340,7 @@ impl TusHandler {
         Ok(created + self.expires_in(pending) <= SystemTime::now())
     }
 
-    pub(super) async fn cleanup_expired(&self) -> anyhow::Result<()> {
+    pub(crate) async fn cleanup_expired(&self) -> anyhow::Result<()> {
         lifecycle::cleanup(
             &self.upload_dir,
             self.config.pending_expires_in,

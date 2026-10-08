@@ -23,7 +23,7 @@ actix-identity = "0.8.0"
 actix-session = { version = "0.10.1", features = ["redis-session", "redis-pool"] }
 clap = { version = "4.6.1", features = ["derive"] }
 dirs = "6.0.0"
-elm_rs = "=0.2.1"
+elm_rs = { version = "=0.2.1", features = ["uuid"] }
 log = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
@@ -130,7 +130,7 @@ rev = "c9efd65ccf72bf447867e5f959eec7779771007e"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "9e3154fa3d0c318d0ec48513c16b1f37105ef33c"
+rev = "80589feab5a9afbe6e474f76b39cc563506c9262"
 
 [dependencies.echo-gpu-client]
 git = "ssh://git@github.com/echoua/echo-gpu.git"

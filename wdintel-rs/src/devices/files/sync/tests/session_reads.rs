@@ -37,6 +37,27 @@ async fn issue_3390_session_reads_keep_revisions_after_later_sync() {
     )
     .await
     .unwrap();
+    let uploaded = file_entry::Entity::find()
+        .filter(file_entry::Column::DeviceId.eq(device_id))
+        .filter(file_entry::Column::AbsolutePath.eq(r"C:\reports\a.log"))
+        .one(files.connection())
+        .await
+        .unwrap()
+        .unwrap();
+    crate::file_registry::test_support::publish_content(
+        files.connection(),
+        &uploaded,
+        actor.id,
+    )
+    .await;
+    let progress = crate::devices::analytics::query::device_summary(
+        files.connection(),
+        device_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(progress.total_file_count, 2);
+    assert_eq!(progress.files_with_content_count, 1);
     let mut updated = raw_item(r"C:\reports\a.log");
     updated.mime_type = Some("application/pdf".to_owned());
     updated.extension = Some("pdf".to_owned());
@@ -49,6 +70,14 @@ async fn issue_3390_session_reads_keep_revisions_after_later_sync() {
     )
     .await
     .unwrap();
+    let progress = crate::devices::analytics::query::device_summary(
+        files.connection(),
+        device_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(progress.total_file_count, 3);
+    assert_eq!(progress.files_with_content_count, 0);
     let sync_id = &first.sync.sync_id;
     let roots = read::roots(
         &env.dbx,
@@ -187,6 +216,7 @@ async fn issue_3390_session_reads_keep_revisions_after_later_sync() {
     .await
     .unwrap();
     assert_eq!(summary.total_file_count, 2);
+    assert_eq!(summary.files_with_content_count, 1);
     assert_eq!(summary.analyzed_file_count, 0);
     let summaries = listing::summaries(
         &env.dbx,
@@ -204,6 +234,10 @@ async fn issue_3390_session_reads_keep_revisions_after_later_sync() {
         .summaries
         .iter()
         .all(|summary| summary.analysis.total_file_count == 2));
+    for summary in &summaries.summaries {
+        let expected = u64::from(summary.sync_id == *sync_id);
+        assert_eq!(summary.analysis.files_with_content_count, expected);
+    }
     assert_session_access_and_listing(
         &env, &actor, &reader, device_id, sync_id,
     )
@@ -220,8 +254,9 @@ async fn assert_session_access_and_listing(
     let files = env.file_registry_db().unwrap();
     let body =
         || request::<ListDeviceFileRootsReq>(device_id, sync_id, json!({}));
+    let basic = access::login_with_roles(actor, &["Basic"]);
     assert!(matches!(
-        read::roots(&env.dbx, files, actor, body()).await,
+        read::roots(&env.dbx, files, &basic, body()).await,
         Err(AppError::Forbidden(_))
     ));
     let other = insert_device(&env.dbx, actor).await;

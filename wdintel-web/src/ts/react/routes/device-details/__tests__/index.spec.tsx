@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DeviceDetails } from '../../../../../Bindings';
 import { createNeoMuiTheme } from '../../../mui-theme';
 import { DeviceDetailsPage } from '.././index';
+import { listDeviceAudio } from '../../../services/api/device-audio';
 
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 const testTheme = createNeoMuiTheme('light');
@@ -18,10 +19,16 @@ const pageMock = vi.hoisted(() => ({
   useDeviceFiles: vi.fn(),
   useDeviceFileJournal: vi.fn(),
   useDeviceAnalyticsTags: vi.fn(),
+  useDeviceSyncSessions: vi.fn(),
 }));
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
+
+vi.mock('../../../services/api/device-audio', () => ({ listDeviceAudio: vi.fn() }));
+vi.mock('../use-device-sync-sessions', () => ({
+  useDeviceSyncSessions: pageMock.useDeviceSyncSessions,
+}));
 
 vi.mock('.././use-device-details-page', () => ({
   useDeviceDetailsPage: pageMock.useDeviceDetailsPage,
@@ -102,6 +109,14 @@ function buildPage(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  vi.mocked(listDeviceAudio).mockResolvedValue({ audio: [], nextCursor: null });
+  pageMock.useDeviceSyncSessions.mockReturnValue({
+    ready: true,
+    session: null,
+    selectionError: null,
+    refreshVersion: 0,
+    refresh: vi.fn(),
+  });
   pageMock.useDeviceDetailsPage.mockReturnValue(buildPage());
   pageMock.useDeviceFiles.mockReturnValue({ counts: { error: null }, tree: { branches: {} } });
   pageMock.useDeviceFileJournal.mockReturnValue({
@@ -134,7 +149,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderPage(authUserRoles: string[] = ['DeviceSource']) {
+function renderPage(authUserRoles: string[] = ['Cyber']) {
   act(() => {
     root?.render(
       <ThemeProvider theme={testTheme}>
@@ -177,8 +192,13 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText.indexOf('Основне')).toBeLessThan(leftPanelText.indexOf('Кастомні поля'));
     expect(leftPanelText.indexOf('Кастомні поля')).toBeLessThan(leftPanelText.indexOf('Додатково'));
     const tabs = Array.from(container?.querySelectorAll('[role="tab"]') ?? []);
-    expect(tabs).toHaveLength(3);
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Аналітичні відомості', 'Файли', 'Журнал']);
+    expect(tabs).toHaveLength(4);
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      'Аналітичні відомості',
+      'Файли',
+      'Журнал',
+      'Аудіо',
+    ]);
     expect(
       container
         ?.querySelector('[data-testid="device-analytics-panel"]')
@@ -278,4 +298,26 @@ describe('DeviceDetailsPage layout', () => {
     expect(filesSidebar).not.toBeNull();
     expect(container?.querySelector('[data-testid="device-file-content-pane"]')).not.toBeNull();
   });
+});
+
+it('keeps_audio_usable_when_file_sessions_fail', async () => {
+  pageMock.useDeviceSyncSessions.mockReturnValue({
+    ready: false,
+    session: null,
+    selectionError: 'Сесія недоступна',
+    refreshVersion: 0,
+    refresh: vi.fn(),
+  });
+  await act(async () => renderPage(['Cyber']));
+  const tab = container!.querySelector<HTMLButtonElement>('#device-details-audio-tab')!;
+  await act(async () => tab.click());
+  expect(
+    container!.querySelector('#device-details-audio-panel')?.getAttribute('aria-labelledby'),
+  ).toBe(tab.id);
+  expect(container!.textContent).toContain('Аудіоматеріалів немає.');
+  expect(container!.textContent).not.toContain('Сесія недоступна');
+  expect(vi.mocked(listDeviceAudio)).toHaveBeenCalledWith(
+    { deviceId: DEVICE_ID, unprocessedOnly: false, limit: 50, cursor: null },
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+  );
 });

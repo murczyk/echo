@@ -1,21 +1,21 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
-import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import { Box, Button, CircularProgress, IconButton, Tooltip } from '@mui/material';
 
 import type { MessageMediaInfo } from '../../../../../Bindings';
-import { getMuiPaletteMode, useMuiPaletteMode } from '../../../mui-theme';
+import {
+  AudioPlayerHost as NeutralAudioPlayerHost,
+  type AudioPlayerElement,
+} from '../../../components/audio-player/AudioPlayerHost';
 import { MessageCardDisabledControlCursorWrapper } from './MessageCardDisabledControlCursorWrapper';
 import {
   MessageCardAudioTranscription,
   useAudioTranscriptionPreferences,
 } from './MessageCardAudioTranscription';
 
-const AUDIO_PLAYER_MIN_HEIGHT_PX = 40;
-const AUDIO_PLAYER_TOP_PADDING_PX = 0;
-const AUDIO_PLAYER_Z_INDEX = 0;
 const AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES = 100 * 1024 * 1024;
 export const MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS = 3_000;
 export const MESSAGE_CARD_ATTACHMENTS_ARCHIVE_DOWNLOAD_KEY = 'archive';
@@ -232,15 +232,7 @@ export function mediaAttachmentThumbnailUrl(mediaId: string): string {
   return `/api/messenger/media/${mediaId}/thumbnail`;
 }
 
-export function syncAudioPlayerTheme(player: HTMLElement, paletteMode: 'light' | 'dark') {
-  player.setAttribute('theme', paletteMode);
-}
-
-type AudioPlayerElement = HTMLElement & {
-  pause?: () => void;
-  play?: () => Promise<void>;
-  autoplay?: boolean;
-};
+export { syncAudioPlayerTheme } from '../../../components/audio-player/AudioPlayerHost';
 
 export function AudioPlayerHost({
   href,
@@ -259,65 +251,20 @@ export function AudioPlayerHost({
   suppressInitialAutoplay?: boolean;
   previewSizing?: boolean;
 }) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<AudioPlayerElement | null>(null);
-  const paletteMode = useMuiPaletteMode();
-  const hasExplicitAudioType = true;
   const canLoadDerivedImages =
-    hasExplicitAudioType &&
-    (sizeBytes == null || sizeBytes <= AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES);
-  const waveSrc = mediaId !== '' && canLoadDerivedImages ? mediaAttachmentWaveUrl(mediaId) : '';
-  const spectrumSrc =
-    mediaId !== '' && canLoadDerivedImages ? mediaAttachmentSpectrumUrl(mediaId) : '';
-  const storageKey = `echo-inbox-${mediaId || displayName}`;
-
-  useLayoutEffect(() => {
-    const host = hostRef.current;
-    if (!host || href === '') return;
-    const player = document.createElement('custom-audio-player') as AudioPlayerElement;
-    player.setAttribute('src', href);
-    player.setAttribute('variant', 'echo');
-    player.setAttribute('mode', 'compact');
-    player.setAttribute('storage-key', storageKey);
-    player.setAttribute('theme', getMuiPaletteMode());
-    if (displayName !== '<файл без назви>') player.setAttribute('file-name', displayName);
-    if (waveSrc !== '') player.setAttribute('wave-src', waveSrc);
-    if (spectrumSrc !== '') player.setAttribute('spectrum-src', spectrumSrc);
-    const originalPlay = player.play;
-    const restorePlay = () => {
-      if (suppressInitialAutoplay) player.play = originalPlay;
-    };
-    if (suppressInitialAutoplay) {
-      player.play = () => Promise.resolve();
-      player.addEventListener('canplay', restorePlay, { once: true });
-    }
-    host.replaceChildren(player);
-    playerRef.current = player;
-    onPlayerChange?.(player);
-    return () => {
-      player.pause?.();
-      player.removeEventListener('canplay', restorePlay);
-      restorePlay();
-      playerRef.current = null;
-      onPlayerChange?.(null, player);
-      host.replaceChildren();
-    };
-  }, [displayName, href, spectrumSrc, storageKey, suppressInitialAutoplay, waveSrc]);
-
-  useLayoutEffect(() => {
-    if (playerRef.current) syncAudioPlayerTheme(playerRef.current, paletteMode);
-  }, [paletteMode]);
-
+    sizeBytes == null || sizeBytes <= AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES;
   return (
-    <div
-      ref={hostRef}
-      className={`message-card-audio-host relative z-0 flex min-w-0 flex-1 items-stretch${
-        previewSizing ? ' message-card-audio-host--preview' : ''
-      }`}
-      data-audio-player-host
-      data-audio-player-min-height-px={AUDIO_PLAYER_MIN_HEIGHT_PX}
-      data-audio-player-top-padding-px={AUDIO_PLAYER_TOP_PADDING_PX}
-      data-audio-player-z-index={AUDIO_PLAYER_Z_INDEX}
+    <NeutralAudioPlayerHost
+      href={href}
+      displayName={displayName}
+      storageKey={`echo-inbox-${mediaId || displayName}`}
+      waveSrc={mediaId !== '' && canLoadDerivedImages ? mediaAttachmentWaveUrl(mediaId) : ''}
+      spectrumSrc={
+        mediaId !== '' && canLoadDerivedImages ? mediaAttachmentSpectrumUrl(mediaId) : ''
+      }
+      onPlayerChange={onPlayerChange}
+      suppressInitialAutoplay={suppressInitialAutoplay}
+      previewSizing={previewSizing}
     />
   );
 }
@@ -440,7 +387,8 @@ export function MessageMediaDownloadLink({
           rel="noopener noreferrer"
           disabled={downloading}
           aria-busy={downloading}
-          aria-label={downloading ? 'Завантаження…' : undefined}
+          aria-label={downloading ? 'Завантаження…' : `Завантажити вкладення: ${displayName}`}
+          data-message-card-attachment-tile="true"
           aria-current={selected ? 'true' : undefined}
           data-summary-selected={selected ? 'true' : undefined}
           onClick={(event) =>
@@ -454,9 +402,10 @@ export function MessageMediaDownloadLink({
             width: 'fit-content',
             minWidth: 0,
             maxWidth: '100%',
-            minHeight: 26,
+            minHeight: 32,
             py: 0.25,
-            px: 0.75,
+            pl: 0.75,
+            pr: 4,
             fontSize: 11,
             lineHeight: 1.25,
             textTransform: 'none',
@@ -471,6 +420,7 @@ export function MessageMediaDownloadLink({
               borderColor: selected ? 'primary.main' : 'text.primary',
             },
             alignSelf: 'flex-start',
+            position: 'relative',
             overflow: 'hidden',
             justifyContent: 'flex-start',
             '& .MuiButton-startIcon': {
@@ -478,13 +428,32 @@ export function MessageMediaDownloadLink({
               ml: -0.25,
               '& svg': { fontSize: 14 },
             },
+            '& .MuiButton-endIcon': { position: 'absolute', top: 5, right: 5, m: 0 },
           }}
-          startIcon={
-            downloading ? (
-              <CircularProgress size={14} aria-label="Завантаження…" />
-            ) : (
-              <DownloadOutlinedIcon aria-hidden />
-            )
+          startIcon={<DescriptionOutlinedIcon aria-hidden />}
+          endIcon={
+            <Box
+              component="span"
+              data-message-card-attachment-download="true"
+              sx={{
+                display: 'inline-flex',
+                width: 22,
+                height: 22,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '50%',
+                color: 'rgba(255, 255, 255, 0.92)',
+                backgroundColor: 'rgba(15, 23, 42, 0.42)',
+                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.28)',
+                opacity: { xs: 0.78, sm: 0.62 },
+              }}
+            >
+              {downloading ? (
+                <CircularProgress size={14} aria-label="Завантаження…" />
+              ) : (
+                <DownloadIcon aria-hidden sx={{ fontSize: 15 }} />
+              )}
+            </Box>
           }
         >
           <Box
@@ -606,6 +575,7 @@ export function MessageMediaThumbnailDownloadLink({
           disabled={downloading}
           aria-busy={downloading}
           aria-label={downloading ? 'Завантаження…' : label}
+          data-message-card-attachment-download="true"
           onClick={(event) => {
             event.stopPropagation();
             guardMessageCardDownloadClick(event, downloadKey, {

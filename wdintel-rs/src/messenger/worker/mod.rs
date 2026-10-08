@@ -1534,6 +1534,89 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn signal_attachment_cleanup_3679_preserves_retained_files() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        echo_client_config::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let (account, datasource) = mk_linked_datasource(&env.dbx).await;
+        let lock = echo_client_lock::Entity::find_by_id(
+            datasource.echo_client_lock_id.unwrap() as i32,
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        let attachments = tempfile::tempdir().unwrap();
+        echo_client_config::ActiveModel {
+            client_id: Set(lock.client_id),
+            process_name: Set("echo-3679".into()),
+            signal_api_attachment_path: Set(
+                attachments.path().to_string_lossy().into_owned(),
+            ),
+            signal_port: Set(0),
+            whatsapp_app_name: Set("echo-3679".into()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        echo_im::worker::cleanup_signal_attachment_worker_once(&env.dbx).await;
+        let [inbox, outbox, expired, hidden, fresh] =
+            mk_signal_cleanup_files(attachments.path());
+        let message = mk_echo_inbox_message(&env.dbx, account.id).await;
+        mk_echo_attachment(
+            &env.dbx,
+            account.id,
+            message.id,
+            inbox.to_str().unwrap(),
+            None,
+        )
+        .await;
+        let message = echo_outbox_message::ActiveModel {
+            body: Set("retained attachment".into()),
+            client_id: Set(lock.client_id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        echo_outbox_message_attachment::ActiveModel {
+            message_id: Set(message.id),
+            path: Set(Some(outbox.to_str().unwrap().into())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        for _ in 0..2 {
+            echo_im::worker::cleanup_signal_attachment_worker_once(&env.dbx).await;
+            for path in [&inbox, &outbox, &fresh] {
+                assert_eq!(std::fs::read(path).unwrap(), b"attachment");
+            }
+            assert!(!expired.exists());
+            assert!(!hidden.exists());
+            assert!(attachments.path().is_dir());
+        }
+        echo_attachment::Entity::delete_many().exec(&env.dbx).await.unwrap();
+        echo_outbox_message_attachment::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        echo_im::worker::cleanup_signal_attachment_worker_once(&env.dbx).await;
+        assert!(!inbox.exists());
+        assert!(!outbox.exists());
+        assert!(fresh.exists());
+        std::fs::remove_file(&fresh).unwrap();
+        std::fs::remove_dir(hidden.parent().unwrap()).unwrap();
+        echo_im::worker::cleanup_signal_attachment_worker_once(&env.dbx).await;
+        assert!(attachments.path().is_dir());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn queue_snapshot_hydrates_empty_attachments_from_echo_attachment() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let (account, datasource) = mk_linked_datasource(&env.dbx).await;
@@ -1701,6 +1784,32 @@ mod tests {
             reply_to: None,
             deleted,
         }
+    }
+
+    fn mk_signal_cleanup_files(
+        attachments_dir: &std::path::Path,
+    ) -> [std::path::PathBuf; 5] {
+        let inbox = attachments_dir.join("inbox * retained.bin");
+        let outbox = attachments_dir.join("outbox\nretained.bin");
+        let expired = attachments_dir.join("expired * file.bin");
+        let nested = attachments_dir.join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        let hidden = nested.join(".expired.bin");
+        let fresh = attachments_dir.join("fresh.bin");
+        for path in [&inbox, &outbox, &expired, &hidden, &fresh] {
+            std::fs::write(path, b"attachment").unwrap();
+        }
+        let expired_at = std::time::SystemTime::now()
+            - Duration::from_secs(
+                (echo_im::config::SIGNAL_ATTACHMENT_TTL_MINUTES + 2) * 60,
+            );
+        for path in [&inbox, &outbox, &expired, &hidden, attachments_dir] {
+            std::fs::File::open(path)
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(expired_at))
+                .unwrap();
+        }
+        [inbox, outbox, expired, hidden, fresh]
     }
 
     async fn mk_linked_datasource(

@@ -15,7 +15,7 @@ import Shared.Components.Toast
 import Shared.Msg exposing (ChangelogReleaseMeta, ChangelogReleasePage)
 import Url.Builder
 import Utils.Api.RetryableHttp as RetryableHttp
-import Utils.Api.Temp exposing (jsonPair, leExpectJson, resolve)
+import Utils.Api.Temp exposing (jsonPair, leExpectJson, resolve, resolveWithMetadata)
 
 
 {-| TODO: Refactor error handling to be more flexible and avoid code duplication.
@@ -382,15 +382,71 @@ delta_csv_to_kmz toMsg file =
         }
 
 
-rer_csv_import :
-    (Result ApiError Int -> msg)
+rer_csv_preflight :
+    (Result ApiError ( Bytes, RerCsvPreflightMetadata ) -> msg)
     -> File
     -> Cmd msg
-rer_csv_import toMsg file =
+rer_csv_preflight toMsg file =
     Http.request
         { method = "POST"
         , headers = []
-        , url = "/api/rer/csv-import"
+        , url = "/api/rer/csv-import/preflight"
+        , body =
+            Http.multipartBody
+                [ Http.filePart (File.name file) file
+                ]
+        , expect = Http.expectBytesResponse toMsg (resolveWithMetadata decodeRerCsvPreflight)
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+rer_csv_import_options :
+    (Result ApiError RerCsvImportOptions -> msg)
+    -> Cmd msg
+rer_csv_import_options toMsg =
+    Http.get
+        { url = "/api/rer/csv-import/options"
+        , expect = leExpectJson toMsg rerCsvImportOptionsDecoder
+        }
+
+
+decodeRerCsvPreflight : Http.Metadata -> Bytes -> Result String ( Bytes, RerCsvPreflightMetadata )
+decodeRerCsvPreflight metadata bytes =
+    case Dict.get "x-echo-rer-csv-metadata" metadata.headers of
+        Nothing ->
+            Err "Missing response header: x-echo-rer-csv-metadata"
+
+        Just value ->
+            Decode.decodeString rerCsvPreflightMetadataDecoder value
+                |> Result.mapError Decode.errorToString
+                |> Result.map (Tuple.pair bytes)
+
+
+rer_csv_import :
+    Bool
+    -> Int
+    -> String
+    -> (Result ApiError Int -> msg)
+    -> File
+    -> Cmd msg
+rer_csv_import isHistorical referenceTimestampMs targetSignalGroupMasterKey toMsg file =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url =
+            Url.Builder.absolute
+                [ "api", "rer", "csv-import" ]
+                [ Url.Builder.string "isHistorical"
+                    (if isHistorical then
+                        "true"
+
+                     else
+                        "false"
+                    )
+                , Url.Builder.int "referenceTimestampMs" referenceTimestampMs
+                , Url.Builder.string "targetSignalGroupMasterKey" targetSignalGroupMasterKey
+                ]
         , body =
             Http.multipartBody
                 [ Http.filePart (File.name file) file
@@ -1285,10 +1341,12 @@ list_organisms toMsg req =
         }
 
 
-get_delta_redirect_url : (Result ApiError DeltaLoginUrl -> msg) -> Cmd msg
-get_delta_redirect_url toMsg =
+get_delta_redirect_url : (Result ApiError DeltaLoginUrl -> msg) -> Maybe String -> Cmd msg
+get_delta_redirect_url toMsg redirect =
     Http.get
-        { url = "/api/fetch-redirect-url"
+        { url =
+            Url.Builder.absolute [ "api", "fetch-redirect-url" ]
+                (redirect |> Maybe.map (\target -> [ Url.Builder.string "redirect" target ]) |> Maybe.withDefault [])
         , expect = leExpectJson toMsg deltaLoginUrlDecoder
         }
 

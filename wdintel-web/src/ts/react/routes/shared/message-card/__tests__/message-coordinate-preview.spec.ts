@@ -75,6 +75,89 @@ describe('message coordinate preview resolver', () => {
     resetCoordinatePreviewStateForTests();
   });
 
+  it('#3064 includes direct, Palitra, document and position points without requiring a Palitra tag for positions', async () => {
+    vi.mocked(listMapPalitrasV2).mockResolvedValue([createPalitra(1)]);
+    vi.mocked(searchPalitraPoints).mockResolvedValue([
+      { points: [{ label: 'BRAVO', coords: { lat: 49.45, lng: 31.52 } }] } as never,
+    ]);
+    vi.mocked(getMediaSummaryCoordinates).mockResolvedValue({
+      coordinates: [
+        {
+          title: 'Документ',
+          description: null,
+          plannedMeans: null,
+          coordinateSystem: 'wgs84',
+          value: '49.5, 31.6',
+        },
+      ],
+    });
+    const position: ContentNode = {
+      CNPositionC: {
+        begin: 0,
+        end: 8,
+        etalon: 'береза 3',
+        text: 'Береза 3',
+        kind: 'position',
+        callsign: null,
+        mgrs: [],
+        knownMgrs: '37UCQ1111122222',
+        knownAt: 1720000000000,
+        knownConflicting: false,
+        coordinateSources: [
+          {
+            mgrs: '37UCQ1111122222',
+            messageUuid: '019a4aa8-0000-7000-8000-000000000066',
+            groupName: 'Група джерела',
+            messageAt: 1720000000000,
+          },
+        ],
+      },
+    };
+    const message = createMessage({
+      coords: '50.45044, 30.52355',
+      textMarked: [position, position],
+      inboxTags: [{ tagId: 7 }] as never,
+      pointTokens: [{ etalon: 'BRAVO' }] as never,
+      media: [{ id: 'document', summary: { state: 'completed', hasCoordinates: true } }] as never,
+    });
+    const result = await resolveMessageCoordinatePreview({ message, tagsMap: palitraTagsMap });
+    expect(result?.points.map((point) => point.source)).toEqual([
+      'direct',
+      'palitra',
+      'document',
+      'position',
+    ]);
+    expect(result?.points[3].label).toBe('Позиція «Береза 3»');
+    expect(result?.points[3].description).toContain('Відомо з інших повідомлень');
+    expect(result?.points[3].coordinateSources).toEqual(position.CNPositionC.coordinateSources);
+    const positionsOnly = createMessage({ textMarked: [position] });
+    expect(hasCoordinatePreviewCandidate(positionsOnly, {})).toBe(true);
+    expect(
+      (await resolveMessageCoordinatePreview({ message: positionsOnly }))?.points,
+    ).toHaveLength(1);
+    const explicitPosition: ContentNode = {
+      CNPositionC: {
+        ...position.CNPositionC,
+        mgrs: ['37UCQ1111122222'],
+        knownMgrs: null,
+      },
+    };
+    for (const text of ['', 'Позиція Береза 3: 37UCQ1111122222']) {
+      const colocated = await resolveMessageCoordinatePreview({
+        message: createMessage({
+          text,
+          coords: '37UCQ1111122222',
+          textMarked: [explicitPosition, explicitPosition],
+        }),
+      });
+      expect(colocated?.points).toHaveLength(1);
+      expect(colocated?.points[0].label).toBe('Позиція «Береза 3»');
+      expect(colocated?.points[0].coordinateSources).toEqual(
+        position.CNPositionC.coordinateSources,
+      );
+    }
+  });
+
   it('resolves direct WGS84 coordinates from msg.coords without loading palitras', async () => {
     const result = await resolveMessageCoordinatePreview({
       message: createMessage({ coords: '50.45044, 30.52355' }),

@@ -1,3 +1,4 @@
+import { FILE_CITATION_SCHEMA, validateFileCitations, type FileCitation } from "./devices.ts";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createHash, randomUUID } from "node:crypto";
@@ -26,6 +27,7 @@ export interface MapRecordInput {
   y: string;
   comments?: string[];
   sources?: MessageCitation[];
+  fileSources?: FileCitation[];
 }
 
 export interface MapRecord extends MapRecordInput {
@@ -36,6 +38,7 @@ export interface MapRecord extends MapRecordInput {
   longitude: number | null;
   comments: string[];
   sources: MessageCitation[];
+  fileSources?: FileCitation[];
   warnings: string[];
 }
 
@@ -245,6 +248,7 @@ const recordSchema = Type.Object({
   comments: Type.Optional(Type.Array(Type.String({ maxLength: 2_000 }), { maxItems: 32,
     description: "When asked to preserve ticket/table fields, copy the complete original ticket or row into comments, including every field. Each record must be self-contained, even for repeated values. There are up to 32 comment cells; combine fields in a cell if necessary, never omit fields to fit a cell limit. Also repeat the group code, callsign and unit already used in the name. Preserve unselected coordinate components exactly, including malformed values; never repair or truncate them." })),
   sources: Type.Optional(Type.Array(sourceSchema, { maxItems: 16 })),
+  fileSources: Type.Optional(Type.Array(FILE_CITATION_SCHEMA, { maxItems: 16 })),
 });
 
 type Request = (path: string, body: unknown, signal?: AbortSignal) => Promise<unknown>;
@@ -342,7 +346,7 @@ function copyStrings(value: unknown): string[] | undefined {
 }
 
 export function sanitizeEditOperations(operations: unknown, selectedPointIds: string[],
-  knownCitation: (citation: MessageCitation) => boolean, maxOperations = EDIT_OPERATION_LIMIT): unknown[] {
+  knownCitation: (citation: MessageCitation) => boolean, maxOperations = EDIT_OPERATION_LIMIT, knownFile: (citation: FileCitation) => boolean = () => false): unknown[] {
   if (!Array.isArray(operations) || !operations.length || operations.length > maxOperations) throw new Error(`Потрібно від 1 до ${maxOperations} операцій. Приклад: ${EDIT_EXAMPLE}`);
   return operations.map((operation) => {
     if (!operation || typeof operation !== "object" || Array.isArray(operation)) throw new Error(`Кожна операція має бути об'єктом. Приклад: ${EDIT_EXAMPLE}`);
@@ -376,6 +380,7 @@ export function sanitizeEditOperations(operations: unknown, selectedPointIds: st
         x: record.x,
         y: record.y,
         comments: record.comments ?? [],
+        fileSources: validateFileCitations(record.fileSources).filter(knownFile),
         sources,
       };
     }
@@ -446,6 +451,7 @@ export interface MapScriptContext {
   run: MapScriptRunner;
   prompt: string;
   messages: () => ScriptMessage[];
+  files?: () => import("./devices.ts").FileSection[];
 }
 
 // Keep in sync with FLIGHT_MARKER in template/python/echomap/recipes.py.
@@ -482,7 +488,7 @@ function targetSelector(target: unknown): Record<string, unknown> {
   throw new Error('target має бути "all", "selected", списком id або точною назвою точки.');
 }
 
-function sanitizeRecordInputs(records: Array<MapRecordInput & { sidc?: string | null }>, knownCitation: (citation: MessageCitation) => boolean) {
+function sanitizeRecordInputs(records: Array<MapRecordInput & { sidc?: string | null }>, knownCitation: (citation: MessageCitation) => boolean, knownFile: (citation: FileCitation) => boolean) {
   let omittedSourceCount = 0;
   const sanitized = records.map((record) => {
     const sources = validateCitations(record.sources).filter((source) => {
@@ -498,6 +504,7 @@ function sanitizeRecordInputs(records: Array<MapRecordInput & { sidc?: string | 
       x: record.x,
       y: record.y,
       comments: record.comments ?? [],
+      fileSources: validateFileCitations(record.fileSources).filter(knownFile),
       sources,
     };
   });
@@ -510,7 +517,7 @@ function tail(text: string, limit = SCRIPT_OUTPUT_LIMIT): string {
 
 export function createMapTools(registry: MapRegistry, request: Request, emit: Emit, countInvocation: () => void,
   knownCitation: (citation: MessageCitation) => boolean, recordSources: (citations: MessageCitation[]) => void = () => {},
-  editing?: MapEditContext, script?: MapScriptContext, resolver?: SidcResolver) {
+  editing?: MapEditContext, script?: MapScriptContext, resolver?: SidcResolver, knownFile: (citation: FileCitation) => boolean = () => false) {
   const idSchema = Type.String({ pattern: UUID.source });
   const cursor = editing ? { ...editing, selectedPointIds: [...editing.selectedPointIds] } : undefined;
   // Retries within this request reuse a key; a later request repeating the
@@ -533,7 +540,7 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
     const document = registry.draft(id);
     if (!Array.isArray(records) || !records.length || document.totalCount + records.length > RECORD_LIMIT)
       throw new Error("Append batch exceeds map limits");
-    const { sanitized, omittedSourceCount } = sanitizeRecordInputs(records, knownCitation);
+    const { sanitized, omittedSourceCount } = sanitizeRecordInputs(records, knownCitation, knownFile);
     const preparedRecords: MapRecord[] = [];
     for (let offset = 0; offset < sanitized.length; offset += BATCH_LIMIT) {
       signal?.throwIfAborted();
@@ -556,7 +563,7 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
 
   async function applyEdit(operations: unknown, revisionSummary: unknown, maxOperations: number, signal?: AbortSignal) {
     if (!cursor) throw new Error("No map is open for editing");
-    const sanitized = sanitizeEditOperations(operations, cursor.selectedPointIds, knownCitation, maxOperations);
+    const sanitized = sanitizeEditOperations(operations, cursor.selectedPointIds, knownCitation, maxOperations, knownFile);
     const idempotencyKey = createHash("sha256").update(`${editKeySalt}\n${cursor.revision}\n${JSON.stringify(sanitized)}`).digest("hex");
     const result = await request("/api/ai-agent/maps/edit", {
       requestId: cursor.requestId,
@@ -623,6 +630,8 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
         const records = document.records.slice(offset, offset + limit);
         signal?.throwIfAborted();
         recordSources(validateCitations(records.flatMap((record) => record.sources)));
+        const files = records.flatMap((record) => record.fileSources ?? []);
+        for (let offset = 0; offset < files.length; offset += 100) emit({ type: "file_citations", citations: files.slice(offset, offset + 100) });
         return { ...summary(document, local ? registry.isPublished(document.id) : true), records, nextOffset: offset + records.length < document.records.length ? offset + records.length : null };
       }),
   ];
@@ -669,11 +678,12 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
         const outcome = await script.run(code, {
           prompt: script.prompt,
           messages: script.messages(),
+          files: script.files?.() ?? [],
           map,
           selectedPointIds: cursor?.selectedPointIds ?? [],
         }, signal);
         if (outcome.status !== 0 || !outcome.result) {
-          const reports = countKnownReports([script.prompt, ...script.messages().map((message) => message.text)]);
+          const reports = countKnownReports([script.prompt, ...script.messages().map((message) => message.text), ...(script.files?.() ?? []).map((file) => file.text)]);
           const hint = reports > 0 ? `\nДля ${reports} звітів «Детали полета» викличте echo_map_from_reports з id чернетки — без коду.` : "";
           throw new Error(`Script failed (exit ${outcome.status}). Fix it and retry.${hint}\n${tail(outcome.stderr)}`);
         }
@@ -707,6 +717,7 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
         const outcome = await script.run(`from echomap import recipes\nrecipes.run(${name ? JSON.stringify(name) : "None"}, symbol=${requested ? JSON.stringify(requested) : "None"})\n`, {
           prompt: script.prompt,
           messages: script.messages(),
+          files: script.files?.() ?? [],
           map: null,
           selectedPointIds: [],
         }, signal);
@@ -722,9 +733,10 @@ export function createMapTools(registry: MapRegistry, request: Request, emit: Em
   return tools;
 }
 
-const SCRIPT_DESCRIPTION = `Run a short Python 3 script with the echomap library, without network or file access, to build or bulk-edit a map from text instead of typing every record. Prefer it for more than about 5 records, repetitive tickets/tables, and bulk symbol or field changes. The script sees the user's prompt and the Echo messages already retrieved in this request.
+const SCRIPT_DESCRIPTION = `Run a short Python 3 script with the echomap library, without network or file access, to build or bulk-edit a map from text instead of typing every record. Prefer it for more than about 5 records, repetitive tickets/tables, and bulk symbol or field changes. The script sees the user's prompt, retrieved Echo messages and device-file sections already read in this request.
 Library: from echomap import inputs, parse, recipes, sidc, Record, emit_records, current_map, emit_patch, log
 - recipes.records(symbol=None) -> Record objects parsed from known report formats («Детали полета»), ready to filter/rename/slice and pass to emit_records.
+- inputs.files() -> [FileSection(name, locator, text)] with .citation(); pass source=file to Record to preserve its revision and section. File dates are not observation dates.
 - inputs.prompt() -> str; inputs.messages() -> [Message(message_id, message_identifier, text, datetime, author, group)].
 - parse.split(text, marker_regex) -> blocks starting at matching lines; parse.kv(block) -> Fields with .first("Key", "Альтернатива"); parse.pair(text) -> (x, y) copied as written; parse.pairs(text); parse.dt(date, time=None) -> "YYYY-MM-DDTHH:MM:SS" or None; parse.lines(text).
 - sidc.find(text, identity="unknown"|"friend"|"hostile"|"neutral"|"suspect", echelon=None) -> 20-digit SIDC from Ukrainian/English words ("" when unknown); sidc.set(code, identity=, status=, echelon=, hq=, symbol_set=, entity=); sidc.retype(code, "танк"); sidc.describe(code); sidc.search("radar") -> [(set, entity, label)].
@@ -732,7 +744,7 @@ Library: from echomap import inputs, parse, recipes, sidc, Record, emit_records,
 - current_map() -> Map with .records (MapRecord: id, name, sidc, when, comments, x, y, crs, selected, text, describe()), .selected(), .where(name=, text=, identity=, symbol_set=, entity=, selected=, predicate), .remove(*records), .add(Record), .title; emit_patch(map, summary="…") saves all changes as one revision.
 print() and log() output is returned. Follow the same naming, comment, coordinate and date rules as for echo_map_append; copy source text into comments by passing the parsed block, never retype it.`;
 
-export const MAP_GUIDANCE = `When asked for a map or CSV/KMZ from points, build a document with the map tools. Read every input record, preserve order and repeated coordinates, append up to 128 records per call (up to 512 in one document); preparation is automatically split into batches of at most 32. For verbose tickets/tables, process about 16 source rows per call to stay within output limits, including every event/subgroup within those rows, and publish only after all records are included. Use one main map and optional separate submaps. Include the exact published [мапа](echo-map:<id>) references beside relevant passages; the latest main map automatically appears at the end. Never invent an ID, claim a download exists before publishing, or print a download data URL. Do not expose map tool names or IDs in prose. Use echo_map_list to recover documents after compaction and echo_map_get to read full records in batches. Copy the user's supplied SIDCs and explicit naming overrides exactly. When coordinates are present but no APP6D SIDC was supplied, leave sidc empty; Echo assigns the standard symbol and a warning. Never invent a SIDC. For unit reports, derive the name only from the explicit Подразделение/Підрозділ field, or the leading unit designation when that field is absent. Never include the posting author, header username, drone/operator name, or recipient callsign from other fields. Order that supplied unit hierarchy from its smallest unit/team to the regiment; omit divisions and larger units. Preserve a callsign only when it is part of that unit designation or an explicit naming override. Join the unit names with spaces, preserving their spelling and case. Do not add commas, dashes, mission descriptions, cargo, equipment, or invented missing units to the name. Keep that information in comments. When every ticket/table field is requested, copy the complete original ticket or row into comments, preserving all field labels and values. Every record must be self-contained: repeat common values and never refer to a previous row instead of copying its fields. Use one or several comment cells for the complete source text; combine fields if a ticket has more fields than available cells, never stop at a cell limit. Preserve source wording, avoiding translation, paraphrase or shortened summaries. For table group names, follow the user's explicit group-code/callsign/unit naming rule. A group code is distinct from the table's ordinal row number. Keep applicable section headings and every supplied row-column value in comments when requested. In particular, explicitly repeat the original group code, callsign, personnel count and unit in comments even when the code/callsign/unit also appear in the name. Do not omit a requested comment field because its value is already represented by another record property. Preserve unselected position components exactly in comments, including extra or missing digits; never repair or truncate an unused coordinate. Use CAPDOC platform type. Prefer each event's date/time over posting headers; use the header date only when an event date is absent. Apply the supplied date policy: no date/time gives null, date only gives YYYY-MM-DDT00:00:00, date plus time gives YYYY-MM-DDTHH:mm:ss, time without a date gives null. When a posting header supplies the missing date, use that date with the event time. For tables, choose real position, then changed position, then previous position, and preserve unselected positions and other information in comments. In a flattened table, retain the position-column order: a later changed/real position pair takes precedence over the earlier previous position pair. Copy coordinates exactly from the chosen pair. Before publication, verify names, selected positions, input order, and total row count against the original input; use echo_map_get to inspect canonical records if needed. Normalize no coordinates yourself: copy original X/Y including malformed components and missing digits. Supplied MSK-2000 pairs use Echo's СК-42 conversion, not USK-2000. Invalid rows remain in CSV and are omitted from map geometry and KMZ; report their warnings and counts. Copy optional source citations only from retrieved messages. Leave sources empty when the text was pasted and no message was retrieved; citations that were not retrieved are omitted. Do not paste a [мапа](echo-map:<id>) link until echo_map_publish returns it. If echo_map_append fails, correct the arguments and retry instead of claiming that the map exists. Lines, polygons and attachments are not supported.`;
+export const MAP_GUIDANCE = `When asked for a map or CSV/KMZ from points, build a document with the map tools. Read every input record, preserve order and repeated coordinates, append up to 128 records per call (up to 512 in one document); preparation is automatically split into batches of at most 32. For verbose tickets/tables, process about 16 source rows per call to stay within output limits, including every event/subgroup within those rows, and publish only after all records are included. Use one main map and optional separate submaps. Include the exact published [мапа](echo-map:<id>) references beside relevant passages; the latest main map automatically appears at the end. Never invent an ID, claim a download exists before publishing, or print a download data URL. Do not expose map tool names or IDs in prose. Use echo_map_list to recover documents after compaction and echo_map_get to read full records in batches. Copy the user's supplied SIDCs and explicit naming overrides exactly. When coordinates are present but no APP6D SIDC was supplied, leave sidc empty; Echo assigns the standard symbol and a warning. Never invent a SIDC. For unit reports, derive the name only from the explicit Подразделение/Підрозділ field, or the leading unit designation when that field is absent. Never include the posting author, header username, drone/operator name, or recipient callsign from other fields. Order that supplied unit hierarchy from its smallest unit/team to the regiment; omit divisions and larger units. Preserve a callsign only when it is part of that unit designation or an explicit naming override. Join the unit names with spaces, preserving their spelling and case. Do not add commas, dashes, mission descriptions, cargo, equipment, or invented missing units to the name. Keep that information in comments. When every ticket/table field is requested, copy the complete original ticket or row into comments, preserving all field labels and values. Every record must be self-contained: repeat common values and never refer to a previous row instead of copying its fields. Use one or several comment cells for the complete source text; combine fields if a ticket has more fields than available cells, never stop at a cell limit. Preserve source wording, avoiding translation, paraphrase or shortened summaries. For table group names, follow the user's explicit group-code/callsign/unit naming rule. A group code is distinct from the table's ordinal row number. Keep applicable section headings and every supplied row-column value in comments when requested. In particular, explicitly repeat the original group code, callsign, personnel count and unit in comments even when the code/callsign/unit also appear in the name. Do not omit a requested comment field because its value is already represented by another record property. Preserve unselected position components exactly in comments, including extra or missing digits; never repair or truncate an unused coordinate. Use CAPDOC platform type. Prefer each event's date/time over posting headers; use the header date only when an event date is absent. Apply the supplied date policy: no date/time gives null, date only gives YYYY-MM-DDT00:00:00, date plus time gives YYYY-MM-DDTHH:mm:ss, time without a date gives null. When a posting header supplies the missing date, use that date with the event time. For tables, choose real position, then changed position, then previous position, and preserve unselected positions and other information in comments. In a flattened table, retain the position-column order: a later changed/real position pair takes precedence over the earlier previous position pair. Copy coordinates exactly from the chosen pair. Before publication, verify names, selected positions, input order, and total row count against the original input; use echo_map_get to inspect canonical records if needed. Normalize no coordinates yourself: copy original X/Y including malformed components and missing digits. Supplied MSK-2000 pairs use Echo's СК-42 conversion, not USK-2000. Invalid rows remain in CSV and are omitted from map geometry and KMZ; report their warnings and counts. Copy optional sources only from retrieved messages and fileSources only from retrieved device-file citations, preserving their revision, extractionRevision and section. Leave sources empty when the text was pasted and no message was retrieved; citations that were not retrieved are omitted. Do not paste a [мапа](echo-map:<id>) link until echo_map_publish returns it. If echo_map_append fails, correct the arguments and retry instead of claiming that the map exists. Lines, polygons and attachments are not supported.`;
 
 export const SCRIPT_GUIDANCE = `For «Детали полета» UAV flight reports, call echo_map_from_reports on the draft instead of writing code or appending records yourself. When the user wants only some reports, custom names, or more than 512 records split into submaps, use echo_map_script with recipes.records() (the same parsed Record objects) and filter, rename or slice them before emit_records. For more than about 5 records from tickets, reports or tables, or for bulk changes to an open map, prefer echo_map_script: write a short Python script that parses the prompt or retrieved messages and emits records/edits, instead of typing records into echo_map_append. Pass parsed source blocks as comments so original text is copied, not retyped. If a script fails, read the error, fix the script and retry. Verify the returned counts against the input before publishing. When the user asks for a symbol type or affiliation (e.g. "ворожі танки", "дружні БпЛА"), choose the SIDC with sidc.find/sidc.set/sidc.retype; otherwise keep the rule about unsupplied SIDCs.`;
 

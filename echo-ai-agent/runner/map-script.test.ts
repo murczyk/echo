@@ -165,3 +165,17 @@ test("#3064 echo_map_from_reports parses known reports without model-written cod
   assert.deepEqual(registry.outcome.expected.get(id), { count: 25, label: "Деталі польоту (БпЛА)" });
   assert.equal((await execute("echo_map_publish", { id })).published, true);
 });
+
+test('#3064 sandboxed file parsing preserves file revisions without inventing dates', { skip: !realRunner && 'namespace isolation unavailable' }, async () => {
+  const source = { deviceId: '11111111-1111-4111-8111-111111111111', fileId: '22222222-2222-4222-8222-222222222222', revision: 3, extractionRevision: '33333333-3333-4333-8333-333333333333', section: 4 };
+  const outcome = await realRunner!([
+    'from echomap import inputs, parse, Record, emit_records',
+    'for section in inputs.files():',
+    '    x, y = parse.pair(section.text)',
+    '    emit_records([Record(name="Point", x=x, y=y, comments=[section.text], source=section)])',
+  ].join('\n'), { prompt: '', messages: [], files: [{ source, name: 'points.xlsx', locator: 'row 5', text: '5272881, 6679505' }], map: null, selectedPointIds: [] });
+  assert.equal(outcome.status, 0, outcome.stderr);
+  assert.deepEqual(outcome.result!.records[0].fileSources, [source]);
+  assert.equal(outcome.result!.records[0].observationDatetime, null);
+  assert.deepEqual(outcome.result!.records[0].sources, []);
+});

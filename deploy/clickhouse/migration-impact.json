@@ -1,5 +1,32 @@
 {
   "migrations": {
+    "echo:m20261006_164921_sigint_inbox_item_freq_datetime_index": {
+      "changes": []
+    },
+    "echo:m20261006_150248_network_freq_exact_count_index": {
+      "changes": []
+    },
+    "echo:m20261006_150705_ai_agent_chat_webhook": {
+      "changes": [
+        { "table": "public.ai_agent_settings", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261006_082251_device_document_settings": {
+      "changes": [{ "table": "public.device_document_settings", "strategy": "excluded" }]
+    },
+    "echo:m20261006_075657_ai_gov_ua_settings": {
+      "changes": [
+        { "table": "public.ai_gov_ua_settings", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261005_044401_messenger_media_cache_settings": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_additive" }
+      ]
+    },
+    "echo:m20261004_175803_signal_message_media_created_at_index": {
+      "changes": []
+    },
     "echo:m20260929_195200_ai_agent_map_workspace": {
       "changes": [
         { "table": "public.ai_agent_map", "strategy": "excluded" },
@@ -670,8 +697,43 @@
         }
       ]
     }
+ ,
+    "echo:m20261002_192628_ai_position_parsing": {
+      "changes": [
+        { "table": "public.ai_position_settings", "strategy": "excluded" },
+        { "table": "public.ai_position_worker_job", "strategy": "excluded" },
+        { "table": "public.ai_position_mention", "strategy": "excluded" },
+        { "table": "public.ai_position_coordinate", "strategy": "excluded" },
+        { "table": "public.ai_position_knowledge", "strategy": "excluded" },
+        { "table": "public.ai_position_knowledge_job", "strategy": "excluded" },
+        { "table": "public.ai_position_link_job", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261003_041306_ai_position_feedback": {
+      "changes": [
+        { "table": "public.ai_position_feedback", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261003_111926_ai_position_kind": {
+      "changes": [
+        { "table": "public.ai_position_mention", "strategy": "excluded" },
+        { "table": "public.ai_position_knowledge", "strategy": "excluded" },
+        { "table": "public.ai_position_feedback", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261006_110425_merge_cyber_roles": { "changes": [] },
+    "echo:m20261005_050621_attachment_documents": {
+      "changes": [
+        { "table": "public.attachment_settings", "strategy": "excluded" },
+        { "table": "public.attachment_document", "strategy": "excluded" },
+        { "table": "public.attachment_chunk", "strategy": "excluded" },
+        { "table": "public.attachment_job", "strategy": "excluded" },
+        { "table": "public.ai_position_mention", "strategy": "excluded" }
+      ]
+    }
   },
   "dependencies": {
+    "echo-im:80589feab5a9afbe6e474f76b39cc563506c9262": { "changes": [] },
     "echo-im:f9b21242397b9cb04c9c98213f1c5217f1f1e273": {
       "changes": [
         {

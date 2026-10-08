@@ -169,8 +169,8 @@ pub(super) async fn load_summaries(
     ids: Vec<Uuid>,
 ) -> anyhow::Result<Vec<DeviceSyncSessionSummary>> {
     let rows = SessionQuery::new(device_id, ids).all(files.connection(), r#"
-        , summary_files as materialized (select sync_id, current_analysis_run_id, tag_ids, created_at from session_files), totals as (
-            select sync_id, count(*) as total, count(current_analysis_run_id) as analyzed
+        , summary_files as materialized (select sync_id, content_path, current_analysis_run_id, tag_ids, created_at from session_files), totals as (
+            select sync_id, count(*) as total, count(content_path) as with_content, count(current_analysis_run_id) as analyzed
             from summary_files group by sync_id
         ), tag_counts as (
             select files.sync_id, tag.id, tag.name, count(*) as file_count, max(files.created_at) as latest
@@ -179,6 +179,7 @@ pub(super) async fn load_summaries(
             group by files.sync_id, tag.id, tag.name
         )
         select session.id as sync_id, coalesce(totals.total, 0) as total,
+            coalesce(totals.with_content, 0) as with_content,
             coalesce(totals.analyzed, 0) as analyzed,
             coalesce(jsonb_agg(jsonb_build_object('tag', jsonb_build_object('id', tag.id, 'name', tag.name),
                 'file_count', tag.file_count, 'latest_file_entry_created_at',
@@ -187,12 +188,13 @@ pub(super) async fn load_summaries(
         from file_sync_session session left join totals on totals.sync_id = session.id
         left join tag_counts tag on tag.sync_id = session.id
         where session.device_id = $1 and session.id = any($2::uuid[])
-        group by session.id, totals.total, totals.analyzed order by session.created_at desc, session.id desc
+        group by session.id, totals.total, totals.with_content, totals.analyzed order by session.created_at desc, session.id desc
     "#).await.c(h!())?;
     rows.into_iter().map(|row| Ok(DeviceSyncSessionSummary {
         sync_id: row.try_get::<Uuid>("", "sync_id").c(h!())?.to_string(),
         analysis: crate::devices::analytics::types::DeviceAnalyticsSummaryRsp {
             total_file_count: row.try_get::<i64>("", "total").c(h!())?.try_into().c(h!())?,
+            files_with_content_count: row.try_get::<i64>("", "with_content").c(h!())?.try_into().c(h!())?,
             analyzed_file_count: row.try_get::<i64>("", "analyzed").c(h!())?.try_into().c(h!())?,
             items: serde_json::from_value(row.try_get("", "items").c(h!())?).c(h!())?,
         },

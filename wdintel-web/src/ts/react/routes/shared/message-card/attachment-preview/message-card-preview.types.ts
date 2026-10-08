@@ -18,7 +18,10 @@ export type KmzAttachmentPreviewSource = {
   mediaId: string;
   originalHref: string;
   fileName: string;
+  sizeBytes?: number | null;
+  contentType?: string | null;
   initialStatus: string;
+  nativeFormat?: 'kml' | 'kmz' | null;
 };
 
 export type MessageCardPreviewNavigation = {
@@ -45,4 +48,4 @@ export type MessageCardPreviewItem =
   | { type: 'audio'; value: AudioPreviewSource }
   | { type: 'document'; value: MessageCardDocument }
   | { type: 'kmz'; value: KmzAttachmentPreviewSource }
-  | { type: 'coordinate'; points: CoordinatePreviewPoint[] };
+  | { type: 'coordinate'; points: CoordinatePreviewPoint[]; initialPointIndex?: number };

@@ -103,7 +103,7 @@ async fn process_next(env: &Env) -> anyhow::Result<bool> {
         return Ok(false);
     };
     let started_at = Instant::now();
-    let response = summarize(&env.dbx, &job).await;
+    let response = summarize(&env.ai_engine_client, &env.dbx, &job).await;
     match response {
         Ok((summary, response)) => {
             record_coordinate_drops(env, &job, &summary.coordinate_drops);
@@ -223,6 +223,7 @@ returning job.*
 }
 
 async fn summarize(
+    ai_client: &crate::ai_engine::AiEngineClient,
     dbx: &DatabaseConnection,
     job: &media_summary_entity::Model,
 ) -> anyhow::Result<(StructuredSummary, AiEngineResponse)> {
@@ -237,6 +238,7 @@ async fn summarize(
     let source_text = job.source_text.as_deref().c(h!())?;
     let messages = summary_messages(source_text);
     let response = request_structured_ai_response(
+        ai_client,
         &ai_engine,
         messages,
         0.1,
@@ -284,6 +286,9 @@ async fn complete(
     if updated.rows_affected != 1 {
         anyhow::bail!("media summary lease was lost before completion");
     }
+    crate::ai_position::worker::enqueue_media_if_enabled(dbx, job.media_id)
+        .await
+        .c(h!())?;
     Ok(())
 }
 
@@ -673,6 +678,25 @@ fn retry_delay(attempts: i32) -> i64 {
 
 fn truncate_error(error: String) -> String {
     error.chars().take(MEDIA_SUMMARY_MAX_ERROR_CHARS).collect()
+}
+
+pub(crate) async fn summarize_attachment_text(
+    ai_client: &crate::ai_engine::AiEngineClient,
+    engine: &ai_engine::Model,
+    text: &str,
+) -> anyhow::Result<(String, Vec<MediaSummaryCoordinate>)> {
+    let response = request_structured_ai_response(
+        ai_client,
+        engine,
+        summary_messages(text),
+        0.1,
+        MEDIA_SUMMARY_OUTPUT_TOKENS,
+        response_format(),
+    )
+    .await
+    .c(h!())?;
+    let summary = parse_response(&response.content).await.c(h!())?;
+    Ok((summary.summary, summary.coordinates))
 }
 
 #[cfg(test)]

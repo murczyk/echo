@@ -10,8 +10,8 @@ from pathlib import Path, PurePosixPath
 from .validation import validate_package
 
 
-def create_package_zip(package_dir: Path, destination: Path) -> None:
-    errors = validate_package(package_dir)
+def create_package_zip(package_dir: Path, destination: Path, *, native: bool = False) -> None:
+    errors = validate_native_package(package_dir) if native else validate_package(package_dir)
     if errors:
         raise ValueError("invalid canonical package: " + "; ".join(errors[:5]))
     temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
@@ -42,10 +42,14 @@ def validate_package_zip(path: Path) -> None:
                 raise ValueError("ZIP contains an unsafe member")
             if archive.getinfo(name).is_dir():
                 raise ValueError("ZIP contains unexpected directory members")
-        required = {"manifest.json", "quality.json", "provenance.json", "document.html", "document.md"}
+        manifest = json.loads(archive.read("manifest.json"))
+        required = {"manifest.json", "document.html", "document.md"}
+        required |= (
+            {"document.json"} if manifest.get("format") == "attachment_document_v1"
+            else {"quality.json", "provenance.json"}
+        )
         if not required.issubset(names):
             raise ValueError("ZIP does not contain a canonical package")
-        manifest = json.loads(archive.read("manifest.json"))
         for relative, expected in manifest.get("file_hashes", {}).items():
             if relative not in names:
                 raise ValueError(f"ZIP is missing package member: {relative}")
@@ -55,3 +59,24 @@ def validate_package_zip(path: Path) -> None:
                     digest.update(chunk)
             if digest.hexdigest() != expected:
                 raise ValueError(f"ZIP member checksum mismatch: {relative}")
+
+
+def validate_native_package(directory: Path) -> list[str]:
+    from .documents import CHUNK_CHARS, MAX_CHARS
+
+    manifest = json.loads((directory / "manifest.json").read_text())
+    payload = json.loads((directory / "document.json").read_text())
+    if manifest.get("format") != "attachment_document_v1":
+        return ["unknown native package format"]
+    sections = payload["sections"]
+    if sum(len(section["text"]) for section in sections) > MAX_CHARS * 2:
+        return ["extracted text limit"]
+    if any(len(section["text"]) > CHUNK_CHARS for section in sections):
+        return ["section exceeds chunk limit"]
+    for name, expected in manifest["file_hashes"].items():
+        path = PurePosixPath(name)
+        if path.is_absolute() or ".." in path.parts:
+            return ["unsafe package member"]
+        if hashlib.sha256((directory / name).read_bytes()).hexdigest() != expected:
+            return ["package checksum mismatch"]
+    return []

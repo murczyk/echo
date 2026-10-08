@@ -235,9 +235,10 @@ export function DeviceAnalyticsPanel({
           >
             <Paper variant="outlined" sx={{ flex: '1 1 140px', minWidth: 0, px: 2, py: 1.5 }}>
               <Typography variant="caption" color="text.secondary">
-                Усього файлів
+                Файлів з контентом / усього
               </Typography>
               <Typography variant="h6">
+                {fileCountFormatter.format(summary.filesWithContentCount)}/
                 {fileCountFormatter.format(summary.totalFileCount)}
               </Typography>
             </Paper>

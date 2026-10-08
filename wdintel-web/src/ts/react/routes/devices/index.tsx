@@ -197,6 +197,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
           aorOptions={page.aorOptions}
           unitOptions={page.unitOptions}
           hasChanges={page.editHasChanges}
+          nameRequired={page.editNameRequired}
           onClose={page.closeEditDialog}
           onChange={page.setEditForm}
           onSave={(form) => void page.submitEditDialog(form)}

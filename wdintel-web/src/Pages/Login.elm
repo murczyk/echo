@@ -20,8 +20,8 @@ import Route.Path
 import Shared
 import Shared.Model exposing (isDarkMode)
 import Task
-import Url.Builder
 import Utils.Api.ErrorHandling
+import Utils.LoginRedirect
 import Utils.Components exposing (fieldError, isInvalidCls)
 import Utils.Utils exposing (..)
 import View exposing (View)
@@ -82,7 +82,7 @@ init route shared _ =
       , totpTokenInp = ""
       , pending2fa = Nothing
       , authInFlight = False
-      , redirect = Dict.get "redirect" route.query
+      , redirect = Dict.get "redirect" route.query |> Maybe.andThen (Utils.LoginRedirect.normalize route.url)
       , serverInfo = shared.serverInfo
       , showCredsLogin = False
       }
@@ -195,32 +195,9 @@ remapConfirm2faFormErrors errors =
                             errors
 
 
-navigateAfterLogin : Shared.Model -> Model -> Effect Msg
-navigateAfterLogin shared model =
-    case shared.location of
-        Nothing ->
-            E.none
-
-        Just loc ->
-            E.sendCmd <|
-                Browser.Navigation.load
-                    (model.redirect
-                        |> mmap
-                            (\x ->
-                                if
-                                    String.contains "localhost" x
-                                        || String.contains "127.0.0.1" x
-                                then
-                                    x
-
-                                else
-                                    String.replace "http://" "https://" x
-                            )
-                        |> def
-                            (loc.origin
-                                ++ Url.Builder.absolute [] []
-                            )
-                    )
+navigateAfterLogin : Model -> Effect Msg
+navigateAfterLogin model =
+    E.loadExternalUrl (Maybe.withDefault "/" model.redirect)
 
 
 page : Shared.Model -> Route () -> Page Model Msg
@@ -300,7 +277,7 @@ update shared msg model =
             case pendingFromLoginRsp rsp of
                 Nothing ->
                     ( { model | authInFlight = False }
-                    , navigateAfterLogin shared model
+                    , navigateAfterLogin model
                     )
 
                 Just pending ->
@@ -355,7 +332,7 @@ update shared msg model =
 
         Confirm2faDone (Ok ()) ->
             ( { model | authInFlight = False }
-            , navigateAfterLogin shared model
+            , navigateAfterLogin model
             )
 
         Cancel2fa ->
@@ -413,7 +390,7 @@ update shared msg model =
             )
 
         GetDeltaRedirectUrl ->
-            ( model, E.sendCmd <| Api.get_delta_redirect_url GotDeltaRedirectUrl )
+            ( model, E.sendCmd <| Api.get_delta_redirect_url GotDeltaRedirectUrl model.redirect )
 
         GotDeltaRedirectUrl (Ok url) ->
             ( model
@@ -539,43 +516,51 @@ body _ deltaLoginFlag sharedToasts model =
         logoBlock =
             div [ class "mb-4 pt-2" ]
                 [ div
-                    [ class "logo-animated d-flex justify-content-center align-items-center"
+                    [ class "logo-coin-trigger d-flex justify-content-center align-items-center"
                     , style "gap" "5px"
                     ]
-                    [ div
-                        [ class "d-flex align-items-center justify-content-center"
-                        , style "width" "65px"
+                    [ node "echo-logo-coin"
+                        [ class "logo-coin logo-coin--auto d-flex align-items-center justify-content-center"
+                        , style "width" "60px"
                         , style "height" "60px"
-                        , style "position" "relative"
                         ]
                         [ div
-                            [ class "main-image"
-                            , style "width" "60px"
-                            , style "height" "60px"
-                            ]
-                            [ img
-                                [ src "/img/kraken-mark.png"
+                            [ class "logo-coin__idle" ]
+                            [ div
+                                [ class "logo-coin__disc"
                                 , style "width" "60px"
                                 , style "height" "60px"
-                                , alt "Echo"
                                 ]
-                                []
-                            ]
-                        , div
-                            [ class "hover-image"
-                            , style "width" "60px"
-                            , style "height" "60px"
-                            , style "background-color" "#000"
-                            , style "border-radius" "50%"
-                            ]
-                            [ img
-                                [ src "/img/flying_skull_logo_transparent.png"
-                                , style "width" "60px"
-                                , style "height" "42px"
-                                , style "z-index" "1"
-                                , alt "Flying Skull"
+                                [ div
+                                    [ class "main-image logo-coin__face logo-coin__face--front"
+                                    , style "width" "60px"
+                                    , style "height" "60px"
+                                    ]
+                                    [ img
+                                        [ src "/img/kraken-mark.png"
+                                        , style "width" "60px"
+                                        , style "height" "60px"
+                                        , alt "Echo"
+                                        ]
+                                        []
+                                    ]
+                                , div
+                                    [ class "hover-image logo-coin__face logo-coin__face--back"
+                                    , style "width" "60px"
+                                    , style "height" "60px"
+                                    , style "background-color" "#000"
+                                    , style "border-radius" "50%"
+                                    ]
+                                    [ img
+                                        [ src "/img/riskdept.svg"
+                                        , style "width" "54px"
+                                        , style "height" "54px"
+                                        , style "z-index" "1"
+                                        , alt "Risk Department"
+                                        ]
+                                        []
+                                    ]
                                 ]
-                                []
                             ]
                         ]
                     , div []

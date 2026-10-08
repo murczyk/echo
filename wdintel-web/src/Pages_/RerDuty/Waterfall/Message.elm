@@ -149,16 +149,36 @@ renderAttachment attachment =
     let
         displayFileName =
             withDefault "<файл без назви>" attachment.fileName
+        nativePreview =
+            String.endsWith ".kml" (String.toLower displayFileName)
+                || String.endsWith ".kmz" (String.toLower displayFileName)
+                || String.contains "kml" (String.toLower attachment.contentType)
+                || String.contains "kmz" (String.toLower attachment.contentType)
+                || String.contains "google-earth" (String.toLower attachment.contentType)
     in
-    a
-        [ class "btn btn-outline-secondary btn-sm mb-2"
-        , href attachment.href
-        , download displayFileName
-        , target "_blank"
-        ]
-        [ i [ class "bi bi-download me-2" ] []
-        , text displayFileName
-        ]
+    if nativePreview || attachment.kmzConversionStatus /= Nothing then
+        node "kmz-attachment-preview"
+            [ class "mb-2"
+            , attribute "media-id" attachment.id
+            , attribute "original-href" attachment.href
+            , attribute "file-name" displayFileName
+            , attribute "conversion-status" (Maybe.withDefault "" attachment.kmzConversionStatus)
+            , attribute "size-bytes" (String.fromInt attachment.sizeBytes)
+            , attribute "content-type" attachment.contentType
+            ]
+            []
+
+    else
+            a
+                [ class "btn btn-outline-secondary btn-sm mb-2"
+                , href attachment.href
+                , download displayFileName
+                , target "_blank"
+                ]
+                [ i [ class "bi bi-download me-2" ] []
+                , text displayFileName
+                ]
+
 
 
 renderMedia : MessageMediaInfo -> Maybe (Html msg)

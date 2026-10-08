@@ -140,7 +140,9 @@ pub async fn infer(
         .await
         .c(h!())?
         .ok_or_else(invalid_grant)?;
-    let response = request_ocr_response(&ai_engine, request).await?;
+    let response =
+        request_ocr_response(&env.ai_engine_client, &ai_engine, request)
+            .await?;
     Ok(HttpResponse::Ok().json(response))
 }
 

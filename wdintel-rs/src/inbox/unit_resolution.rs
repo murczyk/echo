@@ -227,14 +227,14 @@ fn structural_alias_has_trigram(alias: &str) -> bool {
 fn structural_word_condition(word: &str) -> (Condition, bool) {
     let normalized = normalize_structural_text(word);
     let aliases = equivalent_unit_notion_aliases(&normalized);
-    let aliases = if aliases
-        .iter()
-        .all(|alias| structural_alias_has_trigram(alias))
-    {
-        aliases
-    } else {
-        vec![word]
-    };
+    let aliases = std::iter::once(word)
+        .chain(
+            aliases
+                .into_iter()
+                .filter(|alias| structural_alias_has_trigram(alias)),
+        )
+        .unique_by(|alias| alias.to_lowercase())
+        .collect_vec();
     let has_trigram = aliases
         .iter()
         .all(|alias| structural_alias_has_trigram(alias));
@@ -253,6 +253,26 @@ fn structural_word_condition(word: &str) -> (Condition, bool) {
         })
         .fold(Condition::any(), |condition, alias| condition.add(alias));
     (condition, has_trigram)
+}
+
+fn structural_anchor_condition(anchor: &str) -> Option<Condition> {
+    let normalized = normalize_structural_text(anchor);
+    let variants = equivalent_sigint_unit_name_variants(anchor, &normalized);
+    if variants.len() > INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT {
+        warn!("Too many equivalent structural anchor variants for {anchor:?}");
+        return None;
+    }
+    Some(
+        variants
+            .into_iter()
+            .map(|variant| {
+                orbit_unit::Column::GenerativeUnitNameFull
+                    .ilike(format!("%{variant}%"))
+            })
+            .fold(Condition::any(), |condition, variant| {
+                condition.add(variant)
+            }),
+    )
 }
 
 async fn structural_candidates<C>(
@@ -306,10 +326,9 @@ where
             })
             .max_by_key(|segment| segment.chars().count());
         if let Some(anchor) = anchor {
-            query =
-                query.filter(orbit_unit::Column::GenerativeUnitNameFull.ilike(
-                    format!("%{}%", collapse_unit_label_whitespace(anchor)),
-                ));
+            if let Some(condition) = structural_anchor_condition(anchor) {
+                query = query.filter(condition);
+            }
         }
     }
 
@@ -2361,6 +2380,35 @@ mod tests {
 
         assert_eq!(
             resolve_sigint_unit_id(&env.dbx, Some(&unit_v2), None)
+                .await
+                .unwrap(),
+            Some(unit.id)
+        );
+        delete_orbit_units(&env.dbx, vec![orbit_unit]).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn structural_matching_keeps_selective_army_aliases() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let orbit_unit = insert_orbit_unit(
+            &env.dbx,
+            "20 ЗВА",
+            None,
+            "fieldArmy",
+            &[unit.id],
+        )
+        .await;
+
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, Some("20 ОА"), None)
                 .await
                 .unwrap(),
             Some(unit.id)

@@ -37,8 +37,12 @@ function coordinatePreviewInputKey(message: InboxMessage, tagsMap: Record<number
     media: (message.media ?? []).map((media) => ({
       id: media.id,
       summary: media.summary,
+      positions: media.positions,
     })),
     text: message.text,
+    positions: (message.textMarked ?? []).flatMap((node) =>
+      typeof node !== 'string' && 'CNPositionC' in node ? [node.CNPositionC] : [],
+    ),
   });
 }
 

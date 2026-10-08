@@ -371,3 +371,42 @@ def test_zip_validation_rejects_traversal_and_accepts_canonical_members(tmp_path
         archive.writestr("../escape", b"x")
     with pytest.raises(ValueError, match="unsafe"):
         validate_package_zip(unsafe)
+
+
+def test_native_attachment_job_runs_without_ocr_dependency_and_packages_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from echo_document_extractor.worker import Worker
+
+    monkeypatch.setenv("ECHO_DOCUMENT_EXTRACTOR_TOKEN", TOKEN)
+    config = runtime_config(tmp_path)
+    app = create_app(config)
+    with TestClient(app) as client:
+        ordinary = client.post(
+            "/v1/jobs", headers=auth(), files=[("files", ("scan.png", png_bytes(), "image/png"))]
+        )
+        assert ordinary.status_code == 202
+        response = client.post(
+            "/v1/jobs",
+            headers={**auth(), "Idempotency-Key": "native-1"},
+            files=[("files", ("order.txt", "Позиція Береза".encode(), "text/plain"))],
+            data={
+                "manifest": json.dumps(
+                    {"schema_version": 1, "inputs": ["order.txt"], "metadata": {"attachment_native": True}}
+                )
+            },
+        )
+        assert response.status_code == 202
+        worker = Worker(config, start_metrics=False)
+        job = worker.queue.claim(worker.owner, 30, native_only=True)
+        assert job is not None and job.id == response.json()["id"]
+        asyncio.run(worker.process(job))
+        state = client.get(f"/v1/jobs/{job.id}", headers=auth()).json()
+        assert state["state"] == "completed", state
+        content = client.get(f"/v1/jobs/{job.id}/result", headers=auth())
+        with zipfile.ZipFile(io.BytesIO(content.content)) as archive:
+            payload = json.loads(archive.read("document.json"))
+            assert payload["sections"][0]["text"] == "Позиція Береза"
+        assert client.get(f"/v1/jobs/{ordinary.json()['id']}", headers=auth()).json()["state"] == "queued"

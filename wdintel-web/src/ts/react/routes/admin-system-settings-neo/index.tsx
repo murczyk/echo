@@ -60,6 +60,10 @@ type SystemSettingsForm = {
   analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
+  messengerMediaCacheMinFreeGib: SystemSettingsItem['messengerMediaCacheMinFreeGib'];
+  messengerMediaCacheMaxSizeGib: SystemSettingsItem['messengerMediaCacheMaxSizeGib'];
+  messengerMediaCacheRetentionHours: SystemSettingsItem['messengerMediaCacheRetentionHours'];
+  messengerMediaCacheEnabled: SystemSettingsItem['messengerMediaCacheEnabled'];
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
@@ -96,6 +100,10 @@ type SystemSettingsPayload = {
   analysisAorFilterEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
+  messengerMediaCacheMinFreeGib: SystemSettingsItem['messengerMediaCacheMinFreeGib'];
+  messengerMediaCacheMaxSizeGib: SystemSettingsItem['messengerMediaCacheMaxSizeGib'];
+  messengerMediaCacheRetentionHours: SystemSettingsItem['messengerMediaCacheRetentionHours'];
+  messengerMediaCacheEnabled: SystemSettingsItem['messengerMediaCacheEnabled'];
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
@@ -132,6 +140,10 @@ const EMPTY_FORM: SystemSettingsForm = {
   analysisAorFilterEnabled: true,
   twoFactorAuthEnabled: true,
   excludeOrbitOtherUnits: true,
+  messengerMediaCacheEnabled: false,
+  messengerMediaCacheRetentionHours: 24,
+  messengerMediaCacheMaxSizeGib: 32,
+  messengerMediaCacheMinFreeGib: 10,
   dutyTestEnabled: false,
   dutyTestSinceMs: 0,
   dutyTestLimit: 1,
@@ -218,6 +230,10 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
     twoFactorAuthEnabled: item?.twoFactorAuthEnabled ?? true,
     excludeOrbitOtherUnits: item?.excludeOrbitOtherUnits ?? true,
+    messengerMediaCacheMinFreeGib: item?.messengerMediaCacheMinFreeGib ?? 10,
+    messengerMediaCacheMaxSizeGib: item?.messengerMediaCacheMaxSizeGib ?? 32,
+    messengerMediaCacheRetentionHours: item?.messengerMediaCacheRetentionHours ?? 24,
+    messengerMediaCacheEnabled: item?.messengerMediaCacheEnabled ?? false,
     dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
     dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
     dutyTestLimit: item?.rerDutyTestLimit ?? 1,
@@ -257,6 +273,10 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
     a.twoFactorAuthEnabled === b.twoFactorAuthEnabled &&
     a.excludeOrbitOtherUnits === b.excludeOrbitOtherUnits &&
+    a.messengerMediaCacheMinFreeGib === b.messengerMediaCacheMinFreeGib &&
+    a.messengerMediaCacheMaxSizeGib === b.messengerMediaCacheMaxSizeGib &&
+    a.messengerMediaCacheRetentionHours === b.messengerMediaCacheRetentionHours &&
+    a.messengerMediaCacheEnabled === b.messengerMediaCacheEnabled &&
     a.dutyTestEnabled === b.dutyTestEnabled &&
     a.dutyTestSinceMs === b.dutyTestSinceMs &&
     a.dutyTestLimit === b.dutyTestLimit &&
@@ -352,6 +372,10 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
     twoFactorAuthEnabled: form.twoFactorAuthEnabled,
     excludeOrbitOtherUnits: form.excludeOrbitOtherUnits,
+    messengerMediaCacheMinFreeGib: form.messengerMediaCacheMinFreeGib,
+    messengerMediaCacheMaxSizeGib: form.messengerMediaCacheMaxSizeGib,
+    messengerMediaCacheRetentionHours: form.messengerMediaCacheRetentionHours,
+    messengerMediaCacheEnabled: form.messengerMediaCacheEnabled,
     dutyTestEnabled: form.dutyTestEnabled,
     dutyTestSinceMs: form.dutyTestSinceMs,
     dutyTestLimit: form.dutyTestLimit,
@@ -618,11 +642,17 @@ function MainSettingsSection({
 function DutySettingsSection({
   form,
   patchForm,
+  onDutyTestEnabledChange,
+  loading,
+  saving,
   replayStatus,
   replayStatusError,
 }: {
   form: SystemSettingsForm;
   patchForm: PatchSystemSettingsForm;
+  onDutyTestEnabledChange: (enabled: boolean) => void;
+  loading: boolean;
+  saving: boolean;
   replayStatus: RerDutyTestReplayStatus | null;
   replayStatusError: string | null;
 }) {
@@ -638,7 +668,7 @@ function DutySettingsSection({
             onChange={(_, checked) => patchForm({ dutyExcludeMenuEnabled: checked })}
           />
         }
-        label="Меню - (мінус) в оперативному"
+        label="Меню «—» (мінус) в оперативному"
       />
       <FormControlLabel
         control={
@@ -659,8 +689,9 @@ function DutySettingsSection({
         control={
           <Switch
             checked={form.dutyTestEnabled}
+            disabled={loading || saving}
             onChange={(_, checked) => {
-              patchForm({ dutyTestEnabled: checked });
+              onDutyTestEnabledChange(checked);
             }}
           />
         }
@@ -1183,13 +1214,81 @@ export function AdminSystemSettingsNeoPage() {
     setForm((prev) => ({ ...prev, ...patch }));
   }
 
+  async function saveSystemSettings(nextForm: SystemSettingsForm) {
+    const payload = formToPayload(nextForm);
+    await createSystemSettings({
+      rerAnalysisUnitsExactMatchOnlyDefault: payload.exactMatchOnlyDefault,
+      rerDutyTestEnabled: payload.dutyTestEnabled,
+      rerDutyInsertHistoricalInterceptions: payload.dutyTestEnabled,
+      rerDutyTestSinceMs: payload.dutyTestSinceMs,
+      rerDutyTestLimit: payload.dutyTestLimit,
+      rerDutyPollIntervalSec: payload.dutyPollIntervalSec,
+      rerDutyTestReplayIntervalSec: payload.dutyTestReplayIntervalSec,
+      rerDutyShortUrl: payload.shortUrlEnabled,
+      supportNonRerInterceptions: payload.supportNonRerInterceptions,
+      defaultNeoAnalysis: payload.defaultNeoAnalysis,
+      showClassicDuty: payload.showClassicDuty,
+      showClassicAnalysis: payload.showClassicAnalysis,
+      showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
+      disableBotTags: payload.disableBotTags,
+      dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
+      analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
+      twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
+      excludeOrbitOtherUnits: payload.excludeOrbitOtherUnits,
+      messengerMediaCacheMinFreeGib: payload.messengerMediaCacheMinFreeGib,
+      messengerMediaCacheMaxSizeGib: payload.messengerMediaCacheMaxSizeGib,
+      messengerMediaCacheRetentionHours: payload.messengerMediaCacheRetentionHours,
+      messengerMediaCacheEnabled: payload.messengerMediaCacheEnabled,
+      autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
+      devicesSectionEnabled: payload.devicesSectionEnabled,
+      sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
+      doNotStoreDuplicateEchoimFailures: payload.doNotStoreDuplicateEchoimFailures,
+      goiAssociationMessageUidWorkerEnabled: payload.goiAssociationMessageUidWorkerEnabled,
+      reportChunkingHours: payload.reportChunkingHours,
+      limitBigReports: payload.limitBigReports,
+      enableAudioTranscription: payload.enableAudioTranscription,
+      pelengBoundsEnabled: payload.pelengBoundsEnabled,
+      pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
+      pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,
+      pelengBoundsBottomRightLat: payload.pelengBoundsBottomRightLat,
+      pelengBoundsBottomRightLng: payload.pelengBoundsBottomRightLng,
+      echoRestapiErrorDiscordWebhookUrl: payload.echoRestapiErrorDiscordWebhookUrl,
+    });
+  }
+
+  async function handleDutyTestEnabledChange(enabled: boolean) {
+    if (saveInProgress || loadInProgress) return;
+
+    if (enabled) {
+      patchForm({ dutyTestEnabled: true });
+      return;
+    }
+
+    const nextForm = { ...saved, dutyTestEnabled: enabled };
+    patchForm({ dutyTestEnabled: enabled });
+    setSaveInProgress(true);
+    setSaveError(null);
+
+    try {
+      await saveSystemSettings(nextForm);
+      setSaved(nextForm);
+      notify({ severity: 'success', message: 'Налаштування тестових повідомлень збережено.' });
+      window.dispatchEvent(new Event('system-settings-saved'));
+    } catch (error) {
+      patchForm({ dutyTestEnabled: saved.dutyTestEnabled });
+      setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
+    } finally {
+      setSaveInProgress(false);
+    }
+  }
+
   async function handleSaveSystemSettings(event?: FormEvent) {
     event?.preventDefault();
     if (saveInProgress) return;
     if (!isDirty) return;
 
     const nextForm = normalizeForm(form);
-    const validationError = validatePelengBounds(nextForm);
+    const validationError = validateMediaCacheSettings(nextForm) ?? validatePelengBounds(nextForm);
     if (validationError) {
       setForm(nextForm);
       setSaveError(validationError);
@@ -1200,41 +1299,7 @@ export function AdminSystemSettingsNeoPage() {
     setSaveError(null);
 
     try {
-      const payload = formToPayload(nextForm);
-      await createSystemSettings({
-        rerAnalysisUnitsExactMatchOnlyDefault: payload.exactMatchOnlyDefault,
-        rerDutyTestEnabled: payload.dutyTestEnabled,
-        rerDutyInsertHistoricalInterceptions: payload.dutyTestEnabled,
-        rerDutyTestSinceMs: payload.dutyTestSinceMs,
-        rerDutyTestLimit: payload.dutyTestLimit,
-        rerDutyPollIntervalSec: payload.dutyPollIntervalSec,
-        rerDutyTestReplayIntervalSec: payload.dutyTestReplayIntervalSec,
-        rerDutyShortUrl: payload.shortUrlEnabled,
-        supportNonRerInterceptions: payload.supportNonRerInterceptions,
-        defaultNeoAnalysis: payload.defaultNeoAnalysis,
-        showClassicDuty: payload.showClassicDuty,
-        showClassicAnalysis: payload.showClassicAnalysis,
-        showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
-        disableBotTags: payload.disableBotTags,
-        dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
-        analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
-        twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
-        excludeOrbitOtherUnits: payload.excludeOrbitOtherUnits,
-        autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
-        devicesSectionEnabled: payload.devicesSectionEnabled,
-        sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
-        doNotStoreDuplicateEchoimFailures: payload.doNotStoreDuplicateEchoimFailures,
-        goiAssociationMessageUidWorkerEnabled: payload.goiAssociationMessageUidWorkerEnabled,
-        reportChunkingHours: payload.reportChunkingHours,
-        limitBigReports: payload.limitBigReports,
-        enableAudioTranscription: payload.enableAudioTranscription,
-        pelengBoundsEnabled: payload.pelengBoundsEnabled,
-        pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
-        pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,
-        pelengBoundsBottomRightLat: payload.pelengBoundsBottomRightLat,
-        pelengBoundsBottomRightLng: payload.pelengBoundsBottomRightLng,
-        echoRestapiErrorDiscordWebhookUrl: payload.echoRestapiErrorDiscordWebhookUrl,
-      });
+      await saveSystemSettings(nextForm);
       setForm(nextForm);
       setSaved(nextForm);
       notify({
@@ -1358,7 +1423,12 @@ export function AdminSystemSettingsNeoPage() {
                     hidden={activeTab !== 'cache'}
                     aria-labelledby="system-settings-neo-tab-cache"
                   >
-                    {activeTab === 'cache' ? <CacheBackfillSection /> : null}
+                    {activeTab === 'cache' ? (
+                      <Stack spacing={3}>
+                        <MediaCacheSettingsSection form={form} patchForm={patchForm} />
+                        <CacheBackfillSection />
+                      </Stack>
+                    ) : null}
                   </Box>
 
                   <Box
@@ -1372,6 +1442,9 @@ export function AdminSystemSettingsNeoPage() {
                         <DutySettingsSection
                           form={form}
                           patchForm={patchForm}
+                          onDutyTestEnabledChange={handleDutyTestEnabledChange}
+                          loading={loadInProgress}
+                          saving={saveInProgress}
                           replayStatus={replayStatus}
                           replayStatusError={replayStatusError}
                         />
@@ -1439,29 +1512,103 @@ export function AdminSystemSettingsNeoPage() {
                   </Box>
                 </Box>
 
-                {activeTab !== 'cache' ? (
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      justifyContent: 'flex-end',
-                      pt: 1,
-                    }}
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    pt: 1,
+                  }}
+                >
+                  <PowerButton
+                    variant="contained"
+                    type="submit"
+                    disabled={saveInProgress || loadInProgress || !isDirty}
+                    startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
                   >
-                    <PowerButton
-                      variant="contained"
-                      type="submit"
-                      disabled={saveInProgress || loadInProgress || !isDirty}
-                      startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
-                    >
-                      зберегти
-                    </PowerButton>
-                  </Box>
-                ) : null}
+                    зберегти
+                  </PowerButton>
+                </Box>
               </Stack>
             </CardContent>
           </Box>
         </Card>
       </Stack>
     </Box>
+  );
+}
+
+function validateMediaCacheSettings(form: SystemSettingsForm): string | null {
+  const limits = [
+    [form.messengerMediaCacheRetentionHours, 24, 8760],
+    [form.messengerMediaCacheMaxSizeGib, 1, 1_048_576],
+    [form.messengerMediaCacheMinFreeGib, 0, 1_048_576],
+  ];
+  if (
+    limits.some(([value, min, max]) => !Number.isSafeInteger(value) || value < min || value > max)
+  ) {
+    return 'Кеш медіа: зберігання має бути від 24 до 8760 годин, розмір — від 1 до 1048576 ГіБ, резерв — від 0 до 1048576 ГіБ.';
+  }
+  return null;
+}
+
+function MediaCacheSettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
+  return (
+    <Stack spacing={2}>
+      <Typography variant="h6">Локальний кеш медіа</Typography>
+      <Typography variant="body2" color="text.secondary">
+        Зберігає свіжі вкладення локально та готує відео для відтворення на телефоні. Зміни
+        застосовуються після збереження без перезапуску. Відновлення наявних вкладень починається
+        протягом 30 секунд.
+      </Typography>
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.messengerMediaCacheEnabled}
+            onChange={(_, checked) => patchForm({ messengerMediaCacheEnabled: checked })}
+          />
+        }
+        label="Увімкнути локальний кеш медіа"
+      />
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+        <TextField
+          type="number"
+          label="Зберігання медіа (години)"
+          value={form.messengerMediaCacheRetentionHours}
+          slotProps={{ htmlInput: { min: 24, max: 8760, step: 1 } }}
+          onChange={(event) =>
+            patchForm({ messengerMediaCacheRetentionHours: Number(event.target.value) })
+          }
+        />
+        <TextField
+          type="number"
+          label="Максимальний розмір кешу (ГіБ)"
+          value={form.messengerMediaCacheMaxSizeGib}
+          slotProps={{ htmlInput: { min: 1, max: 1_048_576, step: 1 } }}
+          onChange={(event) =>
+            patchForm({ messengerMediaCacheMaxSizeGib: Number(event.target.value) })
+          }
+        />
+        <TextField
+          type="number"
+          label="Резерв вільного місця (ГіБ)"
+          value={form.messengerMediaCacheMinFreeGib}
+          slotProps={{ htmlInput: { min: 0, max: 1_048_576, step: 1 } }}
+          onChange={(event) =>
+            patchForm({ messengerMediaCacheMinFreeGib: Number(event.target.value) })
+          }
+        />
+      </Stack>
+      <Typography variant="body2" color="text.secondary">
+        Оригінали в межах строку зберігання не видаляються для звільнення місця. Якщо ліміту чи
+        вільного місця недостатньо, нові вкладення завантажуються з віддаленого сховища. Зменшення
+        ліміту не видаляє захищені файли; вимкнення зупиняє нове кешування.
+      </Typography>
+    </Stack>
   );
 }

@@ -271,13 +271,27 @@ pub async fn run(
     }
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     let rq = reqwest::Client::new();
+    let config = crate::config::read_config(mode).c(h!())?;
+    let ai_client = crate::ai_engine::AiEngineClient::new(
+        db.clone(),
+        config.totp_strongbox_key,
+    )
+    .c(h!())?;
     let system_login_id = crate::users::system_login_id(&db).await.c(h!())?;
     let ai_config = crate::ai_callsign::worker::load_worker_config(&db).await?;
     let mut app = ReprocessApp::new(start_dt, end_dt, ai_config);
     let mut terminal = RestoringTerminal::new().c(h!())?;
     let run_result = {
         let _quiet_logs = QuietLogs::new();
-        run_app(&db, &rq, system_login_id, &mut terminal, &mut app).await
+        run_app(
+            &ai_client,
+            &db,
+            &rq,
+            system_login_id,
+            &mut terminal,
+            &mut app,
+        )
+        .await
     };
     terminal.restore().c(h!())?;
     run_result?;
@@ -387,6 +401,7 @@ fn last_index(len: usize) -> Option<usize> {
 }
 
 async fn run_app(
+    ai_client: &crate::ai_engine::AiEngineClient,
     db: &DatabaseConnection,
     rq: &reqwest::Client,
     system_login_id: Uuid,
@@ -403,7 +418,7 @@ async fn run_app(
             continue;
         }
         if app.status == ReprocessStatus::Running {
-            advance_work(db, rq, system_login_id, app).await?;
+            advance_work(ai_client, db, rq, system_login_id, app).await?;
             continue;
         }
         if !event::poll(poll).c(h!())? {
@@ -494,6 +509,7 @@ fn handle_preview_key(app: &mut ReprocessApp, code: KeyCode) -> bool {
 }
 
 async fn advance_work(
+    ai_client: &crate::ai_engine::AiEngineClient,
     db: &DatabaseConnection,
     rq: &reqwest::Client,
     system_login_id: Uuid,
@@ -503,7 +519,7 @@ async fn advance_work(
         load_next_hour(db, app).await?;
         return Ok(());
     }
-    process_next_item(db, rq, system_login_id, app).await
+    process_next_item(ai_client, db, rq, system_login_id, app).await
 }
 
 async fn load_next_hour(
@@ -538,6 +554,7 @@ async fn load_next_hour(
 }
 
 async fn process_next_item(
+    ai_client: &crate::ai_engine::AiEngineClient,
     db: &DatabaseConnection,
     rq: &reqwest::Client,
     system_login_id: Uuid,
@@ -553,6 +570,7 @@ async fn process_next_item(
         .unwrap_or_default();
     let inbox_item_id = inbox_item.id;
     let recomputed = match recompute_inbox_item_callsigns(
+        ai_client,
         db,
         rq,
         &inbox_item,

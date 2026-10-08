@@ -57,6 +57,16 @@
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-card-document-utils.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational attachment parser coverage.
 
+## ZIP archive previews
+
+- **Status:** operational compatibility
+- **Behavior ID:** `react-zip-attachment-preview`
+- **Affected route/component:** shared Duty Neo and Analysis Neo message-card document preview dialog.
+- **Expected observable result:** ZIPs are recognized by name, URL, and parameterized ZIP MIME type after KMZ/DOCX/XLSX precedence. Opening one fetches only then, lists bounded archive metadata, and permits downloading a single supported regular member. The original ZIP download remains available for loading, malformed, unsupported, size-limit, network, and extraction failures.
+- **Known race/idempotency constraints:** closing or changing the attachment aborts fetch and worker work; ZIP members never become carousel items; listing does not inflate members and extraction processes only the selected member.
+- **Source implementation:** `zip-preview.worker.ts`, `renderers/ZipDocumentPreview.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-card-document-utils.spec.ts`; `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/zip-preview.worker.spec.ts`
+
 ## Text and Markdown preview safety
 
 - **Status:** inferred characterization

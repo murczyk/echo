@@ -3395,43 +3395,10 @@ where
     let mut q2 = q;
     if let Some(ref search) = m_str_trim(search) {
         let search_parts = search::parse_search_parts(search).context(h!())?;
-        if !search_parts.ts_query.is_empty() {
-            let search_tsv = Expr::cust("sigint_search.search_tsv");
-            let search_filter =
-                sea_orm::sea_query::extension::postgres::PgExpr::matches(
-                    search_tsv.clone(),
-                    Expr::cust_with_values(
-                        "websearch_to_tsquery('russian', $1)",
-                        vec![search_parts.ts_query.clone()],
-                    ),
-                );
-            let search_filter = match search::ts_prefix_query(
-                &search_parts.ts_query,
-            ) {
-                Some(ts_prefix_query) => search_filter.or(
-                    sea_orm::sea_query::extension::postgres::PgExpr::matches(
-                        search_tsv,
-                        Expr::cust_with_values(
-                            "to_tsquery('russian', $1)",
-                            vec![ts_prefix_query],
-                        ),
-                    ),
-                ),
-                None => search_filter,
-            };
-            q2 = q2
-                .join(
-                    JoinType::InnerJoin,
-                    sigint_inbox_item::Relation::SigintSearch.def(),
-                )
-                .filter(search_filter);
-        }
-        for ilike in search_parts.ilike {
-            q2 = q2.filter(body_noheader_body_ilike(ilike));
-        }
-        for not_ilike in search_parts.not_ilike {
-            q2 = q2.filter(body_noheader_body_not_ilike(not_ilike));
-        }
+        q2 = q2.filter(
+            crate::attachments::search::message_filter(search, "all")
+                .c(h!())?,
+        );
 
         if !search_parts.freq.is_empty() {
             q2 = filter_selected_freqs(q2, &Some(search_parts.freq))?;
@@ -3451,20 +3418,6 @@ where
         return Ok(q2);
     }
     Ok(q2)
-}
-
-fn body_noheader_body_ilike(pattern: String) -> SimpleExpr {
-    Expr::cust_with_values(
-        "coalesce(jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body'), '') ILIKE $1 ESCAPE '\\'",
-        vec![pattern],
-    )
-}
-
-fn body_noheader_body_not_ilike(pattern: String) -> SimpleExpr {
-    Expr::cust_with_values(
-        "coalesce(jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body'), '') NOT ILIKE $1 ESCAPE '\\'",
-        vec![pattern],
-    )
 }
 
 /// Summary table showing row-per-frequency
@@ -7790,7 +7743,7 @@ async fn freq_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<FreqStatsRsp>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "Api"])
         .await
         .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
@@ -8514,6 +8467,9 @@ async fn count_stats(
 }
 
 fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
+    if req.search.as_ref().is_some_and(|s| !s.trim().is_empty()) {
+        return false;
+    }
     // Analytics scopes are materialized from interception-time partitions. Until
     // their creation-time equivalent is available, route creation-basis requests
     // through PostgreSQL so every panel describes the same message set.
@@ -8554,6 +8510,9 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
+    if req.search.as_ref().is_some_and(|s| !s.trim().is_empty()) {
+        return false;
+    }
     !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
         || (req.load_latest == Some(true) && req.nolimit != Some(true))
 }
@@ -9841,7 +9800,7 @@ async fn freq_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "Api"])
         .await
         .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)

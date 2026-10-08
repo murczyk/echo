@@ -696,6 +696,7 @@ mod tests {
             y: y.to_string(),
             comments: vec!["коментар".to_string()],
             sources: Vec::new(),
+            file_sources: Vec::new(),
         }
     }
 

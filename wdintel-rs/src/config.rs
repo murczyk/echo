@@ -23,7 +23,6 @@ pub const PG_POOL_BGWORKER_MAX_CONNECTIONS: u32 = 20;
 pub const PG_WDFILE_POOL_MAX_CONNECTIONS: u32 = 10;
 pub const PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS: u32 = 1;
 pub const MIGRATION_ADVISORY_LOCK_NAME: &str = "echo:migrations";
-pub const MIGRATION_ADVISORY_LOCK_RETRY_MILLIS: u64 = 250;
 pub const FILE_REGISTRY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 60;
 pub(crate) const DEVICE_FILE_CONTENT_REUSE_MAX_BODY_BYTES: usize = 1024;
 pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -75,6 +74,14 @@ pub const INBOX_ITEM_CALLSIGN_LOAD_BATCH_SIZE: usize = 20_000;
 pub const NLP_ADDR: &str = "http://127.0.0.1:5000";
 pub const RQ_TIMEOUT: u64 = 10;
 pub const AI_ENGINE_REQUEST_TIMEOUT_SEC: u64 = 300;
+pub const AI_GOV_UA_API_HOST: &str = "inference.ai.mod.gov.ua";
+pub const AI_GOV_UA_AUTH_BASE: &str = "https://login.microsoftonline.com";
+pub const AI_GOV_UA_API_BASE: &str = "https://inference.ai.mod.gov.ua/v1";
+pub const AI_GOV_UA_SETTINGS_ID: i16 = 1;
+pub const AI_GOV_UA_SECRET_AAD: &[u8] = b"echo/ai_gov_ua/client_secret";
+pub const AI_GOV_UA_TOKEN_REFRESH_SKEW_SEC: u64 = 60;
+pub const AI_GOV_UA_TOKEN_REQUEST_TIMEOUT_SEC: u64 = 15;
+pub const AI_GOV_UA_SCOPE_MAX_CHARS: usize = 2048;
 pub const AI_ENGINE_NAME_MAX_CHARS: usize = 255;
 pub const AI_ENGINE_URL_MAX_CHARS: usize = 2048;
 pub const AI_ENGINE_MODEL_NAME_MAX_CHARS: usize = 255;
@@ -123,6 +130,70 @@ pub const AI_SETTLEMENT_WORKER_MAX_ATTEMPTS: i32 = 8;
 pub const AI_SETTLEMENT_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_SETTLEMENT_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-28-settlement-prompt/prompt.txt");
+pub const AI_POSITION_SETTINGS_ID: i16 = 1;
+pub const AI_POSITION_PROMPT_MAX_CHARS: usize = 100_000;
+pub const AI_POSITION_TEST_MESSAGE_MAX_CHARS: usize = 20_000;
+pub const AI_POSITION_SOURCE_MAX_CHARS: usize = 20_000;
+pub const AI_POSITION_MAX_POSITIONS: usize = 50;
+pub const AI_POSITION_MAX_COORDINATES: usize = 10;
+pub const AI_POSITION_NAME_MAX_CHARS: usize = 120;
+pub const AI_POSITION_COORDINATE_MAX_CHARS: usize = 120;
+pub const AI_POSITION_EVIDENCE_MAX_CHARS: usize = 300;
+pub const AI_POSITION_OUTPUT_TOKENS: u32 = 2_048;
+pub const AI_POSITION_TEMPERATURE: f32 = 0.0;
+/// A coordinate farther than this from the position name (in chars) or on a
+/// different line block is at most `low` certainty.
+pub const AI_POSITION_COORDINATE_NEAR_CHARS: usize = 200;
+/// Model and source coordinates closer than this are the same point.
+pub const AI_POSITION_COORDINATE_MATCH_METERS: f64 = 50.0;
+pub const AI_POSITION_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+pub const AI_POSITION_WORKER_RETRY_BASE_SECS: i64 = 5;
+pub const AI_POSITION_WORKER_RETRY_MAX_SECS: i64 = 300;
+pub const AI_POSITION_WORKER_MAX_ATTEMPTS: i32 = 8;
+pub const AI_POSITION_WORKER_MAX_ERROR_CHARS: usize = 2_000;
+pub const AI_POSITION_BACKFILL_MAX_DAYS: i64 = 90;
+pub const AI_POSITION_FEEDBACK_TEXT_MAX_CHARS: usize = 2_000;
+pub const AI_POSITION_FEEDBACK_VERDICTS: [&str; 7] = [
+    "correct",
+    "not_position",
+    "wrong_name",
+    "wrong_coordinates",
+    "missed",
+    "wrong_kind",
+    "other",
+];
+/// What a named location is: a position, a crew, or a callsign tied to a
+/// place.
+pub const AI_POSITION_KINDS: [&str; 3] = ["position", "crew", "callsign"];
+pub const AI_POSITION_BACKFILL_BATCH: i64 = 1_000;
+pub const AI_POSITION_LIST_MAX_LIMIT: u64 = 200;
+pub const AI_POSITION_LIST_DEFAULT_LIMIT: u64 = 50;
+pub const AI_POSITION_LIST_MAX_FILTERS: usize = 10;
+pub const AI_POSITION_NEAR_DEFAULT_METERS: f64 = 1_000.0;
+pub const AI_POSITION_NEAR_MAX_METERS: f64 = 50_000.0;
+pub const AI_POSITION_LOOKUP_DEFAULT_DAYS: i64 = 30;
+pub const AI_POSITION_LOOKUP_MAX_DAYS: i64 = 365;
+pub const AI_POSITION_LOOKUP_MAX_ITEMS: i64 = 20;
+pub const AI_POSITION_LIST_FILTER_MAX_CHARS: usize = 200;
+/// Facts older than this before a position's latest fact do not decide where
+/// it is now (positions move and code names are reused).
+pub const AI_POSITION_KNOWLEDGE_WINDOW_DAYS: i64 = 30;
+/// Messages per page when a knowledge recompute links a position to the
+/// scope's other messages.
+pub const AI_POSITION_KNOWLEDGE_LINK_BATCH: i64 = 500;
+/// Most message cards a knowledge change announces for refresh.
+pub const AI_POSITION_KNOWLEDGE_EVENT_MAX_MESSAGES: u64 = 1_000;
+/// Facts within this distance describe the same place.
+pub const AI_POSITION_KNOWLEDGE_CLUSTER_METERS: f64 = 300.0;
+/// A fact's weight halves every this many days before the latest fact.
+pub const AI_POSITION_KNOWLEDGE_HALF_LIFE_DAYS: f64 = 7.0;
+/// A second place with at least this share of the best place's weight makes
+/// the knowledge conflicting.
+pub const AI_POSITION_KNOWLEDGE_CONFLICT_RATIO: f64 = 0.5;
+/// Sent once when the model's reply is not valid JSON.
+pub const AI_POSITION_REPAIR_PROMPT: &str = "Попередня відповідь не є валідним JSON за схемою. Поверни ту саму відповідь як валідний JSON: координати без значення не додавай (порожній список []).";
+pub const AI_POSITION_DEFAULT_PROMPT: &str =
+    include_str!("../../ai-eval/2026-10-02-position-prompt/prompt.txt");
 pub const AI_INTEL_REPORT_SETTINGS_ID: i16 = 1;
 pub const AI_INTEL_REPORT_HISTORY_DAYS: i64 = 3;
 pub const AI_INTEL_REPORT_BUCKET_CANDIDATE_LIMIT: u64 = 12;
@@ -155,7 +226,7 @@ pub const AI_AGENT_COPIED_LOGIN_PREFIX: &str = "copied-ai-agent-";
 pub const AI_AGENT_CONTAINER_NAME_PREFIX: &str = "echo-ai-agent-";
 pub const AI_AGENT_ROLE_API: &str = "ApiAgent";
 pub const AI_AGENT_ROLE_RER: &str = "Rer";
-pub const ROLE_CYBER_VIEWER: &str = "CyberViewer";
+pub const ROLE_CYBER: &str = "Cyber";
 pub const AI_AGENT_ROLE_CYBER: &str = "Cyber";
 pub const AI_AGENT_CORRELATION_HEADER: &str = "X-Echo-Agent-Session";
 pub const AI_AGENT_BOOTSTRAP_REDIS_PREFIX: &str = "ai-agent:bootstrap:";
@@ -273,7 +344,7 @@ pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
 pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.01.6";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.06.1";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -391,7 +462,7 @@ pub const API_INTEGRATION_IGGY_PUBLISH_RETRY_2_MS: u64 = 100;
 pub const API_INTEGRATION_IGGY_PUBLISH_RETRY_3_MS: u64 = 1_000;
 pub const API_INTEGRATION_IGGY_ANALYTICS_WINDOW_SEC: u64 = 60;
 pub const API_INTEGRATION_IGGY_ENRICHMENT_ID_BATCH_SIZE: usize = 20_000;
-pub const API_INTEGRATION_IGGY_EVENT_BATCH_SIZE: u64 = 500;
+pub const API_INTEGRATION_IGGY_EVENT_BATCH_SIZE: u64 = 5_000;
 pub const API_INTEGRATION_IGGY_VISIBILITY_ID_BATCH_SIZE: u64 = 5_000;
 pub const API_INTEGRATION_IGGY_LOCK_NAMESPACE: &str = "iggy-integration:";
 pub const RQ_TIMEOUT_ALPINE_CONVERTER: u64 = 600;
@@ -435,6 +506,20 @@ pub const DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS: usize = 3;
 pub const DEVICE_FILE_SEARCH_FILTER_MAX_VALUES: usize = 50;
 pub const DEVICE_FILE_SEARCH_NAME_QUERY_MIN_CHARS: usize = 3;
 pub const DEVICE_FILE_SEARCH_NAME_QUERY_MAX_CHARS: usize = 255;
+
+pub const DEVICE_DOCUMENT_SEARCH_LIMIT: i64 = 20;
+pub const DEVICE_DOCUMENT_SEARCH_MAX_LIMIT: i64 = 50;
+pub const DEVICE_DOCUMENT_READ_LIMIT: i64 = 4;
+pub const DEVICE_DOCUMENT_READ_MAX_LIMIT: i64 = 8;
+pub const DEVICE_DOCUMENT_QUERY_MAX_CHARS: usize = 1000;
+pub const DEVICE_DOCUMENT_DISCOVERY_BATCH: i64 = 100;
+pub const DEVICE_DOCUMENT_WORKER_SLEEP_SECS: u64 = 5;
+pub const DEVICE_DOCUMENT_LEASE_SECS: i64 = 900;
+pub const DEVICE_DOCUMENT_MAX_ATTEMPTS: i32 = 5;
+pub const DEVICE_DOCUMENT_MAX_INSPECTIONS: i64 = 20;
+pub const DEVICE_DOCUMENT_QUERY_TIMEOUT_MS: u64 = 5000;
+
+pub const DEVICE_DOCUMENT_PARSER_VERSION: &str = "1";
 pub const DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS: usize = 16_384;
 pub const DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES: usize = 65_536;
 pub const DEVICE_FILE_PATH_COMPONENT_MAX_COUNT: usize = 256;
@@ -467,6 +552,8 @@ pub const MULTIPART_MAX_FIELDS: usize = 64;
 pub const MULTIPART_TEXT_MAX_BYTES: usize = 80 * 1024;
 pub const MULTIPART_IDLE_TIMEOUT_SECS: u64 = 30;
 pub const MULTIPART_MAX_CONCURRENT_BUFFERED_REQUESTS: usize = 2;
+pub const RER_CSV_PREFLIGHT_METADATA_HEADER: &str = "x-echo-rer-csv-metadata";
+pub const RER_CSV_IMPORT_SKIP_PREVIEW_CHARS: usize = 160;
 pub const STORAGE_UPLOAD_ENCRYPT_MAX_CONCURRENT_OPERATIONS: usize = 2;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this archive-download limit synchronized
 /// with `SIGINT_MESSAGE_MAX_ATTACHMENTS`, frontend
@@ -577,6 +664,7 @@ pub const SIGINT_NETWORK_GROUP_ACTIVITY_PERIOD_LAST_30_DAYS: i64 = 30;
 pub const SIGINT_NETWORK_GROUP_ACTIVITY_PERIOD_LAST_60_DAYS: i64 = 60;
 pub const SIGINT_NETWORK_FREQ_CALLSIGN_PERIOD_LAST_7_DAYS: i64 = 7;
 pub const SIGINT_NETWORK_FREQ_CALLSIGN_PERIOD_LAST_21_DAYS: i64 = 21;
+pub const SIGINT_NETWORK_FREQ_CALLSIGN_QUERY_MAX_PERIOD_GROUPS: usize = 4;
 pub const SIGINT_NETWORK_FIND_LIVE_RETURN_LIMIT: usize = 10;
 pub const SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT: u64 = 250;
 pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
@@ -719,6 +807,11 @@ pub const SIGNAL_RESTART_MAINTENANCE_TTL_SEC: u64 = 90;
 pub const SIGNAL_RESTART_COOLDOWN_TTL_SEC: u64 = 5 * 60;
 pub const SIGNAL_RESTART_MAINTENANCE_RETRY_SEC: u64 = 1;
 pub const MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR: &str = "/tmp";
+pub const MESSENGER_MEDIA_CACHE_RETENTION_HOURS_DEFAULT: i64 = 24;
+pub const MESSENGER_MEDIA_CACHE_MAX_SIZE_GIB_DEFAULT: i64 = 32;
+pub const MESSENGER_MEDIA_CACHE_MIN_FREE_GIB_DEFAULT: i64 = 10;
+pub const MESSENGER_MEDIA_CACHE_RETENTION_HOURS_MAX: i64 = 8760;
+pub const MESSENGER_MEDIA_CACHE_SIZE_GIB_MAX: i64 = 1_048_576;
 pub const MESSENGER_MEDIA_CACHE_DIR_NAME: &str = "messenger_media_cache";
 pub const MESSENGER_MEDIA_CACHE_PREFLIGHT_HEADER: &str =
     "x-echo-media-cache-preflight";
@@ -792,6 +885,26 @@ pub const MESSENGER_MEDIA_CACHE_TEMP_TTL_SECS: u64 = 2 * 60 * 60;
 pub const MESSENGER_MEDIA_CACHE_CLEANUP_INTERVAL_SECS: u64 = 15 * 60;
 pub const MESSENGER_MEDIA_CACHE_DIR_MODE: u32 = 0o700;
 pub const MESSENGER_MEDIA_CACHE_FILE_MODE: u32 = 0o600;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_DIR_NAME: &str = "local";
+pub const MESSENGER_MEDIA_LOCAL_CACHE_RETENTION_SECS: u64 = 24 * 60 * 60;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_MAX_TOTAL_SIZE_BYTES: u64 =
+    32 * 1024 * 1024 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_MIN_FREE_SPACE_BYTES: u64 =
+    10 * 1024 * 1024 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_LOCK_WAIT_MILLIS: u64 = 500;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_LOCK_RETRY_MILLIS: u64 = 25;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_WORKER_INTERVAL_SECS: u64 = 30;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_RECOVERY_BATCH_SIZE: u64 = 100;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_RECOVERY_CONCURRENCY: usize = 2;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_ORPHAN_TTL_SECS: i64 = 2 * 60 * 60;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_METADATA_MAX_BYTES: u64 = 16 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_TIMEOUT_SECS: u64 = 5 * 60;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_PROBE_TIMEOUT_SECS: u64 = 15;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_MP4_METADATA_MAX_BYTES: u64 =
+    16 * 1024 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_EXTRA_BYTES: u64 = 1024 * 1024;
+pub const MESSENGER_MEDIA_LOCAL_CACHE_FFMPEG_BIN: &str = "ffmpeg";
+pub const MESSENGER_MEDIA_LOCAL_CACHE_FFPROBE_BIN: &str = "ffprobe";
 pub const MESSENGER_MEDIA_THUMBNAIL_DIR_NAME: &str = "thumbnails";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_DIR_NAME: &str = "thumbnail_sources";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_BUDGET_LOCK_FILE_NAME: &str =
@@ -913,6 +1026,7 @@ pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
 pub const EVENT_STREAM_ORIGIN_HEADER: &str = "x-echo-event-origin";
 pub const EVENT_STREAM_ORIGIN_MAX_BYTES: usize = 128;
 pub const IDENTITY_SESSION_USER_ID_KEY: &str = "actix_identity.user_id";
+pub const DELTA_LOGIN_REDIRECT_SESSION_PREFIX: &str = "delta_login.redirect.";
 pub const SESSION_ACTIVITY_QUEUE_CAPACITY_DEFAULT: usize = 2048;
 pub const SESSION_ACTIVITY_PAYLOAD_MAX_BYTES_DEFAULT: usize = 4096;
 pub const SESSION_ACTIVITY_GREPTIME_BATCH_SIZE: usize = 100;
@@ -940,6 +1054,7 @@ pub const MESSENGER_SYSTEM_SERVICE_NAME_CANDIDATE_LIMIT: usize = 1_000;
 pub const CLIENT_DATA_DIR_NAME: &str = "client_data";
 pub const WHATSAPP_CLIENT_CONFIG: &str = "/etc/echo/config.toml";
 pub const GENERATE_MESSAGE_UID_TILL_MAX_DAYS: i64 = 20;
+pub const SIGNAL_MESSAGE_UID_EPOCH_UNIX_MILLIS: i64 = 1_640_995_200_000;
 pub const UNKNOWN_GROUP_MASTER_KEY: &str = "undefined_group";
 pub const OPERATOR_INBOX_WORKER_LOOKBACK_HOURS: i64 = 3;
 pub const REDIS_MGS_ID_TTL: i32 = 3600;
@@ -1043,6 +1158,10 @@ DELETE FROM ai_callsign_feedback;
 DELETE FROM ai_callsign_feedback_summary;
 DELETE FROM ai_callsign_override;
 DELETE FROM ai_callsign_action;
+DELETE FROM ai_position_feedback;
+DELETE FROM ai_position_link_job;
+DELETE FROM ai_position_knowledge_job;
+DELETE FROM ai_position_knowledge;
 UPDATE ai_intel_report_settings
 SET quick_suggestion_enabled = false,
     quick_ai_engine_id = NULL,
@@ -1392,12 +1511,15 @@ pub struct Config {
     #[serde(default)]
     pub totp_strongbox_key: Option<String>,
     pub storage_dir: String,
+    #[serde(skip)]
+    pub(crate) messenger_media_cache: Option<MessengerMediaCacheConfig>,
     pub signal_api_phone: String,
     pub signal_import_group_name: String,
     pub signal_import_fiven_name: String,
     pub static_path: String,
     pub executable_path: String,
     pub fill_comp_freq_worker: bool,
+    pub api_integration_iggy_event_batch_size: Option<u64>,
     pub summary_table_callsign_threshold: Option<i64>,
     pub disable_cleanup_networks_worker: Option<bool>,
     pub disable_unit_location_v2_worker: Option<bool>,
@@ -1460,6 +1582,28 @@ pub struct Config {
     pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
     pub ai_agent_dispatcher: Option<AiAgentDispatcherConfig>,
     pub ocr: Option<OcrConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[serde(default)]
+pub struct MessengerMediaCacheConfig {
+    pub enabled: bool,
+    pub retention_secs: u64,
+    pub max_total_size_bytes: u64,
+    pub min_free_space_bytes: u64,
+}
+
+impl Default for MessengerMediaCacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            retention_secs: MESSENGER_MEDIA_LOCAL_CACHE_RETENTION_SECS,
+            max_total_size_bytes:
+                MESSENGER_MEDIA_LOCAL_CACHE_MAX_TOTAL_SIZE_BYTES,
+            min_free_space_bytes:
+                MESSENGER_MEDIA_LOCAL_CACHE_MIN_FREE_SPACE_BYTES,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -1780,6 +1924,11 @@ impl AnalyticsConfig {
 }
 
 impl Config {
+    pub fn api_integration_iggy_event_batch_size(&self) -> u64 {
+        self.api_integration_iggy_event_batch_size
+            .unwrap_or(API_INTEGRATION_IGGY_EVENT_BATCH_SIZE)
+    }
+
     pub fn summary_table_callsign_threshold(&self) -> i64 {
         self.summary_table_callsign_threshold
             .unwrap_or(RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS)
@@ -2077,6 +2226,21 @@ pub fn check_is_worker_night_shift(config: &Config) -> bool {
     let now = Utc::now().with_timezone(&get_tz());
     !(shift_end..shift_start).contains(&now.hour())
 }
+
+pub const ATTACHMENT_BATCH_SIZE: i64 = 50;
+pub const ATTACHMENT_CHUNK_CHARS: usize = 12_000;
+pub const ATTACHMENT_CHUNK_OVERLAP: usize = 1000;
+pub const ATTACHMENT_WORKER_SLEEP_SECS: u64 = 5;
+pub const ATTACHMENT_LEASE_SECS: i64 = 900;
+pub const ATTACHMENT_MAX_ATTEMPTS: i32 = 8;
+pub const ATTACHMENT_SEARCH_LIMIT: i64 = 20;
+pub const ATTACHMENT_READ_LIMIT: i64 = 4;
+pub const ATTACHMENT_MAX_QUERY_CHARS: usize = 1_000;
+pub const ATTACHMENT_MAX_RESULT_BYTES: usize = 250 * 1024 * 1024;
+
+pub const ATTACHMENT_MAX_INSPECTION_JOBS: i64 = 32;
+
+pub const ATTACHMENT_EXTRACTOR_URL_ENV: &str = "ATTACHMENT_EXTRACTOR_URL";
 
 #[cfg(test)]
 mod config_tests {

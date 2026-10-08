@@ -151,7 +151,7 @@ describe('AttachmentsSection media previews', () => {
       Array.from(document.body.querySelectorAll('li[role="menuitem"]')).map(
         (item) => item.textContent,
       ),
-    ).toEqual(['Редагувати', 'Завантажити']);
+    ).toEqual(['Редагувати', 'Завантажити', 'Перейменувати']);
     act(() => image.root.unmount());
 
     const documentRow = await renderSection([

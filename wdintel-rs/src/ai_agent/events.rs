@@ -25,6 +25,7 @@ const EVENT_TYPES: &[&str] = &[
     "tool_end",
     "source",
     "message_citations",
+    "file_citations",
     "map_artifact",
     "completion",
     "cancellation",
@@ -48,6 +49,7 @@ const RUNNER_EVENT_TYPES: &[&str] = &[
     "tool_end",
     "source",
     "message_citations",
+    "file_citations",
     "map_artifact",
 ];
 
@@ -270,6 +272,10 @@ pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
         payload.remove("activityOnly");
     }
     payload = sanitize(payload);
+    if event_type == "file_citations" {
+        let citations = super::file_citations::parse(&payload)?;
+        payload = serde_json::json!({ "citations": citations });
+    }
     if event_type == "message_citations" {
         let citations = super::citations::parse(&payload)?;
         payload = serde_json::json!({ "citations": citations });

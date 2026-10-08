@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { requestTraversal } from '../../browser/navigation-guard';
 
 const HISTORY_STATE_KEY = '__echoBrowserBackOverlayIds';
 const DOCUMENT_CLASS = 'echo-browser-back-overlay-open';
@@ -55,7 +56,7 @@ function requestOverlayClose(id: string, onClose: () => boolean | void) {
   overlays = overlays.filter((entry) => entry !== overlay);
   updateDocumentProtection();
   if (historyIds.includes(id)) {
-    window.history.back();
+    void requestTraversal(-1);
   }
 }
 
@@ -162,7 +163,7 @@ function unregisterOverlay(id: string, consumeHistory = false) {
     consumeHistory && overlay === topOverlay() && readOverlayIds(window.history.state).includes(id);
   overlays = overlays.filter((entry) => entry.id !== id);
   updateDocumentProtection();
-  if (shouldConsumeHistory) window.history.back();
+  if (shouldConsumeHistory) void requestTraversal(-1);
 }
 
 function unregisterOverlayAfterUnmount(id: string) {
@@ -184,8 +185,8 @@ function unregisterOverlayAfterUnmount(id: string) {
     }
     pendingUnmountedOverlayIds.clear();
 
-    if (historyLayerCount === 1) window.history.back();
-    else if (historyLayerCount > 1) window.history.go(-historyLayerCount);
+    if (historyLayerCount === 1) void requestTraversal(-1);
+    else if (historyLayerCount > 1) void requestTraversal(-historyLayerCount);
   });
 }
 

@@ -1,15 +1,62 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { minimalInboxMessage } from '../../src/ts/react/routes/rer-duty-neo/inbox-message-mocks';
 
 import {
+  buildMessageCardMediaPreviewInboxResponse,
   createDeferredMediaResponse,
+  KML_PREVIEW_FIXTURE,
+  MACOS_ZIP_MEMBER_NAMES,
   MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES,
+  openLegacyKmlPreviewHost,
   openMessageCardPreviewHost,
 } from './message-card-media-preview.fixtures';
 
 function resolveFixtureUrl(page: Page, pathname: string) {
   return new URL(pathname, page.url()).href;
+}
+
+async function expectDownloadFile(locator: Locator, fileName: string) {
+  const [download] = await Promise.all([
+    locator.page().waitForEvent('download'),
+    locator.click({ force: true, noWaitAfter: true }),
+  ]);
+  expect(download.suggestedFilename()).toBe(fileName);
+}
+
+async function expectDownloadInsideTile(tile: Locator, fileName: string) {
+  const download = tile.locator('[data-message-card-attachment-download="true"]');
+  await expect(download).toBeVisible();
+  const tileBox = await tile.boundingBox();
+  const downloadBox = await download.boundingBox();
+  if (tileBox == null || downloadBox == null) throw new Error('Attachment tile is not laid out');
+  expect(downloadBox.x).toBeGreaterThanOrEqual(tileBox.x);
+  expect(downloadBox.x + downloadBox.width).toBeLessThanOrEqual(tileBox.x + tileBox.width);
+  await expectDownloadFile(download, fileName);
+}
+
+async function expectKmzDownloadChoice(
+  dialog: Locator,
+  label: string,
+  fileName?: string,
+  contents?: string,
+) {
+  const button = dialog.getByRole('button', { name: 'Скачати' });
+  await button.focus();
+  await button.press('Enter');
+  const item = dialog.page().getByRole('menuitem', { name: label });
+  await expect(item).toBeVisible();
+  const [download] = await Promise.all([
+    item.page().waitForEvent('download'),
+    item.click({ force: true, noWaitAfter: true }),
+  ]);
+  if (fileName != null) expect(download.suggestedFilename()).toBe(fileName);
+  if (contents != null) {
+    const path = await download.path();
+    if (path == null) throw new Error('Download has no local file');
+    expect(await readFile(path, 'utf8')).toBe(contents);
+  }
 }
 
 async function createPlayableVideoFixture(page: Page): Promise<Buffer> {
@@ -77,6 +124,13 @@ async function openMarkdownPreview(page: Page) {
   return page.getByRole('dialog', { name: 'Перегляд документа' });
 }
 
+async function openZipPreview(page: Page) {
+  const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+  if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+  await page.getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.zip }).click();
+  return page.getByRole('dialog', { name: 'Перегляд документа' });
+}
+
 async function openLegacyOfficePreview(page: Page, name: string) {
   const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
   if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
@@ -117,6 +171,227 @@ async function verifyEscapeClose(page: Page, dialog: Locator, reopen: () => Prom
 
 // Regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke @regression', () => {
+  test('ECHO-3660 streams managed playback after readiness and retains original download controls', async ({
+    page,
+  }) => {
+    await openMessageCardPreviewHost(page, 'duty');
+    const fixture = await createPlayableVideoFixture(page);
+    const originalUrl = '/api/messenger/media/browser-cache-test';
+    const inbox = buildMessageCardMediaPreviewInboxResponse();
+    const attachment = inbox.inbox_items[0][1].media?.find((item) => item.id === 'e2e-video-1');
+    expect(attachment).toBeDefined();
+    if (!attachment) throw new Error('Missing video fixture');
+    attachment.href = originalUrl;
+    await page.route('**/api/rer-importer/get-inbox', (route) => route.fulfill({ json: inbox }));
+    let readinessRequests = 0;
+    let streamingRequests = 0;
+    await page.route('**/api/messenger/media/browser-cache-test**', async (route) => {
+      const request = route.request();
+      if (new URL(request.url()).pathname.endsWith('/playback')) {
+        if (request.headers()['x-echo-media-cache-preflight'] === '1') {
+          readinessRequests += 1;
+          expect(request.headers().range).toBe('bytes=0-0');
+          if (readinessRequests === 1) {
+            await route.fulfill({ status: 503, headers: { 'Retry-After': '2' } });
+            return;
+          }
+        } else {
+          streamingRequests += 1;
+        }
+        const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers().range ?? '');
+        const start = range ? Number(range[1]) : 0;
+        const end = range?.[2]
+          ? Math.min(Number(range[2]), fixture.length - 1)
+          : fixture.length - 1;
+        await route.fulfill({
+          status: range ? 206 : 200,
+          contentType: 'video/webm',
+          headers: {
+            'Accept-Ranges': 'bytes',
+            ...(range ? { 'Content-Range': `bytes ${start}-${end}/${fixture.length}` } : {}),
+          },
+          body: fixture.subarray(start, end + 1),
+        });
+        return;
+      }
+      await route.fulfill({ status: 404 });
+    });
+    await page.reload();
+    await page.getByRole('button', { name: /^Розгорнути медіа:/ }).click();
+    const dialog = await openVideoPreview(page);
+    const video = dialog.locator('video');
+    await expect(video).toHaveAttribute('src', resolveFixtureUrl(page, `${originalUrl}/playback`));
+    await video.evaluate(async (element) => {
+      element.muted = true;
+      element.loop = true;
+      await element.play();
+    });
+    await expect(video).toHaveJSProperty('paused', false);
+    expect(readinessRequests).toBe(2);
+    expect(streamingRequests).toBeGreaterThan(0);
+    await expect(dialog.getByRole('link', { name: 'Відкрити в новій вкладці' })).toHaveAttribute(
+      'href',
+      originalUrl,
+    );
+    await expect(dialog.getByRole('button', { name: 'Скачати' })).toBeVisible();
+  });
+
+  for (const host of ['duty', 'analysis'] as const) {
+    test(`${host} document, map, and other attachment tiles download inside their borders`, async ({
+      page,
+    }) => {
+      await openMessageCardPreviewHost(page, host, { withZip: true, withKmlPreviews: true });
+      const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+      if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+      const tiles = page.locator('[data-message-card-attachment-tile="true"]');
+
+      await expectDownloadInsideTile(
+        tiles.filter({
+          has: page.getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text }),
+        }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text,
+      );
+      await expectDownloadInsideTile(
+        tiles.filter({ hasText: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.binary }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.binary,
+      );
+      await expectDownloadInsideTile(
+        tiles.filter({
+          has: page.getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml }),
+        }),
+        'e2e-route_files.zip',
+      );
+      await expectDownloadInsideTile(
+        tiles.filter({
+          has: page.getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz }),
+        }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz,
+      );
+      await expectDownloadInsideTile(
+        tiles.filter({
+          has: page.getByRole('button', {
+            name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.denseKml,
+          }),
+        }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.denseKml,
+      );
+    });
+  }
+
+  for (const host of ['duty', 'analysis'] as const) {
+    test(`${host} ZIP previews download a member and navigate to an adjacent document`, async ({
+      page,
+    }) => {
+      await openMessageCardPreviewHost(page, host, { withZip: true });
+      let releaseZip!: () => void;
+      const zipReady = new Promise<void>((resolve) => {
+        releaseZip = resolve;
+      });
+      await page.route(
+        '**/test-assets/message-card-media-preview/e2e-preview.zip',
+        async (route) => {
+          await zipReady;
+          await route.fallback();
+        },
+      );
+      const dialog = await openZipPreview(page);
+      try {
+        const stage = dialog.locator('[data-attachment-preview-swipe-content]');
+        const loading = dialog.getByRole('status');
+        await expect(loading).toBeVisible();
+        const stageBox = await stage.boundingBox();
+        const loadingBox = await loading.boundingBox();
+        if (stageBox == null || loadingBox == null)
+          throw new Error('ZIP loading stage is not laid out');
+        expect(
+          Math.abs(loadingBox.x + loadingBox.width / 2 - stageBox.x - stageBox.width / 2),
+        ).toBeLessThan(2);
+        expect(
+          Math.abs(loadingBox.y + loadingBox.height / 2 - stageBox.y - stageBox.height / 2),
+        ).toBeLessThan(2);
+      } finally {
+        releaseZip();
+      }
+      await expect(dialog.getByText('nested/member.txt')).toBeVisible();
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        dialog.getByRole('button', { name: 'Скачати nested/member.txt' }).click(),
+      ]);
+      expect(download.suggestedFilename()).toBe('member.txt');
+      await dialog.getByRole('button', { name: 'Попереднє' }).click();
+      await expect(dialog.getByText('E2E Markdown preview')).toBeVisible();
+    });
+  }
+
+  for (const host of ['duty', 'analysis'] as const) {
+    test(`${host} ZIP MIME opens a misleading PDF-named archive`, async ({ page }) => {
+      await openMessageCardPreviewHost(page, host, { withZip: true });
+      const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+      if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+      await page
+        .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.misleadingZip })
+        .click();
+      const dialog = page.getByRole('dialog', { name: 'Перегляд документа' });
+      await expect(dialog.getByText('nested/member.txt')).toBeVisible();
+      await expectDownloadFile(
+        dialog.getByRole('button', { name: 'Скачати nested/member.txt' }),
+        'member.txt',
+      );
+      await expectDownloadFile(
+        dialog.getByRole('link', { name: 'Скачати' }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.misleadingZip,
+      );
+    });
+  }
+
+  for (const host of ['duty', 'analysis'] as const) {
+    test(`${host} macOS ZIP preview shows Cyrillic files without Finder metadata`, async ({
+      page,
+    }) => {
+      await openMessageCardPreviewHost(page, host, { withZip: true });
+      const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+      if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+      await page
+        .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.macZip })
+        .click();
+      const dialog = page.getByRole('dialog', { name: 'Перегляд документа' });
+      await expect(dialog.getByText('Файлів: 5;', { exact: false })).toBeVisible();
+      for (const name of MACOS_ZIP_MEMBER_NAMES)
+        await expect(dialog.getByText(name, { exact: true })).toBeVisible();
+      const rows = dialog.locator('[data-zip-entry-index]');
+      await expect(
+        rows.filter({ hasText: 'Фото.png' }).locator('svg[data-testid="ImageIcon"]'),
+      ).toBeVisible();
+      await expect(
+        rows.filter({ hasText: 'Мапа.kml' }).locator('svg[data-testid="MapOutlinedIcon"]'),
+      ).toBeVisible();
+      await expect(
+        rows.filter({ hasText: 'Наказ.pdf' }).locator('svg[data-testid="DescriptionOutlinedIcon"]'),
+      ).toBeVisible();
+      const row = rows.filter({ hasText: 'Звіт.txt' });
+      const nameBox = await row.locator('[data-zip-entry-name="true"]').boundingBox();
+      const sizeBox = await row.locator('[data-zip-entry-size="true"]').boundingBox();
+      const downloadBox = await row.getByRole('button', { name: 'Скачати Звіт.txt' }).boundingBox();
+      if (nameBox == null || sizeBox == null || downloadBox == null)
+        throw new Error('ZIP member row is not laid out');
+      expect(nameBox.x + nameBox.width).toBeLessThanOrEqual(sizeBox.x + 1);
+      expect(sizeBox.x + sizeBox.width).toBeLessThanOrEqual(downloadBox.x + 1);
+      expect(
+        Math.abs(nameBox.y + nameBox.height / 2 - sizeBox.y - sizeBox.height / 2),
+      ).toBeLessThan(2);
+      await expect(dialog.getByText('__MACOSX', { exact: false })).toHaveCount(0);
+      await expect(dialog.getByText('._', { exact: false })).toHaveCount(0);
+      await expectDownloadFile(
+        dialog.getByRole('button', { name: `Скачати ${MACOS_ZIP_MEMBER_NAMES[0]}` }),
+        MACOS_ZIP_MEMBER_NAMES[0],
+      );
+      await expectDownloadFile(
+        dialog.getByRole('link', { name: 'Скачати' }),
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.macZip,
+      );
+    });
+  }
+
   for (const host of ['duty', 'analysis'] as const) {
     // Regression: https://github.com/echoua/echo/issues/3405
     test(`${host} message card preview smoke covers the shared contract`, async ({ page }) => {
@@ -213,6 +488,229 @@ test.describe('@smoke @regression', () => {
     });
   }
 
+  test('ECHO-3521 keeps conversion retry visible until the converted KMZ is ready @regression', async ({
+    page,
+  }) => {
+    await openMessageCardPreviewHost(page, 'duty', { withKmlPreviews: true });
+    let conversionStatus = 'error';
+    let statusPolls = 0;
+    let releaseRetry!: () => void;
+    const retryResponseGate = new Promise<void>((resolve) => {
+      releaseRetry = resolve;
+    });
+    await page.route('**/api/messenger/media/e2e-kml/kmz-conversion/status', (route) => {
+      statusPolls += 1;
+      return route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: conversionStatus,
+          error: conversionStatus === 'error' ? 'worker.rs line 251' : null,
+          converted_file_name: conversionStatus === 'done' ? 'e2e-route_converted.kmz' : null,
+        }),
+      });
+    });
+    await page.route('**/api/messenger/media/e2e-kml/kmz-conversion/retry', async (route) => {
+      await retryResponseGate;
+      conversionStatus = 'pending';
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'pending', error: null, converted_file_name: null }),
+      });
+    });
+
+    const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+    if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+    await page
+      .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml })
+      .click();
+    const dialog = page.getByRole('dialog', { name: 'Попередній перегляд KML' });
+    await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+    const retryButton = dialog.getByRole('button', { name: 'Повторити конвертацію KMZ' });
+    await expect(retryButton).toBeVisible();
+    await retryButton.hover();
+    const tooltip = page.getByRole('tooltip');
+    await expect(tooltip).toContainText('Повторити конвертацію KMZ');
+    await expect(tooltip.getByText('worker.rs line 251')).toBeHidden();
+    await tooltip.getByText('Технічні деталі').click();
+    await expect(tooltip.getByText('worker.rs line 251')).toBeVisible();
+
+    await retryButton.click();
+    const progressButton = dialog.getByRole('button', { name: 'Конвертація KMZ триває' });
+    await expect(progressButton).toBeVisible();
+    await expect(progressButton).toBeDisabled();
+    releaseRetry();
+    await expect.poll(() => statusPolls).toBeGreaterThan(1);
+    await expect(progressButton).toBeVisible();
+    conversionStatus = 'done';
+    await expect(retryButton).toHaveCount(0);
+    await expect(progressButton).toHaveCount(0);
+    await expect(page.getByText('Конвертований KMZ готовий до завантаження.')).toBeVisible();
+    await expectKmzDownloadChoice(
+      dialog,
+      'Завантажити конвертований KMZ',
+      'e2e-route_converted.kmz',
+    );
+  });
+
+  for (const host of ['duty', 'analysis'] as const) {
+    test(`${host} legacy Elm route previews native KML/KMZ and preserves downloads`, async ({
+      page,
+    }) => {
+      const requests: string[] = [];
+      let downloads = 0;
+      page.on('request', (request) => requests.push(request.url()));
+      page.on('download', () => {
+        downloads += 1;
+      });
+      await openLegacyKmlPreviewHost(page, host);
+
+      const beforeKmlRequests = requests.length;
+      await page.getByRole('button', { name: 'legacy-route.kml' }).click();
+      const kmlDialog = page.getByRole('dialog', { name: 'Попередній перегляд KML' });
+      await expect(kmlDialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      await expect
+        .poll(() => requests.slice(beforeKmlRequests))
+        .toContainEqual(
+          expect.stringContaining('/api/messenger/media/legacy-kml/kmz-conversion/status'),
+        );
+      await expectKmzDownloadChoice(kmlDialog, 'Завантажити оригінал', 'legacy-route.kml');
+      await expectKmzDownloadChoice(
+        kmlDialog,
+        'Завантажити конвертований KMZ',
+        'legacy-route_converted.kmz',
+      );
+      await kmlDialog.getByRole('button', { name: 'Закрити' }).click();
+
+      for (const [fileName, label, originalFileName] of [
+        ['legacy-route.kmz', 'Попередній перегляд KMZ', 'e2e-route.kmz'],
+      ] as const) {
+        const beforeRequests = requests.length;
+        await page.getByRole('button', { name: fileName, exact: true }).click();
+        const dialog = page.getByRole('dialog', { name: label });
+        await expect(dialog).toBeVisible();
+        await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+        await expect
+          .poll(() => requests.slice(beforeRequests))
+          .toContainEqual(
+            expect.stringContaining(`/test-assets/message-card-media-preview/${originalFileName}`),
+          );
+        expect(requests.slice(beforeRequests)).not.toContainEqual(
+          expect.stringContaining('/kmz-conversion/status'),
+        );
+        const downloadButton = dialog.getByRole('button', { name: 'Скачати' });
+        await downloadButton.click();
+        const originalDownload = page.getByRole('menuitem', { name: 'Завантажити оригінал' });
+        await expect(originalDownload).toBeVisible();
+        await expect(
+          page.getByRole('menuitem', { name: 'Завантажити конвертований KMZ' }),
+        ).toHaveCount(0);
+        const downloadsBefore = downloads;
+        await originalDownload.click({ noWaitAfter: true });
+        await downloadButton.click();
+        await originalDownload.click({ force: true, noWaitAfter: true });
+        await expect.poll(() => downloads).toBe(downloadsBefore + 1);
+        await dialog.getByRole('button', { name: 'Закрити' }).click();
+      }
+
+      const beforeMimeOnlyKmlRequests = requests.length;
+      const mimeOnlyKmlSource = page.waitForResponse(
+        (response) =>
+          response
+            .url()
+            .includes('/test-assets/message-card-media-preview/legacy-kml-without-extension') &&
+          response.request().method() === 'GET',
+      );
+      const mimeOnlyKmlStatus = page.waitForResponse(
+        (response) =>
+          response
+            .url()
+            .includes('/api/messenger/media/legacy-kml-without-extension/kmz-conversion/status') &&
+          response.request().method() === 'GET',
+      );
+      await page.getByRole('button', { name: 'legacy-route', exact: true }).click();
+      const mimeOnlyKmlDialog = page.getByRole('dialog', { name: 'Попередній перегляд KML' });
+      await expect(mimeOnlyKmlDialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      expect((await mimeOnlyKmlSource).headers()['content-disposition']).toBe(
+        "inline; filename*=UTF-8''legacy-route",
+      );
+      expect((await mimeOnlyKmlStatus).status()).toBe(404);
+      await expect
+        .poll(() => requests.slice(beforeMimeOnlyKmlRequests))
+        .toContainEqual(
+          expect.stringContaining(
+            '/api/messenger/media/legacy-kml-without-extension/kmz-conversion/status',
+          ),
+        );
+      await expect(
+        mimeOnlyKmlDialog.getByRole('button', { name: 'Повторити конвертацію KMZ' }),
+      ).toHaveCount(0);
+      await mimeOnlyKmlDialog.getByRole('button', { name: 'Скачати' }).click();
+      await expect(page.getByRole('menuitem', { name: 'Завантажити оригінал' })).toBeVisible();
+      await expect(
+        page.getByRole('menuitem', { name: 'Завантажити конвертований KMZ' }),
+      ).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expectKmzDownloadChoice(
+        mimeOnlyKmlDialog,
+        'Завантажити оригінал',
+        undefined,
+        `${KML_PREVIEW_FIXTURE}\n`,
+      );
+      await mimeOnlyKmlDialog.getByRole('button', { name: 'Закрити' }).click();
+
+      const beforeMimeOnlyKmzRequests = requests.length;
+      await page.getByRole('button', { name: 'legacy-route.bin', exact: true }).click();
+      const mimeOnlyKmzDialog = page.getByRole('dialog', { name: 'Попередній перегляд KMZ' });
+      await expect(mimeOnlyKmzDialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      expect(requests.slice(beforeMimeOnlyKmzRequests)).not.toContainEqual(
+        expect.stringContaining('/kmz-conversion/status'),
+      );
+      await mimeOnlyKmzDialog.getByRole('button', { name: 'Скачати' }).click();
+      await expect(page.getByRole('menuitem', { name: 'Завантажити оригінал' })).toBeVisible();
+      await expect(
+        page.getByRole('menuitem', { name: 'Завантажити конвертований KMZ' }),
+      ).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expectKmzDownloadChoice(mimeOnlyKmzDialog, 'Завантажити оригінал', 'legacy-route.bin');
+      await mimeOnlyKmzDialog.getByRole('button', { name: 'Закрити' }).click();
+
+      await expect(page.getByRole('link', { name: 'legacy-not-geodata.bin' })).toBeVisible();
+
+      const beforeLimitRequests = requests.length;
+      await page.getByRole('button', { name: 'legacy-oversized.kml' }).click();
+      const limitDialog = page.getByRole('dialog', { name: 'Попередній перегляд KML' });
+      await expect(
+        limitDialog.getByText(
+          'Перевищено ліміт попереднього перегляду 25 МіБ. Оригінал можна завантажити.',
+        ),
+      ).toBeVisible();
+      expect(requests.slice(beforeLimitRequests)).not.toContainEqual(
+        expect.stringContaining('/test-assets/message-card-media-preview/e2e-route.kml'),
+      );
+      await expectKmzDownloadChoice(limitDialog, 'Завантажити оригінал', 'legacy-oversized.kml');
+      await limitDialog.getByRole('button', { name: 'Закрити' }).click();
+
+      const beforeConvertedRequests = requests.length;
+      await page.getByRole('button', { name: 'legacy-route.gpx' }).click();
+      const convertedDialog = page.getByRole('dialog', {
+        name: 'Попередній перегляд конвертованого KMZ',
+      });
+      await expect(convertedDialog).toBeVisible();
+      await expect(convertedDialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      await expect
+        .poll(() => requests.slice(beforeConvertedRequests))
+        .toContainEqual(
+          expect.stringContaining('/api/messenger/media/legacy-gpx/kmz-conversion/status'),
+        );
+      await expectKmzDownloadChoice(
+        convertedDialog,
+        'Завантажити конвертований KMZ',
+        'legacy-route_converted.kmz',
+      );
+      await expectKmzDownloadChoice(convertedDialog, 'Завантажити оригінал', 'legacy-route.gpx');
+    });
+  }
+
   test('duty message card preview stays open and closes on mobile widths', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 844 });
     await openMessageCardPreviewHost(page, 'duty');
@@ -222,6 +720,129 @@ test.describe('@smoke @regression', () => {
     await imageDialog.getByRole('button', { name: 'Закрити' }).click();
     await expect(imageDialog).toHaveCount(0);
   });
+
+  for (const host of ['duty', 'analysis'] as const) {
+    test(`${host} native KML and KMZ previews retain map and carousel behavior`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 375, height: 844 });
+      await openMessageCardPreviewHost(page, host, { withKmlPreviews: true });
+      const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+      if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+
+      await expectDownloadFile(
+        page.getByRole('link', {
+          name: `Завантажити оригінал і конвертований KMZ: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml}`,
+        }),
+        'e2e-route_files.zip',
+      );
+      await expect(
+        page.getByRole('link', {
+          name: `Завантажити оригінал і конвертований KMZ: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz}`,
+        }),
+      ).toHaveCount(0);
+
+      await page
+        .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml })
+        .click();
+      await expect(page.getByRole('dialog', { name: 'Попередній перегляд KML' })).toBeVisible();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      await expectKmzDownloadChoice(
+        dialog,
+        'Завантажити оригінал',
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kml,
+      );
+      await expect(dialog.getByRole('button', { name: 'Закрити' })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Попереднє' })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Наступне' })).toBeVisible();
+      await expectKmzDownloadChoice(
+        dialog,
+        'Завантажити конвертований KMZ',
+        'e2e-route_converted.kmz',
+      );
+
+      const counter = dialog.locator('[data-attachment-preview-counter="true"]:visible');
+      const beforeDrag = await counter.textContent();
+      const map = dialog.locator('[data-kmz-preview-map="true"]');
+      const box = await map.boundingBox();
+      if (box == null) throw new Error('KMZ preview map is not laid out');
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 + 20);
+      await page.mouse.up();
+      await expect(counter).toHaveText(beforeDrag ?? '');
+
+      await dialog.getByRole('button', { name: 'Закрити' }).click();
+      await page
+        .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz })
+        .click();
+      await expect(page.getByRole('dialog', { name: 'Попередній перегляд KMZ' })).toBeVisible();
+      await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      await expectKmzDownloadChoice(
+        dialog,
+        'Завантажити оригінал',
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.kmz,
+      );
+      await expect(
+        page.getByRole('menuitem', { name: 'Завантажити конвертований KMZ' }),
+      ).toHaveCount(0);
+      await dialog.getByRole('button', { name: 'Скачати' }).click();
+      await expect(page.getByRole('menuitem', { name: 'Завантажити оригінал' })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('menuitem', { name: 'Завантажити оригінал' })).toHaveCount(0);
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole('button', { name: 'Закрити' }).click();
+
+      await page
+        .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx })
+        .click();
+      await expect(
+        page.getByRole('dialog', { name: 'Попередній перегляд конвертованого KMZ' }),
+      ).toBeVisible();
+      await expect(dialog.locator('[data-kmz-preview-map="true"]')).toBeVisible();
+      await expectKmzDownloadChoice(
+        dialog,
+        'Завантажити оригінал',
+        MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.gpx,
+      );
+      await expectKmzDownloadChoice(
+        dialog,
+        'Завантажити конвертований KMZ',
+        'e2e-route_converted.kmz',
+      );
+    });
+
+    test(`${host} dense point-only KML keeps a stable map while zooming into details`, async ({
+      page,
+    }) => {
+      await openMessageCardPreviewHost(page, host, { withKmlPreviews: true });
+      const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+      if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
+      await page
+        .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.denseKml })
+        .click();
+      const dialog = page.getByRole('dialog', { name: 'Попередній перегляд KML' });
+      const map = dialog.locator('[data-kmz-preview-map="true"]');
+      await expect(map).toBeVisible();
+      await expect(map).toHaveAttribute('data-kmz-preview-point-mode', 'overview');
+      const mapIdentity = await map.evaluate((element) => {
+        const identity = crypto.randomUUID();
+        element.setAttribute('data-e2e-map-identity', identity);
+        return identity;
+      });
+      const box = await map.boundingBox();
+      if (box == null) throw new Error('Dense KML preview map is not laid out');
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      for (let index = 0; index < 5; index += 1) await page.mouse.wheel(0, -480);
+      await expect(map).toHaveAttribute('data-kmz-preview-point-mode', 'detail');
+      await expect(map).toHaveAttribute('data-e2e-map-identity', mapIdentity);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 + 20);
+      await page.mouse.up();
+      await expect(map).toHaveAttribute('data-kmz-preview-point-mode', 'detail');
+    });
+  }
 
   test('DOC/XLS malformed input preserves the shared download fallback', async ({ page }) => {
     for (const host of ['duty', 'analysis'] as const) {
@@ -1522,3 +2143,222 @@ test.describe('message card media preview contract', () => {
     await expect(reopenedAudioDialog).toBeVisible();
   });
 });
+
+for (const width of [1280, 390]) {
+  test(`#3064 positions share the message map and copied links use UUIDs at ${width}px @regression`, async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(90_000);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.setViewportSize({ width, height: 900 });
+    const uuid = '019a4aa8-0000-7000-8000-000000000065';
+    const sourceUuid = '019a4aa8-0000-7000-8000-000000000066';
+    for (const host of ['analysis', 'duty'] as const) {
+      await openMessageCardPreviewHost(page, host, {
+        palitraEtalon: 'BRAVO',
+        messageReferenceResponse: {
+          message: [
+            501,
+            minimalInboxMessage({
+              messageUuid: sourceUuid,
+              text: 'Береза 3 підтверджена за координатами 37UCQ1111122222.',
+              groupMasterKey: 'source-group',
+              timestamp: 1720000000000,
+            }),
+          ],
+        },
+        messageOverrides: {
+          messageUuid: uuid,
+          text: 'BRAVO Береза 3',
+          coords: '50.45044, 30.52355',
+          textMarked: [
+            { CNPointC: { begin: 0, end: 5, etalon: 'BRAVO', text: 'BRAVO', palitraIds: [1] } },
+            { CNTextC: { text: ' ' } },
+            {
+              CNPositionC: {
+                begin: 6,
+                end: 14,
+                etalon: 'береза 3',
+                text: 'Береза 3',
+                kind: 'position',
+                callsign: null,
+                mgrs: [],
+                knownMgrs: '37UCQ1111122222',
+                knownAt: 1720000000000,
+                knownConflicting: false,
+                coordinateSources: [
+                  {
+                    mgrs: '37UCQ1111122222',
+                    messageUuid: sourceUuid,
+                    groupName: 'Група джерела',
+                    messageAt: 1720000000000,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      });
+      const card = page.locator('.message-card-root').first();
+      const position = card.getByRole('button', {
+        name: /Позиція «Береза 3».*Відкрити мапу повідомлення/,
+      });
+      await expect(position).toBeVisible();
+      await expect(position).not.toHaveAttribute('title');
+      await position.hover();
+      const hoverPreview = page.locator('[data-coordinate-hover-preview]');
+      await expect(hoverPreview).toBeVisible();
+      await expect(hoverPreview).toContainText('Позиція «Береза 3»');
+      await expect(hoverPreview.locator('.coordinate-hover-preview__map-region')).toHaveCount(2);
+      await page.keyboard.press('Escape');
+      await expect(hoverPreview).toHaveCount(0);
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate(
+          (value) => document.documentElement.setAttribute('data-bs-theme', value),
+          theme,
+        );
+        const styles = await card.evaluate((element) => {
+          const palette = getComputedStyle(element.querySelector('.content-token--point')!);
+          const position = getComputedStyle(element.querySelector('.content-token--position')!);
+          return {
+            palette: [palette.backgroundColor, palette.boxShadow, palette.fontSize],
+            position: [position.backgroundColor, position.boxShadow, position.fontSize],
+          };
+        });
+        expect(styles.position).toEqual(styles.palette);
+      }
+      if (host === 'analysis') {
+        await position.click();
+      } else {
+        await position.focus();
+        await page.keyboard.press('Enter');
+      }
+      const dialog = page.getByRole('dialog', { name: 'Перегляд координат' });
+      const map = dialog.locator('.coordinate-fullscreen-map');
+      await expect(map).toHaveAttribute('data-coordinate-marker-count', '3');
+      const targetLabel = map
+        .locator('.coordinate-preview-mgrs-label')
+        .filter({ hasText: /37U CQ/ });
+      await expect(targetLabel).toHaveCount(1);
+      const [mapBox, targetBox] = await Promise.all([map.boundingBox(), targetLabel.boundingBox()]);
+      expect(
+        Math.abs(targetBox!.x + targetBox!.width / 2 - (mapBox!.x + mapBox!.width / 2)),
+      ).toBeLessThan(30);
+      expect(
+        Math.abs(targetBox!.y + targetBox!.height / 2 - (mapBox!.y + mapBox!.height / 2)),
+      ).toBeLessThan(50);
+      await page.mouse.click(mapBox!.x + mapBox!.width / 2, mapBox!.y + mapBox!.height / 2);
+      const sourceChip = dialog.locator('[data-coordinate-position-sources] a.echo-chip');
+      await expect(sourceChip).toHaveCount(1);
+      await expect(sourceChip).toHaveAttribute('href', `/rer-analysis-neo?m=${sourceUuid}`);
+      await expect(sourceChip).toContainText('Група джерела');
+      const sourceRequest = page.waitForRequest('**/api/rer-importer/inbox-item-context');
+      await sourceChip.hover();
+      expect((await sourceRequest).postDataJSON()).toEqual({ message_uid: sourceUuid });
+      const sourcePreview = page.getByTestId('message-summary-preview-501');
+      await expect(sourcePreview).toBeVisible();
+      await expect(sourcePreview).toContainText('Береза 3 підтверджена');
+      await expect(sourcePreview).toContainText('Група джерела');
+      await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
+      const coordinates = card.getByRole('button', { name: /^(Розгорнути|Згорнути) координати:/ });
+      if ((await coordinates.getAttribute('aria-expanded')) !== 'true') await coordinates.click();
+      await card
+        .locator('[data-coordinate-preview-tile]')
+        .getByRole('button', { name: /Open .* on map/ })
+        .click();
+      await expect(map).toHaveAttribute('data-coordinate-marker-count', '3');
+      await expect(map.locator('.coordinate-preview-mgrs-label')).toHaveCount(3);
+      const overviewBox = await map.boundingBox();
+      for (const label of await map.locator('.coordinate-preview-mgrs-label').all()) {
+        const box = await label.boundingBox();
+        expect(box!.x).toBeGreaterThanOrEqual(overviewBox!.x - 1);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(overviewBox!.x + overviewBox!.width + 1);
+        expect(box!.y).toBeGreaterThanOrEqual(overviewBox!.y - 1);
+        expect(box!.y + box!.height).toBeLessThanOrEqual(overviewBox!.y + overviewBox!.height + 1);
+      }
+      await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
+      const copyButton = card.getByRole('button', { name: /^Копіювати/ });
+      if (await copyButton.isVisible()) {
+        await copyButton.click();
+      } else {
+        await card.getByRole('button', { name: 'Більше дій' }).click();
+        await page.getByRole('menuitem', { name: /^Копіювати/ }).click();
+      }
+      await page.getByRole('menuitem', { name: 'Копіювати посилання на повідомлення' }).click();
+      const link = new URL(await page.evaluate(() => navigator.clipboard.readText()));
+      expect(link.searchParams.get('m')).toBe(uuid);
+      expect(link.pathname).toBe('/rer-analysis-neo');
+    }
+  });
+}
+
+for (const host of ['analysis', 'duty'] as const) {
+  test(`#3676 recognized document positions join the embedded ${host} message map @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: host === 'analysis' ? 1280 : 390, height: 900 });
+    const position = {
+      begin: 0,
+      end: 10,
+      etalon: 'северный 2',
+      text: 'Северный 2',
+      kind: 'position',
+      callsign: null,
+      mgrs: [],
+      knownMgrs: '36TXT8727176222',
+      knownAt: Date.UTC(2026, 7, 16, 16, 20),
+      knownConflicting: true,
+      coordinateSources: [],
+    };
+    await openMessageCardPreviewHost(page, host, {
+      messageOverrides: {
+        coords: null,
+        text: 'Документи з розпізнаними позиціями',
+        textMarked: [],
+        media: [
+          ...(buildMessageCardMediaPreviewInboxResponse().inbox_items[0][1].media ?? []),
+          {
+            id: 'e2e-coordinate-error',
+            contentType: 'application/pdf',
+            fileName: 'positions.pdf',
+            sizeBytes: 128,
+            href: '/test-assets/message-card-media-preview/e2e-preview.txt',
+            transcription: null,
+            ocr: null,
+            summary: { state: 'completed', lastError: null, hasCoordinates: false },
+            kmzConversionStatus: null,
+            positions: [
+              position,
+              position,
+              {
+                ...position,
+                text: 'Янсон 5',
+                etalon: 'янсон 5',
+                mgrs: ['37UCQ1111122222'],
+                knownMgrs: null,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const card = page.locator('.message-card-root').first();
+    const coordinates = card.getByRole('button', { name: /^(Розгорнути|Згорнути) координати:/ });
+    await expect(coordinates).toContainText('2');
+    if ((await coordinates.getAttribute('aria-expanded')) !== 'true') await coordinates.click();
+    await card
+      .locator('[data-coordinate-preview-tile]')
+      .getByRole('button', { name: /Open .* on map/ })
+      .click();
+    const dialog = page.getByRole('dialog', { name: 'Перегляд координат' });
+    await expect(dialog.locator('.coordinate-fullscreen-map')).toHaveAttribute(
+      'data-coordinate-marker-count',
+      '2',
+    );
+    await expect(dialog).toContainText('Северный 2');
+    await expect(dialog).toContainText('16.08.2026');
+    await expect(dialog).toContainText('є розбіжності');
+    await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
+  });
+}

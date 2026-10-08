@@ -1,3 +1,5 @@
+import { FileCitationChip } from './FileCitationChip';
+import { fileCitationHref } from '../../services/api/device-documents';
 import dayjs from 'dayjs';
 import {
   createContext,
@@ -9,11 +11,13 @@ import {
   type ComponentProps,
 } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
 import type {
   AiAgentMapSummary,
   AiAgentMessageCitation,
+  AiAgentFileCitation,
   InboxMessage,
   SignalGroupEntry,
 } from '../../../../Bindings';
@@ -26,6 +30,10 @@ import { APP_TIME_ZONE } from '../../utils/misc';
 import { summarizeIntelligenceMessage } from '../shared/intelligence-reports';
 import { MessageSummaryPreview } from '../shared/message-card/MessageSummaryPreview';
 import { buildMessageLinkHref } from '../shared/message-card/message-card.utils';
+
+// Agent answers often put one item per line ("кожні координати з нової
+// строки") without Markdown list syntax; keep those single newlines visible.
+const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks];
 
 type ResolvedCitation = { message: InboxMessage; groupName: string } | null;
 const EMPTY_CITATIONS: AiAgentMessageCitation[] = [];
@@ -71,6 +79,7 @@ function resolveMessages(
 
 const CitationContext = createContext<{
   registered: Map<string, AiAgentMessageCitation>;
+  files: Map<string, AiAgentFileCitation>;
   maps: Map<string, AiAgentMapSummary>;
   resolved: Map<number, ResolvedCitation>;
   failed: boolean;
@@ -90,6 +99,10 @@ function CitationAnchor({ href, children: label }: ComponentProps<'a'>) {
     );
   }
 
+  const file = context.files.get(href ?? '');
+  if (file) return <FileCitationChip source={file} />;
+  if (href?.startsWith('/devices/') && href.includes('?file='))
+    return <EchoChip label="Неперевірене джерело" />;
   const citation = registered.get(href ?? '');
   if (!citation) {
     if (href?.startsWith('/rer-analysis-neo?')) return <EchoChip label="Неперевірене джерело" />;
@@ -127,10 +140,12 @@ const MARKDOWN_COMPONENTS = { a: CitationAnchor };
 export function CitationMarkdown({
   children,
   citations = EMPTY_CITATIONS,
+  fileCitations = [],
   maps = [],
 }: {
   children: string;
   citations?: AiAgentMessageCitation[];
+  fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
 }) {
   const { notify } = usePowerSnackbar();
@@ -225,6 +240,7 @@ export function CitationMarkdown({
       <CitationContext.Provider
         value={{
           registered,
+          files: new Map(fileCitations.map((source) => [fileCitationHref(source), source])),
           resolved,
           failed,
           refresh,
@@ -236,7 +252,7 @@ export function CitationMarkdown({
         <ReactMarkdown
           skipHtml
           disallowedElements={['img']}
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={MARKDOWN_PLUGINS}
           components={MARKDOWN_COMPONENTS}
           urlTransform={(url) => (url.startsWith('echo-map:') ? url : defaultUrlTransform(url))}
         >

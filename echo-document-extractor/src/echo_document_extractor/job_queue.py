@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -178,18 +179,28 @@ class JobQueue:
             row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return _job(row) if row else None
 
-    def claim(self, owner: str, lease_seconds: int, max_active_jobs: int = 1) -> Job | None:
+    def claim(
+        self, owner: str, lease_seconds: int, max_active_jobs: int = 1, native_only: bool = False
+    ) -> Job | None:
         now = time.time()
         with self.transaction() as connection:
             running = connection.execute("SELECT COUNT(*) FROM jobs WHERE state = 'running'").fetchone()[0]
             if running >= max_active_jobs:
                 return None
-            row = connection.execute(
+            candidates = connection.execute(
                 """SELECT * FROM jobs
                 WHERE state = 'queued' OR (state = 'retry_wait' AND retry_at <= ?)
-                ORDER BY created_at LIMIT 1""",
+                ORDER BY created_at""",
                 (now,),
-            ).fetchone()
+            ).fetchall()
+            row = next(
+                (
+                    candidate
+                    for candidate in candidates
+                    if not native_only or _native_job(candidate["spool_path"])
+                ),
+                None,
+            )
             if not row:
                 return None
             connection.execute(
@@ -402,3 +413,10 @@ def _job(row: sqlite3.Row) -> Job:
     values = dict(row)
     values["cancel_requested"] = bool(values["cancel_requested"])
     return Job(**values)
+
+
+def _native_job(spool_path: str) -> bool:
+    manifest = Path(spool_path) / "manifest.json"
+    if not manifest.is_file():
+        return False
+    return json.loads(manifest.read_text()).get("metadata", {}).get("attachment_native") is True

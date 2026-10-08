@@ -1,6 +1,5 @@
-use super::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
+use super::ROLE_CYBER;
 use crate::config::ROLE_ADMIN;
-use crate::config::ROLE_CYBER_VIEWER;
 use crate::devices::devices::query::{
     authorize_file_registry_access, FileRegistryDeviceAccess,
 };
@@ -30,7 +29,26 @@ pub(in crate::devices) fn organism_id(
 }
 
 pub(crate) fn require_read(roles: &serde_json::Value) -> Result<(), AppError> {
-    require_any_role(roles, &[ROLE_CYBER, ROLE_CYBER_VIEWER, ROLE_ADMIN])
+    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
+}
+
+pub(in crate::devices) fn require_audio_source(
+    roles: &serde_json::Value,
+) -> Result<(), AppError> {
+    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
+}
+
+pub(in crate::devices) fn require_audio_read(
+    roles: &serde_json::Value,
+) -> Result<(), AppError> {
+    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
+}
+
+pub(in crate::devices) fn require_audio_edit(
+    roles: &serde_json::Value,
+) -> Result<(), AppError> {
+    require_audio_read(roles).c(h!())?;
+    Ok(())
 }
 
 pub(crate) async fn require_message_devices(
@@ -38,7 +56,7 @@ pub(crate) async fn require_message_devices(
     login_id: &Uuid,
 ) -> Result<(), AppError> {
     ensure_devices_section_enabled(dbx).await.c(h!())?;
-    Ok(crate::users::has_role(dbx, login_id, ROLE_CYBER_VIEWER)
+    Ok(crate::users::has_role(dbx, login_id, ROLE_CYBER)
         .await
         .c(h!())?)
 }
@@ -56,49 +74,25 @@ pub(crate) fn resolve_message_devices_access(
 pub(in crate::devices) fn require_create(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_any_role(
-        roles,
-        &[
-            ROLE_CYBER,
-            ROLE_CYBER_VIEWER,
-            ROLE_DEVICE_SOURCE,
-            ROLE_ADMIN,
-        ],
-    )
+    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
 }
 
 pub(in crate::devices) fn require_source_write(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_any_role(
-        roles,
-        &[
-            ROLE_CYBER,
-            ROLE_CYBER_VIEWER,
-            ROLE_DEVICE_SOURCE,
-            ROLE_ADMIN,
-        ],
-    )
+    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
 }
 
 pub(in crate::devices) fn require_file_sync(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_any_role(
-        roles,
-        &[
-            ROLE_CYBER,
-            ROLE_CYBER_VIEWER,
-            ROLE_DEVICE_SOURCE,
-            ROLE_ADMIN,
-        ],
-    )
+    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
 }
 
 pub(in crate::devices) fn require_analytical_write(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_any_role(roles, &[ROLE_DEVICE_SOURCE, ROLE_ADMIN])
+    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
 }
 
 pub(in crate::devices) fn require_field_groups(

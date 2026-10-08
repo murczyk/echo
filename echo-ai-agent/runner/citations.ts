@@ -98,6 +98,23 @@ export function prepareMessageCitations(
   ) {
     body.messages = body.messages.map(enrich);
   }
+  if (skill.startsWith("attachment_")) {
+    const result = body.result && typeof body.result === "object" ? body.result as JsonObject : body;
+    const documents = Array.isArray(result.documents) ? result.documents : result.document ? [result.document] : [];
+    for (const document of documents as JsonObject[]) {
+      if (!Number.isSafeInteger(document.messageId) || (document.messageId as number) < 1) continue;
+      const identifier = typeof document.messageUuid === "string" ? document.messageUuid : String(document.messageId);
+      const citation = { messageId: document.messageId as number, messageIdentifier: identifier };
+      document.citation = citationHref(citation);
+      document.text = typeof document.summary === "string" ? document.summary : String(document.fileName ?? "");
+      citations.push(citation);
+      if (Array.isArray(result.sections)) {
+        const sections = result.sections as JsonObject[];
+        for (const section of sections) section.citation = document.citation;
+        messages.push({ ...citation, text: sections.map((section) => `${section.member} — ${section.locator}:\n${section.text ?? section.markdown ?? ""}`).join("\n\n"), datetime: "", author: "", group: "" });
+      }
+    }
+  }
   return { body, citations, messages };
 }
 

@@ -14,6 +14,90 @@ pub struct ReadOnlyRoute {
 pub const ROUTES: &[ReadOnlyRoute] = &[
     ReadOnlyRoute {
         method: "POST",
+        path: "/api/device/ai/search",
+        skill: "device_search",
+        label: "Шукаю пристрої",
+        request_kind: "deviceSearch",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/device/detail",
+        skill: "device_get",
+        label: "Читаю відомості пристрою",
+        request_kind: "deviceGet",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/device/files/ai/search",
+        skill: "device_file_search",
+        label: "Шукаю файли пристроїв",
+        request_kind: "deviceFileSearch",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/device/files/ai/get",
+        skill: "device_file_get",
+        label: "Читаю опис файлу",
+        request_kind: "deviceFileRead",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/device/files/ai/read",
+        skill: "device_file_read",
+        label: "Читаю вміст файлу",
+        request_kind: "deviceFileRead",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/device/files/ai/inspect-original",
+        skill: "device_file_inspect",
+        label: "Перевіряю оригінал файлу",
+        request_kind: "deviceFileInspect",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/device/files/ai/inspection-status",
+        skill: "device_file_inspection_status",
+        label: "Читаю результат перевірки файлу",
+        request_kind: "deviceFileStatus",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/attachments/search",
+        skill: "attachment_search",
+        label: "Шукаю документи",
+        request_kind: "attachmentSearch",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/attachments/get",
+        skill: "attachment_get",
+        label: "Читаю опис документа",
+        request_kind: "attachmentRead",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/attachments/read",
+        skill: "attachment_read",
+        label: "Читаю вміст документа",
+        request_kind: "attachmentRead",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/attachments/inspect-original",
+        skill: "attachment_inspect",
+        label: "Перевіряю оригінал",
+        request_kind: "attachmentInspect",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/attachments/inspection-status",
+        skill: "attachment_inspection_status",
+        label: "Читаю результат перевірки",
+        request_kind: "attachmentStatus",
+    },
+    ReadOnlyRoute {
+        method: "POST",
         path: "/api/ai-agent/maps/prepare",
         skill: "map_prepare",
         label: "Готую точки мапи",
@@ -67,6 +151,13 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
         skill: "messages_by_id",
         label: "Читаю повідомлення",
         request_kind: "messageIds",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/positions/lookup",
+        skill: "position_lookup",
+        label: "Шукаю позиції",
+        request_kind: "positionLookup",
     },
     ReadOnlyRoute {
         method: "POST",
@@ -150,6 +241,16 @@ pub fn skills_json() -> serde_json::Value {
     serde_json::to_value(ROUTES).expect("AI agent route registry serializes")
 }
 
+pub fn skills_for_devices(allowed: bool) -> serde_json::Value {
+    serde_json::to_value(
+        ROUTES
+            .iter()
+            .filter(|route| allowed || !route.skill.starts_with("device_"))
+            .collect::<Vec<_>>(),
+    )
+    .expect("AI agent routes serialize")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +286,17 @@ mod tests {
                     | "mapRecords"
                     | "mapDocument"
                     | "mapEdit"
+                    | "positionLookup"
+                    | "attachmentSearch"
+                    | "attachmentRead"
+                    | "attachmentInspect"
+                    | "attachmentStatus"
+                    | "deviceSearch"
+                    | "deviceGet"
+                    | "deviceFileSearch"
+                    | "deviceFileRead"
+                    | "deviceFileInspect"
+                    | "deviceFileStatus"
             ));
         }
         let daily_activity = ROUTES

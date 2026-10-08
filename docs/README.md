@@ -7,7 +7,7 @@ separate API, background-worker, and report-worker processes isolate
 interactive traffic from long-running work.
 
 Quick intelligence-report suggestions are a synchronous, optional API path
-that makes exactly one structured vLLM request. It reads only the selected
+that makes one logical structured AI request. It reads only the selected
 message and already-completed transcription/summary records. Historical style
 examples come only from preceding accessible human `intel_product` links and
 `sigint_comment` rows. The feature is disabled by default and does not persist
@@ -95,6 +95,10 @@ installer holds the reconciliation lock, saves the previous library and
 configuration hashes, and stops gateway PostgreSQL before replacing its
 library. Inbox diagnostics record the final operation outcome and duration,
 including complete PostgreSQL fallback after candidate revalidation.
+
+Messenger attachments can use a persistent local tier for fresh media and
+normalized video playback, with private S3 remaining the durable original store.
+See [Messenger media delivery](messenger-media-delivery.md).
 
 ## Device file content storage
 
@@ -383,7 +387,7 @@ binary and database schema are compatible.
 - [Deployment and server operations](../deploy/server.md)
 - [Optional analytics stack](../deploy/clickhouse/README.md)
 - [Monitoring](MONITORING.md)
-- [AI routing](../echo-vllm-router/README.md) and [document extraction](../echo-document-extractor/README.md)
+- [AI routing](../echo-vllm-router/README.md), [government inference](ai/government-inference.md), and [document extraction](../echo-document-extractor/README.md)
 - [GOI](../goi/README.md), [messengers](MESSENGERS.md), and [ORBIT](ORBIT.md)
 
 The previous accumulated architecture and rollout notes are preserved in the

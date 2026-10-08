@@ -68,8 +68,9 @@ pub async fn process_signal_message_queue_item_with_options(
     changed_inbox_item_ids: &mut Vec<i64>,
     options: ProcessSignalMessageQueueItemOptions,
 ) -> Result<ProcessSignalMessageQueueItemResult, AppError> {
-    let staged_media =
-        stage_queue_media(&attachments, config, s3).await.c(h!())?;
+    let staged_media = stage_queue_media(txn, &attachments, config, s3)
+        .await
+        .c(h!())?;
     process_signal_message_queue_item_with_staged_media_and_options(
         m,
         &staged_media,
@@ -378,20 +379,24 @@ async fn persist_queue_media(
 }
 
 pub async fn stage_queue_media(
+    dbx: &impl sea_orm::ConnectionTrait,
     attachments: &[MessageAttachmentF1],
     config: &Config,
     s3: &Option<opendal::Operator>,
 ) -> Result<StagedMediaAttachments, AppError> {
-    stage_queue_media_with_previous_hash(attachments, config, s3, None).await
+    stage_queue_media_with_previous_hash(dbx, attachments, config, s3, None)
+        .await
 }
 
 pub async fn stage_queue_media_for_active_edit(
+    dbx: &impl sea_orm::ConnectionTrait,
     attachments: &[MessageAttachmentF1],
     previous_attachments_hash: &Option<String>,
     config: &Config,
     s3: &Option<opendal::Operator>,
 ) -> Result<StagedMediaAttachments, AppError> {
     stage_queue_media_with_previous_hash(
+        dbx,
         attachments,
         config,
         s3,
@@ -401,6 +406,7 @@ pub async fn stage_queue_media_for_active_edit(
 }
 
 async fn stage_queue_media_with_previous_hash(
+    dbx: &impl sea_orm::ConnectionTrait,
     attachments: &[MessageAttachmentF1],
     config: &Config,
     s3: &Option<opendal::Operator>,
@@ -424,6 +430,7 @@ async fn stage_queue_media_with_previous_hash(
         ));
     }
     crate::messenger::media::stage_media_attachments(
+        dbx,
         &upload_inputs,
         config,
         s3,
@@ -479,6 +486,7 @@ mod tests {
         let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
 
         let staged_media = stage_queue_media(
+            &env.dbx,
             &[MessageAttachmentF1 {
                 path: path.display().to_string(),
                 name: Some("lock-held.txt".into()),
@@ -517,6 +525,7 @@ mod tests {
             Some(format!("[attachment sha256:{}]", sha256::digest(payload)));
 
         let staged_media = stage_queue_media_for_active_edit(
+            &env.dbx,
             &[MessageAttachmentF1 {
                 path: path.display().to_string(),
                 name: Some("unchanged.txt".into()),
@@ -551,6 +560,7 @@ mod tests {
         memory_s3_config(&mut config);
         let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
         let staged_media = stage_queue_media(
+            &env.dbx,
             &[MessageAttachmentF1 {
                 path: path.display().to_string(),
                 name: Some("queue-route.gpx".into()),
@@ -620,6 +630,7 @@ mod tests {
         memory_s3_config(&mut config);
         let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
         let staged_media = stage_queue_media(
+            &env.dbx,
             &[MessageAttachmentF1 {
                 path: path.display().to_string(),
                 name: Some("queue-audio.ogg".into()),

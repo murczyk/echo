@@ -52,6 +52,8 @@ pub enum Relation {
     FileContent,
     #[sea_orm(has_many = "super::file_content_upload::Entity")]
     FileContentUpload,
+    #[sea_orm(has_many = "super::file_document::Entity")]
+    FileDocument,
     #[sea_orm(
         belongs_to = "super::file_entry::Entity",
         from = "(Column::DeviceId, Column::Id)",
@@ -95,6 +97,12 @@ impl Related<super::file_content::Entity> for Entity {
 impl Related<super::file_content_upload::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileContentUpload.def()
+    }
+}
+
+impl Related<super::file_document::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileDocument.def()
     }
 }
 
