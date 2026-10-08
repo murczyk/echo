@@ -7848,7 +7848,7 @@ mod tests {
     }
 
     async fn seed_position_display_message_3064(
-        env: &Env,
+        env: &Arc<Env>,
         group: &datasource_group::Model,
     ) -> (signal_message::Model, signal_message_media::Model) {
         use crate::entities::ai_position_mention;
