@@ -51,6 +51,7 @@ fn sanitize_html_with_images(html: &str, allow_images: bool) -> String {
     let tags = HashSet::from([
         "article",
         "section",
+        "div",
         "h1",
         "h2",
         "h3",

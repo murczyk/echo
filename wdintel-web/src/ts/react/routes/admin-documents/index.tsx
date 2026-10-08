@@ -1,169 +1,164 @@
-import { DeviceDocumentsPanel } from './DeviceDocumentsPanel';
+import { Button, Stack, Tab, Tabs } from '@mui/material';
+import { useState } from 'react';
+
+import type { AttachmentSettings, DeviceDocumentSettings } from '../../../../Bindings';
+import { PageHeader } from '../../components/PageHeader';
+import { PowerAlert } from '../../components/PowerAlert';
 import { AttachmentDocumentDialog } from '../shared/message-card/attachment-preview/DocumentContentDialog';
-import { useCallback, useEffect, useState } from 'react';
-import {
-  Button,
-  FormControlLabel,
-  MenuItem,
-  Stack,
-  Switch,
-  TextField,
-  Typography,
-} from '@mui/material';
-import type { AttachmentAdminRsp, AttachmentSettings } from '../../../../Bindings';
-import { usePowerSnackbar } from '../../components/PowerSnackbar';
-import {
-  getAttachmentsPage,
-  retryAttachment,
-  saveAttachmentSettings,
-} from '../../services/api/attachments';
+import { DeviceDocumentsTable } from './DeviceDocumentsTable';
+import { DocumentSettingsCard } from './DocumentSettingsCard';
+import { DocumentsToolbar } from './DocumentsToolbar';
+import { MessageDocumentsTable } from './MessageDocumentsTable';
+import { QueueCounts } from './QueueCounts';
+import { useDeviceDocuments, useMessageDocuments } from './useDocumentsAdmin';
+
+type DocumentsTab = 'messages' | 'devices' | 'settings';
+
+const TAB_LABELS: Record<DocumentsTab, string> = {
+  messages: 'Вкладення повідомлень',
+  devices: 'Файли пристроїв',
+  settings: 'Налаштування',
+};
+
+function tabProps(tab: DocumentsTab) {
+  return {
+    value: tab,
+    label: TAB_LABELS[tab],
+    id: `admin-documents-tab-${tab}`,
+    'aria-controls': `admin-documents-panel-${tab}`,
+  };
+}
 
 export function AdminDocumentsPage() {
-  const [page, setPage] = useState<AttachmentAdminRsp | null>(null);
-  const [settings, setSettings] = useState<AttachmentSettings | null>(null);
-  const [query, setQuery] = useState('');
+  const [tab, setTab] = useState<DocumentsTab>('messages');
   const [preview, setPreview] = useState<string | null>(null);
-  const { notify } = usePowerSnackbar();
-  const load = useCallback(
-    async (cursor: string | null = null) => {
-      try {
-        const response = await getAttachmentsPage(query, cursor);
-        setPage(response);
-        setSettings(response.settings);
-      } catch (error) {
-        notify({
-          severity: 'error',
-          message: `Не вдалося завантажити документи: ${String(error)}`,
-        });
-      }
-    },
-    [query, notify],
-  );
-  useEffect(() => {
-    void load();
-  }, []);
-  async function save() {
-    if (!settings) return;
-    try {
-      setSettings(await saveAttachmentSettings(settings));
-      notify({ severity: 'success', message: 'Налаштування збережено' });
-    } catch (error) {
-      notify({ severity: 'error', message: `Не вдалося зберегти: ${String(error)}` });
-    }
-  }
-  async function retry(mediaId: string) {
-    try {
-      await retryAttachment(mediaId);
-      await load();
-    } catch (error) {
-      notify({ severity: 'error', message: `Не вдалося повторити обробку: ${String(error)}` });
-    }
-  }
+  const messages = useMessageDocuments();
+  const devices = useDeviceDocuments();
+  const devicesAvailable = devices.page?.available ?? false;
+
   return (
-    <Stack spacing={3}>
-      <DeviceDocumentsPanel />
-      <Typography variant="h4">Документи повідомлень</Typography>
-      {settings && (
-        <Stack spacing={2}>
-          <FormControlLabel
-            label="Індексація вкладень"
-            control={
-              <Switch
-                checked={settings.enabled}
-                onChange={(_, enabled) => setSettings({ ...settings, enabled })}
-              />
-            }
-          />
-          <FormControlLabel
-            label="Автоматичні підсумки"
-            control={
-              <Switch
-                checked={settings.summariesEnabled}
-                onChange={(_, summariesEnabled) => setSettings({ ...settings, summariesEnabled })}
-              />
-            }
-          />
-          <FormControlLabel
-            label="Пошук позицій у документах та OCR"
-            control={
-              <Switch
-                checked={settings.positionsEnabled}
-                onChange={(_, positionsEnabled) => setSettings({ ...settings, positionsEnabled })}
-              />
-            }
-          />
-          <TextField
-            select
-            label="Рушій підсумків"
-            value={settings.aiEngineId ?? ''}
-            onChange={(event) =>
-              setSettings({ ...settings, aiEngineId: event.target.value || null })
-            }
+    <Stack spacing={2}>
+      <PageHeader
+        title="Документи"
+        titleActions={
+          <Tabs
+            value={tab}
+            onChange={(_, value: DocumentsTab) => setTab(value)}
+            aria-label="Розділи документів"
           >
-            <MenuItem value="">Не обрано</MenuItem>
-            {page?.engines.map((engine) => (
-              <MenuItem key={engine.id} value={engine.id}>
-                {engine.name}
-              </MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            select
-            label="Рушій позицій"
-            value={settings.positionEngineId ?? ''}
-            onChange={(event) =>
-              setSettings({ ...settings, positionEngineId: event.target.value || null })
-            }
-          >
-            <MenuItem value="">Не обрано</MenuItem>
-            {page?.engines.map((engine) => (
-              <MenuItem key={engine.id} value={engine.id}>
-                {engine.name}
-              </MenuItem>
-            ))}
-          </TextField>
-          <Typography>
-            {settings.backfillComplete
-              ? 'Історію вкладень додано до черги'
-              : 'Історія додається до черги від нових до старих'}
-          </Typography>
-          <Button onClick={() => void save()}>Зберегти</Button>
-        </Stack>
-      )}
-      <Typography>
-        {page?.counts.map((count) => `${count.kind} / ${count.state}: ${count.count}`).join(' · ')}
-      </Typography>
-      <Stack direction="row" spacing={2}>
-        <TextField
-          label="Назва або вміст"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <Button
-          onClick={() => {
-            void load();
-          }}
-        >
-          Пошук / оновити
-        </Button>
-      </Stack>
-      {page?.documents.map((document) => (
-        <section key={document.mediaId}>
-          <Button onClick={() => setPreview(document.mediaId)}>{document.fileName}</Button>
-          <Typography>
-            {document.state} · {document.quality} · розділів: {document.chunkCount} · підсумок:{' '}
-            {document.summaryState} · позиції: {document.positionState}
-          </Typography>
-          <Typography>{document.summary}</Typography>
-          <Typography color="error">{document.lastError}</Typography>
-          <Button onClick={() => void retry(document.mediaId)}>Повторити обробку</Button>
-        </section>
-      ))}
-      {page && page.documents.length === 50 && (
-        <Button onClick={() => void load(page.documents.at(-1)?.mediaId ?? null)}>
-          Наступні документи
-        </Button>
-      )}
+            <Tab {...tabProps('messages')} />
+            <Tab {...tabProps('devices')} />
+            <Tab {...tabProps('settings')} />
+          </Tabs>
+        }
+        titleActionsGap={2}
+      />
+
+      <div
+        role="tabpanel"
+        id="admin-documents-panel-messages"
+        aria-labelledby="admin-documents-tab-messages"
+        hidden={tab !== 'messages'}
+      >
+        {tab === 'messages' && (
+          <Stack spacing={2}>
+            <QueueCounts counts={messages.page?.counts ?? []} />
+            <DocumentsToolbar
+              query={messages.query}
+              onQueryChange={messages.setQuery}
+              onSearch={() => void messages.load()}
+            />
+            <MessageDocumentsTable
+              documents={messages.page?.documents ?? []}
+              onPreview={setPreview}
+              onRetry={(mediaId) => void messages.retry(mediaId)}
+            />
+            {messages.loadMore && (
+              <div>
+                <Button onClick={() => void messages.loadMore?.()}>Наступні документи</Button>
+              </div>
+            )}
+          </Stack>
+        )}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="admin-documents-panel-devices"
+        aria-labelledby="admin-documents-tab-devices"
+        hidden={tab !== 'devices'}
+      >
+        {tab === 'devices' && (
+          <Stack spacing={2}>
+            {devices.error && <PowerAlert severity="error">{devices.error}</PowerAlert>}
+            {devices.page && !devicesAvailable && (
+              <PowerAlert severity="info">Файловий реєстр не підключено</PowerAlert>
+            )}
+            {devicesAvailable && (
+              <>
+                <QueueCounts counts={devices.page?.counts ?? []} />
+                <DocumentsToolbar
+                  query={devices.query}
+                  onQueryChange={devices.setQuery}
+                  onSearch={() => void devices.load()}
+                />
+                <DeviceDocumentsTable
+                  documents={devices.page?.documents ?? []}
+                  busy={devices.busy}
+                  onRetry={(document) => void devices.retry(document)}
+                />
+              </>
+            )}
+          </Stack>
+        )}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="admin-documents-panel-settings"
+        aria-labelledby="admin-documents-tab-settings"
+        hidden={tab !== 'settings'}
+      >
+        {tab === 'settings' && (
+          <Stack spacing={2} sx={{ maxWidth: 560 }}>
+            {messages.settings && (
+              <DocumentSettingsCard<AttachmentSettings>
+                title="Вкладення повідомлень"
+                enabledLabel="Індексація вкладень"
+                positionsLabel="Пошук позицій у документах та OCR"
+                note={
+                  messages.settings.backfillComplete
+                    ? 'Історію вкладень додано до черги'
+                    : 'Історія додається до черги від нових до старих'
+                }
+                settings={messages.settings}
+                engines={messages.page?.engines ?? []}
+                saving={messages.busy}
+                onChange={messages.setSettings}
+                onSave={() => void messages.save()}
+              />
+            )}
+            {devices.settings && devicesAvailable && (
+              <DocumentSettingsCard<DeviceDocumentSettings>
+                title="Файли пристроїв"
+                enabledLabel="Індексація файлів пристроїв"
+                positionsLabel="Пошук позицій"
+                note={`${
+                  devices.page?.backfillComplete
+                    ? 'Історію додано до черги'
+                    : 'Історія додається до черги'
+                } · Додано: ${devices.page?.discovered ?? 0}`}
+                settings={devices.settings}
+                engines={devices.page?.engines ?? []}
+                saving={devices.busy}
+                onChange={devices.setSettings}
+                onSave={() => void devices.save()}
+              />
+            )}
+          </Stack>
+        )}
+      </div>
+
       {preview && <AttachmentDocumentDialog mediaId={preview} onClose={() => setPreview(null)} />}
     </Stack>
   );

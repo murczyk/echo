@@ -464,6 +464,8 @@ mod m20261006_164921_sigint_inbox_item_freq_datetime_index;
 
 pub struct Migrator;
 
+mod m20261008_051638_ai_position_highlight_flags;
+
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
@@ -1093,6 +1095,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261006_150248_network_freq_exact_count_index::Migration),
             Box::new(m20261006_160533_rer_report_enabled::Migration),
             Box::new(m20261006_164921_sigint_inbox_item_freq_datetime_index::Migration),
+            Box::new(m20261008_051638_ai_position_highlight_flags::Migration),
         ]
     }
 }

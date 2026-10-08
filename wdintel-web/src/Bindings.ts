@@ -2869,6 +2869,7 @@ export type MessageMediaInfo = {
   transcription: string | null;
   ocr: OcrMediaSummary | null;
   summary: MediaSummaryStatus | null;
+  coordinateStatus: AttachmentCoordinateStatus | null;
   kmzConversionStatus: string | null;
   positions: Array<CnPosition>;
 };
@@ -4915,6 +4916,7 @@ export type SystemSettingsCurrentRsp = {
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
 };
@@ -4956,6 +4958,7 @@ export type SystemSettingsItem = {
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheEnabled: boolean;
@@ -5000,6 +5003,7 @@ export type CreateSystemSettingsReq = {
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheEnabled: boolean;
@@ -6436,6 +6440,11 @@ export type MediaSummaryStatus = {
   hasCoordinates: boolean;
 };
 
+export type AttachmentCoordinateStatus = {
+  revision: string;
+  hasCoordinates: boolean;
+};
+
 export type MediaSummaryCoordinate = {
   title: string;
   description: string;
@@ -6849,4 +6858,5 @@ export type UserDutySettingsDto = {
   mediaSummaryEnabled: boolean;
   messageSortBy: MessageTimeBasis;
   messageAutoParseEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean;
 };

@@ -875,6 +875,12 @@ pub async fn aggregate_to_inbox_messages(
         crate::media_summary::load_statuses(&env.dbx, &media_entries)
             .await
             .c(h!())?;
+    let coordinates_by_media = crate::attachments::coordinates::load_statuses(
+        &env.dbx,
+        &media_entries,
+    )
+    .await
+    .c(h!())?;
     let kmz_conversion_statuses =
         crate::sigint::media_conversion::load_statuses(
             &env.dbx,
@@ -922,19 +928,27 @@ pub async fn aggregate_to_inbox_messages(
     };
 
     let highlight_points = req.highlight_points.unwrap_or(false);
-    let highlight_positions =
-        highlight_points || req.highlight_callsigns.unwrap_or(false);
-    let mut positions_by_media = crate::ai_position::list::positions_by_media(
-        &env.dbx,
-        media_by_message
-            .values()
-            .flatten()
-            .map(|media| media.id)
-            .collect(),
-        &sigint_groups.iter().cloned().collect(),
-    )
-    .await
-    .c(h!())?;
+    let ai_position_highlights_enabled =
+        crate::user_settings::ai_position_highlights_enabled(&env.dbx, *login)
+            .await
+            .c(h!())?;
+    let highlight_positions = ai_position_highlights_enabled
+        && (highlight_points || req.highlight_callsigns.unwrap_or(false));
+    let mut positions_by_media = if ai_position_highlights_enabled {
+        crate::ai_position::list::positions_by_media(
+            &env.dbx,
+            media_by_message
+                .values()
+                .flatten()
+                .map(|media| media.id)
+                .collect(),
+            &sigint_groups.iter().cloned().collect(),
+        )
+        .await
+        .c(h!())?
+    } else {
+        HashMap::new()
+    };
     let mut positions_by_message = if highlight_positions {
         crate::ai_position::list::positions_by_message(
             &env.dbx,
@@ -985,6 +999,7 @@ pub async fn aggregate_to_inbox_messages(
                 transcription: transcriptions_by_media.get(&m.id).cloned(),
                 ocr: ocr_by_media.get(&m.id).cloned(),
                 summary: summaries_by_media.get(&m.id).cloned(),
+                coordinate_status: coordinates_by_media.get(&m.id).cloned(),
                 kmz_conversion_status: kmz_conversion_statuses
                     .get(&m.id)
                     .cloned(),

@@ -1023,6 +1023,16 @@ pub struct OneoffReprocessAudioTranscriberPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+pub struct OneoffReindexStoredOcrPs {
+    #[arg(long)]
+    pub media_id: Uuid,
+    #[arg(long, action)]
+    pub dry_run: bool,
+    #[arg(long, action)]
+    pub yes: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct OneoffReprocessMediaSummariesPs {
     #[arg(
         long,
@@ -1218,6 +1228,7 @@ enum Cmd {
     OneoffRequeueAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffRetranscribeAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffReprocessMediaSummaries(OneoffReprocessMediaSummariesPs),
+    OneoffReindexStoredOcr(OneoffReindexStoredOcrPs),
     OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
     OneoffCompactDatasourceGroup,
     OneoffEnsureApiIntegrationIggyTopics,
@@ -2135,6 +2146,7 @@ async fn async_main(
         Cmd::OneoffRetranscribeAudioTranscriber(ps) => {
             transcriber::backfill::retranscribe_completed(mode, ps).await
         }
+        Cmd::OneoffReindexStoredOcr(ps) => attachments::recovery::run(mode, ps).await,
         Cmd::OneoffReprocessMediaSummaries(ps) => {
             media_summary::reprocess::run(mode, ps).await
         }

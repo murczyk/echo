@@ -184,6 +184,7 @@ describe('inbox API normalization', () => {
         positions: [],
         ocr: null,
         summary: null,
+        coordinateStatus: null,
         kmzConversionStatus: 'done',
       },
     ]);
@@ -229,6 +230,20 @@ describe('inbox API normalization', () => {
 });
 
 describe('normalizeMessageMediaInfo', () => {
+  it('#3714 retains published coordinate readiness independently of summaries on the wire', () => {
+    expect(
+      normalizeMessageMediaInfo({
+        id: 'scan',
+        coordinate_status: { revision: 'first', hasCoordinates: true },
+        summary: null,
+      }),
+    ).toMatchObject({
+      coordinateStatus: { revision: 'first', hasCoordinates: true },
+      summary: null,
+    });
+    expect(normalizeMessageMediaInfo({ id: 'legacy' }).coordinateStatus).toBeNull();
+  });
+
   it('maps snake_case attachment fields to camelCase', () => {
     expect(
       normalizeMessageMediaInfo({
@@ -248,6 +263,7 @@ describe('normalizeMessageMediaInfo', () => {
       positions: [],
       ocr: null,
       summary: null,
+      coordinateStatus: null,
       kmzConversionStatus: null,
     });
   });

@@ -26,6 +26,7 @@ export type UserDutySettings = {
   dutyCollapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageAutoParseEnabled: boolean;
+  aiPositionHighlightsEnabled: UserDutySettingsDto['aiPositionHighlightsEnabled'];
 };
 
 export type MessageTimeBasis = 'interception' | 'creation';
@@ -46,6 +47,7 @@ type UserDutySettingsWire = Omit<
   | 'mediaSummaryEnabled'
   | 'messageSortBy'
   | 'messageAutoParseEnabled'
+  | 'aiPositionHighlightsEnabled'
 > & {
   messageTextPreviewLines?: string | null;
   tagsLayout: DutyTagsLayoutWire;
@@ -59,6 +61,7 @@ type UserDutySettingsWire = Omit<
   mediaSummaryEnabled?: boolean | null;
   messageSortBy?: MessageTimeBasis | null;
   messageAutoParseEnabled?: boolean | null;
+  aiPositionHighlightsEnabled?: UserDutySettingsDto['aiPositionHighlightsEnabled'] | null;
 };
 
 function normalizeMessageTextPreviewLines(
@@ -128,6 +131,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     dutyCollapseMediaPreviews:
       raw.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
     mediaSummaryEnabled: raw.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED,
+    aiPositionHighlightsEnabled: raw.aiPositionHighlightsEnabled ?? false,
     messageAutoParseEnabled: raw.messageAutoParseEnabled ?? DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
   };
 }
@@ -156,6 +160,7 @@ export async function saveUserSettings(
       showClassicAnalysis: body.showClassicAnalysis,
       dutyCollapseMediaPreviews: body.dutyCollapseMediaPreviews,
       mediaSummaryEnabled: body.mediaSummaryEnabled,
+      aiPositionHighlightsEnabled: body.aiPositionHighlightsEnabled,
       messageAutoParseEnabled: body.messageAutoParseEnabled,
     },
     { signal },

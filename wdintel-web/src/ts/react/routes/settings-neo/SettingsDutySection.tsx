@@ -24,6 +24,9 @@ export type SettingsDutySectionProps = {
   onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
   mediaSummaryEnabled: boolean;
   onMediaSummaryEnabledChange: (value: boolean) => void;
+  aiPositionHighlightsEnabled: boolean;
+  aiPositionHighlightsEnabledGlobally: boolean;
+  onAiPositionHighlightsEnabledChange: (value: boolean) => void;
   /** When true, duty feed does not auto-scroll / follow new messages. */
   disableAutoScroll: boolean;
   onDisableAutoScrollChange: (value: boolean) => void;
@@ -49,6 +52,9 @@ export function SettingsDutySection({
   onMessageTextPreviewLinesChange,
   mediaSummaryEnabled,
   onMediaSummaryEnabledChange,
+  aiPositionHighlightsEnabled,
+  aiPositionHighlightsEnabledGlobally,
+  onAiPositionHighlightsEnabledChange,
   disableAutoScroll,
   onDisableAutoScrollChange,
   doNotPersistCurrentFilter,
@@ -101,6 +107,9 @@ export function SettingsDutySection({
             onTagsLayoutChange={onTagsLayoutChange}
             messageTextPreviewLines={messageTextPreviewLines}
             onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
+            aiPositionHighlightsEnabled={aiPositionHighlightsEnabled}
+            aiPositionHighlightsEnabledGlobally={aiPositionHighlightsEnabledGlobally}
+            onAiPositionHighlightsEnabledChange={onAiPositionHighlightsEnabledChange}
             mediaSummaryEnabled={mediaSummaryEnabled}
             onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
             collapseMediaPreviews={collapseMediaPreviews}
