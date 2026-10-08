@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20261008_113430_sigint_unit_orbit_combat_type": {
+      "changes": [
+        { "table": "public.sigint_unit_orbit_combat_type", "strategy": "replicated_snapshot" },
+        { "table": "public.sigint_unit", "strategy": "replicated_snapshot", "targeted_resnapshot": true }
+      ]
+    },
     "echo:m20261008_051638_ai_position_highlight_flags": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_backfill" },

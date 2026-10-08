@@ -76,6 +76,7 @@ pub enum StartAction {
     LinkOrbitUnitsToSigint,
     FixLinkedUnitEchelonNumbers,
     MarkLinkedSigintUnitsPresentInOrbit,
+    PopulateLinkedSigintUnitCombatTypes,
     FixMisplacedUnitEchelons,
     ReviewEchelonConflicts,
     MergeUnitDuplicates,
@@ -93,7 +94,7 @@ struct StartMenuEntry {
     action: StartAction,
 }
 
-const START_MENU_ACTIONS: [StartMenuEntry; 11] = [
+const START_MENU_ACTIONS: [StartMenuEntry; 12] = [
     StartMenuEntry {
         label: "Link unlinked SIGINT units to ORBIT units",
         action: StartAction::LinkSigintUnitsToOrbit,
@@ -105,6 +106,10 @@ const START_MENU_ACTIONS: [StartMenuEntry; 11] = [
     StartMenuEntry {
         label: "Replace linked SIGINT echelon values with mismatched ORBIT numbers",
         action: StartAction::FixLinkedUnitEchelonNumbers,
+    },
+    StartMenuEntry {
+        label: "Populate linked SIGINT unit combat types",
+        action: StartAction::PopulateLinkedSigintUnitCombatTypes,
     },
     StartMenuEntry {
         label: "Mark linked SIGINT units as present in ORBIT",

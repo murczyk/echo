@@ -129,6 +129,8 @@ const sigintUnit: Unit = {
   hasOrbit: false,
   orbitUnitIds: [],
   orbitUnitGenerativeNames: [],
+  combatTypeId: null,
+  combatTypeName: null,
 };
 
 const firstPage = {

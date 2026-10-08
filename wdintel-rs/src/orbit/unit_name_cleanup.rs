@@ -1051,6 +1051,7 @@ mod tests {
         army_region: &str,
     ) -> sigint_unit::Model {
         sigint_unit::Model {
+            combat_type_id: None,
             id: 1,
             company: String::new(),
             regiment: "9 мсп".to_string(),

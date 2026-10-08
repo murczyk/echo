@@ -46,6 +46,8 @@ createUnit id army division regiment battalion company =
     , hasOrbit = False
     , orbitUnitIds = []
     , orbitUnitGenerativeNames = []
+    , combatTypeId = Nothing
+    , combatTypeName = Nothing
     }
 
 

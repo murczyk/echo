@@ -6,11 +6,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ListUnitsReq } from '../../../../../Bindings';
+import type { MRT_ColumnFiltersState } from 'material-react-table';
 import { RerUnitsNeoPage } from '../index';
 
 const tableStateMock = vi.hoisted(() => ({
   globalFilter: '',
-  columnFilters: [],
+  columnFilters: [] as MRT_ColumnFiltersState,
   sorting: [{ id: 'name', desc: false }],
   columnOrder: [],
   columnSizing: {},
@@ -135,6 +136,7 @@ beforeEach(() => {
   root = createRoot(container);
   tableStateMock.globalFilter = '';
   tableStateMock.columnFilters = [];
+  tableStateMock.sorting = [{ id: 'name', desc: false }];
   pageMock.requests = [];
   pageMock.value = buildPageValue();
 });
@@ -147,6 +149,21 @@ afterEach(() => {
 });
 
 describe('RerUnitsNeoPage search and pagination controls', () => {
+  it('#3113 sends combat-type filters and both sort directions to the unit API', () => {
+    tableStateMock.columnFilters = [{ id: 'combatTypeName', value: 'Піхота' }];
+    tableStateMock.sorting = [{ id: 'combatTypeName', desc: false }];
+    renderPage();
+    expect(pageMock.requests.at(-1)).toMatchObject({
+      filterCombatType: 'Піхота',
+      sortBy: 'UnitCombatTypeAsc',
+    });
+    tableStateMock.sorting = [{ id: 'combatTypeName', desc: true }];
+    renderPage();
+    expect(pageMock.requests.at(-1)).toMatchObject({
+      filterCombatType: 'Піхота',
+      sortBy: 'UnitCombatTypeDesc',
+    });
+  });
   it('places page navigation with the table controls', () => {
     renderPage();
 

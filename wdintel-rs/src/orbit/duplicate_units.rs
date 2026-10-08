@@ -1350,6 +1350,7 @@ mod tests {
         brigade: &str,
     ) -> sigint_unit::Model {
         sigint_unit::Model {
+            combat_type_id: None,
             id,
             other: String::new(),
             team_or_crew: String::new(),
