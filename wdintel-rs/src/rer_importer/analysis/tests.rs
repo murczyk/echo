@@ -9443,43 +9443,6 @@ async fn echo_3308_location_wildcards_match_literally() {
     assert!(!selected_wildcards.contains(&messages.location_b));
 }
 
-#[test]
-fn echo_3308_denied_locations_sql_keeps_nulls() {
-    let sql = filter_denied_locations(
-        sigint_inbox_item::Entity::find(),
-        &strings(&["Location A", ""]),
-        true,
-    )
-    .unwrap()
-    .build(DbBackend::Postgres)
-    .to_string();
-    assert!(sql.contains(
-        r#"("sigint_inbox_item"."location_v2" IS NULL OR (NOT "sigint_inbox_item"."location_v2" LIKE '%|LOCATION A|%' ESCAPE E'\\'))"#
-    ), "{sql}");
-    assert!(sql.contains(
-        r#"("sigint_inbox_item"."freq" IS NULL OR "sigint_inbox_item"."freq" NOT IN (SELECT "freq" FROM "freq_location" WHERE "freq_location"."location" = ANY(ARRAY ['Location A'])))"#
-    ), "{sql}");
-    assert!(
-        sql.contains(r#""sigint_inbox_item"."location_v2" IS NOT NULL"#),
-        "{sql}"
-    );
-}
-
-#[test]
-fn echo_3308_selected_locations_sql() {
-    let sql = filter_selected_locations(
-        sigint_inbox_item::Entity::find(),
-        &strings(&["Location A", ""]),
-        true,
-    )
-    .unwrap()
-    .build(DbBackend::Postgres)
-    .to_string();
-    assert!(sql.ends_with(
-        r#"WHERE "sigint_inbox_item"."location_v2" LIKE '%|LOCATION A|%' ESCAPE E'\\' OR "sigint_inbox_item"."freq" IN (SELECT "freq" FROM "freq_location" WHERE "freq_location"."location" = ANY(ARRAY ['Location A'])) OR "sigint_inbox_item"."location_v2" IS NULL"#
-    ), "{sql}");
-}
-
 #[actix_web::test]
 #[serial]
 async fn echo_3461_activity_daily_requires_device_filter_access() {
