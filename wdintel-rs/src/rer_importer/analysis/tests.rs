@@ -1385,7 +1385,8 @@ async fn fetch_callsign_page_for_req(
     env: &Arc<Env>,
     req: AnalysisCallsignPageReq,
 ) -> Result<AnalysisCallsignPageRsp, AppError> {
-    let (login, master_keys) = analysis_login_and_master_keys(env).await?;
+    let (login, master_keys) =
+        analysis_login_and_master_keys(env).await.context(h!())?;
     Ok(stats::fetch_callsigns_page_for_login(
         &req,
         &login,
