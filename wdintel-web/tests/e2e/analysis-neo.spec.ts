@@ -943,7 +943,7 @@ test.describe('@smoke @regression', () => {
   });
 
   // Regression: https://github.com/echoua/echo/issues/3694
-  test('analysis neo inserts a matching realtime message without reloading the page', async ({
+  test('analysis neo handles a sustained mixed realtime stream without reloading', async ({
     page,
   }) => {
     await page.clock.setFixedTime(new Date('2026-07-13T13:00:00Z'));
@@ -969,69 +969,109 @@ test.describe('@smoke @regression', () => {
       ],
       images: [previewHref],
     });
-    const newMessageId = 1000;
-    const newMessage = {
-      ...template,
-      messageUid: 'analysis-realtime-e2e-new-message',
-      text: 'Realtime analysis message',
-      date: '13.07.2026',
-      time: '12:35',
-      timestamp: Date.parse('2026-07-13T09:35:00Z'),
-    };
-    const refreshedPage = {
-      ...initialPage,
-      inbox_items: [[newMessageId, newMessage], ...initialPage.inbox_items],
-    } as typeof initialPage;
-    let releaseInboxChangedEvent = false;
-    let inboxChangedEventSent = false;
+    const serverMessages = new Map(initialPage.inbox_items);
+    const newMessages = new Map(
+      [1000, 1001, 1002, 1003].map(
+        (messageId, index) =>
+          [
+            messageId,
+            {
+              ...template,
+              messageUid: `analysis-realtime-e2e-new-message-${index + 1}`,
+              text: `Realtime analysis message ${index + 1}`,
+              date: '13.07.2026',
+              time: `12:3${5 + index}`,
+              timestamp: Date.parse('2026-07-13T09:35:00Z') + index * 1_000,
+            },
+          ] as const,
+      ),
+    );
+    const updatedMessages = new Map(
+      [105, 106, 107].map((messageId) => {
+        const message = serverMessages.get(messageId);
+        if (message == null) throw new Error(`Analysis fixture message ${messageId} is missing`);
+        return [
+          messageId,
+          { ...message, text: `Updated visible analysis message ${messageId}` },
+        ] as const;
+      }),
+    );
+    const realtimeMessageIds = [1000, 105, 9001, 1001, 106, 1002, 110, 1003, 9002, 107];
+    let releasedEventCount = 0;
+    let deliveredEventCount = 0;
+    let lastEventId: string | null = null;
     let messageLookupCount = 0;
     let postEventInboxRequestCount = 0;
+    let inboxCountRequestCount = 0;
     const targetedMessageRequests: number[][] = [];
     await setupAnalysisNeoPage(page, { inboxResponse: initialPage });
     await page.route('**/api/rer-importer/get-inbox', async (route) => {
-      if (inboxChangedEventSent) {
+      if (deliveredEventCount > 0) {
         postEventInboxRequestCount += 1;
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
       await route.fulfill({
         contentType: 'application/json; charset=utf-8',
-        body: JSON.stringify(inboxChangedEventSent ? refreshedPage : initialPage),
+        body: JSON.stringify({
+          ...initialPage,
+          inbox_items: Array.from(serverMessages.entries()),
+        }),
       });
     });
-    await page.route('**/api/rer-importer/messages-by-id', async (route) => {
-      const body = route.request().postDataJSON() as { message_ids?: number[] };
-      targetedMessageRequests.push(body.message_ids ?? []);
+    await page.route('**/api/rer-importer/get-inbox-count', async (route) => {
+      inboxCountRequestCount += 1;
       await route.fulfill({
         contentType: 'application/json; charset=utf-8',
-        body: JSON.stringify({ messages: [[newMessageId, newMessage]] }),
+        body: JSON.stringify({
+          quantity: serverMessages.size,
+          first_element_ts: null,
+        }),
       });
     });
     await page.route('**/api/rer-importer/messages-by-id-matching-filters', async (route) => {
       messageLookupCount += 1;
+      const body = route.request().postDataJSON() as { message_ids?: number[] };
+      const messageIds = body.message_ids ?? [];
+      targetedMessageRequests.push(messageIds);
+      const messages = messageIds.flatMap((messageId) => {
+        const message = serverMessages.get(messageId);
+        return message == null ? [] : [[messageId, message]];
+      });
       await route.fulfill({
         contentType: 'application/json; charset=utf-8',
-        body: JSON.stringify({ message_ids: [newMessageId] }),
+        body: JSON.stringify({ messages }),
       });
     });
     await page.route('**/api/event-stream/long-poll', async (route) => {
-      const events =
-        releaseInboxChangedEvent && !inboxChangedEventSent
-          ? [
-              {
-                id: 'analysis-realtime-e2e-event',
-                event_type: { ETInboxChanged: newMessageId },
-                created_at: Date.now(),
-                origin: null,
-                intelligence_report: false,
-              },
-            ]
-          : [];
-      if (events.length > 0) inboxChangedEventSent = true;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      let events: unknown[] = [];
+      const messageId =
+        deliveredEventCount < releasedEventCount
+          ? realtimeMessageIds[deliveredEventCount]
+          : undefined;
+      if (messageId != null) {
+        const newMessage = newMessages.get(messageId);
+        const updatedMessage = updatedMessages.get(messageId);
+        if (newMessage != null) serverMessages.set(messageId, newMessage);
+        if (updatedMessage != null) serverMessages.set(messageId, updatedMessage);
+        if (messageId === 110) serverMessages.delete(messageId);
+        deliveredEventCount += 1;
+        lastEventId = `analysis-realtime-e2e-event-${deliveredEventCount}`;
+        events = [
+          {
+            id: lastEventId,
+            event_type: { ETInboxChanged: messageId },
+            created_at: Date.now(),
+            origin: null,
+            intelligence_report: false,
+          },
+        ];
+      }
       await route.fulfill({
         contentType: 'application/json; charset=utf-8',
         body: JSON.stringify({
           events,
-          last_event_id: inboxChangedEventSent ? 'analysis-realtime-e2e-event' : null,
+          last_event_id: lastEventId,
         }),
       });
     });
@@ -1041,10 +1081,17 @@ test.describe('@smoke @regression', () => {
         body: '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="navy"/></svg>',
       });
     });
-    await page.goto('/rer-analysis-neo');
+    await page.goto('/rer-analysis-neo?search=Analysis');
 
     const messageList = page.locator('section[aria-labelledby] ul').first();
     await expect(messageList.locator('[data-message-id]')).toHaveCount(20);
+    const messageCountStatus = page
+      .locator('[role="status"]')
+      .filter({ hasText: /^\d+ з \d+$|^— з —$/ })
+      .first();
+    await expect(messageCountStatus).toHaveText('20 з 20');
+    await page.waitForTimeout(400);
+    const inboxCountRequestsBeforeEvent = inboxCountRequestCount;
     const anchor = page.locator('[data-message-id="105"]');
     await expect(anchor).toContainText('Analysis narrow fixture message 4');
     await anchor.evaluate((element) => {
@@ -1071,9 +1118,30 @@ test.describe('@smoke @regression', () => {
     const offsetBefore = await anchorOffset();
     await page.evaluate(() => {
       const observedWindow = window as typeof window & {
+        __analysisCountPlaceholderObserver?: MutationObserver;
+        __analysisCountPlaceholderSeen?: boolean;
         __analysisRealtimeSkeletonSeen?: boolean;
         __analysisRealtimeSkeletonObserver?: MutationObserver;
       };
+      const messageCountStatus = Array.from(document.querySelectorAll('[role="status"]')).find(
+        (element) => element.textContent?.trim() === '20 з 20',
+      );
+      if (messageCountStatus == null) throw new Error('Analysis message count status is missing');
+      observedWindow.__analysisCountPlaceholderSeen = false;
+      observedWindow.__analysisCountPlaceholderObserver?.disconnect();
+      const markCountPlaceholder = () => {
+        if (messageCountStatus.textContent?.trim() === '— з —') {
+          observedWindow.__analysisCountPlaceholderSeen = true;
+        }
+      };
+      observedWindow.__analysisCountPlaceholderObserver = new MutationObserver(
+        markCountPlaceholder,
+      );
+      observedWindow.__analysisCountPlaceholderObserver.observe(messageCountStatus, {
+        characterData: true,
+        childList: true,
+        subtree: true,
+      });
       observedWindow.__analysisRealtimeSkeletonSeen = false;
       observedWindow.__analysisRealtimeSkeletonObserver?.disconnect();
       const markFullCenterSkeleton = () => {
@@ -1095,17 +1163,98 @@ test.describe('@smoke @regression', () => {
     });
 
     const messageLookupsBeforeEvent = messageLookupCount;
-    releaseInboxChangedEvent = true;
-    await expect.poll(() => inboxChangedEventSent).toBe(true);
-    await expect.poll(() => messageLookupCount).toBeGreaterThan(messageLookupsBeforeEvent);
+    releasedEventCount = 1;
+    await expect.poll(() => deliveredEventCount).toBe(1);
+    await expect.poll(() => messageLookupCount).toBe(messageLookupsBeforeEvent + 1);
 
-    const receivedMessage = page.locator(`[data-message-id="${newMessageId}"]`);
-    await expect(receivedMessage).toContainText('Realtime analysis message');
+    const receivedMessage = page.locator('[data-message-id="1000"]');
+    await expect(receivedMessage).toContainText('Realtime analysis message 1');
     await expect(messageList.locator('[data-message-id]')).toHaveCount(21);
+    await expect.poll(() => inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvent + 2);
+    await expect(messageCountStatus).toHaveText('21 з 21');
     await expect(anchor).toContainText('Analysis narrow fixture message 4');
     await expect
       .poll(async () => ({
         anchorOffset: await anchorOffset(),
+        countPlaceholderSeen: await page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __analysisCountPlaceholderSeen?: boolean;
+              }
+            ).__analysisCountPlaceholderSeen ?? false,
+        ),
+        fullCenterSkeletonSeen: await page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __analysisRealtimeSkeletonSeen?: boolean;
+              }
+            ).__analysisRealtimeSkeletonSeen ?? false,
+        ),
+        inboxCountRequestCount,
+        postEventInboxRequestCount,
+        previewOpen: await previewDialog.isVisible(),
+        targetedMessageRequests,
+      }))
+      .toEqual({
+        anchorOffset: offsetBefore,
+        countPlaceholderSeen: false,
+        fullCenterSkeletonSeen: false,
+        inboxCountRequestCount: inboxCountRequestsBeforeEvent + 2,
+        postEventInboxRequestCount: 0,
+        previewOpen: true,
+        targetedMessageRequests: [[1000]],
+      });
+
+    releasedEventCount = 2;
+    await expect.poll(() => deliveredEventCount).toBe(2);
+    await expect.poll(() => messageLookupCount).toBe(messageLookupsBeforeEvent + 2);
+    await expect(anchor).toContainText('Updated visible analysis message 105');
+    await page.waitForTimeout(5_200);
+    expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvent + 2);
+    await expect(messageCountStatus).toHaveText('21 з 21');
+
+    releasedEventCount = realtimeMessageIds.length;
+    await expect.poll(() => deliveredEventCount).toBe(realtimeMessageIds.length);
+    await expect.poll(() => messageLookupCount).toBe(messageLookupsBeforeEvent + 10);
+    await expect(page.locator('[data-message-id="1001"]')).toContainText(
+      'Realtime analysis message 2',
+    );
+    await expect(page.locator('[data-message-id="1002"]')).toContainText(
+      'Realtime analysis message 3',
+    );
+    await expect(page.locator('[data-message-id="1003"]')).toContainText(
+      'Realtime analysis message 4',
+    );
+    await expect(page.locator('[data-message-id="106"]')).toContainText(
+      'Updated visible analysis message 106',
+    );
+    await expect(page.locator('[data-message-id="107"]')).toContainText(
+      'Updated visible analysis message 107',
+    );
+    await expect(page.locator('[data-message-id="110"]')).toHaveCount(0);
+    await expect(page.locator('[data-message-id="9001"]')).toHaveCount(0);
+    await expect(page.locator('[data-message-id="9002"]')).toHaveCount(0);
+    await expect(messageList.locator('[data-message-id]')).toHaveCount(23);
+    await expect(messageCountStatus).toHaveText('23 з 23', { timeout: 10_000 });
+    await expect
+      .poll(() => inboxCountRequestCount, { timeout: 10_000 })
+      .toBe(inboxCountRequestsBeforeEvent + 6);
+    await page.waitForTimeout(5_200);
+    expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvent + 6);
+    expect(targetedMessageRequests).toEqual(realtimeMessageIds.map((messageId) => [messageId]));
+    await expect
+      .poll(async () => ({
+        anchorOffset: await anchorOffset(),
+        countPlaceholderSeen: await page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __analysisCountPlaceholderSeen?: boolean;
+              }
+            ).__analysisCountPlaceholderSeen ?? false,
+        ),
         fullCenterSkeletonSeen: await page.evaluate(
           () =>
             (
@@ -1116,16 +1265,21 @@ test.describe('@smoke @regression', () => {
         ),
         postEventInboxRequestCount,
         previewOpen: await previewDialog.isVisible(),
-        targetedMessageRequests,
       }))
       .toEqual({
         anchorOffset: offsetBefore,
+        countPlaceholderSeen: false,
         fullCenterSkeletonSeen: false,
         postEventInboxRequestCount: 0,
         previewOpen: true,
-        targetedMessageRequests: [[newMessageId]],
       });
     await page.evaluate(() => {
+      (
+        window as typeof window & {
+          __analysisCountPlaceholderObserver?: MutationObserver;
+          __analysisRealtimeSkeletonObserver?: MutationObserver;
+        }
+      ).__analysisCountPlaceholderObserver?.disconnect();
       (
         window as typeof window & {
           __analysisRealtimeSkeletonObserver?: MutationObserver;

@@ -224,6 +224,7 @@ function systemSettings() {
     rer_duty_poll_interval_sec: 1,
     rer_duty_test_replay_interval_sec: 1,
     short_url_enabled: false,
+    rer_report_enabled: false,
     support_non_rer_interceptions: false,
     default_neo_analysis: false,
     autofix_echoim_missing_messages: false,
@@ -246,6 +247,7 @@ function systemSettings() {
     disable_bot_tags: false,
     duty_exclude_menu_enabled: true,
     analysis_aor_filter_enabled: false,
+    ai_position_highlights_enabled: false,
     two_factor_auth_enabled: true,
     exclude_orbit_other_units: false,
   };
@@ -550,6 +552,47 @@ async function installMocks(page: Page, roles = ['Cyber']): Promise<ApiTracker> 
 }
 
 for (const routeName of ['list', 'details']) {
+  test(`@regression #3569 CyberViewer device permissions in ${routeName}`, async ({ page }) => {
+    await installMocks(page, ['CyberViewer']);
+    await page.route('**/api/device/list', (route) =>
+      fulfillJson(route, {
+        list: [
+          {
+            id: DEVICE_ID,
+            name: 'Device Alpha',
+            aors: [],
+            unit: null,
+            external_url: null,
+            custom_fields: {},
+            created_by: 'operator',
+            archived: false,
+            created_at: NOW,
+            updated_at: NOW,
+            archived_at: null,
+          },
+        ],
+        total: 1,
+        has_more: false,
+        status_counts: { active: 1, archived: 0 },
+      }),
+    );
+    await page.goto(routeName === 'list' ? '/devices' : `/devices/${DEVICE_ID}`);
+    if (routeName === 'list') {
+      await page.getByRole('button', { name: 'Дії', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Редагувати' }).click();
+    } else {
+      await page.getByRole('button', { name: 'Редагувати пристрій', exact: true }).click();
+    }
+    const drawer = page.locator('.MuiDrawer-paper').filter({
+      has: page.getByRole('heading', { name: 'Редагувати пристрій' }),
+    });
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByRole('textbox', { name: 'Зовнішнє посилання' })).toBeEditable();
+    await expect(drawer.getByRole('textbox', { name: /^Назва/ })).toHaveCount(0);
+    await expect(drawer.getByRole('combobox', { name: 'Смуги' })).toHaveCount(0);
+    await expect(drawer.getByRole('combobox', { name: 'Підрозділ' })).toHaveCount(0);
+  });
+
   test(`@regression Cyber device metadata permissions in ${routeName}`, async ({ page }) => {
     test.setTimeout(60_000);
     await installMocks(page, ['Cyber']);
