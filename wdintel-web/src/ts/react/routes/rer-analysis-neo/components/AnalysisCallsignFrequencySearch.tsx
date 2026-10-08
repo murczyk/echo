@@ -308,9 +308,9 @@ export function AnalysisCallsignFrequencySearch({
           <Typography id={headingId} component="h2" variant="subtitle1" sx={{ fontWeight: 700 }}>
             Частоти за позивними
           </Typography>
-          <p className="mt-echo-xs mb-0 text-echo-sm text-echo-text-muted">
+          <Typography component="p" variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             Знайти частоти зі спільними позивними.
-          </p>
+          </Typography>
         </div>
         <IconButton
           size="small"

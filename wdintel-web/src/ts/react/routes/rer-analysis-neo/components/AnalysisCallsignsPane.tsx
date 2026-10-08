@@ -139,7 +139,12 @@ export function AnalysisCallsignsPane({
   }, [displayedEntries, selectedCallsigns, selectedValues]);
   return (
     <Stack spacing={0}>
-      <Paper component="section" variant="outlined" className="p-echo-lg pb-0">
+      <Paper
+        component="section"
+        variant="outlined"
+        className="p-echo-lg pb-0"
+        sx={(theme) => ({ '--analysis-callsign-secondary-text': theme.palette.text.secondary })}
+      >
         <Typography component="h2" variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
           Позивні
         </Typography>
@@ -190,7 +195,7 @@ export function AnalysisCallsignsPane({
           </Stack>
         ) : null}
         {selectedCallsigns.length > 0 ? (
-          <Button onClick={onClearCallsign} className="mb-echo-sm">
+          <Button onClick={onClearCallsign} sx={{ mb: 1 }}>
             Очистити вибір
           </Button>
         ) : null}
@@ -242,7 +247,14 @@ export function AnalysisCallsignsPane({
                     label={
                       <>
                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                        <span className="ms-echo-xs shrink-0 text-echo-xs text-echo-text-muted">
+                        <span
+                          className="ms-echo-xs shrink-0 text-echo-xs"
+                          style={{
+                            color: fullySelected
+                              ? 'inherit'
+                              : 'var(--analysis-callsign-secondary-text)',
+                          }}
+                        >
                           {item.count}
                         </span>
                       </>
