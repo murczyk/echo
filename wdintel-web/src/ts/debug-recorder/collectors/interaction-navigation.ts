@@ -21,6 +21,7 @@ const INTERACTION_EVENTS = new Map<string, string>([
 const INTENT_EVENTS = new Map<string, string>([
   ['wheel', 'wheel'],
   ['touchmove', 'touch'],
+  ['pointerdown', 'pointer'],
 ]);
 const SCROLL_KEY_CODES = new Set([
   'ArrowDown',

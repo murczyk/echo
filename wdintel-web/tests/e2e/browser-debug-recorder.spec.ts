@@ -111,7 +111,22 @@ test('user records and exports safe browser diagnostics in Live mode @regression
   const initialPath = `/rer-duty-neo?state-short=short-1&diagnostic=${encodeURIComponent(SECRETS.query)}#${encodeURIComponent(SECRETS.hash)}`;
   await page.goto(initialPath);
   await expect(page.locator('app-navbar header')).toBeVisible();
+  const navbarRow = page.locator('.app-navbar-row');
+  await expect
+    .poll(() =>
+      navbarRow.evaluate(
+        (element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length,
+      ),
+    )
+    .toBe(3);
   await activateRecorder(page);
+  await expect
+    .poll(() =>
+      navbarRow.evaluate(
+        (element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length,
+      ),
+    )
+    .toBe(4);
 
   const panel = page.locator('[data-debug-recorder-root]');
   const beforeReload = await storedRecording(page);

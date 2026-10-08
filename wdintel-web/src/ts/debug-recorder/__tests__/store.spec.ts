@@ -222,6 +222,19 @@ describe('browser debug recorder store', () => {
     });
   });
 
+  it('continues in memory and reports unavailable session storage', () => {
+    const recorder = createBrowserDebugRecorder(
+      dependencies(new MemoryStorage(), { storage: null }),
+    );
+
+    recorder.start();
+
+    expect(recorder.getSnapshot()).toMatchObject({
+      state: 'recording',
+      persistenceFailed: true,
+    });
+  });
+
   it('persists detector events and the final anomaly summary without recursion', () => {
     const storage = new MemoryStorage();
     const recorder = createBrowserDebugRecorder(dependencies(storage));
@@ -264,6 +277,17 @@ describe('browser debug recorder store', () => {
     expect(raw).not.toContain('secret.example');
     expect(raw).not.toContain('ECHO_SECRET_SENTINEL');
     expect(raw).not.toContain('request-42');
+  });
+
+  it('persists values truncated while collector events are ingested', () => {
+    const storage = new MemoryStorage();
+    const recorder = createBrowserDebugRecorder(dependencies(storage));
+    recorder.start();
+
+    recorder.record({ kind: 'semantic.metrics', details: { outcome: 'x'.repeat(161) } });
+    recorder.flush();
+
+    expect(loadDebugSession(storage, Date.now())?.truncatedValues).toBe(1);
   });
 
   it('keeps ready data after a failed download and clears it after a successful retry', () => {

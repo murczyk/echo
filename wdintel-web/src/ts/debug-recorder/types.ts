@@ -114,4 +114,5 @@ export type DebugSanitizer = {
   alias: (scope: string, value: string | number) => string;
   sanitizeSessionForExport: (session: PersistedDebugSession) => PersistedDebugSession;
   getAliases: () => DebugAliasTable;
+  getTruncatedValues: () => number;
 };

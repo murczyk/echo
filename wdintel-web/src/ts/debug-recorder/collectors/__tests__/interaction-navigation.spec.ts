@@ -86,6 +86,7 @@ describe('interaction and navigation collector', () => {
     expect(events).toEqual([
       { kind: 'scroll.intent', source: 'collector', details: { kind: 'wheel' } },
       { kind: 'scroll.intent', source: 'collector', details: { kind: 'touch' } },
+      { kind: 'scroll.intent', source: 'collector', details: { kind: 'pointer' } },
       { kind: 'scroll.intent', source: 'collector', details: { kind: 'keyboard' } },
     ]);
     cleanup();

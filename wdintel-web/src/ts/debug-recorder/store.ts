@@ -158,7 +158,14 @@ export function createBrowserDebugRecorder(
   const flush = () => {
     clearTimer(persistenceTimer);
     persistenceTimer = null;
-    if (!session || !storage) return;
+    if (!session) return;
+    if (!storage) {
+      if (!session.persistenceFailed) {
+        session.persistenceFailed = true;
+        emit();
+      }
+      return;
+    }
     updateSizeAndEvict();
     if (saveDebugSession(storage, session)) return;
     if (!session.persistenceFailed) {
@@ -190,6 +197,7 @@ export function createBrowserDebugRecorder(
       tMs: atMs - session.startedAt,
       route: input.route ?? getRoute(),
     });
+    session.truncatedValues = sanitizer.getTruncatedValues();
     if (!event) {
       session.rejectedEvents += 1;
       return false;
@@ -280,6 +288,7 @@ export function createBrowserDebugRecorder(
     sanitizer = createDebugSanitizer(session.recordingId, {
       aliasSalt: session.aliasSalt,
       aliases: session.aliases,
+      truncatedValues: session.truncatedValues,
     });
     anomalySummaryBase = {
       total: session.anomalies.total,

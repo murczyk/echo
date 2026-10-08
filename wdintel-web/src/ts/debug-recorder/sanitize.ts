@@ -86,6 +86,7 @@ function dataPropertyValue(value: object, key: string): unknown {
 type DebugSanitizerOptions = {
   aliasSalt?: string;
   aliases?: DebugAliasTable;
+  truncatedValues?: number;
 };
 
 function aliasFingerprint(salt: string, scope: string, value: string): string {
@@ -108,7 +109,7 @@ export function createDebugSanitizer(
     (count, scopeAliases) => count + Object.keys(scopeAliases).length,
     0,
   );
-  let truncatedValues = 0;
+  let truncatedValues = Math.max(0, Math.trunc(options.truncatedValues ?? 0));
 
   const alias = (scopeValue: string, rawValue: string | number): string => {
     const scope = normalizeToken(scopeValue, 'id').replace(/[.:]/g, '_');
@@ -327,5 +328,6 @@ export function createDebugSanitizer(
     alias,
     sanitizeSessionForExport,
     getAliases: () => copyAliases(aliases),
+    getTruncatedValues: () => truncatedValues,
   };
 }
