@@ -4889,6 +4889,7 @@ export type SystemSettingsCurrentRsp = {
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
 };
@@ -4930,6 +4931,7 @@ export type SystemSettingsItem = {
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheEnabled: boolean;
@@ -4974,6 +4976,7 @@ export type CreateSystemSettingsReq = {
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheEnabled: boolean;
@@ -6823,4 +6826,5 @@ export type UserDutySettingsDto = {
   mediaSummaryEnabled: boolean;
   messageSortBy: MessageTimeBasis;
   messageAutoParseEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean;
 };

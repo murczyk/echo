@@ -100,6 +100,8 @@ pub struct UserDutySettingsDto {
     pub message_sort_by: MessageTimeBasis,
     #[serde(default = "default_message_auto_parse_enabled")]
     pub message_auto_parse_enabled: bool,
+    #[serde(default)]
+    pub ai_position_highlights_enabled: bool,
 }
 
 fn default_duty_collapse_media_previews() -> bool {
@@ -128,6 +130,7 @@ impl Default for UserDutySettingsDto {
             show_classic_analysis: false,
             duty_collapse_media_previews: false,
             media_summary_enabled: false,
+            ai_position_highlights_enabled: false,
             message_sort_by: MessageTimeBasis::MessageInterception,
             message_auto_parse_enabled: default_message_auto_parse_enabled(),
         }

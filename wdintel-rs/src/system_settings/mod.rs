@@ -146,6 +146,9 @@ fn map_system_settings_item(
         duty_exclude_menu_enabled: settings
             .duty_exclude_menu_enabled
             .unwrap_or(true),
+        ai_position_highlights_enabled: settings
+            .ai_position_highlights_enabled
+            .unwrap_or(false),
         analysis_aor_filter_enabled: settings
             .analysis_aor_filter_enabled
             .unwrap_or(ANALYSIS_AOR_FILTER_ENABLED_DEFAULT),
@@ -703,6 +706,7 @@ fn system_settings_active_model(
         disable_bot_tags: Set(Some(req.disable_bot_tags)),
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
+        ai_position_highlights_enabled: Set(req.ai_position_highlights_enabled),
         two_factor_auth_enabled: Set(Some(req.two_factor_auth_enabled)),
         exclude_orbit_other_units: Set(Some(req.exclude_orbit_other_units)),
         messenger_media_cache_enabled: Set(Some(
@@ -759,15 +763,25 @@ async fn create_system_settings_for_login(
     validate_rer_duty_test_replay_settings(req)?;
     let txn = dbx.begin().await.c(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
-    let hide_orbit_data = get_active_system_settings(&txn)
-        .await
-        .c(h!())?
+    let settings = get_active_system_settings(&txn).await.c(h!())?;
+    let hide_orbit_data = settings
+        .as_ref()
         .map(|settings| settings.hide_orbit_data)
         .unwrap_or(false);
+    let mut req = req.clone();
+    req.ai_position_highlights_enabled = Some(
+        req.ai_position_highlights_enabled
+            .or_else(|| {
+                settings.and_then(|settings| {
+                    settings.ai_position_highlights_enabled
+                })
+            })
+            .unwrap_or(false),
+    );
     deactivate_active_settings(&txn, login).await.c(h!())?;
     let created = system_settings_active_model(
         login,
-        req,
+        &req,
         echo_im_sync_cursor,
         hide_orbit_data,
     )?
@@ -914,6 +928,9 @@ pub async fn current_system_settings(
             duty_exclude_menu_enabled: settings
                 .duty_exclude_menu_enabled
                 .unwrap_or(true),
+            ai_position_highlights_enabled: settings
+                .ai_position_highlights_enabled
+                .unwrap_or(false),
             analysis_aor_filter_enabled: settings
                 .analysis_aor_filter_enabled
                 .unwrap_or(ANALYSIS_AOR_FILTER_ENABLED_DEFAULT),
@@ -953,6 +970,7 @@ pub async fn current_system_settings(
             disable_bot_tags: false,
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
+            ai_position_highlights_enabled: false,
             two_factor_auth_enabled: true,
             exclude_orbit_other_units: true,
         },
@@ -1072,6 +1090,50 @@ mod tests {
         crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn legacy_admin_saves_preserve_ai_position_display_3064() {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let mut legacy_body =
+            serde_json::to_value(settings_req(false)).unwrap();
+        legacy_body
+            .as_object_mut()
+            .unwrap()
+            .remove("ai_position_highlights_enabled");
+        let legacy_req: CreateSystemSettingsReq =
+            serde_json::from_value(legacy_body).unwrap();
+        assert_eq!(legacy_req.ai_position_highlights_enabled, None);
+        let mut req = settings_req(false);
+        for (incoming, expected) in [
+            (Some(true), true),
+            (None, true),
+            (Some(false), false),
+            (None, false),
+        ] {
+            req.ai_position_highlights_enabled = incoming;
+            let req = if incoming.is_none() {
+                &legacy_req
+            } else {
+                &req
+            };
+            let saved = create_system_settings_for_login(&env.dbx, &login, req)
+                .await
+                .unwrap();
+            assert_eq!(saved.ai_position_highlights_enabled, Some(expected));
+            assert_eq!(
+                get_active_system_settings(&env.dbx)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .id,
+                saved.id
+            );
+        }
     }
 
     #[tokio::test]
@@ -1597,6 +1659,7 @@ mod tests {
             disable_bot_tags: false,
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
+            ai_position_highlights_enabled: Some(false),
             two_factor_auth_enabled: true,
             exclude_orbit_other_units: true,
             messenger_media_cache_enabled: false,
@@ -1674,6 +1737,7 @@ mod tests {
             disable_bot_tags: Set(None),
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
+            ai_position_highlights_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),
             messenger_media_cache_enabled: Set(None),

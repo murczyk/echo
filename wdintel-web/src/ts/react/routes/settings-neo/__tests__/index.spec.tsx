@@ -455,6 +455,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: true,
+      aiPositionHighlightsEnabled: false,
       messageAutoParseEnabled: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',

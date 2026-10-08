@@ -113,6 +113,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       showClassicAnalysis: dutySettings.showClassicAnalysis,
       dutyCollapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
       mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
+      aiPositionHighlightsEnabled: dutySettings.aiPositionHighlightsEnabled,
       messageSortBy: dutySettings.messageSortBy,
       messageAutoParseEnabled: dutySettings.messageAutoParseEnabled,
       ...overrides,
@@ -282,6 +283,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 dutySettings.setMessageTextPreviewLines(value);
                 scheduleDutySettingsSave({ messageTextPreviewLines: value });
               }}
+              aiPositionHighlightsEnabled={dutySettings.aiPositionHighlightsEnabled}
+              aiPositionHighlightsEnabledGlobally={globalSettings.aiPositionHighlightsEnabled}
+              onAiPositionHighlightsEnabledChange={(value) => {
+                dutySettings.setAiPositionHighlightsEnabled(value);
+                scheduleDutySettingsSave({ aiPositionHighlightsEnabled: value });
+              }}
               mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
               onMediaSummaryEnabledChange={(value) => {
                 dutySettings.setMediaSummaryEnabled(value);
@@ -381,6 +388,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     onMessageTextPreviewLinesChange={(value) => {
                       dutySettings.setMessageTextPreviewLines(value);
                       scheduleDutySettingsSave({ messageTextPreviewLines: value });
+                    }}
+                    aiPositionHighlightsEnabled={dutySettings.aiPositionHighlightsEnabled}
+                    aiPositionHighlightsEnabledGlobally={globalSettings.aiPositionHighlightsEnabled}
+                    onAiPositionHighlightsEnabledChange={(value) => {
+                      dutySettings.setAiPositionHighlightsEnabled(value);
+                      scheduleDutySettingsSave({ aiPositionHighlightsEnabled: value });
                     }}
                     mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
                     onMediaSummaryEnabledChange={(value) => {

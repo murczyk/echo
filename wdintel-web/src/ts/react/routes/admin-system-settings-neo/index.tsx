@@ -59,6 +59,7 @@ type SystemSettingsForm = {
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheMinFreeGib: SystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -100,6 +101,7 @@ type SystemSettingsPayload = {
   disableBotTags: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheMinFreeGib: SystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -141,6 +143,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   disableBotTags: false,
   dutyExcludeMenuEnabled: true,
   analysisAorFilterEnabled: true,
+  aiPositionHighlightsEnabled: false,
   twoFactorAuthEnabled: true,
   excludeOrbitOtherUnits: true,
   messengerMediaCacheEnabled: false,
@@ -232,6 +235,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     disableBotTags: item?.disableBotTags ?? false,
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
+    aiPositionHighlightsEnabled: item?.aiPositionHighlightsEnabled ?? false,
     twoFactorAuthEnabled: item?.twoFactorAuthEnabled ?? true,
     excludeOrbitOtherUnits: item?.excludeOrbitOtherUnits ?? true,
     messengerMediaCacheMinFreeGib: item?.messengerMediaCacheMinFreeGib ?? 10,
@@ -276,6 +280,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.disableBotTags === b.disableBotTags &&
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
+    a.aiPositionHighlightsEnabled === b.aiPositionHighlightsEnabled &&
     a.twoFactorAuthEnabled === b.twoFactorAuthEnabled &&
     a.excludeOrbitOtherUnits === b.excludeOrbitOtherUnits &&
     a.messengerMediaCacheMinFreeGib === b.messengerMediaCacheMinFreeGib &&
@@ -376,6 +381,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     disableBotTags: form.disableBotTags,
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
+    aiPositionHighlightsEnabled: form.aiPositionHighlightsEnabled,
     twoFactorAuthEnabled: form.twoFactorAuthEnabled,
     excludeOrbitOtherUnits: form.excludeOrbitOtherUnits,
     messengerMediaCacheMinFreeGib: form.messengerMediaCacheMinFreeGib,
@@ -501,6 +507,19 @@ function MainSettingsSection({
         </ButtonBase>
       </Box>
 
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.aiPositionHighlightsEnabled}
+            onChange={(_, checked) => patchForm({ aiPositionHighlightsEnabled: checked })}
+          />
+        }
+        label="Показувати ШІ-позиції всім користувачам (оперативний та аналіз)"
+      />
+      <Typography variant="body2" color="text.secondary">
+        Коли вимкнено, користувачі можуть увімкнути показ у своїх налаштуваннях. Розпізнавання
+        позицій продовжує працювати.
+      </Typography>
       <FormControlLabel
         control={
           <Switch
@@ -1240,6 +1259,7 @@ export function AdminSystemSettingsNeoPage() {
       disableBotTags: payload.disableBotTags,
       dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
       analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
+      aiPositionHighlightsEnabled: payload.aiPositionHighlightsEnabled,
       twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
       excludeOrbitOtherUnits: payload.excludeOrbitOtherUnits,
       messengerMediaCacheMinFreeGib: payload.messengerMediaCacheMinFreeGib,
