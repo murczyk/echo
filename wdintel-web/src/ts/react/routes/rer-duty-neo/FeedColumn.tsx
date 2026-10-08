@@ -23,8 +23,6 @@ import { FeedColumnContent, type FeedColumnContentHandle } from './FeedColumnCon
 import { useDocumentClickAway } from '../../hooks/use-document-click-away';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import type { FeedColumnModel } from './types';
-import { DutyScrollDebugPanel } from './DutyScrollDebugPanel';
-import { registerDutyScrollDebugBellPress } from './duty-scroll-debug';
 import { clearFeedColumnFab, publishFeedColumnFab } from './feedColumnFab';
 import type {
   ExplicitScrollNavigation,
@@ -95,7 +93,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     async (e: MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();
       e.stopPropagation();
-      registerDutyScrollDebugBellPress();
       const cur = getStoredDutyNotificationSettingsForFeed(feed.id);
       if (cur.soundEnabled || cur.browserEnabled) {
         const result = setStoredDutyNotificationSettingsForFeed(feed.id, {
@@ -156,13 +153,12 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     });
   }, [closeOtherPanels]);
   const onToggleNotificationPanel = useCallback(() => {
-    if (feedCount >= 4) registerDutyScrollDebugBellPress();
     setShowNotificationPanel((open) => {
       const next = !open;
       if (next) closeOtherPanels('notifications');
       return next;
     });
-  }, [closeOtherPanels, feedCount]);
+  }, [closeOtherPanels]);
   const onToggleKeywordsPanel = useCallback(() => {
     setShowKeywordsPanel((open) => {
       const next = !open;
@@ -303,7 +299,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         onNotificationStatusChanged={refreshNotificationStatus}
       />
       <FeedColumnContent ref={contentRef} column={column} />
-      <DutyScrollDebugPanel feed={feed} view={view} />
       {removeConfirmationOpen ? (
         <ConfirmDangerDialog
           open
