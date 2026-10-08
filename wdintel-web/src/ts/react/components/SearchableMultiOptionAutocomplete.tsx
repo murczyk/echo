@@ -23,6 +23,7 @@ type Props<T extends SearchableOption> = {
   className?: string;
   disablePortal?: boolean;
   onBlur?: () => void;
+  onOpen?: () => void;
   onInputChange?: (value: string) => void;
   serverSearch?: boolean;
   loading?: boolean;
@@ -45,6 +46,7 @@ export function SearchableMultiOptionAutocomplete<T extends SearchableOption>({
   className,
   disablePortal,
   onBlur,
+  onOpen,
   onInputChange,
   serverSearch = false,
   loading = false,
@@ -74,6 +76,7 @@ export function SearchableMultiOptionAutocomplete<T extends SearchableOption>({
       inputValue={inputValue}
       disabled={disabled}
       disablePortal={disablePortal}
+      onOpen={onOpen}
       slotProps={slotProps}
       loading={loading}
       loadingText={loadingText}

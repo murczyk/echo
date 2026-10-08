@@ -105,9 +105,9 @@ describe('AnalysisCallsignsPane', () => {
     await act(async () => root?.render(<AnalysisCallsignsPane {...props} />));
 
     const alphaRow = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.includes('ALPHA') && button.textContent?.includes('2'),
+      (button) => button.getAttribute('aria-label') === 'ALPHA 2 повідомлень',
     );
-    expect(alphaRow?.className).toContain('MuiButton-colorPrimary');
+    expect(alphaRow?.getAttribute('data-selected')).toBe('true');
 
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -120,10 +120,10 @@ describe('AnalysisCallsignsPane', () => {
       root?.render(<AnalysisCallsignsPane {...props} selectedCallsigns={['alpha', 'bravo']} />),
     );
     expect(
-      Array.from(container.querySelectorAll('button')).find(
-        (button) => button.textContent?.includes('ALPHA') && button.textContent?.includes('2'),
-      )?.className,
-    ).toContain('MuiButton-colorPrimary');
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.getAttribute('aria-label') === 'ALPHA 2 повідомлень')
+        ?.getAttribute('data-selected'),
+    ).toBe('true');
 
     callsignPage.value = { ...callsignPage.value, entries: [] };
     await act(async () =>
@@ -276,10 +276,8 @@ describe('AnalysisCallsignsPane', () => {
       )?.disabled,
     ).toBe(false);
     expect(
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
-        button.textContent?.includes('BRAVO'),
-      )?.disabled,
-    ).toBe(true);
+      container.querySelector('[aria-label="BRAVO 1 повідомлень"]')?.getAttribute('aria-disabled'),
+    ).toBe('true');
   });
 
   it('does not leave an enabled add action for a fully selected callsign group', async () => {

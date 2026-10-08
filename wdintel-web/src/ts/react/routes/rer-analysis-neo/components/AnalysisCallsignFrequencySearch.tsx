@@ -12,6 +12,7 @@ import {
   Paper,
   Skeleton,
   Stack,
+  Typography,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -170,7 +171,8 @@ export function AnalysisCallsignFrequencySearch({
 }: Props) {
   const { notify } = useOptionalPowerSnackbar();
   const headingId = useId().replace(/:/g, '-');
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
+  const [suggestionsActivated, setSuggestionsActivated] = useState(false);
   const [selectedCallsigns, setSelectedCallsigns] = useState<string[]>([]);
   const selectedValuesRef = useRef<Record<string, string[]>>({});
   const [minMatches, setMinMatches] = useState(DEFAULT_MIN_MATCHES);
@@ -192,7 +194,7 @@ export function AnalysisCallsignFrequencySearch({
     [notify],
   );
   const suggestions = useCallsignPage({
-    active: !collapsed,
+    active: !collapsed && suggestionsActivated,
     analysisReq,
     onError: notifyCallsignLoadError,
   });
@@ -202,6 +204,7 @@ export function AnalysisCallsignFrequencySearch({
       : suggestions.error
         ? 'Не вдалося завантажити позивні.'
         : null;
+  const activateSuggestions = useCallback(() => setSuggestionsActivated(true), []);
   const options = useMemo<CallsignOption[]>(() => {
     const uniqueOptions = new Map<string, string>();
     const optionValues = new Map<string, string[]>();
@@ -299,30 +302,29 @@ export function AnalysisCallsignFrequencySearch({
   };
 
   return (
-    <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 2,
-          mb: collapsed ? 0 : 1.5,
-        }}
-      >
-        <CompactTitle id={headingId} component="h2">
-          Пошук частот
-        </CompactTitle>
+    <Paper variant="outlined" component="section" aria-labelledby={headingId} className="p-echo-lg">
+      <div className="flex items-start justify-between gap-echo-sm">
+        <div>
+          <Typography id={headingId} component="h2" variant="subtitle1" sx={{ fontWeight: 700 }}>
+            Частоти за позивними
+          </Typography>
+          <p className="mt-echo-xs mb-0 text-echo-sm text-echo-text-muted">
+            Знайти частоти зі спільними позивними.
+          </p>
+        </div>
         <IconButton
           size="small"
           aria-expanded={!collapsed}
-          aria-label={collapsed ? 'Розгорнути Пошук частот' : 'Згорнути Пошук частот'}
+          aria-label={
+            collapsed ? 'Розгорнути Частоти за позивними' : 'Згорнути Частоти за позивними'
+          }
           onClick={() => setCollapsed((current) => !current)}
         >
           {collapsed ? <ExpandMoreIcon fontSize="small" /> : <ExpandLessIcon fontSize="small" />}
         </IconButton>
-      </Box>
+      </div>
       <Collapse in={!collapsed} unmountOnExit>
-        <Stack spacing={1.5}>
+        <Stack spacing={1.5} className="mt-echo-md">
           <SearchableMultiOptionAutocomplete
             label="Позивні"
             options={options}
@@ -331,7 +333,11 @@ export function AnalysisCallsignFrequencySearch({
             loading={suggestions.pending}
             loadingText="Завантаження позивних…"
             noOptionsText={suggestionNoOptionsText}
-            onInputChange={suggestions.setQuery}
+            onInputChange={(query) => {
+              activateSuggestions();
+              suggestions.setQuery(query);
+            }}
+            onOpen={activateSuggestions}
             serverSearch
             onValueIdsChange={(valueIds) => {
               const selected = valueIds

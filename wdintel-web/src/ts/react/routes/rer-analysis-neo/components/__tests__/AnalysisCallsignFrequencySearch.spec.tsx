@@ -12,10 +12,14 @@ vi.mock('../../../../services/api/analysis', () => api);
 vi.mock('../../../../components/SearchableMultiOptionAutocomplete', () => ({
   SearchableMultiOptionAutocomplete: ({
     onInputChange,
+    onFocus,
+    onOpen,
     onValueIdsChange,
     options,
   }: {
     onInputChange?: (value: string) => void;
+    onFocus?: () => void;
+    onOpen?: () => void;
     onValueIdsChange: (ids: number[]) => void;
     options: Array<{ id: number }>;
   }) => (
@@ -31,6 +35,15 @@ vi.mock('../../../../components/SearchableMultiOptionAutocomplete', () => ({
       </button>
       <button type="button" onClick={() => onInputChange?.('КОМЕТА')}>
         Шукати КОМЕТА
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          onFocus?.();
+          onOpen?.();
+        }}
+      >
+        Активувати підказки
       </button>
     </>
   ),
@@ -55,7 +68,15 @@ const callsignOptions = [
 ];
 
 function open(container: HTMLElement) {
-  container.querySelector<HTMLButtonElement>('[aria-label="Розгорнути Пошук частот"]')?.click();
+  container
+    .querySelector<HTMLButtonElement>('[aria-label="Розгорнути Частоти за позивними"]')
+    ?.click();
+}
+
+function activateSuggestions(container: HTMLElement) {
+  Array.from(container.querySelectorAll('button'))
+    .find((button) => button.textContent === 'Активувати підказки')
+    ?.click();
 }
 
 function select(container: HTMLElement, selection = 'Обрати позивні') {
@@ -104,9 +125,7 @@ describe('AnalysisCallsignFrequencySearch', () => {
         />,
       );
     });
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="Розгорнути Пошук частот"]')?.click();
-    });
+    await act(async () => open(container));
 
     await act(async () => {
       Array.from(container.querySelectorAll('button'))
@@ -143,9 +162,7 @@ describe('AnalysisCallsignFrequencySearch', () => {
         />,
       );
     });
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="Розгорнути Пошук частот"]')?.click();
-    });
+    await act(async () => open(container));
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>('[aria-label="Додати 456.78 до поточного фільтра"]')
@@ -172,9 +189,7 @@ describe('AnalysisCallsignFrequencySearch', () => {
         />,
       );
     });
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="Розгорнути Пошук частот"]')?.click();
-    });
+    await act(async () => open(container));
 
     await act(async () => {
       Array.from(container.querySelectorAll('button'))
@@ -211,9 +226,8 @@ describe('AnalysisCallsignFrequencySearch', () => {
         />,
       );
     });
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="Розгорнути Пошук частот"]')?.click();
-    });
+    expect(api.fetchAnalysisCallsignPage).not.toHaveBeenCalled();
+    await act(async () => activateSuggestions(container));
     await act(async () => vi.advanceTimersByTimeAsync(250));
     expect(api.fetchAnalysisCallsignPage).toHaveBeenCalledTimes(1);
     api.fetchAnalysisCallsignPage.mockClear();

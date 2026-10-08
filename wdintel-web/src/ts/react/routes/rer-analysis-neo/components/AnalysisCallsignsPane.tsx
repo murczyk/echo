@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCallsignPage } from '../use-callsign-page';
 import { PowerIconButton } from '../../../components/PowerIconButton';
 import { PowerChip } from '../../../components/PowerChip';
+import { EchoChip } from '../../../components/EchoChip';
 import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import {
@@ -32,6 +33,7 @@ import {
 
 type Props = {
   analysisReq: AnalysisStatsReq | null;
+  isCompactLayout?: boolean;
   onClearCallsign: () => void;
   onAddCallsign: (callsigns: string[]) => void;
   onAddFreq: (freq: string) => void;
@@ -49,6 +51,7 @@ type Props = {
 
 export function AnalysisCallsignsPane({
   analysisReq,
+  isCompactLayout = false,
   onClearCallsign,
   onAddCallsign,
   onAddFreq,
@@ -136,13 +139,13 @@ export function AnalysisCallsignsPane({
   }, [displayedEntries, selectedCallsigns, selectedValues]);
   return (
     <Stack spacing={0}>
-      <Paper component="section" variant="outlined" sx={{ p: 2 }}>
+      <Paper component="section" variant="outlined" className="p-echo-lg pb-0">
         <Typography component="h2" variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
           Позивні
         </Typography>
         <TextField
           fullWidth
-          label="Пошук позивного"
+          label="Пошук"
           size="small"
           value={page.query}
           onChange={(event) => page.setQuery(event.target.value)}
@@ -163,6 +166,7 @@ export function AnalysisCallsignsPane({
                 </InputAdornment>
               ) : undefined,
             },
+            htmlInput: { 'aria-label': 'Пошук позивних' },
           }}
           sx={{ mb: 1 }}
         />
@@ -184,6 +188,11 @@ export function AnalysisCallsignsPane({
               ))}
             </Stack>
           </Stack>
+        ) : null}
+        {selectedCallsigns.length > 0 ? (
+          <Button onClick={onClearCallsign} className="mb-echo-sm">
+            Очистити вибір
+          </Button>
         ) : null}
         {error ? (
           <Stack direction="row" spacing={1} alignItems="center">
@@ -217,38 +226,33 @@ export function AnalysisCallsignsPane({
             minHeight: activeProgress && displayedEntries.length === 0 ? 72 : 0,
           }}
         >
-          <Stack spacing={0.25}>
+          <div
+            className={`flex flex-wrap gap-x-echo-xs gap-y-echo-sm ${displayedEntries.length > 0 ? 'mb-echo-sm' : ''} ${isCompactLayout ? '' : 'me-echo-2xl'}`}
+          >
             {displayedEntries.map((item) => {
               const fullySelected = item.values
                 .map(normalizeCallsignLookupValue)
                 .every((value) => selectedValues.has(value));
               return (
-                <Stack key={item.label} direction="row" spacing={0.5} alignItems="center">
-                  <Button
-                    color={fullySelected ? 'primary' : 'inherit'}
-                    disabled={interactionsBlocked}
-                    onClick={() => onToggleCallsign(item.values)}
-                    sx={{
-                      flex: 1,
-                      minWidth: 0,
-                      minHeight: 36,
-                      justifyContent: 'flex-start',
-                      textAlign: 'left',
-                    }}
-                  >
-                    <Typography component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-                      {item.label}
-                    </Typography>
-                    <Typography
-                      component="span"
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ flexShrink: 0, ml: 'auto', pl: 1 }}
-                      aria-label={`${item.count} повідомлень`}
-                    >
-                      {item.count}
-                    </Typography>
-                  </Button>
+                <div key={item.label} className="flex min-w-0 max-w-full items-center gap-echo-xs">
+                  <EchoChip
+                    aria-label={`${item.label} ${item.count} повідомлень`}
+                    aria-disabled={interactionsBlocked || undefined}
+                    className="max-w-full"
+                    label={
+                      <>
+                        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                        <span className="ms-echo-xs shrink-0 text-echo-xs text-echo-text-muted">
+                          {item.count}
+                        </span>
+                      </>
+                    }
+                    labelClassName="min-w-0 px-echo-xs"
+                    onClick={interactionsBlocked ? undefined : () => onToggleCallsign(item.values)}
+                    selected={fullySelected}
+                    title={item.label}
+                    tone="primary"
+                  />
                   {!fullySelected ? (
                     <Tooltip title={`Додати ${item.label} до поточного фільтра`}>
                       <span>
@@ -256,16 +260,21 @@ export function AnalysisCallsignsPane({
                           aria-label={`Додати ${item.label} до поточного фільтра`}
                           disabled={interactionsBlocked}
                           onClick={() => onAddCallsign(item.values)}
+                          sx={{
+                            width: 'var(--echo-size-icon-lg)',
+                            height: 'var(--echo-size-icon-lg)',
+                            p: 0,
+                          }}
                         >
                           <AddIcon fontSize="small" />
                         </PowerIconButton>
                       </span>
                     </Tooltip>
                   ) : null}
-                </Stack>
+                </div>
               );
             })}
-          </Stack>
+          </div>
           <SectionLoadingOverlay
             open={activeProgress && !showInitialSkeleton}
             ariaLabel="Оновлення позивних"
@@ -276,16 +285,23 @@ export function AnalysisCallsignsPane({
         {displayedEntries.length > 0 ? (
           <Box
             aria-busy={activeProgress}
+            data-analysis-callsign-pagination
             sx={{
               position: 'sticky',
               bottom: 0,
-              zIndex: 1,
-              backgroundColor: 'background.default',
+              zIndex: 2,
+              backgroundColor: 'var(--analysis-panel-background, var(--echo-color-background))',
               borderTop: '1px solid',
               borderColor: 'divider',
             }}
           >
-            <Stack direction="row" alignItems="center" spacing={0.5}>
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={0.5}
+              className="py-echo-sm"
+              sx={{ minHeight: 40 }}
+            >
               <TablePagination
                 component="div"
                 count={-1}
@@ -307,11 +323,12 @@ export function AnalysisCallsignsPane({
                 sx={{
                   minHeight: 40,
                   '& .MuiTablePagination-toolbar': {
-                    minHeight: 'inherit',
+                    minHeight: 40,
                     px: 0,
                     alignItems: 'center',
                   },
-                  '& .MuiTablePagination-displayedRows': { m: 0 },
+                  '& .MuiTablePagination-displayedRows': { m: 0, whiteSpace: 'nowrap' },
+                  '& .MuiTablePagination-actions': { display: 'flex', alignItems: 'center' },
                 }}
                 slotProps={{
                   select: { inputProps: { 'aria-label': 'Кількість позивних на сторінці' } },
@@ -339,11 +356,6 @@ export function AnalysisCallsignsPane({
               ) : null}
             </Stack>
           </Box>
-        ) : null}
-        {selectedCallsigns.length > 0 ? (
-          <Button onClick={onClearCallsign} sx={{ mt: 1 }}>
-            Очистити вибір
-          </Button>
         ) : null}
       </Paper>
       <Box sx={{ borderTop: '1px solid', borderColor: 'divider' }}>

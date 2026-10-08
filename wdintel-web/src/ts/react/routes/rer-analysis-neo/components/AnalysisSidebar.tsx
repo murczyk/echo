@@ -498,6 +498,7 @@ export function AnalysisSidebar({
         {sidebarTab === 'callsigns' ? (
           <AnalysisCallsignsPane
             analysisReq={callsignAnalysisReq}
+            isCompactLayout={isCompactLayout}
             onClearCallsign={clearCallsign}
             onAddCallsign={addCallsign}
             onAddFreq={addFreq}

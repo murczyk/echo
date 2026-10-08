@@ -139,11 +139,107 @@ test.describe('@smoke @regression', () => {
     await expect(page.getByRole('button', { name: 'Прибрати BRAVO з фільтра' })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('callsigns-pagination.png') });
     await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
+    await page.screenshot({ path: test.info().outputPath('callsigns-pagination-dark-wide.png') });
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByRole('button', { name: 'Прибрати BRAVO з фільтра' })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('callsigns-pagination-dark-narrow.png') });
     await expect(page.getByRole('button', { name: 'ALPHA 2 повідомлень' })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('callsigns-populated-dark-narrow.png') });
+    for (const mode of ['light', 'dark']) {
+      await page.evaluate(
+        (mode) => document.documentElement.setAttribute('data-bs-theme', mode),
+        mode,
+      );
+      await expect
+        .poll(() =>
+          page.locator('[data-analysis-callsign-pagination]').evaluate((footer) => {
+            let surface = footer.parentElement;
+            while (surface && getComputedStyle(surface).backgroundColor === 'rgba(0, 0, 0, 0)') {
+              surface = surface.parentElement;
+            }
+            return (
+              surface != null &&
+              getComputedStyle(footer).backgroundColor === getComputedStyle(surface).backgroundColor
+            );
+          }),
+        )
+        .toBe(true);
+    }
+  });
+
+  test('@regression keeps callsign chips in server order without premature wrapping', async ({
+    page,
+  }, testInfo) => {
+    await setupAnalysisNeoPage(page, {
+      callsignPageResponse: () => ({
+        entries: [
+          { value: 'uzhorod', label: 'УЖГОРОД', values: ['uzhorod'], count: 12 },
+          { value: 'arbuz', label: 'АРБУЗ', values: ['arbuz'], count: 8 },
+          {
+            value: 'long-callsign',
+            label: 'ДОВГИЙ-ПОЗИВНИЙ-З-ГРУПОЮ-ВАРІАНТІВ',
+            values: ['long-callsign'],
+            count: 1_234,
+          },
+        ],
+        has_more: false,
+        next_cursor: null,
+      }),
+    });
+    await page.goto('/rer-analysis-neo');
+    await page.getByRole('button', { name: 'Розгорнути праву панель' }).click();
+    await page.getByRole('tab', { name: 'Позивні' }).click();
+
+    const uzhorod = page.getByRole('button', { name: 'УЖГОРОД 12 повідомлень' });
+    const arbuz = page.getByRole('button', { name: 'АРБУЗ 8 повідомлень' });
+    await expect(uzhorod).toBeVisible();
+    await expect(arbuz).toBeVisible();
+    const wideLayout = await page.evaluate(() => {
+      const firstChip = document.querySelector<HTMLElement>(
+        '[aria-label="УЖГОРОД 12 повідомлень"]',
+      );
+      const chips = ['УЖГОРОД 12 повідомлень', 'АРБУЗ 8 повідомлень'].map((label) => {
+        const chip = document.querySelector<HTMLElement>(`[aria-label="${label}"]`);
+        return chip?.parentElement?.getBoundingClientRect() ?? null;
+      });
+      return {
+        availableWidth: firstChip?.parentElement?.parentElement?.clientWidth ?? 0,
+        first: chips[0] && { top: chips[0].top, width: chips[0].width },
+        second: chips[1] && { top: chips[1].top, width: chips[1].width },
+      };
+    });
+    expect(wideLayout.first).not.toBeNull();
+    expect(wideLayout.second).not.toBeNull();
+    expect(wideLayout.availableWidth).toBeGreaterThanOrEqual(
+      (wideLayout.first?.width ?? 0) + (wideLayout.second?.width ?? 0) + 4,
+    );
+    expect(wideLayout.first?.top).toBe(wideLayout.second?.top);
+
+    await page.setViewportSize({ width: 768, height: 844 });
+    await expect(uzhorod).toBeVisible();
+    await expect(arbuz).toBeVisible();
+    const mediumChipsFit = await page
+      .locator('[aria-label$="повідомлень"]')
+      .evaluateAll((chips) => chips.every((chip) => chip.scrollWidth <= chip.clientWidth));
+    expect(mediumChipsFit).toBe(true);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(uzhorod).toBeVisible();
+    await expect(arbuz).toBeVisible();
+    const narrowLabels = await page
+      .locator('[aria-label$="повідомлень"]')
+      .evaluateAll((chips) => chips.map((chip) => chip.getAttribute('aria-label')));
+    expect(narrowLabels).toEqual([
+      'УЖГОРОД 12 повідомлень',
+      'АРБУЗ 8 повідомлень',
+      'ДОВГИЙ-ПОЗИВНИЙ-З-ГРУПОЮ-ВАРІАНТІВ 1234 повідомлень',
+    ]);
+    const chipsFit = await page
+      .locator('[aria-label$="повідомлень"]')
+      .evaluateAll((chips) => chips.every((chip) => chip.scrollWidth <= chip.clientWidth));
+    expect(chipsFit).toBe(true);
+    await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
+    await page.screenshot({ path: testInfo.outputPath('callsigns-wrapping-dark-narrow.png') });
   });
 
   test('@regression shows callsign load failures in a toast and keeps retry available', async ({
@@ -392,9 +488,45 @@ test.describe('@smoke @regression', () => {
     await expect(page.getByRole('button', { name: 'CALLSIGN-50 50 повідомлень' })).toBeVisible();
 
     const sidebar = page.locator('[data-analysis-sidebar-scroll-body]');
+    const expectNoFabOverlap = async () => {
+      const overlaps = await page
+        .getByRole('button', { name: 'Додати повідомлення' })
+        .evaluate((fab) => {
+          const fabRect = fab.getBoundingClientRect();
+          const controls = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              '[aria-label$="повідомлень"], [aria-label^="Додати CALLSIGN-"], [aria-label="Перша сторінка позивних"], [aria-label="Попередня сторінка позивних"], [aria-label="Наступна сторінка позивних"]',
+            ),
+          );
+          return controls
+            .filter((control) => {
+              const rect = control.getBoundingClientRect();
+              return (
+                rect.width > 0 &&
+                rect.height > 0 &&
+                rect.left < fabRect.right &&
+                rect.right > fabRect.left &&
+                rect.top < fabRect.bottom &&
+                rect.bottom > fabRect.top
+              );
+            })
+            .map((control) => control.getAttribute('aria-label'));
+        });
+      expect(overlaps).toEqual([]);
+    };
+
+    await sidebar.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await expectNoFabOverlap();
+    await sidebar.evaluate((element) => {
+      element.scrollTop = element.scrollHeight / 2;
+    });
+    await expectNoFabOverlap();
     await sidebar.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
+    await expectNoFabOverlap();
     const nextButton = page.getByRole('button', { name: 'Наступна сторінка позивних' });
     await expect(nextButton).toBeVisible();
     await nextButton.click();
@@ -403,7 +535,10 @@ test.describe('@smoke @regression', () => {
     const progress = page.getByRole('status', { name: 'Оновлення позивних' });
     await expect(progress).toBeVisible();
     await expect(nextButton).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'CALLSIGN-50 50 повідомлень' })).toBeDisabled();
+    await expect(page.locator('[aria-label="CALLSIGN-50 50 повідомлень"]')).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     await page.screenshot({ path: testInfo.outputPath('callsigns-pagination-progress.png') });
 
     releaseNextResponse();
@@ -422,6 +557,40 @@ test.describe('@smoke @regression', () => {
     await expect(progress).toBeVisible();
     releaseRetryResponse();
     await expect(page.getByRole('button', { name: 'NEXT PAGE 1 повідомлень' })).toBeVisible();
+  });
+
+  test('@regression loads frequency callsign suggestions only after the selector is used', async ({
+    page,
+  }, testInfo) => {
+    let frequencySuggestionRequests = 0;
+    await setupAnalysisNeoPage(page, {
+      callsignPageResponse: ({ order }) => {
+        if (order === 'match_then_name') frequencySuggestionRequests += 1;
+        return {
+          entries: [{ value: 'alpha', label: 'ALPHA', values: ['alpha'], count: 2 }],
+          has_more: false,
+          next_cursor: null,
+        };
+      },
+    });
+    await page.goto('/rer-analysis-neo');
+    await page.getByRole('button', { name: 'Розгорнути праву панель' }).click();
+    await page.getByRole('tab', { name: 'Позивні' }).click();
+
+    await expect(page.getByRole('button', { name: 'ALPHA 2 повідомлень' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Частоти за позивними' })).toBeVisible();
+    await expect(page.getByText('Знайти частоти зі спільними позивними.')).toBeVisible();
+    const selector = page.getByRole('combobox', { name: 'Позивні' });
+    await expect(selector).toBeVisible();
+    await expect.poll(() => frequencySuggestionRequests).toBe(0);
+    await page.screenshot({ path: testInfo.outputPath('callsigns-frequency-expanded.png') });
+
+    await selector.fill('a');
+    await expect.poll(() => frequencySuggestionRequests).toBe(1);
+    await page.getByRole('button', { name: 'Згорнути Частоти за позивними' }).click();
+    await expect(selector).toHaveCount(0);
+    await page.getByRole('button', { name: 'Розгорнути Частоти за позивними' }).click();
+    await expect(selector).toBeVisible();
   });
 
   test('@regression discards stale callsign frequency matches after matching inputs change', async ({
@@ -475,7 +644,6 @@ test.describe('@smoke @regression', () => {
 
     await page.getByRole('button', { name: 'Розгорнути праву панель' }).click();
     await page.getByRole('tab', { name: 'Позивні' }).click();
-    await page.getByRole('button', { name: 'Розгорнути Пошук частот' }).click();
     const callsignInput = page.getByRole('combobox', { name: 'Позивні' });
     await callsignInput.fill('alpha');
     await page.getByRole('option', { name: 'ALPHA', exact: true }).click();
