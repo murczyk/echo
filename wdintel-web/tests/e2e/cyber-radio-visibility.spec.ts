@@ -54,7 +54,14 @@ function classicDutyState() {
 
 // Regression: https://github.com/echoua/echo/issues/3568
 test.describe('Cyber radio visibility @regression #3568', () => {
-  for (const roles of [['Rer'], ['Rer', 'Cyber'], ['Admin'], ['Full'], ['Cyber']]) {
+  for (const roles of [
+    ['Rer'],
+    ['Rer', 'Cyber'],
+    ['Admin'],
+    ['Full'],
+    ['Cyber'],
+    ['CyberViewer'],
+  ]) {
     test(`@smoke #3568 classic Duty saved filters wait for ${roles.join('+')} permissions`, async ({
       page,
     }) => {
@@ -87,7 +94,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
       expect(JSON.parse(new URL(page.url()).searchParams.get('state')!)).toEqual(state);
       releaseUser();
 
-      const radioAllowed = roles[0] !== 'Cyber';
+      const radioAllowed = roles.some((role) => ['Rer', 'Full', 'Admin'].includes(role));
       const settings = page.locator('button').filter({ has: page.locator('i.bi-gear') });
       await expect(settings).toHaveCount(2);
       await settings.nth(0).click();

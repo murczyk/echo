@@ -32,7 +32,7 @@ pub async fn list_network_callsigns(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "ApiAgent"],
+        vec!["Rer", "CyberViewer", "ApiAgent"],
     )
     .await
     .c(h!())?;
