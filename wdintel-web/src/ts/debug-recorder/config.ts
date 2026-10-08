@@ -30,6 +30,9 @@ export const DEBUG_ANOMALY_RENDER_STORM_COUNT = 20;
 export const DEBUG_ANOMALY_RENDER_STORM_WINDOW_MS = 1_000;
 export const DEBUG_ANOMALY_MAX_KEYS = 256;
 export const DEBUG_ANOMALY_MAX_TIMESTAMPS_PER_KEY = 64;
+export const DEBUG_SCROLL_HEARTBEAT_MS = 250;
+export const DEBUG_DOM_SUBSTANTIAL_SUBTREE_SIZE = 50;
+export const DEBUG_DOM_MUTATION_INSPECTION_LIMIT = 1_000;
 
 export const DEBUG_MAX_STRING_LENGTH = 160;
 export const DEBUG_MAX_OBJECT_DEPTH = 3;
@@ -39,6 +42,7 @@ export const DEBUG_MAX_ARRAY_LENGTH = 32;
 export const DEBUG_SAFE_DETAIL_KEYS = new Set([
   'abortReason',
   'active',
+  'addedCount',
   'atBottom',
   'bottomDistance',
   'browserEvent',
@@ -50,6 +54,7 @@ export const DEBUG_SAFE_DETAIL_KEYS = new Set([
   'delta',
   'deltaX',
   'deltaY',
+  'devicePixelRatio',
   'durationMs',
   'entryType',
   'errorClass',
@@ -71,6 +76,7 @@ export const DEBUG_SAFE_DETAIL_KEYS = new Set([
   'outcome',
   'phase',
   'reason',
+  'removedCount',
   'requestCount',
   'role',
   'sameOrigin',
