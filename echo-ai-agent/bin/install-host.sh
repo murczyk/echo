@@ -2,7 +2,7 @@
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-set -euo pipefail
+set -euxo pipefail
 
 BUNDLE_DIR=${1:?bundle directory is required}
 dangerously_acknowledge=${2:-}
@@ -205,7 +205,7 @@ ensure_profile() {
   require_nic_config_key security.mac_filtering
   require_nic_config_key security.port_isolation
   incus profile show "$AGENT_PROFILE" >/dev/null 2>&1 \
-    || incus profile create "$AGENT_PROFILE"
+    || incus profile create "$AGENT_PROFILE" < /dev/null
   incus profile set "$AGENT_PROFILE" \
     boot.autostart=false \
     limits.cpu="$AGENT_CPU_LIMIT" \
