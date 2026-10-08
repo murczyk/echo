@@ -4,7 +4,7 @@ import type { DebugCollectorCleanup, DebugEventSink } from '../types';
 const LOADING_SELECTOR = '[aria-busy="true"], [data-debug-skeleton], .MuiSkeleton-root';
 
 function isRecorderElement(element: Element): boolean {
-  return element.closest('[data-debug-recorder-root]') !== null;
+  return element.closest('[data-debug-recorder-host], [data-debug-recorder-root]') !== null;
 }
 
 function subtreeSize(element: Element): number {

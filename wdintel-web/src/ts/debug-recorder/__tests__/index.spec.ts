@@ -162,6 +162,8 @@ describe('browser debug recorder runtime', () => {
     runtime.initialize();
     runtime.initialize();
     expect(mountPanel).toHaveBeenCalledOnce();
+    runtime.mountPanelIfNeeded();
+    expect(mountPanel).toHaveBeenCalledTimes(2);
     expect(runtime.getSnapshot().deadlineAt).toBe(61_000);
     clock = 61_000;
     vi.advanceTimersByTime(60_000);

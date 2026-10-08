@@ -183,6 +183,17 @@ export function createBrowserDebugRecorderRuntime(
     syncLifecycle();
   };
 
+  const mountPanelIfNeeded = () => {
+    const alreadyMounted = panelMounted;
+    syncLifecycle();
+    if (!alreadyMounted || recorder.getSnapshot().state === 'idle') return;
+    try {
+      panelMounter(controller);
+    } catch {
+      panelMounted = false;
+    }
+  };
+
   return {
     initialize,
     configure: (metadata) => {
@@ -241,7 +252,7 @@ export function createBrowserDebugRecorderRuntime(
       }
     },
     clear,
-    mountPanelIfNeeded: syncLifecycle,
+    mountPanelIfNeeded,
     destroy: () => {
       unsubscribe?.();
       unsubscribe = null;

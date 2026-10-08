@@ -22,7 +22,10 @@ const INTENT_EVENTS = new Map<string, string>([
 ]);
 
 function isRecorderTarget(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('[data-debug-recorder-root]') !== null;
+  return (
+    target instanceof Element &&
+    target.closest('[data-debug-recorder-host], [data-debug-recorder-root]') !== null
+  );
 }
 
 function isPersistedPageTransition(event: Event): boolean {

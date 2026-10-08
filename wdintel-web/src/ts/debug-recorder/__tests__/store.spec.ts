@@ -80,6 +80,34 @@ afterEach(() => {
 });
 
 describe('browser debug recorder store', () => {
+  it('returns a stable snapshot until recorder state changes', () => {
+    const recorder = createBrowserDebugRecorder(dependencies(new MemoryStorage()));
+
+    const idle = recorder.getSnapshot();
+    expect(recorder.getSnapshot()).toBe(idle);
+    recorder.start();
+    const recording = recorder.getSnapshot();
+    expect(recording).not.toBe(idle);
+    expect(recorder.getSnapshot()).toBe(recording);
+    recorder.record({ kind: 'interaction.click' });
+    expect(recorder.getSnapshot()).not.toBe(recording);
+  });
+
+  it('persists metadata configured after recording starts', () => {
+    const storage = new MemoryStorage();
+    const recorder = createBrowserDebugRecorder(
+      dependencies(storage, {
+        collectEnvironment: (configured) => ({ ...environment, ...configured }),
+      }),
+    );
+
+    recorder.start();
+    recorder.configure(metadata);
+    recorder.flush();
+
+    expect(loadDebugSession(storage, Date.now())?.environment).toMatchObject(metadata);
+  });
+
   it('ignores duplicate starts and expires at the original deadline', () => {
     const storage = new MemoryStorage();
     const recorder = createBrowserDebugRecorder(dependencies(storage));

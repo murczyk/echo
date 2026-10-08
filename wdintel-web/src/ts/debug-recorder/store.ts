@@ -97,8 +97,10 @@ export function createBrowserDebugRecorder(
   let readyExpiryTimer: ReturnType<typeof setTimeout> | null = null;
   let persistenceTimer: ReturnType<typeof setTimeout> | null = null;
   let downloadError = false;
+  let snapshotCache: DebugRecorderSnapshot | null = null;
 
   const emit = () => {
+    snapshotCache = null;
     for (const listener of listeners) {
       try {
         listener();
@@ -327,8 +329,9 @@ export function createBrowserDebugRecorder(
   };
 
   const getSnapshot = (): DebugRecorderSnapshot => {
+    if (snapshotCache) return snapshotCache;
     if (!session) {
-      return {
+      snapshotCache = {
         state: 'idle',
         recordingId: null,
         startedAt: null,
@@ -340,9 +343,10 @@ export function createBrowserDebugRecorder(
         persistenceFailed: false,
         downloadError: false,
       };
+      return snapshotCache;
     }
     const finishedAt = session.readyAt ?? Math.min(now(), session.deadlineAt);
-    return {
+    snapshotCache = {
       state: session.state,
       recordingId: session.recordingId,
       startedAt: session.startedAt,
@@ -354,11 +358,21 @@ export function createBrowserDebugRecorder(
       persistenceFailed: session.persistenceFailed,
       downloadError,
     };
+    return snapshotCache;
   };
 
   return {
     configure: (nextMetadata) => {
       metadata = { ...nextMetadata };
+      if (!session) return;
+      if (
+        session.environment.echoVersion === metadata.echoVersion &&
+        session.environment.deploymentMode === metadata.deploymentMode
+      ) {
+        return;
+      }
+      session.environment = { ...session.environment, ...metadata };
+      flush();
     },
     start,
     finish: () => transitionReady(now()),

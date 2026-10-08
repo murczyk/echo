@@ -9,6 +9,11 @@ let host: HTMLElement | null = null;
 
 export function mountDebugRecorderPanel(controller: DebugRecorderPanelController): void {
   if (typeof document === 'undefined' || !document.body) return;
+  if (host && !host.isConnected) {
+    reactRoot?.unmount();
+    reactRoot = null;
+    host = null;
+  }
   if (!host) {
     host = document.getElementById(ROOT_ID);
     if (!host) {
@@ -16,7 +21,7 @@ export function mountDebugRecorderPanel(controller: DebugRecorderPanelController
       host.id = ROOT_ID;
       document.body.append(host);
     }
-    host.dataset.debugRecorderRoot = '';
+    host.dataset.debugRecorderHost = '';
   }
   if (!reactRoot) reactRoot = createRoot(host);
   reactRoot.render(<DebugRecorderPanel controller={controller} />);
