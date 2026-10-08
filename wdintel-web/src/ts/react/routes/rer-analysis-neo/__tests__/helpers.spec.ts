@@ -23,11 +23,16 @@ describe('rer-analysis-neo URL state', () => {
   it('treats managed URL parameters as authoritative', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
-      value: { location: { href: 'https://example.test/rer-analysis-neo?search=uid-1' } },
+      value: {
+        location: {
+          href: 'https://example.test/rer-analysis-neo?search=uid-1&onlyWithNetwork=true',
+        },
+      },
     });
 
     expect(parseQueryStateFromWindow()).toMatchObject({
       search: 'uid-1',
+      onlyWithNetwork: true,
       freqsSelected: [],
       tags: [],
     });

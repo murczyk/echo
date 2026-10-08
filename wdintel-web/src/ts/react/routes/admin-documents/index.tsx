@@ -1,3 +1,4 @@
+import { DeviceDocumentsPanel } from './DeviceDocumentsPanel';
 import { AttachmentDocumentDialog } from '../shared/message-card/attachment-preview/DocumentContentDialog';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -60,6 +61,7 @@ export function AdminDocumentsPage() {
   }
   return (
     <Stack spacing={3}>
+      <DeviceDocumentsPanel />
       <Typography variant="h4">Документи повідомлень</Typography>
       {settings && (
         <Stack spacing={2}>

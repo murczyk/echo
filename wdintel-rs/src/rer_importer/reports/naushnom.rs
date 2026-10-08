@@ -399,6 +399,7 @@ async fn get_inbox_messages_report_network_chunk(
         q,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
     )
     .context(h!())?;
     let q = filter_selected_metadata_for_inbox_messages(q, req)?;

@@ -1,6 +1,6 @@
 use self::schema::device_active_model;
 use crate::config::{IDENTITY_DURATION_HOURS, ROLE_ADMIN};
-use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
+use crate::devices::ROLE_CYBER;
 use crate::entities::{
     area_of_responsibility, device_settings, login, organism, sigint_unit,
     system_settings,
@@ -170,7 +170,7 @@ async fn target_api_smoke_covers_all_routes() {
         &env.dbx,
         login::ActiveModel {
             login: Set(login_name.clone()),
-            roles: Set(json!([ROLE_DEVICE_SOURCE])),
+            roles: Set(json!([ROLE_CYBER])),
             organism_id: Set(Some(organism.id)),
             ..Default::default()
         },
@@ -319,12 +319,6 @@ async fn target_api_smoke_covers_all_routes() {
             && aor["name"].as_str() == Some(lookup_aor.name.as_str())
     }));
 
-    let response = post_json!(
-        "/api/sigint/device-name/create",
-        json!({"name": "ECHO-3461 denied source device"})
-    );
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-
     let response = test::call_service(
         &app,
         test::TestRequest::post()
@@ -374,11 +368,12 @@ async fn target_api_smoke_covers_all_routes() {
         "/api/device/update",
         json!({"device_id": device_id, "name": "API renamed"})
     );
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    assert!(test::read_body(response).await.is_empty());
+    assert_eq!(response.status(), StatusCode::OK);
+    let updated: Value = test::read_body_json(response).await;
+    assert_eq!(updated["name"], "API renamed");
 
     let response = post_json!("/api/device/list", json!({}));
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::OK);
 
     let response = test::call_service(
         &app,
@@ -388,11 +383,11 @@ async fn target_api_smoke_covers_all_routes() {
             .to_request(),
     )
     .await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::OK);
 
     let response =
         post_json!("/api/device/detail", json!({"device_id": device_id}));
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::OK);
 
     let response = post_json!(
         "/api/device/files/sync",
@@ -608,11 +603,7 @@ async fn target_api_smoke_covers_all_routes() {
 
     let response =
         post_json!("/api/device/files/roots", json!({"device_id": device_id}));
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-
-    let mut login = login.into_active_model();
-    login.roles = Set(json!([ROLE_CYBER, ROLE_DEVICE_SOURCE]));
-    let login = login.update(&env.dbx).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
 
     let response = post_json!(
         "/api/device/update",
@@ -854,6 +845,31 @@ async fn target_api_smoke_covers_all_routes() {
     let mut login = login.into_active_model();
     login.roles = Set(json!([ROLE_CYBER]));
     let login = login.update(&env.dbx).await.unwrap();
+    for target_id in [&device_id, &child_device.id.to_string()] {
+        let response = post_json!(
+            "/api/device/update",
+            json!({
+                "device_id": target_id,
+                "name": "Cyber renamed",
+                "aor_ids": [lookup_aor.id],
+                "unit_id": lookup_unit.id
+            })
+        );
+        assert_eq!(response.status(), StatusCode::OK);
+        let updated: Value = test::read_body_json(response).await;
+        assert_eq!(updated["name"], "Cyber renamed");
+        assert_eq!(updated["aors"][0]["id"], lookup_aor.id);
+        assert_eq!(updated["unit"]["id"], lookup_unit.id);
+    }
+    let response = post_json!(
+        "/api/device/update",
+        json!({"device_id": other_device.id, "name": "Forbidden"})
+    );
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    for path in ["/api/device/aors", "/api/device/units"] {
+        let response = post_json!(path, json!({}));
+        assert_eq!(response.status(), StatusCode::OK);
+    }
     let response = post_json!(
         "/api/sigint/device-name/create",
         json!({"name": "ECHO-3568 allowed cyber-only device"})
@@ -878,7 +894,7 @@ async fn target_api_smoke_covers_all_routes() {
 
     let mut login = login.into_active_model();
     login.roles = Set(json!(["Rer", ROLE_CYBER]));
-    login.update(&env.dbx).await.unwrap();
+    let login = login.update(&env.dbx).await.unwrap();
     let response = post_json!(
         "/api/sigint/device-name/create",
         json!({"name": "ECHO-3461 allowed device"})
@@ -918,6 +934,9 @@ async fn target_api_smoke_covers_all_routes() {
         cyber_created["external_url"],
         "https://example.com/cyber-device"
     );
+    let mut login = login.into_active_model();
+    login.roles = Set(json!(["Basic"]));
+    login.update(&env.dbx).await.unwrap();
     let response = post_json!(
         "/api/device/update",
         json!({"device_id": device_id, "name": "Forbidden rename"})
@@ -925,11 +944,27 @@ async fn target_api_smoke_covers_all_routes() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let response = post_json!(
         "/api/device/create",
-        json!({"name": "Forbidden Cyber device"})
+        json!({"name": "Forbidden Basic device"})
     );
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-    for path in ["/api/device/aors", "/api/device/units"] {
+    for (path, body) in [
+        ("/api/device/list", json!({})),
+        ("/api/device/detail", json!({"device_id": device_id})),
+        ("/api/device/files/roots", json!({"device_id": device_id})),
+        (
+            "/api/sigint/device-name/create",
+            json!({"name": "Forbidden Basic device"}),
+        ),
+    ] {
+        let response = post_json!(path, body);
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+    for path in [
+        "/api/device/aors",
+        "/api/device/units",
+        "/api/device/unit-stats",
+    ] {
         let response = test::call_service(
             &app,
             test::TestRequest::post()
@@ -1077,7 +1112,7 @@ async fn device_file_content_rejections_are_tus_compliant_and_side_effect_free()
         &env.dbx,
         login::ActiveModel {
             login: Set(format!("content-api-{}", Uuid::now_v7())),
-            roles: Set(json!([ROLE_DEVICE_SOURCE])),
+            roles: Set(json!([ROLE_CYBER])),
             organism_id: Set(Some(organism.id)),
             ..Default::default()
         },
@@ -2499,7 +2534,7 @@ mod access_tests {
         authorize_file_registry_access, FileRegistryDeviceAccess,
     };
     use crate::devices::tests::schema::device_active_model;
-    use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
+    use crate::devices::ROLE_CYBER;
     use crate::entities::{login, organism, system_settings};
     use crate::error::AppError;
     use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
@@ -2553,29 +2588,36 @@ mod access_tests {
     #[test]
     fn access_maps_each_exact_device_role() {
         let cases = [
-            (ROLE_CYBER, (true, true, true, false)),
-            (crate::config::ROLE_CYBER_VIEWER, (true, true, true, false)),
-            (ROLE_DEVICE_SOURCE, (false, true, true, true)),
+            (ROLE_CYBER, (true, true, true, true)),
             (ROLE_ADMIN, (true, true, true, true)),
+            ("Rer", (false, false, false, false)),
+            ("Full", (false, false, false, false)),
+            ("Api", (false, false, false, false)),
+            ("ApiAgent", (false, false, false, false)),
+            ("Basic", (false, false, false, false)),
         ];
 
         for (role, expected_capabilities) in cases {
-            assert_eq!(capabilities(&roles(&[role])), expected_capabilities);
+            let roles = roles(&[role]);
+            assert_eq!(capabilities(&roles), expected_capabilities);
+            for result in [
+                require_file_sync(&roles),
+                require_audio_source(&roles),
+                require_audio_read(&roles),
+                require_audio_edit(&roles),
+            ] {
+                assert_eq!(result.is_ok(), expected_capabilities.0, "{role}");
+            }
         }
+        assert_eq!(capabilities(&roles(&[])), (false, false, false, false));
     }
 
     #[test]
     fn access_unions_combined_device_roles() {
         let cases = vec![
-            (
-                vec![ROLE_CYBER, ROLE_DEVICE_SOURCE],
-                (true, true, true, true),
-            ),
-            (
-                vec![ROLE_DEVICE_SOURCE, "Unrelated"],
-                (false, true, true, true),
-            ),
-            (vec![ROLE_CYBER, "Unrelated"], (true, true, true, false)),
+            (vec![ROLE_CYBER, ROLE_ADMIN], (true, true, true, true)),
+            (vec![ROLE_ADMIN, "Unrelated"], (true, true, true, true)),
+            (vec![ROLE_CYBER, "Unrelated"], (true, true, true, true)),
         ];
 
         for (roles, expected_capabilities) in cases {
@@ -2584,19 +2626,28 @@ mod access_tests {
     }
 
     #[test]
-    fn access_ignores_unrelated_and_miscased_roles() {
+    fn access_ignores_obsolete_unrelated_and_miscased_roles() {
         let cases = vec![
+            vec!["DeviceSource"],
+            vec!["CyberViewer"],
+            vec!["DeviceSource", "CyberViewer"],
             vec!["DevicesEditor"],
             vec!["Unrelated"],
             vec!["cyber"],
-            vec!["devicesource"],
+            vec!["admin"],
         ];
 
         for roles in cases {
-            assert_eq!(
-                capabilities(&json!(roles)),
-                (false, false, false, false)
-            );
+            let roles = json!(roles);
+            assert_eq!(capabilities(&roles), (false, false, false, false));
+            for result in [
+                require_file_sync(&roles),
+                require_audio_source(&roles),
+                require_audio_read(&roles),
+                require_audio_edit(&roles),
+            ] {
+                assert_device_operation_forbidden(result.unwrap_err());
+            }
         }
     }
 
@@ -2609,6 +2660,10 @@ mod access_tests {
             require_create(&roles),
             require_source_write(&roles),
             require_analytical_write(&roles),
+            require_file_sync(&roles),
+            require_audio_source(&roles),
+            require_audio_read(&roles),
+            require_audio_edit(&roles),
         ] {
             assert_device_operation_forbidden(result.unwrap_err());
         }
@@ -2616,37 +2671,33 @@ mod access_tests {
 
     #[test]
     fn access_authorizes_all_field_group_combinations() {
-        let cyber_roles = roles(&[ROLE_CYBER]);
-        let source_roles = roles(&[ROLE_DEVICE_SOURCE]);
-        let cases = [
-            (false, false, true),
-            (true, false, true),
-            (false, true, false),
-            (true, true, false),
-        ];
-
-        for (source_data, analytical_data, cyber_allowed) in cases {
-            let cyber_result = require_field_groups(
-                &cyber_roles,
-                DeviceFieldGroups {
-                    source_data,
-                    analytical_data,
-                },
-            );
-            if cyber_allowed {
-                cyber_result.unwrap();
-            } else {
-                assert_device_operation_forbidden(cyber_result.unwrap_err());
+        for (source_data, analytical_data) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
+            for role in [ROLE_CYBER, ROLE_ADMIN] {
+                require_field_groups(
+                    &roles(&[role]),
+                    DeviceFieldGroups {
+                        source_data,
+                        analytical_data,
+                    },
+                )
+                .unwrap();
             }
-
-            require_field_groups(
-                &source_roles,
-                DeviceFieldGroups {
-                    source_data,
-                    analytical_data,
-                },
-            )
-            .unwrap();
+            for role in ["Rer", "Full", "Api", "ApiAgent", "Basic"] {
+                let result = require_field_groups(
+                    &roles(&[role]),
+                    DeviceFieldGroups {
+                        source_data,
+                        analytical_data,
+                    },
+                );
+                if source_data || analytical_data {
+                    assert_device_operation_forbidden(result.unwrap_err());
+                } else {
+                    result.unwrap();
+                }
+            }
         }
     }
 
@@ -2669,7 +2720,7 @@ mod access_tests {
             &env.dbx,
             login::ActiveModel {
                 login: Set(login_name),
-                roles: Set(json!([ROLE_DEVICE_SOURCE])),
+                roles: Set(json!(["Basic"])),
                 organism_id: Set(Some(organism.id)),
                 ..Default::default()
             },
@@ -2678,17 +2729,37 @@ mod access_tests {
         .unwrap();
         let login_id = login.id;
 
-        let source = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
-        assert_eq!(capabilities(&source.roles), (false, true, true, true));
-        assert_eq!(organism_id(&source).unwrap(), organism.id);
+        let basic = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
+        assert_eq!(capabilities(&basic.roles), (false, false, false, false));
+        assert_eq!(organism_id(&basic).unwrap(), organism.id);
         assert!(require_message_devices(&env.dbx, &login_id).await.is_err());
+        for denied_roles in [
+            vec!["Rer"],
+            vec!["Full"],
+            vec!["Api"],
+            vec!["ApiAgent"],
+            vec!["DeviceSource"],
+            vec!["CyberViewer"],
+            vec![],
+        ] {
+            let mut denied_login = login.clone().into_active_model();
+            denied_login.roles = Set(json!(denied_roles));
+            denied_login.update(&env.dbx).await.unwrap();
+            assert!(
+                matches!(
+                    require_message_devices(&env.dbx, &login_id).await,
+                    Err(AppError::Forbidden(_))
+                ),
+                "{denied_roles:?}"
+            );
+        }
 
         let mut login = login.into_active_model();
         login.roles = Set(json!([ROLE_CYBER]));
         let login = login.update(&env.dbx).await.unwrap();
 
         let cyber = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
-        assert_eq!(capabilities(&cyber.roles), (true, true, true, false));
+        assert_eq!(capabilities(&cyber.roles), (true, true, true, true));
         require_message_devices(&env.dbx, &login_id).await.unwrap();
 
         let mut login = login.into_active_model();
@@ -2752,7 +2823,7 @@ mod access_tests {
             &env.dbx,
             login::ActiveModel {
                 login: Set(format!("device-snapshot-{}", Uuid::now_v7())),
-                roles: Set(json!([ROLE_DEVICE_SOURCE])),
+                roles: Set(json!([ROLE_CYBER])),
                 organism_id: Set(Some(organism.id)),
                 ..Default::default()
             },
@@ -2813,7 +2884,7 @@ mod access_tests {
         ));
 
         let mut updated_login = updated_login.into_active_model();
-        updated_login.roles = Set(json!([ROLE_DEVICE_SOURCE]));
+        updated_login.roles = Set(json!([ROLE_CYBER]));
         updated_login.update(&env.dbx).await.unwrap();
         let mut archived_device = device.into_active_model();
         archived_device.archived = Set(true);

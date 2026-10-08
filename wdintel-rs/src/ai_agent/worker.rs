@@ -637,7 +637,7 @@ async fn run_request_inner(
             "correlationId": correlation_id,
             "correlationHeader": crate::config::AI_AGENT_CORRELATION_HEADER,
             "prompt": request.prompt,
-            "skills": super::route_registry::skills_json(),
+            "skills": super::route_registry::skills_for_devices(crate::devices::documents::access::available(env, request.human_login_id).await),
             "timeContext": {
                 "timeZone": "Europe/Kyiv",
                 "requestStartedAtUtc": request_started_at.to_rfc3339(),
@@ -921,7 +921,30 @@ pub(super) async fn load_history(
     let mut maps = super::maps::load_summaries(&env.dbx, &request_ids)
         .await
         .c(h!())?;
-    let requests = requests.into_iter().rev();
+    let mut file_citations =
+        super::file_citations::load(&env.dbx, &request_ids)
+            .await
+            .c(h!())?;
+    let mut accessible = std::collections::HashSet::new();
+    for prior in &requests {
+        if super::file_citations::readable(
+            env,
+            request.human_login_id,
+            file_citations
+                .get(&prior.id)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+        )
+        .await
+        .c(h!())?
+        {
+            accessible.insert(prior.id);
+        }
+    }
+    let requests = requests
+        .into_iter()
+        .rev()
+        .filter(|prior| accessible.contains(&prior.id));
     Ok(requests
         .flat_map(|request| {
             let request_maps = maps.remove(&request.id).unwrap_or_default();
@@ -933,7 +956,7 @@ pub(super) async fn load_history(
             );
             [
                 json!({ "role": "user", "content": request.prompt }),
-                json!({ "role": "assistant", "content": response, "citations": citations, "maps": request_maps }),
+                json!({ "role": "assistant", "content": response, "citations": citations, "fileCitations": file_citations.remove(&request.id).unwrap_or_default(), "maps": request_maps }),
             ]
         })
         .collect())

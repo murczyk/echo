@@ -454,6 +454,13 @@ mod m20261004_175803_signal_message_media_created_at_index;
 mod m20261005_044401_messenger_media_cache_settings;
 mod m20261005_050621_attachment_documents;
 mod m20261006_075657_ai_gov_ua_settings;
+mod m20261006_110425_merge_cyber_roles;
+mod m20261006_150705_ai_agent_chat_webhook;
+
+mod m20261006_082251_device_document_settings;
+mod m20261006_150248_network_freq_exact_count_index;
+mod m20261006_160533_rer_report_enabled;
+mod m20261006_164921_sigint_inbox_item_freq_datetime_index;
 
 pub struct Migrator;
 
@@ -1080,6 +1087,12 @@ impl MigratorTrait for Migrator {
             Box::new(m20261005_044401_messenger_media_cache_settings::Migration),
             Box::new(m20261005_050621_attachment_documents::Migration),
             Box::new(m20261006_075657_ai_gov_ua_settings::Migration),
+            Box::new(m20261006_110425_merge_cyber_roles::Migration),
+            Box::new(m20261006_082251_device_document_settings::Migration),
+            Box::new(m20261006_150705_ai_agent_chat_webhook::Migration),
+            Box::new(m20261006_150248_network_freq_exact_count_index::Migration),
+            Box::new(m20261006_160533_rer_report_enabled::Migration),
+            Box::new(m20261006_164921_sigint_inbox_item_freq_datetime_index::Migration),
         ]
     }
 }

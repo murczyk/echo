@@ -44,7 +44,7 @@ pub(in crate::devices) fn visible_devices_query(
     scoped_devices_query(login, scope)
 }
 
-fn scoped_devices_query(
+pub(in crate::devices) fn scoped_devices_query(
     login: &login::Model,
     scope: DeviceReadScope,
 ) -> Result<Select<device::Entity>, AppError> {

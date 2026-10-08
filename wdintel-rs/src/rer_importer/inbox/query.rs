@@ -740,6 +740,7 @@ where
         q,
         &req.selected_networks,
         &req.without_network,
+        &req.only_with_network,
     )
     .context(h!())?;
     let include_peleng_locations =

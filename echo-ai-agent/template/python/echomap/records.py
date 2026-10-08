@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 
 from . import state
-from .inputs import Message
+from .inputs import FileSection, Message
 
 MAX_COMMENT_CHARS = 2000
 MAX_COMMENTS = 32
@@ -33,8 +33,10 @@ def comment_cells(comments):
 def citation(source):
     if source is None:
         return None
-    if isinstance(source, Message):
+    if isinstance(source, (Message, FileSection)):
         return source.citation()
+    if "fileId" in source:
+        return {key: source[key] for key in ("deviceId", "fileId", "revision", "extractionRevision", "section") if key in source}
     return {"messageId": int(source["messageId"]), "messageIdentifier": str(source["messageIdentifier"])}
 
 
@@ -69,7 +71,9 @@ class Record:
         if self.sidc and not (len(self.sidc) == 20 and self.sidc.isdigit()):
             raise ValueError(f"SIDC must have 20 digits: {self.sidc!r}")
         citations = [citation(item) for item in [self.source, *self.sources] if item is not None]
+        files = [item for index, item in enumerate(citations) if "fileId" in item and item not in citations[:index]]
         return {
+            **({"fileSources": files} if files else {}),
             "sidc": self.sidc or "",
             "name": str(self.name).strip(),
             "observationDatetime": self.when,
@@ -77,7 +81,7 @@ class Record:
             "x": str(self.x).strip(),
             "y": str(self.y).strip(),
             "comments": comment_cells(self.comments),
-            "sources": [item for index, item in enumerate(citations) if item not in citations[:index]],
+            "sources": [item for index, item in enumerate(citations) if "messageId" in item and item not in citations[:index]],
         }
 
 

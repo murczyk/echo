@@ -2,6 +2,7 @@ import type {
   BookmarkAddReq,
   BookmarkRmReq,
   ImportantAddReq,
+  ImportantMutationRsp,
   ImportantRmReq,
   InboxCommentSaveReq,
   InboxDeleteReq,
@@ -9,7 +10,8 @@ import type {
   InboxMessageTagModelErrorReq,
   InboxMessageTagsRmReq,
 } from '../../../../Bindings';
-import { postVoid } from './client';
+import { transformSnakeToCamel } from '../../../snake-to-camel';
+import { postJson, postVoid } from './client';
 
 const EVENT_ORIGIN_HEADER = 'X-Echo-Event-Origin';
 
@@ -30,12 +32,14 @@ export async function bookmarkRemove(req: BookmarkRmReq): Promise<void> {
   await postVoid('/api/rer/bookmark/delete', { message_id: req.messageId });
 }
 
-export async function importantAdd(req: ImportantAddReq): Promise<void> {
-  await postVoid('/api/rer/important/add', { message_id: req.messageId });
+export async function importantAdd(req: ImportantAddReq): Promise<boolean> {
+  const raw = await postJson<unknown>('/api/rer/important/add', { message_id: req.messageId });
+  return transformSnakeToCamel<ImportantMutationRsp>(raw).important;
 }
 
-export async function importantRemove(req: ImportantRmReq): Promise<void> {
-  await postVoid('/api/rer/important/delete', { message_id: req.messageId });
+export async function importantRemove(req: ImportantRmReq): Promise<boolean> {
+  const raw = await postJson<unknown>('/api/rer/important/delete', { message_id: req.messageId });
+  return transformSnakeToCamel<ImportantMutationRsp>(raw).important;
 }
 
 export async function deleteMessage(req: InboxDeleteReq): Promise<void> {

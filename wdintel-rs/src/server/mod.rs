@@ -139,6 +139,13 @@ async fn new_env_with_initialization(
         mode,
     )
     .await;
+    let device_audio = crate::devices::audio::build_runtime(
+        &config,
+        &dbx,
+        file_registry_db.as_ref(),
+        s3.as_ref(),
+        metrics.clone(),
+    );
     let mut replicas = vec![];
     if let Some(replica_configs) = config.replicas.clone() {
         for replica in replica_configs {
@@ -244,6 +251,7 @@ async fn new_env_with_initialization(
         )),
         echo_gpu_client,
         file_registry_db,
+        device_audio,
         device_file_content,
         rq,
         rq_goi_associations,
@@ -810,6 +818,23 @@ fn spawn_background_workers(
             .await;
         });
     }
+    for (name, kind) in [
+        ("device_document_worker", "extract"),
+        ("device_document_summary_worker", "summary"),
+        ("device_document_position_worker", "positions"),
+        ("device_document_inspection_worker", "inspect"),
+    ] {
+        let attachment_env = env.clone();
+        let attachment_cancel = cancel_token.clone();
+        spawn_named_worker(name, bg_set, async move {
+            crate::devices::documents::worker::run(
+                attachment_env,
+                attachment_cancel,
+                kind,
+            )
+            .await;
+        });
+    }
 
     let ocr_env = env.clone();
     let ocr_cancellation_token = cancel_token.clone();
@@ -883,6 +908,15 @@ fn spawn_background_workers(
         .await;
     });
     if env.file_registry_db.is_some() {
+        let audio_cleanup_runtime = env.device_audio.clone();
+        let audio_cleanup_cancellation = cancel_token.clone();
+        spawn_named_worker("device_audio_cleanup", bg_set, async move {
+            crate::devices::audio::run_cleanup_nofail(
+                audio_cleanup_runtime,
+                audio_cleanup_cancellation,
+            )
+            .await;
+        });
         spawn_device_file_analytics_worker_pool(
             bg_set,
             env.clone(),
@@ -1020,6 +1054,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::inbox_item_context)
             .service(crate::rer_importer::inbox::messages_by_id)
             .service(
+                crate::rer_importer::inbox::messages_by_id_matching_filters,
+            )
+            .service(
                 crate::rer_importer::inbox::messages_by_id_with_metadata,
             )
             .service(crate::rer_importer::inbox::messages_by_uuid)
@@ -1096,6 +1133,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::system_settings::current_system_settings)
             .service(crate::system_settings::list_system_settings)
             .service(crate::system_settings::create_system_settings)
+            .service(crate::system_settings::set_rer_report_enabled)
             .service(crate::system_settings::activate_system_settings)
             .service(crate::system_settings::rer_duty_test_replay_status)
             .service(crate::ai_engine::gov::get_settings)
@@ -1189,6 +1227,15 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_position::feedback::reparse_ai_position_feedback)
             .service(crate::ai_position::feedback::list_ai_position_feedback)
             .service(crate::ai_position::lookup::lookup_positions)
+            .service(crate::devices::documents::api::search)
+            .service(crate::devices::documents::api::get)
+            .service(crate::devices::documents::api::read)
+            .service(crate::devices::documents::api::inspect)
+            .service(crate::devices::documents::api::status)
+            .service(crate::devices::documents::api::retry)
+            .service(crate::devices::documents::discovery::search)
+            .service(crate::devices::documents::settings::page)
+            .service(crate::devices::documents::settings::save)
             .service(crate::attachments::api::search)
             .service(crate::attachments::api::get)
             .service(crate::attachments::api::read)
@@ -1241,6 +1288,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::file_upload::tus_base)
             .service(crate::sigint::file_upload::tus_file)
             .service(crate::sigint::file_upload::fallback_upload)
+            .service(crate::devices::audio::upload_routes())
+            .service(crate::devices::audio::routes())
             .service(crate::sigint::device_name::device_name_create)
             .service(crate::sigint::device_name::device_name_search)
             .service(crate::sigint::device_name::device_name_resolve)

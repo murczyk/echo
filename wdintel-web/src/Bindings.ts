@@ -565,6 +565,7 @@ export type InboxMessagesReq = {
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
   withoutNetwork: boolean | null;
+  onlyWithNetwork: boolean | null;
   metadataCc: Array<string> | null;
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
@@ -796,6 +797,7 @@ export type AnalysisStatsReq = {
   tagPresence: TagPresenceFilter | null;
   selectedNetworks: Array<number> | null;
   withoutNetwork: boolean | null;
+  onlyWithNetwork: boolean | null;
   metadataCc: Array<string> | null;
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
@@ -1597,6 +1599,10 @@ export type ImportantRmReq = {
   messageId: number;
 };
 
+export type ImportantMutationRsp = {
+  important: boolean;
+};
+
 export type ImportantListReq = {
   sinceTsMillis: number | null;
 };
@@ -2245,6 +2251,80 @@ export type DeviceSyncSessionSummariesRsp = {
   summaries: Array<DeviceSyncSessionSummary>;
 };
 
+export type DeviceAudio = {
+  id: string;
+  deviceId: string;
+  recordingStartedAt: string;
+  recordingEndedAt: string;
+  durationSeconds: number;
+  processed: boolean;
+  processingVersion: string;
+};
+
+export type DeviceAudioTranscription = {
+  text: string;
+  textVersion: string;
+};
+
+export type DeviceAudioDetails = {
+  audio: DeviceAudio;
+  transcription: DeviceAudioTranscription;
+  canEdit: boolean;
+};
+
+export type ReceiveDeviceAudioReq = {
+  deviceId: string;
+  uploadUrl: string;
+  name: string;
+  recordingStartedAt: string;
+};
+
+export type ReceiveDeviceAudioRsp = {
+  audio: DeviceAudio;
+};
+
+export type ListDeviceAudioReq = {
+  deviceId: string;
+  unprocessedOnly: boolean;
+  limit: number;
+  cursor: string | null;
+};
+
+export type ListDeviceAudioRsp = {
+  audio: Array<DeviceAudio>;
+  nextCursor: string | null;
+};
+
+export type DeviceAudioDetailReq = {
+  deviceId: string;
+  audioId: string;
+};
+
+export type SaveDeviceAudioTranscriptionReq = {
+  deviceId: string;
+  audioId: string;
+  text: string;
+  expectedTextVersion: string;
+};
+
+export type SaveDeviceAudioTranscriptionRsp = {
+  audioId: string;
+  transcription: DeviceAudioTranscription;
+};
+
+export type SetDeviceAudioProcessingReq = {
+  deviceId: string;
+  audioId: string;
+  processed: boolean;
+  expectedProcessingVersion: string;
+};
+
+export type SetDeviceAudioProcessingRsp = {
+  audioId: string;
+  processed: boolean;
+  processingVersion: string;
+};
+
 export type BatchSummary = {
   syncId: string;
   batchIndex: number;
@@ -2490,6 +2570,7 @@ export type DeviceAnalyticsSummaryItem = {
 
 export type DeviceAnalyticsSummaryRsp = {
   totalFileCount: number;
+  filesWithContentCount: number;
   analyzedFileCount: number;
   items: Array<DeviceAnalyticsSummaryItem>;
 };
@@ -4789,6 +4870,7 @@ export type SystemSettingsCurrentRsp = {
   rerDutyPollIntervalSec: number;
   rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
@@ -4829,6 +4911,7 @@ export type SystemSettingsItem = {
   updatedByLoginId: string | null;
   deleted: boolean;
   shortUrlEnabled: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
@@ -4872,6 +4955,7 @@ export type CreateSystemSettingsReq = {
   rerDutyPollIntervalSec: number;
   rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
+  rerReportEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
@@ -5119,6 +5203,7 @@ export type AiAgentMapRecordInput = {
   y: string;
   comments: Array<string>;
   sources: Array<AiAgentMessageCitation>;
+  fileSources: Array<AiAgentFileCitation>;
 };
 
 export type AiAgentMapRecord = {
@@ -5136,6 +5221,7 @@ export type AiAgentMapRecord = {
   longitude: number | null;
   comments: Array<string>;
   sources: Array<AiAgentMessageCitation>;
+  fileSources: Array<AiAgentFileCitation>;
   warnings: Array<string>;
 };
 
@@ -5314,6 +5400,7 @@ export type AiAgentMessageItem = {
   content: string;
   createdAt: number;
   citations: Array<AiAgentMessageCitation>;
+  fileCitations: Array<AiAgentFileCitation>;
   maps: Array<AiAgentMapSummary>;
 };
 
@@ -5363,6 +5450,7 @@ export type AiAgentAdminSettingsItem = {
   securityReviewEnabled: boolean;
   mattermostChatEnabled: boolean;
   hasMattermostWebhook: boolean;
+  hasMattermostChatWebhook: boolean;
   allowedAiEngineIds: Array<string>;
   providerRuntimeProfiles: Array<AiAgentProviderRuntimeProfileItem>;
 };
@@ -5376,6 +5464,8 @@ export type AiAgentAdminSettingsUpdateReq = {
   mattermostChatEnabled: boolean;
   mattermostWebhookUrl: string | null;
   clearMattermostWebhook: boolean;
+  mattermostChatWebhookUrl: string | null;
+  clearMattermostChatWebhook: boolean;
   allowedAiEngineIds: Array<string>;
   providerRuntimeProfiles: Array<AiAgentProviderRuntimeProfileItem>;
 };
@@ -5945,6 +6035,8 @@ export type AiPositionLookupKnown = {
   firstFactAt: string;
   lastFactAt: string;
   scope: string;
+  scopeKind: string;
+  scopeKey: string;
 };
 
 export type AiPositionLookupMention = {
@@ -5959,6 +6051,8 @@ export type AiPositionLookupMention = {
 };
 
 export type AiPositionLookupRsp = {
+  evidenceGroups: Array<DevicePositionEvidenceGroup>;
+  fileMentions: Array<DevicePositionEvidence>;
   known: Array<AiPositionLookupKnown>;
   located: Array<AiPositionLookupMention>;
   other: Array<AiPositionLookupMention>;
@@ -5981,6 +6075,151 @@ export type AiPositionFeedbackListItem = {
 
 export type AiPositionFeedbackListRsp = {
   items: Array<AiPositionFeedbackListItem>;
+};
+
+export type DeviceDocumentSearchReq = {
+  query: string | null;
+  deviceIds: Array<string> | null;
+  includeArchived: boolean | null;
+  history: boolean | null;
+  scope: string | null;
+  pathPrefix: string | null;
+  format: string | null;
+  from: number | null;
+  to: number | null;
+  cursor: string | null;
+  limit: number | null;
+};
+
+export type DeviceDocumentReadReq = {
+  deviceId: string;
+  fileId: string;
+  revision: number;
+  extractionRevision: string | null;
+  member: string | null;
+  query: string | null;
+  after: number | null;
+  limit: number | null;
+};
+
+export type DeviceDocumentItem = {
+  deviceId: string;
+  fileId: string;
+  revision: number;
+  fileName: string;
+  path: string;
+  format: string | null;
+  modifiedAt: number | null;
+  current: boolean;
+  hasContent: boolean;
+  state: string;
+  extractionRevision: string | null;
+  complete: boolean;
+  summary: string | null;
+  summaryState: string;
+  positionState: string;
+  snippet: string | null;
+  citation: string;
+};
+
+export type DeviceDocumentSearchRsp = {
+  documents: Array<DeviceDocumentItem>;
+  nextCursor: string | null;
+};
+
+export type DeviceDocumentReadRsp = {
+  document: DeviceDocumentItem;
+  sections: Array<AttachmentSection>;
+  nextAfter: number | null;
+  warnings: Array<string>;
+  coordinates: Array<MediaSummaryCoordinate>;
+  positions: Array<AiPositionFound>;
+};
+
+export type DeviceDocumentInspectionReq = {
+  deviceId: string;
+  fileId: string;
+  revision: number;
+  operation: string;
+  member: string | null;
+  locator: string | null;
+};
+
+export type DeviceDocumentInspectionRsp = {
+  id: string;
+  state: string;
+  result: DeviceDocumentReadRsp | null;
+  error: string | null;
+};
+
+export type DeviceDocumentSettings = {
+  enabled: boolean;
+  summariesEnabled: boolean;
+  positionsEnabled: boolean;
+  aiEngineId: string | null;
+  positionEngineId: string | null;
+};
+
+export type DeviceDocumentAdminRsp = {
+  available: boolean;
+  settings: DeviceDocumentSettings;
+  backfillComplete: boolean;
+  discovered: number;
+  counts: Array<AttachmentQueueCount>;
+  documents: Array<DeviceDocumentItem>;
+  engines: Array<AiPositionEngineItem>;
+};
+
+export type AgentDeviceSearchReq = {
+  query: string | null;
+  includeArchived: boolean | null;
+  aorIds: Array<number> | null;
+  unitIds: Array<number> | null;
+  cursor: string | null;
+  limit: number | null;
+};
+
+export type AgentDeviceItem = {
+  id: string;
+  name: string | null;
+  archived: boolean;
+  unitId: number | null;
+  aorIds: Array<number>;
+};
+
+export type AgentDeviceSearchRsp = {
+  devices: Array<AgentDeviceItem>;
+  nextCursor: string | null;
+};
+
+export type AiAgentFileCitation = {
+  deviceId: string;
+  fileId: string;
+  revision: number;
+  extractionRevision: string | null;
+  section: number | null;
+};
+
+export type DevicePositionEvidence = {
+  position: AiPositionFound;
+  source: AiAgentFileCitation;
+  citation: string;
+  fileName: string;
+  locator: string;
+  context: string;
+  aorIds: Array<number>;
+  observationAt: string | null;
+};
+
+export type DevicePositionEvidenceGroup = {
+  scopeKind: string;
+  scopeKey: string;
+  nameKey: string;
+  kind: string;
+  knownIndexes: Array<number>;
+  fileIndexes: Array<number>;
+  certainty: string;
+  conflicting: boolean;
 };
 
 export type AttachmentSearchReq = {

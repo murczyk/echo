@@ -84,6 +84,7 @@ function buildGroupMessagesRequest(masterKey: string): InboxMessagesReq {
     selectedAors: null,
     selectedNetworks: null,
     withoutNetwork: null,
+    onlyWithNetwork: null,
     metadataCc: null,
     metadataSender: null,
     metadataReceiver: null,

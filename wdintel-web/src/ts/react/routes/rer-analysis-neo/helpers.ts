@@ -110,6 +110,7 @@ export function emptyQueryState(): AnalysisQueryState {
     postsSelected: [],
     networksSelected: [],
     withoutNetwork: false,
+    onlyWithNetwork: false,
     orWithExtendedForm: false,
     orBookmarked: false,
     orImportant: false,
@@ -391,7 +392,9 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
   }
 
   if (next.withoutNetwork) {
-    next = { ...next, networksSelected: [] };
+    next = { ...next, networksSelected: [], onlyWithNetwork: false };
+  } else if (next.onlyWithNetwork) {
+    next = { ...next, withoutNetwork: false };
   }
 
   if (next.orWithCoords && next.orWithoutCoords) {
@@ -460,6 +463,7 @@ export function buildAnalysisReq(
       ? null
       : query.networksSelected.map((value) => Number(value)).filter(Number.isFinite),
     withoutNetwork: query.withoutNetwork,
+    onlyWithNetwork: query.onlyWithNetwork,
     metadataCc: query.metadataCc.length ? query.metadataCc : null,
     metadataSender: query.metadataSender.length ? query.metadataSender : null,
     metadataReceiver: query.metadataReceiver.length ? query.metadataReceiver : null,
@@ -544,6 +548,7 @@ export function buildInboxReq(
     selectedAors: req.selectedAors,
     selectedNetworks: req.selectedNetworks,
     withoutNetwork: req.withoutNetwork,
+    onlyWithNetwork: req.onlyWithNetwork,
     metadataCc: req.metadataCc,
     metadataSender: req.metadataSender,
     metadataReceiver: req.metadataReceiver,
@@ -618,6 +623,7 @@ export function queryStateFromSavedFilter(
     postsSelected: req.selectedPosts ?? [],
     networksSelected: (req.selectedNetworks ?? []).map(String),
     withoutNetwork: req.withoutNetwork ?? false,
+    onlyWithNetwork: req.onlyWithNetwork ?? false,
     orWithExtendedForm: req.orWithExtendedForm ?? false,
     orBookmarked: req.orBookmarked ?? false,
     orImportant: req.orImportant ?? false,
@@ -651,6 +657,9 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
   }
   if (isNullOrUndefined(normalized.withoutNetwork)) {
     normalized.withoutNetwork = false;
+  }
+  if (isNullOrUndefined(normalized.onlyWithNetwork)) {
+    normalized.onlyWithNetwork = false;
   }
   if (isNullOrUndefined(normalized.orWithExtendedForm)) {
     normalized.orWithExtendedForm = false;
@@ -705,6 +714,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     postsSelected: normalized.selectedPosts ?? [],
     networksSelected: (normalized.selectedNetworks ?? []).map(String),
     withoutNetwork: normalized.withoutNetwork,
+    onlyWithNetwork: normalized.onlyWithNetwork,
     orWithExtendedForm: normalized.orWithExtendedForm,
     orBookmarked: normalized.orBookmarked,
     orImportant: normalized.orImportant,

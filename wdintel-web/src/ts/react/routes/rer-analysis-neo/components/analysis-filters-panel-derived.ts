@@ -230,6 +230,7 @@ export function buildAnalysisFiltersPanelDerivedData({
   const importantSelectedCount =
     Number(queryState.orWithExtendedForm) +
     Number(queryState.onlyWithMedia) +
+    Number(queryState.onlyWithNetwork) +
     Number(queryState.orBookmarked) +
     Number(queryState.orImportant) +
     Number(queryState.orWithCoords);

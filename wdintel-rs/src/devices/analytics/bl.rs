@@ -543,6 +543,7 @@ pub(super) async fn device_summary(
     });
     Ok(DeviceAnalyticsSummaryRsp {
         total_file_count: summary.total_file_count,
+        files_with_content_count: summary.files_with_content_count,
         analyzed_file_count: summary.analyzed_file_count,
         items: summary
             .items

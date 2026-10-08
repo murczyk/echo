@@ -125,6 +125,7 @@ pub struct Metrics {
     device_file_content_accepted_bytes: Counter<u64>,
     device_file_content_terminal: Counter<u64>,
     device_file_content_failures: Counter<u64>,
+    device_audio_cleanup: Counter<u64>,
     file_analysis_runs: Gauge<u64>,
     file_analysis_run_statuses: Gauge<u64>,
     file_analysis_prepared_items: Counter<u64>,
@@ -234,6 +235,11 @@ impl Metrics {
         let device_file_content_failures = meter
             .u64_counter(DEVICE_FILE_CONTENT_FAILURES_COUNT)
             .with_description("Number of device file content finalization or cleanup failures")
+            .with_unit("1")
+            .build();
+        let device_audio_cleanup = meter
+            .u64_counter(crate::devices::audio::DEVICE_AUDIO_CLEANUP_METRIC)
+            .with_description("Number of device audio cleanup outcomes")
             .with_unit("1")
             .build();
         let file_analysis_runs = meter
@@ -362,6 +368,7 @@ impl Metrics {
             device_file_content_accepted_bytes,
             device_file_content_terminal,
             device_file_content_failures,
+            device_audio_cleanup,
             file_analysis_runs,
             file_analysis_run_statuses,
             file_analysis_prepared_items,
@@ -496,6 +503,11 @@ impl Metrics {
     ) {
         self.device_file_content_failures
             .add(1, &[KeyValue::new("stage", stage)]);
+    }
+
+    pub(crate) fn record_device_audio_cleanup(&self, outcome: &'static str) {
+        self.device_audio_cleanup
+            .add(1, &[KeyValue::new("outcome", outcome)]);
     }
 
     fn record_synchronized_files(&self, operation: &'static str, count: u64) {
@@ -659,6 +671,9 @@ fn metrics_view(instrument: &Instrument) -> Option<Stream> {
             DEVICE_FILE_CONTENT_ACCEPTED_BYTES => (&[], None),
             DEVICE_FILE_CONTENT_TERMINAL_COUNT => (&["status"], None),
             DEVICE_FILE_CONTENT_FAILURES_COUNT => (&["stage"], None),
+            crate::devices::audio::DEVICE_AUDIO_CLEANUP_METRIC => {
+                (&["outcome"], None)
+            }
             FILE_ANALYSIS_RUNS_COUNT => (&["cause"], None),
             FILE_ANALYSIS_RUNS_STATUS_COUNT => (&["status"], None),
             FILE_ANALYSIS_PREPARED_ITEMS_COUNT

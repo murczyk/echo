@@ -17,6 +17,9 @@ pub struct AiAgentMapRecordInput {
     pub comments: Vec<String>,
     #[serde(default)]
     pub sources: Vec<AiAgentMessageCitation>,
+    #[serde(default)]
+    pub file_sources:
+        Vec<crate::devices::documents::types::AiAgentFileCitation>,
 }
 
 #[derive(
@@ -39,6 +42,9 @@ pub struct AiAgentMapRecord {
     pub longitude: Option<f64>,
     pub comments: Vec<String>,
     pub sources: Vec<AiAgentMessageCitation>,
+    #[serde(default)]
+    pub file_sources:
+        Vec<crate::devices::documents::types::AiAgentFileCitation>,
     pub warnings: Vec<String>,
 }
 

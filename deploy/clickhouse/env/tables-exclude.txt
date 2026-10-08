@@ -129,3 +129,5 @@ public.attachment_settings
 public.attachment_document
 public.attachment_chunk
 public.attachment_job
+
+public.device_document_settings

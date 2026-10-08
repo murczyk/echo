@@ -130,6 +130,7 @@ export function emptyAnalysisStatsReq(sinceMs: number, tillMs: number): Analysis
     tagPresence: null,
     selectedNetworks: null,
     withoutNetwork: null,
+    onlyWithNetwork: null,
     metadataCc: null,
     metadataSender: null,
     metadataReceiver: null,

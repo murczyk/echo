@@ -1879,6 +1879,40 @@ mod tests {
     }
 
     #[test]
+    fn historical_validation_resolves_ambiguous_kyiv_timestamp() {
+        let record = RerCsvRecord {
+            source_record: 1,
+            body: "Muraha\n26.10.2025, 03:30:00\nmessage".to_string(),
+        };
+        let between = Utc
+            .with_ymd_and_hms(2025, 10, 26, 0, 45, 0)
+            .unwrap()
+            .with_timezone(&crate::config::get_tz());
+
+        for (reference_time, expected) in [
+            (
+                between,
+                NaiveDate::from_ymd_opt(2025, 10, 26)
+                    .unwrap()
+                    .and_hms_opt(0, 30, 0)
+                    .unwrap(),
+            ),
+            (
+                fixed_now(),
+                NaiveDate::from_ymd_opt(2025, 10, 26)
+                    .unwrap()
+                    .and_hms_opt(1, 30, 0)
+                    .unwrap(),
+            ),
+        ] {
+            let validation =
+                validate_historical_record(reference_time, &record);
+
+            assert_eq!(validation.timestamp, Some(expected));
+        }
+    }
+
+    #[test]
     fn historical_validation_converts_date_only_to_local_midnight() {
         for (body, expected) in [
             (

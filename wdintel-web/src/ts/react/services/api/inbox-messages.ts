@@ -440,6 +440,7 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
     selected_aors: emptyArrToNull(req.selectedAors),
     selected_networks: emptyArrToNull(req.selectedNetworks),
     without_network: req.withoutNetwork,
+    only_with_network: req.onlyWithNetwork,
     metadata_cc: req.metadataCc,
     metadata_sender: req.metadataSender,
     metadata_receiver: req.metadataReceiver,
