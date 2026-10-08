@@ -7847,6 +7847,150 @@ mod tests {
         .is_none());
     }
 
+    async fn seed_position_display_message_3064(
+        env: &Env,
+        group: &datasource_group::Model,
+    ) -> (signal_message::Model, signal_message_media::Model) {
+        use crate::entities::ai_position_mention;
+        let message = seed_message_with_media(
+            env,
+            group,
+            Some("application/pdf"),
+            "position-display",
+        )
+        .await
+        .unwrap();
+        let mut message = message.into_active_model();
+        message.body = Set(Some("Циркон 9".to_string()));
+        let message = message.update(&env.dbx).await.unwrap();
+        let media = signal_message_media::Entity::find()
+            .filter(
+                signal_message_media::Column::SignalMessageId.eq(message.id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        for media_id in [None, Some(media.id)] {
+            ai_position_mention::ActiveModel {
+                sigint_inbox_item_id: Set(if media_id.is_none() {
+                    Some(message.id)
+                } else {
+                    None
+                }),
+                media_id: Set(media_id),
+                name: Set("Циркон 9".to_string()),
+                name_key: Set("циркон 9".to_string()),
+                kind: Set("position".to_string()),
+                begin_char: Set(0),
+                end_char: Set(8),
+                message_at: Set(message.created_at),
+                group_master_key: Set(Some(group.group_master_key.clone())),
+                group_is_secret: Set(false),
+                aor_ids: Set(vec![]),
+                model_name: Set("test".to_string()),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        (message, media)
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn ai_position_display_flags_leave_extraction_data_available_3064() {
+        use crate::entities::user_settings;
+        use crate::rer_importer::highlight::ContentNode;
+
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let (message, media) =
+            seed_position_display_message_3064(&env, &group).await;
+        let req = InboxMessagesReq {
+            nolimit: Some(true),
+            load_latest: Some(true),
+            highlight_points: Some(true),
+            highlight_callsigns: Some(true),
+            ..Default::default()
+        };
+        for (global_enabled, user_enabled, displayed) in [
+            (None, None, false),
+            (Some(false), Some(true), true),
+            (Some(false), Some(false), false),
+            (Some(true), Some(false), true),
+        ] {
+            system_settings::Entity::update_many()
+                .col_expr(
+                    system_settings::Column::AiPositionHighlightsEnabled,
+                    Expr::value(global_enabled),
+                )
+                .filter(system_settings::Column::Deleted.eq(false))
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+            user_settings::Entity::insert(user_settings::ActiveModel {
+                login_id: Set(login.id),
+                ai_position_highlights_enabled: Set(user_enabled),
+                ..Default::default()
+            })
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::column(
+                    user_settings::Column::LoginId,
+                )
+                .update_column(
+                    user_settings::Column::AiPositionHighlightsEnabled,
+                )
+                .to_owned(),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+            let messages =
+                get_inbox_messages(&login.id, &vec![login.id], &env, &req)
+                    .await
+                    .unwrap();
+            let (_, message) =
+                messages.iter().find(|(id, _)| *id == message.id).unwrap();
+            assert_eq!(
+                message
+                    .text_marked
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .any(|node| matches!(node, ContentNode::CNPositionC(_))),
+                displayed
+            );
+            assert_eq!(!message.media[0].positions.is_empty(), displayed);
+            let allowed =
+                [group.group_master_key.clone()].into_iter().collect();
+            assert_eq!(
+                crate::ai_position::list::positions_by_message(
+                    &env.dbx,
+                    vec![media.signal_message_id],
+                    &allowed
+                )
+                .await
+                .unwrap()
+                .len(),
+                1
+            );
+            assert_eq!(
+                crate::ai_position::list::positions_by_media(
+                    &env.dbx,
+                    vec![media.id],
+                    &allowed
+                )
+                .await
+                .unwrap()
+                .len(),
+                1
+            );
+        }
+    }
+
     #[serial]
     #[tokio::test]
     async fn test_get_inbox_messages_filters_only_with_media() {

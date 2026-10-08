@@ -146,6 +146,9 @@ fn map_system_settings_item(
         duty_exclude_menu_enabled: settings
             .duty_exclude_menu_enabled
             .unwrap_or(true),
+        ai_position_highlights_enabled: settings
+            .ai_position_highlights_enabled
+            .unwrap_or(false),
         analysis_aor_filter_enabled: settings
             .analysis_aor_filter_enabled
             .unwrap_or(ANALYSIS_AOR_FILTER_ENABLED_DEFAULT),
@@ -703,6 +706,9 @@ fn system_settings_active_model(
         disable_bot_tags: Set(Some(req.disable_bot_tags)),
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
+        ai_position_highlights_enabled: Set(Some(
+            req.ai_position_highlights_enabled,
+        )),
         two_factor_auth_enabled: Set(Some(req.two_factor_auth_enabled)),
         exclude_orbit_other_units: Set(Some(req.exclude_orbit_other_units)),
         messenger_media_cache_enabled: Set(Some(
@@ -914,6 +920,9 @@ pub async fn current_system_settings(
             duty_exclude_menu_enabled: settings
                 .duty_exclude_menu_enabled
                 .unwrap_or(true),
+            ai_position_highlights_enabled: settings
+                .ai_position_highlights_enabled
+                .unwrap_or(false),
             analysis_aor_filter_enabled: settings
                 .analysis_aor_filter_enabled
                 .unwrap_or(ANALYSIS_AOR_FILTER_ENABLED_DEFAULT),
@@ -953,6 +962,7 @@ pub async fn current_system_settings(
             disable_bot_tags: false,
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
+            ai_position_highlights_enabled: false,
             two_factor_auth_enabled: true,
             exclude_orbit_other_units: true,
         },
@@ -1597,6 +1607,7 @@ mod tests {
             disable_bot_tags: false,
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
+            ai_position_highlights_enabled: false,
             two_factor_auth_enabled: true,
             exclude_orbit_other_units: true,
             messenger_media_cache_enabled: false,

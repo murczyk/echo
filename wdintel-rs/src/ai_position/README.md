@@ -145,6 +145,20 @@ feedback not re-run yet («Перепарсити відгуки»). The evaluat
 improve–replay–reparse loop are in
 [`ai-eval/2026-10-03-position-feedback`](../../../ai-eval/2026-10-03-position-feedback/README.md).
 
+## Display rollout
+
+Admin → System settings → Основні → «Показувати ШІ-позиції всім користувачам»
+controls display in Duty and Analysis. It defaults to off, including existing
+installations. Settings → Оперативний or Аналіз → Картка повідомлення →
+«Показувати ШІ-позиції (експериментально)» lets individual users opt in while
+that global flag is off. Enabling the global flag shows positions for everyone.
+
+The flags apply when messages are loaded; reload an open feed after changing
+them. When display is off, message responses omit AI position highlights and
+AI coordinates from both body and attachments. Ordinary coordinates and palette
+points remain available. Extraction, knowledge/link workers, admin review,
+position lookup and AI-agent tools continue working independently.
+
 ## Operating
 
 1. Apply migration `m20261002_192628_ai_position_parsing`.

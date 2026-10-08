@@ -38,6 +38,8 @@ pub struct SystemSettingsCurrentRsp {
     pub duty_exclude_menu_enabled: bool,
     #[serde(default = "default_analysis_aor_filter_enabled")]
     pub analysis_aor_filter_enabled: bool,
+    #[serde(default)]
+    pub ai_position_highlights_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
     #[serde(default = "default_true")]
@@ -85,6 +87,8 @@ pub struct SystemSettingsItem {
     pub duty_exclude_menu_enabled: bool,
     #[serde(default = "default_analysis_aor_filter_enabled")]
     pub analysis_aor_filter_enabled: bool,
+    #[serde(default)]
+    pub ai_position_highlights_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
     #[serde(default = "default_true")]
@@ -161,6 +165,8 @@ pub struct CreateSystemSettingsReq {
     pub duty_exclude_menu_enabled: bool,
     #[serde(default = "default_analysis_aor_filter_enabled")]
     pub analysis_aor_filter_enabled: bool,
+    #[serde(default)]
+    pub ai_position_highlights_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
     #[serde(default = "default_true")]

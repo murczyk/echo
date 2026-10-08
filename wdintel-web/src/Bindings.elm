@@ -12624,6 +12624,7 @@ type alias SystemSettingsCurrentRsp =
     , disableBotTags : Bool
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
+    , aiPositionHighlightsEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , excludeOrbitOtherUnits : Bool
     }
@@ -12664,6 +12665,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "disable_bot_tags", (Json.Encode.bool) struct.disableBotTags )
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
+        , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
         ]
@@ -12706,6 +12708,7 @@ type alias SystemSettingsItem =
     , disableBotTags : Bool
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
+    , aiPositionHighlightsEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , excludeOrbitOtherUnits : Bool
     , messengerMediaCacheEnabled : Bool
@@ -12754,6 +12757,7 @@ systemSettingsItemEncoder struct =
         , ( "disable_bot_tags", (Json.Encode.bool) struct.disableBotTags )
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
+        , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
         , ( "messenger_media_cache_enabled", (Json.Encode.bool) struct.messengerMediaCacheEnabled )
@@ -12807,6 +12811,7 @@ type alias CreateSystemSettingsReq =
     , disableBotTags : Bool
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
+    , aiPositionHighlightsEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , excludeOrbitOtherUnits : Bool
     , messengerMediaCacheEnabled : Bool
@@ -12850,6 +12855,7 @@ createSystemSettingsReqEncoder struct =
         , ( "disable_bot_tags", (Json.Encode.bool) struct.disableBotTags )
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
+        , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
         , ( "messenger_media_cache_enabled", (Json.Encode.bool) struct.messengerMediaCacheEnabled )
@@ -25277,6 +25283,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_bot_tags" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
 
@@ -25320,6 +25327,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_bot_tags" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_enabled" (Json.Decode.bool)))
@@ -25368,6 +25376,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_bot_tags" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_enabled" (Json.Decode.bool)))
@@ -27893,6 +27902,7 @@ type alias UserDutySettingsDto =
     , mediaSummaryEnabled : Bool
     , messageSortBy : MessageTimeBasis
     , messageAutoParseEnabled : Bool
+    , aiPositionHighlightsEnabled : Bool
     }
 
 
@@ -27912,3 +27922,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaSummaryEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageSortBy" (messageTimeBasisDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageAutoParseEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiPositionHighlightsEnabled" (Json.Decode.bool)))
