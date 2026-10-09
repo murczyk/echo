@@ -270,16 +270,8 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
               )
           : undefined
       }
-      onCopyEtalon={
-        etalonDisplayModel.copyEtalonValue == null
-          ? undefined
-          : (value) => onMessageCopy(value, `etalon-${id}`)
-      }
-      onCopyLocation={
-        etalonDisplayModel.copyLocationValue == null
-          ? undefined
-          : (value) => onMessageCopy(value, `location-${id}`)
-      }
+      onCopyEtalon={(value) => onMessageCopy(value, `etalon-${id}`)}
+      onCopyLocation={(value) => onMessageCopy(value, `location-${id}`)}
       onCreateReport={(focusTarget) =>
         onMessageCreateReport(id, msg, etalonDisplayModel, focusTarget)
       }

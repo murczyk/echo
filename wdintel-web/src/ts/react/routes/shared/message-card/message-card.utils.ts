@@ -439,6 +439,49 @@ export function resolveMessageCardEtalonDisplayModel(
   };
 }
 
+export function hideMessageCardNetworks(
+  displayModel: MessageCardEtalonDisplayModel,
+  unitValue: string | null | undefined,
+): MessageCardEtalonDisplayModel {
+  const unit = normalizeLabel(unitValue);
+  const locationDisplayValue = displayModel.locationDisplayValue;
+
+  if (unit !== '') {
+    return {
+      ...displayModel,
+      primaryKind: 'unit',
+      displayValue: unit,
+      copyEtalonValue: unit,
+      copyLocationValue: locationDisplayValue,
+      renderedNetworks: [],
+      showInlineLocationTooltip: false,
+    };
+  }
+
+  if (locationDisplayValue != null) {
+    return {
+      ...displayModel,
+      primaryKind: 'location',
+      displayValue: locationDisplayValue,
+      copyEtalonValue: null,
+      copyLocationValue: locationDisplayValue,
+      renderedNetworks: [],
+      showInlineLocationTooltip: false,
+    };
+  }
+
+  return {
+    ...displayModel,
+    primaryKind: 'empty',
+    displayValue: NO_DATA_LABEL,
+    copyEtalonValue: null,
+    copyLocationValue: null,
+    renderedNetworks: [],
+    showInlineLocationTooltip: false,
+    locationDisplayValue: null,
+  };
+}
+
 export function buildMessageLinkHref(
   msg:
     | Pick<InboxMessage, 'messageUuid' | 'messageUid'>

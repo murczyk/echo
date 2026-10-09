@@ -41,7 +41,10 @@ import {
   type MessageEntityFilterKind,
   type TagsLayoutVariant,
 } from '../../rer-duty-neo/utils';
-import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
+import {
+  hideMessageCardNetworks,
+  resolveMessageCardEtalonDisplayModel,
+} from './message-card.utils';
 import type { AddPointHighlightBlacklistRequest } from './point-highlight-blacklist';
 import type {
   MessageTextPreviewLineLimit,
@@ -259,17 +262,11 @@ function MessageCardComponent({
       }),
     [msg, featureStrictNetworks, networkDisplayMap, derivedNetworkMap, networks],
   );
-  const visibleEtalonDisplayModel = useMemo(() => {
-    if (!hideNetworks || etalonDisplayModel.primaryKind !== 'network') return etalonDisplayModel;
-    const unit = msg.unit?.trim() ?? '';
-    return {
-      ...etalonDisplayModel,
-      primaryKind: unit === '' ? ('empty' as const) : ('unit' as const),
-      displayValue: unit,
-      copyEtalonValue: unit === '' ? null : unit,
-      renderedNetworks: [],
-    };
-  }, [hideNetworks, etalonDisplayModel, msg.unit]);
+  const visibleEtalonDisplayModel = useMemo(
+    () =>
+      hideNetworks ? hideMessageCardNetworks(etalonDisplayModel, msg.unit) : etalonDisplayModel,
+    [hideNetworks, etalonDisplayModel, msg.unit],
+  );
   const onCopyEtalonAction =
     visibleEtalonDisplayModel.copyEtalonValue == null || onCopyEtalon == null
       ? undefined

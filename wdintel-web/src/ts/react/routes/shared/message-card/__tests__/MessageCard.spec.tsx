@@ -21,7 +21,10 @@ import {
 import { MessageDeviceAccessProvider } from '../MessageDeviceAccess.tsx';
 import { DutyExcludeMenuContext } from '../DutyExcludeMenu.ts';
 import { MessageDeleteAccessContext, MessageWriteAccessContext } from '../MessageWriteAccess.tsx';
-import { resolveMessageCardEtalonDisplayModel } from '../message-card.utils.ts';
+import {
+  hideMessageCardNetworks,
+  resolveMessageCardEtalonDisplayModel,
+} from '../message-card.utils.ts';
 
 const observedPopoverAnchors: Array<HTMLElement | null> = [];
 
@@ -221,18 +224,22 @@ afterEach(() => {
 
 describe('MessageCard', () => {
   // Regression: https://github.com/echoua/echo/issues/3598
-  it('hides hydrated network metadata and copies the independently displayed unit', async () => {
+  it('hides cold-loaded network metadata and copies the independently displayed unit', async () => {
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
     vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);
     const onCopyEtalon = vi.fn();
     const view = await renderCard({
       hideNetworks: true,
-      msg: buildMessage({ unit: 'Підрозділ 42' }),
+      featureStrictNetworks: true,
+      msg: buildMessage({ unit: 'Підрозділ 42', location: 'ЛОКАЦІЯ' }),
+      networkDisplayMap: {},
+      networkMap: {},
       onCopyEtalon,
     });
 
     expect(view.container.textContent).not.toContain('Alpha');
     expect(view.container.textContent).toContain('Підрозділ 42');
+    expect(view.container.textContent).toContain('Локація');
 
     await openOverflowMenu(view.container);
     const copySection = Array.from(
@@ -248,6 +255,74 @@ describe('MessageCard', () => {
 
     expect(onCopyEtalon).toHaveBeenCalledWith('Підрозділ 42');
   });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('keeps independent unit and location copy actions when hiding hydrated networks', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);
+    const onCopyEtalon = vi.fn();
+    const onCopyLocation = vi.fn();
+    const view = await renderCard({
+      hideNetworks: true,
+      msg: buildMessage({ unit: 'Підрозділ 42', location: 'ЛОКАЦІЯ' }),
+      onCopyEtalon,
+      onCopyLocation,
+    });
+
+    expect(view.container.textContent).not.toContain('Alpha');
+    expect(view.container.textContent).toContain('Підрозділ 42');
+    expect(view.container.textContent).toContain('Локація');
+
+    await openOverflowMenu(view.container);
+    const copySection = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Копіювати…');
+    if (copySection == null) throw new Error('missing copy section');
+    await click(copySection);
+    const copyEtalon = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === "Копіювати прив'язку");
+    if (copyEtalon == null) throw new Error('missing etalon copy action');
+    await click(copyEtalon);
+
+    await openOverflowMenu(view.container);
+    const secondCopySection = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Копіювати…');
+    if (secondCopySection == null) throw new Error('missing second copy section');
+    await click(secondCopySection);
+    const copyLocation = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Копіювати локацію');
+    if (copyLocation == null) throw new Error('missing location copy action');
+    await click(copyLocation);
+
+    expect(onCopyEtalon).toHaveBeenCalledWith('Підрозділ 42');
+    expect(onCopyLocation).toHaveBeenCalledWith('Локація');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it.each([
+    { unit: undefined, location: 'ЛОКАЦІЯ', primaryKind: 'location' as const, value: 'Локація' },
+    { unit: undefined, location: null, primaryKind: 'empty' as const, value: '—' },
+  ])(
+    'uses the $primaryKind fallback on hidden cold-loaded networks',
+    ({ unit, location, primaryKind, value }) => {
+      const raw = resolveMessageCardEtalonDisplayModel(buildMessage({ unit, location }), {
+        featureStrictNetworks: true,
+        networkDisplayMap: {},
+        networkMap: {},
+      });
+      const hidden = hideMessageCardNetworks(raw, unit);
+
+      expect(hidden).toMatchObject({
+        primaryKind,
+        displayValue: value,
+        copyEtalonValue: null,
+        renderedNetworks: [],
+      });
+    },
+  );
 
   // Regression: https://github.com/echoua/echo/issues/3598
   it('retains hydrated network metadata and copying when network hiding is disabled', async () => {

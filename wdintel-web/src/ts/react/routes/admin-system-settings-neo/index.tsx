@@ -23,7 +23,7 @@ import {
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
 import { PowerDateTimePicker } from '../../components/PowerDateTimePicker';
@@ -470,6 +470,17 @@ function CoordinateField({ disabled, label, onBlur, onChange, value }: Coordinat
   );
 }
 
+function MainSettingsGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        {title}
+      </Typography>
+      <div className="flex flex-col gap-1">{children}</div>
+    </section>
+  );
+}
+
 function MainSettingsSection({
   form,
   patchForm,
@@ -480,210 +491,218 @@ function MainSettingsSection({
   audioTranscriptionSaved: boolean;
 }) {
   return (
-    <>
-      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
-        Активні значення за замовчуванням
-      </Typography>
+    <div className="flex flex-col gap-6">
+      <MainSettingsGroup title="Інтерфейс і значення за замовчуванням">
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <Switch
+            sx={{ m: 0 }}
+            checked={form.exactMatchOnlyDefault}
+            onChange={(_, checked) => {
+              patchForm({ exactMatchOnlyDefault: checked });
+            }}
+          />
+          <ButtonBase
+            component="button"
+            type="button"
+            onClick={() => {
+              patchForm({ exactMatchOnlyDefault: !form.exactMatchOnlyDefault });
+            }}
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              textAlign: 'left',
+              borderRadius: 0.5,
+              typography: 'body1',
+              fontWeight: 400,
+              color: 'text.primary',
+            }}
+          >
+            Прапорець «точний збіг за еталонкою» на аналізі увімкнений
+          </ButtonBase>
+        </Box>
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-        <Switch
-          sx={{ m: 0 }}
-          checked={form.exactMatchOnlyDefault}
-          onChange={(_, checked) => {
-            patchForm({ exactMatchOnlyDefault: checked });
-          }}
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.defaultNeoAnalysis}
+              onChange={(_, checked) => {
+                patchForm({ defaultNeoAnalysis: checked });
+              }}
+            />
+          }
+          label="Використовувати новий аналіз за замовчуванням"
         />
-        <ButtonBase
-          component="button"
-          type="button"
-          onClick={() => {
-            patchForm({ exactMatchOnlyDefault: !form.exactMatchOnlyDefault });
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.hideNetworks}
+              onChange={(_, checked) => {
+                patchForm({ hideNetworks: checked });
+              }}
+            />
+          }
+          label={
+            <InfoLabel
+              label="Приховати мережі"
+              tooltip="Приховує мережі в картках повідомлень і фільтр «Мережі» в оперативному та аналізі, у класичному й новому інтерфейсах. Сторінка «База даних → Мережі» залишається без змін."
+            />
+          }
+        />
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.aiPositionHighlightsEnabled}
+              onChange={(_, checked) => patchForm({ aiPositionHighlightsEnabled: checked })}
+            />
+          }
+          label={
+            <InfoLabel
+              label="Показувати ШІ-позиції всім користувачам (оперативний та аналіз)"
+              tooltip="Коли вимкнено, користувачі можуть увімкнути показ у своїх налаштуваннях. Розпізнавання позицій продовжує працювати."
+            />
+          }
+        />
+      </MainSettingsGroup>
+
+      <MainSettingsGroup title="Безпека">
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.twoFactorAuthEnabled}
+              onChange={(_, checked) => patchForm({ twoFactorAuthEnabled: checked })}
+            />
+          }
+          label="Двофакторна автентифікація (2FA)"
+        />
+      </MainSettingsGroup>
+
+      <MainSettingsGroup title="Обробка повідомлень">
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.disableBotTags}
+              onChange={(_, checked) => {
+                patchForm({ disableBotTags: checked });
+              }}
+            />
+          }
+          label={<InfoLabel label="Вимкнути теги бота" tooltip={DISABLE_BOT_TAGS_TOOLTIP} />}
+        />
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.enableAudioTranscription}
+              onChange={(_, checked) => {
+                patchForm({ enableAudioTranscription: checked });
+              }}
+            />
+          }
+          label="Увімкнути транскрибування аудіо"
+        />
+        {form.enableAudioTranscription && !audioTranscriptionSaved ? (
+          <PowerAlert severity="info">
+            Збережіть налаштування, щоб відкрити «Транскрибація» в меню «Адмін».
+          </PowerAlert>
+        ) : null}
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.sigintCommentParsingEnabled}
+              onChange={(_, checked) => {
+                patchForm({ sigintCommentParsingEnabled: checked });
+              }}
+            />
+          }
+          label="Парсити коментарі"
+        />
+      </MainSettingsGroup>
+
+      <MainSettingsGroup title="Можливості системи">
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.supportNonRerInterceptions}
+              onChange={(_, checked) => {
+                patchForm({ supportNonRerInterceptions: checked });
+              }}
+            />
+          }
+          label={
+            <InfoLabel
+              label="Підтримка альтернативних перехоплень"
+              tooltip={SUPPORT_NON_RER_TOOLTIP}
+            />
+          }
+        />
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.devicesSectionEnabled}
+              onChange={(_, checked) => {
+                patchForm({ devicesSectionEnabled: checked });
+              }}
+            />
+          }
+          label="Увімкнути розділ Пристрої"
+        />
+      </MainSettingsGroup>
+
+      <MainSettingsGroup title="Службова обробка">
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.doNotStoreDuplicateEchoimFailures}
+              onChange={(_, checked) => {
+                patchForm({ doNotStoreDuplicateEchoimFailures: checked });
+              }}
+            />
+          }
+          label="Не зберігати дублікати помилок Echo IM"
+        />
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.goiAssociationMessageUidWorkerEnabled}
+              onChange={(_, checked) => {
+                patchForm({ goiAssociationMessageUidWorkerEnabled: checked });
+              }}
+            />
+          }
+          label="Заповнювати UID повідомлень висновків GOI"
+        />
+      </MainSettingsGroup>
+
+      <MainSettingsGroup title="Звіти">
+        <TextField
+          label={
+            <InfoLabel label="Вікно обробки звітів (в годинах)" tooltip={REPORT_CHUNKING_TOOLTIP} />
+          }
+          type="number"
+          value={form.reportChunkingHours}
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            patchForm({ reportChunkingHours: Number.isFinite(next) ? next : 24 });
           }}
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            textAlign: 'left',
-            borderRadius: 0.5,
-            typography: 'body1',
-            fontWeight: 400,
-            color: 'text.primary',
-          }}
-        >
-          Прапорець «точний збіг за еталонкою» на аналізі увімкнений
-        </ButtonBase>
-      </Box>
+          inputProps={{ min: 1, max: REPORT_CHUNKING_HOURS_MAX, step: 1 }}
+        />
 
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.aiPositionHighlightsEnabled}
-            onChange={(_, checked) => patchForm({ aiPositionHighlightsEnabled: checked })}
-          />
-        }
-        label="Показувати ШІ-позиції всім користувачам (оперативний та аналіз)"
-      />
-      <Typography variant="body2" color="text.secondary">
-        Коли вимкнено, користувачі можуть увімкнути показ у своїх налаштуваннях. Розпізнавання
-        позицій продовжує працювати.
-      </Typography>
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.twoFactorAuthEnabled}
-            onChange={(_, checked) => patchForm({ twoFactorAuthEnabled: checked })}
-          />
-        }
-        label="Двофакторна автентифікація (2FA)"
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.disableBotTags}
-            onChange={(_, checked) => {
-              patchForm({ disableBotTags: checked });
-            }}
-          />
-        }
-        label={<InfoLabel label="Вимкнути теги бота" tooltip={DISABLE_BOT_TAGS_TOOLTIP} />}
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.enableAudioTranscription}
-            onChange={(_, checked) => {
-              patchForm({ enableAudioTranscription: checked });
-            }}
-          />
-        }
-        label="Увімкнути транскрибування аудіо"
-      />
-      {form.enableAudioTranscription && !audioTranscriptionSaved ? (
-        <PowerAlert severity="info">
-          Збережіть налаштування, щоб відкрити «Транскрибація» в меню «Адмін».
-        </PowerAlert>
-      ) : null}
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.supportNonRerInterceptions}
-            onChange={(_, checked) => {
-              patchForm({ supportNonRerInterceptions: checked });
-            }}
-          />
-        }
-        label={
-          <InfoLabel
-            label="Підтримка альтернативних перехоплень"
-            tooltip={SUPPORT_NON_RER_TOOLTIP}
-          />
-        }
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.defaultNeoAnalysis}
-            onChange={(_, checked) => {
-              patchForm({ defaultNeoAnalysis: checked });
-            }}
-          />
-        }
-        label="Використовувати новий аналіз за замовчуванням"
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.hideNetworks}
-            onChange={(_, checked) => {
-              patchForm({ hideNetworks: checked });
-            }}
-          />
-        }
-        label={
-          <InfoLabel
-            label="Приховати мережі"
-            tooltip="Приховує мережі в картках повідомлень і фільтр «Мережі» в оперативному та аналізі, у класичному й новому інтерфейсах. Сторінка «База даних → Мережі» залишається без змін."
-          />
-        }
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.devicesSectionEnabled}
-            onChange={(_, checked) => {
-              patchForm({ devicesSectionEnabled: checked });
-            }}
-          />
-        }
-        label="Увімкнути розділ Пристрої"
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.sigintCommentParsingEnabled}
-            onChange={(_, checked) => {
-              patchForm({ sigintCommentParsingEnabled: checked });
-            }}
-          />
-        }
-        label="Парсити коментарі"
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.doNotStoreDuplicateEchoimFailures}
-            onChange={(_, checked) => {
-              patchForm({ doNotStoreDuplicateEchoimFailures: checked });
-            }}
-          />
-        }
-        label="Не зберігати дублікати помилок Echo IM"
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.goiAssociationMessageUidWorkerEnabled}
-            onChange={(_, checked) => {
-              patchForm({ goiAssociationMessageUidWorkerEnabled: checked });
-            }}
-          />
-        }
-        label="Заповнювати UID повідомлень висновків GOI"
-      />
-
-      <TextField
-        label={
-          <InfoLabel label="Вікно обробки звітів (в годинах)" tooltip={REPORT_CHUNKING_TOOLTIP} />
-        }
-        type="number"
-        value={form.reportChunkingHours}
-        onChange={(event) => {
-          const next = Number(event.target.value);
-          patchForm({ reportChunkingHours: Number.isFinite(next) ? next : 24 });
-        }}
-        inputProps={{ min: 1, max: REPORT_CHUNKING_HOURS_MAX, step: 1 }}
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.limitBigReports}
-            onChange={(_, checked) => {
-              patchForm({ limitBigReports: checked });
-            }}
-          />
-        }
-        label="Обмежити неоптимізовані звіти лімітом в 10 тис. рядків"
-      />
-    </>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.limitBigReports}
+              onChange={(_, checked) => {
+                patchForm({ limitBigReports: checked });
+              }}
+            />
+          }
+          label="Обмежити неоптимізовані звіти лімітом в 10 тис. рядків"
+        />
+      </MainSettingsGroup>
+    </div>
   );
 }
 

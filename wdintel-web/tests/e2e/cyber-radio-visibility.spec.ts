@@ -361,6 +361,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
 
     expect(request.selected_networks).toBeNull();
     expect(request.without_network).toBe(false);
+    await expect(page.getByText('частоти', { exact: true })).toBeVisible();
     await expect(page.getByText('мережі', { exact: true })).toHaveCount(0);
     await expect(page.locator('app-navbar')).toBeAttached();
     await page.waitForTimeout(250);

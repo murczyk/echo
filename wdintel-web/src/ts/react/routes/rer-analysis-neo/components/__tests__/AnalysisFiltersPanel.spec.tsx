@@ -421,6 +421,18 @@ describe('AnalysisFiltersPanel', () => {
     expect(renderedFilterLabels).not.toContain('Мережі');
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('keeps frequencies but hides networks when network hiding is enabled', async () => {
+    const view = await renderComponent(buildProps({ hideNetworks: true }));
+    rendered.push(view);
+
+    const renderedFilterLabels = analysisFilterFieldSpy.mock.calls.map(
+      ([callProps]) => (callProps as { label: string }).label,
+    );
+    expect(renderedFilterLabels).toContain('Частоти');
+    expect(renderedFilterLabels).not.toContain('Мережі');
+  });
+
   it('passes Elm-parity disabled states into the frequency and network filters', async () => {
     const props = buildProps({
       includeOnlyNewFreqs: true,

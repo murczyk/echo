@@ -517,24 +517,16 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
             }
           : undefined
       }
-      onCopyEtalon={
-        etalonDisplayModel.copyEtalonValue == null
-          ? undefined
-          : (value) => {
-              void copyMessageValue(value).then(() => {
-                onCopyFeedback(`etalon-${id}`);
-              });
-            }
-      }
-      onCopyLocation={
-        etalonDisplayModel.copyLocationValue == null
-          ? undefined
-          : (value) => {
-              void copyMessageValue(value).then(() => {
-                onCopyFeedback(`location-${id}`);
-              });
-            }
-      }
+      onCopyEtalon={(value) => {
+        void copyMessageValue(value).then(() => {
+          onCopyFeedback(`etalon-${id}`);
+        });
+      }}
+      onCopyLocation={(value) => {
+        void copyMessageValue(value).then(() => {
+          onCopyFeedback(`location-${id}`);
+        });
+      }}
       onCreateReport={(focusTarget) => onCreateReport(id, etalonDisplayModel, focusTarget)}
       onEditReport={onEditReport}
       onDelete={() => onDeleteOpen(id)}

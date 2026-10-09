@@ -340,7 +340,7 @@ export function AnalysisFiltersPanelSections({
           />
         </FilterSection>
       ) : null}
-      {radioFeaturesAllowed && !hideNetworks ? (
+      {radioFeaturesAllowed ? (
         <FilterSection
           title="Частоти"
           countLabel={countLabel(
@@ -419,7 +419,7 @@ export function AnalysisFiltersPanelSections({
           onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
         />
       </FilterSection>
-      {radioFeaturesAllowed ? (
+      {radioFeaturesAllowed && !hideNetworks ? (
         <FilterSection
           title="Мережі"
           countLabel={countLabel(

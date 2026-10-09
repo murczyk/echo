@@ -57,7 +57,6 @@ export function useRerDutyReferenceData(messageFeeds: MessageFeedState[], hideNe
 
   useEffect(() => {
     let cancelled = false;
-    if (hideNetworks) return;
     getUnitsList()
       .then((units) => {
         if (cancelled) return;
@@ -74,7 +73,7 @@ export function useRerDutyReferenceData(messageFeeds: MessageFeedState[], hideNe
     return () => {
       cancelled = true;
     };
-  }, [hideNetworks]);
+  }, []);
 
   useEffect(() => {
     if (hideNetworks) return;

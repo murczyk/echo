@@ -1123,7 +1123,10 @@ rightColumn ( messageId, message ) ps model =
                                 text " "
 
                             Just _ ->
-                                if List.isEmpty ps.messageNetworkIds then
+                                if ps.hideNetworks then
+                                    text <| " " ++ (message.unit |> def "Не встановлена")
+
+                                else if List.isEmpty ps.messageNetworkIds then
                                     if isStrict then
                                         text "Не встановлена"
 
