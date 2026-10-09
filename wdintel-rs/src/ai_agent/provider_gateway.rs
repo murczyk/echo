@@ -1,15 +1,16 @@
 use super::auth;
 use crate::config::{
-    AI_AGENT_OPENAI_GPT_6_LUNA, AI_AGENT_OPENAI_GPT_6_SOL,
-    AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
+    AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC, AI_AGENT_OPENAI_GPT_6_LUNA,
+    AI_AGENT_OPENAI_GPT_6_SOL, AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
     AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE, AI_AGENT_PROVIDER_ERROR_MAX_BYTES,
     AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS, AI_AGENT_PROVIDER_GATEWAY_PATH,
     AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE,
     AI_AGENT_PROVIDER_REQUEST_MAX_BYTES, AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC,
-    AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES,
+    AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES, AI_AGENT_PROVIDER_STREAM_MAX_BYTES,
 };
 use crate::error::AppError;
-use crate::types::{info, warn, Env};
+use crate::h;
+use crate::types::{info, warn, Env, ShortContext};
 use actix_web::http::{header, StatusCode};
 use actix_web::{post, web, HttpRequest, HttpResponse};
 use bytes::Bytes;
@@ -33,25 +34,95 @@ pub async fn chat_completions(
             "Provider capability is invalid",
         ));
     };
-    let Some(ai_engine) =
-        auth::authorize_provider_capability(&env, capability).await?
-    else {
-        return Ok(provider_error(
-            StatusCode::UNAUTHORIZED,
-            "Provider capability is invalid or expired",
-        ));
-    };
-    let body = read_bounded_payload(payload).await?;
-    let Some((body, streamed)) =
-        validate_request_body(&body, &ai_engine.model_name)
+    let body = read_bounded_payload(payload).await.c(h!())?;
+    let Some(requested_model_name) = serde_json::from_slice::<Value>(&body)
+        .ok()
+        .and_then(|body| {
+            body.get("model").and_then(Value::as_str).map(str::to_owned)
+        })
     else {
         return Ok(provider_error(
             StatusCode::BAD_REQUEST,
             "Provider request is invalid",
         ));
     };
-    proxy_provider_request(&env.ai_engine_client, ai_engine, body, streamed)
-        .await
+    let Some(authorization) = auth::authorize_provider_capability(
+        &env,
+        capability,
+        &requested_model_name,
+    )
+    .await
+    .c(h!())?
+    else {
+        return Ok(provider_error(
+            StatusCode::UNAUTHORIZED,
+            "Provider capability is invalid or expired",
+        ));
+    };
+    let Some((body, streamed)) =
+        validate_request_body(&body, &authorization.ai_engine.model_name)
+    else {
+        return Ok(provider_error(
+            StatusCode::BAD_REQUEST,
+            "Provider request is invalid",
+        ));
+    };
+    if !checkpoint_request_is_allowed(
+        &body,
+        authorization.checkpoint_max_tokens,
+    ) {
+        return Ok(provider_error(
+            StatusCode::BAD_REQUEST,
+            "Checkpoint provider request is invalid",
+        ));
+    }
+    proxy_provider_request(
+        &env.ai_engine_client,
+        authorization.ai_engine,
+        body,
+        streamed,
+    )
+    .await
+}
+
+fn checkpoint_request_is_allowed(
+    body: &Value,
+    max_tokens: Option<i32>,
+) -> bool {
+    let Some(max_tokens) = max_tokens else {
+        return true;
+    };
+    let budgets = ["max_tokens", "max_completion_tokens"]
+        .into_iter()
+        .filter_map(|key| body.get(key))
+        .collect::<Vec<_>>();
+    if budgets.is_empty()
+        || !budgets.iter().all(|budget| {
+            budget.as_i64().is_some_and(|budget| {
+                budget > 0 && budget <= i64::from(max_tokens)
+            })
+        })
+    {
+        return false;
+    }
+    for key in ["tools", "tool_choice", "functions", "function_call"] {
+        if body.get(key).is_some() {
+            return false;
+        }
+    }
+    if body.get("n").is_some_and(|count| count.as_i64() != Some(1)) {
+        return false;
+    }
+    body.get("messages")
+        .and_then(Value::as_array)
+        .is_some_and(|messages| {
+            messages.iter().all(|message| {
+                matches!(
+                    message.get("role").and_then(Value::as_str),
+                    Some("system" | "user")
+                )
+            })
+        })
 }
 
 fn bearer_capability(http_req: &HttpRequest) -> Option<&str> {
@@ -134,6 +205,21 @@ fn normalize_reasoning_effort(
     }
 }
 
+fn provider_request_timeout(
+    ai_engine: &crate::entities::ai_engine::Model,
+    streamed: bool,
+) -> Duration {
+    let seconds = if streamed
+        && ai_engine.model_name == crate::config::AI_AGENT_GLM_5_3
+        && crate::ai_engine::client::is_government_url(&ai_engine.url)
+    {
+        AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC
+    } else {
+        AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC
+    };
+    Duration::from_secs(seconds)
+}
+
 async fn proxy_provider_request(
     client: &crate::ai_engine::AiEngineClient,
     ai_engine: crate::entities::ai_engine::Model,
@@ -151,13 +237,8 @@ async fn proxy_provider_request(
         .or_else(|| body.get("max_tokens"))
         .and_then(Value::as_u64);
     let request_bytes = body.to_string().len();
-    let response = client
-        .send(
-            &ai_engine,
-            body,
-            Duration::from_secs(AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC),
-        )
-        .await;
+    let timeout = provider_request_timeout(&ai_engine, streamed);
+    let response = client.send(&ai_engine, body, timeout).await;
     let response = match response {
         Ok(response) => response,
         Err(err) => {
@@ -240,13 +321,18 @@ async fn proxy_provider_request(
         ));
     }
     let engine_id = ai_engine.id;
+    let response_limit = if streamed {
+        AI_AGENT_PROVIDER_STREAM_MAX_BYTES
+    } else {
+        AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES
+    };
     let stream = response.bytes_stream().scan(
         0_usize,
         move |response_bytes, chunk| {
             let result = match chunk {
                 Ok(chunk) => {
                     *response_bytes = response_bytes.saturating_add(chunk.len());
-                    if *response_bytes > AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES {
+                    if *response_bytes > response_limit {
                         warn!(
                             "AI agent provider gateway response limit exceeded engine_id={engine_id}"
                         );
@@ -257,9 +343,11 @@ async fn proxy_provider_request(
                         Ok(chunk)
                     }
                 }
-                Err(_) => {
+                Err(err) => {
                     warn!(
-                        "AI agent provider gateway response stream failed engine_id={engine_id}"
+                        "AI agent provider gateway response stream failed engine_id={engine_id} timeout={} duration_ms={}",
+                        err.is_timeout(),
+                        started_at.elapsed().as_millis()
                     );
                     Err(actix_web::error::ErrorBadGateway(
                         "Provider response was interrupted",
@@ -389,6 +477,152 @@ fn provider_error(status: StatusCode, message: &'static str) -> HttpResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issue_3724_checkpoint_scope_rejected_tools_and_excess_output() {
+        let body = json!({"model":"gpt-6-luna","messages":[{"role":"system","content":"Checkpoint"},{"role":"user","content":"Evidence"}],"max_tokens":8192});
+        assert!(checkpoint_request_is_allowed(&body, Some(8192)));
+        for (field, value) in [
+            ("tools", json!([])),
+            ("max_tokens", json!(8193)),
+            ("max_completion_tokens", json!(8193)),
+            ("n", json!(2)),
+        ] {
+            let mut invalid = body.clone();
+            invalid[field] = value;
+            assert!(
+                !checkpoint_request_is_allowed(&invalid, Some(8192)),
+                "{field}"
+            );
+        }
+        let mut invalid = body.clone();
+        invalid["messages"][1]["role"] = json!("assistant");
+        assert!(!checkpoint_request_is_allowed(&invalid, Some(8192)));
+        assert!(checkpoint_request_is_allowed(&invalid, None));
+    }
+
+    fn checkpoint_stream_fixture() -> Bytes {
+        let frame = format!(
+            "data: {}\n\n",
+            json!({
+                "id": "checkpoint-fixture",
+                "model": "glm-5.3",
+                "system_fingerprint": "metadata".repeat(32),
+                "choices": [{"index": 0, "delta": {"reasoning_content": "x"}, "finish_reason": null}],
+            })
+        );
+        let finish = format!(
+            "data: {}\n\ndata: [DONE]\n\n",
+            json!({"choices": [{"index": 0, "delta": {"content": "Retained evidence https://example.invalid/?m=last"}, "finish_reason": "stop"}], "usage": {"completion_tokens": 8193}})
+        );
+        Bytes::from(frame.repeat(8192) + &finish)
+    }
+
+    async fn checkpoint_fixture_reply(
+        events: web::Data<Bytes>,
+        body: web::Json<Value>,
+    ) -> HttpResponse {
+        if body["stream"].as_bool().unwrap_or(false) {
+            HttpResponse::Ok()
+                .content_type("text/event-stream")
+                .body(events.get_ref().clone())
+        } else {
+            HttpResponse::Ok()
+                .content_type("application/json")
+                .body(json!({"content": "x".repeat(AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES)}).to_string())
+        }
+    }
+
+    fn checkpoint_fixture_server(
+        events: Bytes,
+    ) -> (actix_web::dev::Server, std::net::SocketAddr) {
+        use actix_web::{App, HttpServer};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = HttpServer::new(move || {
+            App::new().app_data(web::Data::new(events.clone())).route(
+                "/v1/chat/completions",
+                web::post().to(checkpoint_fixture_reply),
+            )
+        })
+        .workers(1)
+        .listen(listener)
+        .unwrap()
+        .run();
+        (server, address)
+    }
+
+    fn checkpoint_fixture_engine(
+        address: std::net::SocketAddr,
+    ) -> crate::entities::ai_engine::Model {
+        crate::entities::ai_engine::Model {
+            id: uuid::Uuid::now_v7(),
+            name: "checkpoint fixture".into(),
+            url: format!("http://{address}/v1"),
+            token: None,
+            model_name: "glm-5.3".into(),
+            created_at: chrono::Utc::now().naive_utc(),
+            updated_at: chrono::Utc::now().naive_utc(),
+            enabled: true,
+            callsign_enabled: false,
+            ocr_enabled: false,
+            ocr_request_profile: "default".into(),
+        }
+    }
+
+    #[actix_web::test]
+    async fn issue_3724_preserved_large_reasoning_stream_and_json_limit() {
+        use actix_web::body::to_bytes;
+        let events = checkpoint_stream_fixture();
+        assert!(events.len() > AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES);
+        let (server, address) = checkpoint_fixture_server(events.clone());
+        let handle = server.handle();
+        let task = actix_web::rt::spawn(server);
+        let client = crate::ai_engine::AiEngineClient::new(
+            sea_orm::DatabaseConnection::default(),
+            None,
+        )
+        .unwrap();
+        let ai_engine = checkpoint_fixture_engine(address);
+        let response = proxy_provider_request(
+            &client,
+            ai_engine.clone(),
+            json!({"stream": true}),
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(to_bytes(response.into_body()).await.unwrap(), events);
+        let response = proxy_provider_request(
+            &client,
+            ai_engine,
+            json!({"stream": false}),
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(to_bytes(response.into_body()).await.is_err());
+        handle.stop(true).await;
+        task.await.unwrap().unwrap();
+    }
+
+    #[test]
+    fn issue_3724_allowed_long_glm_streams_within_request_deadline() {
+        let mut ai_engine =
+            checkpoint_fixture_engine("127.0.0.1:1".parse().unwrap());
+        let regular =
+            Duration::from_secs(AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC);
+        assert_eq!(provider_request_timeout(&ai_engine, true), regular);
+        ai_engine.url = crate::config::AI_GOV_UA_API_BASE.to_string();
+        assert_eq!(
+            provider_request_timeout(&ai_engine, true),
+            Duration::from_secs(crate::config::AI_AGENT_DISPATCHER_TIMEOUT_SEC)
+        );
+        assert_eq!(provider_request_timeout(&ai_engine, false), regular);
+        ai_engine.model_name =
+            crate::config::AI_AGENT_OPENAI_GPT_6_LUNA.to_string();
+        assert_eq!(provider_request_timeout(&ai_engine, true), regular);
+    }
 
     #[actix_web::test]
     async fn open_event_stream_delivers_first_frame_with_compression_enabled() {

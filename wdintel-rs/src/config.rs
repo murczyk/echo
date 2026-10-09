@@ -287,6 +287,7 @@ pub const AI_AGENT_DISPATCHER_IDENTITY_FILE: &str =
 pub const AI_AGENT_DISPATCHER_KNOWN_HOSTS_FILE: &str =
     "/etc/echo/ai-agent/known_hosts";
 pub const AI_AGENT_DISPATCHER_TIMEOUT_SEC: u64 = 10 * 60;
+pub const AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC: u64 = 30 * 60;
 pub const AI_AGENT_DISPATCHER_CONTROL_TIMEOUT_SEC: u64 = 30;
 pub const AI_AGENT_DISPATCHER_MAX_FRAME_BYTES: usize = 1024 * 1024;
 pub const AI_AGENT_DISPATCHER_CONTROL_MAX_FRAMES: usize = 32;
@@ -302,9 +303,12 @@ pub const AI_AGENT_PROVIDER_CAPABILITY_CALLS_REDIS_PREFIX: &str =
 pub const AI_AGENT_PROVIDER_CAPABILITY_CORRELATION_REDIS_PREFIX: &str =
     "ai-agent:provider-capability-correlation:";
 pub const AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC: u64 = 11 * 60;
+pub const AI_AGENT_GLM_5_3_PROVIDER_CAPABILITY_TTL_SEC: u64 =
+    AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC + 60;
 pub const AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT: i64 = 256;
 pub const AI_AGENT_PROVIDER_REQUEST_MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const AI_AGENT_PROVIDER_STREAM_MAX_BYTES: usize = 16 * 1024 * 1024;
 pub const AI_AGENT_PROVIDER_ERROR_MAX_BYTES: usize = 64 * 1024;
 pub const AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS: usize = 4 * 1024;
 pub const AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE: &str =
@@ -312,6 +316,8 @@ pub const AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE: &str =
 pub const AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE: &str =
     "Provider output token limit reached";
 pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
+pub const AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC: u64 =
+    AI_AGENT_DISPATCHER_TIMEOUT_SEC;
 pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";
 pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
@@ -319,7 +325,8 @@ pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
 pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
 pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.09.1";
+pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.09.13";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;

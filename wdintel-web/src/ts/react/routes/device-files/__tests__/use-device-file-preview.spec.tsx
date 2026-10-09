@@ -135,6 +135,7 @@ describe('device file preview access', () => {
   );
 
   it('times out a pending initial HEAD and recovers through a fresh Retry', async () => {
+    await import('../../shared/message-card/renderers/DocumentFilePreview');
     vi.useFakeTimers();
     let pendingSignal: AbortSignal;
     fetchMock

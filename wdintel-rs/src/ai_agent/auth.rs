@@ -59,6 +59,21 @@ struct ProviderCapabilityGrant {
     correlation_id: Uuid,
     ai_engine_id: Uuid,
     model_name: String,
+    #[serde(default)]
+    checkpoint: Option<CheckpointProviderGrant>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckpointProviderGrant {
+    pub ai_engine_id: Uuid,
+    pub model_name: String,
+    pub max_output_tokens: i32,
+}
+
+pub struct AuthorizedProvider {
+    pub ai_engine: ai_engine::Model,
+    pub checkpoint_max_tokens: Option<i32>,
 }
 
 pub async fn issue_bootstrap(
@@ -108,58 +123,72 @@ pub async fn issue_provider_capability(
     correlation_id: Uuid,
     ai_engine_id: Uuid,
     model_name: String,
+    checkpoint: Option<CheckpointProviderGrant>,
 ) -> Result<String, AppError> {
     let mut random = [0_u8; 32];
     rand::rng().fill(&mut random);
     let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(random);
     let digest = sha256::digest(token.as_bytes());
+    let ttl = provider_capability_ttl(&model_name);
     let grant = serde_json::to_string(&ProviderCapabilityGrant {
         login_id,
         request_id,
         correlation_id,
         ai_engine_id,
         model_name,
+        checkpoint,
     })
     .c(h!())?;
     let mut redis = env.redis.clone();
     let mut pipe = redis::pipe();
     pipe.atomic();
-    pipe.set_ex(
-        provider_capability_key(&digest),
-        grant,
-        AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC,
-    )
-    .ignore()
-    .set_ex(
-        provider_capability_correlation_key(correlation_id),
-        digest,
-        AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC,
-    )
-    .ignore();
+    pipe.set_ex(provider_capability_key(&digest), grant, ttl)
+        .ignore()
+        .set_ex(
+            provider_capability_correlation_key(correlation_id),
+            digest,
+            ttl,
+        )
+        .ignore();
     pipe.query_async::<()>(&mut redis).await.c(h!())?;
     Ok(token)
+}
+
+fn provider_capability_ttl(model_name: &str) -> u64 {
+    if model_name == crate::config::AI_AGENT_GLM_5_3 {
+        crate::config::AI_AGENT_GLM_5_3_PROVIDER_CAPABILITY_TTL_SEC
+    } else {
+        AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC
+    }
+}
+
+async fn read_provider_capability(
+    env: &Env,
+    digest: &str,
+) -> anyhow::Result<(Option<String>, i64)> {
+    redis::Script::new(
+        r#"
+local value = redis.call('GET', KEYS[1])
+if not value then return {false, 0} end
+local calls = redis.call('INCR', KEYS[2])
+if calls == 1 then redis.call('PEXPIRE', KEYS[2], math.max(1, redis.call('PTTL', KEYS[1]))) end
+return {value, calls}
+        "#,
+    )
+    .key(provider_capability_key(digest))
+    .key(provider_capability_calls_key(digest))
+    .invoke_async(&mut env.redis.clone())
+    .await
+    .c(h!())
 }
 
 pub async fn authorize_provider_capability(
     env: &Env,
     token: &str,
-) -> Result<Option<ai_engine::Model>, AppError> {
+    requested_model_name: &str,
+) -> Result<Option<AuthorizedProvider>, AppError> {
     let digest = sha256::digest(token.as_bytes());
-    let (raw, calls): (Option<String>, i64) = redis::Script::new(
-        r#"
-local value = redis.call('GET', KEYS[1])
-if not value then return {false, 0} end
-local calls = redis.call('INCR', KEYS[2])
-if calls == 1 then redis.call('EXPIRE', KEYS[2], ARGV[1]) end
-return {value, calls}
-        "#,
-    )
-    .key(provider_capability_key(&digest))
-    .key(provider_capability_calls_key(&digest))
-    .arg(AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC)
-    .invoke_async(&mut env.redis.clone())
-    .await
-    .c(h!())?;
+    let (raw, calls) = read_provider_capability(env, &digest).await.c(h!())?;
     if calls > AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT {
         return Ok(None);
     }
@@ -215,7 +244,53 @@ return {value, calls}
     {
         return Ok(None);
     }
-    Ok(Some(ai_engine))
+    Ok(
+        resolve_provider_engine(env, &grant, requested_model_name, ai_engine)
+            .await
+            .c(h!())?,
+    )
+}
+
+async fn resolve_provider_engine(
+    env: &Env,
+    grant: &ProviderCapabilityGrant,
+    requested_model_name: &str,
+    ai_engine: ai_engine::Model,
+) -> anyhow::Result<Option<AuthorizedProvider>> {
+    if requested_model_name == ai_engine.model_name {
+        return Ok(Some(AuthorizedProvider {
+            ai_engine,
+            checkpoint_max_tokens: None,
+        }));
+    }
+    if ai_engine.model_name != crate::config::AI_AGENT_GLM_5_3
+        || !crate::ai_engine::client::is_government_url(&ai_engine.url)
+    {
+        return Ok(None);
+    }
+    let Some(checkpoint) = grant.checkpoint.as_ref().filter(|checkpoint| {
+        checkpoint.model_name == requested_model_name
+            && checkpoint.model_name
+                == crate::config::AI_AGENT_OPENAI_GPT_6_LUNA
+            && checkpoint.max_output_tokens >= 256
+    }) else {
+        return Ok(None);
+    };
+    let ai_engine =
+        super::access::allowed_engine_by_id(&env.dbx, checkpoint.ai_engine_id)
+            .await
+            .c(h!())?;
+    if ai_engine.model_name != checkpoint.model_name
+        || !crate::ai_engine::client::is_government_url(&ai_engine.url)
+        || super::access::agent_provider_transport(&ai_engine)
+            != Some(super::access::AgentProviderTransport::EchoGateway)
+    {
+        return Ok(None);
+    }
+    Ok(Some(AuthorizedProvider {
+        ai_engine,
+        checkpoint_max_tokens: Some(checkpoint.max_output_tokens),
+    }))
 }
 
 #[post("/api/ai-agent/bootstrap/exchange")]
@@ -655,6 +730,63 @@ mod bootstrap_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issue_3724_scoped_capability_lifetime_to_glm_deadline() {
+        assert_eq!(
+            provider_capability_ttl(crate::config::AI_AGENT_GLM_5_3),
+            crate::config::AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC + 60
+        );
+        assert_eq!(
+            provider_capability_ttl(crate::config::AI_AGENT_OPENAI_GPT_6_LUNA),
+            AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC
+        );
+    }
+
+    #[actix_web::test]
+    #[serial_test::serial]
+    async fn issue_3724_kept_provider_call_counter_until_grant_expiry() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let digest = sha256::digest(Uuid::now_v7().to_string().as_bytes());
+        let grant_key = provider_capability_key(&digest);
+        let calls_key = provider_capability_calls_key(&digest);
+        let mut redis = env.redis.clone();
+        redis
+            .set_ex::<_, _, ()>(
+                &grant_key,
+                "fixture",
+                provider_capability_ttl(crate::config::AI_AGENT_GLM_5_3),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            read_provider_capability(&env, &digest).await.unwrap(),
+            (Some("fixture".to_string()), 1)
+        );
+        let (grant_ttl, calls_ttl): (i64, i64) = redis::pipe()
+            .pttl(&grant_key)
+            .pttl(&calls_key)
+            .query_async(&mut redis)
+            .await
+            .unwrap();
+        assert!(
+            calls_ttl > (AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC * 1000) as i64
+        );
+        assert!((grant_ttl - calls_ttl).abs() < 100);
+        redis
+            .incr::<_, _, i64>(
+                &calls_key,
+                AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT - 1,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            read_provider_capability(&env, &digest).await.unwrap().1,
+            AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT + 1
+        );
+        redis.del::<_, ()>(&[grant_key, calls_key]).await.unwrap();
+    }
 
     #[test]
     fn bootstrap_storage_never_contains_plain_token_in_key() {
