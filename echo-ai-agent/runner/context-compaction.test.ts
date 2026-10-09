@@ -108,7 +108,7 @@ async function fixture(
             ? ""
             : checkpoint === "unchanged"
               ? "Non-reducing checkpoint. ".repeat(30_000)
-              : `Original request preserved. Fixed day: 2026-10-08/2026-10-09. Alpha received documents, source ${firstCitation}. Continue the cursor from the retained latest page; coverage remains incomplete.`;
+              : `Original request preserved. Fixed day: 2026-10-08/2026-10-09. Alpha received documents, source ${firstCitation}. Continue nextCursor=${pagesRead * 20}; coverage remains incomplete.`;
         delta = { role: "assistant", content };
         if (checkpoint === "reasoning")
           delta.reasoning_content = "Evidence checkpoint reasoning";
@@ -117,14 +117,22 @@ async function fixture(
           (message: any) => message.role === "tool",
         );
         if (pagesRead > 0) {
-          assert.ok(
-            tools.length > 0,
-            "latest tool-call/result batch survives compaction",
-          );
-          assert.equal(
-            JSON.parse(tools.at(-1).content).nextCursor,
-            pagesRead * 20,
-          );
+          if (checkpoint === "retained-batch" && tools.length === 0)
+            assert.ok(
+              JSON.stringify(body.messages).includes(
+                `nextCursor=${pagesRead * 20}`,
+              ),
+            );
+          else {
+            assert.ok(
+              tools.length > 0,
+              "latest tool-call/result batch survives compaction",
+            );
+            assert.equal(
+              JSON.parse(tools.at(-1).content).nextCursor,
+              pagesRead * 20,
+            );
+          }
         }
         delta = {
           role: "assistant",
@@ -300,7 +308,9 @@ async function fixture(
     noPromptTemplates: true,
     noThemes: true,
     noContextFiles: true,
-    systemPrompt: "Evidence report fixture. ".repeat(800),
+    systemPrompt: "Evidence report fixture. ".repeat(
+      checkpoint === "retained-batch" ? 6_000 : 800,
+    ),
   });
   await resourceLoader.reload();
   const compact = createToolResponseCompactor();
@@ -471,6 +481,34 @@ for (const [pages, batchWidth] of [
     }
   });
 }
+
+test("#3724 checkpointed a large retained batch after a non-reducing prefix", async () => {
+  const value = await fixture(4, "retained-batch", false, 2, {
+    maxTokens: 8_192,
+    reserveTokens: 16_384,
+    modelName: "checkpoint",
+  });
+  try {
+    await value.session.prompt(value.prompt);
+    assert.ifError(value.contextFailure());
+    validateFinalAssistantMessage(value.session.messages);
+    assert.deepEqual(value.cursors, [0, 20, 40, 60]);
+    assert.ok(value.checkpointCalls() >= 4);
+    assert.ok(value.resetCalls() >= 2);
+    assert.equal(
+      value.session.sessionManager
+        .getEntries()
+        .filter(
+          (entry: any) =>
+            entry.type === "message" && entry.message.role === "toolResult",
+        ).length,
+      4,
+    );
+    assert.deepEqual(value.errors, []);
+  } finally {
+    await value.close();
+  }
+});
 
 test("#3724 continued pagination and follow-ups with a separate checkpoint engine", async () => {
   const value = await fixture(14, "stop", false, 2, {

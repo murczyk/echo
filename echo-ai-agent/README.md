@@ -290,6 +290,8 @@ assistant messages into an in-memory Pi session. Echo supplies each provider's
 context before generation and between complete tool rounds, accounting for the
 system prompt, tool schemas and provider output allowance. Checkpoints preserve
 evidence, citations and pagination; empty or truncated checkpoints are rejected.
+A non-reducing prefix checkpoint can fall back once to all completed evidence,
+including the latest tool batch, within the same input and output guards.
 An optional gateway checkpoint engine keeps the primary report engine unchanged;
 both use the same request-scoped capability.
 With this engine, an output-limit failure triggers one fresh evidence checkpoint

@@ -200,7 +200,13 @@ async function compactOnce(
   let cut = checkpointCut(entries, settings.compactionKeepRecentTokens);
   const tokensBefore = selectedEngine.contextWindow - available(context);
   const checkpointTokens = settings.checkpointMaxTokens ?? settings.maxTokens;
-  for (let attempt = 0; attempt < 2 && cut > 0; attempt += 1) {
+  let retryAllEvidence = false;
+  for (
+    let attempt = 0;
+    (attempt < 2 || retryAllEvidence) && cut > 0;
+    attempt += 1
+  ) {
+    retryAllEvidence = false;
     signal?.throwIfAborted();
     const summaryContext = checkpointContext(entries.slice(0, cut), settings);
     if (
@@ -239,11 +245,17 @@ async function compactOnce(
       entryMessages(entries.slice(cut)),
     );
     const next = { ...context, messages: [...messages, ...pending] };
-    if (available(next) <= available(context))
+    if (available(next) <= available(context)) {
+      if (cut < entries.length) {
+        cut = entries.length;
+        retryAllEvidence = true;
+        continue;
+      }
       throw new Error("context compaction did not reduce the request");
+    }
     session.sessionManager.appendCompaction(
       summary,
-      entries[cut].id,
+      entries[cut]?.id ?? "",
       tokensBefore,
       undefined,
       true,
