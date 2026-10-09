@@ -122,6 +122,25 @@ suite =
                                         Expect.fail "current generation count was not applied"
                             ]
                             ()
+        , test "#3598 omits network counts when networks are hidden" <|
+            \_ ->
+                withContext <|
+                    \shared route initial ->
+                        let
+                            dated =
+                                withDateRange 0 1000 initial
+
+                            ( hidden, _ ) =
+                                RerAnalysis.update user shared route Refresh { dated | hideNetworks = True }
+
+                            ( visible, _ ) =
+                                RerAnalysis.update user shared route Refresh dated
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal 10 hidden.statsCountRemaining
+                            , \_ -> Expect.equal 11 visible.statsCountRemaining
+                            ]
+                            ()
         , test "#3001 ignores a matching generation from another request scope" <|
             \_ ->
                 withContext <|

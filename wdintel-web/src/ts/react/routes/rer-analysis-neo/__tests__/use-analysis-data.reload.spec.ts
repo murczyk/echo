@@ -370,7 +370,10 @@ describe('reloadAnalysisData', () => {
       [1, { networkIds: [] }],
     ]);
     expect(messagesLoadingTransitions).toContain(false);
-    await vi.waitFor(() => expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(10));
+    await vi.waitFor(() => expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(9));
+    expect(mocks.fetchAnalysisStatsCount.mock.calls.map(([dimension]) => dimension)).not.toContain(
+      'networks',
+    );
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(
       buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null),
     );
@@ -380,7 +383,7 @@ describe('reloadAnalysisData', () => {
     await reloadPromise;
     await flushPromises();
 
-    expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(10);
+    expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(9);
     expect(invalidateCorrelatedFreqsCache).toHaveBeenCalledTimes(1);
   });
   it('#3001 applies fast counters independently and drops a late counter after cancellation', async () => {
@@ -590,6 +593,9 @@ describe('reloadAnalysisData', () => {
     }
 
     expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(10);
+    expect(mocks.fetchAnalysisStatsCount.mock.calls.map(([dimension]) => dimension)).toContain(
+      'networks',
+    );
     expect(mocks.fetchAnalysisUnitMatchStatsCount).toHaveBeenCalledTimes(1);
     expect(maxActiveRequests).toBe(4);
     expect(counts?.groupsCount).toBe(1);
@@ -631,6 +637,7 @@ describe('reloadAnalysisData', () => {
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
+      hideNetworks: true,
       invalidateCorrelatedFreqsCache: vi.fn(),
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
@@ -738,6 +745,10 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchAnalysisCallsigns).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisCallsignInfos).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisFreqs).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(18));
+    expect(mocks.fetchAnalysisStatsCount.mock.calls.map(([dimension]) => dimension)).not.toContain(
+      'networks',
+    );
     expect(setMessages).toHaveBeenLastCalledWith([
       [22, { networkIds: [] }],
       [21, { networkIds: [] }],

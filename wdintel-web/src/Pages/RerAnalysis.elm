@@ -790,8 +790,8 @@ allAnalysisCountRequests =
     [ MessageStatsCountRequest, UnitMatchStatsCountRequest ] ++ analysisStatsCountRequests
 
 
-analysisCountRequests : B.AnalysisStatsReq -> List StatsCountRequest
-analysisCountRequests req =
+analysisCountRequests : Bool -> B.AnalysisStatsReq -> List StatsCountRequest
+analysisCountRequests hideNetworks req =
     [ MessageStatsCountRequest ]
         ++ (if hasSelectedAnalysisUnits req then
                 [ UnitMatchStatsCountRequest ]
@@ -799,7 +799,11 @@ analysisCountRequests req =
             else
                 []
            )
-        ++ analysisStatsCountRequests
+        ++ List.filter
+            (\request ->
+                not hideNetworks || request /= StatsCountFieldRequest NetworksCountField
+            )
+            analysisStatsCountRequests
 
 
 analysisCountRequestEffect : Int -> B.AnalysisStatsReq -> StatsCountRequest -> Effect Msg
@@ -873,7 +877,7 @@ startAnalysisCountStats req model =
             model.statsCountGeneration + 1
 
         requests =
-            analysisCountRequests req
+            analysisCountRequests model.hideNetworks req
 
         activeRequests =
             List.take analysisCountMaxConcurrent requests

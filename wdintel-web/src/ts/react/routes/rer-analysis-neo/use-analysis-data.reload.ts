@@ -699,6 +699,7 @@ type AnalysisCountsLoad = {
 export function startAnalysisCountsLoad(
   req: AnalysisStatsReq,
   context: {
+    hideNetworks?: boolean;
     isStale: () => boolean;
     onError: (message: string) => void;
     onUnauthorized: (error: unknown) => boolean;
@@ -760,7 +761,9 @@ export function startAnalysisCountsLoad(
     applyPatch({ unitsExactMatchesCount: 0, unitsNonExactMatchesCount: 0 });
   }
   requests.push(
-    ...ANALYSIS_COUNT_FIELDS.map(
+    ...ANALYSIS_COUNT_FIELDS.filter(
+      ([dimension]) => !context.hideNetworks || dimension !== 'networks',
+    ).map(
       ([dimension, field]) =>
         () =>
           load(
@@ -932,6 +935,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       }
 
       activeCountsLoad = startAnalysisCountsLoad(analysisReq, {
+        hideNetworks: params.hideNetworks,
         isStale: isStaleReload,
         onError: params.onError,
         onUnauthorized: params.onUnauthorized,
@@ -1073,6 +1077,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             resolvedFreqsRsp = rebuiltFreqsRsp;
             activeCountsLoad?.abort();
             activeCountsLoad = startAnalysisCountsLoad(rebuiltAnalysisReq, {
+              hideNetworks: params.hideNetworks,
               isStale: isStaleReload,
               onError: params.onError,
               onUnauthorized: params.onUnauthorized,
