@@ -14,6 +14,7 @@ struct TrieNode<D> {
 #[derive(Default, Debug)]
 pub struct Trie<D> {
     root: TrieNode<D>,
+    max_word_count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -27,10 +28,13 @@ impl<D: Default + Clone> Trie<D> {
     pub fn new() -> Self {
         Trie {
             root: TrieNode::default(),
+            max_word_count: 0,
         }
     }
 
     pub fn insert(&mut self, word: &str, data: D) {
+        self.max_word_count =
+            self.max_word_count.max(word.split_whitespace().count());
         let mut current_node = &mut self.root;
 
         for c in word.chars() {
@@ -38,6 +42,10 @@ impl<D: Default + Clone> Trie<D> {
         }
         current_node.is_end_of_word = true;
         current_node.data = data;
+    }
+
+    pub fn max_word_count(&self) -> usize {
+        self.max_word_count
     }
 
     // max_distance arg is Levenshtein distance, if 0 - performs exact search
@@ -55,6 +63,19 @@ impl<D: Default + Clone> Trie<D> {
             data: vec![],
         };
         let not_found = result.clone();
+        if max_distance == 0 {
+            let mut node = &self.root;
+            for symbol in word.chars() {
+                let Some(child) = node.children.get(&symbol) else {
+                    return not_found;
+                };
+                node = child;
+            }
+            if node.is_end_of_word {
+                result.data.push((word, node.data.clone()));
+            }
+            return result;
+        }
         Self::try_find_match(
             &self.root,
             &mut word,

@@ -509,7 +509,7 @@ fn capture_unit_and_locality(
         '_if: {
             lazy_static! {
                 static ref RE: Regex = Regex::new(
-                    r#"(?P<unit>.*)(?P<locality> [А-ЯЄІЇ'\s]+-[А-ЯЄІЇ'\s]+)"#
+                    r#"(?P<unit>.*?)(?P<locality> [А-ЯЄІЇ'\s]+(?:-[А-ЯЄІЇ'\s]+)+)"#
                 )
                 .unwrap();
             }
@@ -1019,6 +1019,59 @@ mod tests {
             )
             .unwrap(),
         ))
+    }
+
+    #[test]
+    fn settlement_header_regressions_3383() {
+        #[derive(Deserialize)]
+        struct HeaderFixture {
+            case: usize,
+            message: String,
+            expected_rust_settlements: Vec<String>,
+        }
+        #[derive(Deserialize)]
+        struct Baseline {
+            default_settlements_sources: Vec<String>,
+        }
+        let fixtures: Vec<HeaderFixture> = serde_json::from_str(include_str!(
+            "../../../ai-eval/2026-10-09-settlement-regressions/messages.json"
+        ))
+        .unwrap();
+        let baseline: Baseline = serde_json::from_str(include_str!(
+            "../../../ai-eval/2026-10-09-settlement-regressions/baseline.json"
+        ))
+        .unwrap();
+        let paths = crate::config::get_settlement_paths(Some(
+            baseline.default_settlements_sources.join(","),
+        ))
+        .unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(paths, Mode::Test)
+                .unwrap(),
+        ));
+        let mut failures = vec![];
+        for fixture in fixtures {
+            let parsed =
+                extract_unit(settlements.clone(), &fixture.message, vec![])
+                    .unwrap();
+            let mut actual = parsed
+                .locality_v2
+                .unwrap_or_default()
+                .into_iter()
+                .map(|settlement| settlement.name)
+                .collect::<Vec<_>>();
+            actual.sort();
+            if actual != fixture.expected_rust_settlements {
+                failures.push(format!(
+                    "case {}: expected {:?}, got {:?}, locality {:?}",
+                    fixture.case,
+                    fixture.expected_rust_settlements,
+                    actual,
+                    parsed.locality
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
     #[test]
@@ -1853,7 +1906,7 @@ mod tests {
             "Цаповка, Бєлгородська обл.)".to_string()
         );
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
-        assert_eq!(locality_v2_txt, vec!["БЄЛГОРОДКА", "ХАПОВКА"]);
+        assert!(locality_v2_txt.is_empty());
         assert_eq!(
             Vec::<String>::new(),
             parse_library_unit(&String::from(body))

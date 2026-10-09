@@ -2887,6 +2887,142 @@ values (
 
     #[tokio::test]
     #[serial_test::serial]
+    async fn resolves_renamed_settlements_and_keeps_forests_unresolved_3383() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let paths = crate::config::get_settlement_paths(Some(
+            "kharkivska_oblast".to_string(),
+        ))
+        .unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(
+                paths,
+                crate::types::Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let names = [
+            "Анискине",
+            "Анищине",
+            "Івашкине",
+            "Іващине",
+            "Рибалкине",
+            "Рибалчине",
+            "Рибалкіне",
+            "Верхнє Горіхове",
+            "Заливний",
+        ];
+        let candidates = load_settlement_candidates(
+            &txn,
+            settlements,
+            &names.map(str::to_string),
+            None,
+        )
+        .await
+        .unwrap();
+        for (index, legacy_id) in
+            [79948, 79948, 98911, 98911, 65447, 65447, 65447]
+                .into_iter()
+                .enumerate()
+        {
+            assert_eq!(candidates[index].len(), 1, "{}", names[index]);
+            assert_eq!(
+                candidates[index][0].settlement_id, legacy_id,
+                "{}",
+                names[index]
+            );
+        }
+        assert!(candidates[7].is_empty());
+        assert!(candidates[8].is_empty());
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn renamed_settlement_migration_preserves_existing_rows_3383() {
+        use echo_migration::MigratorTrait;
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let legacy_ids = [79948, 98911, 65447];
+        let before = settlement::Entity::find()
+            .filter(settlement::Column::Id.is_in(legacy_ids))
+            .order_by_asc(settlement::Column::Id)
+            .all(&txn)
+            .await
+            .unwrap();
+        txn.execute_unprepared(
+            r#"
+            delete from settlement where id in (2000000001, 2000000002, 2000000003);
+            insert into settlement (id, kind, name, territorial_community, district, region, lon, lat, tag)
+            select 3383001, kind, 'Анищине', territorial_community, district, region, lon, lat, tag
+            from settlement where id = 79948;
+            "#,
+        ).await.unwrap();
+        let migrations = echo_migration::Migrator::migrations();
+        let migration = migrations
+            .iter()
+            .find(|migration| {
+                migration.name() == "m20261009_144937_settlement_renamed_names"
+            })
+            .unwrap();
+        let manager = echo_migration::SchemaManager::new(&txn);
+        migration.up(&manager).await.unwrap();
+        migration.up(&manager).await.unwrap();
+        migration.down(&manager).await.unwrap();
+        let renamed = settlement::Entity::find()
+            .filter(settlement::Column::Name.is_in([
+                "Анищине",
+                "Іващине",
+                "Рибалчине",
+            ]))
+            .order_by_asc(settlement::Column::Id)
+            .all(&txn)
+            .await
+            .unwrap();
+        assert_eq!(
+            renamed
+                .iter()
+                .map(|settlement| settlement.id)
+                .collect::<Vec<_>>(),
+            vec![3383001, 2000000002, 2000000003]
+        );
+        let after = settlement::Entity::find()
+            .filter(settlement::Column::Id.is_in(legacy_ids))
+            .order_by_asc(settlement::Column::Id)
+            .all(&txn)
+            .await
+            .unwrap();
+        assert_eq!(before, after);
+        for (legacy_id, name) in
+            [(79948, "Анищине"), (98911, "Іващине"), (65447, "Рибалчине")]
+        {
+            let legacy = before
+                .iter()
+                .find(|settlement| settlement.id == legacy_id)
+                .unwrap();
+            let mut renamed = renamed
+                .iter()
+                .find(|settlement| settlement.name == name)
+                .unwrap()
+                .clone();
+            renamed.id = legacy.id;
+            renamed.name = legacy.name.clone();
+            assert_eq!(&renamed, legacy);
+        }
+        let collision = txn.begin().await.unwrap();
+        collision.execute_unprepared("delete from settlement where id = 2000000002; insert into settlement (id, kind, name) values (2000000002, 'Village', '#3383 ID COLLISION');").await.unwrap();
+        assert!(migration
+            .up(&echo_migration::SchemaManager::new(&collision))
+            .await
+            .is_err());
+        collision.rollback().await.unwrap();
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
     async fn maps_configured_aliases_to_canonical_database_settlements() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();

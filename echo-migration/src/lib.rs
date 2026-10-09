@@ -472,6 +472,7 @@ mod m20261008_113430_sigint_unit_orbit_combat_type;
 mod m20261009_074414_system_settings_hide_networks;
 mod m20261009_100730_rer_csv_body_index;
 mod m20261009_100730_rer_csv_processing;
+mod m20261009_144937_settlement_renamed_names;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1109,6 +1110,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261009_201221_ai_agent_reasoning_policy::Migration),
             Box::new(m20261009_100730_rer_csv_body_index::Migration),
             Box::new(m20261009_100730_rer_csv_processing::Migration),
+            Box::new(m20261009_144937_settlement_renamed_names::Migration),
         ]
     }
 }

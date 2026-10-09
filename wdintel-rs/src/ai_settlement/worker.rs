@@ -683,7 +683,12 @@ mod tests {
             message.id,
             "message body",
             &config,
-            vec!["existing mixed".to_string(), "THIRD".to_string()],
+            vec![
+                "existing mixed".to_string(),
+                "THIRD".to_string(),
+                "ВЕРХНЄ ГОРІХОВЕ".to_string(),
+                "ЗАЛИВНИЙ".to_string(),
+            ],
         )
         .await
         .unwrap());
@@ -695,7 +700,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             inbox_item.location_v2.as_deref(),
-            Some("|Existing Mixed|SECOND|THIRD|")
+            Some("|Existing Mixed|SECOND|THIRD|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|")
         );
         let links = sigint_inbox_item_settlement::Entity::find()
             .filter(sigint_inbox_item_settlement::Column::ItemId.eq(message.id))
@@ -705,11 +710,27 @@ mod tests {
             .unwrap();
         assert_eq!(
             links
-                .into_iter()
-                .map(|link| link.settlement_text)
+                .iter()
+                .map(|link| link.settlement_text.as_str())
                 .collect::<Vec<_>>(),
-            vec!["Existing Mixed", "SECOND", "THIRD"]
+            vec![
+                "Existing Mixed",
+                "SECOND",
+                "THIRD",
+                "ВЕРХНЄ ГОРІХОВЕ",
+                "ЗАЛИВНИЙ"
+            ]
         );
+        assert!(links
+            .iter()
+            .filter(|link| {
+                matches!(
+                    link.settlement_text.as_str(),
+                    "ВЕРХНЄ ГОРІХОВЕ" | "ЗАЛИВНИЙ"
+                )
+            })
+            .all(|link| link.settlement_id.is_none()
+                && link.is_undefined.is_none()));
         assert!(ai_settlement_worker_job::Entity::find_by_id(message.id)
             .one(&env.dbx)
             .await

@@ -304,12 +304,16 @@ pub(crate) fn find_settlements_by_name_scope(
         .c(h!())?;
     let sources = select_settlements_sources(&settlements_lock, m_aor_ids);
     let mut matches: Vec<SettlementDetails> = Vec::new();
-    let query = query.to_uppercase();
+    let query = query.to_uppercase().replace('’', "'");
     for source in sources {
-        let (_, _, _, settlements, _) = source;
-        for s in settlements.values() {
-            if s.name.contains(&query) {
-                matches.push(s.clone());
+        let (_, _, _, _, settlements_by_name) = source;
+        for (name, settlements) in settlements_by_name {
+            if name.contains(&query)
+                || (query.contains('\'')
+                    && name.contains('’')
+                    && name.replace('’', "'").contains(&query))
+            {
+                matches.extend(settlements.iter().cloned());
             }
         }
     }
@@ -409,16 +413,39 @@ pub fn parse_location_with_aor(
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
     let settlements_data = select_settlements_data(&settlements_lock, m_aor_id);
+    let (location, allow_fuzzy) =
+        normalize_location_context(&location, settlements_data);
+    let result = location
+        .split(['(', ')', ',', '/', ';', '\n', '–', '—'])
+        .flat_map(|phrase| {
+            find_matching_settlements(
+                normalize_location_phrase(phrase, &settlements_data.2),
+                settlements_data,
+                allow_fuzzy,
+            )
+        })
+        .collect();
+    Ok(deduplicate_settlement_names(result))
+}
+
+fn normalize_location_context(
+    location: &str,
+    settlements_data: &SettlementsData,
+) -> (String, bool) {
     lazy_static! {
         static ref JUNK_CHAR_RE: Regex =
-            Regex::new(r#"[ \(\)\.\-\,\/\:";!\?\*\%\$@0-9]"#).unwrap();
+            Regex::new(r#"[ \.\:"!\?\*\%\$@0-9]"#).unwrap();
         static ref JUNK_WORD_RE: Regex = Regex::new(
-            &r#"\W($s1)"#.replace("$s1", &collect_blacklist().join("|"))
+            &r#"\b($s1)\b"#.replace("$s1", &collect_blacklist().join("|"))
         )
         .unwrap();
+        static ref ADMIN_AREA_RE: Regex =
+            Regex::new(r#"\b([\p{L}]+)\.?\s+(ОБЛ(?:АСТЬ)?|РАЙОН|Р-Н|РН)\b"#)
+                .unwrap();
     }
     let location = location
         .to_uppercase()
+        .replace('’', "'")
         .replace("Ы", "І")
         .replace("ОБЛ.", "ОБЛАСТЬ")
         .replace("РАЙ.", "РАЙОН")
@@ -426,22 +453,68 @@ pub fn parse_location_with_aor(
         .replace("Р-Н ", "РАЙОН ")
         .replace("Н.П.", " ")
         .replace("ОБ-ТЬ", "ОБЛАСТЬ");
+    let allow_fuzzy = ADMIN_AREA_RE.captures_iter(&location).all(|captures| {
+        captures[2].starts_with("Р")
+            || settlements_data.0.iter().any(|region| {
+                let region = region
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .to_uppercase();
+                levenshtein::levenshtein(&captures[1], &region)
+                    <= crate::config::LOCATION_REGION_MAX_DISTANCE
+            })
+    });
+    let location =
+        ADMIN_AREA_RE.replace_all(&location, |captures: &regex::Captures| {
+            if captures[2].starts_with("Р")
+                && is_standard_location_context_word(&captures[1])
+            {
+                captures[0].to_string()
+            } else {
+                " ".to_string()
+            }
+        });
+    let location = remove_named_forests(&location);
     let location = JUNK_CHAR_RE.replace_all(&location, " ").to_string();
     let location = JUNK_WORD_RE.replace_all(&location, " ").to_string();
-    let location = trim(location);
-    let location = try_process_nearest_location(location);
-    let words = location
-        .split_whitespace()
-        .map(|x| x.to_string())
-        .collect_vec();
-    let result = find_matching_settlements(words, settlements_data).c(h!())?;
-    if result.is_empty() {
-        return Ok(vec![]);
+    (location, allow_fuzzy)
+}
+
+fn remove_named_forests(location: &str) -> String {
+    lazy_static! {
+        static ref NAMED_FOREST_RE: Regex =
+            Regex::new(r#"\b(?:ЛІС|ЛЕС)\s+[^,;()/\n–—-]+"#).unwrap();
     }
+    let location =
+        NAMED_FOREST_RE.replace_all(location, |captures: &regex::Captures| {
+            let next =
+                captures[0].split_whitespace().nth(1).unwrap_or_default();
+            if crate::config::LOCATION_FOREST_CONTEXT_WORDS.contains(&next) {
+                captures[0].to_string()
+            } else {
+                " ".to_string()
+            }
+        });
+    location.to_string()
+}
 
-    let result = deduplicate_settlement_names(result);
-
-    Ok(result)
+fn normalize_location_phrase(
+    phrase: &str,
+    trie: &Trie<SettlementDetails>,
+) -> Vec<String> {
+    let phrase = phrase
+        .split_whitespace()
+        .map(|word| {
+            if trie.find_matches(word, None).data.is_empty() {
+                word.replace('-', " ")
+            } else {
+                word.to_string()
+            }
+        })
+        .join(" ");
+    let phrase = try_process_nearest_location(trim(phrase));
+    phrase.split_whitespace().map(str::to_string).collect_vec()
 }
 
 fn try_process_nearest_location(location: String) -> String {
@@ -494,96 +567,75 @@ fn trim_tail(name: String) -> String {
 fn find_matching_settlements(
     words: Vec<String>,
     config: &SettlementsData,
-) -> anyhow::Result<Vec<SettlementDetails>> {
-    let (_region_names, regions, trie, _, _) = config;
-    if words.is_empty() {
-        return Ok(vec![]);
-    }
-    let mut result = BTreeMap::new();
-    let mut cache = vec![];
-    for word in words.clone() {
-        let res = match_settlement(&word, trie);
-        cache.push((word, res));
-    }
-    let mut i = 0;
-    while i + 2 < words.len() {
-        i = handle_three_words_group(regions, trie, &mut result, &mut cache, i)
-            .c(h!())?;
-    }
-    let remainder = words.len() - i;
-    if remainder == 1 {
-        let new_data = cache.get(i).cloned().c(h!())?.to_owned().1.data;
-        for (row, coords) in new_data {
-            result.insert(row, coords);
-        }
-    } else {
-        handle_two_words_group(regions, trie, &mut result, &mut cache, i)
-            .c(h!())?;
-    }
-    let mut result = result.into_iter().collect_vec();
-    result.sort_by_key(|(key, _data)| key.clone());
-    let mut result_data = vec![];
-    for (_, row) in result {
-        result_data.push(row);
-    }
-    Ok(result_data)
-}
-
-fn handle_two_words_group(
-    regions: &[String],
-    trie: &Trie<SettlementDetails>,
-    result: &mut BTreeMap<String, SettlementDetails>,
-    cache: &mut [(String, trie::Result<SettlementDetails>)],
-    i: usize,
-) -> anyhow::Result<()> {
-    let (word0, res0) = cache.get(i).c(h!())?;
-    let (word1, res1) = cache.get(i + 1).c(h!())?;
-    let query = &format!("{word0} {word1}");
-    let joined_res = match_settlement(query, trie);
-    let is_region =
-        joined_res.data.iter().any(|(row, _)| regions.contains(row));
-    if is_region {
-        return Ok(());
-    }
-    let data = if joined_res.data.is_empty() {
-        [res0.data.as_slice(), res1.data.as_slice()].concat()
-    } else {
-        joined_res.data
-    };
-    for (rec, coords) in data {
-        result.insert(rec, coords);
-    }
-    Ok(())
-}
-
-fn handle_three_words_group(
-    regions: &[String],
-    trie: &Trie<SettlementDetails>,
-    result: &mut BTreeMap<String, SettlementDetails>,
-    cache: &mut [(String, trie::Result<SettlementDetails>)],
-    i: usize,
-) -> anyhow::Result<usize> {
-    let (word0, res0) = cache.get(i).c(h!())?;
-    let (word1, _) = cache.get(i + 1).c(h!())?;
-    let mut i = i + 1;
-    let joined0 = format!("{word0} {word1}");
-    let joined_res = match_settlement(&joined0, trie);
-    let data = if !joined_res.data.is_empty() {
-        i += 1;
-        let is_region =
-            joined_res.data.iter().any(|(row, _)| regions.contains(row));
-        if is_region {
-            vec![]
+    allow_fuzzy: bool,
+) -> Vec<SettlementDetails> {
+    let (_, regions, trie, _, _) = config;
+    let mut result = vec![];
+    let mut index = 0;
+    while index < words.len() {
+        let max_words = trie.max_word_count().min(words.len() - index);
+        let exact =
+            match_location_span(&words[index..], 1, max_words, trie, false);
+        let min_fuzzy_words = exact.as_ref().map_or(1, |(span, _)| span + 1);
+        let fuzzy = allow_fuzzy
+            .then(|| {
+                match_location_span(
+                    &words[index..],
+                    min_fuzzy_words,
+                    max_words,
+                    trie,
+                    true,
+                )
+            })
+            .flatten();
+        let matched = fuzzy.or(exact);
+        if let Some((span, matches)) = matched {
+            for (name, settlement) in matches {
+                if !regions.contains(&name) {
+                    result.push(settlement);
+                }
+            }
+            index += span;
         } else {
-            joined_res.data
+            index += 1;
         }
-    } else {
-        res0.data.clone()
-    };
-    for (k, v) in data {
-        result.insert(k, v);
     }
-    Ok(i)
+    result
+}
+
+fn match_location_span(
+    words: &[String],
+    min_words: usize,
+    max_words: usize,
+    trie: &Trie<SettlementDetails>,
+    fuzzy: bool,
+) -> Option<(usize, Vec<(String, SettlementDetails)>)> {
+    for span in (min_words..=max_words).rev() {
+        if fuzzy
+            && words[1..span]
+                .iter()
+                .any(|word| !trie.find_matches(word, None).data.is_empty())
+        {
+            continue;
+        }
+        let query = words[..span].join(" ");
+        let matches = if fuzzy {
+            match_settlement(&query, trie)
+        } else {
+            trie.find_matches(&query, None)
+        };
+        if !matches.data.is_empty()
+            && (!fuzzy
+                || span == 1
+                || matches
+                    .data
+                    .iter()
+                    .all(|(name, _)| name.split_whitespace().count() == span))
+        {
+            return Some((span, matches.data));
+        }
+    }
+    None
 }
 
 fn trim(string: String) -> String {
@@ -702,7 +754,13 @@ pub fn load_from_file(
                     .entry(name.clone())
                     .or_default()
                     .push(details.clone());
-                trie.insert(&name.clone(), details);
+                trie.insert(&name.replace('’', "'"), details.clone());
+                if name.contains('-') {
+                    trie.insert(
+                        &name.replace('’', "'").replace('-', " "),
+                        details,
+                    );
+                }
             }
             let region = region.to_uppercase();
             let region_trimmed = region.clone().replace("ОБЛАСТЬ", "ОБЛ");
@@ -810,17 +868,28 @@ fn match_settlement(
     trie: &Trie<SettlementDetails>,
 ) -> trie::Result<SettlementDetails> {
     let len = query.chars().count();
-    let distance = if len > 5 {
-        Some(1 + (len / 7)) // tweaked based on experiments
+    let distance = if len > crate::config::LOCATION_FUZZY_MIN_CHARS {
+        Some(1 + (len / crate::config::LOCATION_FUZZY_DISTANCE_DIVISOR))
     } else {
         None
     };
     let mut result = trie.find_matches(query, distance);
-    if result.data.len() > 3 {
-        result.data = vec![]; // invalid query, too noisy output
-    }
-    if result.data.len() > 1 {
-        result.data = vec![result.data[0].clone()] // drop alternative names to avoid junk
+    if let Some((_, first)) = result.data.first() {
+        if result
+            .data
+            .iter()
+            .any(|(_, settlement)| settlement.id != first.id)
+        {
+            result.data.clear();
+        } else {
+            result.data.sort_by(|left, right| {
+                left.1
+                    .language
+                    .cmp(&right.1.language)
+                    .then_with(|| left.0.cmp(&right.0))
+            });
+            result.data.truncate(1);
+        }
     }
     result
 }
@@ -842,7 +911,7 @@ fn collect_near() -> Vec<&'static str> {
 }
 
 fn collect_blacklist() -> Vec<&'static str> {
-    vec![
+    let mut words = vec![
         "РОЗВІДКИ",
         "РОЗВІДКА",
         "ШТУРМ",
@@ -878,7 +947,10 @@ fn collect_blacklist() -> Vec<&'static str> {
         "КРАСНОДАРСЬКИЙ",
         "БАТАРЕЯ",
         "БАТАРЄЯ",
-    ]
+    ];
+    words.extend_from_slice(crate::config::LOCATION_COUNTRY_NAMES);
+    words.extend_from_slice(crate::config::LOCATION_CONTEXT_WORDS);
+    words
 }
 
 // removes duplicate names in russian or translit if this settlement is already present in result set
@@ -1643,6 +1715,91 @@ mod tests {
     }
 
     #[test]
+    fn settlement_context_and_spellings_3383() {
+        let paths = crate::config::get_settlement_paths(Some(
+            "kharkivska_oblast,donetska_oblast,luhanska_oblast,bilhorodska_oblast_rf"
+                .to_string(),
+        ))
+        .unwrap();
+        let settlements = Arc::new(RwLock::new(
+            load_settlements_data_config(paths, Mode::Test).unwrap(),
+        ));
+        for (input, expected) in [
+            (
+                "Україна, н.п. Шев’яківка, Росія, Білорусь",
+                vec!["ШЕВ’ЯКІВКА"],
+            ),
+            ("РФ/РБ/Украина/Россия/Беларусь", vec![]),
+            ("н.п. Українка; н.п. Південне", vec!["ПІВДЕННЕ", "УКРАЇНКА"]),
+            ("південні околиці Вільча", vec!["ВІЛЬЧА"]),
+            (
+                "Кам'янка-Павлівка-Красне Перше",
+                vec!["КАМ’ЯНКА", "КРАСНЕ ПЕРШЕ", "ПАВЛІВКА"],
+            ),
+            (
+                "Сакко І Ванцетті / Красне Перше",
+                vec!["КРАСНЕ ПЕРШЕ", "САККО І ВАНЦЕТТІ"],
+            ),
+            (
+                "ліс Верхнє Горіхове-ліс Заливний; н.п. Горіхове",
+                vec!["ГОРІХОВЕ"],
+            ),
+            ("лісовий масив на захід від Вовчанська", vec!["ВОВЧАНСЬК"]),
+            (
+                "ПЕРМОМАЙСЬКИЙ/ОХРИМІВКА",
+                vec!["ОХРІМІВКА", "ПЕРВОМАЙСЬКИЙ"],
+            ),
+            (
+                "ГОПТАРОВКА, КОНДРАТОВКА, ОЗЕРКИ, Курська область",
+                vec!["ОЗЕРКИ"],
+            ),
+        ] {
+            let actual = parse_location_with_aor_id(
+                settlements.clone(),
+                input.to_string(),
+            )
+            .unwrap();
+            assert_eq!(test_settlements_array(actual), expected, "{input}");
+        }
+        for paths in [
+            vec!["settlements_json/kharkivska_oblast.json".to_string()],
+            vec![crate::config::SETTLEMENTS_LEGACY_FILE.to_string()],
+        ] {
+            let settlements = Arc::new(RwLock::new(
+                load_settlements_data_config(paths, Mode::Test).unwrap(),
+            ));
+            for name in [
+                "АНИСКИНЕ",
+                "АНИЩИНЕ",
+                "ІВАШКИНЕ",
+                "ІВАЩИНЕ",
+                "РИБАЛКИНЕ",
+                "РИБАЛЧИНЕ",
+                "РИБАЛКІНЕ",
+            ] {
+                let parsed = parse_location_with_aor_id(
+                    settlements.clone(),
+                    name.to_string(),
+                )
+                .unwrap();
+                assert_eq!(test_settlements_array(parsed), vec![name]);
+                let found = find_settlements_by_name_scope(
+                    settlements.clone(),
+                    name.to_string(),
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+                assert!(
+                    found.iter().any(|settlement| settlement.name == name),
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    #[test]
     pub fn test1() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
@@ -2106,7 +2263,7 @@ mod tests {
         ));
         let result = parse_location_with_aor_id(settlements, String::from(r#"УКХ Центр ( гсабатр гсадн 30 мсп 72 мсд 44 АК ЛВО ров (р-н Щебекіно))"#)).unwrap();
         let result = test_settlements_array(result);
-        assert_eq!(vec!["ШЕБЕКИНО"], result);
+        assert_eq!(vec!["ШЕБЕКІНЕ"], result);
     }
 
     #[test]

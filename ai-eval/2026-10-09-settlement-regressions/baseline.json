@@ -1,0 +1,15 @@
+{
+  "source": "echo-kharkiv2",
+  "captured_at": "2026-10-09",
+  "worker_engine": "glm-5.3",
+  "prompt_overridden": true,
+  "worker_enabled": true,
+  "aor_id": 2,
+  "aor_settlements_configs": [],
+  "default_settlements_sources": [
+    "kharkivska_oblast",
+    "donetska_oblast",
+    "luhanska_oblast",
+    "bilhorodska_oblast_rf"
+  ]
+}

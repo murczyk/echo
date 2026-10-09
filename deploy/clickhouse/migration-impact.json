@@ -27,6 +27,7 @@
         }
       ]
     },
+    "echo:m20261009_144937_settlement_renamed_names": { "changes": [] },
     "echo:m20261008_051638_ai_position_highlight_flags": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_backfill" },

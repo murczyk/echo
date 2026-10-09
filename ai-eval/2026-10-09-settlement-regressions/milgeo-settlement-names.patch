@@ -1,0 +1,101 @@
+diff --git a/overpass_geojson_data_gen/src/geojson_utils.rs b/overpass_geojson_data_gen/src/geojson_utils.rs
+index 973a2f3..93e887c 100644
+--- a/overpass_geojson_data_gen/src/geojson_utils.rs
++++ b/overpass_geojson_data_gen/src/geojson_utils.rs
+@@ -12,7 +12,7 @@ pub const LANGUAGE_RU: &str = "ru";
+ 
+ pub const LANGUAGE_TRANSLIT: &str = "translit";
+ 
+-#[derive(Serialize, Clone)]
++#[derive(Serialize, serde::Deserialize, Clone)]
+ pub struct SettlementDetails {
+     pub id: i32,
+     pub name: String,
+@@ -57,6 +57,20 @@ pub fn add_ukrainian_regions(
+     }
+ }
+ 
++pub fn add_settlement_aliases(result: &mut LocationResult) {
++    let aliases: BTreeMap<String, Vec<SettlementDetails>> =
++        serde_json::from_str(&read_resource("settlement_aliases.json").unwrap())
++            .unwrap();
++    for (region, aliases) in aliases {
++        for alias in aliases {
++            result
++                .entry(region.clone())
++                .or_default()
++                .insert(alias.name.clone(), alias);
++        }
++    }
++}
++
+ fn add_ua_region(
+     result: &mut LocationResult,
+     filename: &str,
+diff --git a/overpass_geojson_data_gen/src/main.rs b/overpass_geojson_data_gen/src/main.rs
+index 3f41e5e..d30faf9 100644
+--- a/overpass_geojson_data_gen/src/main.rs
++++ b/overpass_geojson_data_gen/src/main.rs
+@@ -22,6 +22,7 @@ async fn main() {
+     geojson_utils::process_region_coords(ru_coords.clone(), &mut result);
+     geojson_utils::process_region_coords(rb_coords.clone(), &mut result);
+     geojson_utils::add_ukrainian_regions(UA_FILES, &mut result);
++    geojson_utils::add_settlement_aliases(&mut result);
+ 
+     settlements::save_settlements_by_region_to_json(result);
+ 
+diff --git a/overpass_geojson_data_gen/resources/settlement_aliases.json b/overpass_geojson_data_gen/resources/settlement_aliases.json
+new file mode 100644
+index 000000000..1fe208fd9
+--- /dev/null
++++ b/overpass_geojson_data_gen/resources/settlement_aliases.json
+@@ -0,0 +1,49 @@
++{
++  "Харківська область": [
++    {
++      "coords": [
++        50.2375499,
++        37.52331
++      ],
++      "id": 7526250,
++      "language_details": null,
++      "name": "Іващине"
++    },
++    {
++      "coords": [
++        50.210949,
++        37.51968
++      ],
++      "id": 7526746,
++      "language_details": null,
++      "name": "Анищине"
++    },
++    {
++      "id": 65447,
++      "name": "Рибалкине",
++      "coords": [
++        50.378159,
++        37.234633
++      ],
++      "language_details": null
++    },
++    {
++      "id": 65447,
++      "name": "Рибалчине",
++      "coords": [
++        50.378159,
++        37.234633
++      ],
++      "language_details": null
++    },
++    {
++      "id": 65447,
++      "name": "Рибалкіне",
++      "coords": [
++        50.378159,
++        37.234633
++      ],
++      "language_details": null
++    }
++  ]
++}

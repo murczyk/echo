@@ -91,6 +91,64 @@ pub const AI_CALLSIGN_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_CALLSIGN_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-10-callsign-prompt/prompt.txt");
 pub const AI_SETTLEMENT_SETTINGS_ID: i16 = 1;
+pub const LOCATION_REGION_MAX_DISTANCE: usize = 2;
+pub const LOCATION_FUZZY_MIN_CHARS: usize = 5;
+pub const LOCATION_FUZZY_DISTANCE_DIVISOR: usize = 7;
+pub const LOCATION_FOREST_CONTEXT_WORDS: &[&str] =
+    &["НА", "ВІД", "БІЛЯ", "МАСИВ", "МАССИВ"];
+pub const LOCATION_COUNTRY_NAMES: &[&str] = &[
+    "УКРАЇНА",
+    "УКРАИНА",
+    "UKRAINE",
+    "РОСІЯ",
+    "РОССИЯ",
+    "RUSSIA",
+    "РФ",
+    "БІЛОРУСЬ",
+    "БЕЛАРУСЬ",
+    "БЕЛАРУССИЯ",
+    "BELARUS",
+    "РБ",
+];
+pub const LOCATION_CONTEXT_WORDS: &[&str] = &[
+    "УПРАВЛІННЯ",
+    "ПІДРОЗДІЛ",
+    "ПІДРОЗДІЛУ",
+    "ПІДРОЗДІЛОМ",
+    "СКЛАДУ",
+    "ВЗАЄМОДІЇ",
+    "ПОСТІВ",
+    "СПОСТЕРЕЖЕННЯ",
+    "ПОВІТРЯНИМ",
+    "ПРОСТОРОМ",
+    "ЛІСОВИЙ",
+    "ЛІСОВОГО",
+    "ЛЕСНОЙ",
+    "ЛЕСНОГО",
+    "МАСИВ",
+    "МАСИВУ",
+    "МАССИВ",
+    "МАССИВА",
+    "ПІВДЕННІ",
+    "ПІВДЕННИХ",
+    "ПІВНІЧНІ",
+    "ПІВНІЧНИХ",
+    "СХІДНІ",
+    "СХІДНИХ",
+    "ЗАХІДНІ",
+    "ЗАХІДНИХ",
+    "ЮЖНЫЕ",
+    "ЮЖНЫХ",
+    "СЕВЕРНЫЕ",
+    "СЕВЕРНЫХ",
+    "ВОСТОЧНЫЕ",
+    "ВОСТОЧНЫХ",
+    "ЗАПАДНЫЕ",
+    "ЗАПАДНЫХ",
+    "РН",
+    "НП",
+    "ЗРБАТР",
+];
 pub const AI_SETTLEMENT_PROMPT_MAX_CHARS: usize = 100_000;
 pub const AI_SETTLEMENT_MESSAGE_MAX_CHARS: usize = 100_000;
 pub const AI_SETTLEMENT_MAX_SETTLEMENTS: usize = 500;
