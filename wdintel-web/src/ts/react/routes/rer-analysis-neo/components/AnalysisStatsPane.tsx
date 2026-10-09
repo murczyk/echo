@@ -7,6 +7,7 @@ import { normalizeUnknownUnitDisplayValue } from '../../shared/analysis-unit-fil
 
 type Props = {
   groupsLoading: boolean;
+  hideNetworks: boolean;
   rightSidebarLoading: boolean;
   rightSidebarOutdated?: boolean;
   onClearFreq: () => void;
@@ -38,6 +39,7 @@ type Props = {
 
 export function AnalysisStatsPane({
   groupsLoading,
+  hideNetworks,
   onClearFreq,
   onClearGroup,
   onClearLocation,
@@ -104,17 +106,19 @@ export function AnalysisStatsPane({
           />
         ) : null}
       </Box>
-      <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCountBlock
-          title="Мережі"
-          items={topNetworks}
-          loading={rightSidebarLoading}
-          onClearSelection={onClearNetwork}
-          onItemAdd={onAddNetwork}
-          onItemToggle={onToggleNetwork}
-          selectedItemKeys={selectedNetworks}
-        />
-      </Box>
+      {!hideNetworks ? (
+        <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+          <AnalysisCountBlock
+            title="Мережі"
+            items={topNetworks}
+            loading={rightSidebarLoading}
+            onClearSelection={onClearNetwork}
+            onItemAdd={onAddNetwork}
+            onItemToggle={onToggleNetwork}
+            selectedItemKeys={selectedNetworks}
+          />
+        </Box>
+      ) : null}
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
         <AnalysisCountBlock
           title="Підрозділи"
