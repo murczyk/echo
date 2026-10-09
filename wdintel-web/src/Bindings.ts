@@ -4869,6 +4869,16 @@ export type CountStatsRsp = {
   networksCount: number;
 };
 
+export type MessageStatsCountRsp = {
+  countOverall: number;
+  countSelected: number;
+};
+
+export type UnitMatchStatsCountRsp = {
+  exactMatchesCount: number;
+  nonExactMatchesCount: number;
+};
+
 export type GroupStatsRsp = {
   groups: Array<AnalysisStatsGroup>;
   groupNames: Array<SignalGroupEntry>;

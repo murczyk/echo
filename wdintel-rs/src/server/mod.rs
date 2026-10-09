@@ -1067,6 +1067,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::analysis::network_stats)
             .service(crate::rer_importer::analysis::network_stats_count)
             .service(crate::rer_importer::analysis::count_stats)
+            .service(crate::rer_importer::analysis::message_stats_count)
+            .service(crate::rer_importer::analysis::unit_match_stats_count)
             .service(crate::rer_importer::analysis::location_stats)
             .service(crate::rer_importer::analysis::unit_stats)
             .service(crate::rer_importer::analysis::tag_stats)

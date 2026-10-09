@@ -6,6 +6,7 @@ import CoreAuthTests
 import Le.Block.UnitTests
 import Le.Callsign.HintStrategyTests
 import Le.Callsign.MessageHintTests
+import RerAnalysisCountRegressionTests
 import RerAnalysisMapRegressionTests
 import RerDutyRefreshRegressionTests
 import Test exposing (..)
@@ -23,5 +24,6 @@ suite =
         , UnitHierarchyTests.suite
         , CoordinatesTests.suite
         , RerAnalysisMapRegressionTests.suite
+        , RerAnalysisCountRegressionTests.suite
         , RerDutyRefreshRegressionTests.suite
         ]

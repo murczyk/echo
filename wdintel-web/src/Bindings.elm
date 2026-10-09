@@ -12611,6 +12611,34 @@ countStatsRspEncoder struct =
         ]
 
 
+type alias MessageStatsCountRsp =
+    { countOverall : Int
+    , countSelected : Int
+    }
+
+
+messageStatsCountRspEncoder : MessageStatsCountRsp -> Json.Encode.Value
+messageStatsCountRspEncoder struct =
+    Json.Encode.object
+        [ ( "count_overall", (Json.Encode.int) struct.countOverall )
+        , ( "count_selected", (Json.Encode.int) struct.countSelected )
+        ]
+
+
+type alias UnitMatchStatsCountRsp =
+    { exactMatchesCount : Int
+    , nonExactMatchesCount : Int
+    }
+
+
+unitMatchStatsCountRspEncoder : UnitMatchStatsCountRsp -> Json.Encode.Value
+unitMatchStatsCountRspEncoder struct =
+    Json.Encode.object
+        [ ( "exact_matches_count", (Json.Encode.int) struct.exactMatchesCount )
+        , ( "non_exact_matches_count", (Json.Encode.int) struct.nonExactMatchesCount )
+        ]
+
+
 type alias GroupStatsRsp =
     { groups : List (AnalysisStatsGroup)
     , groupNames : List (SignalGroupEntry)
@@ -25551,6 +25579,20 @@ countStatsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "networks_count" (Json.Decode.int)))
+
+
+messageStatsCountRspDecoder : Json.Decode.Decoder MessageStatsCountRsp
+messageStatsCountRspDecoder =
+    Json.Decode.succeed MessageStatsCountRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count_overall" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count_selected" (Json.Decode.int)))
+
+
+unitMatchStatsCountRspDecoder : Json.Decode.Decoder UnitMatchStatsCountRsp
+unitMatchStatsCountRspDecoder =
+    Json.Decode.succeed UnitMatchStatsCountRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exact_matches_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "non_exact_matches_count" (Json.Decode.int)))
 
 
 groupStatsRspDecoder : Json.Decode.Decoder GroupStatsRsp

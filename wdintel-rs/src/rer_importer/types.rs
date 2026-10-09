@@ -1318,6 +1318,22 @@ pub struct CountStatsRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct MessageStatsCountRsp {
+    pub count_overall: i64,
+    pub count_selected: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitMatchStatsCountRsp {
+    pub exact_matches_count: i64,
+    pub non_exact_matches_count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct AnalysisStatsRsp {
     pub count_overall: i64,
     pub count_selected: i64,
