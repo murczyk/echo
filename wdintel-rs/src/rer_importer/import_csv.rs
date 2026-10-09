@@ -445,7 +445,10 @@ async fn reconcile_rer_csv_message_target_group(
 ) -> anyhow::Result<()> {
     let txn = context.dbx.begin().await.context(h!())?;
     reconcile_rer_csv_message_target_group_in_transaction(
-        context, message_id, &txn,
+        &context.group_id,
+        context.datasource_group_id,
+        message_id,
+        &txn,
     )
     .await
     .context(h!())?;
@@ -453,14 +456,14 @@ async fn reconcile_rer_csv_message_target_group(
     Ok(())
 }
 
-async fn reconcile_rer_csv_message_target_group_in_transaction<
+pub(crate) async fn reconcile_rer_csv_message_target_group_in_transaction<
     C: ConnectionTrait,
 >(
-    context: &RerCsvImportContext<'_>,
+    group_id: &str,
+    datasource_group_id: i64,
     message_id: i64,
     txn: &C,
 ) -> anyhow::Result<()> {
-    let datasource_group_id = context.datasource_group_id;
     let message = signal_message::Entity::find_by_id(message_id)
         .one(txn)
         .await
@@ -475,10 +478,7 @@ async fn reconcile_rer_csv_message_target_group_in_transaction<
     };
     let group_link = signal_message_group::Entity::find()
         .filter(signal_message_group::Column::SignalMessageId.eq(message.id))
-        .filter(
-            signal_message_group::Column::GroupMasterKey
-                .eq(context.group_id.clone()),
-        )
+        .filter(signal_message_group::Column::GroupMasterKey.eq(group_id))
         .order_by_asc(signal_message_group::Column::Id)
         .one(txn)
         .await
@@ -508,7 +508,7 @@ async fn reconcile_rer_csv_message_target_group_in_transaction<
                 id: NotSet,
                 signal_message_id: Set(message.id),
                 signal_message_uuid: Set(message.id_uuid),
-                group_master_key: Set(Some(context.group_id.clone())),
+                group_master_key: Set(Some(group_id.to_string())),
                 sender: Set(message.sender.clone()),
                 login_id: Set(message.login_id),
                 message_uid: Set(message.message_uid.clone()),
@@ -847,40 +847,41 @@ async fn import_rer_csv_record(
     record: RerCsvRecord,
     stats: &mut RerCsvImportStats,
 ) -> anyhow::Result<()> {
-    let Some(timestamp) = rer_csv_import_record_timestamp(
-        &record,
-        context.import_as_new,
-        context.lnow,
-        bgid,
-        context.dbx,
-        stats,
+    let timestamp = if context.import_as_new {
+        Some(Utc::now().naive_utc())
+    } else {
+        let validation = validate_historical_record(context.lnow, &record);
+        if validation.should_skip() {
+            None
+        } else {
+            validation.timestamp
+        }
+    };
+    let outcome = persistence::persist_rer_csv_message(
+        context,
+        record.body.clone(),
+        timestamp,
     )
     .await
-    .c(h!())?
-    else {
+    .context(h!())?;
+    let Some(outcome) = outcome else {
+        rer_csv_import_record_timestamp(
+            &record,
+            context.import_as_new,
+            context.lnow,
+            bgid,
+            context.dbx,
+            stats,
+        )
+        .await
+        .context(h!())?;
         return Ok(());
     };
-    let outcome =
-        persistence::persist_rer_csv_message(context, record.body, timestamp)
-            .await
-            .context(h!())?;
     let message_id = outcome.message_id();
-    let processed = match outcome {
-        RerCsvPersistence::Duplicate(_) => false,
-        _ if context.reconcile_target_group => {
-            persistence::process_rer_csv_message(context, redis, message_id)
-                .await
-                .context(h!())?
-        }
-        _ => {
-            process_imported_rer_csv_message(
-                context, redis, message_id, timestamp,
-            )
+    let processed =
+        process_persisted_rer_csv_message(context, redis, outcome, timestamp)
             .await
             .context(h!())?;
-            true
-        }
-    };
     match outcome {
         RerCsvPersistence::Inserted(_) => stats.imported += 1,
         RerCsvPersistence::Reused(_) if processed => stats.reused += 1,
@@ -897,6 +898,34 @@ async fn import_rer_csv_record(
         }
     }
     Ok(())
+}
+
+async fn process_persisted_rer_csv_message(
+    context: &RerCsvImportContext<'_>,
+    redis: &mut redis::aio::ConnectionManager,
+    outcome: RerCsvPersistence,
+    timestamp: Option<NaiveDateTime>,
+) -> anyhow::Result<bool> {
+    let message_id = outcome.message_id();
+    match outcome {
+        RerCsvPersistence::Duplicate(_) => Ok(false),
+        _ if context.reconcile_target_group => {
+            persistence::process_rer_csv_message(context, redis, message_id)
+                .await
+                .context(h!())
+        }
+        _ => {
+            process_imported_rer_csv_message(
+                context,
+                redis,
+                message_id,
+                timestamp.context(h!())?,
+            )
+            .await
+            .context(h!())?;
+            Ok(true)
+        }
+    }
 }
 
 pub async fn oneoff_rer_csv_import(
@@ -1777,7 +1806,7 @@ mod tests {
             persistence::persist_rer_csv_message(
                 &context,
                 body.clone(),
-                timestamp,
+                Some(timestamp),
             )
             .await
             .unwrap();

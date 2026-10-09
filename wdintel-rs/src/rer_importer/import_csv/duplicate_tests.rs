@@ -1,6 +1,8 @@
 use super::*;
 use crate::functest::tests::{
-    cleanup_locked, find_test_datasource, mk_datasource_group, mk_signal_group,
+    cleanup_locked, find_test_aor, find_test_datasource, mk_datasource_group,
+    mk_sigint_network, mk_sigint_network_aor, mk_sigint_network_freq,
+    mk_signal_group, mk_signal_group_aor,
 };
 use sea_orm::sea_query::Expr;
 
@@ -330,6 +332,7 @@ async fn issue_3650_csv_persistence_and_processing_failures_are_recoverable() {
         )
         .await;
     }
+    assert_recovery_uses_saved_validation_reference(&context, &mut redis).await;
     // Delivery/completion retries must preserve the committed inbox state.
     let body = "02.10.2026 10:16:00\nCSV delivery completion failure";
     fail_writes(
@@ -375,6 +378,63 @@ async fn issue_3650_csv_persistence_and_processing_failures_are_recoverable() {
             .unwrap()
             .reviewed,
         Some(true)
+    );
+}
+
+async fn assert_recovery_uses_saved_validation_reference(
+    context: &RerCsvImportContext<'_>,
+    redis: &mut redis::aio::ConnectionManager,
+) {
+    let later = context.lnow + chrono::Duration::days(10);
+    let body = format!(
+        "{}\n{}\none\ntwo\nthree\n{}\nCSV saved validation reference",
+        context.lnow.format("%d.%m.%Y %H:%M:%S"),
+        format!("{} ", "x".repeat(99)).repeat(53),
+        later.format("%d.%m.%Y %H:%M:%S"),
+    );
+    let record = RerCsvRecord {
+        source_record: 1,
+        body: body.clone(),
+    };
+    assert!(!validate_historical_record(context.lnow, &record).should_skip());
+    assert!(validate_historical_record(later, &record).invalid_message_size);
+    fail_writes(context.dbx, "sigint_search", "insert", "true").await;
+    let failure = import_bodies(context, redis, &[&body], None).await;
+    allow_writes(context.dbx, "sigint_search").await;
+    assert!(failure.is_err());
+    let original = messages(context.dbx, &body).await.remove(0);
+    let later_context = RerCsvImportContext {
+        settlements: context.settlements.clone(),
+        dbx: context.dbx,
+        rq: context.rq,
+        config: context.config,
+        group_id: context.group_id.clone(),
+        datasource_group_id: context.datasource_group_id,
+        source_uuid: context.source_uuid.clone(),
+        import_as_new: context.import_as_new,
+        reconcile_target_group: context.reconcile_target_group,
+        lnow: later,
+    };
+    for (reused, duplicates) in [(1, 0), (0, 1)] {
+        assert_counts(
+            &import_bodies(&later_context, redis, &[&body], None)
+                .await
+                .unwrap(),
+            0,
+            reused,
+            duplicates,
+            0,
+        );
+        assert_eq!(messages(context.dbx, &body).await, vec![original.clone()]);
+    }
+    assert_eq!(
+        sigint_inbox_item::Entity::find_by_id(original.id)
+            .one(context.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .datetime,
+        original.timestamp
     );
 }
 
@@ -479,10 +539,14 @@ async fn issue_3650_legacy_duplicates_preserve_inboxes_and_reuse_missing_ones()
             .await
             .unwrap();
     assert!(extra_id > id);
-    let outcome =
-        persistence::persist_rer_csv_message(&context, body.into(), timestamp)
-            .await
-            .unwrap();
+    let outcome = persistence::persist_rer_csv_message(
+        &context,
+        body.into(),
+        Some(timestamp),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert!(
         matches!(outcome, RerCsvPersistence::Duplicate(existing_id) if existing_id == id)
     );
@@ -536,10 +600,14 @@ async fn assert_later_legacy_inbox_prevents_recovery(
         .await
         .unwrap();
     assert!(later_id > extra_id);
-    let outcome =
-        persistence::persist_rer_csv_message(context, body.into(), timestamp)
-            .await
-            .unwrap();
+    let outcome = persistence::persist_rer_csv_message(
+        context,
+        body.into(),
+        Some(timestamp),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert!(
         matches!(outcome, RerCsvPersistence::Duplicate(existing_id) if existing_id == later_id)
     );
@@ -559,11 +627,64 @@ async fn assert_later_legacy_inbox_prevents_recovery(
 
 #[tokio::test]
 #[serial_test::serial]
+async fn issue_3650_new_import_recovery_keeps_reference_date_and_mode() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let mut context = csv_context(&env).await;
+    context.import_as_new = true;
+    let mut redis = env.redis.clone();
+    let body = "Час: 10:15:00\nF=146.5000\nCSV new import recovery reference";
+    let expected = validate_historical_record(
+        context.lnow,
+        &RerCsvRecord {
+            source_record: 1,
+            body: body.to_string(),
+        },
+    )
+    .timestamp
+    .unwrap();
+    let outcome = persistence::persist_rer_csv_message(
+        &context,
+        body.to_string(),
+        Some(context.lnow.naive_utc()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let id = outcome.message_id();
+    let original = messages(&env.dbx, body).await.remove(0);
+    context.import_as_new = false;
+    context.lnow += chrono::Duration::days(1);
+    for (reused, duplicates) in [(1, 0), (0, 1)] {
+        assert_counts(
+            &import_bodies(&context, &mut redis, &[body], None)
+                .await
+                .unwrap(),
+            0,
+            reused,
+            duplicates,
+            0,
+        );
+        assert_eq!(messages(&env.dbx, body).await, vec![original.clone()]);
+        assert_eq!(
+            sigint_inbox_item::Entity::find_by_id(id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .datetime,
+            Some(expected)
+        );
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn issue_3650_split_csv_duplicates_preserve_children_and_recover_delivery(
 ) {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let mut context = csv_context(&env).await;
     context.import_as_new = true;
+    let network_id = csv_network(&context).await;
     let mut redis = env.redis.clone();
     let body = format!(
         "02.10.2026 10:16:00\nF=146.5000\nfirst CSV header\n{}\n02.10.2026 10:17:00\nF=146.5000\nsecond CSV header\n{}",
@@ -593,6 +714,7 @@ async fn issue_3650_split_csv_duplicates_preserve_children_and_recover_delivery(
     let mut child_ids = state.inbox_item_ids.unwrap();
     assert_eq!(child_ids.len(), 2);
     assert!(!child_ids.contains(&parent.id));
+    assert_csv_children_reconciled(&context, &child_ids, network_id).await;
     let interrupted_id = insert_rer_csv_message(
         &context,
         body.clone(),
@@ -639,6 +761,102 @@ async fn issue_3650_split_csv_duplicates_preserve_children_and_recover_delivery(
         0,
     );
     assert_eq!(messages(&env.dbx, &body).await.len(), 3);
+}
+
+async fn csv_network(context: &RerCsvImportContext<'_>) -> i64 {
+    let aor = find_test_aor(context.dbx).await.unwrap();
+    mk_signal_group_aor(
+        context.dbx,
+        signal_group_aor::ActiveModel {
+            master_key: Set(context.group_id.clone()),
+            aor_id: Set(aor.id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let network = mk_sigint_network(
+        context.dbx,
+        sigint_network::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_sigint_network_aor(
+        context.dbx,
+        sigint_network_aor::ActiveModel {
+            network_id: Set(network.id),
+            aor_id: Set(aor.id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_sigint_network_freq(
+        context.dbx,
+        sigint_network_freq::ActiveModel {
+            network_id: Set(network.id),
+            freq: Set("146.5000".to_string()),
+            active_from: Set(
+                (context.lnow - chrono::Duration::days(1)).naive_utc()
+            ),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    network.id
+}
+
+async fn assert_csv_children_reconciled(
+    context: &RerCsvImportContext<'_>,
+    child_ids: &[i64],
+    network_id: i64,
+) {
+    for id in child_ids {
+        let child = signal_message::Entity::find_by_id(*id)
+            .one(context.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let links = signal_message_group::Entity::find()
+            .filter(signal_message_group::Column::SignalMessageId.eq(*id))
+            .all(context.dbx)
+            .await
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        let link = &links[0];
+        assert_eq!(
+            link.group_master_key.as_deref(),
+            Some(context.group_id.as_str())
+        );
+        assert_eq!(
+            child.datasource_group_id,
+            Some(context.datasource_group_id)
+        );
+        assert_eq!(link.datasource_group_id, child.datasource_group_id);
+        assert_eq!(link.signal_message_uuid, child.id_uuid);
+        assert_eq!(link.sender, child.sender);
+        assert_eq!(link.login_id, child.login_id);
+        assert_eq!(link.message_uid, child.message_uid);
+        assert_eq!(link.created_at, child.created_at);
+        assert_eq!(
+            sigint_inbox_item_network::Entity::find()
+                .filter(
+                    sigint_inbox_item_network::Column::SigintInboxItemId
+                        .eq(*id)
+                )
+                .filter(
+                    sigint_inbox_item_network::Column::SigintNetworkId
+                        .eq(network_id)
+                )
+                .count(context.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+    }
 }
 
 async fn csv_inboxes(

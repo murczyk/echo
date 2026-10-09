@@ -29,6 +29,9 @@ pub(crate) enum InboxDatetimeOverride {
         datetime: NaiveDateTime,
         reference_time: DateTime<Tz>,
     },
+    ReferenceTime {
+        reference_time: DateTime<Tz>,
+    },
 }
 
 impl ConstructInboxItemResult {
@@ -125,7 +128,8 @@ where
         let spawned = match datetime_override.as_ref() {
             Some(InboxDatetimeOverride::Historical {
                 reference_time, ..
-            }) => {
+            })
+            | Some(InboxDatetimeOverride::ReferenceTime { reference_time }) => {
                 crate::rer_importer::multimessage::spawn_multiple_messages_at(
                     txn,
                     &message,
@@ -146,7 +150,12 @@ where
         }
     }
     let tz = crate::config::get_tz();
-    let lnow = Local::now().with_timezone(&tz);
+    let lnow = match datetime_override.as_ref() {
+        Some(InboxDatetimeOverride::ReferenceTime { reference_time }) => {
+            *reference_time
+        }
+        _ => Local::now().with_timezone(&tz),
+    };
     let allow_kraken_audio =
         message_has_other_interseption_group(txn, &message).await?;
     let (mut m_dt, meow_format) =
@@ -324,7 +333,7 @@ where
             .c(h!())?;
             (date_v, time_v, datetime)
         }
-        None => {
+        None | Some(InboxDatetimeOverride::ReferenceTime { .. }) => {
             let datetime = datetime::from_date_time_text(
                 default_date_v.as_deref(),
                 default_time_v.as_deref(),

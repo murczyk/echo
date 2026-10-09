@@ -15,6 +15,13 @@ impl MigrationTrait for Migration {
         manager
             .get_connection()
             .execute_unprepared(
+                "drop index concurrently if exists signal_message_body_fingerprint_idx;",
+            )
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
+        manager
+            .get_connection()
+            .execute_unprepared(
                 r#"
 create index concurrently signal_message_body_fingerprint_idx
     on signal_message (md5(body), id);

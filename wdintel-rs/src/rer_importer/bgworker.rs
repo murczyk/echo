@@ -1,4 +1,5 @@
 use crate::config::*;
+use crate::rer_importer::import_csv::reconcile_rer_csv_message_target_group_in_transaction;
 use crate::types::*;
 use sea_orm::*;
 
@@ -25,6 +26,7 @@ where
         config,
         message_id,
         datetime_override,
+        None,
     )
     .await
     .c(h!())?)
@@ -39,6 +41,7 @@ pub(crate) async fn process_message_to_inbox_with_override<
     config: &Config,
     message_id: i64,
     datetime_override: Option<crate::inbox::InboxDatetimeOverride>,
+    target_group: Option<(&str, i64)>,
 ) -> anyhow::Result<Vec<i64>> {
     let mut cache = TopKCache::<String, String>::new(CAPACITY);
     let mut recs = vec![message_id];
@@ -47,6 +50,16 @@ pub(crate) async fn process_message_to_inbox_with_override<
         let Some(message_id) = recs.pop() else {
             break;
         };
+        if let Some((group_id, datasource_group_id)) = target_group {
+            reconcile_rer_csv_message_target_group_in_transaction(
+                group_id,
+                datasource_group_id,
+                message_id,
+                txn,
+            )
+            .await
+            .context(h!())?;
+        }
         let result = process_message_to_inbox_one(
             settlements.clone(),
             txn,

@@ -13,9 +13,9 @@ index. Existing timestamp/creation indexes cannot serve this identity.
 The production group-access index is
 `signal_message_group_group_master_key_signal_message_id_idx`.
 
-Plain `EXPLAIN` before adding the body index selected a sequential message
-scan. Plain `EXPLAIN` after adding the migration's `(md5(body), id)` partial
-index selected a bitmap index scan. `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF,
+For the previous active-only lookup, plain `EXPLAIN` before adding the body
+index selected a sequential message scan. With its partial `(md5(body), id)`
+index, plain `EXPLAIN` selected a bitmap index scan. `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF,
 SUMMARY ON)` then confirmed one candidate, exact-body filtering, and indexed
 group membership. The hit took 0.590 ms with 3 local buffer hits and 11 reads;
 a miss took 0.043 ms with 1 hit and 2 reads. Neither visited a whole group.
@@ -24,8 +24,9 @@ PostgreSQL 14 estimated 4,755 fingerprint candidates where the actual count
 was one; the measured access path remained bounded by matching fingerprints.
 Very frequent identical bodies can increase candidate work; full equality
 still decides identity, including in the event of a fingerprint collision.
-Index maintenance adds a body hash to active-message writes. Concurrent index
-creation avoids holding a table write lock for the build.
+The previous index added a body hash to active-message writes. The final index
+also covers deleted messages, as measured below. Concurrent index creation
+avoids holding a table write lock for the build.
 
 The captured baseline plans follow. They use the previous active-only lookup
 from `wdintel-rs/src/rer_importer/import_csv/persistence.rs`; measurements of
@@ -47,7 +48,7 @@ ANALYZE
 ANALYZE
 ANALYZE
 PREPARE
-                                                                              QUERY PLAN                                                                               
+                                                                              QUERY PLAN
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Limit  (cost=26870.78..26879.24 rows=1 width=11)
    ->  Result  (cost=26870.78..26879.24 rows=1 width=11)
@@ -69,7 +70,7 @@ PREPARE
 
 CREATE INDEX
 ANALYZE
-                                                                              QUERY PLAN                                                                               
+                                                                              QUERY PLAN
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Limit  (cost=8224.74..8233.19 rows=1 width=11)
    ->  Result  (cost=8224.74..8233.19 rows=1 width=11)
@@ -92,7 +93,7 @@ ANALYZE
                  Index Cond: (id = m.id)
 (19 rows)
 
-                                                                                          QUERY PLAN                                                                                           
+                                                                                          QUERY PLAN
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Limit  (cost=8224.74..8233.19 rows=1 width=11) (actual rows=1 loops=1)
    Buffers: local hit=3 read=11
@@ -133,7 +134,7 @@ ANALYZE
  Execution Time: 0.590 ms
 (37 rows)
 
-                                                                                       QUERY PLAN                                                                                       
+                                                                                       QUERY PLAN
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Limit  (cost=8224.74..8233.19 rows=1 width=11) (actual rows=0 loops=1)
    Buffers: local hit=1 read=2

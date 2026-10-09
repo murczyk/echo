@@ -100,8 +100,8 @@ async fn track_csv_message(
 pub(super) async fn persist_rer_csv_message(
     context: &RerCsvImportContext<'_>,
     body: String,
-    timestamp: NaiveDateTime,
-) -> anyhow::Result<RerCsvPersistence> {
+    timestamp: Option<NaiveDateTime>,
+) -> anyhow::Result<Option<RerCsvPersistence>> {
     let txn = begin_csv_transaction(context.dbx).await.context(h!())?;
     let outcome = if context.reconcile_target_group {
         lock_csv_identity(&txn, &context.group_id, &body)
@@ -124,6 +124,10 @@ pub(super) async fn persist_rer_csv_message(
                 RerCsvPersistence::Reused(message.id)
             }
             None => {
+                let Some(timestamp) = timestamp else {
+                    txn.commit().await.c(h!())?;
+                    return Ok(None);
+                };
                 let id = insert_rer_csv_message(context, body, timestamp, &txn)
                     .await
                     .context(h!())?;
@@ -132,6 +136,10 @@ pub(super) async fn persist_rer_csv_message(
             }
         }
     } else {
+        let Some(timestamp) = timestamp else {
+            txn.commit().await.c(h!())?;
+            return Ok(None);
+        };
         RerCsvPersistence::Inserted(
             insert_rer_csv_message(context, body, timestamp, &txn)
                 .await
@@ -139,7 +147,7 @@ pub(super) async fn persist_rer_csv_message(
         )
     };
     txn.commit().await.c(h!())?;
-    Ok(outcome)
+    Ok(Some(outcome))
 }
 
 pub(super) async fn process_rer_csv_message(
@@ -203,15 +211,16 @@ async fn construct_csv_inbox(
         .await
         .c(h!())?
         .context(h!())?;
+    let reference_time = Utc
+        .from_utc_datetime(&reference_time)
+        .with_timezone(&crate::config::get_tz());
     let datetime_override = if import_as_new {
-        None
+        crate::inbox::InboxDatetimeOverride::ReferenceTime { reference_time }
     } else {
-        Some(crate::inbox::InboxDatetimeOverride::Historical {
+        crate::inbox::InboxDatetimeOverride::Historical {
             datetime: message.timestamp.context(h!())?,
-            reference_time: Utc
-                .from_utc_datetime(&reference_time)
-                .with_timezone(&crate::config::get_tz()),
-        })
+            reference_time,
+        }
     };
     let ids =
         crate::rer_importer::bgworker::process_message_to_inbox_with_override(
@@ -220,7 +229,8 @@ async fn construct_csv_inbox(
             context.rq,
             context.config,
             message_id,
-            datetime_override,
+            Some(datetime_override),
+            Some((&context.group_id, context.datasource_group_id)),
         )
         .await
         .context(h!())?;
@@ -231,7 +241,10 @@ async fn construct_csv_inbox(
     };
     for id in processed_ids {
         reconcile_rer_csv_message_target_group_in_transaction(
-            context, id, &txn,
+            &context.group_id,
+            context.datasource_group_id,
+            id,
+            &txn,
         )
         .await
         .context(h!())?;

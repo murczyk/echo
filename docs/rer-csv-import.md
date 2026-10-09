@@ -42,6 +42,18 @@ through their saved child inbox IDs, including before delivery completes; once
 all children are deleted, the source can be imported again. Completed duplicates
 are never reprocessed or updated.
 
+Existing matches are checked before rejecting a record against the retry's
+reference date. Recovery retains the original validation context even if the
+same body would now fail historical preflight. New messages still require
+current validation. Each split child is linked to the selected group before
+AOR resolution and network assignment; final group metadata is reconciled
+again before commit.
+
+Import-as-new recovery also parses time-only dates and split headers against
+the stored reference date, retaining parsed body time instead of replacing it
+with the message insertion timestamp. Changing the retry's import mode does
+not change the saved processing mode.
+
 Imports predating this safeguard have no processing marker. Existing messages
 with an inbox row are conservatively skipped to preserve reviewed data; this
 does not certify that every historical processing step succeeded. A legacy
@@ -61,6 +73,11 @@ split parents; exact body comparison remains authoritative. The PostgreSQL-only
 recovery table `rer_csv_import_message` is excluded from analytics replication
 through the packaged exclusion list and migration-impact declaration. Normal
 deployment synchronizes exclusions before applying migrations.
+
+The index migration drops a leftover index concurrently before rebuilding it,
+so an interrupted concurrent build can be retried without accepting an invalid
+index. This also rebuilds a valid index left by an interrupted migration-ledger
+write; allow the build to finish before starting the backend.
 
 Recovery state must be retained alongside messages. Deleting it removes the
 ability to distinguish completed inbox construction from interrupted delivery.
