@@ -1,4 +1,5 @@
 import React from 'react';
+import { registerBrowserDebugRecorderPress } from '../../../debug-recorder';
 
 const CONSTRUCTION_EMOJIS = ['🚧', '👷', '🔨', '🔧'];
 
@@ -95,11 +96,15 @@ export function ChangelogDropdown({
     }
   }, [deploymentMaintenanceId, openDropdown, setOpenDropdown]);
 
-  if (!deploymentMaintenanceId && !changelogData) return null;
   const isOpen = openDropdown === dropdownKey;
+  const hasDropdownContent = Boolean(deploymentMaintenanceId || changelogData);
 
   const toggleMsg = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (registerBrowserDebugRecorderPress()) {
+      setOpenDropdown(null);
+      return;
+    }
     if (isOpen) {
       setOpenDropdown(null);
     } else if (!deploymentMaintenanceId && changelogData?.unseen) {
@@ -131,36 +136,41 @@ export function ChangelogDropdown({
           )}
         </div>
       </button>
-      <div className={`absolute right-0 pt-2 z-[3001] ${isOpen ? 'block' : 'hidden'}`}>
-        <div className="w-72 p-3 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200">
-          {deploymentMaintenanceId ? (
-            <MaintenanceNotice onClose={() => setOpenDropdown(null)} />
-          ) : (
-            <>
-              <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-2">
-                Останні зміни: Реліз {changelogData!.version.replace(/-/g, '.')}
-              </div>
-              <ul className="space-y-1 text-sm text-[var(--color-text)] list-none max-h-64 overflow-y-auto pr-1">
-                {changelogData!.preview.map((line: string, i: number) => (
-                  <li key={i} className="ml-4 list-disc leading-snug break-words">
-                    {line}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-3">
-                <a
-                  href={changelogData!.fullUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm font-semibold text-[var(--color-text)] hover:underline"
-                >
-                  Читати повністю
-                </a>
-              </div>
-            </>
-          )}
+      {hasDropdownContent && (
+        <div
+          data-testid="changelog-dropdown-body"
+          className={`absolute right-0 pt-2 z-[3001] ${isOpen ? 'block' : 'hidden'}`}
+        >
+          <div className="w-72 p-3 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200">
+            {deploymentMaintenanceId ? (
+              <MaintenanceNotice onClose={() => setOpenDropdown(null)} />
+            ) : (
+              <>
+                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)] mb-2">
+                  Останні зміни: Реліз {changelogData!.version.replace(/-/g, '.')}
+                </div>
+                <ul className="space-y-1 text-sm text-[var(--color-text)] list-none max-h-64 overflow-y-auto pr-1">
+                  {changelogData!.preview.map((line: string, i: number) => (
+                    <li key={i} className="ml-4 list-disc leading-snug break-words">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-3">
+                  <a
+                    href={changelogData!.fullUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-semibold text-[var(--color-text)] hover:underline"
+                  >
+                    Читати повністю
+                  </a>
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
