@@ -89,7 +89,7 @@ def inventory():
             release = {'release': directory.name, 'manifest': None, 'digest': digest(directory), 'source': 'retained'}
             try:
                 release['manifest'] = manifest(directory)
-            except (RuntimeError, ValueError) as error:
+            except (OSError, RuntimeError, ValueError, LookupError, SyntaxError, AttributeError, TypeError) as error:
                 release['manifest_error'] = str(error)
             releases.append(release)
     template = next((row for row in records if row['name'] == FIXED), {})
