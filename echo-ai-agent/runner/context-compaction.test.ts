@@ -25,7 +25,11 @@ async function fixture(
   checkpoint = "stop",
   restored = false,
   batchWidth = 1,
-  checkpointSettings: { maxTokens?: number; reserveTokens: number } = {
+  checkpointSettings: {
+    maxTokens?: number;
+    reserveTokens: number;
+    modelName?: string;
+  } = {
     maxTokens: 16_384,
     reserveTokens: 16_384,
   },
@@ -51,6 +55,10 @@ async function fixture(
       requests.push(body);
       const system = body.messages[0].content;
       const summary = system.includes("Create a concise evidence checkpoint");
+      assert.equal(
+        body.model,
+        summary ? (checkpointSettings.modelName ?? "fixture") : "fixture",
+      );
       assert.equal(
         body.max_tokens ?? body.max_completion_tokens,
         summary ? (checkpointSettings.maxTokens ?? 8_192) : 8_192,
@@ -165,6 +173,19 @@ async function fixture(
               maxTokens: 8_192,
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             },
+            ...(checkpointSettings.modelName
+              ? [
+                  {
+                    id: checkpointSettings.modelName,
+                    name: checkpointSettings.modelName,
+                    reasoning: false,
+                    input: ["text"],
+                    contextWindow: 65_536,
+                    maxTokens: checkpointSettings.maxTokens ?? 8_192,
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                  },
+                ]
+              : []),
           ],
         },
       },
@@ -279,6 +300,9 @@ async function fixture(
       prompt,
       maxTokens: 8_192,
       checkpointMaxTokens: checkpointSettings.maxTokens,
+      checkpointEngine: checkpointSettings.modelName
+        ? modelRuntime.getModel("fixture", checkpointSettings.modelName)
+        : undefined,
       compactionReserveTokens: checkpointSettings.reserveTokens,
       compactionKeepRecentTokens: 8_192,
       providerApiKey: "fixture",
@@ -369,6 +393,25 @@ for (const [pages, batchWidth] of [
     }
   });
 }
+
+test("#3724 continued pagination and follow-ups with a separate checkpoint engine", async () => {
+  const value = await fixture(14, "stop", false, 2, {
+    maxTokens: 8_192,
+    reserveTokens: 16_384,
+    modelName: "checkpoint",
+  });
+  try {
+    await value.session.prompt(value.prompt);
+    validateFinalAssistantMessage(value.session.messages);
+    assert.ok(value.checkpointCalls() > 0);
+    assert.equal(value.cursors.length, 14);
+    await value.session.prompt("Summarize the same fixed period briefly.");
+    validateFinalAssistantMessage(value.session.messages);
+    assert.deepEqual(value.errors, []);
+  } finally {
+    await value.close();
+  }
+});
 
 test("#3724 includes system schemas and pending prompt when compacting restored history", async () => {
   const value = await fixture(0, "stop", true);

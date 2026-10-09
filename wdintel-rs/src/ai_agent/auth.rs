@@ -59,6 +59,21 @@ struct ProviderCapabilityGrant {
     correlation_id: Uuid,
     ai_engine_id: Uuid,
     model_name: String,
+    #[serde(default)]
+    checkpoint: Option<CheckpointProviderGrant>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckpointProviderGrant {
+    pub ai_engine_id: Uuid,
+    pub model_name: String,
+    pub max_output_tokens: i32,
+}
+
+pub struct AuthorizedProvider {
+    pub ai_engine: ai_engine::Model,
+    pub checkpoint_max_tokens: Option<i32>,
 }
 
 pub async fn issue_bootstrap(
@@ -108,6 +123,7 @@ pub async fn issue_provider_capability(
     correlation_id: Uuid,
     ai_engine_id: Uuid,
     model_name: String,
+    checkpoint: Option<CheckpointProviderGrant>,
 ) -> Result<String, AppError> {
     let mut random = [0_u8; 32];
     rand::rng().fill(&mut random);
@@ -120,6 +136,7 @@ pub async fn issue_provider_capability(
         correlation_id,
         ai_engine_id,
         model_name,
+        checkpoint,
     })
     .c(h!())?;
     let mut redis = env.redis.clone();
@@ -168,7 +185,8 @@ return {value, calls}
 pub async fn authorize_provider_capability(
     env: &Env,
     token: &str,
-) -> Result<Option<ai_engine::Model>, AppError> {
+    requested_model_name: &str,
+) -> Result<Option<AuthorizedProvider>, AppError> {
     let digest = sha256::digest(token.as_bytes());
     let (raw, calls) = read_provider_capability(env, &digest).await.c(h!())?;
     if calls > AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT {
@@ -226,7 +244,53 @@ pub async fn authorize_provider_capability(
     {
         return Ok(None);
     }
-    Ok(Some(ai_engine))
+    Ok(
+        resolve_provider_engine(env, &grant, requested_model_name, ai_engine)
+            .await
+            .c(h!())?,
+    )
+}
+
+async fn resolve_provider_engine(
+    env: &Env,
+    grant: &ProviderCapabilityGrant,
+    requested_model_name: &str,
+    ai_engine: ai_engine::Model,
+) -> anyhow::Result<Option<AuthorizedProvider>> {
+    if requested_model_name == ai_engine.model_name {
+        return Ok(Some(AuthorizedProvider {
+            ai_engine,
+            checkpoint_max_tokens: None,
+        }));
+    }
+    if ai_engine.model_name != crate::config::AI_AGENT_GLM_5_3
+        || !crate::ai_engine::client::is_government_url(&ai_engine.url)
+    {
+        return Ok(None);
+    }
+    let Some(checkpoint) = grant.checkpoint.as_ref().filter(|checkpoint| {
+        checkpoint.model_name == requested_model_name
+            && checkpoint.model_name
+                == crate::config::AI_AGENT_OPENAI_GPT_6_LUNA
+            && checkpoint.max_output_tokens >= 256
+    }) else {
+        return Ok(None);
+    };
+    let ai_engine =
+        super::access::allowed_engine_by_id(&env.dbx, checkpoint.ai_engine_id)
+            .await
+            .c(h!())?;
+    if ai_engine.model_name != checkpoint.model_name
+        || !crate::ai_engine::client::is_government_url(&ai_engine.url)
+        || super::access::agent_provider_transport(&ai_engine)
+            != Some(super::access::AgentProviderTransport::EchoGateway)
+    {
+        return Ok(None);
+    }
+    Ok(Some(AuthorizedProvider {
+        ai_engine,
+        checkpoint_max_tokens: Some(checkpoint.max_output_tokens),
+    }))
 }
 
 #[post("/api/ai-agent/bootstrap/exchange")]

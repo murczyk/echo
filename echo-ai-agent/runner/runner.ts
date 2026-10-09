@@ -39,7 +39,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.09.4";
+const HARNESS_RELEASE = "2026.10.09.5";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -75,6 +75,8 @@ const RUNNER_PAYLOAD_FIELDS = new Set([
   "contextWindow",
   "maxTokens",
   "checkpointMaxTokens",
+  "checkpointModelName",
+  "checkpointContextWindow",
   "compactionReserveTokens",
   "compactionKeepRecentTokens",
   "expectedIdentity",
@@ -139,6 +141,8 @@ interface RunnerPayload {
   contextWindow: number;
   maxTokens: number;
   checkpointMaxTokens: number;
+  checkpointModelName?: string;
+  checkpointContextWindow?: number;
   compactionReserveTokens: number;
   compactionKeepRecentTokens: number;
   expectedIdentity?: JsonObject;
@@ -290,6 +294,18 @@ export function validatePayload(
     Math.min(131_072, compactionReserveTokens),
     maxTokens,
   );
+  const checkpointModelName = value.checkpointModelName === undefined
+    ? undefined
+    : requireString(value.checkpointModelName, "checkpointModelName", 200);
+  const checkpointContextWindow = checkpointModelName === undefined
+    ? undefined
+    : validateInteger(value.checkpointContextWindow, checkpointMaxTokens + 1_024, 2_000_000, contextWindow);
+  if (checkpointModelName !== undefined && (providerTransport !== "echo_gateway" || checkpointModelName === requestedModel)) {
+    throw new Error("checkpoint provider requires a separate gateway model");
+  }
+  if (checkpointModelName === undefined && value.checkpointContextWindow !== undefined) {
+    throw new Error("checkpointContextWindow requires checkpointModelName");
+  }
   const compactionKeepRecentTokens = validateInteger(
     value.compactionKeepRecentTokens,
     1_024,
@@ -336,6 +352,8 @@ export function validatePayload(
     contextWindow,
     maxTokens,
     checkpointMaxTokens,
+    checkpointModelName,
+    checkpointContextWindow,
     compactionReserveTokens,
     compactionKeepRecentTokens,
     expectedIdentity,
@@ -2410,6 +2428,15 @@ export async function writeModelsFile(
               maxTokens: payload.maxTokens,
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             },
+            ...(payload.checkpointModelName ? [{
+              id: payload.checkpointModelName,
+              name: payload.checkpointModelName,
+              reasoning: false,
+              input: ["text"],
+              contextWindow: payload.checkpointContextWindow,
+              maxTokens: payload.checkpointMaxTokens,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            }] : []),
           ],
         },
       },
@@ -2835,6 +2862,10 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     });
     const selectedModel = modelRuntime.getModel(PROVIDER_ID, payload.modelName);
     if (!selectedModel) throw new Error("configured vLLM model is unavailable");
+    const checkpointEngine = payload.checkpointModelName
+      ? modelRuntime.getModel(PROVIDER_ID, payload.checkpointModelName)
+      : undefined;
+    if (payload.checkpointModelName && !checkpointEngine) throw new Error("configured checkpoint model is unavailable");
     const sessionManager = SessionManager.inMemory("/home/echo");
     restoreHistory(sessionManager, payload);
     for (const entry of payload.history) {
@@ -2934,7 +2965,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       (message) => currentTurnAssistantMessages.push(message),
       () => emitAssistant.current,
     );
-    const contextFailure = installContextCompaction(session, { ...payload, signal: cancellation.signal },
+    const contextFailure = installContextCompaction(session, { ...payload, checkpointEngine, signal: cancellation.signal },
       () => emit({ type: "progress", summary: "Скорочую контекст і продовжую аналіз" }),
       (messages) => compactResponse.reset(messages));
     currentTurnAssistantMessages.length = 0;

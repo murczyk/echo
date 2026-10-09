@@ -22,6 +22,7 @@ interface ContextSettings {
   prompt: string;
   maxTokens: number;
   checkpointMaxTokens?: number;
+  checkpointEngine?: NonNullable<AgentSession["model"]>;
   compactionReserveTokens: number;
   compactionKeepRecentTokens: number;
   providerApiKey?: string;
@@ -190,6 +191,7 @@ async function compactOnce(
   pending: AgentMessage[] = [],
 ): Promise<AgentContext> {
   const { session, settings, selectedEngine, summarize, onCompacted } = runtime;
+  const checkpointEngine = settings.checkpointEngine ?? selectedEngine;
   const available = (context: AgentContext) =>
     availableTokens(runtime, context);
   const entries = session.sessionManager
@@ -203,7 +205,7 @@ async function compactOnce(
     const summaryContext = checkpointContext(entries.slice(0, cut), settings);
     if (
       clampMaxTokensToContext(
-        selectedEngine,
+        checkpointEngine,
         summaryContext,
         checkpointTokens,
       ) < checkpointTokens
@@ -211,7 +213,7 @@ async function compactOnce(
       cut = smallerCut(entries, cut);
       continue;
     }
-    const response = await summarize(selectedEngine, summaryContext, {
+    const response = await summarize(checkpointEngine, summaryContext, {
       apiKey: settings.providerApiKey ?? "echo-local-tokenless",
       maxTokens: checkpointTokens,
       signal,

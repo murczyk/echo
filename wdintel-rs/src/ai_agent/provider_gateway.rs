@@ -9,7 +9,8 @@ use crate::config::{
     AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES, AI_AGENT_PROVIDER_STREAM_MAX_BYTES,
 };
 use crate::error::AppError;
-use crate::types::{info, warn, Env};
+use crate::h;
+use crate::types::{info, warn, Env, ShortContext};
 use actix_web::http::{header, StatusCode};
 use actix_web::{post, web, HttpRequest, HttpResponse};
 use bytes::Bytes;
@@ -33,25 +34,95 @@ pub async fn chat_completions(
             "Provider capability is invalid",
         ));
     };
-    let Some(ai_engine) =
-        auth::authorize_provider_capability(&env, capability).await?
-    else {
-        return Ok(provider_error(
-            StatusCode::UNAUTHORIZED,
-            "Provider capability is invalid or expired",
-        ));
-    };
-    let body = read_bounded_payload(payload).await?;
-    let Some((body, streamed)) =
-        validate_request_body(&body, &ai_engine.model_name)
+    let body = read_bounded_payload(payload).await.c(h!())?;
+    let Some(requested_model_name) = serde_json::from_slice::<Value>(&body)
+        .ok()
+        .and_then(|body| {
+            body.get("model").and_then(Value::as_str).map(str::to_owned)
+        })
     else {
         return Ok(provider_error(
             StatusCode::BAD_REQUEST,
             "Provider request is invalid",
         ));
     };
-    proxy_provider_request(&env.ai_engine_client, ai_engine, body, streamed)
-        .await
+    let Some(authorization) = auth::authorize_provider_capability(
+        &env,
+        capability,
+        &requested_model_name,
+    )
+    .await
+    .c(h!())?
+    else {
+        return Ok(provider_error(
+            StatusCode::UNAUTHORIZED,
+            "Provider capability is invalid or expired",
+        ));
+    };
+    let Some((body, streamed)) =
+        validate_request_body(&body, &authorization.ai_engine.model_name)
+    else {
+        return Ok(provider_error(
+            StatusCode::BAD_REQUEST,
+            "Provider request is invalid",
+        ));
+    };
+    if !checkpoint_request_is_allowed(
+        &body,
+        authorization.checkpoint_max_tokens,
+    ) {
+        return Ok(provider_error(
+            StatusCode::BAD_REQUEST,
+            "Checkpoint provider request is invalid",
+        ));
+    }
+    proxy_provider_request(
+        &env.ai_engine_client,
+        authorization.ai_engine,
+        body,
+        streamed,
+    )
+    .await
+}
+
+fn checkpoint_request_is_allowed(
+    body: &Value,
+    max_tokens: Option<i32>,
+) -> bool {
+    let Some(max_tokens) = max_tokens else {
+        return true;
+    };
+    let budgets = ["max_tokens", "max_completion_tokens"]
+        .into_iter()
+        .filter_map(|key| body.get(key))
+        .collect::<Vec<_>>();
+    if budgets.is_empty()
+        || !budgets.iter().all(|budget| {
+            budget.as_i64().is_some_and(|budget| {
+                budget > 0 && budget <= i64::from(max_tokens)
+            })
+        })
+    {
+        return false;
+    }
+    for key in ["tools", "tool_choice", "functions", "function_call"] {
+        if body.get(key).is_some() {
+            return false;
+        }
+    }
+    if body.get("n").is_some_and(|count| count.as_i64() != Some(1)) {
+        return false;
+    }
+    body.get("messages")
+        .and_then(Value::as_array)
+        .is_some_and(|messages| {
+            messages.iter().all(|message| {
+                matches!(
+                    message.get("role").and_then(Value::as_str),
+                    Some("system" | "user")
+                )
+            })
+        })
 }
 
 fn bearer_capability(http_req: &HttpRequest) -> Option<&str> {
@@ -406,6 +477,29 @@ fn provider_error(status: StatusCode, message: &'static str) -> HttpResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issue_3724_checkpoint_scope_rejected_tools_and_excess_output() {
+        let body = json!({"model":"gpt-6-luna","messages":[{"role":"system","content":"Checkpoint"},{"role":"user","content":"Evidence"}],"max_tokens":8192});
+        assert!(checkpoint_request_is_allowed(&body, Some(8192)));
+        for (field, value) in [
+            ("tools", json!([])),
+            ("max_tokens", json!(8193)),
+            ("max_completion_tokens", json!(8193)),
+            ("n", json!(2)),
+        ] {
+            let mut invalid = body.clone();
+            invalid[field] = value;
+            assert!(
+                !checkpoint_request_is_allowed(&invalid, Some(8192)),
+                "{field}"
+            );
+        }
+        let mut invalid = body.clone();
+        invalid["messages"][1]["role"] = json!("assistant");
+        assert!(!checkpoint_request_is_allowed(&invalid, Some(8192)));
+        assert!(checkpoint_request_is_allowed(&invalid, None));
+    }
 
     fn checkpoint_stream_fixture() -> Bytes {
         let frame = format!(

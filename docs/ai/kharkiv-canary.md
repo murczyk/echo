@@ -22,7 +22,7 @@ shared document extractor, including its existing Paddle and GPU routers.
 | Network | `vnet0`, reserved DHCP `10.190.254.39`, MAC `BC:24:11:37:24:01` |
 | Tailscale | `echo-ai-agents-ua.eagle-atria.ts.net`, `100.88.139.100` |
 | SSH | admin 22; forced dispatcher 22031 |
-| Harness | `2026.10.09.4`, matched by the canary Echo build |
+| Harness | `2026.10.09.5`, matched by the canary Echo build |
 | Capacity | six running containers total; each 2 CPUs, 4 GiB RAM, 20 GiB root |
 
 The `ua` host profile uses a dedicated disk and validates its hostname, OS,
@@ -93,10 +93,16 @@ citations. Checkpoints are internal and never appear as assistant answers.
 Complete tool results enter the checkpoint request; the SDK's default
 2,000-character tool-result truncation is bypassed. The complete serialized
 request must still fit the provider context budget.
-Government GLM checkpoint generation has a separate output cap of up to 16,384
-tokens, bounded by the configured compaction reserve. Other engines retain their
-normal output cap for checkpoints. Normal generation uses Kharkiv's configured
-16,384-token GLM budget. Checkpoint failures retain their cause
+When government Luna is enabled and allowed for agents, government GLM requests
+use Luna for internal checkpoints, with Luna's configured context and output
+budget (8,192 tokens on Kharkiv), bounded by GLM's compaction reserve. GLM retains
+maximum reasoning and its 16,384-token budget for report generation. Both engines
+share one request-scoped capability, cancellation, revocation and call counter.
+Luna's delegated scope rejects tools and output budgets above its grant. It is
+rechecked against the enabled engine allowlist on every request. If no allowed
+government Luna exists, legacy GLM checkpoints retain their separate output cap
+of up to 16,384 tokens. Other engines retain their normal checkpoint output cap.
+Checkpoint failures retain their cause
 even when the SDK records them as assistant errors.
 Provider SSE responses have a separate 16 MiB transport limit for per-token
 framing and reasoning metadata. JSON responses retain their 2 MiB limit;
@@ -133,12 +139,14 @@ prompts using the existing implementation.
 ## Upgrade and rollback
 
 For the context-exhaustion fix, build the matching application and immutable
-`2026.10.09.4` harness from `main`. Preserve the UA host profile and existing
+`2026.10.09.5` harness from `main`. Preserve the UA host profile and existing
 relay configuration. Drain Kharkiv AI requests, close admission, and select
 only `echo-kharkiv2` on `echo-ai-agents-ua` through the control panel. Apply
 pending application migrations through the normal targeted analytics health
 procedure, then verify the authenticated agent connection before reopening.
-Set only the government GLM runtime profile's `max_output_tokens` to 16,384;
+Keep government Luna enabled, allowed for agents, and configured with its
+65,536-token context and 8,192-token output profile. Set only the government GLM
+runtime profile's `max_output_tokens` to 16,384;
 its context, reserve and recent-history values remain as listed above. An
 8,192-token budget can exhaust maximum reasoning before the first tool call.
 Validate the original fixed report period in a new conversation; retain the
