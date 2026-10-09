@@ -82,6 +82,18 @@ async function fixture(
           );
           return;
         }
+        if (
+          checkpoint === "connection-error" ||
+          (checkpoint === "connection-once" && checkpointCalls <= 3)
+        ) {
+          response.writeHead(502, { "Content-Type": "application/json" });
+          response.end(
+            JSON.stringify({
+              error: { message: "Provider connection failed" },
+            }),
+          );
+          return;
+        }
         assert.ok(!body.messages[1].content.includes("Unfinished draft."));
         assert.ok(body.messages[1].content.includes("Original request:"));
         assert.ok(body.messages[1].content.includes("2026-10-09"));
@@ -742,7 +754,7 @@ test("#3724 includes system schemas and pending prompt when compacting restored 
   }
 });
 
-for (const mode of ["stream-once", "network-once"]) {
+for (const mode of ["stream-once", "network-once", "connection-once"]) {
   test(`#3724 retries an interrupted checkpoint once without replacing evidence with partial text: ${mode}`, async () => {
     const value = await fixture(7, mode);
     try {
@@ -768,7 +780,13 @@ for (const mode of ["stream-once", "network-once"]) {
   });
 }
 
-for (const mode of ["stream-error", "network-error", "filtered", "denied"]) {
+for (const mode of [
+  "stream-error",
+  "network-error",
+  "connection-error",
+  "filtered",
+  "denied",
+]) {
   test(`#3724 preserves source evidence and bounds checkpoint retries: ${mode}`, async () => {
     const value = await fixture(7, mode);
     try {
@@ -777,7 +795,11 @@ for (const mode of ["stream-error", "network-error", "filtered", "denied"]) {
       assert.ok(value.contextFailure());
       assert.equal(
         value.checkpointCalls(),
-        ["filtered", "denied"].includes(mode) ? 1 : 2,
+        mode === "connection-error"
+          ? 6
+          : ["filtered", "denied"].includes(mode)
+            ? 1
+            : 2,
       );
       assert.equal(value.resetCalls(), 0);
       assert.equal(

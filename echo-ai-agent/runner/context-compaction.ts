@@ -141,7 +141,7 @@ function checkpointText(response: AssistantMessage): string {
 function interruptedCheckpoint(response: AssistantMessage): boolean {
   return (
     response.stopReason === "error" &&
-    /Stream ended without finish_reason|Provider finish_reason: network_error|connection error|connection reset|ECONNRESET|fetch failed|timed?\s*out|interrupted/i.test(
+    /Stream ended without finish_reason|Provider finish_reason: network_error|Provider connection failed|connection error|connection reset|ECONNRESET|fetch failed|timed?\s*out|interrupted/i.test(
       response.errorMessage ?? "",
     )
   );
