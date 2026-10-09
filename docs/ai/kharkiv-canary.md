@@ -79,9 +79,10 @@ and its extractor allowlist entry. Keep the direct Kharkiv entry.
 
 ## Configuration and processing scope
 
-Both government engines use the Tsur runtime profile: context 65,536 tokens,
-output 8,192, compaction reserve 16,384, recent history 8,192. GLM is the default
-and reviewer. Only the government engines are allowed for agent conversations;
+Both government engines retain Tsur's context of 65,536 tokens, compaction
+reserve of 16,384 and recent history of 8,192. Kharkiv's GLM generation budget
+is 16,384 tokens, including reasoning and visible output; Luna retains 8,192.
+GLM is the default and reviewer. Only government engines are allowed for agent conversations;
 the old Gemma engine registration is retained for rollback.
 
 GLM agent requests explicitly use maximum reasoning. The runner checks complete
@@ -94,12 +95,13 @@ Complete tool results enter the checkpoint request; the SDK's default
 request must still fit the provider context budget.
 Government GLM checkpoint generation has a separate output cap of up to 16,384
 tokens, bounded by the configured compaction reserve. Other engines retain their
-normal output cap for checkpoints. Normal generation retains its 8,192-token
-limit on Kharkiv. Checkpoint failures retain their cause
+normal output cap for checkpoints. Normal generation uses Kharkiv's configured
+16,384-token GLM budget. Checkpoint failures retain their cause
 even when the SDK records them as assistant errors.
 Provider SSE responses have a separate 16 MiB transport limit for per-token
 framing and reasoning metadata. JSON responses retain their 2 MiB limit;
-answer limits, tool budgets and the total request deadline remain unchanged.
+configured output limits still apply. Tool budgets and the total request deadline
+remain unchanged.
 Government GLM streams may continue within that ten-minute deadline; other
 provider requests retain their five-minute timeout.
 Empty, truncated or ineffective checkpoints fail without replacing source
@@ -135,6 +137,9 @@ relay configuration. Drain Kharkiv AI requests, close admission, and select
 only `echo-kharkiv2` on `echo-ai-agents-ua` through the control panel. Apply
 pending application migrations through the normal targeted analytics health
 procedure, then verify the authenticated agent connection before reopening.
+Set only the government GLM runtime profile's `max_output_tokens` to 16,384;
+its context, reserve and recent-history values remain as listed above. An
+8,192-token budget can exhaust maximum reasoning before the first tool call.
 Validate the original fixed report period in a new conversation; retain the
 failed request and its audit. Rollback restores the saved application and
 `2026.10.08.3` namespace/template, preserving additive schema and new data.
