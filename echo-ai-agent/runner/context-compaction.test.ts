@@ -16,6 +16,7 @@ import { Type } from "typebox";
 import { installContextCompaction } from "./context-compaction.ts";
 import {
   createToolResponseCompactor,
+  recoverFinalOutputLimit,
   validateFinalAssistantMessage,
 } from "./runner.ts";
 
@@ -29,6 +30,7 @@ async function fixture(
     maxTokens?: number;
     reserveTokens: number;
     modelName?: string;
+    finalOutput?: string;
   } = {
     maxTokens: 16_384,
     reserveTokens: 16_384,
@@ -39,6 +41,7 @@ async function fixture(
   let checkpointCalls = 0;
   let progressCalls = 0;
   let resetCalls = 0;
+  let finalCalls = 0;
   const cursors: number[] = [];
   const requests: any[] = [];
   const errors: unknown[] = [];
@@ -80,12 +83,21 @@ async function fixture(
             !body.messages[1].content.includes("more characters truncated"),
           );
         }
-        if (checkpoint === "cancel") {
+        if (
+          checkpoint === "cancel" ||
+          (finalCalls > 0 &&
+            checkpointSettings.finalOutput === "cancel-recovery")
+        ) {
           cancellation.abort();
           response.destroy();
           return;
         }
-        finishReason = checkpoint === "length" ? "length" : "stop";
+        finishReason =
+          checkpoint === "length" ||
+          (finalCalls > 0 &&
+            checkpointSettings.finalOutput === "checkpoint-limit")
+            ? "length"
+            : "stop";
         const content =
           checkpoint === "empty"
             ? ""
@@ -126,11 +138,22 @@ async function fixture(
         };
         finishReason = "tool_calls";
       } else {
+        finalCalls += 1;
         assert.ok(JSON.stringify(body.messages).includes(firstCitation));
         delta = {
           role: "assistant",
           content: `Alpha: completed ${pagesRead * 20} fixture messages. [Source](${firstCitation})`,
         };
+        if (
+          checkpointSettings.finalOutput &&
+          (finalCalls === 1 ||
+            checkpointSettings.finalOutput === "always-length")
+        ) {
+          finishReason = "length";
+          delta = {
+            reasoning_content: "Synthetic unsuccessful provider reasoning",
+          };
+        }
       }
       const promptTokens = Math.ceil(
         (JSON.stringify(body.messages).length +
@@ -294,7 +317,7 @@ async function fixture(
     sessionManager,
     settingsManager,
   });
-  const contextFailure = installContextCompaction(
+  const contextCompaction = installContextCompaction(
     session,
     {
       prompt,
@@ -323,9 +346,11 @@ async function fixture(
     cursors,
     firstCitation,
     checkpointCalls: () => checkpointCalls,
+    finalCalls: () => finalCalls,
     progressCalls: () => progressCalls,
     resetCalls: () => resetCalls,
-    contextFailure,
+    contextFailure: contextCompaction.failure,
+    contextCompaction,
     close: async () => {
       session.dispose();
       server.closeAllConnections();
@@ -412,6 +437,109 @@ test("#3724 continued pagination and follow-ups with a separate checkpoint engin
     await value.close();
   }
 });
+
+for (const finalOutput of [
+  "retry",
+  "always-length",
+  "checkpoint-limit",
+  "cancel-recovery",
+  "legacy",
+]) {
+  test(`#3724 bounded output recovery: ${finalOutput}`, async () => {
+    const value = await fixture(7, "stop", false, 2, {
+      maxTokens: 8_192,
+      reserveTokens: 16_384,
+      modelName: finalOutput === "legacy" ? undefined : "checkpoint",
+      finalOutput,
+    });
+    const observed: unknown[] = [];
+    const unsubscribe = value.session.subscribe((event: any) => {
+      if (event.type === "message_end" && event.message.role === "assistant")
+        observed.push(event.message);
+    });
+    try {
+      await value.session.prompt(value.prompt);
+      assert.throws(
+        () => validateFinalAssistantMessage(observed),
+        /output token limit/,
+      );
+      const audit = structuredClone(value.session.sessionManager.getEntries());
+      const resets = value.resetCalls();
+      const emitAssistant = { current: true };
+      const recovery = () =>
+        recoverFinalOutputLimit(
+          value.session,
+          {
+            prompt: value.prompt,
+            checkpointModelName:
+              finalOutput === "legacy" ? undefined : "checkpoint",
+          },
+          observed,
+          value.contextCompaction,
+          emitAssistant,
+        );
+      if (
+        finalOutput === "checkpoint-limit" ||
+        finalOutput === "cancel-recovery"
+      ) {
+        await assert.rejects(recovery);
+        assert.equal(value.resetCalls(), resets);
+        assert.deepEqual(value.session.sessionManager.getEntries(), audit);
+      } else {
+        assert.equal(await recovery(), finalOutput !== "legacy");
+        assert.equal(value.finalCalls(), finalOutput === "legacy" ? 1 : 2);
+        assert.equal(
+          value.resetCalls(),
+          resets + (finalOutput === "legacy" ? 0 : 1),
+        );
+        assert.deepEqual(
+          value.session.sessionManager.getEntries().slice(0, audit.length),
+          audit,
+        );
+        if (finalOutput === "retry") {
+          validateFinalAssistantMessage(observed);
+          assert.ok(
+            !value.session.sessionManager
+              .buildContextEntries()
+              .some(
+                (entry: any) =>
+                  entry.type === "message" &&
+                  entry.message.role === "toolResult",
+              ),
+          );
+          assert.ok(
+            !value.requests
+              .at(-1)
+              .messages.some((message: any) => message.role === "tool"),
+          );
+          assert.ok(
+            value.requests
+              .at(-1)
+              .messages.some(
+                (message: any) =>
+                  message.role === "user" &&
+                  (message.content === value.prompt ||
+                    (Array.isArray(message.content) &&
+                      message.content.some(
+                        (block: any) =>
+                          block.type === "text" && block.text === value.prompt,
+                      ))),
+              ),
+          );
+        } else
+          assert.throws(
+            () => validateFinalAssistantMessage(observed),
+            /output token limit/,
+          );
+      }
+      assert.equal(emitAssistant.current, true);
+      assert.deepEqual(value.errors, []);
+    } finally {
+      unsubscribe();
+      await value.close();
+    }
+  });
+}
 
 test("#3724 includes system schemas and pending prompt when compacting restored history", async () => {
   const value = await fixture(0, "stop", true);

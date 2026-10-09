@@ -292,6 +292,8 @@ system prompt, tool schemas and provider output allowance. Checkpoints preserve
 evidence, citations and pagination; empty or truncated checkpoints are rejected.
 An optional gateway checkpoint engine keeps the primary report engine unchanged;
 both use the same request-scoped capability.
+With this engine, an output-limit failure triggers one fresh evidence checkpoint
+and one primary-engine retry within the existing request deadline and limits.
 Checkpoint generation has a separate `checkpointMaxTokens` output cap, defaulting
 to the normal answer cap. Its failure cause survives SDK error conversion.
 Each tool response and retained tool context remain bounded, with discarded

@@ -293,13 +293,59 @@ async function ensureContext(
   }
 }
 
+async function compactAllForOutputRetry(
+  runtime: CompactionRuntime,
+): Promise<void> {
+  const { session, settings, summarize, onProgress, onCompacted } = runtime;
+  const checkpointEngine = settings.checkpointEngine;
+  if (!checkpointEngine)
+    throw new Error("output recovery requires a checkpoint engine");
+  settings.signal?.throwIfAborted();
+  const entries = session.sessionManager
+    .buildContextEntries()
+    .filter((entry) => sessionEntryToContextMessages(entry).length > 0);
+  const context = checkpointContext(entries, settings);
+  const maxTokens = settings.checkpointMaxTokens ?? settings.maxTokens;
+  if (clampMaxTokensToContext(checkpointEngine, context, maxTokens) < maxTokens)
+    throw new Error("output recovery evidence exceeds checkpoint context");
+  onProgress();
+  const response = await summarize(checkpointEngine, context, {
+    apiKey: settings.providerApiKey ?? "echo-local-tokenless",
+    maxTokens,
+    signal: settings.signal,
+    maxRetries: 2,
+    cacheRetention: "none",
+  });
+  settings.signal?.throwIfAborted();
+  const summary = checkpointText(response);
+  const tokensBefore =
+    runtime.selectedEngine.contextWindow -
+    availableTokens(runtime, session.agent.state);
+  const messages = compactedMessages(summary, tokensBefore, []);
+  session.sessionManager.appendCompaction(
+    summary,
+    "",
+    tokensBefore,
+    undefined,
+    true,
+    response.usage,
+  );
+  session.agent.state.messages = messages;
+  onCompacted(messages);
+}
+
+export interface ContextCompaction {
+  failure: () => unknown;
+  compactForOutputRetry: () => Promise<void>;
+}
+
 export function installContextCompaction(
   session: AgentSession,
   settings: ContextSettings,
   onProgress: () => void,
   onCompacted: (messages: AgentMessage[]) => void,
   summarize: typeof completeSimple = completeSimple,
-): () => unknown {
+): ContextCompaction {
   const selectedEngine = session.model;
   if (!selectedEngine)
     throw new Error("context compaction requires an AI engine");
@@ -356,5 +402,8 @@ export function installContextCompaction(
     settings.signal?.throwIfAborted();
     await previousPrompt(pendingPrompt, options);
   };
-  return () => runtime.failure;
+  return {
+    failure: () => runtime.failure,
+    compactForOutputRetry: () => compactAllForOutputRetry(runtime),
+  };
 }

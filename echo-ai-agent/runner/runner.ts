@@ -7,6 +7,7 @@ import {
   ModelRuntime,
   SessionManager,
   SettingsManager,
+  type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { countKnownReports, createMapTools, EDIT_GUIDANCE, knownReportsGuidance, MapRegistry, MAP_GUIDANCE, normalizeToolArguments, SCRIPT_GUIDANCE, preserveMapReferences, publishReferencedDrafts, stripUnpublishedMapLinks, validateMapEdit, validateMapSummaries, type MapEditContext, type MapSummary } from "./maps.ts";
@@ -33,13 +34,13 @@ import {
 } from "./citations.ts";
 import { createMapScriptRunner, MAP_PYTHON_ROOT } from "./map-script.ts";
 import { SidcResolver } from "./sidc-resolver.ts";
-import { installContextCompaction } from "./context-compaction.ts";
+import { installContextCompaction, type ContextCompaction } from "./context-compaction.ts";
 
 const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.09.5";
+const HARNESS_RELEASE = "2026.10.09.6";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -2757,13 +2758,37 @@ export function subscribeToEvents(
   });
 }
 
-export function validateFinalAssistantMessage(messages: unknown[]): void {
-  const assistantMessage = messages.findLast(
+function lastAssistantMessage(messages: unknown[]): JsonObject | undefined {
+  return messages.findLast(
     (message) =>
       Boolean(message) &&
       typeof message === "object" &&
       (message as JsonObject).role === "assistant",
   ) as JsonObject | undefined;
+}
+
+export async function recoverFinalOutputLimit(
+  session: AgentSession,
+  payload: Pick<RunnerPayload, "prompt" | "checkpointModelName">,
+  messages: unknown[],
+  compaction: ContextCompaction,
+  emitAssistant: { current: boolean },
+): Promise<boolean> {
+  if (!payload.checkpointModelName || lastAssistantMessage(messages)?.stopReason !== "length") return false;
+  await compaction.compactForOutputRetry();
+  messages.length = 0;
+  const previous = emitAssistant.current;
+  emitAssistant.current = false;
+  try {
+    await session.prompt(payload.prompt, { expandPromptTemplates: false, source: "rpc" });
+  } finally {
+    emitAssistant.current = previous;
+  }
+  return true;
+}
+
+export function validateFinalAssistantMessage(messages: unknown[]): void {
+  const assistantMessage = lastAssistantMessage(messages);
   if (!assistantMessage) {
     throw new Error("provider response is missing");
   }
@@ -2965,7 +2990,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       (message) => currentTurnAssistantMessages.push(message),
       () => emitAssistant.current,
     );
-    const contextFailure = installContextCompaction(session, { ...payload, checkpointEngine, signal: cancellation.signal },
+    const contextCompaction = installContextCompaction(session, { ...payload, checkpointEngine, signal: cancellation.signal },
       () => emit({ type: "progress", summary: "Скорочую контекст і продовжую аналіз" }),
       (messages) => compactResponse.reset(messages));
     currentTurnAssistantMessages.length = 0;
@@ -2975,13 +3000,17 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         expandPromptTemplates: false,
         source: "rpc",
       });
+      if (toolLimitError) throw toolLimitError;
+      if (cancelled) return;
+      if (contextCompaction.failure()) throw contextCompaction.failure();
+      await recoverFinalOutputLimit(session, payload, currentTurnAssistantMessages, contextCompaction, emitAssistant);
     } catch (error) {
       if (toolLimitError) throw toolLimitError;
       throw error;
     }
     if (toolLimitError) throw toolLimitError;
     if (cancelled) return;
-    if (contextFailure()) throw contextFailure();
+    if (contextCompaction.failure()) throw contextCompaction.failure();
     validateFinalAssistantMessage(currentTurnAssistantMessages);
     const draft = turnAssistantText(currentTurnAssistantMessages);
     publishReferencedDrafts(draft, mapRegistry, emit);
