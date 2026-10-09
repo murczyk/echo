@@ -38,6 +38,11 @@ import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { useObservedWidth } from '../../hooks/use-observed-width';
 import { AnalysisRightDock } from './AnalysisRightDock';
 import { analysisWorkspaceColumns, shouldInlineAnalysisLeftPanel } from './analysis-editor-layout';
+import {
+  recordAnalysisDebugPageSnapshot,
+  summarizeAnalysisDebugFilters,
+  useAnalysisDebugEnabled,
+} from './analysis-debug';
 
 export type RerAnalysisNeoPageProps = {
   authUserName?: string | null;
@@ -49,6 +54,7 @@ export function RerAnalysisNeoPage({
   authUserRoles = [],
 }: RerAnalysisNeoPageProps = {}) {
   const page = useRerAnalysisNeoPage(authUserName, authUserRoles);
+  const analysisDebugEnabled = useAnalysisDebugEnabled();
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const editorRef = useRef<ManageMessageEditorHandle>(null);
@@ -115,6 +121,46 @@ export function RerAnalysisNeoPage({
   const analysisMapVisible =
     centerTab === 'map' ||
     (page.analysisMapInSidebar && rightPanelVisible && page.rightSidebarTab === 'map');
+  useEffect(() => {
+    if (!analysisDebugEnabled) return;
+    recordAnalysisDebugPageSnapshot({
+      centerTab,
+      centerTabPending: page.centerTabPending,
+      leftPanelOpen: leftPanelVisible,
+      rightPanelOpen: rightPanelVisible,
+      rightSidebarTab: page.rightSidebarTab,
+      messagesLoading: page.messagesLoading,
+      messagesPaging: page.messagesPaging,
+      messagesTotalLoading: page.messagesTotalLoading,
+      messagesTotalCount: page.messagesTotalCount,
+      messagesOverallCount: page.messagesOverallCount,
+      messageIds: page.messages.map(([messageId]) => messageId),
+      pageIndex: page.pageIndex,
+      visiblePageIndex: page.visibleMessagesPageIndex,
+      newestFirst: page.newestFirst,
+      hasLoadedInitialMessages: page.hasLoadedInitialMessages,
+      noMoreToLoad: page.noMoreToLoad,
+      directMessageActive: page.directMessageNavigation != null,
+      directMessageLoading: page.directMessageLoading,
+      messageViewportPreserving: page.messageViewportPreserving,
+      filtersLoading: page.filtersLoading,
+      countsLoading: page.countsLoading,
+      summaryLoading: page.summaryLoading,
+      ...summarizeAnalysisDebugFilters(page.queryState),
+      hasError: page.error != null,
+      hasValidationError: page.validationError != null,
+      editorOpen,
+      skeletonVisible: showLoadingSkeletons,
+    });
+  }, [
+    analysisDebugEnabled,
+    centerTab,
+    editorOpen,
+    leftPanelVisible,
+    page,
+    rightPanelVisible,
+    showLoadingSkeletons,
+  ]);
   const openReport = useCallback(
     (focusTarget: HTMLElement) => {
       reportFocusTargetRef.current = focusTarget;
