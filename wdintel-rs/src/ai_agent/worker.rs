@@ -818,9 +818,12 @@ fn checkpoint_output_tokens(
     if ai_engine.model_name == crate::config::AI_AGENT_GLM_5_3
         && crate::ai_engine::client::is_government_url(&ai_engine.url)
     {
-        runtime_profile.max_output_tokens.max(
-            crate::config::AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS
-                .min(runtime_profile.compaction_reserve_tokens),
+        std::cmp::max(
+            runtime_profile.max_output_tokens,
+            std::cmp::min(
+                crate::config::AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS,
+                runtime_profile.compaction_reserve_tokens,
+            ),
         )
     } else {
         runtime_profile.max_output_tokens
