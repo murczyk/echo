@@ -5,7 +5,6 @@ import {
   normalizeUnknownUnitFilterLabel,
   normalizeUnknownUnitFilterValue,
 } from '../../shared/analysis-unit-filter';
-import { isPresent } from '../../../utils/misc';
 import { normalizeCallsignFilterValues } from '../../../utils/callsign-normalization';
 import type { AnalysisFiltersPanelPage } from './analysis-filters-panel-shared';
 
@@ -13,7 +12,9 @@ type Params = Pick<
   AnalysisFiltersPanelPage,
   'aorEntries' | 'counts' | 'groupInfos' | 'options' | 'queryState' | 'tagsMap' | 'tagsOrder'
 > &
-  Partial<Pick<AnalysisFiltersPanelPage, 'unitsMap'>>;
+  Partial<Pick<AnalysisFiltersPanelPage, 'unitsMap'>> & {
+    callsignsOptions: AnalysisFilterOption[];
+  };
 
 export type AnalysisFiltersPanelDerivedData = {
   groupOptions: AnalysisFilterOption[];
@@ -95,8 +96,35 @@ function countMergedSelectedGroupOptions(
   return visibleCount + selectedGroups.filter((key) => !matchedSelectedKeys.has(key)).length;
 }
 
+export function buildCallsignFilterOptions(
+  callsigns: AnalysisFilterOption[],
+): AnalysisFilterOption[] {
+  const groupedByLabel = new Map<string, AnalysisFilterOption>();
+
+  callsigns.forEach((option) => {
+    const label = (option.label ?? option.value).toLocaleUpperCase('uk-UA');
+    const values = normalizeCallsignFilterValues(option.values ?? [option.value]);
+    if (values.length === 0) return;
+
+    const existingOption = groupedByLabel.get(label);
+    if (existingOption != null) {
+      existingOption.values = normalizeCallsignFilterValues([
+        ...(existingOption.values ?? [existingOption.value]),
+        ...values,
+      ]);
+      existingOption.count += option.count;
+      return;
+    }
+
+    groupedByLabel.set(label, { value: values[0], label, count: option.count, values });
+  });
+
+  return Array.from(groupedByLabel.values());
+}
+
 export function buildAnalysisFiltersPanelDerivedData({
   aorEntries,
+  callsignsOptions,
   groupInfos,
   options,
   queryState,
@@ -105,23 +133,6 @@ export function buildAnalysisFiltersPanelDerivedData({
   unitsMap = {},
 }: Params): AnalysisFiltersPanelDerivedData {
   const groupOptions = buildMergedGroupOptions(options.groups, groupInfos);
-
-  const callsignsOptions = options.callsigns.reduce<AnalysisFilterOption[]>((acc, option) => {
-    const label = (option.label ?? option.value).toLocaleUpperCase('uk-UA');
-    const values = normalizeCallsignFilterValues(option.values ?? [option.value]);
-    if (values.length === 0) return acc;
-    const existingOption = acc.find((item) => item.label === label);
-    if (isPresent(existingOption)) {
-      existingOption.values = normalizeCallsignFilterValues([
-        ...(existingOption.values ?? []),
-        ...values,
-      ]);
-      existingOption.count += option.count;
-      return acc;
-    }
-    acc.push({ value: values[0], label, count: option.count, values });
-    return acc;
-  }, []);
 
   const aorNamesById = Object.fromEntries(aorEntries.map((aor) => [String(aor.id), aor.name]));
   const aorOptions = sortFilterOptionsByLabel(

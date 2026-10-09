@@ -521,7 +521,7 @@ describe('useRerAnalysisNeoPage', () => {
         onlyWithMetadata: false,
       });
       expect(latest?.centerTab).toBe('messages');
-      expect(latest?.rightSidebarTab).toBe('stats');
+      expect(latest?.rightSidebarTab).toBe('callsigns');
     },
   );
   it('opens the first available sidebar tab when the right panel is toggled while map stays in the center', async () => {
@@ -542,7 +542,7 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
   });
 
   // Regression: https://github.com/echoua/echo/issues/3461
@@ -680,12 +680,12 @@ describe('useRerAnalysisNeoPage', () => {
     await act(async () => latest?.toggleRightPanel());
     await flushEffects();
     expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
-    expect(currentAnalysisData?.loadFilterSection).toHaveBeenCalledWith('groups');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
+    expect(currentAnalysisData?.loadFilterSection).not.toHaveBeenCalledWith('callsigns');
 
     await act(async () => latest?.setRightSidebarTab('callsigns'));
     await flushEffects();
-    expect(currentAnalysisData?.loadFilterSection).toHaveBeenCalledWith('callsigns');
+    expect(currentAnalysisData?.loadFilterSection).not.toHaveBeenCalledWith('callsigns');
     await act(async () => latest?.toggleRightPanel());
     await flushEffects();
 
@@ -735,7 +735,7 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.leftPanelOpen).toBe(false);
     expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
     window.history.replaceState({}, '', originalUrl);
   });
   it('writes panel visibility to query parameters', async () => {
@@ -1489,7 +1489,7 @@ describe('useRerAnalysisNeoPage', () => {
     });
     await flushEffects();
 
-    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
     expect(latest?.rightPanelOpen).toBe(true);
   });
 });

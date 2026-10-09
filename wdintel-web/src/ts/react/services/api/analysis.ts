@@ -1,6 +1,8 @@
 import type {
   AnalysisCallsignFrequencyMatchesReq,
   AnalysisCallsignFrequencyMatchesRsp,
+  AnalysisCallsignPageReq,
+  AnalysisCallsignPageRsp,
   AnalysisStatsReq,
   EditFreqUnitNameReq,
   BatchMessageCommentsReq,
@@ -258,6 +260,25 @@ export async function fetchAnalysisCallsigns(
   options?: RequestOptions,
 ): Promise<CallsignStatsRsp> {
   return postAnalysisStats<CallsignStatsRsp>('/api/rer/analysis/stats/callsigns', req, options);
+}
+
+export async function fetchAnalysisCallsignPage(
+  req: AnalysisCallsignPageReq,
+  options?: RequestOptions,
+): Promise<AnalysisCallsignPageRsp> {
+  const body = {
+    req: analysisStatsReqBody(req.req),
+    query: req.query,
+    page_size: req.pageSize,
+    cursor: req.cursor,
+    order: req.order,
+  };
+  const raw = await postJson<unknown>(
+    '/api/rer/analysis/callsigns-page',
+    body as JsonValue,
+    options,
+  );
+  return transformSnakeToCamel<AnalysisCallsignPageRsp>(raw);
 }
 
 export async function fetchAnalysisUnits(

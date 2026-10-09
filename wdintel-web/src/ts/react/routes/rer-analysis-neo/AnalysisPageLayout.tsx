@@ -83,9 +83,8 @@ export function RerAnalysisNeoPage({
     page.error == null &&
     !keepDirectMessageVisible &&
     !keepMessageViewportVisible &&
-    (page.messagesLoading ||
-      page.directMessageLoading ||
-      (!page.hasLoadedInitialMessages && page.messages.length === 0));
+    !page.hasLoadedInitialMessages &&
+    (page.messagesLoading || page.directMessageLoading || page.messages.length === 0);
   const leftPanelVisible = page.leftPanelOpen;
   const requestedRightPanelVisible = page.rightPanelOpen;
   const editorIntentKey = createMessageOpen

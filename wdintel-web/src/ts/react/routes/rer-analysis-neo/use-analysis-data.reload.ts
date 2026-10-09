@@ -15,7 +15,7 @@ import type { AnalysisStatsReq } from '../../../../Bindings';
 import {
   fetchAnalysisAors,
   fetchAnalysisCount,
-  fetchAnalysisCallsigns,
+  fetchAnalysisCallsignPage,
   fetchAnalysisFreqs,
   fetchAnalysisGroups,
   fetchAnalysisMapPoints,
@@ -33,10 +33,6 @@ import {
 import { isAbortError } from '../../services/api/client';
 import { getGroupInfosBatch } from '../../services/api/inbox-reference-data';
 import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
-import {
-  normalizeCallsignFilterValues,
-  normalizeCallsignLookupValue,
-} from '../../utils/callsign-normalization';
 import { isNullOrUndefined, isPresent, sortFrequenciesNumerically } from '../../utils/misc';
 import { getUnitIdFilterValue } from '../../utils/unit-search';
 import {
@@ -322,7 +318,6 @@ export function filterSectionsForQueryState(
   if (queryState.aorsSelected.length > 0) sections.push('aors');
   if (queryState.groupsSelected.length > 0) sections.push('groups');
   if (queryState.sendersSelected.length > 0) sections.push('senders');
-  if (queryState.callsignsSelected.length > 0) sections.push('callsigns');
   if (queryState.unitsSelected.length > 0) sections.push('units');
   if (queryState.locationsSelected.length > 0) sections.push('locations');
   if (queryState.postsSelected.length > 0) sections.push('posts');
@@ -505,32 +500,25 @@ export async function loadFilterSectionData(
       return;
     }
     case 'callsigns': {
-      const callsignsRsp = await fetchAnalysisCallsigns(context.analysisReq, requestOptions);
+      const callsignsRsp = await fetchAnalysisCallsignPage(
+        {
+          req: context.analysisReq,
+          query: '',
+          pageSize: 50,
+          cursor: null,
+          order: 'count_desc',
+        },
+        requestOptions,
+      );
       if (isStale() || isAborted()) return;
-      const groupedByLabel = new Map<string, AnalysisFilterOption>();
-      callsignsRsp.callsigns.forEach((item) => {
-        const value = normalizeCallsignLookupValue(item.callsign);
-        if (value === '') return;
-        const label = value.toLocaleUpperCase('uk-UA');
-        const existing = groupedByLabel.get(label);
-        if (isPresent(existing)) {
-          existing.count += item.count;
-          existing.values = normalizeCallsignFilterValues([
-            ...(existing.values ?? [existing.value]),
-            value,
-          ]);
-          return;
-        }
-        groupedByLabel.set(label, {
-          value,
-          label,
-          count: item.count,
-          values: [value],
-        });
-      });
       context.setOptions((current) => ({
         ...current,
-        callsigns: [...groupedByLabel.values()].sort((a, b) => a.label.localeCompare(b.label)),
+        callsigns: callsignsRsp.entries.map((item) => ({
+          value: item.value,
+          label: item.label,
+          count: item.count,
+          values: item.values,
+        })),
       }));
       return;
     }
@@ -999,11 +987,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
               sectionsToReload: filterSectionsForInitialLoad(
                 params.queryState,
                 params.includeDefaultFilterSections !== false,
-                params.rightSidebarVisible && params.rightSidebarTab === 'stats'
-                  ? ['groups']
-                  : params.rightSidebarVisible && params.rightSidebarTab === 'callsigns'
-                    ? ['callsigns']
-                    : [],
+                params.rightSidebarVisible && params.rightSidebarTab === 'stats' ? ['groups'] : [],
               ),
               loadedSections:
                 params.includeDefaultFilterSections !== false
