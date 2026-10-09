@@ -1460,7 +1460,20 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
             let
                 networkBlock =
                     if vps.hideNetworks then
-                        text ""
+                        div [ class "font-medium" ]
+                            [ message.unit
+                                |> Maybe.map trim
+                                |> Maybe.andThen
+                                    (\unit ->
+                                        if String.isEmpty unit then
+                                            Nothing
+
+                                        else
+                                            Just unit
+                                    )
+                                |> Maybe.withDefault "Не встановлена"
+                                |> text
+                            ]
 
                     else
                         case message.networkIds of

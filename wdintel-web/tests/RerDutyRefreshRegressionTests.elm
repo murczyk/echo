@@ -3,6 +3,7 @@ module RerDutyRefreshRegressionTests exposing (suite)
 import Bindings as B
 import Dict
 import Expect
+import Http
 import Json.Decode
 import Json.Encode
 import Le.Waterfall.MessagesTests exposing (messageStub)
@@ -15,6 +16,7 @@ import Set
 import Shared
 import String
 import Test exposing (Test, describe, test)
+import Time
 import Url
 import Utils.RemoteData exposing (RemoteData(..))
 
@@ -22,7 +24,74 @@ import Utils.RemoteData exposing (RemoteData(..))
 suite : Test
 suite =
     describe "Rer Duty refresh regressions"
-        [ test "refresh enrichment stays isolated to the owning waterfall" <|
+        [ test "#3598 unresolved settings defer network hydration" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-duty" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            route =
+                                Route.fromUrl () url
+
+                            ( shared, _ ) =
+                                Shared.init (Ok { isDark = False, now = 0 }) route
+
+                            ( waterfall, _ ) =
+                                Waterfall.init True "wf-a" Nothing
+
+                            ( updatedWaterfall, _ ) =
+                                Waterfall.update
+                                    shared
+                                    anonymousUser
+                                    (Waterfall.TickTimeTick (Time.millisToPosix 0))
+                                    { waterfall
+                                        | messages =
+                                            Messages.fromList
+                                                [ ( 1, { messageStub | networkIds = Just [ 7 ] } ) ]
+                                    }
+                        in
+                        Expect.equal Set.empty updatedWaterfall.networkIdsRequested
+        , test "#3598 failed network batches release only their own requests and wait before retrying" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-duty" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            ( shared, _ ) =
+                                Shared.init (Ok { isDark = False, now = 0 }) (Route.fromUrl () url)
+
+                            ( waterfall, _ ) =
+                                Waterfall.init True "wf-a" Nothing
+
+                            ( failed, _ ) =
+                                Waterfall.update shared anonymousUser
+                                    (Waterfall.GotNetworksInfo [ 7 ] (Err { httpError = Http.Timeout, formErrors = Dict.empty, errors = [] }))
+                                    { waterfall | networkIdsRequested = Set.fromList [ 7, 8 ] }
+
+                            ( ticked, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.TickTimeTick (Time.millisToPosix 1000)) failed
+
+                            ( completed, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.GotNetworksInfo [ 8 ] (Ok [])) ticked
+
+                            ( retried, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.RetryNetworks [ 7 ]) completed
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal (Set.singleton 8) failed.networkIdsRequested
+                            , \_ -> Expect.equal (Set.singleton 7) failed.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal failed.networkIdsWaitingForRetry ticked.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal Set.empty completed.networkIdsRequested
+                            , \_ -> Expect.equal (Set.fromList [ 7, 8 ]) completed.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal (Set.singleton 8) retried.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal Set.empty retried.networkIdsRequested
+                            ]
+                            ()
+        , test "refresh enrichment stays isolated to the owning waterfall" <|
             \_ ->
                 case Url.fromString "http://localhost/rer-duty" of
                     Nothing ->

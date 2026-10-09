@@ -10,6 +10,7 @@ module Config exposing
     , thresholdStopCountingDays
     , waterfallLoadEarlierThresholdMs
     , waterfallMessageLimit
+    , waterfallNetworkRetryDelayMs
     )
 
 {-| Show tornado on visible messages
@@ -56,6 +57,11 @@ waterfallLoadEarlierThresholdMs =
 waterfallMessageLimit : number
 waterfallMessageLimit =
     100
+
+
+waterfallNetworkRetryDelayMs : Float
+waterfallNetworkRetryDelayMs =
+    5000
 
 
 adjacentFreqsRangeOptions : List Float

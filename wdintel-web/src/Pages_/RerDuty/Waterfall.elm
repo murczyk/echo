@@ -75,7 +75,8 @@ type Msg
     | GotSignals (Result ApiError B.ListSignalsRsp)
     | GotLatestFrequencies (Result ApiError (List String))
     | GotCallsignsInfo (List String) (Result ApiError (List B.CallsignInfoRes))
-    | GotNetworksInfo (Result ApiError (List B.Network))
+    | GotNetworksInfo (List Int) (Result ApiError (List B.Network))
+    | RetryNetworks (List Int)
     | GotGroupKeys (Result ApiError (List String))
     | GotTags (Result ApiError (List ( Int, B.Tag )))
     | InitGotLatestSenders (Result ApiError B.SignalProfilesRsp)
@@ -184,6 +185,8 @@ type alias Model =
     , profiles : Dict String (Maybe B.SignalProfileEntry)
     , groupInfos : Dict String B.SignalGroupEntry
     , networksExtra : Dict Int B.Network
+    , networkIdsRequested : Set Int
+    , networkIdsWaitingForRetry : Set Int
     , groups : List String
     , messages : Messages.Messages
     , loadingEarlier : LoadingEarlierStatus
@@ -291,6 +294,8 @@ init radioFeaturesAllowed id_ ms =
       , profiles = Dict.empty
       , groupInfos = Dict.empty
       , networksExtra = Dict.empty
+      , networkIdsRequested = Set.empty
+      , networkIdsWaitingForRetry = Set.empty
       , groups = []
       , messages = Messages.fromList []
       , loadingEarlier = NotLoading
@@ -730,11 +735,14 @@ applyRefreshedMessages shared messages model =
     let
         ( updatedModel, callsignEffect ) =
             updateFreqsAndCallsigns messages model
+
+        ( hydratedModel, networkEffect ) =
+            loadNetworksForMessages shared updatedModel messages
     in
-    ( updatedModel
+    ( hydratedModel
     , E.batch
         [ callsignEffect
-        , loadNetworksForMessages shared updatedModel messages
+        , networkEffect
         ]
     )
 
@@ -780,23 +788,52 @@ missingNetworkIdsForMessages shared model messages =
     messages
         |> List.concatMap (\( _, msg ) -> msg.networkIds |> Maybe.withDefault [])
         |> List.filter (\networkId -> not (Dict.member networkId knownNetworks))
+        |> List.filter (\networkId -> not (Set.member networkId model.networkIdsRequested))
+        |> List.filter (\networkId -> not (Set.member networkId model.networkIdsWaitingForRetry))
         |> ListX.unique
 
 
-loadNetworksForMessages : Shared.Model -> Model -> List ( Int, B.InboxMessage ) -> Effect Msg
+loadNetworksForMessages : Shared.Model -> Model -> List ( Int, B.InboxMessage ) -> ( Model, Effect Msg )
 loadNetworksForMessages shared model messages =
     let
         missingIds =
             missingNetworkIdsForMessages shared model messages
     in
-    if shared.systemSettings |> Maybe.map .hideNetworks |> Maybe.withDefault False then
-        E.none
+    case shared.systemSettings of
+        Just settings ->
+            if settings.hideNetworks || List.isEmpty missingIds then
+                ( model, E.none )
 
-    else if List.isEmpty missingIds then
-        E.none
+            else
+                ( { model | networkIdsRequested = Set.union model.networkIdsRequested (Set.fromList missingIds) }
+                , E.getNetworksInfoByIds (GotNetworksInfo missingIds) missingIds
+                )
+
+        Nothing ->
+            ( model, E.none )
+
+
+loadNetworksForLoadedMessages : Shared.Model -> Model -> ( Model, Effect Msg )
+loadNetworksForLoadedMessages shared model =
+    loadNetworksForMessages shared model (Messages.toMessageList model.messages)
+
+
+deferNetworkRetry : List Int -> Model -> ( Model, Effect Msg )
+deferNetworkRetry networkIds model =
+    if List.isEmpty networkIds then
+        ( model, E.none )
 
     else
-        E.getNetworksInfoByIds GotNetworksInfo missingIds
+        ( { model | networkIdsWaitingForRetry = Set.union model.networkIdsWaitingForRetry (Set.fromList networkIds) }
+        , E.sendCmd <| Task.perform (\_ -> RetryNetworks networkIds) (Process.sleep Config.waterfallNetworkRetryDelayMs)
+        )
+
+
+hideNetworks : Shared.Model -> Bool
+hideNetworks shared =
+    shared.systemSettings
+        |> Maybe.map .hideNetworks
+        |> Maybe.withDefault True
 
 
 commonGotVisibleMsgFunc : List Int -> { a | unreadIds : List Int, lastViewedMessageId : LastViewedMessageId, isMsgVisible : List Int } -> { a | unreadIds : List Int, lastViewedMessageId : LastViewedMessageId, isMsgVisible : List Int }
@@ -1542,12 +1579,15 @@ update shared user msg model =
 
                     else
                         m2
+
+                ( m4, networkEffect ) =
+                    loadNetworksForMessages shared m3 messages
             in
-            ( m3
+            ( m4
             , E.batch <|
                 [ loadNewGroups messages model
                 , loadNewProfiles messages model
-                , loadNetworksForMessages shared model messages
+                , networkEffect
                 , E.sendCmd <| jumpToBottom (waterfallDivId model.id) NoOp
                 , eff1
                 ]
@@ -1584,15 +1624,20 @@ update shared user msg model =
 
                 oldestViewedMessageId =
                     Maybe.map2 (\id1 id2 -> Basics.min id1 id2) loadingEarlierIdTrigger minVisibleId
+                m3 =
+                    { m2
+                        | messages = Messages.prependList model.messages messages
+                        , loadingEarlier = ScrollingIntoMessage
+                    }
+
+                ( m4, networkEffect ) =
+                    loadNetworksForMessages shared m3 messages
             in
-            ( { m2
-                | messages = Messages.prependList model.messages messages
-                , loadingEarlier = ScrollingIntoMessage
-              }
+            ( m4
             , E.batch <|
                 [ loadNewGroups messages model
                 , loadNewProfiles messages model
-                , loadNetworksForMessages shared model messages
+                , networkEffect
 
                 --, E.getViewportById (waterfallDivId model.id) (GotViewportBeforePrepending messages)
                 , E.sendCmd <|
@@ -1861,19 +1906,25 @@ update shared user msg model =
 
                         ( m3, eff3 ) =
                             updateFreqsAndCallsigns messages m2WithCallsigns
-                    in
-                    ( { m3
-                        | loadingInboxMessages =
-                            if List.length m2.notRenderedMessagesYet == 0 then
-                                False
 
-                            else
-                                model.loadingInboxMessages
-                      }
+                        m4 =
+                            { m3
+                                | loadingInboxMessages =
+                                    if List.length m2.notRenderedMessagesYet == 0 then
+                                        False
+
+                                    else
+                                        model.loadingInboxMessages
+                            }
+
+                        ( m5, networkEffect ) =
+                            loadNetworksForMessages shared m4 messages
+                    in
+                    ( m5
                     , E.batch <|
                         [ eff1
                         , eff3
-                        , loadNetworksForMessages shared model messages
+                        , networkEffect
                         , E.sendCmd <|
                             if List.length m3.notRenderedMessagesYet > 0 then
                                 Ports.waterfall_getVisibleMsgIds
@@ -1910,12 +1961,15 @@ update shared user msg model =
 
                         ( m3, eff3 ) =
                             updateFreqsAndCallsigns messages m2WithCallsigns
+
+                        ( m4, networkEffect ) =
+                            loadNetworksForMessages shared m3 messages
                     in
-                    ( m3
+                    ( m4
                     , E.batch <|
                         [ eff1
                         , eff3
-                        , loadNetworksForMessages shared model messages
+                        , networkEffect
                         , if List.length messages > 0 then
                             E.sendCmd <| jumpToBottom (waterfallDivId model.id) NoOp
 
@@ -1955,12 +2009,15 @@ update shared user msg model =
 
                         ( m3, eff3 ) =
                             updateFreqsAndCallsigns messages m2WithCallsigns
+
+                        ( m4, networkEffect ) =
+                            loadNetworksForMessages shared m3 messages
                     in
-                    ( m3
+                    ( m4
                     , E.batch <|
                         [ eff1
                         , eff3
-                        , loadNetworksForMessages shared model messages
+                        , networkEffect
                         ]
                     )
 
@@ -2126,9 +2183,15 @@ update shared user msg model =
 
                         Just _ ->
                             m2
+
+                ( m4, networkEffect ) =
+                    loadNetworksForLoadedMessages shared m3
             in
-            ( m3
-            , E.sendCmd <| Task.perform (\_ -> TickTimeSlept) (Process.sleep 1000)
+            ( m4
+            , E.batch
+                [ networkEffect
+                , E.sendCmd <| Task.perform (\_ -> TickTimeSlept) (Process.sleep 1000)
+                ]
             )
 
         TickTimeSlept ->
@@ -2196,17 +2259,38 @@ update shared user msg model =
         GotCallsignsInfo requested (Ok callsigns) ->
             ( mergeCallsignsInfo callsigns { model | messageCallsignsRequested = List.foldl Set.remove model.messageCallsignsRequested requested }, E.none )
 
-        GotNetworksInfo (Err e) ->
-            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e )
+        GotNetworksInfo requested (Err e) ->
+            let
+                ( m2, retryEffect ) =
+                    deferNetworkRetry requested { model | networkIdsRequested = List.foldl Set.remove model.networkIdsRequested requested }
+            in
+            ( m2
+            , E.batch
+                [ Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e
+                , retryEffect
+                ]
+            )
 
-        GotNetworksInfo (Ok networks) ->
+        GotNetworksInfo requested (Ok networks) ->
             let
                 newNetworks =
                     networks
                         |> List.map (\network -> ( network.id, network ))
                         |> Dict.fromList
+
+                m2 =
+                    { model
+                        | networksExtra = Dict.union newNetworks model.networksExtra
+                        , networkIdsRequested = List.foldl Set.remove model.networkIdsRequested requested
+                    }
+
+                missingIds =
+                    requested |> List.filter (\networkId -> not (Dict.member networkId (networksForView shared m2)))
             in
-            ( { model | networksExtra = Dict.union newNetworks model.networksExtra }, E.none )
+            deferNetworkRetry missingIds m2
+
+        RetryNetworks networkIds ->
+            loadNetworksForLoadedMessages shared { model | networkIdsWaitingForRetry = List.foldl Set.remove model.networkIdsWaitingForRetry networkIds }
 
         GotSignals (Err err) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження сигналів" err )
@@ -2238,7 +2322,7 @@ update shared user msg model =
                                     networksForView shared model
 
                                 messageNetworkIds =
-                                    if shared.systemSettings |> Maybe.map .hideNetworks |> Maybe.withDefault False then
+                                    if hideNetworks shared then
                                         []
 
                                     else case message_.networkIds of
@@ -2254,7 +2338,7 @@ update shared user msg model =
                             , waterfallId = model.id
                             , datasources = model.datasources
                             , messageNetworkIds = messageNetworkIds
-                            , hideNetworks = shared.systemSettings |> Maybe.map .hideNetworks |> Maybe.withDefault False
+                            , hideNetworks = hideNetworks shared
                             , masterUnits =
                                 case shared.masterUnits of
                                     Success units ->
@@ -2602,7 +2686,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                                     networksForView shared model
 
                                                 messageNetworkIds =
-                                                    if shared.systemSettings |> Maybe.map .hideNetworks |> Maybe.withDefault False then
+                                                    if hideNetworks shared then
                                                         []
 
                                                     else case message.networkIds of
@@ -2618,7 +2702,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                             , serverInfo = serverInfo
                                             , user = user
                                             , messageNetworkIds = messageNetworkIds
-                                            , hideNetworks = shared.systemSettings |> Maybe.map .hideNetworks |> Maybe.withDefault False
+                                            , hideNetworks = hideNetworks shared
                                             , masterUnits = masterUnits
                                             , networkDetailsViewPreference = shared.rerNetworkDetailsPreferredView
                                             , callsignsInfo = model.callsignsInfo
