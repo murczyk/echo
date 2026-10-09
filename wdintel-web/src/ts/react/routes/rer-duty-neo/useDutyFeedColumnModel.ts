@@ -20,6 +20,7 @@ export type DutyFeedColumnModelDeps = {
   canUseMessageDevices: boolean;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -327,6 +328,7 @@ function buildFeedMessageCard(
     featureStrictNetworks,
     tagsLayout: deps.tagsLayout,
     hideBotTags: deps.hideBotTags,
+    hideNetworks: deps.hideNetworks,
     collapseMediaPreviews: deps.collapseMediaPreviews,
     mediaSummaryEnabled: deps.mediaSummaryEnabled,
     messageTextPreviewLines: deps.messageTextPreviewLines,

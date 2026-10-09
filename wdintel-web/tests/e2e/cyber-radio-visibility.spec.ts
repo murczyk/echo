@@ -334,6 +334,39 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     await expect(page.getByText('мережі', { exact: true })).toBeVisible();
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3598
+  test('#3598 ignores restored network filters without network-only requests in classic Analysis', async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
+    const inbox = createLoadedInboxResponse();
+    inbox.inbox_items[0][1].networkIds = [7];
+    await installRerDutyShortStateMocks(page, { hideNetworks: true, inboxResponse: inbox });
+    await installAnalysisNeoApiMocks(page, { hideNetworks: true, inboxResponse: inbox });
+    await useRoles(page, ['Rer']);
+    const networkRequests: string[] = [];
+    page.on('request', (request) => {
+      const path = new URL(request.url()).pathname;
+      if (
+        path === '/api/rer/analysis/stats/networks' ||
+        path === '/api/sigint/network-info-batch-id'
+      ) {
+        networkRequests.push(path);
+      }
+    });
+    const inboxRequest = page.waitForRequest('**/api/rer-importer/get-inbox');
+    const state = toLegacyRerAnalysisQueryState({ networksSelected: ['7'], withoutNetwork: true });
+    await page.goto(`/rer-analysis?state=${encodeURIComponent(JSON.stringify(state))}`);
+    const request = (await inboxRequest).postDataJSON();
+
+    expect(request.selected_networks).toBeNull();
+    expect(request.without_network).toBe(false);
+    await expect(page.getByText('мережі', { exact: true })).toHaveCount(0);
+    await expect(page.locator('app-navbar')).toBeAttached();
+    await page.waitForTimeout(250);
+    expect(networkRequests).toEqual([]);
+  });
+
   for (const enabled of [true, false]) {
     test(`#3568 Duty minus menu follows the system flag: ${enabled}`, async ({ page }) => {
       await installRerDutyShortStateMocks(page, {

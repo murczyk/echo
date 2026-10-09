@@ -57,6 +57,7 @@ type alias ViewParams =
     , audioTranscriptionEnabled : Bool
     , audioTranscriptionCollapsed : Bool
     , disableBotTags : Bool
+    , hideNetworks : Bool
     }
 
 
@@ -1458,7 +1459,11 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
         messageColumn =
             let
                 networkBlock =
-                    case message.networkIds of
+                    if vps.hideNetworks then
+                        text ""
+
+                    else
+                        case message.networkIds of
                         Just networkIds ->
                             let
                                 networkItems =
@@ -1528,7 +1533,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     ]
                   <|
                     (markedTextModel
-                        |> Shared.MarkedText.viewWithMessageHintResults messageHintResults Nothing (Dict.values vps.networks) message.freq message.text (vps.pointTokenClickUrlFor message) metadataLinks
+                        |> Shared.MarkedText.viewWithMessageHintResults messageHintResults Nothing (if vps.hideNetworks then [] else Dict.values vps.networks) message.freq message.text (vps.pointTokenClickUrlFor message) metadataLinks
                     )
                 ]
             ]

@@ -789,7 +789,10 @@ loadNetworksForMessages shared model messages =
         missingIds =
             missingNetworkIdsForMessages shared model messages
     in
-    if List.isEmpty missingIds then
+    if shared.systemSettings |> Maybe.map .hideNetworks |> Maybe.withDefault False then
+        E.none
+
+    else if List.isEmpty missingIds then
         E.none
 
     else
@@ -2235,7 +2238,10 @@ update shared user msg model =
                                     networksForView shared model
 
                                 messageNetworkIds =
-                                    case message_.networkIds of
+                                    if shared.systemSettings |> Maybe.map .hideNetworks |> Maybe.withDefault False then
+                                        []
+
+                                    else case message_.networkIds of
                                         Just networkIds ->
                                             ListX.unique networkIds
 
@@ -2248,6 +2254,7 @@ update shared user msg model =
                             , waterfallId = model.id
                             , datasources = model.datasources
                             , messageNetworkIds = messageNetworkIds
+                            , hideNetworks = shared.systemSettings |> Maybe.map .hideNetworks |> Maybe.withDefault False
                             , masterUnits =
                                 case shared.masterUnits of
                                     Success units ->
@@ -2595,7 +2602,10 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                                     networksForView shared model
 
                                                 messageNetworkIds =
-                                                    case message.networkIds of
+                                                    if shared.systemSettings |> Maybe.map .hideNetworks |> Maybe.withDefault False then
+                                                        []
+
+                                                    else case message.networkIds of
                                                         Just networkIds ->
                                                             ListX.unique networkIds
 
@@ -2608,6 +2618,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                             , serverInfo = serverInfo
                                             , user = user
                                             , messageNetworkIds = messageNetworkIds
+                                            , hideNetworks = shared.systemSettings |> Maybe.map .hideNetworks |> Maybe.withDefault False
                                             , masterUnits = masterUnits
                                             , networkDetailsViewPreference = shared.rerNetworkDetailsPreferredView
                                             , callsignsInfo = model.callsignsInfo

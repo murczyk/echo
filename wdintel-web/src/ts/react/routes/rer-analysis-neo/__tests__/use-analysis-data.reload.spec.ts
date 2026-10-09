@@ -248,7 +248,7 @@ describe('loadFilterSectionData', () => {
 });
 
 describe('reloadAnalysisData', () => {
-  it('clears messages loading immediately after inbox resolves, without waiting for freqs', async () => {
+  it('#3598 skips network statistics while hidden and clears messages loading without waiting for freqs', async () => {
     const inboxDeferred = deferred<ReloadInboxRsp>();
     const freqsDeferred = deferred<{
       freqs: Array<{ freq: string; count: number; isNew: boolean }>;
@@ -283,6 +283,7 @@ describe('reloadAnalysisData', () => {
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
+      hideNetworks: true,
       invalidateCorrelatedFreqsCache,
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
@@ -361,6 +362,8 @@ describe('reloadAnalysisData', () => {
     ]);
     expect(messagesLoadingTransitions).toContain(false);
     expect(mocks.fetchAnalysisCount).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchAnalysisNetworks).not.toHaveBeenCalled();
+    expect(mocks.fetchNetworksByIds).not.toHaveBeenCalled();
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(
       buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null),
     );

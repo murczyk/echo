@@ -54,6 +54,7 @@ type Props = Pick<
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   unitsExactMatchOnlyDefault: boolean | null;
   analysisAorFilterEnabled: boolean;
+  hideNetworks: boolean;
   rerReportFilterEnabled: boolean;
   toggleSection: (section: FilterSectionId) => void;
 };
@@ -118,6 +119,7 @@ export function AnalysisFiltersPanelSections({
   queryState,
   unitsExactMatchOnlyDefault,
   analysisAorFilterEnabled,
+  hideNetworks,
   rerReportFilterEnabled,
   setIncludeOnlyNewFreqs,
   toggleSection,
@@ -216,7 +218,7 @@ export function AnalysisFiltersPanelSections({
           />
         </FilterSection>
       ) : null}
-      {radioFeaturesAllowed ? (
+      {radioFeaturesAllowed && !hideNetworks ? (
         <FilterSection
           title="Частоти"
           countLabel={countLabel(

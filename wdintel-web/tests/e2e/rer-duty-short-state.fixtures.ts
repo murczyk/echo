@@ -7,6 +7,7 @@ type ShortStateFixtureOptions = {
   enableAudioTranscription?: boolean;
   dutyExcludeMenuEnabled?: boolean;
   analysisAorFilterEnabled?: boolean;
+  hideNetworks?: boolean;
   shortStateId?: string;
   shortState?: unknown;
   inboxResponse?: InboxMessagesRspRaw | null | Promise<InboxMessagesRspRaw | null>;
@@ -206,6 +207,7 @@ export async function installRerDutyShortStateMocks(
           shortUrlEnabled: true,
           dutyExcludeMenuEnabled: options.dutyExcludeMenuEnabled,
           analysisAorFilterEnabled: options.analysisAorFilterEnabled,
+          hideNetworks: options.hideNetworks,
         }),
       );
       resolveSystemSettingsReady();

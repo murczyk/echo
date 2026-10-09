@@ -215,6 +215,7 @@ type alias Model =
     , audioTranscriptionEnabled : Bool
     , analysisAudioTranscriptionCollapsed : Bool
     , disableBotTags : Bool
+    , hideNetworks : Bool
     , withoutModelTags : Bool
     , editSidebar : Maybe Int
     , eventLastId : Maybe String

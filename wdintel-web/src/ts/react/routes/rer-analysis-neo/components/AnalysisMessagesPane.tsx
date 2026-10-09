@@ -129,6 +129,7 @@ type Props = {
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   messageTimeBasis?: MessageTimeBasis;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
@@ -372,6 +373,7 @@ type AnalysisMessageCardItemProps = {
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   messageTimeBasis?: MessageTimeBasis;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
@@ -413,6 +415,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   tagsLoading,
   tagsLayout,
   hideBotTags,
+  hideNetworks,
   messageTimeBasis,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   collapseMediaPreviews,
@@ -451,6 +454,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       tagsLoading={tagsLoading}
       tagsLayout={tagsLayout}
       hideBotTags={hideBotTags}
+      hideNetworks={hideNetworks}
       messageTimeBasis={messageTimeBasis}
       collapseMediaPreviews={collapseMediaPreviews}
       messageTextPreviewLines={messageTextPreviewLines}
@@ -514,8 +518,8 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       onCopyEtalon={
         etalonDisplayModel.copyEtalonValue == null
           ? undefined
-          : () => {
-              void copyMessageValue(etalonDisplayModel.copyEtalonValue).then(() => {
+          : (value) => {
+              void copyMessageValue(value).then(() => {
                 onCopyFeedback(`etalon-${id}`);
               });
             }
@@ -523,8 +527,8 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       onCopyLocation={
         etalonDisplayModel.copyLocationValue == null
           ? undefined
-          : () => {
-              void copyMessageValue(etalonDisplayModel.copyLocationValue).then(() => {
+          : (value) => {
+              void copyMessageValue(value).then(() => {
                 onCopyFeedback(`location-${id}`);
               });
             }
@@ -599,6 +603,7 @@ function AnalysisMessagesPaneComponent({
   tagsLoading,
   tagsLayout,
   hideBotTags,
+  hideNetworks,
   messageTimeBasis,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   collapseMediaPreviews,
@@ -1264,6 +1269,7 @@ function AnalysisMessagesPaneComponent({
               tagsLoading={tagsLoading}
               tagsLayout={tagsLayout}
               hideBotTags={hideBotTags}
+              hideNetworks={hideNetworks}
               messageTimeBasis={messageTimeBasis}
               mediaSummaryEnabled={mediaSummaryEnabled}
               collapseMediaPreviews={collapseMediaPreviews}

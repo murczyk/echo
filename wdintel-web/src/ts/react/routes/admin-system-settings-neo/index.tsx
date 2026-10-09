@@ -57,6 +57,7 @@ type SystemSettingsForm = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
+  hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
@@ -99,6 +100,7 @@ type SystemSettingsPayload = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
+  hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
@@ -141,6 +143,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   showClassicAnalysis: true,
   showPelengDistanceToBattleline: false,
   disableBotTags: false,
+  hideNetworks: false,
   dutyExcludeMenuEnabled: true,
   analysisAorFilterEnabled: true,
   aiPositionHighlightsEnabled: false,
@@ -233,6 +236,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     showClassicAnalysis: item?.showClassicAnalysis ?? true,
     showPelengDistanceToBattleline: item?.showPelengDistanceToBattleline ?? false,
     disableBotTags: item?.disableBotTags ?? false,
+    hideNetworks: item?.hideNetworks ?? false,
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
     aiPositionHighlightsEnabled: item?.aiPositionHighlightsEnabled ?? false,
@@ -278,6 +282,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.showClassicAnalysis === b.showClassicAnalysis &&
     a.showPelengDistanceToBattleline === b.showPelengDistanceToBattleline &&
     a.disableBotTags === b.disableBotTags &&
+    a.hideNetworks === b.hideNetworks &&
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
     a.aiPositionHighlightsEnabled === b.aiPositionHighlightsEnabled &&
@@ -379,6 +384,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     showClassicAnalysis: form.showClassicAnalysis,
     showPelengDistanceToBattleline: form.showPelengDistanceToBattleline,
     disableBotTags: form.disableBotTags,
+    hideNetworks: form.hideNetworks,
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
     aiPositionHighlightsEnabled: form.aiPositionHighlightsEnabled,
@@ -586,6 +592,23 @@ function MainSettingsSection({
           />
         }
         label="Використовувати новий аналіз за замовчуванням"
+      />
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.hideNetworks}
+            onChange={(_, checked) => {
+              patchForm({ hideNetworks: checked });
+            }}
+          />
+        }
+        label={
+          <InfoLabel
+            label="Приховати мережі"
+            tooltip="Приховує мережі в картках повідомлень і фільтр «Мережі» в оперативному та аналізі, у класичному й новому інтерфейсах. Сторінка «База даних → Мережі» залишається без змін."
+          />
+        }
       />
 
       <FormControlLabel
@@ -1257,6 +1280,7 @@ export function AdminSystemSettingsNeoPage() {
       showClassicAnalysis: payload.showClassicAnalysis,
       showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
       disableBotTags: payload.disableBotTags,
+      hideNetworks: payload.hideNetworks,
       dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
       analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
       aiPositionHighlightsEnabled: payload.aiPositionHighlightsEnabled,

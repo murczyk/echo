@@ -6,7 +6,7 @@ import { getUnitsByIds, getUnitsList } from '../../services/api/units';
 import { createMasterUnitText } from './utils';
 import type { MessageFeedState } from './utils';
 
-export function useRerDutyReferenceData(messageFeeds: MessageFeedState[]) {
+export function useRerDutyReferenceData(messageFeeds: MessageFeedState[], hideNetworks: boolean) {
   const [networkMap, setNetworkMap] = useState<Record<number, Network>>({});
   const [unitsMap, setUnitsMap] = useState<Record<number, Unit>>({});
 
@@ -32,6 +32,7 @@ export function useRerDutyReferenceData(messageFeeds: MessageFeedState[]) {
   );
 
   useEffect(() => {
+    if (hideNetworks) return;
     const missing = allNetworkIds.filter((id) => !(id in networkMapRef.current));
     if (missing.length === 0) return;
 
@@ -52,10 +53,11 @@ export function useRerDutyReferenceData(messageFeeds: MessageFeedState[]) {
     return () => {
       cancelled = true;
     };
-  }, [allNetworkIds.join(',')]);
+  }, [allNetworkIds.join(','), hideNetworks]);
 
   useEffect(() => {
     let cancelled = false;
+    if (hideNetworks) return;
     getUnitsList()
       .then((units) => {
         if (cancelled) return;
@@ -72,9 +74,10 @@ export function useRerDutyReferenceData(messageFeeds: MessageFeedState[]) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hideNetworks]);
 
   useEffect(() => {
+    if (hideNetworks) return;
     const missing = referencedUnitIds.filter((id) => !(id in unitsMapRef.current));
     if (missing.length === 0) return;
 
@@ -95,7 +98,7 @@ export function useRerDutyReferenceData(messageFeeds: MessageFeedState[]) {
     return () => {
       cancelled = true;
     };
-  }, [referencedUnitIds.join(',')]);
+  }, [referencedUnitIds.join(','), hideNetworks]);
 
   const networkDisplayMap = useMemo(() => {
     const next: Record<number, string> = {};

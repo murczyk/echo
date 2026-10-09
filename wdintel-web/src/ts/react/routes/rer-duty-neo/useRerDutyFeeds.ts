@@ -150,6 +150,8 @@ export function useRerDutyFeeds(
   currentUserOrganismId: number | null = null,
   deviceAccess: DeviceAccess = { status: 'loading' },
   radioFeaturesAllowed = false,
+  hideNetworks = false,
+  networkVisibilityReady = true,
 ) {
   const [keywordSets, setKeywordSets] = useState<OrganismKeywordSetDto[]>([]);
   const reloadKeywordSets = useCallback(async () => {
@@ -183,6 +185,8 @@ export function useRerDutyFeeds(
     disableAutoScroll: dutyDisableAutoScroll,
     deviceAccess,
     radioFeaturesAllowed,
+    hideNetworks,
+    networkVisibilityReady,
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;

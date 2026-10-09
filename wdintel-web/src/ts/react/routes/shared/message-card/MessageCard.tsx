@@ -112,6 +112,7 @@ export type MessageCardProps = {
   /** Tag chips section visual density mode. */
   tagsLayout?: TagsLayoutVariant;
   hideBotTags?: boolean;
+  hideNetworks?: boolean;
   tagsLoading?: boolean;
   /** Baseline "now" when the card is off-screen; while visible, relative time updates every second. */
   referenceTimeMs: number | null;
@@ -142,8 +143,8 @@ export type MessageCardProps = {
   onCopyTextWithNetwork?: () => void;
   onCopyTextWithNetworkAndNote?: () => void;
   onCopyMessageLink?: () => void;
-  onCopyEtalon?: () => void;
-  onCopyLocation?: () => void;
+  onCopyEtalon?: (value: string) => void;
+  onCopyLocation?: (value: string) => void;
   onCreateReport?: (focusTarget: HTMLElement) => void;
   onEditReport?: (reportId: number) => void;
   onDelete?: () => void;
@@ -179,6 +180,7 @@ function MessageCardComponent({
   analysisDestination = 'classic',
   tagsLayout = 'full',
   hideBotTags = false,
+  hideNetworks = false,
   tagsLoading = false,
   referenceTimeMs,
   authUserName,
@@ -257,9 +259,25 @@ function MessageCardComponent({
       }),
     [msg, featureStrictNetworks, networkDisplayMap, derivedNetworkMap, networks],
   );
-  const onCopyEtalonAction = etalonDisplayModel.copyEtalonValue == null ? undefined : onCopyEtalon;
+  const visibleEtalonDisplayModel = useMemo(() => {
+    if (!hideNetworks || etalonDisplayModel.primaryKind !== 'network') return etalonDisplayModel;
+    const unit = msg.unit?.trim() ?? '';
+    return {
+      ...etalonDisplayModel,
+      primaryKind: unit === '' ? ('empty' as const) : ('unit' as const),
+      displayValue: unit,
+      copyEtalonValue: unit === '' ? null : unit,
+      renderedNetworks: [],
+    };
+  }, [hideNetworks, etalonDisplayModel, msg.unit]);
+  const onCopyEtalonAction =
+    visibleEtalonDisplayModel.copyEtalonValue == null || onCopyEtalon == null
+      ? undefined
+      : () => onCopyEtalon(visibleEtalonDisplayModel.copyEtalonValue!);
   const onCopyLocationAction =
-    etalonDisplayModel.copyLocationValue == null ? undefined : onCopyLocation;
+    visibleEtalonDisplayModel.copyLocationValue == null || onCopyLocation == null
+      ? undefined
+      : () => onCopyLocation(visibleEtalonDisplayModel.copyLocationValue!);
   const pointEtalons = useMemo(() => getPointEtalonsFromMessage(msg, tagsMap), [msg, tagsMap]);
   const radioFeaturesAllowed = useRadioFeatures();
   const dutyExcludeMenuEnabled = useContext(DutyExcludeMenuContext);
@@ -345,7 +363,7 @@ function MessageCardComponent({
     displayTimestamp: messageTimeBasis === 'creation' ? displayTimestamp : undefined,
     messageTimeBasis,
     copiedFeedbackId,
-    etalonDisplayModel,
+    etalonDisplayModel: visibleEtalonDisplayModel,
     mapHref,
     analysisHref,
     rightInsetPx: rightHeaderInsetPx,
@@ -354,8 +372,8 @@ function MessageCardComponent({
     onCreateReport,
     onCopyText,
     onCopyFreq: radioFeaturesAllowed ? onCopyFreq : undefined,
-    onCopyTextWithNetwork,
-    onCopyTextWithNetworkAndNote,
+    onCopyTextWithNetwork: hideNetworks ? undefined : onCopyTextWithNetwork,
+    onCopyTextWithNetworkAndNote: hideNetworks ? undefined : onCopyTextWithNetworkAndNote,
     onCopyMessageLink,
     onCopyEtalon: onCopyEtalonAction,
     onCopyLocation: onCopyLocationAction,
@@ -393,7 +411,7 @@ function MessageCardComponent({
               msg={msg}
               groupName={groupName}
               senderName={senderName}
-              etalonDisplayModel={etalonDisplayModel}
+              etalonDisplayModel={visibleEtalonDisplayModel}
               metadataTrigger={metadataTrigger}
             />
           }

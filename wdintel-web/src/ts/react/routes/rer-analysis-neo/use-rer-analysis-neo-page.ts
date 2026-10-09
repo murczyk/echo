@@ -138,6 +138,7 @@ export function useRerAnalysisNeoPage(
   const [showPelengDistanceToBattleline, setShowPelengDistanceToBattleline] = useState(false);
   const [analysisAorFilterEnabled, setAnalysisAorFilterEnabled] = useState(true);
   const [hideBotTags, setHideBotTags] = useState(false);
+  const [hideNetworks, setHideNetworks] = useState(false);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulUiFiltersBeyondDateRange(initialQueryState)
       ? createResetQueryState(initialNow, initialRadioFeaturesAllowed)
@@ -277,9 +278,11 @@ export function useRerAnalysisNeoPage(
               ? []
               : queryStateWithResolvedRoleDate.deviceNamesSelected,
           onlyWithNetwork:
-            rerReportFilterAccess.status === 'denied'
+            rerReportFilterAccess.status === 'denied' || hideNetworks
               ? false
               : queryStateWithResolvedRoleDate.onlyWithNetwork,
+          networksSelected: hideNetworks ? [] : queryStateWithResolvedRoleDate.networksSelected,
+          withoutNetwork: hideNetworks ? false : queryStateWithResolvedRoleDate.withoutNetwork,
         },
         radioFeaturesAllowed,
       ),
@@ -288,6 +291,7 @@ export function useRerAnalysisNeoPage(
       queryStateWithResolvedRoleDate,
       radioFeaturesAllowed,
       rerReportFilterAccess.status,
+      hideNetworks,
     ],
   );
   useEffect(() => {
@@ -306,11 +310,13 @@ export function useRerAnalysisNeoPage(
           deviceNamesSelected:
             deviceAccess.status === 'denied' ? [] : initialQueryState.deviceNamesSelected,
           onlyWithNetwork:
-            rerReportFilterAccess.status === 'denied' ? false : initialQueryState.onlyWithNetwork,
+            rerReportFilterAccess.status === 'denied' || hideNetworks
+              ? false
+              : initialQueryState.onlyWithNetwork,
           groupsSelected: queryState.groupsSelected,
           freqsSelected: queryState.freqsSelected,
-          networksSelected: queryState.networksSelected,
-          withoutNetwork: queryState.withoutNetwork,
+          networksSelected: hideNetworks ? [] : queryState.networksSelected,
+          withoutNetwork: hideNetworks ? false : queryState.withoutNetwork,
           messageTimeBasis: dutySettings.messageSortBy,
         },
         radioFeaturesAllowed,
@@ -320,6 +326,7 @@ export function useRerAnalysisNeoPage(
       radioFeaturesAllowed,
       deviceAccess.status,
       rerReportFilterAccess.status,
+      hideNetworks,
       queryState.freqsSelected,
       queryState.groupsSelected,
       queryState.networksSelected,
@@ -472,6 +479,7 @@ export function useRerAnalysisNeoPage(
     authUserName,
     currentUser,
     deferInitialLoad:
+      systemSettingsStatus === 'loading' ||
       deviceAccess.status === 'loading' ||
       (rerReportFilterAccessPending && queryState.onlyWithNetwork) ||
       (deviceAccess.status === 'error' && queryState.deviceNamesSelected.length > 0) ||
@@ -489,6 +497,7 @@ export function useRerAnalysisNeoPage(
     rightSidebarTab,
     shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
     queryState: effectiveQueryState,
+    hideNetworks,
   });
   const reload = useCallback(
     (options: Parameters<typeof data.reload>[0] = {}) => {
@@ -798,6 +807,7 @@ export function useRerAnalysisNeoPage(
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
         setShowPelengDistanceToBattleline(settings.showPelengDistanceToBattleline);
         setHideBotTags(settings.disableBotTags ?? false);
+        setHideNetworks(settings.hideNetworks ?? false);
         setAnalysisAorFilterEnabled(settings.analysisAorFilterEnabled ?? true);
         setSystemSettingsStatus('success');
       })
@@ -1275,6 +1285,7 @@ export function useRerAnalysisNeoPage(
     queryState: effectiveQueryState,
     tagsLayout: dutySettings.tagsLayout,
     hideBotTags,
+    hideNetworks,
     mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
     collapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
     messageTextPreviewLines: dutySettings.messageTextPreviewLines,

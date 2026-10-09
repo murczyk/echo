@@ -263,6 +263,7 @@ export function AnalysisCenterPanel({
             tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
             tagsLayout={page.tagsLayout}
             hideBotTags={page.hideBotTags}
+            hideNetworks={page.hideNetworks}
             messageTimeBasis={page.queryState.messageTimeBasis}
             collapseMediaPreviews={page.collapseMediaPreviews}
             mediaSummaryEnabled={page.mediaSummaryEnabled}

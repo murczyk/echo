@@ -86,6 +86,7 @@ type alias ViewParams =
     , isMsgVisible : List Int
     , groupInfos : Dict String B.SignalGroupEntry
     , messageNetworkIds : List Int
+    , hideNetworks : Bool
     , onlyMyUnitTagsEnabled : Bool
     }
 
@@ -725,7 +726,7 @@ view ps messageTuple model =
         ]
 
 
-leftColumn : ( Int, B.InboxMessage ) -> { isDarkMode : Bool, user : B.User, waterfallId : String, datasources : List ( Int, B.Datasource ), serverInfo : Maybe B.ServerInfo, networks : Dict Int B.Network, zone : Time.Zone, time : Maybe Time.Posix, profiles : Dict String (Maybe B.SignalProfileEntry), message : ( Int, B.InboxMessage ), tags : List ( Int, B.Tag ), callsignsInfo : Dict String (List B.CallsignInfo), messageCallsignsInfo : Dict String B.CallsignInfoRes, masterUnits : Dict Int B.Unit, networkDetailsViewPreference : Shared.Model.RerNetworkDetailsPreferredView, signals : List B.Signal, isMsgVisible : List Int, groupInfos : Dict String B.SignalGroupEntry, messageNetworkIds : List Int, onlyMyUnitTagsEnabled : Bool, copied : Maybe ClipboardObject } -> { a | edited : Maybe { b | current : { c | extendedForm : Maybe String } }, isEditPopupOpen : Bool, id : Int, isDuplicate : Bool, isUnfolded : Bool } -> Html Msg
+leftColumn : ( Int, B.InboxMessage ) -> { isDarkMode : Bool, user : B.User, waterfallId : String, datasources : List ( Int, B.Datasource ), serverInfo : Maybe B.ServerInfo, networks : Dict Int B.Network, zone : Time.Zone, time : Maybe Time.Posix, profiles : Dict String (Maybe B.SignalProfileEntry), message : ( Int, B.InboxMessage ), tags : List ( Int, B.Tag ), callsignsInfo : Dict String (List B.CallsignInfo), messageCallsignsInfo : Dict String B.CallsignInfoRes, masterUnits : Dict Int B.Unit, networkDetailsViewPreference : Shared.Model.RerNetworkDetailsPreferredView, signals : List B.Signal, isMsgVisible : List Int, groupInfos : Dict String B.SignalGroupEntry, messageNetworkIds : List Int, hideNetworks : Bool, onlyMyUnitTagsEnabled : Bool, copied : Maybe ClipboardObject } -> { a | edited : Maybe { b | current : { c | extendedForm : Maybe String } }, isEditPopupOpen : Bool, id : Int, isDuplicate : Bool, isUnfolded : Bool } -> Html Msg
 leftColumn ( messageId, message ) ps model =
     let
         clipboardBlock msgType isBig =

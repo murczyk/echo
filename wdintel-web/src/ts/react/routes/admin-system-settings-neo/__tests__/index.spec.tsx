@@ -183,6 +183,19 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ disableBotTags: true }));
     await act(async () => root.unmount());
   });
+  it('saves the #3598 hide-networks toggle', async () => {
+    const { container, root } = await renderPage();
+    const checkbox = Array.from(container.querySelectorAll('label'))
+      .find((label) => label.textContent?.includes('Приховати мережі'))
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+
+    expect(checkbox?.checked).toBe(false);
+    await act(async () => checkbox?.click());
+    await act(async () => button(container, 'зберегти')?.click());
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ hideNetworks: true }));
+    await act(async () => root.unmount());
+  });
   it('persists disabling test message replay immediately', async () => {
     window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
     mocks.list.mockResolvedValue([{ id: 1, deleted: false, rerDutyTestEnabled: true }]);

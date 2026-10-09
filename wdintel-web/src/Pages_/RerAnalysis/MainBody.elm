@@ -128,6 +128,7 @@ mainBody user model shared route =
                         , audioTranscriptionEnabled = model.audioTranscriptionEnabled
                         , audioTranscriptionCollapsed = model.analysisAudioTranscriptionCollapsed
                         , disableBotTags = model.disableBotTags
+                        , hideNetworks = model.hideNetworks
                         }
 
                     renderPs =

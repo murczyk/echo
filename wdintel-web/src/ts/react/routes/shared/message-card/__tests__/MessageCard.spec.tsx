@@ -220,6 +220,59 @@ afterEach(() => {
 });
 
 describe('MessageCard', () => {
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('hides hydrated network metadata and copies the independently displayed unit', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);
+    const onCopyEtalon = vi.fn();
+    const view = await renderCard({
+      hideNetworks: true,
+      msg: buildMessage({ unit: 'Підрозділ 42' }),
+      onCopyEtalon,
+    });
+
+    expect(view.container.textContent).not.toContain('Alpha');
+    expect(view.container.textContent).toContain('Підрозділ 42');
+
+    await openOverflowMenu(view.container);
+    const copySection = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Копіювати…');
+    if (copySection == null) throw new Error('missing copy section');
+    await click(copySection);
+    const copyEtalon = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === "Копіювати прив'язку");
+    if (copyEtalon == null) throw new Error('missing etalon copy action');
+    await click(copyEtalon);
+
+    expect(onCopyEtalon).toHaveBeenCalledWith('Підрозділ 42');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('retains hydrated network metadata and copying when network hiding is disabled', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);
+    const onCopyEtalon = vi.fn();
+    const view = await renderCard({ onCopyEtalon });
+
+    expect(view.container.textContent).toContain('Alpha');
+
+    await openOverflowMenu(view.container);
+    const copySection = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Копіювати…');
+    if (copySection == null) throw new Error('missing copy section');
+    await click(copySection);
+    const copyEtalon = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === "Копіювати прив'язку");
+    if (copyEtalon == null) throw new Error('missing etalon copy action');
+    await click(copyEtalon);
+
+    expect(onCopyEtalon).toHaveBeenCalledWith('р/м Alpha');
+  });
+
   it.each([
     { displayMode: 'duty' as const, hasExcludeSection: true },
     { displayMode: 'analysis' as const, hasExcludeSection: false },

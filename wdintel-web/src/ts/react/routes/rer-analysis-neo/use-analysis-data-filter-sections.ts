@@ -151,6 +151,7 @@ export function filterSectionsToInvalidateForPatch(
 
 type Params = {
   queryState: AnalysisQueryState;
+  hideNetworks: boolean;
   optionsFreqValues: string[];
   unitsMapRef: MutableRefObject<Record<number, Unit>>;
   onError: (message: string) => void;
@@ -166,6 +167,7 @@ type Params = {
 
 export function useAnalysisFilterSections({
   queryState,
+  hideNetworks,
   optionsFreqValues,
   unitsMapRef,
   onError,
@@ -324,6 +326,7 @@ export function useAnalysisFilterSections({
 
   const loadFilterSection = useCallback(
     async (section: AnalysisFilterSectionId) => {
+      if (hideNetworks && section === 'networks') return;
       if (queryState.radioFeaturesAllowed === false && ['metadata', 'posts'].includes(section))
         return;
       const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
@@ -384,6 +387,7 @@ export function useAnalysisFilterSections({
       markSectionInFlight,
       optionsFreqValues,
       queryState,
+      hideNetworks,
       setAorEntries,
       setGroupInfos,
       setNetworks,

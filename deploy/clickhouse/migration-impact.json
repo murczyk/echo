@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20261009_074414_system_settings_hide_networks": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20261008_113430_sigint_unit_orbit_combat_type": {
       "changes": [
         { "table": "public.sigint_unit_orbit_combat_type", "strategy": "replicated_snapshot" },

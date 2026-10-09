@@ -109,6 +109,7 @@ type DutyMessageCardItemProps = {
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -154,6 +155,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   feedCount,
   tagsLayout,
   hideBotTags,
+  hideNetworks,
   collapseMediaPreviews = false,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines,
@@ -207,6 +209,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       feedCount={feedCount}
       tagsLayout={tagsLayout}
       hideBotTags={hideBotTags}
+      hideNetworks={hideNetworks}
       collapseMediaPreviews={collapseMediaPreviews}
       mediaSummaryEnabled={mediaSummaryEnabled}
       messageTextPreviewLines={messageTextPreviewLines}
@@ -270,12 +273,12 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       onCopyEtalon={
         etalonDisplayModel.copyEtalonValue == null
           ? undefined
-          : () => onMessageCopy(etalonDisplayModel.copyEtalonValue ?? '', `etalon-${id}`)
+          : (value) => onMessageCopy(value, `etalon-${id}`)
       }
       onCopyLocation={
         etalonDisplayModel.copyLocationValue == null
           ? undefined
-          : () => onMessageCopy(etalonDisplayModel.copyLocationValue ?? '', `location-${id}`)
+          : (value) => onMessageCopy(value, `location-${id}`)
       }
       onCreateReport={(focusTarget) =>
         onMessageCreateReport(id, msg, etalonDisplayModel, focusTarget)
@@ -300,6 +303,7 @@ type DutyMessageListProps = {
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -350,6 +354,7 @@ const DutyMessageList = memo(
     feedCount,
     tagsLayout,
     hideBotTags,
+    hideNetworks,
     collapseMediaPreviews = false,
     mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
     messageTextPreviewLines,
@@ -406,6 +411,7 @@ const DutyMessageList = memo(
                   feedCount={feedCount}
                   tagsLayout={tagsLayout}
                   hideBotTags={hideBotTags}
+                  hideNetworks={hideNetworks}
                   collapseMediaPreviews={collapseMediaPreviews}
                   mediaSummaryEnabled={mediaSummaryEnabled}
                   messageTextPreviewLines={messageTextPreviewLines}
@@ -657,6 +663,7 @@ export const FeedColumnContent = memo(
       featureStrictNetworks,
       tagsLayout,
       hideBotTags,
+      hideNetworks,
       collapseMediaPreviews = false,
       mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
       messageTextPreviewLines,
@@ -802,6 +809,7 @@ export const FeedColumnContent = memo(
           feedCount={feedCount}
           tagsLayout={tagsLayout}
           hideBotTags={hideBotTags}
+          hideNetworks={hideNetworks}
           collapseMediaPreviews={collapseMediaPreviews}
           mediaSummaryEnabled={mediaSummaryEnabled}
           messageTextPreviewLines={messageTextPreviewLines}

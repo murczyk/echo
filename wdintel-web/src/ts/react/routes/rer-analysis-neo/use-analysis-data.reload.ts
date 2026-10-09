@@ -687,6 +687,7 @@ export function transformMessagePageResponse<
 }
 
 type ReloadParams = {
+  hideNetworks?: boolean;
   clearAnalysisResults: () => void;
   focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
@@ -1077,6 +1078,14 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
     const loadReferenceData = async () => {
       try {
+        if (params.hideNetworks) {
+          const units = await getUnitsList(params.signal ? { signal: params.signal } : undefined);
+          if (isStaleReload() || params.signal?.aborted) return;
+          params.setUnitsMap(Object.fromEntries(units.map((unit) => [unit.id, unit])));
+          params.setNetworks([]);
+          params.setOptions((current) => ({ ...current, networks: [] }));
+          return;
+        }
         const networksAnalysisReq = buildAnalysisReqForFilterSection(
           'networks',
           criticalData.resolvedAnalysisReq,
