@@ -114,6 +114,14 @@ fn normalize_reasoning_effort(
     expected_model_name: &str,
 ) {
     body.remove("reasoning_effort");
+    if expected_model_name == crate::config::AI_AGENT_GLM_5_3 {
+        body.insert(
+            "reasoning_effort".to_string(),
+            Value::String("max".to_string()),
+        );
+        body.insert("thinking".to_string(), json!({ "type": "enabled" }));
+        return;
+    }
     if expected_model_name
         .starts_with(AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX)
         || expected_model_name == AI_AGENT_OPENAI_GPT_6_SOL
@@ -478,6 +486,23 @@ mod tests {
                 assert_eq!(body["reasoning_effort"], "none");
             }
         }
+    }
+
+    #[test]
+    fn kharkiv_3724_preserves_glm_maximum_reasoning() {
+        let request = json!({
+            "model": "glm-5.3",
+            "messages": [{ "role": "user", "content": "Report" }],
+            "reasoning_effort": "none",
+            "thinking": { "type": "disabled" }
+        });
+        let (request, _) = validate_request_body(
+            request.to_string().as_bytes(),
+            crate::config::AI_AGENT_GLM_5_3,
+        )
+        .unwrap();
+        assert_eq!(request["reasoning_effort"], "max");
+        assert_eq!(request["thinking"]["type"], "enabled");
     }
 
     #[test]

@@ -4,7 +4,6 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   defineTool,
-  estimateTokens,
   ModelRuntime,
   SessionManager,
   SettingsManager,
@@ -34,12 +33,13 @@ import {
 } from "./citations.ts";
 import { createMapScriptRunner, MAP_PYTHON_ROOT } from "./map-script.ts";
 import { SidcResolver } from "./sidc-resolver.ts";
+import { installContextCompaction } from "./context-compaction.ts";
 
 const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.06.1";
+const HARNESS_RELEASE = "2026.10.09.1";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -1828,14 +1828,14 @@ export function createToolResponseCompactor(
   maxTotalCharacters = TOOL_CONTEXT_MAX_CHARACTERS,
   maxResponseCharacters = TOOL_RESPONSE_MAX_CHARACTERS,
   maxInvocations = MAX_TOOL_INVOCATIONS,
-): (
+): ((
   route: Pick<SkillDefinition, "skill" | "requestKind">,
   value: unknown,
   maxItems: number,
-) => string {
+) => string) & { reset: (messages: unknown[]) => void } {
   let remainingCharacters = maxTotalCharacters;
   let remainingInvocations = maxInvocations;
-  return (route, value, maxItems) => {
+  const compact = (route: Pick<SkillDefinition, "skill" | "requestKind">, value: unknown, maxItems: number) => {
     const reservedForLater = Math.max(0, remainingInvocations - 1) * 2;
     const maxCharacters = Math.max(
       2,
@@ -1847,10 +1847,22 @@ export function createToolResponseCompactor(
       maxItems,
       maxCharacters,
     );
+    if (compacted === "{}" && JSON.stringify(value) !== "{}") {
+      throw new Error("tool context budget exhausted before delivering source data");
+    }
     remainingCharacters = Math.max(0, remainingCharacters - compacted.length);
     remainingInvocations = Math.max(0, remainingInvocations - 1);
     return compacted;
   };
+  compact.reset = (messages: unknown[]) => {
+    const retained = messages.reduce<number>((total, message) => {
+      const result = message as JsonObject;
+      if (result.role !== "toolResult" || !Array.isArray(result.content)) return total;
+      return total + result.content.reduce((size: number, block: JsonObject) => size + (block.type === "text" && typeof block.text === "string" ? block.text.length : 0), 0);
+    }, 0);
+    remainingCharacters = Math.max(0, maxTotalCharacters - retained);
+  };
+  return compact;
 }
 
 const INTERCEPTION_CONTEXT_PARAMETERS = Type.Object(
@@ -2751,46 +2763,6 @@ export function validateFinalAssistantMessage(messages: unknown[]): void {
   }
 }
 
-function estimateSessionTokens(messages: unknown[]): number {
-  return messages.reduce(
-    (total, message) => total + estimateTokens(message as never),
-    0,
-  );
-}
-
-export async function compactHistoryIfNeeded(
-  session: any,
-  payload: RunnerPayload,
-): Promise<void> {
-  const promptTokens = estimateTokens({
-    role: "user",
-    content: payload.prompt,
-    timestamp: Date.now(),
-  } as never);
-  const threshold = payload.contextWindow - payload.compactionReserveTokens;
-  let contextTokens = estimateSessionTokens(session.messages) + promptTokens;
-  for (let attempt = 0; contextTokens > threshold && attempt < 3; attempt += 1) {
-    if (session.messages.length < 2) {
-      throw new Error("provider context window exceeded before request");
-    }
-    const result = await session.compact(
-      "Preserve named subjects and callsigns, their aliases and referents, the current period and group scope, relevant evidence with its exact citation URLs, and unresolved user intent. Omit implementation details and redundant tool output.",
-    );
-    const compactedTokens =
-      result.estimatedTokensAfter ?? estimateSessionTokens(session.messages);
-    if (
-      compactedTokens >= contextTokens - promptTokens &&
-      compactedTokens + promptTokens > threshold
-    ) {
-      throw new Error("context compaction did not reduce the request");
-    }
-    contextTokens = compactedTokens + promptTokens;
-  }
-  if (contextTokens > threshold) {
-    throw new Error("provider context window exceeded after compaction");
-  }
-}
-
 export async function testConnection(
   payload: RunnerPayload,
   exchange: (
@@ -2836,9 +2808,11 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
   let toolLimitError: Error | undefined;
   const mapRegistry = new MapRegistry(payload.history.flatMap((entry) => entry.maps ?? []));
   let cancelled = false;
+  const cancellation = new AbortController();
   const cancel = async () => {
     if (cancelled) return;
     cancelled = true;
+    cancellation.abort();
     if (session) await session.abort().catch(() => undefined);
   };
   process.once("SIGINT", () => void cancel());
@@ -2951,7 +2925,9 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       (message) => currentTurnAssistantMessages.push(message),
       () => emitAssistant.current,
     );
-    await compactHistoryIfNeeded(session, payload);
+    installContextCompaction(session, { ...payload, signal: cancellation.signal },
+      () => emit({ type: "progress", summary: "Скорочую контекст і продовжую аналіз" }),
+      (messages) => compactResponse.reset(messages));
     currentTurnAssistantMessages.length = 0;
     emit({ type: "progress", summary: "Аналізую запит" });
     try {

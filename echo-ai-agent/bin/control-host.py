@@ -86,7 +86,12 @@ def inventory():
     releases = []
     for directory in sorted((ROOT / 'releases').glob('*')):
         if directory.is_dir() and RELEASE_RE.fullmatch(directory.name):
-            releases.append({'release': directory.name, 'manifest': manifest(directory), 'digest': digest(directory), 'source': 'retained'})
+            release = {'release': directory.name, 'manifest': None, 'digest': digest(directory), 'source': 'retained'}
+            try:
+                release['manifest'] = manifest(directory)
+            except (OSError, RuntimeError, ValueError, LookupError, SyntaxError, AttributeError, TypeError) as error:
+                release['manifest_error'] = str(error)
+            releases.append(release)
     template = next((row for row in records if row['name'] == FIXED), {})
     current = (ROOT / 'current').resolve()
     selections = {path.stem: json.loads(path.read_text()) for path in SELECTIONS.glob('*.json')}

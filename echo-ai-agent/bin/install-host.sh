@@ -11,9 +11,7 @@ dangerously_acknowledge=${2:-}
   exit 1
 }
 # shellcheck disable=SC1091
-source "$BUNDLE_DIR/config/host.env"
-# shellcheck disable=SC1091
-source "$BUNDLE_DIR/versions.env"
+source "$BUNDLE_DIR/bin/load-host-config.sh"
 
 INSTALL_ROOT=/opt/echo-ai-agent
 CONFIG_ROOT=/etc/echo-ai-agent
@@ -136,6 +134,7 @@ verify_fresh_partition() {
   [[ "$marker_start" =~ ^[0-9]+$ && "$marker_sectors" =~ ^[0-9]+$ ]] \
     || die "invalid storage marker"
   p2_start=$(lsblk -bnro START "$STORAGE_PARTITION")
+  p2_start=${p2_start:-0}
   p2_sectors=$(partition_sectors "$STORAGE_PARTITION")
   [[ "$p2_start" == "$marker_start" && "$p2_sectors" == "$marker_sectors" ]] \
     || die "storage partition changed after setup"
