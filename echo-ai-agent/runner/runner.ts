@@ -39,7 +39,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.09.2";
+const HARNESS_RELEASE = "2026.10.09.3";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -74,6 +74,7 @@ const RUNNER_PAYLOAD_FIELDS = new Set([
   "systemPrompt",
   "contextWindow",
   "maxTokens",
+  "checkpointMaxTokens",
   "compactionReserveTokens",
   "compactionKeepRecentTokens",
   "expectedIdentity",
@@ -137,6 +138,7 @@ interface RunnerPayload {
   systemPrompt?: string;
   contextWindow: number;
   maxTokens: number;
+  checkpointMaxTokens: number;
   compactionReserveTokens: number;
   compactionKeepRecentTokens: number;
   expectedIdentity?: JsonObject;
@@ -282,6 +284,12 @@ export function validatePayload(
     contextWindow - 1,
     Math.max(maxTokens, Math.min(32_768, contextWindow - 1)),
   );
+  const checkpointMaxTokens = validateInteger(
+    value.checkpointMaxTokens,
+    256,
+    Math.min(131_072, compactionReserveTokens),
+    maxTokens,
+  );
   const compactionKeepRecentTokens = validateInteger(
     value.compactionKeepRecentTokens,
     1_024,
@@ -327,6 +335,7 @@ export function validatePayload(
     systemPrompt,
     contextWindow,
     maxTokens,
+    checkpointMaxTokens,
     compactionReserveTokens,
     compactionKeepRecentTokens,
     expectedIdentity,

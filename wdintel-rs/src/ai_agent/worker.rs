@@ -631,6 +631,7 @@ async fn run_request_inner(
             "modelName": ai_engine.model_name,
             "contextWindow": runtime_profile.context_window_tokens,
             "maxTokens": runtime_profile.max_output_tokens,
+            "checkpointMaxTokens": checkpoint_output_tokens(&ai_engine, &runtime_profile),
             "compactionReserveTokens": runtime_profile.compaction_reserve_tokens,
             "compactionKeepRecentTokens": runtime_profile.compaction_keep_recent_tokens,
             "bootstrapToken": bootstrap_token,
@@ -807,6 +808,22 @@ fn bounded_runner_payload(
             });
         }
         history.drain(..2);
+    }
+}
+
+fn checkpoint_output_tokens(
+    ai_engine: &crate::entities::ai_engine::Model,
+    runtime_profile: &ai_agent_engine_runtime_profile::Model,
+) -> i32 {
+    if ai_engine.model_name == crate::config::AI_AGENT_GLM_5_3
+        && crate::ai_engine::client::is_government_url(&ai_engine.url)
+    {
+        runtime_profile.max_output_tokens.max(
+            crate::config::AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS
+                .min(runtime_profile.compaction_reserve_tokens),
+        )
+    } else {
+        runtime_profile.max_output_tokens
     }
 }
 

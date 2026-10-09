@@ -21,6 +21,7 @@ type AgentContext = Parameters<
 interface ContextSettings {
   prompt: string;
   maxTokens: number;
+  checkpointMaxTokens?: number;
   compactionReserveTokens: number;
   compactionKeepRecentTokens: number;
   providerApiKey?: string;
@@ -183,10 +184,7 @@ async function compactOnce(
     .filter((entry) => sessionEntryToContextMessages(entry).length > 0);
   let cut = checkpointCut(entries, settings.compactionKeepRecentTokens);
   const tokensBefore = selectedEngine.contextWindow - available(context);
-  const checkpointTokens = Math.max(
-    settings.maxTokens,
-    settings.compactionReserveTokens,
-  );
+  const checkpointTokens = settings.checkpointMaxTokens ?? settings.maxTokens;
   for (let attempt = 0; attempt < 2 && cut > 0; attempt += 1) {
     signal?.throwIfAborted();
     const summaryContext = checkpointContext(entries.slice(0, cut), settings);

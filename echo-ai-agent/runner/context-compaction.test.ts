@@ -25,6 +25,10 @@ async function fixture(
   checkpoint = "stop",
   restored = false,
   batchWidth = 1,
+  checkpointSettings: { maxTokens?: number; reserveTokens: number } = {
+    maxTokens: 16_384,
+    reserveTokens: 16_384,
+  },
 ) {
   const directory = await mkdtemp(join(tmpdir(), "echo-context-regression-"));
   let pagesRead = 0;
@@ -49,7 +53,7 @@ async function fixture(
       const summary = system.includes("Create a concise evidence checkpoint");
       assert.equal(
         body.max_tokens ?? body.max_completion_tokens,
-        summary ? 16_384 : 8_192,
+        summary ? (checkpointSettings.maxTokens ?? 8_192) : 8_192,
       );
       let delta: any;
       let finishReason = "stop";
@@ -261,7 +265,8 @@ async function fixture(
     {
       prompt,
       maxTokens: 8_192,
-      compactionReserveTokens: 16_384,
+      checkpointMaxTokens: checkpointSettings.maxTokens,
+      compactionReserveTokens: checkpointSettings.reserveTokens,
       compactionKeepRecentTokens: 8_192,
       providerApiKey: "fixture",
       timeContext: { requestStartedAtUtc: "2026-10-09T04:38:34Z" },
@@ -295,6 +300,20 @@ async function fixture(
 
 test("#3724 preserves answer headroom while reasoning checkpoints exceed the answer output limit", async () => {
   const value = await fixture(7, "reasoning");
+  try {
+    await value.session.prompt(value.prompt);
+    assert.equal(value.contextFailure(), undefined);
+    validateFinalAssistantMessage(value.session.messages);
+    assert.ok(value.checkpointCalls() > 0);
+    assert.equal(value.cursors.length, 7);
+    assert.deepEqual(value.errors, []);
+  } finally {
+    await value.close();
+  }
+});
+
+test("#3724 keeps legacy checkpoint caps independent of larger context reserves", async () => {
+  const value = await fixture(7, "stop", false, 1, { reserveTokens: 32_768 });
   try {
     await value.session.prompt(value.prompt);
     assert.equal(value.contextFailure(), undefined);
