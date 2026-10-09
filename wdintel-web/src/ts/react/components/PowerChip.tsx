@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { isNullOrUndefined, isPresent } from '../utils/misc';
 
 type PowerChipProps = {
+  ariaLabel?: string;
   href?: string;
   label: ReactNode;
   color?: ChipProps['color'];
@@ -41,6 +42,7 @@ function getReadableTextColor(backgroundColor: string): string {
 }
 
 export function PowerChip({
+  ariaLabel,
   href,
   label,
   color = 'primary',
@@ -111,6 +113,7 @@ export function PowerChip({
       {...(isPresent(href) ? { component: 'a' as const, href } : {})}
       color={hasExplicitPalette ? undefined : color}
       label={label}
+      aria-label={ariaLabel}
       title={title}
       onClick={isInteractive && isNullOrUndefined(href) ? onClick : undefined}
       onDelete={onDelete}

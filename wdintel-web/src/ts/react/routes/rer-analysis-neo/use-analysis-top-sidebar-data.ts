@@ -25,6 +25,7 @@ export function useAnalysisTopSidebarData({
   queryState,
 }: Params) {
   const [rightSidebarLoading, setRightSidebarLoading] = useState(false);
+  const [rightSidebarOutdated, setRightSidebarOutdated] = useState(false);
   const [topFreqs, setTopFreqs] = useState<AnalysisCountItem[]>([]);
   const [topCallsigns, setTopCallsigns] = useState<AnalysisCountItem[]>([]);
   const [topUnits, setTopUnits] = useState<AnalysisCountItem[]>([]);
@@ -34,6 +35,7 @@ export function useAnalysisTopSidebarData({
 
   const rightSidebarRequestRef = useRef(0);
   const rightSidebarRequestKeyRef = useRef<string | null>(null);
+  const rightSidebarHasLoadedRef = useRef(false);
   const rightSidebarAbortControllerRef = useRef<AbortController | null>(null);
   const newCallsignsRequestRef = useRef(0);
   const newCallsignsLoadedKeyRef = useRef<string | null>(null);
@@ -44,12 +46,15 @@ export function useAnalysisTopSidebarData({
     rightSidebarAbortControllerRef.current?.abort();
     rightSidebarRequestRef.current += 1;
     rightSidebarRequestKeyRef.current = null;
+    if (rightSidebarHasLoadedRef.current) setRightSidebarOutdated(true);
     setRightSidebarLoading(false);
-  }, [setRightSidebarLoading]);
+  }, []);
 
   const loadTopSidebarData = useCallback(async () => {
     const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
     if (isNullOrUndefined(analysisReq)) {
+      rightSidebarAbortControllerRef.current?.abort();
+      rightSidebarAbortControllerRef.current = null;
       rightSidebarRequestRef.current += 1;
       rightSidebarRequestKeyRef.current = null;
       setTopCallsigns([]);
@@ -57,6 +62,7 @@ export function useAnalysisTopSidebarData({
       setTopLocations([]);
       setTopUnits([]);
       setRightSidebarLoading(false);
+      setRightSidebarOutdated(false);
       return;
     }
 
@@ -92,6 +98,8 @@ export function useAnalysisTopSidebarData({
           (item) => item.count,
         ),
       );
+      rightSidebarHasLoadedRef.current = true;
+      setRightSidebarOutdated(false);
     } catch (loadError) {
       if (
         requestId !== rightSidebarRequestRef.current ||
@@ -138,6 +146,7 @@ export function useAnalysisTopSidebarData({
 
   return {
     rightSidebarLoading,
+    rightSidebarOutdated,
     topFreqs,
     topCallsigns,
     topUnits,

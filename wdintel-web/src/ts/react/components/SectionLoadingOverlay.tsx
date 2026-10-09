@@ -5,18 +5,25 @@ import { loadingOverlayBackdropSx } from './loadingOverlayStyles';
 type Props = {
   open: boolean;
   ariaLabel: string;
+  announce?: boolean;
   showSpinner?: boolean;
   sx?: object;
 };
 
-export function SectionLoadingOverlay({ open, ariaLabel, showSpinner = true, sx }: Props) {
+export function SectionLoadingOverlay({
+  open,
+  ariaLabel,
+  announce = true,
+  showSpinner = true,
+  sx,
+}: Props) {
   if (!open) return null;
 
   return (
     <Box
-      role="status"
-      aria-live="polite"
-      aria-label={ariaLabel}
+      role={announce ? 'status' : undefined}
+      aria-live={announce ? 'polite' : undefined}
+      aria-label={announce ? ariaLabel : undefined}
       sx={(theme) => ({
         ...loadingOverlayBackdropSx(theme),
         display: 'flex',

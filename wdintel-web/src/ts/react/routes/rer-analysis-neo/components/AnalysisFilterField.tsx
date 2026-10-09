@@ -33,6 +33,7 @@ type Props = {
   preserveSelectionOrder?: boolean;
   preserveSelectedOptionValuesOnChange?: boolean;
   preserveInputOnSelect?: boolean;
+  preserveInputOnBlur?: boolean;
   bulkPaste?: boolean;
   bulkPasteSeparators?: string[];
   bulkPasteMenuLabel?: string;
@@ -176,6 +177,7 @@ export function AnalysisFilterField({
   preserveSelectionOrder = false,
   preserveSelectedOptionValuesOnChange = false,
   preserveInputOnSelect = false,
+  preserveInputOnBlur = false,
   bulkPaste = false,
   bulkPasteSeparators,
   bulkPasteMenuLabel,
@@ -249,6 +251,7 @@ export function AnalysisFilterField({
       options={autocompleteOptions}
       value={autocompleteValue}
       inputValue={inputValue}
+      clearOnBlur={preserveInputOnBlur ? false : undefined}
       disabled={disabled}
       loading={loading}
       loadingText={`Завантаження${ELLIPSIS}`}
@@ -278,7 +281,7 @@ export function AnalysisFilterField({
       }}
       onClose={() => {
         setOpen(false);
-        if (preserveInputOnSelect) {
+        if (preserveInputOnSelect && !preserveInputOnBlur) {
           clearInputValue();
         }
         if (deferredCommit) {
@@ -295,6 +298,7 @@ export function AnalysisFilterField({
       onInputChange={(_event, nextInputValue, reason) => {
         if (
           reason === 'reset' ||
+          (preserveInputOnBlur && reason === 'blur') ||
           (preserveInputOnSelect && (reason === 'selectOption' || reason === 'removeOption'))
         ) {
           return;

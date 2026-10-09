@@ -187,7 +187,7 @@ export function useRerAnalysisNeoPage(
     () => initialPanelQueryState.rightPanelOpen ?? false,
   );
   const [selectedSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(() =>
-    initialPanelQueryState.rightPanelOpen ? 'stats' : null,
+    initialPanelQueryState.rightPanelOpen ? 'callsigns' : null,
   );
   const [targetMessageUid] = useState(parseMessageUidFromWindow);
   const [targetMessageWindow, setTargetMessageWindow] = useState<InboxWindowRsp | null>(null);
@@ -266,7 +266,9 @@ export function useRerAnalysisNeoPage(
   const centerTab =
     !radioFeaturesAllowed && selectedCenterTab === 'summary' ? 'messages' : selectedCenterTab;
   const rightSidebarTab =
-    !radioFeaturesAllowed && selectedSidebarTab === 'frequencies' ? 'stats' : selectedSidebarTab;
+    !radioFeaturesAllowed && selectedSidebarTab === 'frequencies'
+      ? 'callsigns'
+      : selectedSidebarTab;
   const effectiveQueryState = useMemo(
     () =>
       effectiveRadioQuery(
@@ -740,6 +742,7 @@ export function useRerAnalysisNeoPage(
     async (
       callsigns: string[],
       minMatches: number,
+      signal?: AbortSignal,
     ): Promise<AnalysisCallsignFrequencyMatchesRsp | null> => {
       if (isNullOrUndefined(analysisReq)) {
         setPageError('Перевірте дату та час перед пошуком частот.');
@@ -747,12 +750,16 @@ export function useRerAnalysisNeoPage(
       }
 
       try {
-        return await fetchAnalysisCallsignFrequencyMatches({
-          req: analysisReq,
-          callsigns,
-          minMatches,
-        });
+        return await fetchAnalysisCallsignFrequencyMatches(
+          {
+            req: analysisReq,
+            callsigns,
+            minMatches,
+          },
+          { signal },
+        );
       } catch (loadError) {
+        if (signal?.aborted) return null;
         if (!handleUnauthorized(loadError)) setPageError(toErrorMessage(loadError));
         return null;
       }
@@ -862,7 +869,7 @@ export function useRerAnalysisNeoPage(
     }
 
     if (rightSidebarTab === 'map') {
-      setRightSidebarTab('stats');
+      setRightSidebarTab('callsigns');
     }
   }, [
     centerTab,
@@ -1083,7 +1090,6 @@ export function useRerAnalysisNeoPage(
       (['tags', 'groups', 'senders'] as const).forEach((section) => sections.add(section));
     }
     if (rightPanelOpen && rightSidebarTab === 'stats') sections.add('groups');
-    if (rightPanelOpen && rightSidebarTab === 'callsigns') sections.add('callsigns');
     if (sections.size === 0) return;
     void Promise.all(Array.from(sections, (section) => data.loadFilterSection(section)));
   }, [data.loadFilterSection, leftPanelOpen, rightPanelOpen, rightSidebarTab]);
@@ -1293,6 +1299,7 @@ export function useRerAnalysisNeoPage(
     summaryLoaded: data.summaryLoaded,
     summaryHasLoadedOnce: data.summaryHasLoadedOnce,
     rightSidebarLoading: data.rightSidebarLoading,
+    rightSidebarOutdated: data.rightSidebarOutdated,
     summaryRows: data.summaryRows,
     summaryCallsignsInfo: data.summaryCallsignsInfo,
     unitsMap: data.unitsMap,

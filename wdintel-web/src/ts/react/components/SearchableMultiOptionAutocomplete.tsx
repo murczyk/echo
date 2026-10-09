@@ -1,6 +1,6 @@
 import { Autocomplete, TextField } from '@mui/material';
 import type { AutocompleteProps } from '@mui/material/Autocomplete';
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import { createRankedFilterOptions } from '../utils/search-filter';
 
@@ -23,6 +23,9 @@ type Props<T extends SearchableOption> = {
   className?: string;
   disablePortal?: boolean;
   onBlur?: () => void;
+  onOpen?: () => void;
+  onInputChange?: (value: string) => void;
+  serverSearch?: boolean;
   loading?: boolean;
   loadingText?: string;
   slotProps?: AutocompleteProps<T, true, false, false>['slotProps'];
@@ -43,10 +46,14 @@ export function SearchableMultiOptionAutocomplete<T extends SearchableOption>({
   className,
   disablePortal,
   onBlur,
+  onOpen,
+  onInputChange,
+  serverSearch = false,
   loading = false,
   loadingText,
   slotProps,
 }: Props<T>) {
+  const [inputValue, setInputValue] = useState('');
   const selectedOptions = useMemo(
     () =>
       valueIds
@@ -66,17 +73,28 @@ export function SearchableMultiOptionAutocomplete<T extends SearchableOption>({
       className={className}
       options={options}
       value={selectedOptions}
+      inputValue={inputValue}
       disabled={disabled}
       disablePortal={disablePortal}
+      onOpen={onOpen}
       slotProps={slotProps}
       loading={loading}
       loadingText={loadingText}
       noOptionsText={noOptionsText}
       getOptionLabel={getOptionLabel}
       isOptionEqualToValue={(option, value) => option.id === value.id}
-      filterOptions={filterOptions}
-      onChange={(_, nextOptions) => {
+      filterOptions={serverSearch ? (items) => items : filterOptions}
+      onInputChange={(_event, value, reason) => {
+        if (reason === 'reset') return;
+        setInputValue(value);
+        onInputChange?.(value);
+      }}
+      onChange={(_, nextOptions, reason) => {
         onValueIdsChange(nextOptions.map((option) => option.id));
+        if (reason === 'selectOption') {
+          setInputValue('');
+          onInputChange?.('');
+        }
       }}
       renderInput={(params) => (
         <TextField

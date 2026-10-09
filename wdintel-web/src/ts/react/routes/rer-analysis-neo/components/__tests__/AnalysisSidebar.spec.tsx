@@ -207,6 +207,89 @@ describe('AnalysisSidebar', () => {
     expect(updateQueryState).toHaveBeenCalledWith({ callsignsSelected: ['нугуш'] });
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3452
+  it('removes only a fully selected callsign group from the right panel', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        queryState: {
+          callsignsSelected: ['ALPHA', 'alpha', 'BETA'],
+          freqsSelected: [],
+          locationsSelected: [],
+          networksSelected: [],
+          search: '',
+          unitsSelected: [],
+        } as ComponentProps<typeof AnalysisSidebar>['queryState'],
+        rightSidebarTab: 'callsigns',
+        updateQueryState,
+      }),
+    );
+    rendered.push(view);
+
+    const callsignsProps = callsignsPaneSpy.mock.lastCall?.[0] as {
+      onToggleCallsign: (callsigns: string[]) => void;
+    };
+    callsignsProps.onToggleCallsign(['Alpha', 'alpha']);
+
+    expect(updateQueryState).toHaveBeenCalledWith({ callsignsSelected: ['BETA'] });
+  });
+
+  it('clears the selection when its only callsign group is toggled', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        queryState: {
+          callsignsSelected: ['ALPHA'],
+          freqsSelected: [],
+          locationsSelected: [],
+          networksSelected: [],
+          search: '',
+          unitsSelected: [],
+        } as ComponentProps<typeof AnalysisSidebar>['queryState'],
+        rightSidebarTab: 'callsigns',
+        updateQueryState,
+      }),
+    );
+    rendered.push(view);
+
+    const callsignsProps = callsignsPaneSpy.mock.lastCall?.[0] as {
+      onToggleCallsign: (callsigns: string[]) => void;
+    };
+    callsignsProps.onToggleCallsign(['alpha']);
+
+    expect(updateQueryState).toHaveBeenCalledWith({ callsignsSelected: [] });
+  });
+
+  it('keeps exclusive callsign selection for partially selected and unselected groups', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        queryState: {
+          callsignsSelected: ['alpha'],
+          freqsSelected: [],
+          locationsSelected: [],
+          networksSelected: [],
+          search: '',
+          unitsSelected: [],
+        } as ComponentProps<typeof AnalysisSidebar>['queryState'],
+        rightSidebarTab: 'callsigns',
+        updateQueryState,
+      }),
+    );
+    rendered.push(view);
+
+    const callsignsProps = callsignsPaneSpy.mock.lastCall?.[0] as {
+      onToggleCallsign: (callsigns: string[]) => void;
+    };
+    callsignsProps.onToggleCallsign(['Alpha', 'Bravo']);
+    callsignsProps.onToggleCallsign(['CHARLIE']);
+
+    expect(updateQueryState).toHaveBeenNthCalledWith(1, {
+      callsignsSelected: ['alpha', 'bravo'],
+    });
+    expect(updateQueryState).toHaveBeenNthCalledWith(2, { callsignsSelected: ['charlie'] });
+  });
+
   it('routes tab clicks into the page callback', async () => {
     const setRightSidebarTab = vi.fn();
     const view = await renderComponent(buildProps({ setRightSidebarTab }));
