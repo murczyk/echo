@@ -6,7 +6,10 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { PowerChip } from '../../../components/PowerChip';
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
-import { buildAnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
+import {
+  buildAnalysisFiltersPanelDerivedData,
+  buildCallsignFilterOptions,
+} from './analysis-filters-panel-derived';
 import { AnalysisFiltersPanelSections } from './analysis-filters-panel-sections';
 import {
   getInitialExpandedSections,
@@ -81,10 +84,15 @@ export function AnalysisFiltersPanel({
   } = page;
   const [expandedSections, setExpandedSections] = useState(() => getInitialExpandedSections());
   const [mobileExpanded, setMobileExpanded] = useState(false);
+  const callsignsOptions = useMemo(
+    () => buildCallsignFilterOptions(options.callsigns),
+    [options.callsigns],
+  );
   const derived = useMemo(
     () =>
       buildAnalysisFiltersPanelDerivedData({
         aorEntries,
+        callsignsOptions,
         counts,
         groupInfos,
         options,
@@ -93,7 +101,17 @@ export function AnalysisFiltersPanel({
         tagsOrder,
         unitsMap,
       }),
-    [aorEntries, counts, groupInfos, options, queryState, tagsMap, tagsOrder, unitsMap],
+    [
+      aorEntries,
+      callsignsOptions,
+      counts,
+      groupInfos,
+      options,
+      queryState,
+      tagsMap,
+      tagsOrder,
+      unitsMap,
+    ],
   );
 
   const toggleSection = (section: FilterSectionId) => {

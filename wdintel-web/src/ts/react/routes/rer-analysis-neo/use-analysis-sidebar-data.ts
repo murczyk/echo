@@ -49,6 +49,7 @@ export type UseAnalysisSidebarDataResult = {
   summaryHasLoadedOnce: boolean;
   summaryRows: SummaryTableFreqRow[];
   rightSidebarLoading: boolean;
+  rightSidebarOutdated?: boolean;
   topCallsigns: AnalysisCountItem[];
   topFreqs: AnalysisCountItem[];
   topLocations: AnalysisCountItem[];

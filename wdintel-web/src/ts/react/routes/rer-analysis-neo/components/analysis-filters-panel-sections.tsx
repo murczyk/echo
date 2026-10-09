@@ -1,6 +1,7 @@
 import { useRadioFeatures } from '../../shared/RadioFeatures';
 import {
   Box,
+  Button,
   Checkbox,
   FormControl,
   FormControlLabel,
@@ -14,16 +15,22 @@ import {
   Typography,
 } from '@mui/material';
 import type { MouseEvent } from 'react';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import type { CountStatsRsp } from '../../../../../Bindings';
 
 import type { AnalysisFilterSectionId } from '../types';
-import { normalizeCallsignFilterValues } from '../../../utils/callsign-normalization';
+import {
+  normalizeCallsignFilterValues,
+  normalizeCallsignLookupValue,
+} from '../../../utils/callsign-normalization';
 import { NO_DATA_LABEL } from '../../../utils/misc';
 import { isCanonicalUnitIdValue } from '../../../utils/unit-search';
 import { AnalysisFilterField } from './AnalysisFilterField';
 import { AnalysisDeviceNamesFilter } from './AnalysisDeviceNamesFilter';
+import { buildAnalysisReq } from '../helpers';
+import { useCallsignPage } from '../use-callsign-page';
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import type { AnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
 import {
   compactCheckboxLabelSx,
@@ -82,6 +89,121 @@ function tagFilterModeHint(mode: TagFilterMode): string {
 }
 
 type MetadataFilterMode = 'all' | 'with' | 'without';
+
+function CallsignFilterField({
+  active,
+  fallbackOptions,
+  options,
+  queryState,
+  value,
+  onChange,
+}: {
+  active: boolean;
+  fallbackOptions: AnalysisFiltersPanelDerivedData['callsignsOptions'];
+  options: AnalysisFiltersPanelPage['options'];
+  queryState: AnalysisFiltersPanelPage['queryState'];
+  value: string[];
+  onChange: (callsigns: string[]) => void;
+}) {
+  const { notify } = useOptionalPowerSnackbar();
+  const analysisReq = useMemo(
+    () =>
+      buildAnalysisReq(
+        queryState,
+        options.freqs.map((option) => option.value),
+      ),
+    [options.freqs, queryState],
+  );
+  const notifyCallsignLoadError = useCallback(
+    (loadError: unknown) => {
+      notify({
+        severity: 'error',
+        message:
+          loadError instanceof Error && loadError.message
+            ? loadError.message
+            : 'Не вдалося завантажити позивні.',
+      });
+    },
+    [notify],
+  );
+  const page = useCallsignPage({
+    active,
+    analysisReq,
+    onError: notifyCallsignLoadError,
+  });
+  const error =
+    page.error instanceof Error
+      ? page.error.message
+      : page.error
+        ? 'Не вдалося завантажити позивні.'
+        : null;
+  const callsignOptions = active
+    ? page.entries.map((entry) => {
+        const values = normalizeCallsignFilterValues(entry.values);
+        const value = normalizeCallsignLookupValue(entry.value);
+        return {
+          value: values.includes(value) ? value : (values[0] ?? value),
+          label: entry.label,
+          count: entry.count,
+          values,
+        };
+      })
+    : fallbackOptions;
+
+  return (
+    <Stack spacing={0.5}>
+      <AnalysisFilterField
+        label="Позивні"
+        options={callsignOptions}
+        loading={page.pending}
+        emptyLoading={active && page.pending && page.entries.length === 0}
+        value={value}
+        deferredCommit
+        preserveInputOnSelect
+        preserveInputOnBlur
+        onInputChange={page.setQuery}
+        onChange={(callsignsSelected) => onChange(normalizeCallsignFilterValues(callsignsSelected))}
+      />
+      <Stack direction="row" spacing={0.5}>
+        <Button
+          size="small"
+          disabled={page.pending || page.stale || page.pageIndex === 0}
+          onClick={() => void page.loadFirstPage()}
+        >
+          Перша
+        </Button>
+        <Button
+          size="small"
+          disabled={page.pending || page.stale || !page.hasPrevious}
+          onClick={() => void page.loadPreviousPage()}
+        >
+          Попередні
+        </Button>
+        <Button
+          size="small"
+          disabled={page.pending || page.stale || !page.hasMore}
+          onClick={() => void page.loadNextPage()}
+        >
+          Наступні
+        </Button>
+      </Stack>
+      {error ? (
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <Typography color="error" variant="caption">
+            {error}
+          </Typography>
+          <Button
+            size="small"
+            disabled={!page.canRetry || page.loading}
+            onClick={() => void page.retry()}
+          >
+            Повторити
+          </Button>
+        </Stack>
+      ) : null}
+    </Stack>
+  );
+}
 
 function metadataFilterModeFromState(
   queryState: AnalysisFiltersPanelPage['queryState'],
@@ -287,20 +409,14 @@ export function AnalysisFiltersPanelSections({
         )}
         expanded={expandedSections.callsigns}
         onToggle={() => toggleSection('callsigns')}
-        onLoad={loadSection('callsigns')}
       >
-        <AnalysisFilterField
-          label="Позивні"
-          options={derived.callsignsOptions}
-          loading={isFilterSectionLoading('callsigns') || isFilterSectionStale('callsigns')}
-          emptyLoading={isFilterSectionEmptyLoading('callsigns', derived.callsignsOptions.length)}
+        <CallsignFilterField
+          active={expandedSections.callsigns}
+          fallbackOptions={derived.callsignsOptions}
+          options={options}
+          queryState={queryState}
           value={queryState.callsignsSelected}
-          deferredCommit
-          onChange={(callsignsSelected) =>
-            updateQueryState({
-              callsignsSelected: normalizeCallsignFilterValues(callsignsSelected),
-            })
-          }
+          onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
         />
       </FilterSection>
       {radioFeaturesAllowed ? (

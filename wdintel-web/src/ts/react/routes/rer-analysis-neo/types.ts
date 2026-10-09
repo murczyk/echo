@@ -182,8 +182,8 @@ export function getAnalysisSidebarTabs(
   radioFeaturesAllowed = true,
 ): AnalysisSidebarTab[] {
   const tabs: AnalysisSidebarTab[] = analysisMapInSidebar
-    ? ['map', 'stats', 'frequencies', 'callsigns', 'graph', 'newCallsigns']
-    : ['stats', 'frequencies', 'callsigns', 'graph', 'newCallsigns'];
+    ? ['callsigns', 'map', 'stats', 'frequencies', 'graph', 'newCallsigns']
+    : ['callsigns', 'stats', 'frequencies', 'graph', 'newCallsigns'];
   return tabs.filter((tab) => radioFeaturesAllowed || tab !== 'frequencies');
 }
 
@@ -290,6 +290,7 @@ export type AnalysisPageState = {
   summaryLoaded: boolean;
   summaryHasLoadedOnce: boolean;
   rightSidebarLoading: boolean;
+  rightSidebarOutdated?: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;
@@ -309,6 +310,7 @@ export type AnalysisPageActions = {
   findCallsignFrequencyMatches: (
     callsigns: string[],
     minMatches: number,
+    signal?: AbortSignal,
   ) => Promise<AnalysisCallsignFrequencyMatchesRsp | null>;
   loadCallsignGraph: () => void;
   loadCorrelatedFreqs: () => void;

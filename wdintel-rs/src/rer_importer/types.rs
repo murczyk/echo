@@ -1180,6 +1180,45 @@ pub struct CallsignStatsRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+#[serde(rename_all = "snake_case")]
+pub enum AnalysisCallsignPageOrder {
+    CountDesc,
+    MatchThenName,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignPageReq {
+    pub req: AnalysisStatsReq,
+    pub query: String,
+    pub page_size: Option<u64>,
+    pub cursor: Option<String>,
+    pub order: AnalysisCallsignPageOrder,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignPageEntry {
+    pub value: String,
+    pub label: String,
+    pub values: Vec<String>,
+    pub count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignPageRsp {
+    pub entries: Vec<AnalysisCallsignPageEntry>,
+    pub has_more: bool,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct AnalysisStatsMetadataValue {
     pub value: String,
     pub count: i64,

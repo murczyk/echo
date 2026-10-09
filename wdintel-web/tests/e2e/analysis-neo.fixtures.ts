@@ -13,6 +13,7 @@ type AnalysisNeoMockOptions = {
   inboxResponse?: InboxMessagesRspRaw | null;
   signalGroups?: string[];
   networkInfoResponse?: unknown[];
+  callsignPageResponse?: (request: { cursor?: string | null; query?: string }) => unknown;
 };
 
 function jsonBody(body: unknown): string {
@@ -319,6 +320,15 @@ export async function installAnalysisNeoApiMocks(
 
     if (pathname === '/api/rer/analysis/stats/callsigns') {
       await fulfillJson(route, { callsigns: [] }, options.sidebarDelayMs);
+      return;
+    }
+
+    if (pathname === '/api/rer/analysis/callsigns-page') {
+      const body = request.postDataJSON() as { cursor?: string | null; query?: string };
+      await fulfillJson(
+        route,
+        options.callsignPageResponse?.(body) ?? { entries: [], has_more: false, next_cursor: null },
+      );
       return;
     }
 
