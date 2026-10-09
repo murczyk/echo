@@ -1,0 +1,8 @@
+[Unit]
+Description=Allow only Kharkiv to use the private document relay
+Before=echo-document-extractor-relay.socket
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/echo-document-extractor-relay-firewall
+RemainAfterExit=yes

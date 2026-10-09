@@ -10,7 +10,7 @@ dangerously_acknowledge=${3:-}
 SCRIPT_DIR=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 BUNDLE_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 # shellcheck disable=SC1091
-source "$BUNDLE_DIR/config/host.env"
+source "$BUNDLE_DIR/bin/load-host-config.sh"
 
 die() {
   printf '[echo-ai-agent] ERROR: %s\n' "$*" >&2

@@ -405,10 +405,19 @@ pub(crate) fn parse_library_unit_segments(text: &str) -> Vec<String> {
 pub(crate) fn parse_library_unit_typed_segments(
     text: &str,
 ) -> Option<Vec<(UnitType, String)>> {
+    let segments = parse_library_unit_typed_segments_any_order(text);
+    (!segments.is_empty()
+        && segments.windows(2).all(|pair| pair[0].0 < pair[1].0))
+    .then_some(segments)
+}
+
+pub(crate) fn parse_library_unit_typed_segments_any_order(
+    text: &str,
+) -> Vec<(UnitType, String)> {
     let text = preprocess_unit_text(&text.to_string());
     let mut units_info = capture_library_unit(&text);
     units_info.sort_by_key(|unit| unit.idx);
-    let segments = units_info
+    units_info
         .into_iter()
         .filter_map(|unit| {
             unit.unit_type.map(|unit_type| {
@@ -419,10 +428,7 @@ pub(crate) fn parse_library_unit_typed_segments(
                 (unit_type, name)
             })
         })
-        .collect_vec();
-    (!segments.is_empty()
-        && segments.windows(2).all(|pair| pair[0].0 < pair[1].0))
-    .then_some(segments)
+        .collect_vec()
 }
 
 fn capture_library_unit(text: &str) -> Vec<UnitInfo> {

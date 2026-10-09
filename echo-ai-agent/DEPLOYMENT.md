@@ -1,6 +1,6 @@
 # Echo AI agent deployment
 
-One `echo-ai-agent-vm` serves every Echo deployment. Run section 1 once, then
+Each agent VM serves its assigned Echo namespaces. The default host is `echo-ai-agent-vm`; the Ukrainian canary uses `echo-ai-agents-ua` ([rollout](../docs/ai/kharkiv-canary.md)). Run section 1 once per host, then
 repeat sections 2–6 for each authorized Echo server with a separate key and
 namespace.
 

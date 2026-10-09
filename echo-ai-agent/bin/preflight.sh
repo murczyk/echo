@@ -12,6 +12,13 @@ connection_mode=${2:-admin}
 require_cmd jq
 require_cmd ssh
 validate_bundle
+if [[ "$STORAGE_LAYOUT" == dedicated-disk ]]; then
+  remote_root=$(make_remote_stage "$target_host" "$connection_mode")
+  trap 'remove_remote_stage "$target_host" "$remote_root" "$connection_mode"' EXIT
+  ssh_target "$connection_mode" "$target_host" sudo -n bash \
+    "$remote_root/bin/dedicated-storage.sh" "$remote_root" check
+  exit
+fi
 ssh_target "$connection_mode" "$target_host" bash -s -- \
   "$EXPECTED_HOSTNAME" \
   "$EXPECTED_OS_ID" \

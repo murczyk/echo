@@ -248,6 +248,7 @@ export async function installAnalysisNeoApiMocks(
         goi_host: null,
         goi_integrations: [],
         last_release_seen: null,
+        rer_report_eligible: false,
       });
       return;
     }

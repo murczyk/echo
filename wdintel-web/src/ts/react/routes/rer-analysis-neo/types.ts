@@ -263,6 +263,7 @@ export type AnalysisPageState = {
   unitsExactMatchOnlyDefault: boolean | null;
   analysisAorFilterEnabled: boolean;
   rerReportEnabled: boolean;
+  rerReportFilterEnabled: boolean;
   supportNonRerInterceptions: boolean;
   cyberEchoEnabled: boolean;
   options: AnalysisFilterOptions;

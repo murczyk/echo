@@ -962,7 +962,7 @@ fn unit_search_sort_expressions(
         sigint_unit::Column::Section.into_column_ref().into(),
         sigint_unit::Column::TeamOrCrew.into_column_ref().into(),
         sigint_unit::Column::Other.into_column_ref().into(),
-        sigint_unit::Column::Id.into_column_ref().into(),
+        Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)),
     ]);
     expressions
 }
@@ -2652,19 +2652,21 @@ enum UnitReferenceStep {
     NetworkCallsigns,
     Attachments,
     Labels,
+    RerReportMetadata,
     InboxLinks,
     OrbitLinks,
     Devices,
 }
 
 impl UnitReferenceStep {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::Callsigns,
         Self::Signals,
         Self::NetworkUnits,
         Self::NetworkCallsigns,
         Self::Attachments,
         Self::Labels,
+        Self::RerReportMetadata,
         Self::InboxLinks,
         Self::OrbitLinks,
         Self::Devices,
@@ -2678,6 +2680,7 @@ impl UnitReferenceStep {
             Self::NetworkCallsigns => "Позивні мереж",
             Self::Attachments => "Файли",
             Self::Labels => "Мітки",
+            Self::RerReportMetadata => "Метадані звіту РЕР",
             Self::InboxLinks => "Прив’язки повідомлень",
             Self::OrbitLinks => "Прив’язки ORBIT",
             Self::Devices => "Пристрої",
@@ -2754,6 +2757,15 @@ where
             move_unit_labels(old_unit_id, new_unit_id, dbx, limit)
                 .await
                 .c(h!())?
+        }
+        UnitReferenceStep::RerReportMetadata => {
+            crate::rer_report_admin::merge_unit_metadata(
+                dbx,
+                old_unit_id,
+                new_unit_id,
+            )
+            .await
+            .c(h!())?
         }
         UnitReferenceStep::InboxLinks => move_inbox_item_unit_links(
             old_unit_id,

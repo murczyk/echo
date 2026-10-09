@@ -11,9 +11,7 @@ dangerously_acknowledge=${2:-}
   exit 1
 }
 # shellcheck disable=SC1091
-source "$BUNDLE_DIR/config/host.env"
-# shellcheck disable=SC1091
-source "$BUNDLE_DIR/versions.env"
+source "$BUNDLE_DIR/bin/load-host-config.sh"
 
 die() {
   printf '[echo-ai-agent] ERROR: %s\n' "$*" >&2
@@ -176,6 +174,11 @@ write_or_verify_storage_marker() {
   chmod 0600 "$STORAGE_MARKER"
 }
 
+if [[ "$STORAGE_LAYOUT" == dedicated-disk ]]; then
+  "$BUNDLE_DIR/bin/dedicated-storage.sh" "$BUNDLE_DIR" setup
+  migrate_admin_ssh_port
+  exit
+fi
 verify_audited_root_partition
 migrate_admin_ssh_port
 p1_start=$(lsblk -bnro START "$STORAGE_ROOT_PARTITION")

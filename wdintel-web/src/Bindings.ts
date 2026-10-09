@@ -1726,6 +1726,7 @@ export type User = {
   goiHost: string | null;
   goiIntegrations: Array<GoiUserIntegration>;
   lastReleaseSeen: string | null;
+  rerReportEligible: boolean;
 };
 
 export type AuthorIdentity = {
@@ -5037,6 +5038,43 @@ export type RerDutyTestReplayStatusRsp = {
   nextSourcePosition: number | null;
   generatedCount: number;
   nextEmitAtMs: number | null;
+};
+
+export type RerReportAccessListRsp = {
+  loginIds: Array<string>;
+};
+
+export type ReplaceRerReportAccessListReq = {
+  loginIds: Array<string>;
+};
+
+export type RerReportMetadataItem = {
+  id: number;
+  sigintUnitId: number;
+  sigintUnitName: string;
+  locations: Array<string>;
+  labels: Array<string>;
+};
+
+export type RerReportMetadataListRsp = {
+  items: Array<RerReportMetadataItem>;
+};
+
+export type CreateRerReportMetadataReq = {
+  sigintUnitId: number;
+  locations: Array<string>;
+  labels: Array<string>;
+};
+
+export type UpdateRerReportMetadataReq = {
+  id: number;
+  sigintUnitId: number;
+  locations: Array<string>;
+  labels: Array<string>;
+};
+
+export type DeleteRerReportMetadataReq = {
+  id: number;
 };
 
 export type AiGovUaSettingsRsp = {

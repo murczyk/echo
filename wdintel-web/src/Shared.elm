@@ -169,6 +169,7 @@ init flagsResult route =
                 , goiHost = Nothing
                 , goiIntegrations = []
                 , lastReleaseSeen = Nothing
+                , rerReportEligible = False
                 }
       , userLoaded = False
       , themeMode =

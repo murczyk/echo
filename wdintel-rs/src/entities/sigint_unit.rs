@@ -122,6 +122,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SigintUnitOrbitCombatType,
+    #[sea_orm(has_one = "super::sigint_unit_rer_report_metadata::Entity")]
+    SigintUnitRerReportMetadata,
 }
 
 impl Related<super::device::Entity> for Entity {
@@ -199,6 +201,12 @@ impl Related<super::sigint_unit_changelog::Entity> for Entity {
 impl Related<super::sigint_unit_label::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintUnitLabel.def()
+    }
+}
+
+impl Related<super::sigint_unit_rer_report_metadata::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintUnitRerReportMetadata.def()
     }
 }
 
