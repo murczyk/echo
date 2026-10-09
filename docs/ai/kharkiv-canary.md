@@ -99,7 +99,9 @@ limit on Kharkiv. Checkpoint failures retain their cause
 even when the SDK records them as assistant errors.
 Provider SSE responses have a separate 16 MiB transport limit for per-token
 framing and reasoning metadata. JSON responses retain their 2 MiB limit;
-answer limits, tool budgets and request deadlines remain unchanged.
+answer limits, tool budgets and the total request deadline remain unchanged.
+Government GLM streams may continue within that ten-minute deadline; other
+provider requests retain their five-minute timeout.
 Empty, truncated or ineffective checkpoints fail without replacing source
 history. Cancellation also aborts checkpoint generation. Compaction releases
 only discarded tool-context allowance; citation registries, invocation limits

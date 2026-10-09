@@ -1,7 +1,7 @@
 use super::auth;
 use crate::config::{
-    AI_AGENT_OPENAI_GPT_6_LUNA, AI_AGENT_OPENAI_GPT_6_SOL,
-    AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
+    AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC, AI_AGENT_OPENAI_GPT_6_LUNA,
+    AI_AGENT_OPENAI_GPT_6_SOL, AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
     AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE, AI_AGENT_PROVIDER_ERROR_MAX_BYTES,
     AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS, AI_AGENT_PROVIDER_GATEWAY_PATH,
     AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE,
@@ -134,6 +134,21 @@ fn normalize_reasoning_effort(
     }
 }
 
+fn provider_request_timeout(
+    ai_engine: &crate::entities::ai_engine::Model,
+    streamed: bool,
+) -> Duration {
+    let seconds = if streamed
+        && ai_engine.model_name == crate::config::AI_AGENT_GLM_5_3
+        && crate::ai_engine::client::is_government_url(&ai_engine.url)
+    {
+        AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC
+    } else {
+        AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC
+    };
+    Duration::from_secs(seconds)
+}
+
 async fn proxy_provider_request(
     client: &crate::ai_engine::AiEngineClient,
     ai_engine: crate::entities::ai_engine::Model,
@@ -151,13 +166,8 @@ async fn proxy_provider_request(
         .or_else(|| body.get("max_tokens"))
         .and_then(Value::as_u64);
     let request_bytes = body.to_string().len();
-    let response = client
-        .send(
-            &ai_engine,
-            body,
-            Duration::from_secs(AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC),
-        )
-        .await;
+    let timeout = provider_request_timeout(&ai_engine, streamed);
+    let response = client.send(&ai_engine, body, timeout).await;
     let response = match response {
         Ok(response) => response,
         Err(err) => {
@@ -262,9 +272,11 @@ async fn proxy_provider_request(
                         Ok(chunk)
                     }
                 }
-                Err(_) => {
+                Err(err) => {
                     warn!(
-                        "AI agent provider gateway response stream failed engine_id={engine_id}"
+                        "AI agent provider gateway response stream failed engine_id={engine_id} timeout={} duration_ms={}",
+                        err.is_timeout(),
+                        started_at.elapsed().as_millis()
                     );
                     Err(actix_web::error::ErrorBadGateway(
                         "Provider response was interrupted",
@@ -498,6 +510,24 @@ mod tests {
         assert!(to_bytes(response.into_body()).await.is_err());
         handle.stop(true).await;
         task.await.unwrap().unwrap();
+    }
+
+    #[test]
+    fn issue_3724_allowed_long_glm_streams_within_request_deadline() {
+        let mut ai_engine =
+            checkpoint_fixture_engine("127.0.0.1:1".parse().unwrap());
+        let regular =
+            Duration::from_secs(AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC);
+        assert_eq!(provider_request_timeout(&ai_engine, true), regular);
+        ai_engine.url = crate::config::AI_GOV_UA_API_BASE.to_string();
+        assert_eq!(
+            provider_request_timeout(&ai_engine, true),
+            Duration::from_secs(crate::config::AI_AGENT_DISPATCHER_TIMEOUT_SEC)
+        );
+        assert_eq!(provider_request_timeout(&ai_engine, false), regular);
+        ai_engine.model_name =
+            crate::config::AI_AGENT_OPENAI_GPT_6_LUNA.to_string();
+        assert_eq!(provider_request_timeout(&ai_engine, true), regular);
     }
 
     #[actix_web::test]
