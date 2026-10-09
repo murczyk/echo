@@ -40,7 +40,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.09.7";
+const HARNESS_RELEASE = "2026.10.09.8";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -2778,11 +2778,14 @@ export async function recoverFinalOutputLimit(
   await compaction.compactForOutputRetry();
   messages.length = 0;
   const previous = emitAssistant.current;
+  const previousTools = session.agent.state.tools;
   emitAssistant.current = false;
+  session.agent.state.tools = [];
   try {
     await session.prompt(payload.prompt, { expandPromptTemplates: false, source: "rpc" });
   } finally {
     emitAssistant.current = previous;
+    session.agent.state.tools = previousTools;
   }
   return true;
 }

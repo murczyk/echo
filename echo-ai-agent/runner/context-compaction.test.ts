@@ -43,6 +43,7 @@ async function fixture(
   let progressCalls = 0;
   let resetCalls = 0;
   let finalCalls = 0;
+  let mutations = 0;
   const cursors: number[] = [];
   const requests: any[] = [];
   const errors: unknown[] = [];
@@ -136,6 +137,27 @@ async function fixture(
               },
             }),
           ),
+        };
+        finishReason = "tool_calls";
+      } else if (
+        checkpointSettings.finalOutput === "mutation" &&
+        (mutations === 0 ||
+          (mutations === 1 &&
+            finalCalls > 0 &&
+            body.tools?.some(
+              (tool: any) => tool.function.name === "echo_map_edit",
+            )))
+      ) {
+        delta = {
+          role: "assistant",
+          tool_calls: [
+            {
+              index: 0,
+              id: `mutation_${mutations}`,
+              type: "function",
+              function: { name: "echo_map_edit", arguments: "{}" },
+            },
+          ],
         };
         finishReason = "tool_calls";
       } else {
@@ -305,6 +327,20 @@ async function fixture(
       };
     },
   });
+  const mutationTool = defineTool({
+    name: "echo_map_edit",
+    label: "Edit fixture map",
+    description: "Add a fixture map point and advance its revision.",
+    parameters: Type.Object({}),
+    executionMode: "sequential",
+    execute: async () => ({
+      content: [{ type: "text", text: `Map revision ${++mutations} saved` }],
+    }),
+  });
+  const tools =
+    checkpointSettings.finalOutput === "mutation"
+      ? [tool, mutationTool]
+      : [tool];
   const { session } = await createAgentSession({
     cwd: directory,
     agentDir: directory,
@@ -312,8 +348,8 @@ async function fixture(
     model: selectedEngine,
     thinkingLevel: "off",
     noTools: "all",
-    tools: [tool.name],
-    customTools: [tool],
+    tools: tools.map((tool) => tool.name),
+    customTools: tools,
     resourceLoader,
     sessionManager,
     settingsManager,
@@ -348,6 +384,7 @@ async function fixture(
     firstCitation,
     checkpointCalls: () => checkpointCalls,
     finalCalls: () => finalCalls,
+    mutations: () => mutations,
     progressCalls: () => progressCalls,
     resetCalls: () => resetCalls,
     contextFailure: contextCompaction.failure,
@@ -441,6 +478,7 @@ test("#3724 continued pagination and follow-ups with a separate checkpoint engin
 
 for (const finalOutput of [
   "retry",
+  "mutation",
   "always-length",
   "checkpoint-limit",
   "cancel-recovery",
@@ -466,6 +504,7 @@ for (const finalOutput of [
       );
       const audit = structuredClone(value.session.sessionManager.getEntries());
       const resets = value.resetCalls();
+      const tools = value.session.agent.state.tools;
       const emitAssistant = { current: true };
       const recovery = () =>
         recoverFinalOutputLimit(
@@ -497,7 +536,7 @@ for (const finalOutput of [
           value.session.sessionManager.getEntries().slice(0, audit.length),
           audit,
         );
-        if (finalOutput === "retry") {
+        if (finalOutput === "retry" || finalOutput === "mutation") {
           validateFinalAssistantMessage(observed);
           const answer = (observed.at(-1) as any).content
             .filter((block: any) => block.type === "text")
@@ -521,6 +560,7 @@ for (const finalOutput of [
               .at(-1)
               .messages.some((message: any) => message.role === "tool"),
           );
+          assert.ok(!value.requests.at(-1).tools?.length);
           assert.ok(
             value.requests
               .at(-1)
@@ -541,6 +581,8 @@ for (const finalOutput of [
             /output token limit/,
           );
       }
+      assert.equal(value.mutations(), finalOutput === "mutation" ? 1 : 0);
+      assert.deepEqual(value.session.agent.state.tools, tools);
       assert.equal(emitAssistant.current, true);
       assert.deepEqual(value.errors, []);
     } finally {
