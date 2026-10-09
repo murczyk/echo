@@ -303,7 +303,13 @@ async function compactAllForOutputRetry(
   settings.signal?.throwIfAborted();
   const entries = session.sessionManager
     .buildContextEntries()
-    .filter((entry) => sessionEntryToContextMessages(entry).length > 0);
+    .filter((entry) => sessionEntryToContextMessages(entry).length > 0)
+    .filter(
+      (entry) =>
+        entry.type !== "message" ||
+        entry.message.role !== "assistant" ||
+        entry.message.stopReason !== "length",
+    );
   const context = checkpointContext(entries, settings);
   const maxTokens = settings.checkpointMaxTokens ?? settings.maxTokens;
   if (clampMaxTokensToContext(checkpointEngine, context, maxTokens) < maxTokens)

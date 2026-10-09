@@ -48,6 +48,8 @@ async function fixture(
   const requests: any[] = [];
   const errors: unknown[] = [];
   const firstCitation = "https://example.invalid/?m=fixture-1";
+  const primaryMaxTokens =
+    checkpointSettings.finalOutput === "large-draft" ? 16_384 : 8_192;
   const cancellation = new AbortController();
   const prompt = restored
     ? "Review this pending request. ".repeat(2_000)
@@ -66,12 +68,13 @@ async function fixture(
       );
       assert.equal(
         body.max_tokens ?? body.max_completion_tokens,
-        summary ? (checkpointSettings.maxTokens ?? 8_192) : 8_192,
+        summary ? (checkpointSettings.maxTokens ?? 8_192) : primaryMaxTokens,
       );
       let delta: any;
       let finishReason = "stop";
       if (summary) {
         checkpointCalls += 1;
+        assert.ok(!body.messages[1].content.includes("Unfinished draft."));
         assert.ok(body.messages[1].content.includes("Original request:"));
         assert.ok(body.messages[1].content.includes("2026-10-09"));
         if (body.messages[1].content.includes("[Tool result]:")) {
@@ -184,6 +187,9 @@ async function fixture(
           finishReason = "length";
           delta = {
             reasoning_content: "Synthetic unsuccessful provider reasoning",
+            ...(checkpointSettings.finalOutput === "large-draft"
+              ? { content: "Unfinished draft. ".repeat(3_800) }
+              : {}),
           };
         }
       }
@@ -225,7 +231,7 @@ async function fixture(
               reasoning: false,
               input: ["text"],
               contextWindow: 65_536,
-              maxTokens: 8_192,
+              maxTokens: primaryMaxTokens,
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             },
             ...(checkpointSettings.modelName
@@ -367,7 +373,7 @@ async function fixture(
     session,
     {
       prompt,
-      maxTokens: 8_192,
+      maxTokens: primaryMaxTokens,
       checkpointMaxTokens: checkpointSettings.maxTokens,
       checkpointEngine: checkpointSettings.modelName
         ? modelRuntime.getModel("fixture", checkpointSettings.modelName)
@@ -487,6 +493,7 @@ test("#3724 continued pagination and follow-ups with a separate checkpoint engin
 
 for (const finalOutput of [
   "retry",
+  "large-draft",
   "mutation",
   "always-length",
   "checkpoint-limit",
@@ -512,6 +519,8 @@ for (const finalOutput of [
         /output token limit/,
       );
       const audit = structuredClone(value.session.sessionManager.getEntries());
+      if (finalOutput === "large-draft")
+        assert.ok(JSON.stringify(audit).includes("Unfinished draft."));
       const resets = value.resetCalls();
       const tools = value.session.agent.state.tools;
       const stream = value.session.agent.streamFunction;
@@ -552,7 +561,7 @@ for (const finalOutput of [
           value.session.sessionManager.getEntries().slice(0, audit.length),
           audit,
         );
-        if (finalOutput === "retry" || finalOutput === "mutation") {
+        if (["retry", "large-draft", "mutation"].includes(finalOutput)) {
           validateFinalAssistantMessage(observed);
           const answer = (observed.at(-1) as any).content
             .filter((block: any) => block.type === "text")
