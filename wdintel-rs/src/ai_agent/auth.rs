@@ -113,6 +113,7 @@ pub async fn issue_provider_capability(
     rand::rng().fill(&mut random);
     let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(random);
     let digest = sha256::digest(token.as_bytes());
+    let ttl = provider_capability_ttl(&model_name);
     let grant = serde_json::to_string(&ProviderCapabilityGrant {
         login_id,
         request_id,
@@ -124,20 +125,44 @@ pub async fn issue_provider_capability(
     let mut redis = env.redis.clone();
     let mut pipe = redis::pipe();
     pipe.atomic();
-    pipe.set_ex(
-        provider_capability_key(&digest),
-        grant,
-        AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC,
-    )
-    .ignore()
-    .set_ex(
-        provider_capability_correlation_key(correlation_id),
-        digest,
-        AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC,
-    )
-    .ignore();
+    pipe.set_ex(provider_capability_key(&digest), grant, ttl)
+        .ignore()
+        .set_ex(
+            provider_capability_correlation_key(correlation_id),
+            digest,
+            ttl,
+        )
+        .ignore();
     pipe.query_async::<()>(&mut redis).await.c(h!())?;
     Ok(token)
+}
+
+fn provider_capability_ttl(model_name: &str) -> u64 {
+    if model_name == crate::config::AI_AGENT_GLM_5_3 {
+        crate::config::AI_AGENT_GLM_5_3_PROVIDER_CAPABILITY_TTL_SEC
+    } else {
+        AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC
+    }
+}
+
+async fn read_provider_capability(
+    env: &Env,
+    digest: &str,
+) -> anyhow::Result<(Option<String>, i64)> {
+    redis::Script::new(
+        r#"
+local value = redis.call('GET', KEYS[1])
+if not value then return {false, 0} end
+local calls = redis.call('INCR', KEYS[2])
+if calls == 1 then redis.call('PEXPIRE', KEYS[2], math.max(1, redis.call('PTTL', KEYS[1]))) end
+return {value, calls}
+        "#,
+    )
+    .key(provider_capability_key(digest))
+    .key(provider_capability_calls_key(digest))
+    .invoke_async(&mut env.redis.clone())
+    .await
+    .c(h!())
 }
 
 pub async fn authorize_provider_capability(
@@ -145,21 +170,7 @@ pub async fn authorize_provider_capability(
     token: &str,
 ) -> Result<Option<ai_engine::Model>, AppError> {
     let digest = sha256::digest(token.as_bytes());
-    let (raw, calls): (Option<String>, i64) = redis::Script::new(
-        r#"
-local value = redis.call('GET', KEYS[1])
-if not value then return {false, 0} end
-local calls = redis.call('INCR', KEYS[2])
-if calls == 1 then redis.call('EXPIRE', KEYS[2], ARGV[1]) end
-return {value, calls}
-        "#,
-    )
-    .key(provider_capability_key(&digest))
-    .key(provider_capability_calls_key(&digest))
-    .arg(AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC)
-    .invoke_async(&mut env.redis.clone())
-    .await
-    .c(h!())?;
+    let (raw, calls) = read_provider_capability(env, &digest).await.c(h!())?;
     if calls > AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT {
         return Ok(None);
     }
@@ -655,6 +666,63 @@ mod bootstrap_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issue_3724_scoped_capability_lifetime_to_glm_deadline() {
+        assert_eq!(
+            provider_capability_ttl(crate::config::AI_AGENT_GLM_5_3),
+            crate::config::AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC + 60
+        );
+        assert_eq!(
+            provider_capability_ttl(crate::config::AI_AGENT_OPENAI_GPT_6_LUNA),
+            AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC
+        );
+    }
+
+    #[actix_web::test]
+    #[serial_test::serial]
+    async fn issue_3724_kept_provider_call_counter_until_grant_expiry() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let digest = sha256::digest(Uuid::now_v7().to_string().as_bytes());
+        let grant_key = provider_capability_key(&digest);
+        let calls_key = provider_capability_calls_key(&digest);
+        let mut redis = env.redis.clone();
+        redis
+            .set_ex::<_, _, ()>(
+                &grant_key,
+                "fixture",
+                provider_capability_ttl(crate::config::AI_AGENT_GLM_5_3),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            read_provider_capability(&env, &digest).await.unwrap(),
+            (Some("fixture".to_string()), 1)
+        );
+        let (grant_ttl, calls_ttl): (i64, i64) = redis::pipe()
+            .pttl(&grant_key)
+            .pttl(&calls_key)
+            .query_async(&mut redis)
+            .await
+            .unwrap();
+        assert!(
+            calls_ttl > (AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC * 1000) as i64
+        );
+        assert!((grant_ttl - calls_ttl).abs() < 100);
+        redis
+            .incr::<_, _, i64>(
+                &calls_key,
+                AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT - 1,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            read_provider_capability(&env, &digest).await.unwrap().1,
+            AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT + 1
+        );
+        redis.del::<_, ()>(&[grant_key, calls_key]).await.unwrap();
+    }
 
     #[test]
     fn bootstrap_storage_never_contains_plain_token_in_key() {

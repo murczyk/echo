@@ -442,9 +442,13 @@ async fn run_request(
     request: &ai_agent_request::Model,
     cancellation: &CancellationToken,
 ) -> Result<RunOutcome, AppError> {
+    let ai_engine =
+        access::allowed_engine(&env.dbx, Some(request.ai_engine_id)).await?;
+    let timeout =
+        request_execution_timeout(&ai_engine.model_name, &ai_engine.url);
     match tokio::time::timeout(
-        StdDuration::from_secs(AI_AGENT_DISPATCHER_TIMEOUT_SEC),
-        run_request_inner(env, request, cancellation),
+        timeout,
+        run_request_inner(env, request, cancellation, ai_engine),
     )
     .await
     {
@@ -468,6 +472,17 @@ async fn run_request(
             })
         }
     }
+}
+
+fn request_execution_timeout(model_name: &str, url: &str) -> StdDuration {
+    let seconds = if model_name == crate::config::AI_AGENT_GLM_5_3
+        && crate::ai_engine::client::is_government_url(url)
+    {
+        crate::config::AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC
+    } else {
+        AI_AGENT_DISPATCHER_TIMEOUT_SEC
+    };
+    StdDuration::from_secs(seconds)
 }
 
 async fn append_request_preparation(
@@ -518,6 +533,7 @@ async fn run_request_inner(
     env: &Env,
     request: &ai_agent_request::Model,
     cancellation: &CancellationToken,
+    ai_engine: crate::entities::ai_engine::Model,
 ) -> Result<RunOutcome, AppError> {
     let request_started_at = Utc::now();
     if cancellation.is_cancelled() {
@@ -541,8 +557,6 @@ async fn run_request_inner(
             "AI agent harness was disabled before execution".to_string(),
         ));
     }
-    let ai_engine =
-        access::allowed_engine(&env.dbx, Some(request.ai_engine_id)).await?;
     let runtime_profile =
         ai_agent_engine_runtime_profile::Entity::find_by_id(ai_engine.id)
             .one(&env.dbx)
@@ -1348,6 +1362,35 @@ async fn reconcile_abandoned_containers(env: &Env) -> Result<(), AppError> {
 mod tests {
     use super::*;
     use serial_test::serial;
+
+    #[test]
+    fn issue_3724_scoped_long_execution_to_government_glm() {
+        let regular = StdDuration::from_secs(AI_AGENT_DISPATCHER_TIMEOUT_SEC);
+        let government = crate::config::AI_GOV_UA_API_BASE;
+        assert_eq!(
+            request_execution_timeout(
+                crate::config::AI_AGENT_GLM_5_3,
+                government,
+            ),
+            StdDuration::from_secs(
+                crate::config::AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC
+            )
+        );
+        assert_eq!(
+            request_execution_timeout(
+                crate::config::AI_AGENT_GLM_5_3,
+                "https://example.invalid/v1",
+            ),
+            regular
+        );
+        assert_eq!(
+            request_execution_timeout(
+                crate::config::AI_AGENT_OPENAI_GPT_6_LUNA,
+                government,
+            ),
+            regular
+        );
+    }
 
     #[test]
     fn cleanup_periods_match_product_contract() {

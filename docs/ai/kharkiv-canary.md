@@ -100,14 +100,15 @@ normal output cap for checkpoints. Normal generation uses Kharkiv's configured
 even when the SDK records them as assistant errors.
 Provider SSE responses have a separate 16 MiB transport limit for per-token
 framing and reasoning metadata. JSON responses retain their 2 MiB limit;
-configured output limits still apply. Tool budgets and the total request deadline
-remain unchanged.
-Government GLM streams may continue within that ten-minute deadline; other
-provider requests retain their five-minute timeout.
+configured output limits still apply. Government GLM requests have a bounded
+twenty-minute execution deadline, with up to ten minutes per provider stream.
+Other engines retain ten minutes overall and five minutes per provider request.
+Provider credentials remain valid through the selected deadline, and their call
+counters expire with the credential so a long request cannot reset its limit.
 Empty, truncated or ineffective checkpoints fail without replacing source
 history. Cancellation also aborts checkpoint generation. Compaction releases
 only discarded tool-context allowance; citation registries, invocation limits
-and the ten-minute request deadline remain in force.
+and the engine's total execution deadline remain in force.
 
 If a report fails with an output-limit error, inspect the request's provider
 gateway logs. A shrinking `max_output_tokens` after successful tool pages
