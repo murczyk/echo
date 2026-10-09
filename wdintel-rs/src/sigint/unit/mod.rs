@@ -962,7 +962,7 @@ fn unit_search_sort_expressions(
         sigint_unit::Column::Section.into_column_ref().into(),
         sigint_unit::Column::TeamOrCrew.into_column_ref().into(),
         sigint_unit::Column::Other.into_column_ref().into(),
-        Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)).into(),
+        Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)),
     ]);
     expressions
 }
