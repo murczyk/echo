@@ -1,6 +1,7 @@
 # Kharkiv government AI canary
 
-`echo-kharkiv2` uses government `glm-5.3` for agents, reviews, callsigns,
+`echo-kharkiv2` uses government `gpt-6-sol` as the default agent provider,
+with `glm-5.3` selectable for agents and used for reviews, callsigns,
 settlements, positions, summaries, and report suggestions. Government
 `gpt-6-luna` supplies vision through the `openai_vision` OCR profile. Azure
 application credentials are reused from Tsur, decrypted for transfer, and
@@ -79,11 +80,21 @@ and its extractor allowlist entry. Keep the direct Kharkiv entry.
 
 ## Configuration and processing scope
 
-Both government engines retain Tsur's context of 65,536 tokens, compaction
+All government engines retain Tsur's context of 65,536 tokens, compaction
 reserve of 16,384 and recent history of 8,192. Kharkiv's GLM generation budget
-is 16,384 tokens, including reasoning and visible output; Luna retains 8,192.
-GLM is the default and reviewer. Only government engines are allowed for agent conversations;
+is 16,384 tokens, including reasoning and visible output; Sol and Luna use 8,192.
+Sol is the default agent provider; GLM remains selectable and is the reviewer.
+Only government engines are allowed for agent conversations;
 the old Gemma engine registration is retained for rollback.
+
+Existing conversations retain their provider. Start a new conversation to use
+the changed default. Change the default through the AI agent admin settings,
+keeping GLM and Luna allowed and preserving their runtime profiles and webhook
+settings. Sol uses the existing Chat Completions tool transport with
+`reasoning_effort: none`. The government catalogue also lists `gpt-6.1-sol`,
+whose [tool calls require Responses API](https://developers.openai.com/api/docs/models/gpt-6.1-sol);
+it cannot replace Sol on the current agent transport. Sol uses its own provider
+for checkpoints; GLM uses the delegated Luna checkpoint provider below.
 
 GLM agent requests explicitly use maximum reasoning. The runner checks complete
 provider context, including the system prompt, tool schemas and the SDK safety
@@ -107,6 +118,10 @@ government Luna exists, legacy GLM checkpoints retain their separate output cap
 of up to 16,384 tokens. Other engines retain their normal checkpoint output cap.
 Checkpoint failures retain their cause
 even when the SDK records them as assistant errors.
+`content_filter` means the checkpoint provider stopped generation. The runner
+rejects its partial checkpoint and preserves the source audit; it does not
+retry that refusal. The provider response does not identify the triggering
+source passage.
 Provider SSE responses have a separate 16 MiB transport limit for per-token
 framing and reasoning metadata. JSON responses retain their 2 MiB limit;
 configured output limits still apply. Government GLM requests have a bounded
