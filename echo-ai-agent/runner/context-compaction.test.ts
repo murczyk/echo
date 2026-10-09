@@ -45,9 +45,12 @@ async function fixture(
       for await (const chunk of request) text += chunk;
       const body = JSON.parse(text);
       requests.push(body);
-      assert.equal(body.max_tokens ?? body.max_completion_tokens, 8_192);
       const system = body.messages[0].content;
       const summary = system.includes("Create a concise evidence checkpoint");
+      assert.equal(
+        body.max_tokens ?? body.max_completion_tokens,
+        summary ? 16_384 : 8_192,
+      );
       let delta: any;
       let finishReason = "stop";
       if (summary) {
@@ -67,6 +70,8 @@ async function fixture(
               ? "Non-reducing checkpoint. ".repeat(30_000)
               : `Original request preserved. Fixed day: 2026-10-08/2026-10-09. Alpha received documents, source ${firstCitation}. Continue the cursor from the retained latest page; coverage remains incomplete.`;
         delta = { role: "assistant", content };
+        if (checkpoint === "reasoning")
+          delta.reasoning_content = "Evidence checkpoint reasoning";
       } else if (pagesRead < pages) {
         const tools = body.messages.filter(
           (message: any) => message.role === "tool",
@@ -114,7 +119,7 @@ async function fixture(
         `data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`,
       );
       response.end(
-        `data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: finishReason }], usage: { prompt_tokens: promptTokens, completion_tokens: 64, total_tokens: promptTokens + 64 } })}\n\ndata: [DONE]\n\n`,
+        `data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: finishReason }], usage: { prompt_tokens: promptTokens, completion_tokens: summary && checkpoint === "reasoning" ? 10_000 : 64, total_tokens: promptTokens + (summary && checkpoint === "reasoning" ? 10_000 : 64) } })}\n\ndata: [DONE]\n\n`,
       );
     } catch (error) {
       errors.push(error);
@@ -251,7 +256,7 @@ async function fixture(
     sessionManager,
     settingsManager,
   });
-  installContextCompaction(
+  const contextFailure = installContextCompaction(
     session,
     {
       prompt,
@@ -278,6 +283,7 @@ async function fixture(
     checkpointCalls: () => checkpointCalls,
     progressCalls: () => progressCalls,
     resetCalls: () => resetCalls,
+    contextFailure,
     close: async () => {
       session.dispose();
       server.closeAllConnections();
@@ -286,6 +292,20 @@ async function fixture(
     },
   };
 }
+
+test("#3724 preserves answer headroom while reasoning checkpoints exceed the answer output limit", async () => {
+  const value = await fixture(7, "reasoning");
+  try {
+    await value.session.prompt(value.prompt);
+    assert.equal(value.contextFailure(), undefined);
+    validateFinalAssistantMessage(value.session.messages);
+    assert.ok(value.checkpointCalls() > 0);
+    assert.equal(value.cursors.length, 7);
+    assert.deepEqual(value.errors, []);
+  } finally {
+    await value.close();
+  }
+});
 
 for (const [pages, batchWidth] of [
   [7, 1],
@@ -351,6 +371,12 @@ for (const mode of ["length", "empty", "unchanged", "cancel"]) {
         validateFinalAssistantMessage(value.session.messages),
       );
       assert.equal(value.resetCalls(), 0);
+      assert.ok(value.contextFailure());
+      if (mode === "length")
+        assert.match(
+          String(value.contextFailure()),
+          /context checkpoint failed: length/,
+        );
       assert.equal(
         value.session.sessionManager
           .getEntries()

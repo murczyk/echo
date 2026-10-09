@@ -109,12 +109,17 @@ function checkpointContext(
 
 function checkpointText(response: AssistantMessage): string {
   if (response.stopReason !== "stop")
-    throw new Error(`context checkpoint failed: ${response.stopReason}`);
+    throw new Error(
+      `context checkpoint failed: ${response.stopReason} (output tokens: ${response.usage.output})`,
+    );
   const text = response.content
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("\n")
     .trim();
-  if (!text) throw new Error("context checkpoint is empty");
+  if (!text)
+    throw new Error(
+      `context checkpoint is empty (output tokens: ${response.usage.output})`,
+    );
   return text;
 }
 
@@ -150,6 +155,7 @@ interface CompactionRuntime {
   onProgress: () => void;
   onCompacted: (messages: AgentMessage[]) => void;
   summarize: typeof completeSimple;
+  failure?: unknown;
 }
 
 function availableTokens(
@@ -177,6 +183,10 @@ async function compactOnce(
     .filter((entry) => sessionEntryToContextMessages(entry).length > 0);
   let cut = checkpointCut(entries, settings.compactionKeepRecentTokens);
   const tokensBefore = selectedEngine.contextWindow - available(context);
+  const checkpointTokens = Math.max(
+    settings.maxTokens,
+    settings.compactionReserveTokens,
+  );
   for (let attempt = 0; attempt < 2 && cut > 0; attempt += 1) {
     signal?.throwIfAborted();
     const summaryContext = checkpointContext(entries.slice(0, cut), settings);
@@ -184,15 +194,15 @@ async function compactOnce(
       clampMaxTokensToContext(
         selectedEngine,
         summaryContext,
-        settings.maxTokens,
-      ) < settings.maxTokens
+        checkpointTokens,
+      ) < checkpointTokens
     ) {
       cut = smallerCut(entries, cut);
       continue;
     }
     const response = await summarize(selectedEngine, summaryContext, {
       apiKey: settings.providerApiKey ?? "echo-local-tokenless",
-      maxTokens: settings.maxTokens,
+      maxTokens: checkpointTokens,
       signal,
       maxRetries: 2,
       cacheRetention: "none",
@@ -235,7 +245,7 @@ async function compactOnce(
   );
 }
 
-async function ensureContext(
+async function ensureContextInner(
   runtime: CompactionRuntime,
   context: AgentContext,
   signal?: AbortSignal,
@@ -256,17 +266,31 @@ async function ensureContext(
   return context;
 }
 
+async function ensureContext(
+  runtime: CompactionRuntime,
+  context: AgentContext,
+  signal?: AbortSignal,
+  pending: AgentMessage[] = [],
+): Promise<AgentContext> {
+  try {
+    return await ensureContextInner(runtime, context, signal, pending);
+  } catch (error) {
+    runtime.failure = error;
+    throw error;
+  }
+}
+
 export function installContextCompaction(
   session: AgentSession,
   settings: ContextSettings,
   onProgress: () => void,
   onCompacted: (messages: AgentMessage[]) => void,
   summarize: typeof completeSimple = completeSimple,
-): void {
+): () => unknown {
   const selectedEngine = session.model;
   if (!selectedEngine)
     throw new Error("context compaction requires an AI engine");
-  const runtime = {
+  const runtime: CompactionRuntime = {
     session,
     settings,
     selectedEngine,
@@ -319,4 +343,5 @@ export function installContextCompaction(
     settings.signal?.throwIfAborted();
     await previousPrompt(pendingPrompt, options);
   };
+  return () => runtime.failure;
 }

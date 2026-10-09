@@ -39,7 +39,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.09.1";
+const HARNESS_RELEASE = "2026.10.09.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -2925,7 +2925,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       (message) => currentTurnAssistantMessages.push(message),
       () => emitAssistant.current,
     );
-    installContextCompaction(session, { ...payload, signal: cancellation.signal },
+    const contextFailure = installContextCompaction(session, { ...payload, signal: cancellation.signal },
       () => emit({ type: "progress", summary: "Скорочую контекст і продовжую аналіз" }),
       (messages) => compactResponse.reset(messages));
     currentTurnAssistantMessages.length = 0;
@@ -2941,6 +2941,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     }
     if (toolLimitError) throw toolLimitError;
     if (cancelled) return;
+    if (contextFailure()) throw contextFailure();
     validateFinalAssistantMessage(currentTurnAssistantMessages);
     const draft = turnAssistantText(currentTurnAssistantMessages);
     publishReferencedDrafts(draft, mapRegistry, emit);

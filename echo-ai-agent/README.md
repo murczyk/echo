@@ -290,6 +290,8 @@ assistant messages into an in-memory Pi session. Echo supplies each provider's
 context before generation and between complete tool rounds, accounting for the
 system prompt, tool schemas and provider output allowance. Checkpoints preserve
 evidence, citations and pagination; empty or truncated checkpoints are rejected.
+Checkpoint generation can use the full compaction reserve independently of the
+normal answer cap. Its failure cause survives SDK error conversion.
 Each tool response and retained tool context remain bounded, with discarded
 allowance released after compaction. The runner
 also emits normalized
