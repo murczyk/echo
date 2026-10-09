@@ -2099,6 +2099,73 @@ analysisStatsReqEncoder struct =
         ]
 
 
+type AnalysisCallsignPageOrder
+    = CountDesc
+    | MatchThenName
+
+
+analysisCallsignPageOrderEncoder : AnalysisCallsignPageOrder -> Json.Encode.Value
+analysisCallsignPageOrderEncoder enum =
+    case enum of
+        CountDesc ->
+            Json.Encode.string "count_desc"
+        MatchThenName ->
+            Json.Encode.string "match_then_name"
+
+type alias AnalysisCallsignPageReq =
+    { req : AnalysisStatsReq
+    , query : String
+    , pageSize : Maybe (Int)
+    , cursor : Maybe (String)
+    , order : AnalysisCallsignPageOrder
+    }
+
+
+analysisCallsignPageReqEncoder : AnalysisCallsignPageReq -> Json.Encode.Value
+analysisCallsignPageReqEncoder struct =
+    Json.Encode.object
+        [ ( "req", (analysisStatsReqEncoder) struct.req )
+        , ( "query", (Json.Encode.string) struct.query )
+        , ( "page_size", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.pageSize )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        , ( "order", (analysisCallsignPageOrderEncoder) struct.order )
+        ]
+
+
+type alias AnalysisCallsignPageEntry =
+    { value : String
+    , label : String
+    , values : List (String)
+    , count : Int
+    }
+
+
+analysisCallsignPageEntryEncoder : AnalysisCallsignPageEntry -> Json.Encode.Value
+analysisCallsignPageEntryEncoder struct =
+    Json.Encode.object
+        [ ( "value", (Json.Encode.string) struct.value )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "values", (Json.Encode.list (Json.Encode.string)) struct.values )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias AnalysisCallsignPageRsp =
+    { entries : List (AnalysisCallsignPageEntry)
+    , hasMore : Bool
+    , nextCursor : Maybe (String)
+    }
+
+
+analysisCallsignPageRspEncoder : AnalysisCallsignPageRsp -> Json.Encode.Value
+analysisCallsignPageRspEncoder struct =
+    Json.Encode.object
+        [ ( "entries", (Json.Encode.list (analysisCallsignPageEntryEncoder)) struct.entries )
+        , ( "has_more", (Json.Encode.bool) struct.hasMore )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        ]
+
+
 type alias AnalysisCallsignFrequencyMatchesReq =
     { req : AnalysisStatsReq
     , callsigns : List (String)

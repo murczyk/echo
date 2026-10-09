@@ -140,6 +140,7 @@ export type UseAnalysisDataResult = {
   summaryLoaded: boolean;
   summaryHasLoadedOnce: boolean;
   rightSidebarLoading: boolean;
+  rightSidebarOutdated?: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;
