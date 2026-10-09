@@ -8938,9 +8938,7 @@ where
         );
     }
 
-    let _postgres_queue_guard = match postgres_queue
-        .filter(|_| analytics_fallback_needs_capacity(reason))
-    {
+    let _postgres_queue_guard = match postgres_queue {
         Some(queue) => Some(queue.lock_owned().await),
         None => None,
     };
