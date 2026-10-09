@@ -27,8 +27,9 @@ still decides identity, including in the event of a fingerprint collision.
 Index maintenance adds a body hash to active-message writes. Concurrent index
 creation avoids holding a table write lock for the build.
 
-The complete captured plans follow (the SQL is the production lookup from
-`wdintel-rs/src/rer_importer/import_csv/persistence.rs`).
+The captured baseline plans follow. They use the previous active-only lookup
+from `wdintel-rs/src/rer_importer/import_csv/persistence.rs`; measurements of
+the updated lookup are below.
 
 ```text
 SET
@@ -168,4 +169,86 @@ ANALYZE
  Execution Time: 0.043 ms
 (32 rows)
 
+```
+
+## Processed-match priority and split-parent lookup
+
+The updated migration indexes `(md5(body), id)` for all messages, so deleted
+split parents use the same selective access path as active messages. The
+previous active-only index cannot serve split-parent lookup. Maintenance now
+hashes active and deleted message bodies; creation remains concurrent.
+
+The updated SQL was taken directly from `persistence.rs` and measured on the
+same synthetic cardinalities above, with saved child IDs in the 10,000 recovery
+rows. Plain `EXPLAIN` was inspected before `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF,
+SUMMARY ON)`. Both lookups used fingerprint indexes; the updated lookup also
+used primary-key access for recovery state, children, and inboxes, plus indexed
+group membership. Hits examined one body candidate, and the miss examined none.
+No full message, recovery, inbox, or group scan occurred; sorts stayed in memory.
+
+| Lookup | Execution time | Local buffers (hit/read) |
+| --- | --- | --- |
+| Previous lookup, active hit | 5.820 ms | 4/10 |
+| Updated lookup, active hit | 1.556 ms | 7/7 |
+| Updated lookup, tracked split-parent hit | 3.280 ms | 19/7 |
+| Updated lookup, miss | 0.344 ms | 1/2 |
+
+These single executions include different cache states and do not establish a
+latency improvement. Candidate work still grows with identical bodies; saved
+child checks are bounded by each candidate's durable inbox ID array. The
+captured split-parent plan shows both the fingerprint lookup and child checks:
+
+```text
+ Limit  (cost=99.92..99.92 rows=1 width=11) (actual rows=1 loops=1)
+   Buffers: local hit=19 read=7
+   ->  Sort  (cost=99.92..99.92 rows=1 width=11) (actual rows=1 loops=1)
+         Sort Key: ((p.completed_at IS NOT NULL)) DESC, ((SubPlan 1)) DESC, ((p.message_id IS NOT NULL)), m.id
+         Sort Method: quicksort  Memory: 25kB
+         Buffers: local hit=19 read=7
+         ->  Nested Loop Semi Join  (cost=1.14..99.91 rows=1 width=11) (actual rows=1 loops=1)
+               Buffers: local hit=19 read=7
+               ->  Nested Loop Left Join  (cost=0.71..30.81 rows=1 width=53) (actual rows=1 loops=1)
+                     Filter: ((NOT m.deleted) OR (SubPlan 2))
+                     Buffers: local hit=11 read=4
+                     ->  Index Scan using signal_message_body_fingerprint_idx on signal_message m  (cost=0.42..8.45 rows=1 width=9) (actual rows=1 loops=1)
+                           Index Cond: (md5(body) = '2f0daaf45e6c6a3641e96c305c626f39'::text)
+                           Filter: (body = '02.10.2026 10:16:00
+ message 1'::text)
+                           Buffers: local hit=2 read=2
+                     ->  Index Scan using rer_csv_import_message_pkey on rer_csv_import_message p  (cost=0.29..8.30 rows=1 width=45) (actual rows=1 loops=1)
+                           Index Cond: (message_id = m.id)
+                           Buffers: local hit=3
+                     SubPlan 2
+                       ->  Nested Loop  (cost=0.85..132.88 rows=10 width=0) (actual rows=1 loops=1)
+                             Buffers: local hit=6 read=2
+                             ->  Index Scan using signal_message_pkey on signal_message child  (cost=0.42..48.45 rows=10 width=8) (actual rows=1 loops=1)
+                                   Index Cond: (id = ANY (p.inbox_item_ids))
+                                   Filter: ((NOT deleted) AND (id <> m.id))
+                                   Buffers: local hit=2 read=2
+                             ->  Index Only Scan using sigint_inbox_item_pkey on sigint_inbox_item i_1  (cost=0.42..8.44 rows=1 width=8) (actual rows=1 loops=1)
+                                   Index Cond: (id = child.id)
+                                   Heap Fetches: 1
+                                   Buffers: local hit=4
+               ->  Index Only Scan using signal_message_group_group_master_key_signal_message_id_idx on signal_message_group g  (cost=0.42..8.45 rows=1 width=8) (actual rows=1 loops=1)
+                     Index Cond: ((group_master_key = 'group-1'::text) AND (signal_message_id = m.id))
+                     Heap Fetches: 1
+                     Buffers: local hit=1 read=3
+               SubPlan 1
+                 ->  Bitmap Heap Scan on sigint_inbox_item i  (cost=48.76..91.35 rows=11 width=0) (actual rows=1 loops=1)
+                       Recheck Cond: ((id = m.id) OR (id = ANY (p.inbox_item_ids)))
+                       Heap Blocks: exact=1
+                       Buffers: local hit=7
+                       ->  BitmapOr  (cost=48.76..48.76 rows=11 width=0) (actual rows=0 loops=1)
+                             Buffers: local hit=6
+                             ->  Bitmap Index Scan on sigint_inbox_item_pkey  (cost=0.00..4.43 rows=1 width=0) (actual rows=0 loops=1)
+                                   Index Cond: (id = m.id)
+                                   Buffers: local hit=3
+                             ->  Bitmap Index Scan on sigint_inbox_item_pkey  (cost=0.00..44.33 rows=10 width=0) (actual rows=1 loops=1)
+                                   Index Cond: (id = ANY (p.inbox_item_ids))
+                                   Buffers: local hit=3
+ Planning:
+   Buffers: local hit=34
+ Planning Time: 0.493 ms
+ Execution Time: 3.280 ms
+(51 rows)
 ```

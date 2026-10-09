@@ -10,9 +10,11 @@ CSV normalization trims outer whitespace and converts CRLF to LF. Internal
 whitespace, case, headers, and explicit date/time text remain significant.
 Sender, uploader, filename, primary datasource group, and parsed timestamp do
 not affect duplicate identity. Identical time-only text remains a duplicate
-with a later reference date. Deleted messages and matches confined to other
-groups allow a new import. Existing duplicate data is left in place; lookup
-chooses the lowest matching message ID.
+with a later reference date. Matches confined to other groups allow a new
+import. Deleted messages also allow a new import, except tracked split parents
+with an active child inbox. Existing duplicate data is left in place; lookup
+prioritizes completed imports, then legacy inboxes, before recovering an
+interrupted match. Message ID breaks ties within each processing state.
 
 The background-task log identifies duplicate source-record numbers and message
 IDs. Its summary reports `total`, `imported` (new messages), `reused` (interrupted
@@ -35,8 +37,10 @@ Fanout runs after the inbox transaction commits. A durable completion timestamp
 is written only after fanout succeeds. If fanout or its completion write fails,
 retry sends the saved changes without reconstructing the inbox or resetting its
 review state. Notifications can be delivered more than once across a crash;
-message and inbox writes are not repeated. Completed duplicates are never
-reprocessed or updated.
+message and inbox writes are not repeated. Split parents remain discoverable
+through their saved child inbox IDs, including before delivery completes; once
+all children are deleted, the source can be imported again. Completed duplicates
+are never reprocessed or updated.
 
 Imports predating this safeguard have no processing marker. Existing messages
 with an inbox row are conservatively skipped to preserve reviewed data; this
@@ -52,11 +56,11 @@ and Delta imports keep their existing matching and processing behavior.
 
 Apply `m20261009_100730_rer_csv_body_index` and
 `m20261009_100730_rer_csv_processing` before starting the updated backend.
-The first builds the active-body MD5 expression index concurrently; exact body
-comparison remains authoritative. The PostgreSQL-only recovery table
-`rer_csv_import_message` is excluded from analytics replication through the
-packaged exclusion list and migration-impact declaration. Normal deployment
-synchronizes exclusions before applying migrations.
+The first builds the body MD5 expression index concurrently, including deleted
+split parents; exact body comparison remains authoritative. The PostgreSQL-only
+recovery table `rer_csv_import_message` is excluded from analytics replication
+through the packaged exclusion list and migration-impact declaration. Normal
+deployment synchronizes exclusions before applying migrations.
 
 Recovery state must be retained alongside messages. Deleting it removes the
 ability to distinguish completed inbox construction from interrupted delivery.

@@ -60,13 +60,19 @@ async fn find_existing_csv_message(
         r#"
 select m.id, p.message_id is not null as tracked,
        p.completed_at is not null as completed,
-       exists(select 1 from sigint_inbox_item i where i.id = m.id) as has_inbox
+       exists(select 1 from sigint_inbox_item i
+              where i.id = m.id or i.id = any(p.inbox_item_ids)) as has_inbox
 from signal_message m
 left join rer_csv_import_message p on p.message_id = m.id
-where m.deleted = false and md5(m.body) = md5($1::text) and m.body = $1
+where md5(m.body) = md5($1::text) and m.body = $1
+  and (m.deleted = false or exists(
+      select 1 from signal_message child
+      join sigint_inbox_item i on i.id = child.id
+      where child.id = any(p.inbox_item_ids) and child.id <> m.id
+        and child.deleted = false))
   and exists(select 1 from signal_message_group g
              where g.signal_message_id = m.id and g.group_master_key = $2)
-order by m.id
+order by completed desc, has_inbox desc, tracked, m.id
 limit 1
         "#,
         [body.into(), group_id.into()],

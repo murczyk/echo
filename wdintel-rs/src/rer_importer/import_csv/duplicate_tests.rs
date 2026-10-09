@@ -2,6 +2,7 @@ use super::*;
 use crate::functest::tests::{
     cleanup_locked, find_test_datasource, mk_datasource_group, mk_signal_group,
 };
+use sea_orm::sea_query::Expr;
 
 async fn csv_context(env: &Env) -> RerCsvImportContext<'_> {
     let datasource = find_test_datasource(&env.dbx).await.unwrap();
@@ -507,4 +508,145 @@ async fn issue_3650_legacy_duplicates_preserve_inboxes_and_reuse_missing_ones()
         .await
         .unwrap()
         .is_none());
+
+    assert_later_legacy_inbox_prevents_recovery(
+        &context, &mut redis, body, timestamp, extra_id,
+    )
+    .await;
+}
+
+async fn assert_later_legacy_inbox_prevents_recovery(
+    context: &RerCsvImportContext<'_>,
+    redis: &mut redis::aio::ConnectionManager,
+    body: &str,
+    timestamp: NaiveDateTime,
+    extra_id: i64,
+) {
+    let mut deleted = messages(context.dbx, body)
+        .await
+        .remove(0)
+        .into_active_model();
+    deleted.deleted = Set(true);
+    deleted.update(context.dbx).await.unwrap();
+    let later_id =
+        insert_rer_csv_message(context, body.into(), timestamp, context.dbx)
+            .await
+            .unwrap();
+    process_imported_rer_csv_message(context, redis, later_id, timestamp)
+        .await
+        .unwrap();
+    assert!(later_id > extra_id);
+    let outcome =
+        persistence::persist_rer_csv_message(context, body.into(), timestamp)
+            .await
+            .unwrap();
+    assert!(
+        matches!(outcome, RerCsvPersistence::Duplicate(existing_id) if existing_id == later_id)
+    );
+    assert_counts(
+        &import_bodies(context, redis, &[body], None).await.unwrap(),
+        0,
+        0,
+        1,
+        0,
+    );
+    assert!(sigint_inbox_item::Entity::find_by_id(extra_id)
+        .one(context.dbx)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn issue_3650_split_csv_duplicates_preserve_children_and_recover_delivery(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let mut context = csv_context(&env).await;
+    context.import_as_new = true;
+    let mut redis = env.redis.clone();
+    let body = format!(
+        "02.10.2026 10:16:00\nF=146.5000\nfirst CSV header\n{}\n02.10.2026 10:17:00\nF=146.5000\nsecond CSV header\n{}",
+        "first split CSV safeguard ".repeat(110),
+        "second split CSV safeguard ".repeat(110),
+    )
+    .trim()
+    .to_string();
+    fail_writes(
+        &env.dbx,
+        "rer_csv_import_message",
+        "update",
+        "new.completed_at is not null",
+    )
+    .await;
+    let failure = import_bodies(&context, &mut redis, &[&body], None).await;
+    allow_writes(&env.dbx, "rer_csv_import_message").await;
+    assert!(failure.is_err());
+    let parent = messages(&env.dbx, &body).await.remove(0);
+    assert!(parent.deleted);
+    let state = rer_csv_import_message::Entity::find_by_id(parent.id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(state.completed_at.is_none());
+    let mut child_ids = state.inbox_item_ids.unwrap();
+    assert_eq!(child_ids.len(), 2);
+    assert!(!child_ids.contains(&parent.id));
+    let interrupted_id = insert_rer_csv_message(
+        &context,
+        body.clone(),
+        context.lnow.naive_utc(),
+        &env.dbx,
+    )
+    .await
+    .unwrap();
+    let original_messages = messages(&env.dbx, &body).await;
+    sigint_inbox_item::Entity::update_many()
+        .col_expr(sigint_inbox_item::Column::Reviewed, Expr::value(true))
+        .filter(sigint_inbox_item::Column::Id.is_in(child_ids.clone()))
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    let inboxes = csv_inboxes(&env.dbx).await;
+    for (reused, duplicates) in [(1, 0), (0, 1)] {
+        assert_counts(
+            &import_bodies(&context, &mut redis, &[&body], None)
+                .await
+                .unwrap(),
+            0,
+            reused,
+            duplicates,
+            0,
+        );
+        assert_eq!(messages(&env.dbx, &body).await, original_messages);
+        assert_eq!(csv_inboxes(&env.dbx).await, inboxes);
+    }
+    child_ids.push(interrupted_id);
+    signal_message::Entity::update_many()
+        .col_expr(signal_message::Column::Deleted, Expr::value(true))
+        .filter(signal_message::Column::Id.is_in(child_ids))
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    assert_counts(
+        &import_bodies(&context, &mut redis, &[&body], None)
+            .await
+            .unwrap(),
+        1,
+        0,
+        0,
+        0,
+    );
+    assert_eq!(messages(&env.dbx, &body).await.len(), 3);
+}
+
+async fn csv_inboxes(
+    dbx: &DatabaseConnection,
+) -> Vec<sigint_inbox_item::Model> {
+    sigint_inbox_item::Entity::find()
+        .order_by_asc(sigint_inbox_item::Column::Id)
+        .all(dbx)
+        .await
+        .unwrap()
 }

@@ -16,9 +16,8 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-create index concurrently signal_message_active_body_fingerprint_idx
-    on signal_message (md5(body), id)
-    where deleted = false;
+create index concurrently signal_message_body_fingerprint_idx
+    on signal_message (md5(body), id);
                 "#,
             )
             .await
@@ -31,7 +30,7 @@ create index concurrently signal_message_active_body_fingerprint_idx
             .get_connection()
             .execute_unprepared(
                 r#"
-drop index concurrently if exists signal_message_active_body_fingerprint_idx;
+drop index concurrently if exists signal_message_body_fingerprint_idx;
                 "#,
             )
             .await
