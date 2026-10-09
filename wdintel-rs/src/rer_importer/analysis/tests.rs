@@ -8808,11 +8808,71 @@ async fn analysis_split_count_fallbacks_share_capacity_and_release_it_between_wa
     first.unwrap();
     second.unwrap();
     third.unwrap();
-    assert_eq!(maximum.load(Ordering::SeqCst), 3);
+    assert_eq!(maximum.load(Ordering::SeqCst), 1);
     assert_eq!(
         ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits(),
         available
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn analysis_split_postgres_only_counts_serialize_without_outage_capacity()
+{
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    assert!(fixture.env.analytics.is_none());
+    assert!(fixture.env.config.analytics.is_none());
+    let req = analysis_stats_req0(&fixture);
+    let mut search_req = req.clone();
+    search_req.search = Some("postgres-only filter".to_string());
+    let mut creation_req = req.clone();
+    creation_req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    let login = uuid::Uuid::new_v4();
+    let available = ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits();
+
+    for req in [req, search_req, creation_req] {
+        let active = std::sync::atomic::AtomicUsize::new(0);
+        let maximum = std::sync::atomic::AtomicUsize::new(0);
+        let active = &active;
+        let maximum = &maximum;
+        let load = |operation| {
+            counts::read_with_fallback(
+                &fixture.env,
+                login,
+                &req,
+                operation,
+                |_db| async {
+                    panic!("PostgreSQL-only request used analytics")
+                },
+                |db| async move {
+                    assert_eq!(
+                        ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE
+                            .available_permits(),
+                        available
+                    );
+                    let concurrent = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    maximum.fetch_max(concurrent, Ordering::SeqCst);
+                    db.execute_unprepared("select pg_sleep(0.02)")
+                        .await
+                        .c(h!())?;
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    Ok::<_, AppError>(())
+                },
+            )
+        };
+        let (first, second, third, fourth) = tokio::join!(
+            load("analysis stats groups count"),
+            load("analysis stats senders count"),
+            load("analysis stats units count"),
+            load("analysis stats networks count"),
+        );
+        first.unwrap();
+        second.unwrap();
+        third.unwrap();
+        fourth.unwrap();
+        assert_eq!(maximum.load(Ordering::SeqCst), 1);
+    }
 }
 
 #[test]
