@@ -425,6 +425,7 @@ function MessageCardComponent({
           tagsOrder={tagsOrder}
           tagContributionsOrganismId={tagContributionsOrganismId}
           hideBotTags={hideBotTags}
+          hideNetworks={hideNetworks}
           tagsLoading={tagsLoading}
           onToggleTag={onToggleTag}
           readOnly={readOnly}

@@ -1296,17 +1296,17 @@ rightColumn ( messageId, message ) ps model =
                                                 |> List.map
                                                     (\callsign ->
                                                         ( callsign
-                                                        , MessageHint.resolve (Just uniqueMessageNetworkIds) ps.networks ps.messageCallsignsInfo callsign
+                                                        , MessageHint.resolveWithVisibility ps.hideNetworks (Just uniqueMessageNetworkIds) ps.networks ps.messageCallsignsInfo callsign
                                                         )
                                                     )
                                                 |> Dict.fromList
                                     in
                                     Shared.MarkedText.new textMarked
-                                        |> Shared.MarkedText.viewWithMessageHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
+                                        |> Shared.MarkedText.viewWithMessageHintResults hintResultsDict (Just ps.signals) (if ps.hideNetworks then [] else Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
 
                                 Nothing ->
                                     Shared.MarkedText.fromPlainText message.text
-                                        |> Shared.MarkedText.viewWithMessageHintResults Dict.empty (Just ps.signals) (Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
+                                        |> Shared.MarkedText.viewWithMessageHintResults Dict.empty (Just ps.signals) (if ps.hideNetworks then [] else Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
                            )
                         ++ [ div
                                 [ class "flex flex-col items-start gap-2 mt-2"

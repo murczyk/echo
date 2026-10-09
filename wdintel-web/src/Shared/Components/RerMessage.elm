@@ -1579,7 +1579,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 |> List.map
                     (\callsign ->
                         ( callsign
-                        , MessageHint.resolve message.networkIds vps.networks vps.messageCallsignsInfo callsign
+                        , MessageHint.resolveWithVisibility vps.hideNetworks message.networkIds vps.networks vps.messageCallsignsInfo callsign
                         )
                     )
                 |> Dict.fromList

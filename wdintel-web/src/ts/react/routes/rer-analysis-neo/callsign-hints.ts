@@ -371,6 +371,7 @@ export function formatCallsignHintTooltip(result: CallsignHintResult): string | 
 }
 
 export function getMessageCallsignHintResult(params: {
+  hideNetworks?: boolean;
   networkIds?: number[] | null;
   networks: Network[];
   unitsMap?: Record<number, Unit>;
@@ -378,12 +379,21 @@ export function getMessageCallsignHintResult(params: {
   callsign: string;
 }): MessageCallsignHintResult {
   const response = params.callsignInfoMap?.[normalizeCallsignLookupValue(params.callsign)];
+  const allCatalogRows = response?.res ?? [];
+  if (params.hideNetworks) {
+    return {
+      state: allCatalogRows.length > 0 ? 'catalog' : 'unresolved',
+      catalogRows: allCatalogRows,
+      exactNetworkHints: [],
+      otherNetworkHints: [],
+      networkNames: {},
+    };
+  }
   const messageNetworkIds = getMessageNetworkIds(params.networkIds);
   const exactNetworkHints = (response?.networkHints ?? []).filter(
     (hint) => messageNetworkIds?.includes(hint.networkId) ?? false,
   );
   const otherNetworkHints = messageNetworkIds ? [] : (response?.networkHints ?? []);
-  const allCatalogRows = response?.res ?? [];
   const networkUnits = messageNetworkIds
     ? getUnitsInfoByIds(
         getAllUnitIdsForNetworks(getNetworksByIds(messageNetworkIds, params.networks)),

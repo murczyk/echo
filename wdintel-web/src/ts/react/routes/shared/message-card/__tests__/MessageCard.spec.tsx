@@ -374,6 +374,69 @@ describe('MessageCard', () => {
     expect(onCopyEtalon).toHaveBeenCalledWith('р/м Alpha');
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('opens a catalog-only callsign tooltip when networks are hidden', async () => {
+    const view = await renderCard({
+      hideNetworks: true,
+      msg: buildMessage({
+        text: 'WOLF',
+        textMarked: [
+          {
+            CNCallsignC: { text: 'WOLF', begin: 0, end: 4, etalon: 'WOLF' },
+          },
+        ],
+      }),
+      networks: [
+        {
+          id: 7,
+          name: 'МЕРЕЖА, ЯКУ НЕ МОЖНА ПОКАЗУВАТИ',
+          freqs: [],
+          unitIds: [],
+        } as Network,
+      ],
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'КАТАЛОГОВА ПОЗИЦІЯ',
+              comment: '',
+              unit1: 'Каталоговий підрозділ',
+              unit2: '',
+              unitId: null,
+              networkIdsReportedIn: [7],
+            },
+          ],
+          networkHints: [
+            {
+              id: 1,
+              networkId: 7,
+              position: 'МЕРЕЖЕВА ПОЗИЦІЯ',
+              formation: 'МЕРЕЖЕВЕ З’ЄДНАННЯ',
+            },
+          ],
+        },
+      },
+    });
+
+    const hint = view.container.querySelector<HTMLElement>(
+      'button[aria-label="Підказка з каталогу"]',
+    );
+    if (hint == null) throw new Error('missing catalog callsign hint');
+    await act(async () => {
+      hint.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+    });
+
+    const tooltip = document.body.querySelector<HTMLElement>('[role="tooltip"]');
+    expect(tooltip?.textContent).toContain('Позивні з каталогу:');
+    expect(tooltip?.textContent).toContain('КАТАЛОГОВА ПОЗИЦІЯ');
+    expect(tooltip?.textContent).not.toContain('МЕРЕЖЕВА ПОЗИЦІЯ');
+    expect(tooltip?.textContent).not.toContain('МЕРЕЖА, ЯКУ НЕ МОЖНА ПОКАЗУВАТИ');
+  });
+
   it.each([
     { displayMode: 'duty' as const, hasExcludeSection: true },
     { displayMode: 'analysis' as const, hasExcludeSection: false },
