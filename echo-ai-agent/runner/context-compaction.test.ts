@@ -161,6 +161,12 @@ async function fixture(
         };
         finishReason = "tool_calls";
       } else {
+        if (checkpointSettings.finalOutput && finalCalls > 0) {
+          assert.ok(
+            system.includes("final synthesis after evidence collection"),
+          );
+          assert.ok(system.includes("Evidence report fixture."));
+        }
         finalCalls += 1;
         assert.ok(JSON.stringify(body.messages).includes(firstCitation));
         delta = {
@@ -505,6 +511,7 @@ for (const finalOutput of [
       const audit = structuredClone(value.session.sessionManager.getEntries());
       const resets = value.resetCalls();
       const tools = value.session.agent.state.tools;
+      const stream = value.session.agent.streamFunction;
       const emitAssistant = { current: true };
       const recovery = () =>
         recoverFinalOutputLimit(
@@ -583,6 +590,7 @@ for (const finalOutput of [
       }
       assert.equal(value.mutations(), finalOutput === "mutation" ? 1 : 0);
       assert.deepEqual(value.session.agent.state.tools, tools);
+      assert.equal(value.session.agent.streamFunction, stream);
       assert.equal(emitAssistant.current, true);
       assert.deepEqual(value.errors, []);
     } finally {

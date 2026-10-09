@@ -22,7 +22,7 @@ shared document extractor, including its existing Paddle and GPU routers.
 | Network | `vnet0`, reserved DHCP `10.190.254.39`, MAC `BC:24:11:37:24:01` |
 | Tailscale | `echo-ai-agents-ua.eagle-atria.ts.net`, `100.88.139.100` |
 | SSH | admin 22; forced dispatcher 22031 |
-| Harness | `2026.10.09.8`, matched by the canary Echo build |
+| Harness | `2026.10.09.9`, matched by the canary Echo build |
 | Capacity | six running containers total; each 2 CPUs, 4 GiB RAM, 20 GiB root |
 
 The `ua` host profile uses a dedicated disk and validates its hostname, OS,
@@ -124,7 +124,9 @@ request. When a separate checkpoint engine is available, a full-budget
 output-limit response triggers one checkpoint of all active evidence followed
 by one primary-engine retry of the original prompt with tools disabled, so
 completed mutations cannot be replayed. The source audit stays
-intact; only the working context is replaced. The primary engine, reasoning,
+intact, and final-synthesis guidance directs the engine to produce supported
+findings and citations from the checkpoint instead of a progress statement.
+Only the working context is replaced. The primary engine, reasoning,
 output cap, tool and provider counters, and overall deadline remain unchanged.
 Checkpoint failure, cancellation, or another output-limit response ends the
 request; deployments without a separate checkpoint engine retain their prior
@@ -147,7 +149,7 @@ prompts using the existing implementation.
 ## Upgrade and rollback
 
 For the context-exhaustion fix, build the matching application and immutable
-`2026.10.09.8` harness from `main`. Preserve the UA host profile and existing
+`2026.10.09.9` harness from `main`. Preserve the UA host profile and existing
 relay configuration. Drain Kharkiv AI requests, close admission, and select
 only `echo-kharkiv2` on `echo-ai-agents-ua` through the control panel. Apply
 pending application migrations through the normal targeted analytics health

@@ -40,7 +40,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.09.8";
+const HARNESS_RELEASE = "2026.10.09.9";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -2767,6 +2767,10 @@ function lastAssistantMessage(messages: unknown[]): JsonObject | undefined {
   ) as JsonObject | undefined;
 }
 
+function outputRetrySystemPrompt(prompt: string): string {
+  return `${prompt}\n\nThis turn is final synthesis after evidence collection. The conversation checkpoint contains the tool results already retrieved for this request. Complete the user's requested answer now from that evidence, preserving its exact period, subject scope, completed actions, and source URLs. Tools are disabled for this synthesis. State any remaining coverage limitations honestly and provide the available supported findings with adjacent citations. Do not return a plan, acknowledgement, progress update, or promise of later work. Do not mention checkpoints, retries, token budgets, or implementation details.`;
+}
+
 export async function recoverFinalOutputLimit(
   session: AgentSession,
   payload: Pick<RunnerPayload, "prompt" | "checkpointModelName">,
@@ -2779,13 +2783,17 @@ export async function recoverFinalOutputLimit(
   messages.length = 0;
   const previous = emitAssistant.current;
   const previousTools = session.agent.state.tools;
+  const previousStream = session.agent.streamFunction;
   emitAssistant.current = false;
   session.agent.state.tools = [];
+  session.agent.streamFunction = (engine, context, options) => previousStream(engine,
+    { ...context, systemPrompt: outputRetrySystemPrompt(context.systemPrompt) }, options);
   try {
     await session.prompt(payload.prompt, { expandPromptTemplates: false, source: "rpc" });
   } finally {
     emitAssistant.current = previous;
     session.agent.state.tools = previousTools;
+    session.agent.streamFunction = previousStream;
   }
   return true;
 }
