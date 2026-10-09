@@ -112,7 +112,61 @@ pub(crate) async fn ready_original(
     if !enabled(config) {
         return Ok(None);
     }
-    entry(config, media).c(h!())?.ready(false).await.c(h!())
+    ready_object(
+        config,
+        &crate::messenger::media::media_object_key(media),
+        u64::try_from(media.size_bytes).c(h!())?,
+        media.is_encrypted,
+    )
+    .await
+    .c(h!())
+}
+
+pub(crate) async fn ready_object(
+    config: &Config,
+    key: &str,
+    size: u64,
+    encrypted: bool,
+) -> Result<Option<PathBuf>> {
+    if !enabled(config) {
+        return Ok(None);
+    }
+    Entry::new(config, key, size, encrypted)
+        .c(h!())?
+        .ready(false)
+        .await
+        .c(h!())
+}
+
+pub(crate) async fn retain_object_best_effort(
+    config: &Config,
+    key: &str,
+    size: i64,
+    encrypted: bool,
+    source: &Path,
+    published_at: i64,
+) {
+    if !enabled(config) {
+        return;
+    }
+    let result = async {
+        stage_upload(config, key, size, encrypted, source, true)
+            .await
+            .c(h!())?;
+        pin_object(
+            config,
+            key,
+            u64::try_from(size).c(h!())?,
+            encrypted,
+            published_at,
+        )
+        .await
+        .c(h!())
+    }
+    .await;
+    if let Err(error) = result {
+        warn!("media retention degraded object={key}: {error:#}");
+    }
 }
 
 pub(crate) async fn stage_upload_best_effort(
@@ -178,6 +232,14 @@ async fn stage_source(
     expected_size: u64,
     sealed: bool,
 ) -> Result<()> {
+    if expected_size == 0 && !fs::try_exists(source).await.c(h!())? {
+        return files::create_private_file(target)
+            .await
+            .c(h!())?
+            .sync_all()
+            .await
+            .c(h!());
+    }
     if !files::valid_file(source, expected_size).await.c(h!())? {
         bail!("local attachment source changed before cache staging");
     }
@@ -280,7 +342,28 @@ pub(super) async fn pin_media(
     media: &signal_message_media::Model,
     published_at: i64,
 ) -> Result<()> {
-    let entry = entry(config, media).c(h!())?;
+    pin_object(
+        config,
+        &crate::messenger::media::media_object_key(media),
+        u64::try_from(media.size_bytes).c(h!())?,
+        media.is_encrypted,
+        published_at,
+    )
+    .await
+    .c(h!())
+}
+
+pub(crate) async fn pin_object(
+    config: &Config,
+    key: &str,
+    size: u64,
+    encrypted: bool,
+    published_at: i64,
+) -> Result<()> {
+    if !enabled(config) || !fs::try_exists(files::root(config)).await.c(h!())? {
+        return Ok(());
+    }
+    let entry = Entry::new(config, key, size, encrypted).c(h!())?;
     let _lock = entry.lock().await.c(h!())?;
     let Some(mut metadata) = entry.metadata().await.c(h!())? else {
         return Ok(());

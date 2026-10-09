@@ -11,7 +11,7 @@ use super::repository::{
     UploadStatus,
 };
 use super::{DeviceFileContentRuntime, LockedSpool};
-use crate::config::{
+use crate::devices::config::{
     DEVICE_FILE_CONTENT_BUSY_RETRY_AFTER_SECS,
     DEVICE_FILE_CONTENT_ENCRYPTION_MAX_BYTES,
     DEVICE_FILE_CONTENT_FINALIZATION_WAIT_MILLIS,
@@ -191,6 +191,7 @@ pub(crate) async fn finalize(
         }
     };
     drop(permit);
+    super::local_cache::retain_upload_best_effort(env, &upload, spool).await;
     cleanup_completed(runtime, spool, &upload).await;
     Ok(completed)
 }

@@ -19,6 +19,7 @@ pub use super::file_document_job::Entity as FileDocumentJob;
 pub use super::file_document_position::Entity as FileDocumentPosition;
 pub use super::file_document_revision_generation::Entity as FileDocumentRevisionGeneration;
 pub use super::file_entry::Entity as FileEntry;
+pub use super::file_preview::Entity as FilePreview;
 pub use super::file_revision::Entity as FileRevision;
 pub use super::file_sync_batch::Entity as FileSyncBatch;
 pub use super::file_sync_item::Entity as FileSyncItem;
