@@ -145,7 +145,9 @@ type Msg
     | DeleteMessageConfirm
     | DeleteMessageCancel
     | DeleteMessageDone Int (Result ApiError ())
-    | GotStatsCount (Result ApiError B.CountStatsRsp)
+    | GotStatsCount Int B.AnalysisStatsReq StatsCountField (Result ApiError Int)
+    | GotMessageStatsCount Int B.AnalysisStatsReq (Result ApiError B.MessageStatsCountRsp)
+    | GotUnitMatchStatsCount Int B.AnalysisStatsReq (Result ApiError B.UnitMatchStatsCountRsp)
     | GotSystemSettings (Result ApiError B.SystemSettingsCurrentRsp)
     | GotUserDutySettings (Result ApiError B.UserDutySettingsDto)
     | GotStatsAors (Result ApiError B.AreaOfResponsibilityStatsRsp)

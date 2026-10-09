@@ -2277,6 +2277,7 @@ export type DeviceSyncSessionSummariesRsp = {
 export type DeviceAudio = {
   id: string;
   deviceId: string;
+  name: string;
   recordingStartedAt: string;
   recordingEndedAt: string;
   durationSeconds: number;
@@ -2294,6 +2295,26 @@ export type DeviceAudioDetails = {
   transcription: DeviceAudioTranscription;
   canEdit: boolean;
 };
+
+export type DeviceAudioPreparation = {
+  content: DeviceAudioPreparationState;
+  wave: DeviceAudioPreparationState;
+  spectrogram: DeviceAudioPreparationState;
+  retryAfterMs: number;
+};
+
+export type PrepareDeviceAudioReq = {
+  deviceId: string;
+  audioId: string;
+  retry: boolean;
+};
+
+export type DeviceAudioPreparationState =
+  | 'queued'
+  | 'preparing'
+  | 'ready'
+  | 'failed'
+;
 
 export type ReceiveDeviceAudioReq = {
   deviceId: string;
@@ -4846,6 +4867,16 @@ export type CountStatsRsp = {
   tagsCount: number;
   aorsCount: number;
   networksCount: number;
+};
+
+export type MessageStatsCountRsp = {
+  countOverall: number;
+  countSelected: number;
+};
+
+export type UnitMatchStatsCountRsp = {
+  exactMatchesCount: number;
+  nonExactMatchesCount: number;
 };
 
 export type GroupStatsRsp = {

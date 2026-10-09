@@ -577,6 +577,7 @@ describe('AnalysisFiltersPanel', () => {
   it('keeps the tags section counter scoped to tag controls only', async () => {
     const view = await renderComponent(
       buildProps({
+        counts: { tagsCount: 4 },
         options: {
           ...buildOptions(),
           tags: [
@@ -923,6 +924,23 @@ describe('AnalysisFiltersPanel', () => {
 
     expect(view.container.textContent).toContain('7');
     expect(view.container.textContent).toContain('155');
+  });
+
+  it('#3001 shows placeholders for absent counters while preserving completed zeroes', async () => {
+    const view = await renderComponent(
+      buildProps({
+        counts: { sendersCount: 0 },
+        countsLoading: false,
+        filtersLoading: false,
+        queryState: { ...emptyQueryState(), unitsSelected: ['128 омсбр'] },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Групи—');
+    expect(view.container.textContent).toContain('Відправники0');
+    expect(view.container.textContent).toContain('Точний збіг за еталонкою');
+    expect(view.container.textContent).not.toContain('undefined');
   });
 
   it('keeps reset available while the initial filters load is still in flight', async () => {
@@ -1322,7 +1340,7 @@ describe('AnalysisFiltersPanel', () => {
     expect(view.container.textContent).toContain('неточних збігів: 7');
   });
 
-  it('keeps the exact-match count stable while counts are still loading', async () => {
+  it('#3001 renders a newly loaded exact-match count without waiting for other counts', async () => {
     const view = await renderComponent(
       buildProps({
         counts: {
@@ -1387,7 +1405,7 @@ describe('AnalysisFiltersPanel', () => {
       );
     });
 
-    expect(view.container.textContent).toContain('точних збігів: 8');
+    expect(view.container.textContent).toContain('точних збігів: 0');
   });
 
   it('sends true when the exact-match checkbox is checked', async () => {

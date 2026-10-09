@@ -71,7 +71,7 @@ type Params = {
   replaceCurrentMessagePage: (messages: Array<[number, InboxMessage]>) => void;
   refreshMessageCounts: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
-  setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
+  setCounts: Setter<Partial<import('../../../../Bindings').CountStatsRsp> | null>;
   setCountsLoading: Setter<boolean>;
   setFiltersLoading: Setter<boolean>;
   setGroupInfos: Setter<Record<string, SignalGroupEntry>>;
@@ -276,7 +276,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           signal: abortController.signal,
         });
       } finally {
-        if (reloadAbortControllerRef.current === abortController) {
+        if (
+          reloadAbortControllerRef.current === abortController &&
+          abortController.signal.aborted
+        ) {
           reloadAbortControllerRef.current = null;
         }
       }

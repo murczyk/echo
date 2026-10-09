@@ -40,6 +40,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 pub(in crate::rer_importer) mod analytics_unit;
+mod counts;
 pub mod geojson;
 pub mod kmz;
 pub mod search;
@@ -8764,6 +8765,7 @@ where
         operation,
         analytics_supported,
         true,
+        None,
         analytics_query,
         postgres_query,
     )
@@ -8790,6 +8792,7 @@ where
         operation,
         analytics_supported,
         true,
+        None,
         analytics_query,
         postgres_query,
     )
@@ -8821,6 +8824,7 @@ where
         operation,
         analytics_supported,
         false,
+        None,
         analytics_query,
         postgres_query,
     )
@@ -8834,6 +8838,7 @@ async fn with_analytics_read_fallback_inner<T, A, AFut, P, PFut>(
     operation: &str,
     analytics_supported: bool,
     use_configured_timeout: bool,
+    postgres_queue: Option<Arc<tokio::sync::Mutex<()>>>,
     analytics_query: A,
     postgres_query: P,
 ) -> Result<AnalyticsReadOutcome<T>, AppError>
@@ -8933,6 +8938,12 @@ where
         );
     }
 
+    let _postgres_queue_guard = match postgres_queue
+        .filter(|_| analytics_fallback_needs_capacity(reason))
+    {
+        Some(queue) => Some(queue.lock_owned().await),
+        None => None,
+    };
     let postgres_fallback_permit = if analytics_fallback_needs_capacity(reason)
     {
         Some(
@@ -9134,6 +9145,13 @@ fn analytics_retry_state_for_operation(
     retry_states: &RwLock<HashMap<String, Arc<AtomicU64>>>,
     operation: &str,
 ) -> Arc<AtomicU64> {
+    let operation = if operation.starts_with("analysis stats ")
+        && operation.ends_with(" count")
+    {
+        "analysis stats count"
+    } else {
+        operation
+    };
     if let Some(retry_state) = retry_states
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -9650,6 +9668,251 @@ async fn query_count_stats_catalog_dimensions_postgres(
     })
 }
 
+async fn query_message_stats_count_raw(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    freshness_max_age_ms: u64,
+) -> Result<MessageStatsCountRsp, AppError> {
+    let message_id_scope = stats::resolve_analytics_message_id_scope(
+        &req.0,
+        db,
+        freshness_max_age_ms,
+    )
+    .await
+    .context(h!())?;
+    let (count_overall, count_selected) = stats::fetch_counts_raw_with_db(
+        req,
+        user,
+        env,
+        db,
+        master_keys,
+        Some(&message_id_scope),
+        None,
+    )
+    .await
+    .context(h!())?;
+    Ok(MessageStatsCountRsp {
+        count_overall,
+        count_selected,
+    })
+}
+
+async fn query_message_stats_count_postgres(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<MessageStatsCountRsp, AppError> {
+    let (count_overall, count_selected) =
+        stats::fetch_counts(req, user, env, master_keys)
+            .await
+            .context(h!())?;
+    Ok(MessageStatsCountRsp {
+        count_overall,
+        count_selected,
+    })
+}
+
+async fn query_unit_match_stats_count_raw(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    freshness_max_age_ms: u64,
+) -> Result<UnitMatchStatsCountRsp, AppError> {
+    let message_id_scope = stats::resolve_analytics_message_id_scope(
+        &req.0,
+        db,
+        freshness_max_age_ms,
+    )
+    .await
+    .context(h!())?;
+    let (exact_resolved_units, combined_resolved_units) =
+        analytics_unit::resolve_analysis_unit_filter_variants_for_analytics(
+            &env.dbx,
+            &req.selected_units,
+            Some(&message_id_scope),
+        )
+        .await
+        .context(h!())?;
+    let (resolved_units, alternate_resolved_units) =
+        if req.units_exact_match_only.unwrap_or(false) {
+            (exact_resolved_units, combined_resolved_units)
+        } else {
+            (combined_resolved_units, exact_resolved_units)
+        };
+    let count_selected = stats::fetch_selected_count_raw_with_db(
+        req,
+        user,
+        env,
+        db,
+        master_keys.clone(),
+        Some(&message_id_scope),
+        resolved_units.as_ref(),
+    )
+    .await
+    .context(h!())?;
+    let selected_units = req
+        .selected_units
+        .as_ref()
+        .filter(|selected_units| !selected_units.is_empty());
+    let (exact_matches_count, non_exact_matches_count) =
+        if selected_units.is_none() {
+            (count_selected, 0)
+        } else {
+            stats::count_unit_exact_match_breakdown_raw_with_db(
+                req,
+                user,
+                env,
+                db,
+                master_keys,
+                Some(&message_id_scope),
+                count_selected,
+                alternate_resolved_units.as_ref(),
+            )
+            .await
+            .context(h!())?
+        };
+    Ok(UnitMatchStatsCountRsp {
+        exact_matches_count,
+        non_exact_matches_count,
+    })
+}
+
+async fn query_unit_match_stats_count_postgres(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<UnitMatchStatsCountRsp, AppError> {
+    let (exact_matches_count, non_exact_matches_count) =
+        stats::count_unit_exact_match_breakdown(req, user, env, master_keys)
+            .await
+            .context(h!())?;
+    Ok(UnitMatchStatsCountRsp {
+        exact_matches_count,
+        non_exact_matches_count,
+    })
+}
+
+#[post("/api/rer/analysis/stats/messages/count")]
+async fn message_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<MessageStatsCountRsp>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
+    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let analytics_env = &env;
+    let postgres_env = &env;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let count = counts::read_with_fallback(
+        env.get_ref(),
+        login,
+        &req,
+        "analysis stats messages count",
+        |db| async move {
+            query_message_stats_count_raw(
+                analytics_req,
+                analytics_user,
+                analytics_env,
+                &db,
+                analytics_master_keys,
+                freshness_max_age_ms,
+            )
+            .await
+        },
+        |_db| {
+            query_message_stats_count_postgres(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+        },
+    )
+    .await
+    .context(h!())?;
+    Ok(Json(count))
+}
+
+#[post("/api/rer/analysis/stats/units/matches/count")]
+async fn unit_match_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<UnitMatchStatsCountRsp>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
+    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let analytics_env = &env;
+    let postgres_env = &env;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let count = counts::read_with_fallback(
+        env.get_ref(),
+        login,
+        &req,
+        "analysis stats unit matches count",
+        |db| async move {
+            query_unit_match_stats_count_raw(
+                analytics_req,
+                analytics_user,
+                analytics_env,
+                &db,
+                analytics_master_keys,
+                freshness_max_age_ms,
+            )
+            .await
+        },
+        |_db| {
+            query_unit_match_stats_count_postgres(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+        },
+    )
+    .await
+    .context(h!())?;
+    Ok(Json(count))
+}
+
 /// STATS
 #[post("/api/rer/analysis/stats/groups/count")]
 async fn group_stats_count(
@@ -9679,10 +9942,11 @@ async fn group_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let groups_count = with_analytics_read_fallback(
+    let groups_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats groups count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
@@ -9743,10 +10007,11 @@ async fn sender_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let senders_count = with_analytics_read_fallback(
+    let senders_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats senders count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
@@ -9808,10 +10073,11 @@ async fn post_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let posts_count = with_analytics_read_fallback(
+    let posts_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats posts count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
@@ -9876,10 +10142,11 @@ async fn freq_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let freqs_count = with_analytics_read_fallback(
+    let freqs_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats freqs count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
@@ -9941,10 +10208,11 @@ async fn callsign_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let callsigns_count = with_analytics_read_fallback(
+    let callsigns_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats callsigns count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
@@ -10007,10 +10275,11 @@ async fn tag_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let tags_count = with_analytics_read_fallback(
+    let tags_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats tags count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
@@ -10072,10 +10341,11 @@ async fn unit_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let units_count = with_analytics_read_fallback(
+    let units_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats units count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
@@ -10135,10 +10405,11 @@ async fn location_stats_count(
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let analytics_source_db = env.dbx.clone();
-    let locations_count = with_analytics_read_fallback(
+    let locations_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats locations count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
@@ -10214,10 +10485,11 @@ async fn aor_stats_count(
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let analytics_source_db = env.dbx.clone();
-    let aors_count = with_analytics_read_fallback(
+    let aors_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats aors count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
@@ -10294,10 +10566,11 @@ async fn network_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let networks_count = with_analytics_read_fallback(
+    let networks_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats networks count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,

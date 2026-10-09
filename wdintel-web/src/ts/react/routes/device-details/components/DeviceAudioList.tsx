@@ -5,7 +5,13 @@ import dayjs from 'dayjs';
 import { PowerButton } from '../../../components/PowerButton';
 import type { DeviceAudioState } from '../use-device-audio';
 
-export function DeviceAudioList({ audio }: { audio: DeviceAudioState }) {
+export function DeviceAudioList({
+  audio,
+  showRecordingStart,
+}: {
+  audio: DeviceAudioState;
+  showRecordingStart: boolean;
+}) {
   return (
     <div className="flex min-w-0 flex-col gap-echo-sm" data-testid="device-audio-list">
       {audio.loading ? (
@@ -53,16 +59,14 @@ export function DeviceAudioList({ audio }: { audio: DeviceAudioState }) {
               )}
             </span>
           </Tooltip>
-          <span className="min-w-0 text-left text-echo-sm leading-normal tabular-nums">
-            <time className="whitespace-nowrap" dateTime={row.recordingStartedAt}>
-              {dayjs(row.recordingStartedAt).format('DD.MM.YY HH:mm:ss')}
-            </time>{' '}
-            <span className="whitespace-nowrap">
-              {'- '}
-              <time dateTime={row.recordingEndedAt}>
-                {dayjs(row.recordingEndedAt).format('DD.MM.YY HH:mm:ss')}
+          <span className="min-w-0 break-words text-left text-echo-sm leading-normal [overflow-wrap:anywhere]">
+            {showRecordingStart ? (
+              <time className="whitespace-nowrap tabular-nums" dateTime={row.recordingStartedAt}>
+                {dayjs(row.recordingStartedAt).format('DD.MM.YY HH:mm:ss')}
               </time>
-            </span>
+            ) : (
+              row.name
+            )}
           </span>
         </ListItemButton>
       ))}

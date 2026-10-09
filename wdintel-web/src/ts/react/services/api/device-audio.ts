@@ -1,5 +1,7 @@
 import type {
   DeviceAudioDetailReq,
+  DeviceAudioPreparation,
+  PrepareDeviceAudioReq,
   DeviceAudioDetails,
   ListDeviceAudioReq,
   ListDeviceAudioRsp,
@@ -55,5 +57,14 @@ export function headDeviceAudioContent(
   return headResponse(
     `/api/device/audio/${encodeURIComponent(deviceId)}/${encodeURIComponent(audioId)}/content`,
     options,
+  );
+}
+
+export async function prepareDeviceAudio(
+  req: PrepareDeviceAudioReq,
+  options?: RequestOptions,
+): Promise<DeviceAudioPreparation> {
+  return transformSnakeToCamel(
+    await postJson('/api/device/audio/playback/prepare', transformCamelToSnake(req), options),
   );
 }
