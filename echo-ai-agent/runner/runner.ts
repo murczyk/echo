@@ -40,7 +40,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.09.6";
+const HARNESS_RELEASE = "2026.10.09.7";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -2995,6 +2995,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       (messages) => compactResponse.reset(messages));
     currentTurnAssistantMessages.length = 0;
     emit({ type: "progress", summary: "Аналізую запит" });
+    let recoveredOutput = false;
     try {
       await session.prompt(payload.prompt, {
         expandPromptTemplates: false,
@@ -3003,7 +3004,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       if (toolLimitError) throw toolLimitError;
       if (cancelled) return;
       if (contextCompaction.failure()) throw contextCompaction.failure();
-      await recoverFinalOutputLimit(session, payload, currentTurnAssistantMessages, contextCompaction, emitAssistant);
+      recoveredOutput = await recoverFinalOutputLimit(session, payload, currentTurnAssistantMessages, contextCompaction, emitAssistant);
     } catch (error) {
       if (toolLimitError) throw toolLimitError;
       throw error;
@@ -3074,7 +3075,8 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     if (cancelled) return;
     const answer = repairedOutcome ? finalize(repairedOutcome, outcomeCitationRepair) : finalText;
     const truthfulText = notices.length ? `${answer}\n\n${notices.join("\n")}` : answer;
-    const snapshot = assistantSnapshotEvent(draft, truthfulText);
+    const snapshot = assistantSnapshotEvent(recoveredOutput ? "" : draft, truthfulText);
+    if (recoveredOutput && !snapshot) throw new Error("recovered answer exceeds the snapshot limit");
     if (snapshot) emit(snapshot);
   } finally {
     mapRegistry.discardDrafts();

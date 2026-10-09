@@ -14,6 +14,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { installContextCompaction } from "./context-compaction.ts";
+import { assistantSnapshotEvent } from "./citations.ts";
 import {
   createToolResponseCompactor,
   recoverFinalOutputLimit,
@@ -498,6 +499,14 @@ for (const finalOutput of [
         );
         if (finalOutput === "retry") {
           validateFinalAssistantMessage(observed);
+          const answer = (observed.at(-1) as any).content
+            .filter((block: any) => block.type === "text")
+            .map((block: any) => block.text)
+            .join("\n");
+          assert.deepEqual(assistantSnapshotEvent("", answer), {
+            type: "assistant_snapshot",
+            text: `Alpha: completed 140 fixture messages. [Source](${value.firstCitation})`,
+          });
           assert.ok(
             !value.session.sessionManager
               .buildContextEntries()

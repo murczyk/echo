@@ -22,7 +22,7 @@ shared document extractor, including its existing Paddle and GPU routers.
 | Network | `vnet0`, reserved DHCP `10.190.254.39`, MAC `BC:24:11:37:24:01` |
 | Tailscale | `echo-ai-agents-ua.eagle-atria.ts.net`, `100.88.139.100` |
 | SSH | admin 22; forced dispatcher 22031 |
-| Harness | `2026.10.09.6`, matched by the canary Echo build |
+| Harness | `2026.10.09.7`, matched by the canary Echo build |
 | Capacity | six running containers total; each 2 CPUs, 4 GiB RAM, 20 GiB root |
 
 The `ua` host profile uses a dedicated disk and validates its hostname, OS,
@@ -146,7 +146,7 @@ prompts using the existing implementation.
 ## Upgrade and rollback
 
 For the context-exhaustion fix, build the matching application and immutable
-`2026.10.09.6` harness from `main`. Preserve the UA host profile and existing
+`2026.10.09.7` harness from `main`. Preserve the UA host profile and existing
 relay configuration. Drain Kharkiv AI requests, close admission, and select
 only `echo-kharkiv2` on `echo-ai-agents-ua` through the control panel. Apply
 pending application migrations through the normal targeted analytics health
