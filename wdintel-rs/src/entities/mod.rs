@@ -165,6 +165,7 @@ pub mod palitra_point;
 pub mod palitra_point_lexeme;
 pub mod report_download_history;
 pub mod report_history;
+pub mod rer_csv_import_message;
 pub mod rer_gdoc_callsign;
 pub mod rer_report_access_login;
 pub mod restream;

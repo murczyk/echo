@@ -547,6 +547,8 @@ pub const MULTIPART_IDLE_TIMEOUT_SECS: u64 = 30;
 pub const MULTIPART_MAX_CONCURRENT_BUFFERED_REQUESTS: usize = 2;
 pub const RER_CSV_PREFLIGHT_METADATA_HEADER: &str = "x-echo-rer-csv-metadata";
 pub const RER_CSV_IMPORT_SKIP_PREVIEW_CHARS: usize = 160;
+pub const RER_CSV_IMPORT_IDENTITY_LOCK_NAMESPACE: &str = "rer-csv-identity";
+pub const RER_CSV_IMPORT_PROCESSING_LOCK_NAMESPACE: &str = "rer-csv-processing";
 pub const STORAGE_UPLOAD_ENCRYPT_MAX_CONCURRENT_OPERATIONS: usize = 2;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this archive-download limit synchronized
 /// with `SIGINT_MESSAGE_MAX_ATTACHMENTS`, frontend

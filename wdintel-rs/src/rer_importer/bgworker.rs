@@ -18,6 +18,28 @@ where
     let datetime_override = m_created_at.map(|(date, time)| {
         crate::inbox::InboxDatetimeOverride::Fields { date, time }
     });
+    Ok(process_message_to_inbox_with_override(
+        settlements,
+        txn,
+        rq,
+        config,
+        message_id,
+        datetime_override,
+    )
+    .await
+    .c(h!())?)
+}
+
+pub(crate) async fn process_message_to_inbox_with_override<
+    C: ConnectionTrait,
+>(
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    txn: &C,
+    rq: &reqwest::Client,
+    config: &Config,
+    message_id: i64,
+    datetime_override: Option<crate::inbox::InboxDatetimeOverride>,
+) -> anyhow::Result<Vec<i64>> {
     let mut cache = TopKCache::<String, String>::new(CAPACITY);
     let mut recs = vec![message_id];
     let mut changed_inbox_item_ids = vec![];
