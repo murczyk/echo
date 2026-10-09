@@ -165,7 +165,10 @@ async function fixture(
           assert.ok(
             system.includes("final synthesis after evidence collection"),
           );
-          assert.ok(system.includes("Evidence report fixture."));
+          assert.ok(system.includes("Respect fixture tenant instructions."));
+          assert.ok(system.includes("2026-10-09T04:38:34Z"));
+          assert.ok(system.includes("Europe/Kyiv"));
+          assert.ok(!system.includes("Evidence report fixture."));
         }
         finalCalls += 1;
         assert.ok(JSON.stringify(body.messages).includes(firstCitation));
@@ -520,6 +523,12 @@ for (const finalOutput of [
             prompt: value.prompt,
             checkpointModelName:
               finalOutput === "legacy" ? undefined : "checkpoint",
+            systemPrompt: "Respect fixture tenant instructions.",
+            timeContext: {
+              requestStartedAtUtc: "2026-10-09T04:38:34Z",
+              requestStartedAtMs: Date.parse("2026-10-09T04:38:34Z"),
+              timeZone: "Europe/Kyiv",
+            },
           },
           observed,
           value.contextCompaction,

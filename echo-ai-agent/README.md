@@ -294,7 +294,8 @@ An optional gateway checkpoint engine keeps the primary report engine unchanged;
 both use the same request-scoped capability.
 With this engine, an output-limit failure triggers one fresh evidence checkpoint
 and one primary-engine retry with tools disabled within the existing request
-deadline and limits.
+deadline and limits. Its focused synthesis prompt preserves tenant instructions,
+request time, scope and citation rules without the tool workflow guidance.
 Checkpoint generation has a separate `checkpointMaxTokens` output cap, defaulting
 to the normal answer cap. Its failure cause survives SDK error conversion.
 Each tool response and retained tool context remain bounded, with discarded
