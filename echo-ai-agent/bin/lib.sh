@@ -10,6 +10,7 @@ HOST_CONFIG_FILE="$BUNDLE_DIR/config/host.env"
 VERSIONS_FILE="$BUNDLE_DIR/versions.env"
 # shellcheck disable=SC2034  # Consumed by scripts that source this library.
 ADMIN_HOST_FULL=$(ssh -G echo-ai-agent-vm | awk '/^hostname / {print $2}')
+# shellcheck disable=SC2034
 DEFAULT_ADMIN_HOST=echo@${ADMIN_HOST_FULL}
 # shellcheck disable=SC2034  # Consumed by scripts that source this library.
 DEFAULT_BOOTSTRAP_HOST=echo-ai-agent-vm
@@ -86,10 +87,8 @@ scp_to_target() {
 load_bundle() {
   require_file "$HOST_CONFIG_FILE"
   require_file "$VERSIONS_FILE"
-  # shellcheck disable=SC1090
-  source "$HOST_CONFIG_FILE"
-  # shellcheck disable=SC1090
-  source "$VERSIONS_FILE"
+  # shellcheck disable=SC1091
+  source "$BUNDLE_DIR/bin/load-host-config.sh"
 }
 
 validate_bundle() {
@@ -99,6 +98,12 @@ validate_bundle() {
   load_bundle
   require_sha256 NODE_ARCHIVE_SHA256 "$NODE_ARCHIVE_SHA256"
   require_sha256 PI_TARBALL_SHA256 "$PI_TARBALL_SHA256"
+  if [[ "$STORAGE_LAYOUT" == dedicated-disk ]]; then
+    [[ "$EXPECTED_HOSTNAME" == echo-ai-agents-ua && "$STORAGE_DISK" == /dev/sdb \
+      && "$STORAGE_PARTITION" == /dev/sdb \
+      && "$STORAGE_DISK_SERIAL" == echo-ua-agents-data \
+      && "$STORAGE_DISK_BYTES" == 137438953472 ]] || die "unexpected dedicated storage profile"
+  else
   [[ "$EXPECTED_HOSTNAME" == echo-ai-agent-vm ]] || die "unexpected target hostname"
   [[ "$STORAGE_DISK" == /dev/sda ]] || die "unexpected storage disk"
   [[ "$STORAGE_LOGICAL_SECTOR_BYTES" == 512 ]] \
@@ -115,6 +120,7 @@ validate_bundle() {
   [[ "$STORAGE_PARTITION_NUMBER" == 2 ]] || die "unexpected partition number"
   [[ "$STORAGE_MARKER" == /var/lib/echo-ai-agent/storage-partition-created ]] \
     || die "unexpected storage marker path"
+  fi
   [[ "$STORAGE_VG" == ai-agents ]] || die "unexpected storage VG"
   [[ "$STORAGE_THINPOOL" == IncusThinPool ]] || die "unexpected storage thin pool"
   [[ "$AGENT_BRIDGE_IPV4" == 10.43.74.1/24 ]] || die "unexpected bridge network"
@@ -178,3 +184,5 @@ remove_remote_stage() {
   ssh_target "$connection_mode" "$target_host" \
     rm -rf -- "$remote_root" >/dev/null 2>&1 || true
 }
+
+load_bundle

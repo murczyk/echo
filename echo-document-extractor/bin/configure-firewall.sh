@@ -52,8 +52,8 @@ while read -r source_host source_address extra; do
   source_hosts+=("$source_host")
   source_addresses+=("$source_address")
 done <"$SOURCE_FILE"
-(( ${#source_hosts[@]} == 7 )) || {
-  printf 'exactly seven firewall sources are required, found %d\n' "${#source_hosts[@]}" >&2
+(( ${#source_hosts[@]} > 0 )) || {
+  printf 'at least one firewall source is required, found %d\n' "${#source_hosts[@]}" >&2
   exit 1
 }
 
@@ -79,7 +79,7 @@ check_policy() {
 
 if [[ "$MODE" == check ]]; then
   check_policy
-  printf 'Extractor nftables policy is active for seven sources\n'
+  printf 'Extractor nftables policy is active for %d sources\n' "${#source_hosts[@]}"
   exit 0
 fi
 
@@ -105,4 +105,4 @@ else
   printf '%s\n' "$rules" | "$NFT_BIN" --file -
 fi
 check_policy
-printf 'Extractor nftables policy applied for seven sources\n'
+printf 'Extractor nftables policy applied for %d sources\n' "${#source_hosts[@]}"

@@ -6,10 +6,14 @@ TEST_DIR=$(cd "$(dirname "$0")" && pwd)
 LIB=$TEST_DIR/../bin/lib.sh
 case_dir=$(mktemp -d /tmp/echo-analytics-file-lock-test.XXXXXX)
 holder_pid=
+root_owned_case=false
 cleanup() {
   if [[ -n "$holder_pid" ]]; then
     kill "$holder_pid" 2>/dev/null || true
     wait "$holder_pid" 2>/dev/null || true
+  fi
+  if $root_owned_case; then
+    sudo chown "$(id -u):$(id -g)" "$case_dir"
   fi
   rm -rf -- "$case_dir"
 }
@@ -57,6 +61,18 @@ if grep -q '^[[:space:]]*acquire_analytics_reconcile_lock' \
   "$TEST_DIR/../bin/check-analytics-health.sh"; then
   printf 'health probe unexpectedly holds the reconciliation lock for its full run\n' >&2
   exit 1
+fi
+
+# Regression: https://github.com/echoua/echo/issues/3724
+if [[ $EUID -ne 0 ]] && sudo -n true 2>/dev/null; then
+  sudo chown root:root "$case_dir"
+  sudo chmod 1777 "$case_dir"
+  root_owned_case=true
+  busy_output=$(sudo env ECHO_ANALYTICS_RECONCILE_LOCK_FILE="$lock_file" \
+    ANALYTICS_RECONCILE_LOCK_WAIT_SECONDS=0 \
+    ANALYTICS_RECONCILE_LOCK_BUSY_IS_SUCCESS=true \
+    bash -c 'source "$1"; acquire_analytics_reconcile_lock' _ "$LIB")
+  grep -q 'skipping this timer run' <<<"$busy_output"
 fi
 
 printf 'Analytics reconciliation file-lock tests passed\n'
