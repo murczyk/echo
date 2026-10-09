@@ -61,6 +61,17 @@ async function fixture(
         checkpointCalls += 1;
         assert.ok(body.messages[1].content.includes("Original request:"));
         assert.ok(body.messages[1].content.includes("2026-10-09"));
+        if (body.messages[1].content.includes("[Tool result]:")) {
+          assert.ok(body.messages[1].content.includes("Late-page Bravo"));
+          assert.ok(
+            [...body.messages[1].content.matchAll(/\?m=fixture-(\d+)/g)].some(
+              (match) => Number(match[1]) % 20 === 0,
+            ),
+          );
+          assert.ok(
+            !body.messages[1].content.includes("more characters truncated"),
+          );
+        }
         if (checkpoint === "cancel") {
           cancellation.abort();
           response.destroy();
@@ -227,7 +238,9 @@ async function fixture(
           {
             message_uid: `fixture-${id}`,
             text:
-              `Alpha fixture ${id}: ` + "Synthetic document event. ".repeat(65),
+              `Alpha fixture ${id}: ` +
+              "Synthetic document event. ".repeat(65) +
+              (index === 19 ? "Late-page Bravo received the documents." : ""),
             citation: `https://example.invalid/?m=fixture-${id}`,
           },
         ];
@@ -386,6 +399,7 @@ for (const mode of ["length", "empty", "unchanged", "cancel"]) {
     const value = await fixture(7, mode);
     try {
       await value.session.prompt(value.prompt);
+      assert.deepEqual(value.errors, []);
       assert.throws(() =>
         validateFinalAssistantMessage(value.session.messages),
       );

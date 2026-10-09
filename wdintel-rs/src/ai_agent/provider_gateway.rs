@@ -6,7 +6,7 @@ use crate::config::{
     AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS, AI_AGENT_PROVIDER_GATEWAY_PATH,
     AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE,
     AI_AGENT_PROVIDER_REQUEST_MAX_BYTES, AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC,
-    AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES,
+    AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES, AI_AGENT_PROVIDER_STREAM_MAX_BYTES,
 };
 use crate::error::AppError;
 use crate::types::{info, warn, Env};
@@ -240,13 +240,18 @@ async fn proxy_provider_request(
         ));
     }
     let engine_id = ai_engine.id;
+    let response_limit = if streamed {
+        AI_AGENT_PROVIDER_STREAM_MAX_BYTES
+    } else {
+        AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES
+    };
     let stream = response.bytes_stream().scan(
         0_usize,
         move |response_bytes, chunk| {
             let result = match chunk {
                 Ok(chunk) => {
                     *response_bytes = response_bytes.saturating_add(chunk.len());
-                    if *response_bytes > AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES {
+                    if *response_bytes > response_limit {
                         warn!(
                             "AI agent provider gateway response limit exceeded engine_id={engine_id}"
                         );
@@ -389,6 +394,111 @@ fn provider_error(status: StatusCode, message: &'static str) -> HttpResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn checkpoint_stream_fixture() -> Bytes {
+        let frame = format!(
+            "data: {}\n\n",
+            json!({
+                "id": "checkpoint-fixture",
+                "model": "glm-5.3",
+                "system_fingerprint": "metadata".repeat(32),
+                "choices": [{"index": 0, "delta": {"reasoning_content": "x"}, "finish_reason": null}],
+            })
+        );
+        let finish = format!(
+            "data: {}\n\ndata: [DONE]\n\n",
+            json!({"choices": [{"index": 0, "delta": {"content": "Retained evidence https://example.invalid/?m=last"}, "finish_reason": "stop"}], "usage": {"completion_tokens": 8193}})
+        );
+        Bytes::from(frame.repeat(8192) + &finish)
+    }
+
+    async fn checkpoint_fixture_reply(
+        events: web::Data<Bytes>,
+        body: web::Json<Value>,
+    ) -> HttpResponse {
+        if body["stream"].as_bool().unwrap_or(false) {
+            HttpResponse::Ok()
+                .content_type("text/event-stream")
+                .body(events.get_ref().clone())
+        } else {
+            HttpResponse::Ok()
+                .content_type("application/json")
+                .body(json!({"content": "x".repeat(AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES)}).to_string())
+        }
+    }
+
+    fn checkpoint_fixture_server(
+        events: Bytes,
+    ) -> (actix_web::dev::Server, std::net::SocketAddr) {
+        use actix_web::{App, HttpServer};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = HttpServer::new(move || {
+            App::new().app_data(web::Data::new(events.clone())).route(
+                "/v1/chat/completions",
+                web::post().to(checkpoint_fixture_reply),
+            )
+        })
+        .workers(1)
+        .listen(listener)
+        .unwrap()
+        .run();
+        (server, address)
+    }
+
+    fn checkpoint_fixture_engine(
+        address: std::net::SocketAddr,
+    ) -> crate::entities::ai_engine::Model {
+        crate::entities::ai_engine::Model {
+            id: uuid::Uuid::now_v7(),
+            name: "checkpoint fixture".into(),
+            url: format!("http://{address}/v1"),
+            token: None,
+            model_name: "glm-5.3".into(),
+            created_at: chrono::Utc::now().naive_utc(),
+            updated_at: chrono::Utc::now().naive_utc(),
+            enabled: true,
+            callsign_enabled: false,
+            ocr_enabled: false,
+            ocr_request_profile: "default".into(),
+        }
+    }
+
+    #[actix_web::test]
+    async fn issue_3724_preserved_large_reasoning_stream_and_json_limit() {
+        use actix_web::body::to_bytes;
+        let events = checkpoint_stream_fixture();
+        assert!(events.len() > AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES);
+        let (server, address) = checkpoint_fixture_server(events.clone());
+        let handle = server.handle();
+        let task = actix_web::rt::spawn(server);
+        let client = crate::ai_engine::AiEngineClient::new(
+            sea_orm::DatabaseConnection::default(),
+            None,
+        )
+        .unwrap();
+        let ai_engine = checkpoint_fixture_engine(address);
+        let response = proxy_provider_request(
+            &client,
+            ai_engine.clone(),
+            json!({"stream": true}),
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(to_bytes(response.into_body()).await.unwrap(), events);
+        let response = proxy_provider_request(
+            &client,
+            ai_engine,
+            json!({"stream": false}),
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(to_bytes(response.into_body()).await.is_err());
+        handle.stop(true).await;
+        task.await.unwrap().unwrap();
+    }
 
     #[actix_web::test]
     async fn open_event_stream_delivers_first_frame_with_compression_enabled() {

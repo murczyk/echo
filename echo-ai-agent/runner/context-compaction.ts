@@ -80,6 +80,19 @@ function smallerCut(entries: SessionEntry[], cut: number): number {
   );
 }
 
+function checkpointTranscript(messages: Context["messages"]): string {
+  return messages
+    .map((message) => {
+      if (message.role !== "toolResult")
+        return serializeConversation([message]);
+      const text = message.content
+        .flatMap((block) => (block.type === "text" ? [block.text] : []))
+        .join("\n");
+      return `[Tool result]: ${JSON.stringify(message.toolName)} ${JSON.stringify(message.toolCallId)}\n${text}`;
+    })
+    .join("\n\n");
+}
+
 function checkpointContext(
   entries: SessionEntry[],
   settings: ContextSettings,
@@ -101,7 +114,7 @@ function checkpointContext(
     messages: [
       {
         role: "user",
-        content: `Original request: ${JSON.stringify(settings.prompt)}\nFixed time context: ${JSON.stringify(settings.timeContext)}\n<conversation>\n${serializeConversation(messages)}\n</conversation>`,
+        content: `Original request: ${JSON.stringify(settings.prompt)}\nFixed time context: ${JSON.stringify(settings.timeContext)}\n<conversation>\n${checkpointTranscript(messages)}\n</conversation>`,
         timestamp: Date.now(),
       },
     ],
