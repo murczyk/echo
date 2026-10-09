@@ -133,6 +133,20 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     });
     await act(async () => root.unmount());
   });
+  it('keeps the exact-match setting as a selectable label-controlled switch', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#main');
+    const { container, root } = await renderPage();
+    const label = Array.from(container.querySelectorAll('label')).find((item) =>
+      item.textContent?.includes('Прапорець «точний збіг за еталонкою» на Аналізі увімкнений'),
+    );
+    const checkbox = label?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+
+    expect(label?.querySelector('button')).toBeNull();
+    expect(checkbox?.checked).toBe(true);
+    await act(async () => label?.click());
+    expect(checkbox?.checked).toBe(false);
+    await act(async () => root.unmount());
+  });
   it('loads report defaults and saves normalized report settings', async () => {
     const { container, root } = await renderPage();
     const hoursInput = container.querySelector<HTMLInputElement>('input[type="number"]');
