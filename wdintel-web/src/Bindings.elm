@@ -5877,6 +5877,7 @@ deviceSyncSessionSummariesRspEncoder struct =
 type alias DeviceAudio =
     { id : String
     , deviceId : String
+    , name : String
     , recordingStartedAt : String
     , recordingEndedAt : String
     , durationSeconds : Float
@@ -5890,6 +5891,7 @@ deviceAudioEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.string) struct.id )
         , ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "name", (Json.Encode.string) struct.name )
         , ( "recording_started_at", (Json.Encode.string) struct.recordingStartedAt )
         , ( "recording_ended_at", (Json.Encode.string) struct.recordingEndedAt )
         , ( "duration_seconds", (Json.Encode.float) struct.durationSeconds )
@@ -5927,6 +5929,59 @@ deviceAudioDetailsEncoder struct =
         , ( "can_edit", (Json.Encode.bool) struct.canEdit )
         ]
 
+
+type alias DeviceAudioPreparation =
+    { content : DeviceAudioPreparationState
+    , wave : DeviceAudioPreparationState
+    , spectrogram : DeviceAudioPreparationState
+    , retryAfterMs : Int
+    }
+
+
+deviceAudioPreparationEncoder : DeviceAudioPreparation -> Json.Encode.Value
+deviceAudioPreparationEncoder struct =
+    Json.Encode.object
+        [ ( "content", (deviceAudioPreparationStateEncoder) struct.content )
+        , ( "wave", (deviceAudioPreparationStateEncoder) struct.wave )
+        , ( "spectrogram", (deviceAudioPreparationStateEncoder) struct.spectrogram )
+        , ( "retry_after_ms", (Json.Encode.int) struct.retryAfterMs )
+        ]
+
+
+type alias PrepareDeviceAudioReq =
+    { deviceId : String
+    , audioId : String
+    , retry : Bool
+    }
+
+
+prepareDeviceAudioReqEncoder : PrepareDeviceAudioReq -> Json.Encode.Value
+prepareDeviceAudioReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "audio_id", (Json.Encode.string) struct.audioId )
+        , ( "retry", (Json.Encode.bool) struct.retry )
+        ]
+
+
+type DeviceAudioPreparationState
+    = Queued
+    | Preparing
+    | Ready
+    | Failed
+
+
+deviceAudioPreparationStateEncoder : DeviceAudioPreparationState -> Json.Encode.Value
+deviceAudioPreparationStateEncoder enum =
+    case enum of
+        Queued ->
+            Json.Encode.string "queued"
+        Preparing ->
+            Json.Encode.string "preparing"
+        Ready ->
+            Json.Encode.string "ready"
+        Failed ->
+            Json.Encode.string "failed"
 
 type alias ReceiveDeviceAudioReq =
     { deviceId : String
@@ -20871,6 +20926,7 @@ deviceAudioDecoder =
     Json.Decode.succeed DeviceAudio
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "recording_started_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "recording_ended_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duration_seconds" (Json.Decode.float)))
@@ -20892,6 +20948,64 @@ deviceAudioDetailsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription" (deviceAudioTranscriptionDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_edit" (Json.Decode.bool)))
 
+
+deviceAudioPreparationDecoder : Json.Decode.Decoder DeviceAudioPreparation
+deviceAudioPreparationDecoder =
+    Json.Decode.succeed DeviceAudioPreparation
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content" (deviceAudioPreparationStateDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "wave" (deviceAudioPreparationStateDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "spectrogram" (deviceAudioPreparationStateDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retry_after_ms" (Json.Decode.int)))
+
+
+prepareDeviceAudioReqDecoder : Json.Decode.Decoder PrepareDeviceAudioReq
+prepareDeviceAudioReqDecoder =
+    Json.Decode.succeed PrepareDeviceAudioReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retry" (Json.Decode.bool)))
+
+
+deviceAudioPreparationStateDecoder : Json.Decode.Decoder DeviceAudioPreparationState
+deviceAudioPreparationStateDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "queued" ->
+                            Json.Decode.succeed Queued
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "preparing" ->
+                            Json.Decode.succeed Preparing
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ready" ->
+                            Json.Decode.succeed Ready
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "failed" ->
+                            Json.Decode.succeed Failed
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 receiveDeviceAudioReqDecoder : Json.Decode.Decoder ReceiveDeviceAudioReq
 receiveDeviceAudioReqDecoder =

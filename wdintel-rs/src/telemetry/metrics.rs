@@ -126,6 +126,8 @@ pub struct Metrics {
     device_file_content_terminal: Counter<u64>,
     device_file_content_failures: Counter<u64>,
     device_audio_cleanup: Counter<u64>,
+    device_audio_preparation: Counter<u64>,
+    device_audio_preparation_duration: Histogram<f64>,
     file_analysis_runs: Gauge<u64>,
     file_analysis_run_statuses: Gauge<u64>,
     file_analysis_prepared_items: Counter<u64>,
@@ -241,6 +243,13 @@ impl Metrics {
             .u64_counter(crate::devices::audio::DEVICE_AUDIO_CLEANUP_METRIC)
             .with_description("Number of device audio cleanup outcomes")
             .with_unit("1")
+            .build();
+        let device_audio_preparation = meter
+            .u64_counter("echo.device_audio.preparation.count")
+            .build();
+        let device_audio_preparation_duration = meter
+            .f64_histogram("echo.device_audio.preparation.duration")
+            .with_unit("s")
             .build();
         let file_analysis_runs = meter
             .u64_gauge(FILE_ANALYSIS_RUNS_COUNT)
@@ -369,6 +378,8 @@ impl Metrics {
             device_file_content_terminal,
             device_file_content_failures,
             device_audio_cleanup,
+            device_audio_preparation,
+            device_audio_preparation_duration,
             file_analysis_runs,
             file_analysis_run_statuses,
             file_analysis_prepared_items,
@@ -508,6 +519,17 @@ impl Metrics {
     pub(crate) fn record_device_audio_cleanup(&self, outcome: &'static str) {
         self.device_audio_cleanup
             .add(1, &[KeyValue::new("outcome", outcome)]);
+    }
+
+    pub(crate) fn record_device_audio_preparation(
+        &self,
+        outcome: &'static str,
+        seconds: f64,
+    ) {
+        let attributes = [KeyValue::new("outcome", outcome)];
+        self.device_audio_preparation.add(1, &attributes);
+        self.device_audio_preparation_duration
+            .record(seconds, &attributes);
     }
 
     fn record_synchronized_files(&self, operation: &'static str, count: u64) {

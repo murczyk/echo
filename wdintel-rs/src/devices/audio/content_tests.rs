@@ -8,8 +8,11 @@ async fn accepted(
     device: Uuid,
     bytes: web::Bytes,
 ) -> device_audio::Model {
+    let mut runtime = (*env.device_audio).clone();
+    runtime.playback_cache = Arc::new(content::PlaybackCache::default());
+    runtime.preparation = Arc::new(preparation::Preparation::new());
     let command = receive_command(
-        &env.device_audio,
+        &runtime,
         actor,
         device,
         &format!("content-{}", Uuid::new_v4()),
@@ -17,10 +20,11 @@ async fn accepted(
     )
     .await;
     let ReceiveDeviceAudioOutcome::Accepted(response) =
-        receive(&env.device_audio, actor, command).await.unwrap()
+        receive(&runtime, actor, command).await.unwrap()
     else {
         panic!("accepted fixture required")
     };
+    runtime.preparation.shutdown().await;
     device_audio::Entity::find_by_id(
         Uuid::parse_str(&response.audio.id).unwrap(),
     )
@@ -78,6 +82,163 @@ async fn body(content: DeviceAudioContent) -> Vec<u8> {
         bytes.extend_from_slice(&chunk.unwrap());
     }
     bytes
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn ready_audio_streams_bypass_ingest_and_busy_graph_generation() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device) = enabled_audio_device(&env).await;
+    let original = mp3_bytes().await;
+    let audio = accepted(&env, actor, device, original.clone()).await;
+    body(
+        open_content(
+            &env.device_audio,
+            actor,
+            command(device, audio.id, DeviceAudioRepresentation::Content),
+        )
+        .await
+        .unwrap(),
+    )
+    .await;
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let hooks = content::ContentHooks {
+        before_publication: Some(Arc::new({
+            let entered = entered.clone();
+            let release = release.clone();
+            move || {
+                let entered = entered.clone();
+                let release = release.clone();
+                Box::pin(async move {
+                    entered.notify_one();
+                    release.notified().await;
+                    Ok(())
+                })
+            }
+        })),
+    };
+    let graph = tokio::spawn(content::open_with_hooks(
+        env.device_audio.clone(),
+        actor,
+        command(device, audio.id, DeviceAudioRepresentation::Wave),
+        hooks,
+    ));
+    tokio::time::timeout(Duration::from_secs(10), entered.notified())
+        .await
+        .unwrap();
+    let _interactive = env.device_audio.preparation.admit(None).await.unwrap();
+    let _receive = env
+        .device_audio
+        .receive_permits
+        .clone()
+        .acquire_many_owned(DEVICE_AUDIO_RECEIVE_CONCURRENCY as u32)
+        .await
+        .unwrap();
+    let _probe = env
+        .device_audio
+        .probe_permits
+        .clone()
+        .acquire_many_owned(DEVICE_AUDIO_PROBE_CONCURRENCY as u32)
+        .await
+        .unwrap();
+    let _decrypt = env
+        .device_audio
+        .decrypt_permits
+        .clone()
+        .acquire_many_owned(DEVICE_AUDIO_DECRYPT_CONCURRENCY as u32)
+        .await
+        .unwrap();
+    let streams = (0..100).map(|_| async {
+        let bytes = body(
+            open_content(
+                &env.device_audio,
+                actor,
+                command(device, audio.id, DeviceAudioRepresentation::Content),
+            )
+            .await
+            .unwrap(),
+        )
+        .await;
+        assert_eq!(bytes, original);
+    });
+    let streamed = tokio::time::timeout(
+        Duration::from_secs(30),
+        futures_util::future::join_all(streams),
+    )
+    .await;
+    release.notify_one();
+    let graph = graph.await.unwrap().unwrap();
+    env.device_audio.preparation.shutdown().await;
+    streamed.unwrap();
+    assert!(body(graph).await.starts_with(b"\x89PNG"));
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn audio_prepares_after_acceptance_and_recovers_without_a_listener() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device) = enabled_audio_device(&env).await;
+    let runtime = env.device_audio.clone();
+    let request = receive_command(
+        &runtime,
+        actor,
+        device,
+        "prewarmed",
+        native_audio_bytes().await,
+    )
+    .await;
+    let ReceiveDeviceAudioOutcome::Accepted(response) =
+        receive(&runtime, actor, request).await.unwrap()
+    else {
+        panic!("expected accepted audio");
+    };
+    let audio = Uuid::parse_str(&response.audio.id).unwrap();
+    wait_for_preparation(&runtime, audio).await;
+    runtime.preparation.shutdown().await;
+
+    let mut restarted = (*runtime).clone();
+    restarted.storage_dir = runtime.storage_dir.join("restarted");
+    restarted.playback_cache = Arc::new(content::PlaybackCache::default());
+    restarted.preparation = Arc::new(preparation::Preparation::new());
+    let restarted = Arc::new(restarted);
+    assert_eq!(
+        content::readiness(&restarted, audio).await.unwrap(),
+        [false; 3]
+    );
+    let mut cursor = None;
+    preparation::recover(&restarted, &mut cursor).await.unwrap();
+    assert!(cursor.is_some());
+    preparation::recover(&restarted, &mut cursor).await.unwrap();
+    assert!(cursor.is_none());
+    wait_for_preparation(&restarted, audio).await;
+    let denied = preparation::prepare(
+        restarted.clone(),
+        Uuid::new_v4(),
+        device,
+        audio,
+        false,
+    )
+    .await;
+    assert!(denied.is_err());
+    assert_eq!(
+        preparation::prepare(restarted.clone(), actor, device, audio, false)
+            .await
+            .unwrap()
+            .content,
+        DeviceAudioPreparationState::Ready
+    );
+    restarted.preparation.shutdown().await;
+}
+
+async fn wait_for_preparation(runtime: &Arc<DeviceAudioRuntime>, audio: Uuid) {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while content::readiness(runtime, audio).await.unwrap() != [true; 3] {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
 }
 
 #[actix_web::test]

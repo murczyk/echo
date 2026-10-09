@@ -658,6 +658,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20261003_152726_create_device_audio".to_string(),
             "m20261006_082251_device_documents".to_string(),
             "m20261006_082252_file_history_search".to_string(),
+            "m20261008_124822_device_audio_preparation".to_string(),
         ]
     );
 }

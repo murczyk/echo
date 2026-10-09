@@ -44,6 +44,7 @@ function Harness({
 const audio = (id: string): DeviceAudio => ({
   id,
   deviceId: 'first',
+  name: 'recording.wav',
   recordingStartedAt: '2026-10-03T00:00:00.000001Z',
   recordingEndedAt: '2026-10-03T00:00:01.000001Z',
   durationSeconds: 1,
