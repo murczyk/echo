@@ -644,13 +644,16 @@ async fn run_request_inner(
                     correlation_id,
                     ai_engine.id,
                     ai_engine.model_name.clone(),
-                    checkpoint.as_ref().map(|checkpoint| {
-                        auth::CheckpointProviderGrant {
+                    checkpoint
+                        .as_ref()
+                        .filter(|checkpoint| {
+                            checkpoint.model_name != ai_engine.model_name
+                        })
+                        .map(|checkpoint| auth::CheckpointProviderGrant {
                             ai_engine_id: checkpoint.ai_engine_id,
                             model_name: checkpoint.model_name.clone(),
                             max_output_tokens: checkpoint.max_tokens,
-                        }
-                    }),
+                        }),
                 )
                 .await
                 .c(h!())?,
@@ -863,6 +866,16 @@ async fn checkpoint_provider(
         || !crate::ai_engine::client::is_government_url(&ai_engine.url)
     {
         return Ok(None);
+    }
+    if env.config.ai_agent_glm_checkpoint_provider
+        == Some(crate::config::AiAgentGlmCheckpointProvider::Glm)
+    {
+        return Ok(Some(CheckpointProvider {
+            ai_engine_id: ai_engine.id,
+            model_name: ai_engine.model_name.clone(),
+            context_window: runtime_profile.context_window_tokens,
+            max_tokens: checkpoint_output_tokens(ai_engine, runtime_profile),
+        }));
     }
     let ai_engine = access::allowed_engines(&env.dbx)
         .await
@@ -1440,7 +1453,74 @@ async fn reconcile_abandoned_containers(env: &Env) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::{ai_agent_allowed_engine, ai_engine};
     use serial_test::serial;
+
+    #[actix_web::test]
+    #[serial]
+    async fn issue_3724_selected_glm_checkpoints_with_luna_still_allowed() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let mut env = env.as_ref().clone();
+        let mut engines = Vec::new();
+        for (name, output_tokens) in [
+            (crate::config::AI_AGENT_GLM_5_3, 16_384),
+            (crate::config::AI_AGENT_OPENAI_GPT_6_LUNA, 8_192),
+        ] {
+            let engine = ai_engine::ActiveModel {
+                id: Set(Uuid::now_v7()),
+                name: Set(format!("checkpoint-{name}-{}", Uuid::now_v7())),
+                model_name: Set(name.to_string()),
+                url: Set(crate::config::AI_GOV_UA_API_BASE.to_string()),
+                enabled: Set(true),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            ai_agent_allowed_engine::ActiveModel {
+                ai_engine_id: Set(engine.id),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            let profile = ai_agent_engine_runtime_profile::ActiveModel {
+                ai_engine_id: Set(engine.id),
+                context_window_tokens: Set(65_536),
+                max_output_tokens: Set(output_tokens),
+                compaction_reserve_tokens: Set(16_384),
+                compaction_keep_recent_tokens: Set(8_192),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            engines.push((engine, profile));
+        }
+        let (glm, profile) = &engines[0];
+        env.config.ai_agent_glm_checkpoint_provider = None;
+        let checkpoint = checkpoint_provider(&env, glm, profile)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(checkpoint.ai_engine_id, engines[1].0.id);
+        assert_eq!(checkpoint.max_tokens, 8_192);
+        env.config.ai_agent_glm_checkpoint_provider =
+            Some(crate::config::AiAgentGlmCheckpointProvider::Glm);
+        let checkpoint = checkpoint_provider(&env, glm, profile)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(checkpoint.ai_engine_id, glm.id);
+        assert_eq!(checkpoint.model_name, glm.model_name);
+        assert_eq!(checkpoint.context_window, 65_536);
+        assert_eq!(checkpoint.max_tokens, 16_384);
+        assert!(checkpoint_provider(&env, &engines[1].0, &engines[1].1)
+            .await
+            .unwrap()
+            .is_none());
+    }
 
     #[test]
     fn issue_3724_scoped_long_execution_to_government_glm() {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +19,8 @@ import {
   createToolResponseCompactor,
   recoverFinalOutputLimit,
   validateFinalAssistantMessage,
+  validatePayload,
+  writeModelsFile,
 } from "./runner.ts";
 
 // Regression: https://github.com/echoua/echo/issues/3724
@@ -297,7 +299,8 @@ async function fixture(
               maxTokens: primaryMaxTokens,
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             },
-            ...(checkpointSettings.modelName
+            ...(checkpointSettings.modelName &&
+            checkpointSettings.modelName !== "fixture"
               ? [
                   {
                     id: checkpointSettings.modelName,
@@ -315,6 +318,44 @@ async function fixture(
       },
     }),
   );
+  if (checkpointSettings.modelName === "fixture") {
+    const payload = validatePayload(
+      {
+        echoPublicHost: "echo-staging.example.test",
+        modelName: "fixture",
+        checkpointModelName: "fixture",
+        checkpointContextWindow: 65_536,
+        providerTransport: "echo_gateway",
+        providerApiKey: "fixture",
+        contextWindow: 65_536,
+        maxTokens: primaryMaxTokens,
+        checkpointMaxTokens: checkpointSettings.maxTokens,
+        compactionReserveTokens: checkpointSettings.reserveTokens,
+        compactionKeepRecentTokens: 8_192,
+        bootstrapToken: "A".repeat(43),
+        correlationId: "019fc7f7-9770-7f83-9c1a-211af29b02e7",
+        prompt,
+        timeContext: {
+          timeZone: "Europe/Kyiv",
+          requestStartedAtUtc: "2026-10-09T04:38:34Z",
+        },
+        skills: [],
+      },
+      false,
+    );
+    const runtimeModelsPath = await writeModelsFile(directory, payload);
+    const runtimeModels = JSON.parse(
+      await readFile(runtimeModelsPath, "utf8"),
+    );
+    const provider = runtimeModels.providers["echo-vllm"];
+    assert.equal(provider.models.length, 1);
+    assert.equal(provider.models[0].maxTokens, primaryMaxTokens);
+    provider.baseUrl = `http://127.0.0.1:${address.port}/v1`;
+    await writeFile(
+      modelsPath,
+      JSON.stringify({ providers: { fixture: provider } }),
+    );
+  }
   const modelRuntime = await ModelRuntime.create({
     modelsPath,
     allowModelNetwork: false,
@@ -565,28 +606,32 @@ test("#3724 checkpointed a large retained batch after a non-reducing prefix", as
   }
 });
 
-test("#3724 continued pagination and follow-ups with a separate checkpoint engine", async () => {
-  const value = await fixture(14, "stop", false, 2, {
-    maxTokens: 8_192,
-    reserveTokens: 16_384,
-    modelName: "checkpoint",
+for (const checkpointModelName of ["checkpoint", "fixture"]) {
+  test(`#3724 continued pagination and follow-ups with checkpoint engine ${checkpointModelName}`, async () => {
+    const value = await fixture(14, "stop", false, 2, {
+      maxTokens: 8_192,
+      reserveTokens: 16_384,
+      modelName: checkpointModelName,
+    });
+    try {
+      await value.session.prompt(value.prompt);
+      validateFinalAssistantMessage(value.session.messages);
+      assert.ok(value.checkpointCalls() > 0);
+      assert.equal(value.cursors.length, 14);
+      await value.session.prompt("Summarize the same fixed period briefly.");
+      validateFinalAssistantMessage(value.session.messages);
+      assert.deepEqual(value.errors, []);
+    } finally {
+      await value.close();
+    }
   });
-  try {
-    await value.session.prompt(value.prompt);
-    validateFinalAssistantMessage(value.session.messages);
-    assert.ok(value.checkpointCalls() > 0);
-    assert.equal(value.cursors.length, 14);
-    await value.session.prompt("Summarize the same fixed period briefly.");
-    validateFinalAssistantMessage(value.session.messages);
-    assert.deepEqual(value.errors, []);
-  } finally {
-    await value.close();
-  }
-});
+}
 
 for (const finalOutput of [
   "retry",
   "retry-network",
+  "retry-primary",
+  "mutation-primary",
   "large-draft",
   "error-limit",
   "provider-error",
@@ -597,16 +642,20 @@ for (const finalOutput of [
   "legacy",
 ]) {
   test(`#3724 bounded output recovery: ${finalOutput}`, async () => {
+    const primaryCheckpoint = finalOutput.endsWith("-primary");
+    const recoveryMode = primaryCheckpoint
+      ? finalOutput.replace("-primary", "")
+      : finalOutput;
     const value = await fixture(
       7,
       finalOutput === "retry-network" ? "recovery-network" : "stop",
       false,
       2,
       {
-        maxTokens: 8_192,
+        maxTokens: primaryCheckpoint ? 16_384 : 8_192,
         reserveTokens: 16_384,
-        modelName: finalOutput === "legacy" ? undefined : "checkpoint",
-        finalOutput,
+        modelName: finalOutput === "legacy" ? undefined : primaryCheckpoint ? "fixture" : "checkpoint",
+        finalOutput: recoveryMode,
       },
     );
     const observed: unknown[] = [];
@@ -635,7 +684,7 @@ for (const finalOutput of [
           {
             prompt: value.prompt,
             checkpointModelName:
-              finalOutput === "legacy" ? undefined : "checkpoint",
+              finalOutput === "legacy" ? undefined : primaryCheckpoint ? "fixture" : "checkpoint",
             systemPrompt: "Respect fixture tenant instructions.",
             timeContext: {
               requestStartedAtUtc: "2026-10-09T04:38:34Z",
@@ -670,7 +719,7 @@ for (const finalOutput of [
             "large-draft",
             "mutation",
             "error-limit",
-          ].includes(finalOutput)
+          ].includes(recoveryMode)
         ) {
           validateFinalAssistantMessage(observed);
           const answer = (observed.at(-1) as any).content
@@ -718,7 +767,7 @@ for (const finalOutput of [
               : /output token limit/,
           );
       }
-      assert.equal(value.mutations(), finalOutput === "mutation" ? 1 : 0);
+      assert.equal(value.mutations(), recoveryMode === "mutation" ? 1 : 0);
       assert.deepEqual(value.session.agent.state.tools, tools);
       assert.equal(value.session.agent.streamFunction, stream);
       assert.equal(emitAssistant.current, true);

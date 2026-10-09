@@ -296,7 +296,8 @@ and other provider failures end the checkpoint without this retry.
 A non-reducing prefix checkpoint can fall back once to all completed evidence,
 including the latest tool batch, within the same input and output guards.
 An optional gateway checkpoint engine keeps the primary report engine unchanged;
-both use the same request-scoped capability.
+it can also reuse the primary engine without replacing its runtime profile.
+Both use the same request-scoped capability.
 With this engine, an output-limit failure triggers one fresh evidence checkpoint
 and one primary-engine retry with tools disabled within the existing request
 deadline and limits. Its focused synthesis prompt preserves tenant instructions,

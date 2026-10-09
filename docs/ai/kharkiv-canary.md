@@ -1,7 +1,7 @@
 # Kharkiv government AI canary
 
-`echo-kharkiv2` uses government `gpt-6-sol` as the default agent provider,
-with `glm-5.3` selectable for agents and used for reviews, callsigns,
+`echo-kharkiv2` uses government `glm-5.3` as the default agent provider,
+with `gpt-6-sol` selectable for agents. GLM is also used for reviews, callsigns,
 settlements, positions, summaries, and report suggestions. Government
 `gpt-6-luna` supplies vision through the `openai_vision` OCR profile. Azure
 application credentials are reused from Tsur, decrypted for transfer, and
@@ -23,7 +23,7 @@ shared document extractor, including its existing Paddle and GPU routers.
 | Network | `vnet0`, reserved DHCP `10.190.254.39`, MAC `BC:24:11:37:24:01` |
 | Tailscale | `echo-ai-agents-ua.eagle-atria.ts.net`, `100.88.139.100` |
 | SSH | admin 22; forced dispatcher 22031 |
-| Harness | `2026.10.09.13`, matched by the canary Echo build |
+| Harness | `2026.10.09.14`, matched by the canary Echo build |
 | Capacity | six running containers total; each 2 CPUs, 4 GiB RAM, 20 GiB root |
 
 The `ua` host profile uses a dedicated disk and validates its hostname, OS,
@@ -83,7 +83,7 @@ and its extractor allowlist entry. Keep the direct Kharkiv entry.
 All government engines retain Tsur's context of 65,536 tokens, compaction
 reserve of 16,384 and recent history of 8,192. Kharkiv's GLM generation budget
 is 16,384 tokens, including reasoning and visible output; Sol and Luna use 8,192.
-Sol is the default agent provider; GLM remains selectable and is the reviewer.
+GLM is the default agent provider and reviewer; Sol remains selectable.
 Only government engines are allowed for agent conversations;
 the old Gemma engine registration is retained for rollback.
 
@@ -94,7 +94,14 @@ settings. Sol uses the existing Chat Completions tool transport with
 `reasoning_effort: none`. The government catalogue also lists `gpt-6.1-sol`,
 whose [tool calls require Responses API](https://developers.openai.com/api/docs/models/gpt-6.1-sol);
 it cannot replace Sol on the current agent transport. Sol uses its own provider
-for checkpoints; GLM uses the delegated Luna checkpoint provider below.
+for checkpoints; Kharkiv's GLM requests also use GLM for checkpoints.
+
+Set the top-level `ai_agent_glm_checkpoint_provider = "glm"` in
+`/etc/echo/config.toml` and restart the API, background and report workers after
+installing the matching application and harness. This selects GLM with the
+same context and 16,384-token checkpoint cap, preserving the bounded final
+output-recovery retry. Luna remains enabled for vision. Omitting the setting,
+or setting it to `"luna"`, retains automatic Luna delegation when allowed.
 
 GLM agent requests explicitly use maximum reasoning. The runner checks complete
 provider context, including the system prompt, tool schemas and the SDK safety
@@ -107,7 +114,7 @@ tool batch. The input guard, source audit and continuation cursors still apply.
 Complete tool results enter the checkpoint request; the SDK's default
 2,000-character tool-result truncation is bypassed. The complete serialized
 request must still fit the provider context budget.
-When government Luna is enabled and allowed for agents, government GLM requests
+Without the GLM checkpoint override, when government Luna is enabled and allowed for agents, government GLM requests
 use Luna for internal checkpoints, with Luna's configured context and output
 budget (8,192 tokens on Kharkiv), bounded by GLM's compaction reserve. GLM retains
 maximum reasoning and its 16,384-token budget for report generation. Both engines
@@ -171,8 +178,8 @@ prompts using the existing implementation.
 
 ## Upgrade and rollback
 
-For the context-exhaustion fix, build the matching application and immutable
-`2026.10.09.13` harness from `main`. Preserve the UA host profile and existing
+For the configurable checkpoint provider, build the matching application and immutable
+`2026.10.09.14` harness from `main`. Preserve the UA host profile and existing
 relay configuration. Drain Kharkiv AI requests, close admission, and select
 only `echo-kharkiv2` on `echo-ai-agents-ua` through the control panel. Apply
 pending application migrations through the normal targeted analytics health

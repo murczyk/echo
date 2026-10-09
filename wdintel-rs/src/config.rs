@@ -326,7 +326,7 @@ pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
 pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.09.13";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.09.14";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -1571,7 +1571,15 @@ pub struct Config {
     pub network_invalidation_worker_night_shift_start_hour: Option<u32>,
     pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
     pub ai_agent_dispatcher: Option<AiAgentDispatcherConfig>,
+    pub ai_agent_glm_checkpoint_provider: Option<AiAgentGlmCheckpointProvider>,
     pub ocr: Option<OcrConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum AiAgentGlmCheckpointProvider {
+    Glm,
+    Luna,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]

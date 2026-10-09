@@ -40,7 +40,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.09.13";
+const HARNESS_RELEASE = "2026.10.09.14";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -301,8 +301,8 @@ export function validatePayload(
   const checkpointContextWindow = checkpointModelName === undefined
     ? undefined
     : validateInteger(value.checkpointContextWindow, checkpointMaxTokens + 1_024, 2_000_000, contextWindow);
-  if (checkpointModelName !== undefined && (providerTransport !== "echo_gateway" || checkpointModelName === requestedModel)) {
-    throw new Error("checkpoint provider requires a separate gateway model");
+  if (checkpointModelName !== undefined && providerTransport !== "echo_gateway") {
+    throw new Error("checkpoint provider requires a gateway model");
   }
   if (checkpointModelName === undefined && value.checkpointContextWindow !== undefined) {
     throw new Error("checkpointContextWindow requires checkpointModelName");
@@ -2429,7 +2429,7 @@ export async function writeModelsFile(
               maxTokens: payload.maxTokens,
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             },
-            ...(payload.checkpointModelName ? [{
+            ...(payload.checkpointModelName && payload.checkpointModelName !== payload.modelName ? [{
               id: payload.checkpointModelName,
               name: payload.checkpointModelName,
               reasoning: false,
