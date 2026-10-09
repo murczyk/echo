@@ -10,13 +10,17 @@ import Le.Waterfall.MessagesTests exposing (messageStub)
 import Page
 import Pages.RerDuty
 import Pages_.RerDuty.Waterfall as Waterfall
+import Pages_.RerDuty.Waterfall.Message as WaterfallMessage
 import Pages_.RerDuty.Waterfall.Messages as Messages
 import Route
 import Set
 import Shared
 import Shared.Msg as SharedMsg
+import Shared.Model exposing (RerNetworkDetailsPreferredView(..))
 import String
 import Test exposing (Test, describe, test)
+import Test.Html.Query as HtmlQuery
+import Test.Html.Selector as Selector
 import Time
 import Url
 import Utils.RemoteData exposing (RemoteData(..))
@@ -25,7 +29,45 @@ import Utils.RemoteData exposing (RemoteData(..))
 suite : Test
 suite =
     describe "Rer Duty refresh regressions"
-        [ test "#3598 unresolved settings defer network hydration" <|
+        [ test "#3598 hidden network fallback ignores a missing frequency" <|
+            \_ ->
+                let
+                    viewParams message =
+                        { isDarkMode = False
+                        , user = { anonymousUser | roles = [ "Rer" ] }
+                        , waterfallId = "wf-a"
+                        , datasources = []
+                        , serverInfo = Nothing
+                        , networks = Dict.empty
+                        , zone = Time.utc
+                        , time = Nothing
+                        , profiles = Dict.empty
+                        , message = ( 1, message )
+                        , tags = []
+                        , callsignsInfo = Dict.empty
+                        , messageCallsignsInfo = Dict.empty
+                        , masterUnits = Dict.empty
+                        , networkDetailsViewPreference = Classic
+                        , signals = []
+                        , copied = Nothing
+                        , isMsgVisible = []
+                        , groupInfos = Dict.empty
+                        , messageNetworkIds = [ 7 ]
+                        , hideNetworks = True
+                        , onlyMyUnitTagsEnabled = False
+                        }
+
+                    check message expected =
+                        WaterfallMessage.view (viewParams message) ( 1, message ) (WaterfallMessage.init { id = 1 })
+                            |> HtmlQuery.fromHtml
+                            |> HtmlQuery.has [ Selector.text expected ]
+                in
+                Expect.all
+                    [ \_ -> check { messageStub | freq = Nothing, unit = Just "Analysis Unit" } "Analysis Unit"
+                    , \_ -> check { messageStub | freq = Nothing, unit = Nothing } "Не встановлена"
+                    ]
+                    ()
+        , test "#3598 unresolved settings defer network hydration" <|
             \_ ->
                 case Url.fromString "http://localhost/rer-duty" of
                     Nothing ->

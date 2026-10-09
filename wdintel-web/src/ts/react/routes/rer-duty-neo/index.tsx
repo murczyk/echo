@@ -382,7 +382,7 @@ export function RerDutyNeoPage({
     canUseMessageDevices: cyberEchoEnabled,
     tagsLayout,
     hideBotTags,
-    hideNetworks,
+    hideNetworks: hideNetworks || !networkVisibilityReady,
     collapseMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,

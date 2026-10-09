@@ -17,6 +17,7 @@ const nextCreatedResponse = vi.hoisted(() => ({
   value: null as null | { signal_message_id: number },
 }));
 const editorGuardMocks = vi.hoisted(() => ({ dirty: false }));
+const currentSystemSettingsMock = vi.hoisted(() => vi.fn());
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -36,9 +37,7 @@ vi.mock('../../../services/api/user', () => ({
   fetchCurrentUser: vi.fn().mockResolvedValue({ roles: ['Rer'], organismId: null }),
 }));
 vi.mock('../../../services/api/system-settings', () => ({
-  currentSystemSettings: vi
-    .fn()
-    .mockResolvedValue({ devicesSectionEnabled: false, enableAudioTranscription: true }),
+  currentSystemSettings: currentSystemSettingsMock,
 }));
 vi.mock('../../../services/api/inbox-messages', () => ({
   fetchInboxItemContext: fetchInboxItemContextMock,
@@ -66,6 +65,9 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
   }) => (
     <div>
       <div data-testid="active-feed">{activeFeedId}</div>
+      <output data-testid="card-network-visibility">
+        {String(buildFeedColumnModel(messageFeeds[0]).messageCard.hideNetworks)}
+      </output>
       <button type="button" aria-label="Додати повідомлення" onClick={openCreateMessageComposer}>
         Додати повідомлення
       </button>
@@ -493,6 +495,12 @@ async function click(element: Element | null) {
 }
 describe('RerDutyNeoPage creation workflow', () => {
   beforeEach(() => {
+    currentSystemSettingsMock.mockReset();
+    currentSystemSettingsMock.mockResolvedValue({
+      devicesSectionEnabled: false,
+      enableAudioTranscription: true,
+      hideNetworks: false,
+    });
     useRerDutyFeedsMock.mockReset();
     useMediaQueryMock.mockReset();
     useMediaQueryMock.mockReturnValue(false);
@@ -510,6 +518,50 @@ describe('RerDutyNeoPage creation workflow', () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     document.body.innerHTML = '';
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('hides card network presentation until settings resolve, then uses the resolved value', async () => {
+    const settings = deferred<{
+      devicesSectionEnabled: boolean;
+      enableAudioTranscription: boolean;
+      hideNetworks: boolean;
+    }>();
+    currentSystemSettingsMock.mockReturnValue(settings.promise);
+    const { container, root } = await renderPage();
+
+    expect(container.querySelector('[data-testid="card-network-visibility"]')?.textContent).toBe(
+      'true',
+    );
+
+    await act(async () => {
+      settings.resolve({
+        devicesSectionEnabled: false,
+        enableAudioTranscription: true,
+        hideNetworks: false,
+      });
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[data-testid="card-network-visibility"]')?.textContent).toBe(
+      'false',
+    );
+
+    await act(async () => root.unmount());
+  });
+
+  it('restores visible card network presentation after a settings failure', async () => {
+    currentSystemSettingsMock.mockRejectedValue(new Error('settings unavailable'));
+    const { container, root } = await renderPage();
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[data-testid="card-network-visibility"]')?.textContent).toBe(
+      'false',
+    );
+
+    await act(async () => root.unmount());
   });
 
   it('enqueues success Snackbar and reloads empty feeds after creation', async () => {
