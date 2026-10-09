@@ -109,6 +109,7 @@ type alias Model =
     , masterUnits : RemoteData ApiError (Dict Int B.Unit)
     , networks : RemoteData ApiError (Dict Int B.Network)
     , systemSettings : Maybe B.SystemSettingsCurrentRsp
+    , systemSettingsLoaded : Bool
     , now : Int
     , timeZone : Zone
     , callsignsInfo : Dict String (List B.CallsignInfo)

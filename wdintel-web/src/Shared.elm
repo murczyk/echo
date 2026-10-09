@@ -187,6 +187,7 @@ init flagsResult route =
       , masterUnits = NotAsked
       , now = flags.now
       , systemSettings = Nothing
+      , systemSettingsLoaded = False
       , timeZone = TimeZone.europe__kyiv ()
       , callsignsInfo = Dict.empty
       , posts = NotAsked
@@ -219,6 +220,7 @@ update req msg model =
             ( { model
                 | user = Just user
                 , userLoaded = True
+                , systemSettingsLoaded = False
                 , changelogLastSeenLoaded = True
                 , changelogLastSeen = user.lastReleaseSeen
               }
@@ -268,10 +270,10 @@ update req msg model =
             )
 
         GotSystemSettings (Ok settings) ->
-            ( { model | systemSettings = Just settings }, E.none )
+            ( { model | systemSettings = Just settings, systemSettingsLoaded = True }, E.none )
 
         GotSystemSettings (Err err) ->
-            ( { model | systemSettings = Nothing }
+            ( { model | systemSettingsLoaded = True }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження системних налаштувань" err
             )
 

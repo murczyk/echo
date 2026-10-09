@@ -257,6 +257,32 @@ describe('MessageCard', () => {
   });
 
   // Regression: https://github.com/echoua/echo/issues/3598
+  it('passes the hidden-network presentation to report creation', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1024);
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);
+    const onCreateReport = vi.fn();
+    const view = await renderCard({
+      hideNetworks: true,
+      msg: buildMessage({ unit: 'Підрозділ 42', location: 'ЛОКАЦІЯ' }),
+      onCreateReport,
+    });
+
+    const report = view.container.querySelector<HTMLElement>('[title="Створити розвіддонесення"]');
+    if (report == null) throw new Error('missing report action');
+    await click(report);
+
+    expect(onCreateReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        primaryKind: 'unit',
+        displayValue: 'Підрозділ 42',
+        copyEtalonValue: 'Підрозділ 42',
+        renderedNetworks: [],
+      }),
+      report,
+    );
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
   it('keeps independent unit and location copy actions when hiding hydrated networks', async () => {
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
     vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);

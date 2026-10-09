@@ -527,7 +527,9 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
           onCopyFeedback(`location-${id}`);
         });
       }}
-      onCreateReport={(focusTarget) => onCreateReport(id, etalonDisplayModel, focusTarget)}
+      onCreateReport={(visibleEtalonDisplayModel, focusTarget) =>
+        onCreateReport(id, visibleEtalonDisplayModel, focusTarget)
+      }
       onEditReport={onEditReport}
       onDelete={() => onDeleteOpen(id)}
       onEditDetails={(focusTarget) => onOpenEditor(id, focusTarget)}

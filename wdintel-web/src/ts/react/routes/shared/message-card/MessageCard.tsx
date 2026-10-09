@@ -45,6 +45,7 @@ import {
   hideMessageCardNetworks,
   resolveMessageCardEtalonDisplayModel,
 } from './message-card.utils';
+import type { MessageCardEtalonDisplayModel } from './message-card.utils';
 import type { AddPointHighlightBlacklistRequest } from './point-highlight-blacklist';
 import type {
   MessageTextPreviewLineLimit,
@@ -148,7 +149,10 @@ export type MessageCardProps = {
   onCopyMessageLink?: () => void;
   onCopyEtalon?: (value: string) => void;
   onCopyLocation?: (value: string) => void;
-  onCreateReport?: (focusTarget: HTMLElement) => void;
+  onCreateReport?: (
+    visibleEtalonDisplayModel: MessageCardEtalonDisplayModel,
+    focusTarget: HTMLElement,
+  ) => void;
   onEditReport?: (reportId: number) => void;
   onDelete?: () => void;
   onEditDetails?: (focusTarget: HTMLElement) => void;
@@ -366,7 +370,10 @@ function MessageCardComponent({
     rightInsetPx: rightHeaderInsetPx,
     onBookmark,
     onImportant,
-    onCreateReport,
+    onCreateReport:
+      onCreateReport == null
+        ? undefined
+        : (focusTarget) => onCreateReport(visibleEtalonDisplayModel, focusTarget),
     onCopyText,
     onCopyFreq: radioFeaturesAllowed ? onCopyFreq : undefined,
     onCopyTextWithNetwork: hideNetworks ? undefined : onCopyTextWithNetwork,

@@ -1049,7 +1049,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20260914_094608_unit_merge_reference_indexes::Migration),
             Box::new(m20260914_234219_group_stats_dirty_days::Migration),
             Box::new(m20260915_105452_disable_bot_tags::Migration),
-            Box::new(m20261009_074414_system_settings_hide_networks::Migration),
             Box::new(
                 m20260915_151525_network_recalculation_last_seen_batch_index::Migration,
             ),
@@ -1102,6 +1101,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261008_051638_ai_position_highlight_flags::Migration),
             Box::new(m20261008_080110_rer_report_admin::Migration),
             Box::new(m20261008_113430_sigint_unit_orbit_combat_type::Migration),
+            Box::new(m20261009_074414_system_settings_hide_networks::Migration),
         ]
     }
 }

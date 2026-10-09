@@ -799,18 +799,24 @@ loadNetworksForMessages shared model messages =
         missingIds =
             missingNetworkIdsForMessages shared model messages
     in
-    case shared.systemSettings of
-        Just settings ->
-            if settings.hideNetworks || List.isEmpty missingIds then
-                ( model, E.none )
+    if not shared.systemSettingsLoaded || hideNetworks shared || List.isEmpty missingIds then
+        ( model, E.none )
 
-            else
-                ( { model | networkIdsRequested = Set.union model.networkIdsRequested (Set.fromList missingIds) }
-                , E.getNetworksInfoByIds (GotNetworksInfo missingIds) missingIds
-                )
+    else
+        ( { model | networkIdsRequested = Set.union model.networkIdsRequested (Set.fromList missingIds) }
+        , E.getNetworksInfoByIds (GotNetworksInfo missingIds) missingIds
+        )
 
-        Nothing ->
-            ( model, E.none )
+
+hideNetworks : Shared.Model -> Bool
+hideNetworks shared =
+    if not shared.systemSettingsLoaded then
+        True
+
+    else
+        shared.systemSettings
+            |> Maybe.map .hideNetworks
+            |> Maybe.withDefault False
 
 
 loadNetworksForLoadedMessages : Shared.Model -> Model -> ( Model, Effect Msg )
@@ -827,13 +833,6 @@ deferNetworkRetry networkIds model =
         ( { model | networkIdsWaitingForRetry = Set.union model.networkIdsWaitingForRetry (Set.fromList networkIds) }
         , E.sendCmd <| Task.perform (\_ -> RetryNetworks networkIds) (Process.sleep Config.waterfallNetworkRetryDelayMs)
         )
-
-
-hideNetworks : Shared.Model -> Bool
-hideNetworks shared =
-    shared.systemSettings
-        |> Maybe.map .hideNetworks
-        |> Maybe.withDefault True
 
 
 commonGotVisibleMsgFunc : List Int -> { a | unreadIds : List Int, lastViewedMessageId : LastViewedMessageId, isMsgVisible : List Int } -> { a | unreadIds : List Int, lastViewedMessageId : LastViewedMessageId, isMsgVisible : List Int }

@@ -14,6 +14,7 @@ import Pages_.RerDuty.Waterfall.Messages as Messages
 import Route
 import Set
 import Shared
+import Shared.Msg as SharedMsg
 import String
 import Test exposing (Test, describe, test)
 import Time
@@ -53,6 +54,44 @@ suite =
                                     }
                         in
                         Expect.equal Set.empty updatedWaterfall.networkIdsRequested
+        , test "#3598 failed initial settings allow deferred network hydration" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-duty" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            route =
+                                Route.fromUrl () url
+
+                            ( shared, _ ) =
+                                Shared.init (Ok { isDark = False, now = 0 }) route
+
+                            ( settingsFailed, _ ) =
+                                Shared.update route
+                                    (SharedMsg.GotSystemSettings (Err { httpError = Http.Timeout, formErrors = Dict.empty, errors = [] }))
+                                    shared
+
+                            ( waterfall, _ ) =
+                                Waterfall.init True "wf-a" Nothing
+
+                            ( updatedWaterfall, _ ) =
+                                Waterfall.update
+                                    settingsFailed
+                                    anonymousUser
+                                    (Waterfall.TickTimeTick (Time.millisToPosix 0))
+                                    { waterfall
+                                        | messages =
+                                            Messages.fromList
+                                                [ ( 1, { messageStub | networkIds = Just [ 7 ] } ) ]
+                                    }
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal True settingsFailed.systemSettingsLoaded
+                            , \_ -> Expect.equal (Set.singleton 7) updatedWaterfall.networkIdsRequested
+                            ]
+                            ()
         , test "#3598 failed network batches release only their own requests and wait before retrying" <|
             \_ ->
                 case Url.fromString "http://localhost/rer-duty" of

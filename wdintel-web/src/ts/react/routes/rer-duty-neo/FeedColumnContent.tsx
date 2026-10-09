@@ -272,8 +272,8 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       }
       onCopyEtalon={(value) => onMessageCopy(value, `etalon-${id}`)}
       onCopyLocation={(value) => onMessageCopy(value, `location-${id}`)}
-      onCreateReport={(focusTarget) =>
-        onMessageCreateReport(id, msg, etalonDisplayModel, focusTarget)
+      onCreateReport={(visibleEtalonDisplayModel, focusTarget) =>
+        onMessageCreateReport(id, msg, visibleEtalonDisplayModel, focusTarget)
       }
       onEditReport={onMessageEditReport}
       onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
