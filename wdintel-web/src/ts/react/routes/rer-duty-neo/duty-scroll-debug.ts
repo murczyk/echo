@@ -51,7 +51,48 @@ export type DutyScrollDebugTiming = {
   reason?: string;
 };
 
+type DutyScrollDebugItem = readonly [id: number, value: unknown];
+
+export type DutyScrollDebugFeedSnapshotInput = {
+  id: string;
+  items: readonly DutyScrollDebugItem[];
+  pendingNewerItems?: readonly DutyScrollDebugItem[];
+  unreadCount: number;
+  readIds: { readonly size: number };
+  windowedUnreadItems: { readonly size: number };
+  loading: boolean;
+  loadingOlder: boolean;
+  hasReachedStart: boolean;
+};
+
+export type DutyScrollDebugViewSnapshotInput = {
+  narrowScreen?: boolean;
+  feedCount?: number;
+  canRemove: boolean;
+  maxWidth?: string | number;
+  isWatchMode?: boolean;
+  autoScrollAllowed?: boolean;
+  initialPositioningReady?: boolean;
+  scrollTrackingEnabled?: boolean;
+  loadingNewer?: boolean;
+  arrowResultMessage?: string | null;
+  bottomUnreadCount?: number;
+  physicallyAtBottom?: boolean;
+  tailAvailability?: string;
+  unreadCount?: number;
+  unreadPrefetchNeeded?: boolean;
+  pendingNewerFlushNeeded?: boolean;
+  workspaceFabAvoidance?: string;
+  initialScrollAnchorSnapshot?: {
+    anchors: readonly { id: number; index: number; offsetTop: number }[];
+    itemIds: readonly number[];
+    scrollTop: number;
+    scrollHeight: number;
+  } | null;
+};
+
 const activityCounts = new Map<string, number>();
+const snapshotFingerprints = new Map<string, string>();
 let activeRecordingId: string | null = null;
 
 function normalizedName(value: string): string {
@@ -77,19 +118,15 @@ function normalizedToken(value: string): string {
   );
 }
 
-function fingerprint(value: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `duty-${(hash >>> 0).toString(16).padStart(8, '0')}`;
-}
-
 function safeAlias(scope: string, value: string | number | null): string | undefined {
   if (value === null) return undefined;
   const alias = aliasDebugIdentifier(scope, value);
   return alias && /^\{[a-z0-9_-]+\}$/i.test(alias) ? alias : undefined;
+}
+
+function safeFingerprintDetails(value: string): Record<string, string> {
+  const fingerprint = safeAlias('detail', value);
+  return fingerprint ? { fingerprint } : {};
 }
 
 function currentRecordingId(): string | null {
@@ -98,6 +135,7 @@ function currentRecordingId(): string | null {
   if (snapshot.state !== 'recording' || !snapshot.recordingId) return null;
   if (activeRecordingId !== snapshot.recordingId) {
     activityCounts.clear();
+    snapshotFingerprints.clear();
     activeRecordingId = snapshot.recordingId;
   }
   return snapshot.recordingId;
@@ -153,7 +191,7 @@ const BOOLEAN_DETAIL_KEYS: Record<string, string> = {
 
 function legacyDetails(eventName: string, detail: string): Record<string, unknown> {
   if (!detail) return {};
-  const output: Record<string, unknown> = { fingerprint: fingerprint(detail) };
+  const output: Record<string, unknown> = safeFingerprintDetails(detail);
   for (const part of detail.split(';').slice(0, 24)) {
     const match = /^\s*([a-z][a-z0-9_-]*)\s*=\s*(.*?)\s*$/i.exec(part);
     if (!match) continue;
@@ -273,9 +311,89 @@ export function recordDutyScrollDebugTiming(
       ...base,
       phase: timing.phase,
       durationMs: timing.durationMs,
-      ...(timing.reason ? { fingerprint: fingerprint(timing.reason) } : {}),
+      ...(timing.reason ? safeFingerprintDetails(timing.reason) : {}),
     },
   });
+}
+
+function dutyFeedSnapshotDetails(feed: DutyScrollDebugFeedSnapshotInput): Record<string, unknown> {
+  const pendingNewerItems = feed.pendingNewerItems ?? [];
+  return {
+    itemCount: feed.items.length,
+    firstItemId: safeAlias('item', feed.items[0]?.[0] ?? null),
+    lastItemId: safeAlias('item', feed.items.at(-1)?.[0] ?? null),
+    pendingNewerCount: pendingNewerItems.length,
+    pendingNewerTailId: safeAlias('item', pendingNewerItems.at(-1)?.[0] ?? null),
+    unreadCount: feed.unreadCount,
+    readIdCount: feed.readIds.size,
+    windowedUnreadCount: feed.windowedUnreadItems.size,
+    loading: feed.loading,
+    loadingOlder: feed.loadingOlder,
+    hasReachedStart: feed.hasReachedStart,
+  };
+}
+
+function dutyViewSnapshotDetails(view: DutyScrollDebugViewSnapshotInput): Record<string, unknown> {
+  const initialAnchor = view.initialScrollAnchorSnapshot;
+  return {
+    narrowScreen: view.narrowScreen ?? null,
+    feedCount: view.feedCount ?? null,
+    canRemove: view.canRemove,
+    maxWidth: view.maxWidth ?? null,
+    isWatchMode: view.isWatchMode ?? null,
+    autoScrollAllowed: view.autoScrollAllowed ?? null,
+    initialPositioningReady: view.initialPositioningReady ?? null,
+    scrollTrackingEnabled: view.scrollTrackingEnabled ?? null,
+    loadingNewer: view.loadingNewer ?? null,
+    arrowResultFingerprint: view.arrowResultMessage
+      ? (safeAlias('detail', view.arrowResultMessage) ?? null)
+      : null,
+    bottomUnreadCount: view.bottomUnreadCount ?? null,
+    physicallyAtBottom: view.physicallyAtBottom ?? null,
+    tailAvailability: view.tailAvailability ? normalizedToken(view.tailAvailability) : null,
+    unreadCount: view.unreadCount ?? null,
+    unreadPrefetchNeeded: view.unreadPrefetchNeeded ?? null,
+    pendingNewerFlushNeeded: view.pendingNewerFlushNeeded ?? null,
+    workspaceFabAvoidance: view.workspaceFabAvoidance
+      ? normalizedToken(view.workspaceFabAvoidance)
+      : null,
+    documentVisibility: normalizedToken(globalThis.document?.visibilityState ?? 'unknown'),
+    initialAnchors:
+      initialAnchor?.anchors.map((anchor) => ({
+        anchorId: safeAlias('anchor', anchor.id),
+        index: anchor.index,
+        offsetTop: anchor.offsetTop,
+      })) ?? [],
+    initialItemIds:
+      initialAnchor?.itemIds
+        .map((itemId) => safeAlias('item', itemId))
+        .filter((itemId): itemId is string => itemId !== undefined) ?? [],
+    initialScrollTop: initialAnchor?.scrollTop ?? null,
+    initialScrollHeight: initialAnchor?.scrollHeight ?? null,
+  };
+}
+
+function recordDutySnapshotPart(
+  kind: 'duty.feed.snapshot' | 'duty.view.snapshot',
+  base: Record<string, unknown>,
+  details: Record<string, unknown>,
+): void {
+  const snapshot = { ...base, ...details };
+  const key = `${String(base.feedId)}:${kind}`;
+  const nextFingerprint = JSON.stringify(snapshot);
+  if (snapshotFingerprints.get(key) === nextFingerprint) return;
+  snapshotFingerprints.set(key, nextFingerprint);
+  recordDebugEvent({ kind, source: 'duty', details: snapshot });
+}
+
+export function recordDutyScrollDebugSnapshot(
+  feed: DutyScrollDebugFeedSnapshotInput,
+  view: DutyScrollDebugViewSnapshotInput,
+): void {
+  const base = feedDetails(feed.id);
+  if (!base) return;
+  recordDutySnapshotPart('duty.feed.snapshot', base, dutyFeedSnapshotDetails(feed));
+  recordDutySnapshotPart('duty.view.snapshot', base, dutyViewSnapshotDetails(view));
 }
 
 export function beginDutyScrollDebugActivity(
@@ -297,7 +415,7 @@ export function beginDutyScrollDebugActivity(
       ...base,
       kind: activityName,
       active,
-      ...(detail ? { fingerprint: fingerprint(detail) } : {}),
+      ...(detail ? safeFingerprintDetails(detail) : {}),
     },
   });
   let finished = false;
@@ -315,7 +433,7 @@ export function beginDutyScrollDebugActivity(
         ...base,
         kind: activityName,
         active: remaining,
-        ...(result ? { fingerprint: fingerprint(result) } : {}),
+        ...(result ? safeFingerprintDetails(result) : {}),
       },
     });
   };

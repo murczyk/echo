@@ -265,6 +265,9 @@ test('user records and exports safe browser diagnostics in Live mode @regression
     events,
     (event) => event.source === 'duty' && event.kind.startsWith('duty.'),
   );
+  const dutyFeedSnapshotIndex = eventIndex(events, (event) => event.kind === 'duty.feed.snapshot');
+  const dutyViewSnapshotIndex = eventIndex(events, (event) => event.kind === 'duty.view.snapshot');
+  const dutyMetricsIndex = eventIndex(events, (event) => event.kind === 'duty.metrics');
   const reloadIndex = eventIndex(events, (event) => event.kind === 'navigation.reload');
   expect(navigationIndex).toBeLessThan(requestStartIndex);
   expect(requestStartIndex).toBeLessThan(requestEndIndex);
@@ -272,6 +275,32 @@ test('user records and exports safe browser diagnostics in Live mode @regression
   expect(failureIndex).toBeLessThan(errorIndex);
   expect(scrollIndex).toBeLessThan(loadingIndex);
   expect(dutyIndex).toBeLessThan(reloadIndex);
+  expect(events[dutyFeedSnapshotIndex]?.details).toMatchObject({
+    itemCount: 0,
+    pendingNewerCount: 0,
+    unreadCount: 0,
+    readIdCount: 0,
+    windowedUnreadCount: 0,
+    loading: false,
+    loadingOlder: false,
+  });
+  expect(events[dutyViewSnapshotIndex]?.details).toMatchObject({
+    feedCount: 1,
+    canRemove: false,
+    unreadCount: null,
+    documentVisibility: 'visible',
+  });
+  expect(events[dutyMetricsIndex]?.details).toMatchObject({
+    scrollTop: expect.any(Number),
+    previousScrollTop: expect.any(Number),
+    scrollDelta: expect.any(Number),
+    scrollHeight: expect.any(Number),
+    clientHeight: expect.any(Number),
+    bottomDistance: expect.any(Number),
+    atTop: expect.any(Boolean),
+    atBottom: expect.any(Boolean),
+    nearBottom: expect.any(Boolean),
+  });
   expect(events.some((event) => event.kind === 'dom.replacement')).toBe(true);
   expect(events.some((event) => event.kind === 'dom.custom-elements')).toBe(true);
   expect(events.some((event) => event.kind === 'anomaly.http-duplicate')).toBe(true);

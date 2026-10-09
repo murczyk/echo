@@ -34,6 +34,16 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
+function isValidAliases(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Object.values(value).every(
+      (scope) =>
+        isRecord(scope) && Object.values(scope).every((alias) => typeof alias === 'string'),
+    )
+  );
+}
+
 function isValidEnvironment(value: unknown): boolean {
   if (!isRecord(value)) return false;
   return (
@@ -67,7 +77,7 @@ function isValidSession(value: unknown, nowMs: number): value is PersistedDebugS
     if (!isNonNegativeInteger(value[field])) return false;
   }
   if (typeof value.persistenceFailed !== 'boolean') return false;
-  if (!isRecord(value.aliases) || !isValidEnvironment(value.environment)) return false;
+  if (!isValidAliases(value.aliases) || !isValidEnvironment(value.environment)) return false;
   if (!isRecord(value.anomalies) || !isNonNegativeInteger(value.anomalies.total)) return false;
   if (!isRecord(value.anomalies.counts)) return false;
   if (!isRecord(value.collectorSupport)) return false;

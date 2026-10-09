@@ -28,6 +28,7 @@ import type {
   ExplicitScrollNavigation,
   ScrollNavigationIntent,
 } from './windowed-feed-scroll-shared';
+import { recordDutyScrollDebugSnapshot, useDutyScrollDebugEnabled } from './duty-scroll-debug';
 
 export type FeedColumnProps = {
   column: FeedColumnModel;
@@ -50,6 +51,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   ref,
 ) {
   const { feed, view, filterPanel, keywordsPanel, actions } = column;
+  const dutyScrollDebugEnabled = useDutyScrollDebugEnabled();
   const { narrowScreen = false, canRemove, maxWidth, feedCount = 1 } = view;
   const { onRemoveColumn, onCreateFeed } = actions;
   const [showFilters, setShowFilters] = useState(false);
@@ -89,6 +91,10 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       document.removeEventListener('visibilitychange', refresh);
     };
   }, []);
+  useEffect(() => {
+    if (!dutyScrollDebugEnabled) return;
+    recordDutyScrollDebugSnapshot(feed, view);
+  }, [dutyScrollDebugEnabled, feed, view]);
   const handleBellToggleDutyNotifications = useCallback(
     async (e: MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();

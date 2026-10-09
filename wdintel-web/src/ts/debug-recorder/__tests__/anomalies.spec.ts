@@ -65,6 +65,29 @@ describe('debug anomaly detector', () => {
     },
   );
 
+  it.each([
+    ['before', 100, 200],
+    ['after', 200, 100],
+  ] as const)(
+    'correlates a viewport resize %s a large scroll jump',
+    (_order, resizeAt, scrollAt) => {
+      const detector = createDebugAnomalyDetector();
+      const events = [
+        event('viewport.resize', resizeAt, { viewportWidth: 800, viewportHeight: 500 }),
+        event('scroll.sample', scrollAt, { delta: 400, clientHeight: 600 }),
+      ].sort((left, right) => left.tMs - right.tMs);
+
+      const observed = events.flatMap((input) => detector.observe(input));
+
+      expect(observed).toMatchObject([
+        {
+          kind: 'anomaly.scroll-jump',
+          details: { delta: 400, clientHeight: 600, reason: 'viewport.resize' },
+        },
+      ]);
+    },
+  );
+
   it('detects DOM replacement storms and opens one episode until recovery', () => {
     const detector = createDebugAnomalyDetector();
     expect(detector.observe(event('dom.replacement', 0))).toEqual([]);

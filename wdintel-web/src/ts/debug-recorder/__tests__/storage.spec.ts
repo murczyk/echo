@@ -132,6 +132,17 @@ describe('debug recorder session storage', () => {
     expect(storage.values.get('unrelated')).toBe('keep');
   });
 
+  it.each([
+    ['non-record scope', { feed: null }],
+    ['non-string alias', { feed: { fingerprint: 42 } }],
+  ])('removes aliases with a %s', (_name, aliases) => {
+    const storage = new MemoryStorage();
+    storage.values.set(DEBUG_STORAGE_KEY, JSON.stringify({ ...buildSession(), aliases }));
+
+    expect(loadDebugSession(storage, 2_000)).toBeNull();
+    expect(storage.removals).toEqual([DEBUG_STORAGE_KEY]);
+  });
+
   it('removes a stored value larger than one MiB', () => {
     const storage = new MemoryStorage();
     storage.values.set(DEBUG_STORAGE_KEY, 'x'.repeat(DEBUG_MAX_BYTES + 1));

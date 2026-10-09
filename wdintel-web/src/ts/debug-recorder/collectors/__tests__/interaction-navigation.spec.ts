@@ -73,7 +73,39 @@ describe('interaction and navigation collector', () => {
     const cleanup = attachInteractionNavigationCollector((input) => events.push(input));
     window.dispatchEvent(new WheelEvent('wheel'));
     window.dispatchEvent(new TouchEvent('touchmove'));
-    window.dispatchEvent(new PointerEvent('pointerdown'));
+    const button = document.createElement('button');
+    document.body.append(button);
+    button.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' }),
+    );
+    const scroller = document.createElement('div');
+    Object.defineProperties(scroller, {
+      clientHeight: { value: 100 },
+      clientWidth: { value: 100 },
+      scrollHeight: { value: 500 },
+      scrollWidth: { value: 100 },
+    });
+    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({
+      bottom: 100,
+      height: 100,
+      left: 0,
+      right: 115,
+      top: 0,
+      width: 115,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    document.body.append(scroller);
+    scroller.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 110,
+        clientY: 50,
+        pointerType: 'mouse',
+      }),
+    );
     const typing = new KeyboardEvent('keydown', { code: 'KeyA' });
     Object.defineProperty(typing, 'key', {
       get: () => {

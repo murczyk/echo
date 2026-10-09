@@ -108,6 +108,53 @@ describe('debug recorder sanitizer', () => {
     expect(Object.keys(event?.details ?? {}).length).toBeLessThanOrEqual(32);
   });
 
+  it('keeps the safe Analysis state contract and drops raw filter values', () => {
+    const sanitizer = createDebugSanitizer('recording-1');
+    const event = sanitizer.sanitizeInput(
+      {
+        kind: 'analysis.page.snapshot',
+        source: 'analysis',
+        details: {
+          centerTab: 'messages',
+          centerTabPending: false,
+          messagesLoading: true,
+          messagesPaging: false,
+          messagesTotalCount: 240,
+          messageCount: 20,
+          pageIndex: 2,
+          visiblePageIndex: 3,
+          activeFilterCount: 4,
+          selectedFilterValueCount: 7,
+          hasSearch: true,
+          directMessageActive: true,
+          viewportAnchorActive: true,
+          firstItemId: '771111',
+          search: 'ECHO_SECRET_SENTINEL',
+          selectedGroups: ['ECHO_SECRET_SENTINEL'],
+        },
+      },
+      { seq: 1, tMs: 0, route: '/rer-analysis-neo' },
+    );
+
+    expect(event?.details).toMatchObject({
+      centerTab: 'messages',
+      centerTabPending: false,
+      messagesLoading: true,
+      messagesPaging: false,
+      messagesTotalCount: 240,
+      messageCount: 20,
+      pageIndex: 2,
+      visiblePageIndex: 3,
+      activeFilterCount: 4,
+      selectedFilterValueCount: 7,
+      hasSearch: true,
+      directMessageActive: true,
+      viewportAnchorActive: true,
+      firstItemId: expect.stringMatching(/^\{firstItem_/),
+    });
+    expect(JSON.stringify(event)).not.toContain('ECHO_SECRET_SENTINEL');
+  });
+
   it('bounds the persisted alias dictionary while keeping overflow aliases stable', () => {
     const sanitizer = createDebugSanitizer('recording-1');
     let overflowAlias = '';

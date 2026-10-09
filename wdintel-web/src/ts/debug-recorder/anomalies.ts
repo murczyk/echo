@@ -46,6 +46,7 @@ const SCROLL_CORRELATION_KINDS = new Set([
   'interaction.focus',
   'interaction.click',
   'dom.replacement',
+  'viewport.resize',
 ]);
 const RENDER_KINDS = new Set(['semantic.render', 'semantic.commit', 'duty.render', 'duty.commit']);
 

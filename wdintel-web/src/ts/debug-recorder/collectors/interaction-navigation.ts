@@ -40,6 +40,32 @@ function isRecorderTarget(target: EventTarget | null): boolean {
   );
 }
 
+function isScrollbarPointerIntent(event: Event): boolean {
+  if (typeof PointerEvent === 'undefined' || !(event instanceof PointerEvent)) return false;
+  if (event.button !== 0 || (event.pointerType && event.pointerType !== 'mouse')) return false;
+  const target = event.target;
+  if (!(target instanceof Element)) return false;
+  const rootTarget = target === document.documentElement || target === document.body;
+  const element = rootTarget ? document.documentElement : target;
+  const rect = rootTarget
+    ? { top: 0, right: window.innerWidth, bottom: window.innerHeight, left: 0 }
+    : element.getBoundingClientRect();
+  const verticalGutter = Math.max(0, rect.right - rect.left - element.clientWidth);
+  const horizontalGutter = Math.max(0, rect.bottom - rect.top - element.clientHeight);
+  const direction = getComputedStyle(element).direction;
+  const inVerticalGutter =
+    element.scrollHeight > element.clientHeight &&
+    verticalGutter > 0 &&
+    (direction === 'rtl'
+      ? event.clientX <= rect.left + verticalGutter
+      : event.clientX >= rect.right - verticalGutter);
+  const inHorizontalGutter =
+    element.scrollWidth > element.clientWidth &&
+    horizontalGutter > 0 &&
+    event.clientY >= rect.bottom - horizontalGutter;
+  return inVerticalGutter || inHorizontalGutter;
+}
+
 function isPersistedPageTransition(event: Event): boolean {
   if (typeof PageTransitionEvent !== 'undefined' && event instanceof PageTransitionEvent) {
     return event.persisted;
@@ -95,6 +121,7 @@ export function attachInteractionNavigationCollector(
 
   const onIntent = (event: Event) => {
     if (isRecorderTarget(event.target)) return;
+    if (event.type === 'pointerdown' && !isScrollbarPointerIntent(event)) return;
     let kind = INTENT_EVENTS.get(event.type);
     if (event.type === 'keydown') {
       let code: string;
