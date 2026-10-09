@@ -12,11 +12,13 @@ export function systemSettingsCurrentResponse({
   shortUrlEnabled = false,
   dutyExcludeMenuEnabled = true,
   analysisAorFilterEnabled = true,
+  rerReportEnabled = false,
 }: {
   enableAudioTranscription?: boolean;
   shortUrlEnabled?: boolean;
   dutyExcludeMenuEnabled?: boolean;
   analysisAorFilterEnabled?: boolean;
+  rerReportEnabled?: boolean;
 } = {}) {
   const settings: SystemSettingsCurrentRsp = {
     id: null,
@@ -28,7 +30,7 @@ export function systemSettingsCurrentResponse({
     rerDutyPollIntervalSec: 1,
     rerDutyTestReplayIntervalSec: 1,
     shortUrlEnabled,
-    rerReportEnabled: false,
+    rerReportEnabled,
     supportNonRerInterceptions: false,
     defaultNeoAnalysis: false,
     autofixEchoimMissingMessages: false,
