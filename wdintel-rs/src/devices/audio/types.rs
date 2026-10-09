@@ -9,6 +9,7 @@ use uuid::Uuid;
 pub struct DeviceAudio {
     pub id: String,
     pub device_id: String,
+    pub name: String,
     pub recording_started_at: String,
     pub recording_ended_at: String,
     pub duration_seconds: f64,
@@ -29,6 +30,45 @@ pub struct DeviceAudioDetails {
     pub audio: DeviceAudio,
     pub transcription: DeviceAudioTranscription,
     pub can_edit: bool,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrepareDeviceAudioReq {
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub device_id: String,
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub audio_id: String,
+    #[serde(default)]
+    pub retry: bool,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Deserialize,
+    Serialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceAudioPreparationState {
+    Queued,
+    Preparing,
+    Ready,
+    Failed,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+pub struct DeviceAudioPreparation {
+    pub content: DeviceAudioPreparationState,
+    pub wave: DeviceAudioPreparationState,
+    pub spectrogram: DeviceAudioPreparationState,
+    pub retry_after_ms: u64,
 }
 
 #[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
@@ -184,7 +224,7 @@ pub(crate) struct OpenDeviceAudioCommand {
     pub range: Option<DeviceAudioRange>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 pub(crate) enum DeviceAudioRepresentation {
     Content,
     Wave,

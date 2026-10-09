@@ -153,7 +153,7 @@ export function AnalysisPageHeader({
       page.openReport();
     }
   };
-  const loading = page.countsLoading || page.messagesLoading || page.summaryLoading;
+  const loading = page.messagesLoading || page.summaryLoading;
   const dateRangeLoading = page.mapAttrs?.daterangeLoading === 'true';
   const showPagination = !isNarrowLayout;
   return (

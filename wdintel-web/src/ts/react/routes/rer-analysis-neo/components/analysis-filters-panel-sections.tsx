@@ -15,9 +15,8 @@ import {
   Typography,
 } from '@mui/material';
 import type { MouseEvent } from 'react';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import type { CountStatsRsp } from '../../../../../Bindings';
 
 import type { AnalysisFilterSectionId } from '../types';
 import {
@@ -43,7 +42,6 @@ import {
 type Props = Pick<
   AnalysisFiltersPanelPage,
   | 'counts'
-  | 'countsLoading'
   | 'cyberEchoEnabled'
   | 'includeOnlyNewFreqs'
   | 'options'
@@ -53,7 +51,6 @@ type Props = Pick<
 > & {
   derived: AnalysisFiltersPanelDerivedData;
   expandedSections: Record<FilterSectionId, boolean>;
-  countsLoading: boolean;
   filtersLoading: boolean;
   isFilterSectionLoading: (section: AnalysisFilterSectionId) => boolean;
   isFilterSectionEmptyLoading: (section: AnalysisFilterSectionId, optionCount: number) => boolean;
@@ -229,7 +226,6 @@ export function AnalysisFiltersPanelSections({
   counts,
   derived,
   expandedSections,
-  countsLoading,
   cyberEchoEnabled,
   includeOnlyNewFreqs,
   filtersLoading,
@@ -248,14 +244,6 @@ export function AnalysisFiltersPanelSections({
   updateQueryState,
 }: Props) {
   const loadingCountLabel = NO_DATA_LABEL;
-  const lastCountsRef = useRef<CountStatsRsp | null>(counts);
-  const countsSnapshot = countsLoading ? lastCountsRef.current : counts;
-
-  useEffect(() => {
-    if (!countsLoading && counts != null) {
-      lastCountsRef.current = counts;
-    }
-  }, [counts, countsLoading]);
 
   const isSectionLoading = (section: FilterSectionLoadTarget) =>
     section === 'freqs' ? false : isFilterSectionLoading(section);
@@ -271,6 +259,7 @@ export function AnalysisFiltersPanelSections({
     selectedCount: number,
     overallCount: number | null | undefined,
   ) =>
+    overallCount == null ||
     isSectionLoading(section) ||
     isSectionStale(section) ||
     (filtersLoading && optionCount === 0 && selectedCount === 0)
@@ -302,12 +291,15 @@ export function AnalysisFiltersPanelSections({
 
   const effectiveUnitsExactMatchOnly =
     queryState.unitsExactMatchOnly ?? unitsExactMatchOnlyDefault ?? false;
+  const unitsMatchCount = effectiveUnitsExactMatchOnly
+    ? counts?.unitsNonExactMatchesCount
+    : counts?.unitsExactMatchesCount;
   const unitsExactMatchLabel =
     queryState.unitsSelected.length > 0
-      ? countsSnapshot != null
+      ? unitsMatchCount != null
         ? effectiveUnitsExactMatchOnly
-          ? `неточних збігів: ${countsSnapshot.unitsNonExactMatchesCount}`
-          : `точних збігів: ${countsSnapshot.unitsExactMatchesCount}`
+          ? `неточних збігів: ${unitsMatchCount}`
+          : `точних збігів: ${unitsMatchCount}`
         : 'Точний збіг за еталонкою'
       : null;
 
@@ -323,7 +315,7 @@ export function AnalysisFiltersPanelSections({
             'aors',
             options.aors.length,
             derived.aorsSelectedCount,
-            counts?.aorsCount ?? options.aors.length,
+            counts?.aorsCount,
           )}
           expanded={expandedSections.aors}
           onToggle={() => toggleSection('aors')}
@@ -347,7 +339,7 @@ export function AnalysisFiltersPanelSections({
             'freqs',
             options.freqs.length,
             derived.freqsSelectedCount,
-            counts?.freqsCount ?? options.freqs.length,
+            counts?.freqsCount,
           )}
           expanded={expandedSections.freqs}
           onToggle={() => toggleSection('freqs')}
@@ -405,7 +397,7 @@ export function AnalysisFiltersPanelSections({
           'callsigns',
           options.callsigns.length,
           derived.callsignsSelectedCount,
-          counts?.callsignsCount ?? options.callsigns.length,
+          counts?.callsignsCount,
         )}
         expanded={expandedSections.callsigns}
         onToggle={() => toggleSection('callsigns')}
@@ -426,7 +418,7 @@ export function AnalysisFiltersPanelSections({
             'networks',
             options.networks.length,
             derived.networksSelectedCount,
-            counts?.networksCount ?? options.networks.length,
+            counts?.networksCount,
           )}
           expanded={expandedSections.networks}
           onToggle={() => toggleSection('networks')}
@@ -462,7 +454,7 @@ export function AnalysisFiltersPanelSections({
           'units',
           options.units.length,
           derived.unitsSelectedCount,
-          counts?.unitsCount ?? options.units.length,
+          counts?.unitsCount,
         )}
         expanded={expandedSections.units}
         onToggle={() => toggleSection('units')}
@@ -501,7 +493,7 @@ export function AnalysisFiltersPanelSections({
           'groups',
           options.groups.length,
           derived.groupsSelectedCount,
-          counts?.groupsCount ?? options.groups.length,
+          counts?.groupsCount,
         )}
         expanded={expandedSections.groups}
         onToggle={() => toggleSection('groups')}
@@ -524,7 +516,7 @@ export function AnalysisFiltersPanelSections({
           'senders',
           options.senders.length,
           derived.sendersSelectedCount,
-          counts?.sendersCount ?? options.senders.length,
+          counts?.sendersCount,
         )}
         expanded={expandedSections.senders}
         onToggle={() => toggleSection('senders')}
@@ -562,7 +554,7 @@ export function AnalysisFiltersPanelSections({
             'posts',
             options.posts.length,
             derived.postsSelectedCount,
-            counts?.postsCount ?? options.posts.length,
+            counts?.postsCount,
           )}
           expanded={expandedSections.posts}
           onToggle={() => toggleSection('posts')}
@@ -587,7 +579,7 @@ export function AnalysisFiltersPanelSections({
           'locations',
           options.locations.length,
           derived.locationsSelectedCount,
-          counts?.locationsCount ?? options.locations.length,
+          counts?.locationsCount,
         )}
         expanded={expandedSections.locations}
         onToggle={() => toggleSection('locations')}
@@ -714,7 +706,7 @@ export function AnalysisFiltersPanelSections({
           'tags',
           options.tags.length,
           derived.tagsSelectedCount,
-          counts?.tagsCount ?? options.tags.length,
+          counts?.tagsCount,
         )}
         expanded={expandedSections.tags}
         onToggle={() => toggleSection('tags')}

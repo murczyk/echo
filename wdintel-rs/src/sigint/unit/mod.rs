@@ -22,7 +22,6 @@ use crate::users::{
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
-use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, OnConflict, SimpleExpr};
 use std::collections::{BTreeSet, HashMap};
 
@@ -385,10 +384,8 @@ async fn read_units_with_orbit_visibility(
                         find_unit(dbx, *before_unit_id).await.c(h!())?;
                     units = units.filter(
                         Expr::tuple([
-                            sigint_unit::Column::CreatedAt
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Id.into_column_ref().into(),
+                            sigint_unit::Column::CreatedAt.into_simple_expr(),
+                            sigint_unit::Column::Id.into_simple_expr(),
                         ])
                         .lt(SimpleExpr::Tuple(vec![
                             before_unit.created_at.into(),
@@ -406,10 +403,8 @@ async fn read_units_with_orbit_visibility(
                         find_unit(dbx, *after_unit_id).await.c(h!())?;
                     units = units.filter(
                         Expr::tuple([
-                            sigint_unit::Column::CreatedAt
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Id.into_column_ref().into(),
+                            sigint_unit::Column::CreatedAt.into_simple_expr(),
+                            sigint_unit::Column::Id.into_simple_expr(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
                             after_unit.created_at.into(),
@@ -427,41 +422,22 @@ async fn read_units_with_orbit_visibility(
                         find_unit(dbx, *after_unit_id).await.c(h!())?;
                     units = units.filter(
                         Expr::tuple([
-                            sigint_unit::Column::ArmyRegion
-                                .into_column_ref()
-                                .into(),
+                            sigint_unit::Column::ArmyRegion.into_simple_expr(),
                             sigint_unit::Column::MilitaryDistrict
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Army.into_column_ref().into(),
-                            sigint_unit::Column::Corps.into_column_ref().into(),
-                            sigint_unit::Column::Division
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Brigade
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Regiment
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Battalion
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Company
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Platoon
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Squad.into_column_ref().into(),
-                            sigint_unit::Column::Section
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::TeamOrCrew
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Other.into_column_ref().into(),
-                            sigint_unit::Column::Id.into_column_ref().into(),
+                                .into_simple_expr(),
+                            sigint_unit::Column::Army.into_simple_expr(),
+                            sigint_unit::Column::Corps.into_simple_expr(),
+                            sigint_unit::Column::Division.into_simple_expr(),
+                            sigint_unit::Column::Brigade.into_simple_expr(),
+                            sigint_unit::Column::Regiment.into_simple_expr(),
+                            sigint_unit::Column::Battalion.into_simple_expr(),
+                            sigint_unit::Column::Company.into_simple_expr(),
+                            sigint_unit::Column::Platoon.into_simple_expr(),
+                            sigint_unit::Column::Squad.into_simple_expr(),
+                            sigint_unit::Column::Section.into_simple_expr(),
+                            sigint_unit::Column::TeamOrCrew.into_simple_expr(),
+                            sigint_unit::Column::Other.into_simple_expr(),
+                            sigint_unit::Column::Id.into_simple_expr(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
                             after_unit.army_region.into(),
@@ -946,23 +922,21 @@ fn unit_search_sort_expressions(
     }
     expressions.extend([
         Expr::cust(unit_echelon_sort_rank_sql()),
-        sigint_unit::Column::ArmyRegion.into_column_ref().into(),
-        sigint_unit::Column::MilitaryDistrict
-            .into_column_ref()
-            .into(),
-        sigint_unit::Column::Army.into_column_ref().into(),
-        sigint_unit::Column::Corps.into_column_ref().into(),
-        sigint_unit::Column::Division.into_column_ref().into(),
-        sigint_unit::Column::Brigade.into_column_ref().into(),
-        sigint_unit::Column::Regiment.into_column_ref().into(),
-        sigint_unit::Column::Battalion.into_column_ref().into(),
-        sigint_unit::Column::Company.into_column_ref().into(),
-        sigint_unit::Column::Platoon.into_column_ref().into(),
-        sigint_unit::Column::Squad.into_column_ref().into(),
-        sigint_unit::Column::Section.into_column_ref().into(),
-        sigint_unit::Column::TeamOrCrew.into_column_ref().into(),
-        sigint_unit::Column::Other.into_column_ref().into(),
-        Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)),
+        sigint_unit::Column::ArmyRegion.into_simple_expr(),
+        sigint_unit::Column::MilitaryDistrict.into_simple_expr(),
+        sigint_unit::Column::Army.into_simple_expr(),
+        sigint_unit::Column::Corps.into_simple_expr(),
+        sigint_unit::Column::Division.into_simple_expr(),
+        sigint_unit::Column::Brigade.into_simple_expr(),
+        sigint_unit::Column::Regiment.into_simple_expr(),
+        sigint_unit::Column::Battalion.into_simple_expr(),
+        sigint_unit::Column::Company.into_simple_expr(),
+        sigint_unit::Column::Platoon.into_simple_expr(),
+        sigint_unit::Column::Squad.into_simple_expr(),
+        sigint_unit::Column::Section.into_simple_expr(),
+        sigint_unit::Column::TeamOrCrew.into_simple_expr(),
+        sigint_unit::Column::Other.into_simple_expr(),
+        sigint_unit::Column::Id.into_simple_expr(),
     ]);
     expressions
 }
@@ -4507,6 +4481,39 @@ mod tests {
             vec![suffixed_number.id]
         );
         assert!(!final_page.show_load_more);
+
+        for (after_unit_id, expected) in [
+            (None, vec![regiment.id, first_battalion.id]),
+            (
+                Some(first_battalion.id),
+                vec![second_battalion.id, prefixed_number.id],
+            ),
+            (Some(prefixed_number.id), vec![suffixed_number.id]),
+        ] {
+            let req = ListUnitsReq {
+                after_unit_id,
+                filter_text: Some("123 мсп".to_string()),
+                search_mode: Some(ListUnitsSearchMode::Relaxed),
+                ..Default::default()
+            };
+            let units = apply_unit_list_filters(
+                available_units_query(true).left_join(login::Entity),
+                &req,
+                true,
+            );
+            let units = apply_unit_search_cursor(&env.dbx, units, &req, true)
+                .await
+                .unwrap();
+            let units = apply_unit_search_order(units, &req, true)
+                .limit(2)
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            assert_eq!(
+                units.into_iter().map(|unit| unit.id).collect::<Vec<_>>(),
+                expected
+            );
+        }
 
         let misleading_division = crate::functest::tests::mk_sigint_unit(
             &env.dbx,

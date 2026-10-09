@@ -58,12 +58,15 @@ pub(super) async fn receive_with_hooks(
     }
     runtime.byte_store().c(h!())?;
     let admission = Arc::new(
-        runtime
-            .receive_permits
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| unavailable("audio receive is busy"))
-            .c(h!())?,
+        tokio::time::timeout(
+            Duration::from_secs(DEVICE_AUDIO_RECEIVE_WAIT_SECS),
+            runtime.receive_permits.clone().acquire_owned(),
+        )
+        .await
+        .map_err(|_| unavailable("audio receive timed out"))
+        .c(h!())?
+        .map_err(|_| unavailable("audio receive is unavailable"))
+        .c(h!())?,
     );
     let (source, guard) = upload::open_completed(
         &runtime,
@@ -108,6 +111,10 @@ fn finalize_owned(
         let result =
             recover_result(&runtime, actor, &command, &attempt, result).await;
         let terminal = query::confirmed_terminal(&runtime, attempt.id).await;
+        if matches!(&result, Ok(ReceiveDeviceAudioOutcome::Accepted(_))) {
+            preparation::accepted(runtime.clone(), &attempt, &source.file_path)
+                .await;
+        }
         drop(guard);
         if matches!(terminal, Ok(true)) {
             if let Err(error) =

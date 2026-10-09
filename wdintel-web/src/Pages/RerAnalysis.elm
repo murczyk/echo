@@ -278,6 +278,12 @@ init user route _ =
             , locations = NotAsked
             , units = NotAsked
             , counts = NotAsked
+            , statsCountGeneration = 0
+            , statsCountPending = []
+            , statsCountReady = []
+            , statsCountRemaining = 0
+            , statsCountPartial = emptyCountStatsRsp
+            , statsCountError = Nothing
             , networksStats = NotAsked
             , metadataStats = NotAsked
             , networkNames = []
@@ -664,6 +670,362 @@ loadSumTableOnly model =
             ( model, E.none )
 
 
+emptyCountStatsRsp : B.CountStatsRsp
+emptyCountStatsRsp =
+    { countOverall = 0
+    , countSelected = 0
+    , groupsCount = 0
+    , sendersCount = 0
+    , freqsCount = 0
+    , postsCount = 0
+    , callsignsCount = 0
+    , unitsCount = 0
+    , unitsExactMatchesCount = 0
+    , unitsNonExactMatchesCount = 0
+    , locationsCount = 0
+    , tagsCount = 0
+    , aorsCount = 0
+    , networksCount = 0
+    }
+
+
+analysisCountMaxConcurrent : Int
+analysisCountMaxConcurrent =
+    4
+
+
+statsCountFieldName : StatsCountField -> String
+statsCountFieldName field =
+    case field of
+        GroupsCountField ->
+            "groups"
+
+        SendersCountField ->
+            "senders"
+
+        FreqsCountField ->
+            "freqs"
+
+        PostsCountField ->
+            "posts"
+
+        CallsignsCountField ->
+            "callsigns"
+
+        UnitsCountField ->
+            "units"
+
+        LocationsCountField ->
+            "locations"
+
+        TagsCountField ->
+            "tags"
+
+        AorsCountField ->
+            "aors"
+
+        NetworksCountField ->
+            "networks"
+
+
+analysisCountRequestName : StatsCountRequest -> String
+analysisCountRequestName request =
+    case request of
+        MessageStatsCountRequest ->
+            "messages"
+
+        UnitMatchStatsCountRequest ->
+            "unit-matches"
+
+        StatsCountFieldRequest field ->
+            statsCountFieldName field
+
+
+analysisCountTracker : Int -> StatsCountRequest -> String
+analysisCountTracker generation request =
+    "rer-analysis-counts-"
+        ++ String.fromInt generation
+        ++ "-"
+        ++ analysisCountRequestName request
+
+
+maybeListHasItems : Maybe (List a) -> Bool
+maybeListHasItems =
+    Maybe.map (not << List.isEmpty) >> Maybe.withDefault False
+
+
+hasSelectedAnalysisUnits : B.AnalysisStatsReq -> Bool
+hasSelectedAnalysisUnits req =
+    maybeListHasItems req.selectedUnits || maybeListHasItems req.selectedUnitIds
+
+
+isCurrentStatsCountRequest : B.AnalysisStatsReq -> Model -> Bool
+isCurrentStatsCountRequest req model =
+    case ( model.from.datePosix, model.to.datePosix ) of
+        ( Just dtFromPosix, Just dtToPosix ) ->
+            req == Query.analysisStatsParams dtFromPosix dtToPosix model
+
+        _ ->
+            False
+
+
+analysisStatsCountRequests : List StatsCountRequest
+analysisStatsCountRequests =
+    List.map StatsCountFieldRequest
+        [ GroupsCountField
+        , SendersCountField
+        , FreqsCountField
+        , PostsCountField
+        , CallsignsCountField
+        , UnitsCountField
+        , LocationsCountField
+        , TagsCountField
+        , AorsCountField
+        , NetworksCountField
+        ]
+
+
+allAnalysisCountRequests : List StatsCountRequest
+allAnalysisCountRequests =
+    [ MessageStatsCountRequest, UnitMatchStatsCountRequest ] ++ analysisStatsCountRequests
+
+
+analysisCountRequests : B.AnalysisStatsReq -> List StatsCountRequest
+analysisCountRequests req =
+    [ MessageStatsCountRequest ]
+        ++ (if hasSelectedAnalysisUnits req then
+                [ UnitMatchStatsCountRequest ]
+
+            else
+                []
+           )
+        ++ analysisStatsCountRequests
+
+
+analysisCountRequestEffect : Int -> B.AnalysisStatsReq -> StatsCountRequest -> Effect Msg
+analysisCountRequestEffect generation req request =
+    let
+        tracker =
+            analysisCountTracker generation request
+
+        statsCountEffect field endpoint =
+            endpoint tracker (GotStatsCount generation req field) req
+    in
+    case request of
+        MessageStatsCountRequest ->
+            E.getAnalysisMessageStatsCount tracker (GotMessageStatsCount generation req) req
+
+        UnitMatchStatsCountRequest ->
+            E.getAnalysisUnitMatchStatsCount tracker (GotUnitMatchStatsCount generation req) req
+
+        StatsCountFieldRequest field ->
+            case field of
+                GroupsCountField ->
+                    statsCountEffect field E.getAnalysisGroupsCount
+
+                SendersCountField ->
+                    statsCountEffect field E.getAnalysisSendersCount
+
+                FreqsCountField ->
+                    statsCountEffect field E.getAnalysisFreqsCount
+
+                PostsCountField ->
+                    statsCountEffect field E.getAnalysisPostsCount
+
+                CallsignsCountField ->
+                    statsCountEffect field E.getAnalysisCallsignsCount
+
+                UnitsCountField ->
+                    statsCountEffect field E.getAnalysisUnitsCount
+
+                LocationsCountField ->
+                    statsCountEffect field E.getAnalysisLocationsCount
+
+                TagsCountField ->
+                    statsCountEffect field E.getAnalysisTagsCount
+
+                AorsCountField ->
+                    statsCountEffect field E.getAnalysisAorsCount
+
+                NetworksCountField ->
+                    statsCountEffect field E.getAnalysisNetworksCount
+
+
+cancelPreviousAnalysisCountStats : Model -> Effect Msg
+cancelPreviousAnalysisCountStats model =
+    if model.statsCountGeneration == 0 then
+        E.none
+
+    else
+        E.batch <|
+            List.map
+                (analysisCountTracker model.statsCountGeneration
+                    >> Http.cancel
+                    >> E.sendCmd
+                )
+                allAnalysisCountRequests
+
+
+startAnalysisCountStats : B.AnalysisStatsReq -> Model -> ( Model, Effect Msg )
+startAnalysisCountStats req model =
+    let
+        generation =
+            model.statsCountGeneration + 1
+
+        requests =
+            analysisCountRequests req
+
+        activeRequests =
+            List.take analysisCountMaxConcurrent requests
+    in
+    ( { model
+        | counts = Loading
+        , statsCountGeneration = generation
+        , statsCountPending = List.drop analysisCountMaxConcurrent requests
+        , statsCountReady =
+            if hasSelectedAnalysisUnits req then
+                []
+
+            else
+                [ UnitMatchStatsCountRequest ]
+        , statsCountRemaining = List.length requests
+        , statsCountPartial = emptyCountStatsRsp
+        , statsCountError = Nothing
+      }
+    , E.batch
+        (cancelPreviousAnalysisCountStats model
+            :: List.map (analysisCountRequestEffect generation req) activeRequests
+        )
+    )
+
+
+cancelAnalysisCountStats : Model -> ( Model, Effect Msg )
+cancelAnalysisCountStats model =
+    ( { model
+        | counts = NotAsked
+        , statsCountGeneration = model.statsCountGeneration + 1
+        , statsCountPending = []
+        , statsCountReady = []
+        , statsCountRemaining = 0
+        , statsCountPartial = emptyCountStatsRsp
+        , statsCountError = Nothing
+      }
+    , cancelPreviousAnalysisCountStats model
+    )
+
+
+finishAnalysisCountRequest : Int -> B.AnalysisStatsReq -> StatsCountRequest -> Result ApiError (B.CountStatsRsp -> B.CountStatsRsp) -> Model -> ( Model, Effect Msg )
+finishAnalysisCountRequest generation req request result model =
+    if generation /= model.statsCountGeneration || not (isCurrentStatsCountRequest req model) then
+        ( model, E.none )
+
+    else
+        let
+            firstError =
+                case ( result, model.statsCountError ) of
+                    ( Err error, Nothing ) ->
+                        Just error
+
+                    _ ->
+                        model.statsCountError
+
+            partialCounts =
+                case result of
+                    Ok updateCounts ->
+                        updateCounts model.statsCountPartial
+
+                    Err _ ->
+                        model.statsCountPartial
+
+            remaining =
+                Basics.max 0 (model.statsCountRemaining - 1)
+
+            counts =
+                if remaining == 0 then
+                    case firstError of
+                        Just error ->
+                            Failure error
+
+                        Nothing ->
+                            Success partialCounts
+
+                else
+                    model.counts
+
+            finalModel =
+                { model
+                    | counts = counts
+                    , statsCountRemaining = remaining
+                    , statsCountPartial = partialCounts
+                    , statsCountReady =
+                        case result of
+                            Ok _ ->
+                                request :: model.statsCountReady
+
+                            Err _ ->
+                                model.statsCountReady
+                    , statsCountError = firstError
+                }
+
+            ( nextModel, nextEffect ) =
+                case finalModel.statsCountPending of
+                    nextRequest :: pending ->
+                        ( { finalModel | statsCountPending = pending }
+                        , analysisCountRequestEffect generation req nextRequest
+                        )
+
+                    [] ->
+                        ( finalModel, E.none )
+
+            errorEffect =
+                case result of
+                    Err error ->
+                        if error.httpError == Http.BadStatus 401 || model.statsCountError == Nothing then
+                            Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики" error
+
+                        else
+                            E.none
+
+                    Ok _ ->
+                        E.none
+        in
+        ( nextModel, E.batch [ nextEffect, errorEffect ] )
+
+
+updateStatsCountField : StatsCountField -> Int -> B.CountStatsRsp -> B.CountStatsRsp
+updateStatsCountField field count counts =
+    case field of
+        GroupsCountField ->
+            { counts | groupsCount = count }
+
+        SendersCountField ->
+            { counts | sendersCount = count }
+
+        FreqsCountField ->
+            { counts | freqsCount = count }
+
+        PostsCountField ->
+            { counts | postsCount = count }
+
+        CallsignsCountField ->
+            { counts | callsignsCount = count }
+
+        UnitsCountField ->
+            { counts | unitsCount = count }
+
+        LocationsCountField ->
+            { counts | locationsCount = count }
+
+        TagsCountField ->
+            { counts | tagsCount = count }
+
+        AorsCountField ->
+            { counts | aorsCount = count }
+
+        NetworksCountField ->
+            { counts | networksCount = count }
+
+
 loadCoreStats : Model -> ( Model, Effect Msg )
 loadCoreStats model =
     case ( model.from.datePosix, model.to.datePosix ) of
@@ -694,21 +1056,6 @@ loadCoreStats model =
 
                     else
                         NotAsked
-
-                counts =
-                    if loadingCounts then
-                        case model.counts of
-                            Success data ->
-                                NeedsReload data
-
-                            NeedsReload data ->
-                                NeedsReload data
-
-                            _ ->
-                                Loading
-
-                    else
-                        model.counts
 
                 ( m2, eff2 ) =
                     case model.mapPoints of
@@ -793,32 +1140,37 @@ loadCoreStats model =
 
                 ( m4, palitrasEff ) =
                     loadPalitrasIfNeeded m3
+
+                baseModel =
+                    { m4
+                        | loadingInboxMessages = True
+                        , loadingCallsignGraph =
+                            if model.unfoldCallsignGraph then
+                                True
+
+                            else
+                                model.loadingCallsignGraph
+                        , sumTable = sumTable
+                        , nolimitShown = False
+                        , correlatedFreqs = NotAsked
+                        , metadataStats =
+                            if model.unfoldMetadataFilter then
+                                Loading
+
+                            else
+                                m4.metadataStats
+                    }
+
+                ( m5, countEffect ) =
+                    if loadingCounts then
+                        startAnalysisCountStats analysisPs baseModel
+
+                    else
+                        cancelAnalysisCountStats baseModel
             in
-            ( { m4
-                | loadingInboxMessages = True
-                , loadingCallsignGraph =
-                    if model.unfoldCallsignGraph then
-                        True
-
-                    else
-                        model.loadingCallsignGraph
-                , sumTable = sumTable
-                , nolimitShown = False
-                , correlatedFreqs = NotAsked
-                , counts = counts
-                , metadataStats =
-                    if model.unfoldMetadataFilter then
-                        Loading
-
-                    else
-                        m4.metadataStats
-              }
+            ( m5
             , E.batch
-                [ if loadingCounts then
-                    E.getStatsCount GotStatsCount analysisPs
-
-                  else
-                    E.none
+                [ countEffect
                 , E.getTags2 GotStatsTags analysisPs
                 , E.getInboxMessages Nothing
                     GotInbox
@@ -833,7 +1185,7 @@ loadCoreStats model =
             )
 
         _ ->
-            ( model, E.none )
+            cancelAnalysisCountStats model
 
 
 loadCoreStatsAndPushUrl : Model -> ( Model, Effect Msg )
@@ -1208,7 +1560,11 @@ update user shared route msg model =
         InitGotTime now_ ->
             let
                 m2 =
-                    { model | now = Just now_ }
+                    { model
+                        | now = Just now_
+                        , statsCountGeneration =
+                            Basics.max model.statsCountGeneration (Time.posixToMillis now_)
+                    }
                         |> resolveAnalysisDateRange shared
             in
             loadInitialStatsIfReady m2
@@ -1483,17 +1839,42 @@ update user shared route msg model =
             in
             ( { model | networksExtra = Dict.union newNetworks model.networksExtra }, E.none )
 
-        GotStatsCount (Err e) ->
-            ( { model | counts = Failure e }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики" e
-            )
+        GotStatsCount generation req field result ->
+            finishAnalysisCountRequest generation
+                req
+                (StatsCountFieldRequest field)
+                (Result.map (updateStatsCountField field) result)
+                model
 
-        GotStatsCount (Ok counts) ->
-            ( { model
-                | counts = Success counts
-              }
-            , E.none
-            )
+        GotMessageStatsCount generation req result ->
+            finishAnalysisCountRequest generation
+                req
+                MessageStatsCountRequest
+                (Result.map
+                    (\count counts ->
+                        { counts
+                            | countOverall = count.countOverall
+                            , countSelected = count.countSelected
+                        }
+                    )
+                    result
+                )
+                model
+
+        GotUnitMatchStatsCount generation req result ->
+            finishAnalysisCountRequest generation
+                req
+                UnitMatchStatsCountRequest
+                (Result.map
+                    (\count counts ->
+                        { counts
+                            | unitsExactMatchesCount = count.exactMatchesCount
+                            , unitsNonExactMatchesCount = count.nonExactMatchesCount
+                        }
+                    )
+                    result
+                )
+                model
 
         GotStatsFreqs (Err e) ->
             ( model

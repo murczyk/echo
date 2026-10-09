@@ -10,6 +10,7 @@ import Html.Styled
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as ListX
+import Pages_.RerAnalysis.Counts as Counts
 import Pages_.RerAnalysis.Date
 import Pages_.RerAnalysis.Filters
 import Pages_.RerAnalysis.Graphs
@@ -63,7 +64,7 @@ mainBody user model shared route =
             List.length model.messages
 
         messagesCountOverall =
-            extractMRecordField (\r -> r.countOverall) 0 (RD.toMaybe model.counts)
+            Counts.get MessageStatsCountRequest .countOverall model |> Maybe.withDefault 0
 
         deleteConfirmationModal =
             modalDialog
@@ -178,7 +179,7 @@ mainBody user model shared route =
                         [ i [ class "bi bi-inboxes-fill" ] []
                         , text <|
                             " показати всі "
-                                ++ String.fromInt (extractMRecordField (\r -> r.countSelected) 0 (RD.toMaybe model.counts))
+                                ++ Counts.label MessageStatsCountRequest .countSelected model
                         ]
                     ]
             , div [ class "mr-4" ]
@@ -352,14 +353,11 @@ view user model shared route =
 
         headerControls =
             div [ class "flex items-center ml-4", style "gap" "8px" ]
-                [ case model.counts of
-                    Success data ->
+                [ case Counts.get MessageStatsCountRequest identity model of
+                    Just data ->
                         headerCountsPill data False
 
-                    NeedsReload data ->
-                        headerCountsPill data True
-
-                    _ ->
+                    Nothing ->
                         div [ class "mr-3 inline-block", style "min-width" "60px" ] []
                 , div
                     [ class "inline-flex items-stretch border border-border"

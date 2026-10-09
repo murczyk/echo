@@ -196,7 +196,7 @@ export type AnalysisPageState = {
   showAnalysisCallsignAddForm: boolean;
   centerTab: AnalysisCenterTab;
   centerTabPending: boolean;
-  counts: CountStatsRsp | null;
+  counts: Partial<CountStatsRsp> | null;
   copiedFeedbackId: string | null;
   directMessageError: string | null;
   error: string | null;

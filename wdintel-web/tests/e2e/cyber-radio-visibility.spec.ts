@@ -268,7 +268,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
             ? 'aors=7'
             : `state=${encodeURIComponent(JSON.stringify(toLegacyRerAnalysisQueryState({ aorsSelected: ['7'] })))}`;
           const endpoint = neo
-            ? '**/api/rer/analysis/stats/count'
+            ? '**/api/rer/analysis/stats/groups/count'
             : '**/api/rer-importer/get-inbox';
           const filteredRequest = page.waitForRequest(endpoint);
           await page.goto(`/rer-analysis${neo ? '-neo' : ''}?${query}`);
@@ -376,7 +376,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     await installRerDutyShortStateMocks(page);
     await installAnalysisNeoApiMocks(page);
     await useRoles(page, ['Rer']);
-    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
+    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/groups/count');
     await page.goto('/rer-analysis');
     const request = (await countersRequest).postDataJSON();
     expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
@@ -511,7 +511,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
     await installAnalysisNeoApiMocks(page);
     await useRoles(page, ['Rer']);
-    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
+    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/groups/count');
     await page.goto('/rer-analysis-neo');
     const request = (await countersRequest).postDataJSON();
     expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
@@ -530,7 +530,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
     await installAnalysisNeoApiMocks(page);
     await useRoles(page, ['Cyber']);
-    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
+    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/groups/count');
     await page.goto('/rer-analysis-neo');
     const request = (await countersRequest).postDataJSON();
     expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(

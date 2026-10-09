@@ -58,7 +58,7 @@ export type UseAnalysisDataResult = {
   correlatedFreqs: CorrelatedFreq[];
   correlatedFreqsLoaded: boolean;
   correlatedFreqsLoading: boolean;
-  counts: CountStatsRsp | null;
+  counts: Partial<CountStatsRsp> | null;
   countsLoading: boolean;
   aorEntries: AnalysisAorEntry[];
   filtersLoading: boolean;

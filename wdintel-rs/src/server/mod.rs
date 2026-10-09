@@ -1067,6 +1067,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::analysis::network_stats)
             .service(crate::rer_importer::analysis::network_stats_count)
             .service(crate::rer_importer::analysis::count_stats)
+            .service(crate::rer_importer::analysis::message_stats_count)
+            .service(crate::rer_importer::analysis::unit_match_stats_count)
             .service(crate::rer_importer::analysis::location_stats)
             .service(crate::rer_importer::analysis::unit_stats)
             .service(crate::rer_importer::analysis::tag_stats)
@@ -1786,6 +1788,15 @@ pub async fn main_server(
     }
     .run();
 
+    let audio_runtime = env.device_audio.clone();
+    let audio_cancellation = cancel_token.clone();
+    let audio_preparation = tokio::spawn(async move {
+        crate::devices::audio::run_preparation(
+            audio_runtime,
+            audio_cancellation,
+        )
+        .await;
+    });
     let task_completion_future = async move {
         if should_start_bgworkers && mode == Mode::Live {
             std::future::pending::<()>().await;
@@ -1824,6 +1835,7 @@ pub async fn main_server(
             },
             _ = task_completion_future => {
                 info!("[Main] All background tasks finished. Stopping actix server.");
+                cancel_token.cancel();
                 server_handle.stop(true).await;
             }
             _ = server => {
@@ -1832,6 +1844,7 @@ pub async fn main_server(
             }
         }
     }).await.c(h!());
+    audio_preparation.await.c(h!())?;
     if let Some(metrics) = &env.metrics {
         metrics.shutdown();
     }

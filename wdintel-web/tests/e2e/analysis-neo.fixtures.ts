@@ -31,25 +31,6 @@ async function fulfillJson(route: Route, body: unknown, delayMs = 0): Promise<vo
   });
 }
 
-function emptyCountResponse() {
-  return {
-    count_overall: 2,
-    count_selected: 1,
-    groups_count: 0,
-    senders_count: 0,
-    freqs_count: 1,
-    posts_count: 0,
-    callsigns_count: 0,
-    units_count: 0,
-    units_exact_matches_count: 0,
-    units_non_exact_matches_count: 0,
-    locations_count: 0,
-    tags_count: 0,
-    aors_count: 0,
-    networks_count: 0,
-  };
-}
-
 function emptyInboxResponse() {
   return {
     inbox_items: [],
@@ -298,8 +279,18 @@ export async function installAnalysisNeoApiMocks(
       return;
     }
 
-    if (pathname === '/api/rer/analysis/stats/count') {
-      await fulfillJson(route, emptyCountResponse());
+    if (pathname === '/api/rer/analysis/stats/messages/count') {
+      await fulfillJson(route, { count_overall: 0, count_selected: 0 });
+      return;
+    }
+
+    if (pathname === '/api/rer/analysis/stats/units/matches/count') {
+      await fulfillJson(route, { exact_matches_count: 0, non_exact_matches_count: 0 });
+      return;
+    }
+
+    if (/^\/api\/rer\/analysis\/stats\/[^/]+\/count$/.test(pathname)) {
+      await fulfillJson(route, 0);
       return;
     }
 

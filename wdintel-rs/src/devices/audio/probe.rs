@@ -1,9 +1,9 @@
 use super::{
     unavailable, DeviceAudioMediaError, DeviceAudioRuntime,
     DEVICE_AUDIO_DECODER_PROGRESS_TIMEOUT, DEVICE_AUDIO_DECODER_STDERR_BYTES,
-    DEVICE_AUDIO_MAX_JS_TIMESTAMP_MS, DEVICE_AUDIO_MICROSECONDS_PER_SECOND,
-    DEVICE_AUDIO_MIN_TIMESTAMP_US, DEVICE_AUDIO_PROBE_OUTPUT_BYTES,
-    DEVICE_AUDIO_PROCESS_READ_BYTES,
+    DEVICE_AUDIO_FFMPEG_THREADS, DEVICE_AUDIO_MAX_JS_TIMESTAMP_MS,
+    DEVICE_AUDIO_MICROSECONDS_PER_SECOND, DEVICE_AUDIO_MIN_TIMESTAMP_US,
+    DEVICE_AUDIO_PROBE_OUTPUT_BYTES, DEVICE_AUDIO_PROCESS_READ_BYTES,
 };
 use crate::h;
 use crate::types::ShortContext;
@@ -199,6 +199,12 @@ fn decoder_command(source: &Path, sample_rate: &str) -> Command {
             "-loglevel",
             "error",
             "-nostdin",
+            "-threads",
+            DEVICE_AUDIO_FFMPEG_THREADS,
+            "-filter_threads",
+            DEVICE_AUDIO_FFMPEG_THREADS,
+            "-filter_complex_threads",
+            DEVICE_AUDIO_FFMPEG_THREADS,
             "-xerror",
             "-err_detect",
             "explode",
@@ -220,6 +226,8 @@ fn decoder_command(source: &Path, sample_rate: &str) -> Command {
             "0:a:0",
             "-c:a",
             "pcm_s16le",
+            "-threads",
+            DEVICE_AUDIO_FFMPEG_THREADS,
             "-ar",
         ])
         .arg(sample_rate)

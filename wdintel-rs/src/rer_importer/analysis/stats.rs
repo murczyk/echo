@@ -4923,17 +4923,16 @@ pub(super) async fn count_unit_exact_match_breakdown_raw_with_db(
     count_selected: i64,
     alternate_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<(i64, i64), AppError> {
-    let login_value = login_id_from_identity(user)?;
+    let login_value = login_id_from_identity(user).c(h!())?;
     let requested_exact_match = req.units_exact_match_only.unwrap_or(false);
     let mut alternate_req = req.0.clone();
     alternate_req.units_exact_match_only = Some(!requested_exact_match);
-    let (_, alternate_count) = fetch_counts_for_login_with_conn(
+    let alternate_count = fetch_selected_count_for_login_with_conn(
         &Json(alternate_req),
         &login_value,
         master_keys,
         env,
         db,
-        false,
         scope,
         alternate_units,
     )
@@ -7460,17 +7459,6 @@ async fn fetch_counts_for_login_with_conn(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let units = resolve_or_borrow_analysis_unit_filters(
-        &env.dbx,
-        &req.0,
-        scope,
-        resolved_units,
-    )
-    .await
-    .context(h!())?;
-    let units = units.as_deref();
-    let include_peleng_locations =
-        req.include_peleng_locations.unwrap_or(false);
     let read_stats_aggregated = allow_stats_aggregated
         && req.message_time_basis
             != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
@@ -7504,6 +7492,43 @@ async fn fetch_counts_for_login_with_conn(
     {
         return Ok((count_overall, count_overall));
     }
+    let count_selected = fetch_selected_count_for_login_with_conn(
+        req,
+        login_str,
+        master_keys,
+        env,
+        db,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
+    Ok((count_overall, count_selected))
+}
+
+async fn fetch_selected_count_for_login_with_conn(
+    req: &Json<AnalysisStatsReq>,
+    login_str: &uuid::Uuid,
+    master_keys: Vec<String>,
+    env: &Env,
+    db: &DatabaseConnection,
+    scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
+) -> anyhow::Result<i64> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let units = resolve_or_borrow_analysis_unit_filters(
+        &env.dbx,
+        &req.0,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
+    let units = units.as_deref();
+    let include_peleng_locations =
+        req.include_peleng_locations.unwrap_or(false);
     let instant = std::time::Instant::now();
 
     #[derive(FromQueryResult)]
@@ -7595,18 +7620,20 @@ async fn fetch_counts_for_login_with_conn(
     )
     .context(h!())?;
     let selected_count_res =
-        apply_metadata_filters(selected_count_res, &req.0)?;
+        apply_metadata_filters(selected_count_res, &req.0).context(h!())?;
     let selected_count_res =
         filter_search(selected_count_res, &req.search).context(h!())?;
     let selected_count_res = filter_selected_device_names(
         selected_count_res,
         &req.selected_device_names,
-    )?;
+    )
+    .context(h!())?;
     let selected_count_res = filter_selected_aors_for_scope(
         selected_count_res,
         &req.selected_aors,
         scope,
-    )?;
+    )
+    .context(h!())?;
     //println!(
     //    "> selected count res sql (login={}): {}",
     //    login_str,
@@ -7626,7 +7653,33 @@ async fn fetch_counts_for_login_with_conn(
     if instant.elapsed().as_secs() > 1 {
         debug!("count selected op took: {:?}", instant.elapsed());
     }
-    Ok((count_overall, count_selected))
+    Ok(count_selected)
+}
+
+pub(super) async fn fetch_selected_count_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
+) -> anyhow::Result<i64> {
+    if scope.is_some_and(|scope| scope.is_empty()) {
+        return Ok(0);
+    }
+    let login = login_id_from_identity(user).c(h!())?;
+    fetch_selected_count_for_login_with_conn(
+        req,
+        &login,
+        master_keys,
+        env,
+        db,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())
 }
 
 pub(super) async fn fetch_counts_raw_with_db(
