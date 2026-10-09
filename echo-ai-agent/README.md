@@ -21,7 +21,7 @@ every selected template must match its pinned release and isolation metadata.
 
 ## Topology and limits
 
-- Host: Debian 13 `amd64`, hostname `echo-ai-agent-vm`.
+- Hosts: Debian 13 `amd64`; the default profile targets `echo-ai-agent-vm`, and the `ua` profile targets `echo-ai-agents-ua` with a dedicated agent disk. See [Kharkiv rollout](../docs/ai/kharkiv-canary.md).
 - Storage: Incus LVM-thin pool `ai-agents` on `/dev/sda2`.
 - Network: `incusbr0`, `10.43.74.1/24`, NAT enabled, IPv6 disabled.
 - Profile: 2 vCPU, 4 GiB RAM, 20 GiB thin root disk, 512 processes,
@@ -130,7 +130,7 @@ host mutation.
 Run these commands from the operator checkout, not inside the VM. The required
 `--server=echo-ai-agent-vm` parameter is the logical target: bootstrap resolves
 it to the existing local SSH alias on port 22031, while post-setup operations
-resolve it to `echo@echo-ai-agent-vm.eagle-atria.ts.net` on port 22. Any other
+resolve it to `echo@echo-ai-agent-vm.eagle-atria.ts.net` on port 22. Any unregistered
 server value is rejected.
 
 ## Deploy and build the template
@@ -287,8 +287,11 @@ Echo remains canonical for history. The runner restores the supplied user and
 assistant messages into an in-memory Pi session. Echo supplies each provider's
 `contextWindow`, `maxTokens`, `compactionReserveTokens`, and
 `compactionKeepRecentTokens` runtime profile. Pi compacts restored or active
-context at that provider-specific threshold, while each tool response and the
-aggregate tool context are bounded before they enter the session. The runner
+context before generation and between complete tool rounds, accounting for the
+system prompt, tool schemas and provider output allowance. Checkpoints preserve
+evidence, citations and pagination; empty or truncated checkpoints are rejected.
+Each tool response and retained tool context remain bounded, with discarded
+allowance released after compaction. The runner
 also emits normalized
 `assistant_delta`, `progress`, `tool_start`, `tool_update`, `tool_end`, and
 `source` events. Progress-tool lifecycle events are suppressed because the tool

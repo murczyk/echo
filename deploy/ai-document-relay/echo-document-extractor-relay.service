@@ -1,0 +1,19 @@
+[Unit]
+Description=Forward Kharkiv extraction requests over Tailscale
+Requires=echo-document-extractor-relay.socket
+After=tailscaled.service
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=5min 100.93.77.92:8000
+DynamicUser=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+RestrictNamespaces=yes
+MemoryMax=128M
+CPUQuota=100%

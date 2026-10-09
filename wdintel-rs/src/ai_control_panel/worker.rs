@@ -40,6 +40,8 @@ pub(super) fn start(
         .arg(&options.repo)
         .arg("--executable")
         .arg(executable)
+        .arg("--agent-host")
+        .arg(&options.agent_host)
         .arg("--mode")
         .arg(mode.to_string())
         .stdin(Stdio::piped())
