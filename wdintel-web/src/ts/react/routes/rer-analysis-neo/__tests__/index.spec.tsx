@@ -14,6 +14,36 @@ const notifyMock = vi.hoisted(() => vi.fn());
 const createMessageFabPropsHistory = vi.hoisted(() => [] as Array<{ onClick?: () => void }>);
 const editorGuardMocks = vi.hoisted(() => ({ dirty: false }));
 const messagesPanePropsHistory = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+const debugRuntime = vi.hoisted(() => {
+  let recording = false;
+  let recordingId: string | null = null;
+  const aliases = new Map<string, string>();
+  return {
+    record: vi.fn(),
+    alias: vi.fn((scope: string, value: string | number) => {
+      const key = `${scope}:${value}`;
+      if (!aliases.has(key)) aliases.set(key, `{${scope}_${aliases.size + 1}}`);
+      return aliases.get(key)!;
+    }),
+    isRecording: vi.fn(() => recording),
+    subscribe: vi.fn(() => () => {}),
+    snapshot: vi.fn(() => ({ state: recording ? 'recording' : 'idle', recordingId })),
+    start() {
+      recording = true;
+      recordingId = 'recording-1';
+    },
+    reset() {
+      recording = false;
+      recordingId = null;
+      aliases.clear();
+      this.record.mockReset();
+      this.alias.mockClear();
+      this.isRecording.mockClear();
+      this.subscribe.mockClear();
+      this.snapshot.mockClear();
+    },
+  };
+});
 const manageMessageDrawerPropsHistory = vi.hoisted(
   () =>
     [] as Array<{
@@ -191,6 +221,14 @@ vi.mock('@mui/material/Alert', () => ({
 
 vi.mock('../use-rer-analysis-neo-page', () => ({
   useRerAnalysisNeoPage: useRerAnalysisNeoPageMock,
+}));
+
+vi.mock('../../../../debug-recorder', () => ({
+  recordDebugEvent: debugRuntime.record,
+  aliasDebugIdentifier: debugRuntime.alias,
+  isBrowserDebugRecording: debugRuntime.isRecording,
+  subscribeBrowserDebugRecorder: debugRuntime.subscribe,
+  getBrowserDebugRecorderSnapshot: debugRuntime.snapshot,
 }));
 
 vi.mock('../../../components/PageHeader', () => ({
@@ -557,7 +595,50 @@ describe('RerAnalysisNeoPage', () => {
     manageMessageDrawerPropsHistory.splice(0);
     messagesPanePropsHistory.splice(0);
     editorGuardMocks.dirty = false;
+    debugRuntime.reset();
     vi.useFakeTimers();
+  });
+
+  it('records the current Analysis page state during a debug session', async () => {
+    const page = buildPage();
+    page.messages = [
+      [771111, { text: 'ECHO_SECRET_SENTINEL' }],
+      [772222, { text: 'ECHO_SECRET_SENTINEL' }],
+    ] as never;
+    page.pageIndex = 2;
+    page.queryState = {
+      ...emptyQueryState(),
+      groupsSelected: ['ECHO_SECRET_SENTINEL'],
+      search: 'ECHO_SECRET_SENTINEL',
+    };
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    debugRuntime.start();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(debugRuntime.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'analysis.page.snapshot',
+        source: 'analysis',
+        details: expect.objectContaining({
+          messageCount: 2,
+          pageIndex: 2,
+          activeFilterCount: 2,
+          selectedFilterValueCount: 1,
+          hasSearch: true,
+        }),
+      }),
+    );
+    const output = JSON.stringify(debugRuntime.record.mock.calls);
+    expect(output).not.toContain('ECHO_SECRET_SENTINEL');
+    expect(output).not.toContain('771111');
+    expect(output).not.toContain('772222');
   });
 
   afterEach(async () => {
