@@ -125,7 +125,7 @@ function checkpointContext(
 function checkpointText(response: AssistantMessage): string {
   if (response.stopReason !== "stop")
     throw new Error(
-      `context checkpoint failed: ${response.stopReason} (output tokens: ${response.usage.output})`,
+      `context checkpoint failed: ${response.stopReason} (reason: ${checkpointFailureReason(response)}, output tokens: ${response.usage.output})`,
     );
   const text = response.content
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
@@ -136,6 +136,52 @@ function checkpointText(response: AssistantMessage): string {
       `context checkpoint is empty (output tokens: ${response.usage.output})`,
     );
   return text;
+}
+
+function interruptedCheckpoint(response: AssistantMessage): boolean {
+  return (
+    response.stopReason === "error" &&
+    /Stream ended without finish_reason|Provider finish_reason: network_error|connection error|connection reset|ECONNRESET|fetch failed|timed?\s*out|interrupted/i.test(
+      response.errorMessage ?? "",
+    )
+  );
+}
+
+function checkpointFailureReason(response: AssistantMessage): string {
+  if (interruptedCheckpoint(response)) return "interrupted_stream";
+  const error = response.errorMessage ?? "";
+  if (/content_filter/i.test(error)) return "content_filter";
+  if (/context window|context length|input exceeds/i.test(error))
+    return "context_limit";
+  if (/output token limit|max_tokens|model output limit/i.test(error))
+    return "output_limit";
+  return response.stopReason === "error"
+    ? "provider_error"
+    : response.stopReason;
+}
+
+async function summarizeCheckpoint(
+  runtime: CompactionRuntime,
+  context: Context,
+  signal?: AbortSignal,
+): Promise<AssistantMessage> {
+  const { settings, selectedEngine, summarize } = runtime;
+  const checkpointEngine = settings.checkpointEngine ?? selectedEngine;
+  const options = {
+    apiKey: settings.providerApiKey ?? "echo-local-tokenless",
+    maxTokens: settings.checkpointMaxTokens ?? settings.maxTokens,
+    signal,
+    maxRetries: 2,
+    cacheRetention: "none" as const,
+  };
+  signal?.throwIfAborted();
+  let response = await summarize(checkpointEngine, context, options);
+  signal?.throwIfAborted();
+  if (interruptedCheckpoint(response)) {
+    response = await summarize(checkpointEngine, context, options);
+    signal?.throwIfAborted();
+  }
+  return response;
 }
 
 function compactedMessages(
@@ -190,7 +236,7 @@ async function compactOnce(
   signal?: AbortSignal,
   pending: AgentMessage[] = [],
 ): Promise<AgentContext> {
-  const { session, settings, selectedEngine, summarize, onCompacted } = runtime;
+  const { session, settings, selectedEngine, onCompacted } = runtime;
   const checkpointEngine = settings.checkpointEngine ?? selectedEngine;
   const available = (context: AgentContext) =>
     availableTokens(runtime, context);
@@ -219,14 +265,7 @@ async function compactOnce(
       cut = smallerCut(entries, cut);
       continue;
     }
-    const response = await summarize(checkpointEngine, summaryContext, {
-      apiKey: settings.providerApiKey ?? "echo-local-tokenless",
-      maxTokens: checkpointTokens,
-      signal,
-      maxRetries: 2,
-      cacheRetention: "none",
-    });
-    signal?.throwIfAborted();
+    const response = await summarizeCheckpoint(runtime, summaryContext, signal);
     if (
       (response.stopReason === "length" ||
         (response.stopReason === "stop" &&
@@ -308,7 +347,7 @@ async function ensureContext(
 async function compactAllForOutputRetry(
   runtime: CompactionRuntime,
 ): Promise<void> {
-  const { session, settings, summarize, onProgress, onCompacted } = runtime;
+  const { session, settings, onProgress, onCompacted } = runtime;
   const checkpointEngine = settings.checkpointEngine;
   if (!checkpointEngine)
     throw new Error("output recovery requires a checkpoint engine");
@@ -328,14 +367,7 @@ async function compactAllForOutputRetry(
   if (clampMaxTokensToContext(checkpointEngine, context, maxTokens) < maxTokens)
     throw new Error("output recovery evidence exceeds checkpoint context");
   onProgress();
-  const response = await summarize(checkpointEngine, context, {
-    apiKey: settings.providerApiKey ?? "echo-local-tokenless",
-    maxTokens,
-    signal: settings.signal,
-    maxRetries: 2,
-    cacheRetention: "none",
-  });
-  settings.signal?.throwIfAborted();
+  const response = await summarizeCheckpoint(runtime, context, settings.signal);
   const summary = checkpointText(response);
   const tokensBefore =
     runtime.selectedEngine.contextWindow -

@@ -40,6 +40,7 @@ async function fixture(
   const directory = await mkdtemp(join(tmpdir(), "echo-context-regression-"));
   let pagesRead = 0;
   let checkpointCalls = 0;
+  let checkpointInterruptions = 0;
   let progressCalls = 0;
   let resetCalls = 0;
   let finalCalls = 0;
@@ -74,6 +75,13 @@ async function fixture(
       let finishReason = "stop";
       if (summary) {
         checkpointCalls += 1;
+        if (checkpoint === "denied") {
+          response.writeHead(403, { "Content-Type": "application/json" });
+          response.end(
+            JSON.stringify({ error: { message: "Provider access denied" } }),
+          );
+          return;
+        }
         assert.ok(!body.messages[1].content.includes("Unfinished draft."));
         assert.ok(body.messages[1].content.includes("Original request:"));
         assert.ok(body.messages[1].content.includes("2026-10-09"));
@@ -103,12 +111,28 @@ async function fixture(
             checkpointSettings.finalOutput === "checkpoint-limit")
             ? "length"
             : "stop";
-        const content =
-          checkpoint === "empty"
+        if (
+          ["stream-error", "network-error", "filtered"].includes(checkpoint) ||
+          (["stream-once", "network-once"].includes(checkpoint) &&
+            checkpointCalls === 1) ||
+          (checkpoint === "recovery-network" &&
+            finalCalls > 0 &&
+            checkpointInterruptions++ === 0)
+        ) {
+          finishReason = checkpoint.startsWith("stream-")
             ? ""
-            : checkpoint === "unchanged"
-              ? "Non-reducing checkpoint. ".repeat(30_000)
-              : `Original request preserved. Fixed day: 2026-10-08/2026-10-09. Alpha received documents, source ${firstCitation}. Continue nextCursor=${pagesRead * 20}; coverage remains incomplete.`;
+            : checkpoint === "filtered"
+              ? "content_filter"
+              : "network_error";
+        }
+        const content =
+          finishReason !== "stop" && finishReason !== "length"
+            ? "Unfinished checkpoint must not replace source evidence."
+            : checkpoint === "empty"
+              ? ""
+              : checkpoint === "unchanged"
+                ? "Non-reducing checkpoint. ".repeat(30_000)
+                : `Original request preserved. Fixed day: 2026-10-08/2026-10-09. Alpha received documents, source ${firstCitation}. Continue nextCursor=${pagesRead * 20}; coverage remains incomplete.`;
         delta = { role: "assistant", content };
         if (checkpoint === "reasoning")
           delta.reasoning_content = "Evidence checkpoint reasoning";
@@ -550,6 +574,7 @@ test("#3724 continued pagination and follow-ups with a separate checkpoint engin
 
 for (const finalOutput of [
   "retry",
+  "retry-network",
   "large-draft",
   "error-limit",
   "provider-error",
@@ -560,12 +585,18 @@ for (const finalOutput of [
   "legacy",
 ]) {
   test(`#3724 bounded output recovery: ${finalOutput}`, async () => {
-    const value = await fixture(7, "stop", false, 2, {
-      maxTokens: 8_192,
-      reserveTokens: 16_384,
-      modelName: finalOutput === "legacy" ? undefined : "checkpoint",
-      finalOutput,
-    });
+    const value = await fixture(
+      7,
+      finalOutput === "retry-network" ? "recovery-network" : "stop",
+      false,
+      2,
+      {
+        maxTokens: 8_192,
+        reserveTokens: 16_384,
+        modelName: finalOutput === "legacy" ? undefined : "checkpoint",
+        finalOutput,
+      },
+    );
     const observed: unknown[] = [];
     const unsubscribe = value.session.subscribe((event: any) => {
       if (event.type === "message_end" && event.message.role === "assistant")
@@ -621,9 +652,13 @@ for (const finalOutput of [
           audit,
         );
         if (
-          ["retry", "large-draft", "mutation", "error-limit"].includes(
-            finalOutput,
-          )
+          [
+            "retry",
+            "retry-network",
+            "large-draft",
+            "mutation",
+            "error-limit",
+          ].includes(finalOutput)
         ) {
           validateFinalAssistantMessage(observed);
           const answer = (observed.at(-1) as any).content
@@ -706,6 +741,59 @@ test("#3724 includes system schemas and pending prompt when compacting restored 
     await value.close();
   }
 });
+
+for (const mode of ["stream-once", "network-once"]) {
+  test(`#3724 retries an interrupted checkpoint once without replacing evidence with partial text: ${mode}`, async () => {
+    const value = await fixture(7, mode);
+    try {
+      await value.session.prompt(value.prompt);
+      assert.deepEqual(value.errors, []);
+      validateFinalAssistantMessage(value.session.messages);
+      assert.deepEqual(value.cursors, [0, 20, 40, 60, 80, 100, 120]);
+      const checkpoints = value.requests.filter((request) =>
+        request.messages[0].content.includes(
+          "Create a concise evidence checkpoint",
+        ),
+      );
+      assert.deepEqual(checkpoints[1], checkpoints[0]);
+      assert.ok(value.resetCalls() > 0);
+      assert.ok(
+        !JSON.stringify(value.session.sessionManager.getEntries()).includes(
+          "Unfinished checkpoint must not replace source evidence.",
+        ),
+      );
+    } finally {
+      await value.close();
+    }
+  });
+}
+
+for (const mode of ["stream-error", "network-error", "filtered", "denied"]) {
+  test(`#3724 preserves source evidence and bounds checkpoint retries: ${mode}`, async () => {
+    const value = await fixture(7, mode);
+    try {
+      await value.session.prompt(value.prompt);
+      assert.deepEqual(value.errors, []);
+      assert.ok(value.contextFailure());
+      assert.equal(
+        value.checkpointCalls(),
+        ["filtered", "denied"].includes(mode) ? 1 : 2,
+      );
+      assert.equal(value.resetCalls(), 0);
+      assert.equal(
+        value.session.sessionManager
+          .getEntries()
+          .filter((entry) => entry.type === "compaction").length,
+        0,
+      );
+      assert.ok(
+        value.session.messages.some((message) => message.role === "toolResult"),
+      );
+    } finally {
+      await value.close();
+    }
+  });
+}
 
 for (const mode of ["length", "empty", "unchanged", "cancel"]) {
   test(`#3724 preserves source history when checkpoint is ${mode}`, async () => {

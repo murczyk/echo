@@ -22,7 +22,7 @@ shared document extractor, including its existing Paddle and GPU routers.
 | Network | `vnet0`, reserved DHCP `10.190.254.39`, MAC `BC:24:11:37:24:01` |
 | Tailscale | `echo-ai-agents-ua.eagle-atria.ts.net`, `100.88.139.100` |
 | SSH | admin 22; forced dispatcher 22031 |
-| Harness | `2026.10.09.12`, matched by the canary Echo build |
+| Harness | `2026.10.09.13`, matched by the canary Echo build |
 | Capacity | six running containers total; each 2 CPUs, 4 GiB RAM, 20 GiB root |
 
 The `ua` host profile uses a dedicated disk and validates its hostname, OS,
@@ -131,6 +131,9 @@ intact; the exhausted assistant draft is excluded from the recovery checkpoint
 so its generated text cannot consume Luna's evidence allowance. A focused synthesis prompt retains tenant instructions, the fixed request
 time, scope, citations and completed links while omitting tool workflow guidance.
 It directs the engine to produce supported findings from the checkpoint.
+An interrupted checkpoint stream is retried once with unchanged evidence and
+output budget; partial text is rejected. Cancellation, content filters and
+other provider errors are not retried by this recovery.
 Only the working context is replaced. The primary engine, reasoning,
 output cap, tool and provider counters, and overall deadline remain unchanged.
 Checkpoint failure, cancellation, or another output-limit response ends the
@@ -154,7 +157,7 @@ prompts using the existing implementation.
 ## Upgrade and rollback
 
 For the context-exhaustion fix, build the matching application and immutable
-`2026.10.09.12` harness from `main`. Preserve the UA host profile and existing
+`2026.10.09.13` harness from `main`. Preserve the UA host profile and existing
 relay configuration. Drain Kharkiv AI requests, close admission, and select
 only `echo-kharkiv2` on `echo-ai-agents-ua` through the control panel. Apply
 pending application migrations through the normal targeted analytics health
