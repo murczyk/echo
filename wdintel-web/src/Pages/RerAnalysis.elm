@@ -280,6 +280,7 @@ init user route _ =
             , counts = NotAsked
             , statsCountGeneration = 0
             , statsCountPending = []
+            , statsCountReady = []
             , statsCountRemaining = 0
             , statsCountPartial = emptyCountStatsRsp
             , statsCountError = Nothing
@@ -877,8 +878,15 @@ startAnalysisCountStats req model =
             List.take analysisCountMaxConcurrent requests
     in
     ( { model
-        | statsCountGeneration = generation
+        | counts = Loading
+        , statsCountGeneration = generation
         , statsCountPending = List.drop analysisCountMaxConcurrent requests
+        , statsCountReady =
+            if hasSelectedAnalysisUnits req then
+                []
+
+            else
+                [ UnitMatchStatsCountRequest ]
         , statsCountRemaining = List.length requests
         , statsCountPartial = emptyCountStatsRsp
         , statsCountError = Nothing
@@ -893,8 +901,10 @@ startAnalysisCountStats req model =
 cancelAnalysisCountStats : Model -> ( Model, Effect Msg )
 cancelAnalysisCountStats model =
     ( { model
-        | statsCountGeneration = model.statsCountGeneration + 1
+        | counts = NotAsked
+        , statsCountGeneration = model.statsCountGeneration + 1
         , statsCountPending = []
+        , statsCountReady = []
         , statsCountRemaining = 0
         , statsCountPartial = emptyCountStatsRsp
         , statsCountError = Nothing
@@ -903,8 +913,8 @@ cancelAnalysisCountStats model =
     )
 
 
-finishAnalysisCountRequest : Int -> B.AnalysisStatsReq -> Result ApiError (B.CountStatsRsp -> B.CountStatsRsp) -> Model -> ( Model, Effect Msg )
-finishAnalysisCountRequest generation req result model =
+finishAnalysisCountRequest : Int -> B.AnalysisStatsReq -> StatsCountRequest -> Result ApiError (B.CountStatsRsp -> B.CountStatsRsp) -> Model -> ( Model, Effect Msg )
+finishAnalysisCountRequest generation req request result model =
     if generation /= model.statsCountGeneration || not (isCurrentStatsCountRequest req model) then
         ( model, E.none )
 
@@ -946,6 +956,13 @@ finishAnalysisCountRequest generation req result model =
                     | counts = counts
                     , statsCountRemaining = remaining
                     , statsCountPartial = partialCounts
+                    , statsCountReady =
+                        case result of
+                            Ok _ ->
+                                request :: model.statsCountReady
+
+                            Err _ ->
+                                model.statsCountReady
                     , statsCountError = firstError
                 }
 
@@ -960,35 +977,18 @@ finishAnalysisCountRequest generation req result model =
                         ( finalModel, E.none )
 
             errorEffect =
-                case ( result, model.statsCountError ) of
-                    ( Err error, Nothing ) ->
-                        Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики" error
+                case result of
+                    Err error ->
+                        if error.httpError == Http.BadStatus 401 || model.statsCountError == Nothing then
+                            Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики" error
 
-                    _ ->
+                        else
+                            E.none
+
+                    Ok _ ->
                         E.none
         in
         ( nextModel, E.batch [ nextEffect, errorEffect ] )
-
-
-clearUnitMatchCounts : B.AnalysisStatsReq -> RemoteData ApiError B.CountStatsRsp -> RemoteData ApiError B.CountStatsRsp
-clearUnitMatchCounts req counts =
-    if hasSelectedAnalysisUnits req then
-        counts
-
-    else
-        let
-            clear data =
-                { data | unitsExactMatchesCount = 0, unitsNonExactMatchesCount = 0 }
-        in
-        case counts of
-            Success data ->
-                Success (clear data)
-
-            NeedsReload data ->
-                NeedsReload (clear data)
-
-            _ ->
-                counts
 
 
 updateStatsCountField : StatsCountField -> Int -> B.CountStatsRsp -> B.CountStatsRsp
@@ -1055,22 +1055,6 @@ loadCoreStats model =
 
                     else
                         NotAsked
-
-                counts =
-                    clearUnitMatchCounts analysisPs <|
-                        if loadingCounts then
-                            case model.counts of
-                                Success data ->
-                                    NeedsReload data
-
-                                NeedsReload data ->
-                                    NeedsReload data
-
-                                _ ->
-                                    Loading
-
-                        else
-                            model.counts
 
                 ( m2, eff2 ) =
                     case model.mapPoints of
@@ -1168,7 +1152,6 @@ loadCoreStats model =
                         , sumTable = sumTable
                         , nolimitShown = False
                         , correlatedFreqs = NotAsked
-                        , counts = counts
                         , metadataStats =
                             if model.unfoldMetadataFilter then
                                 Loading
@@ -1856,12 +1839,14 @@ update user shared route msg model =
         GotStatsCount generation req field result ->
             finishAnalysisCountRequest generation
                 req
+                (StatsCountFieldRequest field)
                 (Result.map (updateStatsCountField field) result)
                 model
 
         GotMessageStatsCount generation req result ->
             finishAnalysisCountRequest generation
                 req
+                MessageStatsCountRequest
                 (Result.map
                     (\count counts ->
                         { counts
@@ -1876,6 +1861,7 @@ update user shared route msg model =
         GotUnitMatchStatsCount generation req result ->
             finishAnalysisCountRequest generation
                 req
+                UnitMatchStatsCountRequest
                 (Result.map
                     (\count counts ->
                         { counts

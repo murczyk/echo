@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SetStateAction } from 'react';
 
 import type { CountStatsRsp, Network, Unit } from '../../../../../Bindings';
+import { HttpRequestError, isUnauthorizedError } from '../../../services/api/client';
 import { buildAnalysisReq, emptyQueryState } from '../helpers';
 import {
   loadFilterSectionData,
@@ -514,6 +515,34 @@ describe('reloadAnalysisData', () => {
     expect(counts?.unitsExactMatchesCount).toBeUndefined();
     expect(counts?.unitsNonExactMatchesCount).toBeUndefined();
     expect(onError).toHaveBeenCalledExactlyOnceWith('Unit counters unavailable');
+  });
+  it('#3001 handles unauthorized counters after earlier failures and deduplicates ordinary errors', async () => {
+    const laterError = deferred<number>();
+    const unauthorized = new HttpRequestError(401, 'Session expired');
+    mocks.fetchAnalysisStatsCount.mockImplementation((dimension) => {
+      if (dimension === 'groups' || dimension === 'senders') {
+        return Promise.reject(new Error('Counter unavailable'));
+      }
+      return dimension === 'freqs' ? laterError.promise : Promise.resolve(0);
+    });
+    const onError = vi.fn();
+    const onUnauthorized = vi.fn(isUnauthorizedError);
+    const setCountsLoading = vi.fn();
+
+    startAnalysisCountsLoad(buildAnalysisReq(buildQueryState())!, {
+      isStale: () => false,
+      onError,
+      onUnauthorized,
+      setCounts: vi.fn(),
+      setCountsLoading,
+    });
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+    laterError.reject(unauthorized);
+    await vi.waitFor(() => expect(setCountsLoading).toHaveBeenCalledWith(false));
+
+    expect(onUnauthorized).toHaveBeenCalledWith(unauthorized);
+    expect(onError).toHaveBeenCalledExactlyOnceWith('Counter unavailable');
   });
   it('#3001 limits concurrent counter requests while preserving progressive updates', async () => {
     const req = buildAnalysisReq({

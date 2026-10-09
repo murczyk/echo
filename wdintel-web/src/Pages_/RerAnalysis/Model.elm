@@ -35,6 +35,7 @@ type alias Model =
     , counts : RemoteData ApiError B.CountStatsRsp
     , statsCountGeneration : Int
     , statsCountPending : List StatsCountRequest
+    , statsCountReady : List StatsCountRequest
     , statsCountRemaining : Int
     , statsCountPartial : B.CountStatsRsp
     , statsCountError : Maybe ApiError

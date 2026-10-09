@@ -2,15 +2,19 @@ module RerAnalysisCountRegressionTests exposing (suite)
 
 import Bindings as B
 import Dict
+import Effect as E
 import Expect
 import Http
 import Pages.RerAnalysis as RerAnalysis
+import Pages_.RerAnalysis.Filters as Filters
 import Pages_.RerAnalysis.Model exposing (StatsCountField(..))
 import Pages_.RerAnalysis.Msg exposing (Msg(..))
 import Pages_.RerAnalysis.Query as Query
 import Route
 import Shared
 import Test exposing (Test, describe, test)
+import Test.Html.Query as HtmlQuery
+import Test.Html.Selector as Selector
 import Time
 import Url
 import Utils.RemoteData exposing (RemoteData(..))
@@ -189,7 +193,32 @@ suite =
                                         Expect.fail "failed generation remained loading"
                             ]
                             ()
-        , test "#3001 keeps unfinished counts loading and publishes successful zeroes only at completion" <|
+        , test "#3001 logs out after an earlier counter failure while deduplicating ordinary errors" <|
+            \_ ->
+                withCountContext <|
+                    \shared route req pending ->
+                        let
+                            error =
+                                { httpError = Http.NetworkError
+                                , formErrors = Dict.empty
+                                , errors = [ "failure" ]
+                                }
+
+                            ( failed, _ ) =
+                                RerAnalysis.update user shared route (GotStatsCount 1 req GroupsCountField (Err error)) pending
+
+                            ( _, duplicateEffect ) =
+                                RerAnalysis.update user shared route (GotStatsCount 1 req SendersCountField (Err error)) failed
+
+                            ( _, unauthorizedEffect ) =
+                                RerAnalysis.update user shared route (GotStatsCount 1 req SendersCountField (Err { error | httpError = Http.BadStatus 401 })) failed
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal (E.batch [ E.none, E.none ]) duplicateEffect
+                            , \_ -> Expect.equal (E.batch [ E.none, E.logout ]) unauthorizedEffect
+                            ]
+                            ()
+        , test "#3001 renders completed counts while unfinished dimensions remain unavailable" <|
             \_ ->
                 withCountContext <|
                     \shared route req pending ->
@@ -203,6 +232,10 @@ suite =
                         Expect.all
                             [ \_ -> Expect.equal Loading firstResponse.counts
                             , \_ -> Expect.equal 1 firstResponse.statsCountRemaining
+                            , \_ ->
+                                Filters.view False user firstResponse
+                                    |> HtmlQuery.fromHtml
+                                    |> HtmlQuery.has [ Selector.text "42", Selector.text "—" ]
                             , \_ -> Expect.equal 0 completed.statsCountRemaining
                             , \_ ->
                                 case completed.counts of
@@ -242,7 +275,7 @@ suite =
                         Expect.all
                             (List.map checkResponses [ ( Ok 42, Err error ), ( Err error, Ok 42 ) ])
                             ()
-        , test "#3001 keeps previous complete counts marked for reload while new counts are unfinished" <|
+        , test "#3001 clears previous complete counts and renders new dimensions progressively" <|
             \_ ->
                 withCountContext <|
                     \shared route req pending ->
@@ -262,9 +295,13 @@ suite =
                         case completed.counts of
                             Success counts ->
                                 Expect.all
-                                    [ \_ -> Expect.equal (NeedsReload counts) reloading.counts
-                                    , \_ -> Expect.equal (NeedsReload counts) partialReload.counts
+                                    [ \_ -> Expect.equal Loading reloading.counts
+                                    , \_ -> Expect.equal Loading partialReload.counts
                                     , \_ -> Expect.equal 10 partialReload.statsCountRemaining
+                                    , \_ ->
+                                        Filters.view False user partialReload
+                                            |> HtmlQuery.fromHtml
+                                            |> HtmlQuery.has [ Selector.text "43", Selector.text "—" ]
                                     ]
                                     ()
 

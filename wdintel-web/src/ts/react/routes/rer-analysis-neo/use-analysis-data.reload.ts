@@ -735,9 +735,10 @@ export function startAnalysisCountsLoad(
     try {
       applyPatch(toPatch(await request()));
     } catch (loadError) {
-      if (isInactive() || isAbortError(loadError) || reportedError) return;
+      if (isInactive() || isAbortError(loadError)) return;
+      if (context.onUnauthorized(loadError) || reportedError) return;
       reportedError = true;
-      if (!context.onUnauthorized(loadError)) context.onError(toErrorMessage(loadError));
+      context.onError(toErrorMessage(loadError));
     }
   };
 
