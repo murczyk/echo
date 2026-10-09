@@ -126,6 +126,11 @@ Validate the original fixed report period in a new conversation; retain the
 failed request and its audit. Rollback restores the saved application and
 `2026.10.08.3` namespace/template, preserving additive schema and new data.
 
+The control panel reports retained releases with inconsistent compatibility
+manifests as unknown compatibility. Their files and container inventory remain
+available, but those releases cannot be selected for an upgrade. A valid new
+release can still be prepared and selected through the normal guards.
+
 Prepare the extractor package, locked GPU runtime, and native Office/archive
 OS dependencies before stopping admission. Stop only its API and allow its
 worker to drain accepted jobs. Abort and restore admission if draining takes

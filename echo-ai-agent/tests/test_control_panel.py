@@ -263,6 +263,33 @@ class FleetCompatibilityTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'disagrees'):
                 HOST.manifest(directory)
 
+    def test_3724_inconsistent_retained_manifest_preserves_inventory_and_blocks_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for release in [OLD, NEW]:
+                bundle = root / 'releases' / release
+                (bundle / 'dispatcher').mkdir(parents=True)
+                for name in ['release.json', 'versions.env', 'dispatcher/echo_ai_agent_dispatcher.py']:
+                    (bundle / name).write_bytes((ROOT / 'echo-ai-agent' / name).read_bytes())
+            old = root / 'releases' / OLD
+            metadata = {**RELEASE, 'supportedRunnerReleases': [OLD]}
+            (old / 'release.json').write_text(json.dumps(metadata))
+            (root / 'current').symlink_to(root / 'releases' / NEW)
+            with mock.patch.object(HOST, 'ROOT', root), \
+                 mock.patch.object(HOST, 'SELECTIONS', root / 'selections'), \
+                 mock.patch.object(HOST, 'JOURNALS', root / 'journals'), \
+                 mock.patch.object(HOST, 'instances', return_value=[template(NEW)]):
+                inventory = HOST.inventory()
+            releases = {release['release']: release for release in inventory['releases']}
+            self.assertIsNone(releases[OLD]['manifest'])
+            self.assertIn('compatibility disagrees', releases[OLD]['manifest_error'])
+            self.assertEqual(releases[NEW]['manifest'], RELEASE)
+            self.assertEqual(inventory['instances'][0]['release'], NEW)
+            row, _, data = self.fixture()
+            self.assertEqual(CONTROL.blockers(row, releases[OLD], data), 'Unknown release compatibility')
+            with self.assertRaisesRegex(RuntimeError, 'compatibility disagrees'):
+                HOST.manifest(old)
+
     def test_batch_stops_before_second_host_when_first_upgrade_fails(self):
         row, release, data = self.fixture()
         release['digest'] = 'verified'
