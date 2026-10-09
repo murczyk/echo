@@ -183,6 +183,25 @@ async function fixture(
         }
         finalCalls += 1;
         assert.ok(JSON.stringify(body.messages).includes(firstCitation));
+        if (
+          finalCalls === 1 &&
+          ["error-limit", "provider-error"].includes(
+            checkpointSettings.finalOutput ?? "",
+          )
+        ) {
+          response.writeHead(400, { "Content-Type": "application/json" });
+          response.end(
+            JSON.stringify({
+              error: {
+                message:
+                  checkpointSettings.finalOutput === "error-limit"
+                    ? "Provider output token limit reached"
+                    : "Provider request validation failed",
+              },
+            }),
+          );
+          return;
+        }
         delta = {
           role: "assistant",
           content: `Alpha: completed ${pagesRead * 20} fixture messages. [Source](${firstCitation})`,
@@ -532,6 +551,8 @@ test("#3724 continued pagination and follow-ups with a separate checkpoint engin
 for (const finalOutput of [
   "retry",
   "large-draft",
+  "error-limit",
+  "provider-error",
   "mutation",
   "always-length",
   "checkpoint-limit",
@@ -554,7 +575,9 @@ for (const finalOutput of [
       await value.session.prompt(value.prompt);
       assert.throws(
         () => validateFinalAssistantMessage(observed),
-        /output token limit/,
+        finalOutput === "provider-error"
+          ? /provider request failed/
+          : /output token limit/,
       );
       const audit = structuredClone(value.session.sessionManager.getEntries());
       if (finalOutput === "large-draft")
@@ -589,17 +612,19 @@ for (const finalOutput of [
         assert.equal(value.resetCalls(), resets);
         assert.deepEqual(value.session.sessionManager.getEntries(), audit);
       } else {
-        assert.equal(await recovery(), finalOutput !== "legacy");
-        assert.equal(value.finalCalls(), finalOutput === "legacy" ? 1 : 2);
-        assert.equal(
-          value.resetCalls(),
-          resets + (finalOutput === "legacy" ? 0 : 1),
-        );
+        const recoverable = !["legacy", "provider-error"].includes(finalOutput);
+        assert.equal(await recovery(), recoverable);
+        assert.equal(value.finalCalls(), recoverable ? 2 : 1);
+        assert.equal(value.resetCalls(), resets + (recoverable ? 1 : 0));
         assert.deepEqual(
           value.session.sessionManager.getEntries().slice(0, audit.length),
           audit,
         );
-        if (["retry", "large-draft", "mutation"].includes(finalOutput)) {
+        if (
+          ["retry", "large-draft", "mutation", "error-limit"].includes(
+            finalOutput,
+          )
+        ) {
           validateFinalAssistantMessage(observed);
           const answer = (observed.at(-1) as any).content
             .filter((block: any) => block.type === "text")
@@ -641,7 +666,9 @@ for (const finalOutput of [
         } else
           assert.throws(
             () => validateFinalAssistantMessage(observed),
-            /output token limit/,
+            finalOutput === "provider-error"
+              ? /provider request failed/
+              : /output token limit/,
           );
       }
       assert.equal(value.mutations(), finalOutput === "mutation" ? 1 : 0);

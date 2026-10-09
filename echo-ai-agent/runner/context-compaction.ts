@@ -320,7 +320,8 @@ async function compactAllForOutputRetry(
       (entry) =>
         entry.type !== "message" ||
         entry.message.role !== "assistant" ||
-        entry.message.stopReason !== "length",
+        (entry.message.stopReason !== "length" &&
+          entry.message.stopReason !== "error"),
     );
   const context = checkpointContext(entries, settings);
   const maxTokens = settings.checkpointMaxTokens ?? settings.maxTokens;

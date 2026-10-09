@@ -2767,6 +2767,11 @@ function lastAssistantMessage(messages: unknown[]): JsonObject | undefined {
   ) as JsonObject | undefined;
 }
 
+function isOutputTokenLimit(message: JsonObject | undefined): boolean {
+  return message?.stopReason === "length" || (message?.stopReason === "error" &&
+    /output token limit|max_tokens|model output limit/i.test(String(message.errorMessage ?? "")));
+}
+
 function outputRetrySystemPrompt(payload: Pick<RunnerPayload, "systemPrompt" | "timeContext">): string {
   const extra = payload.systemPrompt ? `${payload.systemPrompt}\n\n` : "";
   const time = payload.timeContext
@@ -2782,7 +2787,7 @@ export async function recoverFinalOutputLimit(
   compaction: ContextCompaction,
   emitAssistant: { current: boolean },
 ): Promise<boolean> {
-  if (!payload.checkpointModelName || lastAssistantMessage(messages)?.stopReason !== "length") return false;
+  if (!payload.checkpointModelName || !isOutputTokenLimit(lastAssistantMessage(messages))) return false;
   await compaction.compactForOutputRetry();
   messages.length = 0;
   const previous = emitAssistant.current;
@@ -2807,14 +2812,11 @@ export function validateFinalAssistantMessage(messages: unknown[]): void {
   if (!assistantMessage) {
     throw new Error("provider response is missing");
   }
-  if (assistantMessage.stopReason === "length") {
+  if (isOutputTokenLimit(assistantMessage)) {
     throw new Error("provider output token limit reached");
   }
   if (assistantMessage.stopReason === "error") {
     const errorMessage = String(assistantMessage.errorMessage ?? "");
-    if (/output token limit|max_tokens|model output limit/i.test(errorMessage)) {
-      throw new Error("provider output token limit reached");
-    }
     if (/context window|context length|input exceeds/i.test(errorMessage)) {
       throw new Error("provider context window exceeded");
     }
