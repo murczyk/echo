@@ -110,7 +110,7 @@ even when the SDK records them as assistant errors.
 Provider SSE responses have a separate 16 MiB transport limit for per-token
 framing and reasoning metadata. JSON responses retain their 2 MiB limit;
 configured output limits still apply. Government GLM requests have a bounded
-twenty-minute execution deadline, with up to ten minutes per provider stream.
+thirty-minute execution deadline, with up to ten minutes per provider stream.
 Other engines retain ten minutes overall and five minutes per provider request.
 Provider credentials remain valid through the selected deadline, and their call
 counters expire with the credential so a long request cannot reset its limit.
