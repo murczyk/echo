@@ -634,12 +634,14 @@ async fn content_upload_terminal_transitions_are_recorded() {
     )
     .await;
     super::super::content::worker::cleanup_one_for_test(
+        &env,
         &content_runtime,
         expired_upload_id,
     )
     .await
     .unwrap();
     super::super::content::worker::cleanup_one_for_test(
+        &env,
         &content_runtime,
         expired_upload_id,
     )

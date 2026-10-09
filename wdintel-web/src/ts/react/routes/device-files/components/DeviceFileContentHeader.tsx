@@ -1,67 +1,30 @@
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import { IconButton } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import { Typography } from '@mui/material';
-import { useState } from 'react';
-
+import { useEffect, useRef } from 'react';
 import type { DeviceFileTreeEntry } from '../../../../../Bindings';
 import { PowerButton } from '../../../components/PowerButton';
-import { usePowerSnackbar } from '../../../components/PowerSnackbar';
-import { getDeviceFileContent } from '../../../services/api/devices';
-import { downloadBlob } from '../../../utils/download-blob';
-import { toDeviceFileLoadError } from '../helpers';
-
-function DownloadButton({
-  href,
-  fileName,
-  mobile,
-}: {
-  href: string | null;
-  fileName: string;
-  mobile: boolean;
-}) {
-  const { notify } = usePowerSnackbar();
-  const [downloading, setDownloading] = useState(false);
-  const download = async () => {
-    if (href === null) return;
-    setDownloading(true);
-    try {
-      const blob = await getDeviceFileContent(href);
-      downloadBlob(blob, fileName);
-    } catch (error) {
-      notify({
-        severity: 'error',
-        message: toDeviceFileLoadError(error, 'Помилка скачування файлу').message,
-      });
-    } finally {
-      setDownloading(false);
-    }
-  };
-  return (
-    <PowerButton
-      size="small"
-      variant="contained"
-      disableElevation
-      sx={{ textTransform: 'none' }}
-      className={mobile ? '!min-h-echo-control-lg w-full shrink-0' : 'h-echo-control-sm shrink-0'}
-      startIcon={<DownloadIcon fontSize="small" />}
-      onClick={() => void download()}
-      disabled={href === null || downloading}
-      aria-busy={downloading}
-    >
-      Скачати файл
-    </PowerButton>
-  );
-}
+import type { useDeviceFilePreview } from '../use-device-file-preview';
 
 export function DeviceFileContentHeader({
   file,
-  href,
+  preview,
   sessionScoped = false,
   mobile = false,
+  zoom,
+  onZoomChange,
+  onFullscreen,
 }: {
   file: DeviceFileTreeEntry;
-  href: string | null;
+  preview: ReturnType<typeof useDeviceFilePreview>;
   sessionScoped?: boolean;
   mobile?: boolean;
+  zoom?: number;
+  onZoomChange?: (zoom: number) => void;
+  onFullscreen?: () => void;
 }) {
   const path = file.absolutePath ?? (file.pathComponents.join(' / ') || file.name);
   return (
@@ -95,7 +58,92 @@ export function DeviceFileContentHeader({
           Ревізія {file.revision} · {sessionScoped ? 'Із вибраної сесії' : 'Поточна'}
         </span>
       ) : null}
-      <DownloadButton href={href} fileName={file.name} mobile={mobile} />
+      <DeviceFileContentActions
+        preview={preview}
+        mobile={mobile}
+        zoom={zoom}
+        onZoomChange={onZoomChange}
+        onFullscreen={onFullscreen}
+      />
     </header>
+  );
+}
+
+export function DeviceFileContentActions({
+  preview,
+  mobile = false,
+  zoom,
+  onZoomChange,
+  onFullscreen,
+}: {
+  preview: ReturnType<typeof useDeviceFilePreview>;
+  mobile?: boolean;
+  zoom?: number;
+  onZoomChange?: (zoom: number) => void;
+  onFullscreen?: () => void;
+}) {
+  const downloadFocus = useRef<{ button: HTMLButtonElement; epoch: number | null } | null>(null);
+  useEffect(() => {
+    if (preview.downloading) return;
+    const target = downloadFocus.current;
+    downloadFocus.current = null;
+    if (
+      target &&
+      target.epoch === preview.epoch &&
+      target.button.isConnected &&
+      !target.button.disabled &&
+      document.activeElement === document.body
+    ) {
+      target.button.focus();
+    }
+  }, [preview.downloading, preview.epoch]);
+  return (
+    <>
+      {zoom != null && onZoomChange && (
+        <div className="flex shrink-0 items-center">
+          <IconButton
+            aria-label="Зменшити масштаб"
+            disabled={zoom <= 50}
+            onClick={() => onZoomChange(zoom - 25)}
+          >
+            <ZoomOutIcon />
+          </IconButton>
+          <span aria-live="polite">{zoom}%</span>
+          <IconButton
+            aria-label="Збільшити масштаб"
+            disabled={zoom >= 300}
+            onClick={() => onZoomChange(zoom + 25)}
+          >
+            <ZoomInIcon />
+          </IconButton>
+        </div>
+      )}
+      {onFullscreen && (
+        <IconButton
+          aria-label="На весь екран"
+          disabled={preview.state !== 'ready'}
+          onClick={onFullscreen}
+        >
+          <FullscreenIcon />
+        </IconButton>
+      )}
+      <PowerButton
+        key={preview.epoch}
+        size="small"
+        variant="contained"
+        disableElevation
+        sx={{ textTransform: 'none' }}
+        className={mobile ? '!min-h-echo-control-lg w-full shrink-0' : 'h-echo-control-sm shrink-0'}
+        startIcon={<DownloadIcon fontSize="small" />}
+        onClick={(event) => {
+          downloadFocus.current = { button: event.currentTarget, epoch: preview.epoch };
+          void preview.download();
+        }}
+        disabled={!preview.canDownload || preview.downloading}
+        aria-busy={preview.downloading}
+      >
+        Скачати файл
+      </PowerButton>
+    </>
   );
 }

@@ -15,11 +15,15 @@ export function CsvDocumentPreview({
   zoom,
   sizeBytes,
   contentType,
+  signal,
+  onError,
 }: {
   href: string;
   zoom: number;
   sizeBytes?: number | null;
   contentType?: string | null;
+  signal?: AbortSignal;
+  onError?: (error: unknown) => void;
 }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [preview, setPreview] = useState<CsvPreviewResult | null>(null);
@@ -27,12 +31,16 @@ export function CsvDocumentPreview({
 
   useEffect(() => {
     const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     let disposed = false;
 
     const load = async () => {
       setStatus('loading');
       setPreview(null);
       setError(null);
+      if (controller.signal.aborted) return;
       try {
         if (sizeBytes != null && sizeBytes > MAX_CSV_FILE_BYTES)
           throw new Error('CSV_FILE_TOO_LARGE');
@@ -66,11 +74,12 @@ export function CsvDocumentPreview({
           controller.signal,
           [buffer],
         );
-        if (disposed) return;
+        if (disposed || controller.signal.aborted) return;
         setPreview(result);
         setStatus('ready');
       } catch (loadError) {
         if (disposed || controller.signal.aborted) return;
+        onError?.(loadError);
         setError(loadError instanceof Error ? loadError.message : null);
         setStatus('error');
       }
@@ -78,9 +87,10 @@ export function CsvDocumentPreview({
     void load();
     return () => {
       disposed = true;
+      signal?.removeEventListener('abort', abort);
       controller.abort();
     };
-  }, [contentType, href, sizeBytes]);
+  }, [contentType, href, sizeBytes, signal, onError]);
 
   if (status === 'error') {
     return (

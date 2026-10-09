@@ -67,6 +67,16 @@ function cacheDocumentResponse(href: string, entry: CachedDocumentResponse): voi
   documentResponseCacheBytes += entry.buffer.byteLength;
 }
 
+function throwDocumentReadError(error: unknown): never {
+  if (error instanceof TypeError) {
+    throw new HttpRequestError(
+      0,
+      'Не вдалося завантажити файл. Перевірте з’єднання та повторіть спробу.',
+    );
+  }
+  throw error;
+}
+
 export async function fetchCachedDocumentResponse(
   href: string,
   maxBytes: number,
@@ -90,7 +100,7 @@ export async function fetchCachedDocumentResponse(
     };
   }
 
-  const response = await fetch(href, { signal });
+  const response = await fetch(href, { signal }).catch(throwDocumentReadError);
   if (!response.ok) {
     if (response.status === 401) emitUnauthorizedEvent();
     throw new HttpRequestError(response.status, `HTTP ${response.status}`);
@@ -115,7 +125,9 @@ export async function fetchCachedDocumentResponse(
     throw new Error(tooLargeError);
   }
 
-  const buffer = await readBoundedResponseBody(response, maxBytes, tooLargeError, signal);
+  const buffer = await readBoundedResponseBody(response, maxBytes, tooLargeError, signal).catch(
+    throwDocumentReadError,
+  );
 
   const entry: CachedDocumentResponse = {
     buffer,
@@ -123,7 +135,7 @@ export async function fetchCachedDocumentResponse(
     contentLength,
   };
 
-  if (!response.headers.get('cache-control')?.includes('no-store')) {
+  if (!href.startsWith('blob:') && !response.headers.get('cache-control')?.includes('no-store')) {
     cacheDocumentResponse(href, entry);
   }
 

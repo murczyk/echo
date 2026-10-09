@@ -2082,6 +2082,32 @@ export type ListDeviceFileRootsRsp = {
   roots: Array<DeviceFileRoot>;
 };
 
+export type DeviceFileGeodataPreviewRsp = {
+  fileId: string;
+  revision: number;
+  generation: string | null;
+  status: DeviceFileGeodataPreviewStatus;
+  retryable: boolean;
+  retryAfterMs: number | null;
+  resultSizeBytes: number | null;
+  resultUrl: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+};
+
+export type DeviceFileGeodataPreviewStatus =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'retry_wait'
+  | 'ready'
+  | 'failed'
+;
+
+export type RetryDeviceFileGeodataPreviewReq = {
+  expectedGeneration: string;
+};
+
 export type DeviceFileSubtreeCount = {
   entryId: string;
   fileCount: number;

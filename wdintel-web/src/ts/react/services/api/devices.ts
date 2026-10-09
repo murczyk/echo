@@ -231,7 +231,7 @@ export function getDeviceFileContent(href: string, options?: RequestOptions) {
 export async function getDeviceFileContentSize(href: string, options?: RequestOptions) {
   const response = await headResponse(href, options);
   const length = response.headers.get('content-length');
-  const size = length === null ? null : Number(length);
+  const size = length === null || !/^\d+$/.test(length) ? null : Number(length);
   return size !== null && Number.isSafeInteger(size) && size >= 0 ? size : null;
 }
 

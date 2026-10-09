@@ -5,6 +5,7 @@ mod error;
 mod ltree;
 mod metadata;
 mod path;
+pub(crate) mod preview;
 pub(in crate::devices) mod query;
 pub(crate) mod sessions;
 pub(crate) mod sync;

@@ -583,7 +583,7 @@ pub(crate) async fn upload_device_content_plaintext(
     }
     let writer = op
         .writer_with(full_key)
-        .chunk(crate::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES)
+        .chunk(crate::devices::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES)
         .await
         .c(h!())
         .map_err(|error| DeviceContentUploadError::Internal(error.into()))?;
@@ -595,7 +595,7 @@ pub(crate) async fn upload_device_content_plaintext(
     })?;
     let mut stream = tokio_util::io::ReaderStream::with_capacity(
         file.take(read_limit),
-        crate::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES,
+        crate::devices::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES,
     );
     let mut size = 0_u64;
     let mut first_byte = None;

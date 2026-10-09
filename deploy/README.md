@@ -82,8 +82,9 @@ FileSync APIs remain available. Before enabling uploads in live mode:
   `<storage_dir>/device-file-content-spool` (the runtime uses mode `0700` for
   the directory and `0600` for spool files);
 - provision usable spool capacity of at least
-  `device_file_content.max_reserved_bytes +
-  device_file_content.spool_min_free_bytes` (`21 GiB` with defaults);
+  `82 GiB` (`80 GiB` reservation budget plus a `2 GiB` free-space reserve);
+  upload limits are fixed in `wdintel-rs/src/devices/config.rs`, with a
+  `20 GiB` maximum file size;
 - configure `[s3_config]` with the private bucket, endpoint, credentials, and a
   valid base64 StrongBox key. Keep the endpoint, bucket, and key stable while
   device content or upload rows exist; credentials may rotate;

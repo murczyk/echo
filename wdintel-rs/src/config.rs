@@ -24,33 +24,6 @@ pub const PG_WDFILE_POOL_MAX_CONNECTIONS: u32 = 10;
 pub const PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS: u32 = 1;
 pub const MIGRATION_ADVISORY_LOCK_NAME: &str = "echo:migrations";
 pub const FILE_REGISTRY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 60;
-pub(crate) const DEVICE_FILE_CONTENT_REUSE_MAX_BODY_BYTES: usize = 1024;
-pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_BYTES: u64 =
-    20 * 1024 * 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_PER_LOGIN: u64 =
-    4 * 1024 * 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_COUNT: usize = 256;
-pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_COUNT_PER_LOGIN: usize = 16;
-pub const DEVICE_FILE_CONTENT_SPOOL_MIN_FREE_BYTES: u64 = 1024 * 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_PROBE_SIZE_BYTES: usize = 16 * 1024;
-pub const DEVICE_FILE_CONTENT_UPLOAD_IDLE_TTL_SECS: u64 = 24 * 60 * 60;
-pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_LIFETIME_SECS: u64 = 7 * 24 * 60 * 60;
-pub const DEVICE_FILE_CONTENT_FINALIZATION_MAX_CONCURRENT: usize = 2;
-pub const DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING: usize = 16;
-pub const DEVICE_FILE_CONTENT_FINALIZATION_WAIT_MILLIS: u64 = 1_000;
-pub const DEVICE_FILE_CONTENT_CLEANUP_BATCH_SIZE: usize = 100;
-pub const DEVICE_FILE_CONTENT_CLEANUP_POLL_INTERVAL_SECS: u64 = 30;
-pub const DEVICE_FILE_CONTENT_CLEANUP_RETRY_DELAY_SECS: u64 = 5 * 60;
-pub const DEVICE_FILE_CONTENT_ENCRYPTION_MAX_BYTES: u64 = 100 * 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_DOWNLOAD_MAX_ENCRYPTED_BYTES: u64 =
-    DEVICE_FILE_CONTENT_ENCRYPTION_MAX_BYTES + 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_DOWNLOAD_TIMEOUT_SECS: u64 = 60;
-pub const DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES: usize = 8 * 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_LOCK_WAIT_MILLIS: u64 = 500;
-pub const DEVICE_FILE_CONTENT_LOCK_RETRY_MILLIS: u64 = 25;
-pub const DEVICE_FILE_CONTENT_BUSY_RETRY_AFTER_SECS: u64 = 1;
-pub const DEVICE_FILE_CONTENT_STORAGE_RETRY_AFTER_SECS: u64 = 5;
 pub const PGBACKREST_CONF_PATH: &str = "/etc/pgbackrest/pgbackrest.conf";
 pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
 pub const PGBACKREST_STANZA_CONF_PREFIX: &str = "pgbackrest-";
@@ -1515,8 +1488,6 @@ pub struct Config {
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
     pub file_registry: Option<FileRegistryConfig>,
-    #[serde(default)]
-    pub device_file_content: DeviceFileContentConfig,
     pub cookie_session_secret: String,
     /// Base64 32-byte StrongBox key for encrypting TOTP seeds in Redis and
     /// `login_totp`. Generate with `oneoff-generate-strongbox-key`.
@@ -1615,139 +1586,6 @@ impl Default for MessengerMediaCacheConfig {
             min_free_space_bytes:
                 MESSENGER_MEDIA_LOCAL_CACHE_MIN_FREE_SPACE_BYTES,
         }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
-#[serde(default)]
-pub struct DeviceFileContentConfig {
-    pub upload_max_bytes: u64,
-    pub max_reserved_bytes: u64,
-    pub max_reserved_per_login: u64,
-    pub max_reserved_count: usize,
-    pub max_count_per_login: usize,
-    pub spool_min_free_bytes: u64,
-    pub probe_size_bytes: usize,
-    pub upload_idle_ttl_secs: u64,
-    pub upload_max_lifetime_secs: u64,
-    pub finalization_max_concurrent: usize,
-    pub cleanup_batch_size: usize,
-    pub cleanup_poll_interval_secs: u64,
-    pub cleanup_retry_delay_secs: u64,
-}
-
-impl Default for DeviceFileContentConfig {
-    fn default() -> Self {
-        Self {
-            upload_max_bytes: DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES,
-            max_reserved_bytes: DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_BYTES,
-            max_reserved_per_login:
-                DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_PER_LOGIN,
-            max_reserved_count: DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_COUNT,
-            max_count_per_login: DEVICE_FILE_CONTENT_UPLOAD_MAX_COUNT_PER_LOGIN,
-            spool_min_free_bytes: DEVICE_FILE_CONTENT_SPOOL_MIN_FREE_BYTES,
-            probe_size_bytes: DEVICE_FILE_CONTENT_PROBE_SIZE_BYTES,
-            upload_idle_ttl_secs: DEVICE_FILE_CONTENT_UPLOAD_IDLE_TTL_SECS,
-            upload_max_lifetime_secs:
-                DEVICE_FILE_CONTENT_UPLOAD_MAX_LIFETIME_SECS,
-            finalization_max_concurrent:
-                DEVICE_FILE_CONTENT_FINALIZATION_MAX_CONCURRENT,
-            cleanup_batch_size: DEVICE_FILE_CONTENT_CLEANUP_BATCH_SIZE,
-            cleanup_poll_interval_secs:
-                DEVICE_FILE_CONTENT_CLEANUP_POLL_INTERVAL_SECS,
-            cleanup_retry_delay_secs:
-                DEVICE_FILE_CONTENT_CLEANUP_RETRY_DELAY_SECS,
-        }
-    }
-}
-
-impl DeviceFileContentConfig {
-    pub fn validate(&self) -> Result<(), String> {
-        if self.upload_max_bytes == 0
-            || self.max_reserved_bytes == 0
-            || self.max_reserved_per_login == 0
-            || self.max_reserved_count == 0
-            || self.max_count_per_login == 0
-            || self.spool_min_free_bytes == 0
-            || self.probe_size_bytes == 0
-            || self.upload_idle_ttl_secs == 0
-            || self.upload_max_lifetime_secs == 0
-            || self.finalization_max_concurrent == 0
-            || self.cleanup_batch_size == 0
-            || self.cleanup_poll_interval_secs == 0
-            || self.cleanup_retry_delay_secs == 0
-        {
-            return Err("device_file_content values must be greater than zero"
-                .to_string());
-        }
-        if self.upload_max_bytes > self.max_reserved_bytes
-            || self.max_reserved_per_login > self.max_reserved_bytes
-        {
-            return Err(
-                "device_file_content byte limits must not exceed max_reserved_bytes"
-                    .to_string(),
-            );
-        }
-        if self.max_count_per_login > self.max_reserved_count {
-            return Err(
-                "device_file_content max_count_per_login must not exceed max_reserved_count"
-                    .to_string(),
-            );
-        }
-        if self.upload_idle_ttl_secs > self.upload_max_lifetime_secs {
-            return Err(
-                "device_file_content upload_idle_ttl_secs must not exceed upload_max_lifetime_secs"
-                    .to_string(),
-            );
-        }
-        self.validate_runtime_bounds()
-    }
-
-    fn validate_runtime_bounds(&self) -> Result<(), String> {
-        if i64::try_from(self.cleanup_batch_size).is_err() {
-            return Err(
-                "device_file_content cleanup_batch_size exceeds the SQL limit"
-                    .to_string(),
-            );
-        }
-        if self.finalization_max_concurrent
-            > tokio::sync::Semaphore::MAX_PERMITS
-        {
-            return Err(
-                "device_file_content finalization_max_concurrent exceeds the semaphore limit"
-                    .to_string(),
-            );
-        }
-        let now = chrono::Utc::now();
-        for seconds in [
-            self.upload_idle_ttl_secs,
-            self.upload_max_lifetime_secs,
-            self.cleanup_retry_delay_secs,
-        ] {
-            if i64::try_from(seconds)
-                .ok()
-                .and_then(chrono::Duration::try_seconds)
-                .and_then(|duration| now.checked_add_signed(duration))
-                .is_none()
-            {
-                return Err(
-                    "device_file_content durations exceed the supported timestamp range"
-                        .to_string(),
-                );
-            }
-        }
-        if std::time::Instant::now()
-            .checked_add(std::time::Duration::from_secs(
-                self.cleanup_poll_interval_secs,
-            ))
-            .is_none()
-        {
-            return Err(
-                "device_file_content cleanup_poll_interval_secs exceeds the timer range"
-                    .to_string(),
-            );
-        }
-        Ok(())
     }
 }
 

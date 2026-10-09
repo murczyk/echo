@@ -198,6 +198,10 @@ export async function getBytes(url: string, options?: RequestOptions) {
   }
 }
 
+export async function getResponse(url: string, options?: RequestOptions) {
+  return requestResponse('GET', url, undefined, options);
+}
+
 export async function headResponse(url: string, options?: RequestOptions) {
   return requestResponse('HEAD', url, undefined, options);
 }
