@@ -10,8 +10,8 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::protocol::{self, ContentError};
-use crate::config::DEVICE_FILE_CONTENT_REUSE_MAX_BODY_BYTES;
 use crate::devices::access;
+use crate::devices::config::DEVICE_FILE_CONTENT_REUSE_MAX_BODY_BYTES;
 use crate::h;
 use crate::types::{Env, ShortContextErr};
 
@@ -116,6 +116,7 @@ async fn reuse_inner(
         &body,
     )
     .await?;
+    super::local_cache::pin_revision_best_effort(env, file_id, revision).await;
     Ok(HttpResponse::Ok().json(receipt))
 }
 

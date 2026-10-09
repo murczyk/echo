@@ -25,6 +25,8 @@ import { PowerIconButton } from '../../../components/PowerIconButton';
 import { DeviceAnalyticsTagBadges } from './DeviceAnalyticsTagBadges';
 import type { DeviceFilesState } from '../use-device-files';
 import type { DeviceFileTreeBranch } from '../use-device-file-tree';
+import { isDeviceArchive } from '../device-file-archive';
+import { DeviceArchiveTree } from './DeviceArchiveTree';
 
 const fileCountFormatter = new Intl.NumberFormat('uk-UA');
 
@@ -275,6 +277,15 @@ function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
                 node={toDirectoryNode(entry, node)}
                 depth={depth + 1}
                 files={files}
+              />
+            ) : isDeviceArchive(entry) ? (
+              <DeviceArchiveTree
+                key={`${entry.entryId}/${entry.revision}/${files.archiveEpoch}`}
+                deviceId={files.deviceId}
+                file={entry}
+                depth={depth + 1}
+                selectedEntryId={files.selectedFile?.entryId}
+                onSelectFile={files.selectFile}
               />
             ) : (
               <DeviceFileRow key={entry.entryId} entry={entry} depth={depth + 1} files={files} />

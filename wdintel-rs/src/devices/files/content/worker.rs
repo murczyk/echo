@@ -9,11 +9,12 @@ use tokio_util::sync::CancellationToken;
 use super::repository::{self, UploadStatus};
 use super::DeviceFileContentRuntime;
 use crate::h;
-use crate::types::{error, warn};
+use crate::types::{error, warn, Env};
 
 const CLEANUP_LOCK_SQL: &str = "select pg_try_advisory_lock(hashtextextended('echo:device-file-content-cleanup', 0)) as acquired";
 
 pub(crate) async fn run_nofail(
+    env: std::sync::Arc<Env>,
     runtime: std::sync::Arc<DeviceFileContentRuntime>,
     cancellation: CancellationToken,
 ) {
@@ -24,7 +25,8 @@ pub(crate) async fn run_nofail(
         match acquire_lease(&runtime, &cancellation).await {
             Ok(Some(mut lease)) => {
                 if let Err(error) =
-                    run_with_lease(&runtime, &cancellation, &mut lease).await
+                    run_with_lease(&env, &runtime, &cancellation, &mut lease)
+                        .await
                 {
                     error!("device content cleanup worker failed: {error:#?}");
                 }
@@ -73,6 +75,7 @@ async fn acquire_lease(
 }
 
 async fn run_with_lease(
+    env: &Env,
     runtime: &DeviceFileContentRuntime,
     cancellation: &CancellationToken,
     lease: &mut PoolConnection<Postgres>,
@@ -108,7 +111,7 @@ async fn run_with_lease(
         }
         for candidate in candidates {
             cursor = Some((candidate.next_cleanup_at, candidate.id));
-            if let Err(error) = cleanup_one(runtime, candidate.id).await {
+            if let Err(error) = cleanup_one(env, runtime, candidate.id).await {
                 warn!(
                     "device content cleanup failed for {}: {error:#?}",
                     candidate.id
@@ -151,6 +154,7 @@ fn record_failure(runtime: &DeviceFileContentRuntime) {
 }
 
 async fn cleanup_one(
+    env: &Env,
     runtime: &DeviceFileContentRuntime,
     upload_id: uuid::Uuid,
 ) -> Result<()> {
@@ -184,6 +188,10 @@ async fn cleanup_one(
         return Ok(());
     }
 
+    if upload.status == UploadStatus::Completed {
+        super::local_cache::retain_upload_best_effort(env, &upload, &locked)
+            .await;
+    }
     locked.remove_local().await.context(h!())?;
     repository::mark_spool_removed(
         runtime.file_registry_db.connection(),
@@ -222,8 +230,9 @@ async fn cleanup_one(
 
 #[cfg(test)]
 pub(crate) async fn cleanup_one_for_test(
+    env: &Env,
     runtime: &DeviceFileContentRuntime,
     upload_id: uuid::Uuid,
 ) -> Result<()> {
-    cleanup_one(runtime, upload_id).await
+    cleanup_one(env, runtime, upload_id).await
 }

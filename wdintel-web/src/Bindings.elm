@@ -5384,6 +5384,73 @@ listDeviceFileRootsRspEncoder struct =
         ]
 
 
+type alias DeviceFileGeodataPreviewRsp =
+    { fileId : String
+    , revision : Int
+    , generation : Maybe (String)
+    , status : DeviceFileGeodataPreviewStatus
+    , retryable : Bool
+    , retryAfterMs : Maybe (Int)
+    , resultSizeBytes : Maybe (Int)
+    , resultUrl : Maybe (String)
+    , errorCode : Maybe (String)
+    , errorMessage : Maybe (String)
+    }
+
+
+deviceFileGeodataPreviewRspEncoder : DeviceFileGeodataPreviewRsp -> Json.Encode.Value
+deviceFileGeodataPreviewRspEncoder struct =
+    Json.Encode.object
+        [ ( "file_id", (Json.Encode.string) struct.fileId )
+        , ( "revision", (Json.Encode.int) struct.revision )
+        , ( "generation", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.generation )
+        , ( "status", (deviceFileGeodataPreviewStatusEncoder) struct.status )
+        , ( "retryable", (Json.Encode.bool) struct.retryable )
+        , ( "retry_after_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.retryAfterMs )
+        , ( "result_size_bytes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.resultSizeBytes )
+        , ( "result_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.resultUrl )
+        , ( "error_code", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.errorCode )
+        , ( "error_message", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.errorMessage )
+        ]
+
+
+type DeviceFileGeodataPreviewStatus
+    = GeodataIdle
+    | GeodataQueued
+    | GeodataRunning
+    | GeodataRetryWait
+    | GeodataReady
+    | GeodataFailed
+
+
+deviceFileGeodataPreviewStatusEncoder : DeviceFileGeodataPreviewStatus -> Json.Encode.Value
+deviceFileGeodataPreviewStatusEncoder enum =
+    case enum of
+        GeodataIdle ->
+            Json.Encode.string "idle"
+        GeodataQueued ->
+            Json.Encode.string "queued"
+        GeodataRunning ->
+            Json.Encode.string "running"
+        GeodataRetryWait ->
+            Json.Encode.string "retry_wait"
+        GeodataReady ->
+            Json.Encode.string "ready"
+        GeodataFailed ->
+            Json.Encode.string "failed"
+
+type alias RetryDeviceFileGeodataPreviewReq =
+    { expectedGeneration : String
+    }
+
+
+retryDeviceFileGeodataPreviewReqEncoder : RetryDeviceFileGeodataPreviewReq -> Json.Encode.Value
+retryDeviceFileGeodataPreviewReqEncoder struct =
+    Json.Encode.object
+        [ ( "expected_generation", (Json.Encode.string) struct.expectedGeneration )
+        ]
+
+
 type alias DeviceFileSubtreeCount =
     { entryId : String
     , fileCount : Int
@@ -20595,6 +20662,86 @@ listDeviceFileRootsRspDecoder : Json.Decode.Decoder ListDeviceFileRootsRsp
 listDeviceFileRootsRspDecoder =
     Json.Decode.succeed ListDeviceFileRootsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roots" (Json.Decode.list (deviceFileRootDecoder))))
+
+
+deviceFileGeodataPreviewRspDecoder : Json.Decode.Decoder DeviceFileGeodataPreviewRsp
+deviceFileGeodataPreviewRspDecoder =
+    Json.Decode.succeed DeviceFileGeodataPreviewRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generation" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (deviceFileGeodataPreviewStatusDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retryable" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retry_after_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "result_size_bytes" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "result_url" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error_code" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error_message" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceFileGeodataPreviewStatusDecoder : Json.Decode.Decoder DeviceFileGeodataPreviewStatus
+deviceFileGeodataPreviewStatusDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "idle" ->
+                            Json.Decode.succeed GeodataIdle
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "queued" ->
+                            Json.Decode.succeed GeodataQueued
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "running" ->
+                            Json.Decode.succeed GeodataRunning
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "retry_wait" ->
+                            Json.Decode.succeed GeodataRetryWait
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ready" ->
+                            Json.Decode.succeed GeodataReady
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "failed" ->
+                            Json.Decode.succeed GeodataFailed
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+retryDeviceFileGeodataPreviewReqDecoder : Json.Decode.Decoder RetryDeviceFileGeodataPreviewReq
+retryDeviceFileGeodataPreviewReqDecoder =
+    Json.Decode.succeed RetryDeviceFileGeodataPreviewReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected_generation" (Json.Decode.string)))
 
 
 browseDeviceFilesReqDecoder : Json.Decode.Decoder BrowseDeviceFilesReq

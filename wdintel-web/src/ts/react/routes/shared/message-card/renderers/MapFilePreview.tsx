@@ -1,0 +1,143 @@
+import { useEffect, useState } from 'react';
+import { CircularProgress } from '@mui/material';
+import { BaseLayerId, DEFAULT_BASE_LAYER_ID } from '../../../../../maps/base-layers';
+import type {
+  FilePreviewLifecycleProps,
+  FilePreviewSource,
+} from '../attachment-preview/file-preview-source';
+import { CoordinateMapPreviewControls } from '../CoordinateMapPreviewControls';
+import { KmzAttachmentPreviewMap } from '../KmzAttachmentPreviewMap';
+import { fetchCachedDocumentResponse } from '../document-preview-utils';
+import { MAX_KMZ_PREVIEW_SOURCE_BYTES, kmzPreviewErrorCopy } from '../kmz/kmz-preview-utils';
+import type { KmzPreview } from '../kmz/kmz-preview-types';
+import { FilePreviewRenderError } from '../attachment-preview/file-preview-source';
+import { HttpRequestError } from '../../../../services/api/client';
+import { runWorkerTask } from '../workers/worker-client';
+
+export function hasMapGeometry(preview: KmzPreview) {
+  return (
+    preview.points.length > 0 ||
+    preview.lineStrings.some((line) => line.coords.length >= 2) ||
+    preview.polygons.some((polygon) => polygon.rings.some((ring) => ring.length >= 3))
+  );
+}
+export function MapFileSurface({
+  preview,
+  baseLayerId,
+}: {
+  preview: KmzPreview;
+  baseLayerId: BaseLayerId;
+}) {
+  return (
+    <div
+      className="relative flex h-full min-h-96 w-full flex-1 flex-col"
+      data-map-preview-points={preview.points.length}
+      data-map-preview-lines={preview.lineStrings.length}
+      data-map-preview-polygons={preview.polygons.length}
+    >
+      <KmzAttachmentPreviewMap preview={preview} baseLayerId={baseLayerId} />
+    </div>
+  );
+}
+export async function loadMapFilePreview({
+  href,
+  sizeBytes,
+  format,
+  signal,
+}: {
+  href: string;
+  sizeBytes: number | null;
+  format: 'kml' | 'kmz';
+  signal: AbortSignal;
+}) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal.addEventListener('abort', abort, { once: true });
+  if (signal.aborted) abort();
+  let timedOut = false;
+  const timeout = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 20_000);
+  try {
+    if (sizeBytes != null && sizeBytes > MAX_KMZ_PREVIEW_SOURCE_BYTES)
+      throw new Error('KMZ_SOURCE_TOO_LARGE');
+    const { buffer } = await fetchCachedDocumentResponse(
+      href,
+      MAX_KMZ_PREVIEW_SOURCE_BYTES,
+      'KMZ_SOURCE_TOO_LARGE',
+      controller.signal,
+    );
+    return await runWorkerTask<{ buffer: ArrayBuffer; format: 'kml' | 'kmz' }, KmzPreview>(
+      () =>
+        new Worker(new URL('../kmz/kmz-preview.worker.ts', import.meta.url), { type: 'module' }),
+      { buffer, format },
+      controller.signal,
+      [buffer],
+      20_000,
+    );
+  } catch (error) {
+    if (timedOut && !signal.aborted) throw new Error('KMZ_REQUEST_TIMEOUT');
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+    signal.removeEventListener('abort', abort);
+  }
+}
+export function MapFilePreview({
+  source,
+  format,
+  lifecycle,
+}: {
+  source: FilePreviewSource;
+  format: 'kml' | 'kmz';
+  lifecycle: FilePreviewLifecycleProps;
+}) {
+  const [preview, setPreview] = useState<KmzPreview | null>(null);
+  const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
+  const { signal, onError, isCurrent } = lifecycle;
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+    setPreview(null);
+    if (!controller.signal.aborted && isCurrent()) {
+      void loadMapFilePreview({
+        href: source.originalHref,
+        sizeBytes: source.sizeBytes,
+        format,
+        signal: controller.signal,
+      })
+        .then((result) => {
+          if (active && !signal.aborted && isCurrent()) setPreview(result);
+        })
+        .catch((error) => {
+          if (active && !signal.aborted && isCurrent())
+            onError(
+              error instanceof Error && !(error instanceof HttpRequestError)
+                ? new FilePreviewRenderError(
+                    kmzPreviewErrorCopy(error.message),
+                    /TIMEOUT/.test(error.message),
+                  )
+                : error,
+            );
+        });
+    }
+    return () => {
+      active = false;
+      controller.abort();
+      signal.removeEventListener('abort', abort);
+    };
+  }, [source.key, source.originalHref, source.sizeBytes, format, signal, onError, isCurrent]);
+  if (!preview) return <CircularProgress aria-label="Читання мапи" />;
+  if (!hasMapGeometry(preview))
+    return <p className="p-echo-lg">У файлі немає геометрій для попереднього перегляду.</p>;
+  return (
+    <div className="relative flex min-h-96 flex-1 flex-col">
+      <MapFileSurface preview={preview} baseLayerId={baseLayerId} />
+      <CoordinateMapPreviewControls baseLayerId={baseLayerId} onBaseLayerChange={setBaseLayerId} />
+    </div>
+  );
+}

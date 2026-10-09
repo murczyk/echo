@@ -2,6 +2,9 @@ import type { InboxMessage, MessageMediaInfo } from '../../../../../Bindings';
 import { mediaAttachmentContentType } from './MessageCardMedia';
 import { deriveFileNameFromHref, sanitizeDerivedFileName } from './message-card-image-utils';
 import type { MessageCardDocument, MessageCardDocumentKind } from './document-preview.types';
+import { getDocumentMetadataKind } from './document-file-kind';
+
+export { getDocumentFileKind } from './document-file-kind';
 
 type MessageMediaInfoRaw = MessageMediaInfo & {
   content_type?: string | null;
@@ -11,14 +14,6 @@ type MessageMediaInfoRaw = MessageMediaInfo & {
 const DOCUMENT_DOWNLOAD_EXTENSION_RE = /\.(pdf|docx?|xlsx?|csv|zip)(\?|#|$)/i;
 const LEGACY_WORD_CONTENT_TYPES = new Set(['application/msword']);
 const LEGACY_SPREADSHEET_CONTENT_TYPES = new Set(['application/vnd.ms-excel']);
-const TEXT_CONTENT_TYPES = new Set(['text/plain']);
-const CSV_CONTENT_TYPES = new Set(['text/csv']);
-const MARKDOWN_CONTENT_TYPES = new Set(['text/markdown', 'text/x-markdown']);
-const ZIP_CONTENT_TYPES = new Set([
-  'application/zip',
-  'application/x-zip-compressed',
-  'application/x-zip',
-]);
 
 function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
   const raw = m as MessageMediaInfoRaw;
@@ -34,72 +29,11 @@ function resolveMediaFileName(m: MessageMediaInfo, fallbackName: string): string
 }
 
 export function getDocumentKind(m: MessageMediaInfo): MessageCardDocumentKind {
-  const contentType = mediaAttachmentContentType(m);
-  const fileName = mediaAttachmentDisplayName(m).toLowerCase();
-  const href = String(m.href ?? '').toLowerCase();
-
-  // Office formats and KMZ are ZIP containers but have more specific preview routes.
-  if (fileName.endsWith('.kmz') || /\.kmz(\?|#|$)/i.test(href)) return 'unsupported';
-  if (ZIP_CONTENT_TYPES.has(contentType)) {
-    if (fileName.endsWith('.docx') || /\.docx(\?|#|$)/i.test(href)) return 'docx';
-    if (fileName.endsWith('.xlsx') || /\.xlsx(\?|#|$)/i.test(href)) return 'xlsx';
-    return 'zip';
-  }
-
-  if (contentType === 'application/pdf' || fileName.endsWith('.pdf') || /\.pdf(\?|#|$)/i.test(href))
-    return 'pdf';
-  if (
-    contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-    fileName.endsWith('.docx') ||
-    /\.docx(\?|#|$)/i.test(href)
-  ) {
-    return 'docx';
-  }
-  if (
-    LEGACY_WORD_CONTENT_TYPES.has(contentType) ||
-    fileName.endsWith('.doc') ||
-    /\.doc(\?|#|$)/i.test(href)
-  ) {
-    return 'doc';
-  }
-  if (
-    contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-    fileName.endsWith('.xlsx') ||
-    /\.xlsx(\?|#|$)/i.test(href)
-  ) {
-    return 'xlsx';
-  }
-  if (
-    LEGACY_SPREADSHEET_CONTENT_TYPES.has(contentType) ||
-    fileName.endsWith('.xls') ||
-    /\.xls(\?|#|$)/i.test(href)
-  ) {
-    return 'xls';
-  }
-  if (
-    CSV_CONTENT_TYPES.has(contentType) ||
-    fileName.endsWith('.csv') ||
-    /\.csv(\?|#|$)/i.test(href)
-  ) {
-    return 'csv';
-  }
-  if (
-    fileName.endsWith('.md') ||
-    fileName.endsWith('.markdown') ||
-    /\.md(\?|#|$)/i.test(href) ||
-    /\.markdown(\?|#|$)/i.test(href) ||
-    MARKDOWN_CONTENT_TYPES.has(contentType)
-  ) {
-    return 'md';
-  }
-  if (
-    fileName.endsWith('.txt') ||
-    /\.txt(\?|#|$)/i.test(href) ||
-    TEXT_CONTENT_TYPES.has(contentType)
-  )
-    return 'txt';
-  if (fileName.endsWith('.zip') || /\.zip(\?|#|$)/i.test(href)) return 'zip';
-  return 'unsupported';
+  return getDocumentMetadataKind({
+    contentType: mediaAttachmentContentType(m),
+    fileName: mediaAttachmentDisplayName(m),
+    href: String(m.href ?? ''),
+  });
 }
 
 export function isPdfAttachment(m: MessageMediaInfo): boolean {

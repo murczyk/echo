@@ -16,10 +16,14 @@ export function XlsxDocumentPreview({
   href,
   zoom,
   sizeBytes,
+  signal,
+  onError,
 }: {
   href: string;
   zoom: number;
   sizeBytes?: number | null;
+  signal?: AbortSignal;
+  onError?: (error: unknown) => void;
 }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [workbook, setWorkbook] = useState<XlsxPreviewResult | null>(null);
@@ -28,6 +32,9 @@ export function XlsxDocumentPreview({
 
   useEffect(() => {
     const abortController = new AbortController();
+    const abort = () => abortController.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     let disposed = false;
 
     const load = async () => {
@@ -35,6 +42,7 @@ export function XlsxDocumentPreview({
       setWorkbook(null);
       setError(null);
       setSelectedSheetIndex(0);
+      if (abortController.signal.aborted) return;
 
       try {
         if (sizeBytes != null && sizeBytes > MAX_XLSX_FILE_BYTES) {
@@ -72,11 +80,12 @@ export function XlsxDocumentPreview({
           abortController.signal,
           [buffer],
         );
-        if (disposed) return;
+        if (disposed || abortController.signal.aborted) return;
         setWorkbook(result);
         setStatus('ready');
       } catch (error) {
         if (disposed || abortController.signal.aborted) return;
+        onError?.(error);
         debugDocumentPreview(
           'xlsx',
           'preview failed',
@@ -101,9 +110,10 @@ export function XlsxDocumentPreview({
 
     return () => {
       disposed = true;
+      signal?.removeEventListener('abort', abort);
       abortController.abort();
     };
-  }, [href, sizeBytes]);
+  }, [href, sizeBytes, signal, onError]);
 
   const sheet = workbook?.sheets[selectedSheetIndex] ?? null;
   const sheetNames = useMemo(
@@ -127,6 +137,7 @@ export function XlsxDocumentPreview({
   return (
     <Box
       sx={{
+        position: 'relative',
         width: '100%',
         height: '100%',
         minHeight: 0,

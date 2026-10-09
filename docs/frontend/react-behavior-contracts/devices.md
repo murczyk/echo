@@ -124,6 +124,19 @@
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as user-visible operational safeguards.
 
+## Device file preview format precedence
+
+- **Behavior ID:** `device-file-preview-format-precedence`
+- **Affected route/component:** Devices Files and shared document/image/media/map previews.
+- **Preconditions:** an accessible content-backed revision is selected. Classification identifies an eligible viewer; successful decoding still depends on actual bytes, parser limits, browser codecs and converter availability.
+- **Expected observable result:** trim the filename and normalize the last suffix case-insensitively; use stored extension metadata only when the filename has no suffix. Never infer a format from the original download URL. Converted-map admission uses the same immutable revision filename and metadata fallback as the UI.
+- **MIME and container compatibility:** native KML/KMZ and their known MIME types retain map rendering; GPX/GeoJSON/LDK/TRK/ARE/RTE/WPT/SET/FIT select optional preparation. Explicit audio/video/image MIME determines the corresponding media category before audio/video extension fallbacks. Generic or absent MIME permits recognized image suffixes; an unrelated explicit MIME does not imply an image. DOCX/XLSX/KMZ keep specialized rendering with ZIP MIME; a PDF filename with ZIP MIME selects the archive viewer. Document formats use the existing reference document precedence.
+- **Loading/empty/error/success behavior:** missing content never starts a viewer. Unsupported, corrupt, oversized and unavailable-codec/converter results remain distinct from successful preview; an accessible original retains its exact filename and bytes.
+- **Known race/idempotency constraints:** recognition and preparation concern the selected device/file/revision; conflicting metadata cannot silently substitute a different revision or mutate the stored source snapshot.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/attachment-preview/file-preview-source.ts`, `wdintel-web/src/ts/react/routes/shared/message-card/file-preview-kind.ts`, `wdintel-web/src/ts/react/routes/shared/message-card/document-file-kind.ts`, `wdintel-rs/src/devices/files/preview/bl.rs`, `wdintel-rs/src/devices/files/preview/query.rs`.
+- **Default-suite classifier coverage:** No direct default-suite test; behavior is preserved by this contract.
+- **Operational coverage:** `wdintel-web/tests/e2e/device-file-preview-interactions.spec.ts`, `wdintel-web/tests/e2e/device-file-preview-images.spec.ts`, `wdintel-web/tests/e2e/device-file-preview-documents.spec.ts`, `wdintel-web/tests/e2e/device-file-preview-media.spec.ts`, `wdintel-rs/src/devices/files/preview/tests.rs`. These consume actual file bytes or exercise database/API admission rather than count classifier outputs as format support.
+
 ## Retired manual Device Files synchronization
 
 - **Status:** retired historical behavior

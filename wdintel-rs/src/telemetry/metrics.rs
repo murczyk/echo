@@ -33,6 +33,10 @@ const DEVICE_FILE_CONTENT_TERMINAL_COUNT: &str =
     "echo.device_files.content_upload.terminal.count";
 const DEVICE_FILE_CONTENT_FAILURES_COUNT: &str =
     "echo.device_files.content_upload.failures.count";
+const DEVICE_FILE_PREVIEW_EVENTS_COUNT: &str =
+    "echo.device_files.preview.events.count";
+const DEVICE_FILE_PREVIEW_QUEUE_AGE: &str =
+    "echo.device_files.preview.queue.age";
 const DEVICE_FILES_SYNC_DURATION_BUCKETS_SECS: &[f64] = &[
     0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
 ];
@@ -125,6 +129,8 @@ pub struct Metrics {
     device_file_content_accepted_bytes: Counter<u64>,
     device_file_content_terminal: Counter<u64>,
     device_file_content_failures: Counter<u64>,
+    device_file_preview_events: Counter<u64>,
+    device_file_preview_queue_age: Gauge<f64>,
     device_audio_cleanup: Counter<u64>,
     device_audio_preparation: Counter<u64>,
     device_audio_preparation_duration: Histogram<f64>,
@@ -238,6 +244,16 @@ impl Metrics {
             .u64_counter(DEVICE_FILE_CONTENT_FAILURES_COUNT)
             .with_description("Number of device file content finalization or cleanup failures")
             .with_unit("1")
+            .build();
+        let device_file_preview_events = meter
+            .u64_counter(DEVICE_FILE_PREVIEW_EVENTS_COUNT)
+            .with_description("Number of device file preview outcomes")
+            .with_unit("1")
+            .build();
+        let device_file_preview_queue_age = meter
+            .f64_gauge(DEVICE_FILE_PREVIEW_QUEUE_AGE)
+            .with_description("Age of the oldest pending device file preview")
+            .with_unit("s")
             .build();
         let device_audio_cleanup = meter
             .u64_counter(crate::devices::audio::DEVICE_AUDIO_CLEANUP_METRIC)
@@ -377,6 +393,8 @@ impl Metrics {
             device_file_content_accepted_bytes,
             device_file_content_terminal,
             device_file_content_failures,
+            device_file_preview_events,
+            device_file_preview_queue_age,
             device_audio_cleanup,
             device_audio_preparation,
             device_audio_preparation_duration,
@@ -514,6 +532,29 @@ impl Metrics {
     ) {
         self.device_file_content_failures
             .add(1, &[KeyValue::new("stage", stage)]);
+    }
+
+    pub(crate) fn record_device_file_preview_event(&self, event: &'static str) {
+        if matches!(
+            event,
+            "prepare_create"
+                | "prepare_reuse"
+                | "prepare_reject"
+                | "attempt"
+                | "lease_lost"
+                | "publish_cas_lost"
+                | "cleanup_success"
+                | "cleanup_failure"
+        ) {
+            self.device_file_preview_events
+                .add(1, &[KeyValue::new("event", event)]);
+        }
+    }
+
+    pub(crate) fn record_device_file_preview_queue_age(&self, seconds: f64) {
+        if seconds.is_finite() && seconds >= 0.0 {
+            self.device_file_preview_queue_age.record(seconds, &[]);
+        }
     }
 
     pub(crate) fn record_device_audio_cleanup(&self, outcome: &'static str) {
@@ -693,6 +734,8 @@ fn metrics_view(instrument: &Instrument) -> Option<Stream> {
             DEVICE_FILE_CONTENT_ACCEPTED_BYTES => (&[], None),
             DEVICE_FILE_CONTENT_TERMINAL_COUNT => (&["status"], None),
             DEVICE_FILE_CONTENT_FAILURES_COUNT => (&["stage"], None),
+            DEVICE_FILE_PREVIEW_EVENTS_COUNT => (&["event"], None),
+            DEVICE_FILE_PREVIEW_QUEUE_AGE => (&[], None),
             crate::devices::audio::DEVICE_AUDIO_CLEANUP_METRIC => {
                 (&["outcome"], None)
             }

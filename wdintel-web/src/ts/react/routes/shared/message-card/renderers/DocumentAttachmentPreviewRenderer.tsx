@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, useMediaQuery } from '@mui/material';
+import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import type { MouseEvent } from 'react';
 
@@ -37,61 +37,8 @@ import {
   type AttachmentPreviewReportDraft,
   type AttachmentPreviewReportVisibility,
 } from '../attachment-preview/ReportTextPreview';
-import { MarkdownDocumentPreview, TxtDocumentPreview } from '../text-document-preview';
-import { CsvDocumentPreview } from './CsvDocumentPreview';
-import { DocxDocumentPreview } from './DocxDocumentPreview';
-import { LegacyOfficeDocumentPreview } from './LegacyOfficeDocumentPreview';
-import { PdfDocumentPreview } from './PdfDocumentPreview';
-import { UnsupportedDocumentPreview } from './UnsupportedDocumentPreview';
-import { XlsxDocumentPreview } from './XlsxDocumentPreview';
+import { DocumentFilePreview } from './DocumentFilePreview';
 import { ZipDocumentPreview } from './ZipDocumentPreview';
-
-function DocumentPreview({ document, zoom }: { document: MessageCardDocument; zoom: number }) {
-  return (
-    <Box data-document-preview-content sx={{ flex: '1 1 auto', minHeight: 0, width: '100%' }}>
-      {document.kind === 'pdf' ? (
-        <PdfDocumentPreview
-          href={document.href}
-          zoom={zoom}
-          sizeBytes={document.sizeBytes ?? null}
-        />
-      ) : document.kind === 'doc' || document.kind === 'xls' ? (
-        <LegacyOfficeDocumentPreview
-          key={`${document.kind}:${document.href}`}
-          href={document.href}
-          zoom={zoom}
-          sizeBytes={document.sizeBytes ?? null}
-          kind={document.kind}
-        />
-      ) : document.kind === 'docx' ? (
-        <DocxDocumentPreview
-          href={document.href}
-          zoom={zoom}
-          sizeBytes={document.sizeBytes ?? null}
-        />
-      ) : document.kind === 'xlsx' ? (
-        <XlsxDocumentPreview
-          href={document.href}
-          zoom={zoom}
-          sizeBytes={document.sizeBytes ?? null}
-        />
-      ) : document.kind === 'csv' ? (
-        <CsvDocumentPreview
-          href={document.href}
-          zoom={zoom}
-          sizeBytes={document.sizeBytes ?? null}
-          contentType={document.contentType ?? null}
-        />
-      ) : document.kind === 'txt' ? (
-        <TxtDocumentPreview href={document.href} sizeBytes={document.sizeBytes ?? null} />
-      ) : document.kind === 'md' ? (
-        <MarkdownDocumentPreview href={document.href} sizeBytes={document.sizeBytes ?? null} />
-      ) : (
-        <UnsupportedDocumentPreview fileName={document.fileName ?? document.href} />
-      )}
-    </Box>
-  );
-}
 
 function NonZipDocumentAttachmentPreviewRenderer({
   document,
@@ -300,7 +247,18 @@ function NonZipDocumentAttachmentPreviewRenderer({
         if (region === 'background') onClose();
       }}
     >
-      <DocumentPreview document={currentDocument} zoom={dialogZoom} />
+      <DocumentFilePreview
+        source={{
+          key: `${currentDocument.kind}:${currentDocument.href}`,
+          fileName: currentDocument.fileName ?? '',
+          extension: '',
+          contentType: currentDocument.contentType ?? '',
+          sizeBytes: currentDocument.sizeBytes ?? null,
+          originalHref: currentDocument.href,
+        }}
+        kind={currentDocument.kind}
+        zoom={dialogZoom}
+      />
       {canZoom ? (
         <AttachmentPreviewZoomBadge zoom={dialogZoom} onResetZoom={() => setZoom(100)} />
       ) : null}

@@ -7,6 +7,7 @@ pub(crate) mod analytics;
     reason = "Foundation interfaces are consumed by subsequent audio tasks"
 )]
 pub(crate) mod audio;
+pub mod config;
 pub(crate) mod documents;
 
 #[allow(clippy::module_inception)]

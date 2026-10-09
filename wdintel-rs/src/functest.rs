@@ -84,6 +84,7 @@ pub mod tests {
                         public.file_document_job,
                         public.file_document_generation,
                         public.file_document,
+                        public.file_preview,
                         public.file_content,
                         public.file_content_upload,
                         public.file_revision,

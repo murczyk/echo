@@ -539,6 +539,27 @@ fn spawn_device_file_sync_expiry_worker(
     );
 }
 
+fn spawn_device_file_preview_workers(
+    bg_set: &mut JoinSet<()>,
+    env: Arc<Env>,
+    cancellation: CancellationToken,
+) {
+    let cleanup_env = env.as_ref().clone();
+    let cleanup_cancellation = cancellation.clone();
+    spawn_named_worker("device_file_preview_cleanup", bg_set, async move {
+        crate::devices::files::preview::cleanup_nofail(
+            cleanup_env,
+            cleanup_cancellation,
+        )
+        .await;
+    });
+    let preview_env = env.as_ref().clone();
+    spawn_named_worker("device_file_preview_conversion", bg_set, async move {
+        crate::devices::files::preview::run_nofail(preview_env, cancellation)
+            .await;
+    });
+}
+
 fn spawn_palitra_conversion_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     spawn_named_worker("palitra_conversion_worker", bg_set, async move {
         crate::palitra::conversion_worker::palitra_conversion_worker_nofail(
@@ -908,6 +929,11 @@ fn spawn_background_workers(
         .await;
     });
     if env.file_registry_db.is_some() {
+        spawn_device_file_preview_workers(
+            bg_set,
+            env.clone(),
+            cancel_token.clone(),
+        );
         let audio_cleanup_runtime = env.device_audio.clone();
         let audio_cleanup_cancellation = cancel_token.clone();
         spawn_named_worker("device_audio_cleanup", bg_set, async move {
@@ -929,11 +955,13 @@ fn spawn_background_workers(
         );
         if let Some(runtime) = env.device_file_content.clone() {
             let content_cleanup_cancellation = cancel_token.clone();
+            let content_cleanup_env = env.clone();
             spawn_named_worker(
                 "device_file_content_cleanup_worker",
                 bg_set,
                 async move {
                     crate::devices::files::content::worker::run_nofail(
+                        content_cleanup_env,
                         runtime,
                         content_cleanup_cancellation,
                     )
@@ -1352,6 +1380,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::files::complete_sync_session)
             .service(crate::devices::files::sync_session_items)
             .service(crate::devices::files::content::routes())
+            .service(crate::devices::files::preview::routes())
             .service(crate::devices::analytics::list_tags)
             .service(crate::devices::analytics::create_tag)
             .service(crate::devices::analytics::update_tag)
