@@ -92,7 +92,7 @@ suite =
                             , \_ -> Expect.equal (Set.singleton 7) updatedWaterfall.networkIdsRequested
                             ]
                             ()
-        , test "#3598 failed network batches release only their own requests and wait before retrying" <|
+        , test "#3598 network hydration retries temporary failures once and exhausts omitted responses" <|
             \_ ->
                 case Url.fromString "http://localhost/rer-duty" of
                     Nothing ->
@@ -119,15 +119,67 @@ suite =
 
                             ( retried, _ ) =
                                 Waterfall.update shared anonymousUser (Waterfall.RetryNetworks [ 7 ]) completed
+
+                            ( exhausted, _ ) =
+                                Waterfall.update shared anonymousUser
+                                    (Waterfall.GotNetworksInfo [ 7 ] (Err { httpError = Http.Timeout, formErrors = Dict.empty, errors = [] }))
+                                    retried
+
+                            ( tickedExhausted, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.TickTimeTick (Time.millisToPosix 2000))
+                                    { exhausted
+                                        | messages =
+                                            Messages.fromList
+                                                [ ( 1, { messageStub | networkIds = Just [ 7, 8 ] } ) ]
+                                    }
                         in
                         Expect.all
                             [ \_ -> Expect.equal (Set.singleton 8) failed.networkIdsRequested
                             , \_ -> Expect.equal (Set.singleton 7) failed.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal Set.empty failed.networkIdsRetryExhausted
                             , \_ -> Expect.equal failed.networkIdsWaitingForRetry ticked.networkIdsWaitingForRetry
                             , \_ -> Expect.equal Set.empty completed.networkIdsRequested
-                            , \_ -> Expect.equal (Set.fromList [ 7, 8 ]) completed.networkIdsWaitingForRetry
-                            , \_ -> Expect.equal (Set.singleton 8) retried.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal (Set.singleton 7) completed.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal (Set.singleton 8) completed.networkIdsRetryExhausted
+                            , \_ -> Expect.equal Set.empty retried.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal (Set.fromList [ 7, 8 ]) retried.networkIdsRetryExhausted
                             , \_ -> Expect.equal Set.empty retried.networkIdsRequested
+                            , \_ -> Expect.equal (Set.fromList [ 7, 8 ]) exhausted.networkIdsRetryExhausted
+                            , \_ -> Expect.equal Set.empty tickedExhausted.networkIdsRequested
+                            ]
+                            ()
+        , test "#3598 permanent network hydration failures are immediately exhausted" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-duty" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            ( shared, _ ) =
+                                Shared.init (Ok { isDark = False, now = 0 }) (Route.fromUrl () url)
+
+                            ( waterfall, _ ) =
+                                Waterfall.init True "wf-a" Nothing
+
+                            ( failed, _ ) =
+                                Waterfall.update shared anonymousUser
+                                    (Waterfall.GotNetworksInfo [ 7 ] (Err { httpError = Http.BadStatus 403, formErrors = Dict.empty, errors = [] }))
+                                    { waterfall | networkIdsRequested = Set.singleton 7 }
+
+                            ( ticked, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.TickTimeTick (Time.millisToPosix 1000))
+                                    { failed
+                                        | messages =
+                                            Messages.fromList
+                                                [ ( 1, { messageStub | networkIds = Just [ 7 ] } ) ]
+                                    }
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal Set.empty failed.networkIdsRequested
+                            , \_ -> Expect.equal Set.empty failed.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal (Set.singleton 7) failed.networkIdsRetryExhausted
+                            , \_ -> Expect.equal Set.empty ticked.networkIdsRequested
                             ]
                             ()
         , test "refresh enrichment stays isolated to the owning waterfall" <|

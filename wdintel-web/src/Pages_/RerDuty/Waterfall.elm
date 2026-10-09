@@ -187,6 +187,7 @@ type alias Model =
     , networksExtra : Dict Int B.Network
     , networkIdsRequested : Set Int
     , networkIdsWaitingForRetry : Set Int
+    , networkIdsRetryExhausted : Set Int
     , groups : List String
     , messages : Messages.Messages
     , loadingEarlier : LoadingEarlierStatus
@@ -296,6 +297,7 @@ init radioFeaturesAllowed id_ ms =
       , networksExtra = Dict.empty
       , networkIdsRequested = Set.empty
       , networkIdsWaitingForRetry = Set.empty
+      , networkIdsRetryExhausted = Set.empty
       , groups = []
       , messages = Messages.fromList []
       , loadingEarlier = NotLoading
@@ -790,6 +792,7 @@ missingNetworkIdsForMessages shared model messages =
         |> List.filter (\networkId -> not (Dict.member networkId knownNetworks))
         |> List.filter (\networkId -> not (Set.member networkId model.networkIdsRequested))
         |> List.filter (\networkId -> not (Set.member networkId model.networkIdsWaitingForRetry))
+        |> List.filter (\networkId -> not (Set.member networkId model.networkIdsRetryExhausted))
         |> ListX.unique
 
 
@@ -803,8 +806,27 @@ loadNetworksForMessages shared model messages =
         ( model, E.none )
 
     else
-        ( { model | networkIdsRequested = Set.union model.networkIdsRequested (Set.fromList missingIds) }
-        , E.getNetworksInfoByIds (GotNetworksInfo missingIds) missingIds
+        loadNetworksForIds shared model missingIds
+
+
+loadNetworksForIds : Shared.Model -> Model -> List Int -> ( Model, Effect Msg )
+loadNetworksForIds shared model networkIds =
+    let
+        knownNetworks =
+            networksForView shared model
+
+        idsToLoad =
+            networkIds
+                |> List.filter (\networkId -> not (Dict.member networkId knownNetworks))
+                |> List.filter (\networkId -> not (Set.member networkId model.networkIdsRequested))
+                |> ListX.unique
+    in
+    if not shared.systemSettingsLoaded || hideNetworks shared || List.isEmpty idsToLoad then
+        ( model, E.none )
+
+    else
+        ( { model | networkIdsRequested = Set.union model.networkIdsRequested (Set.fromList idsToLoad) }
+        , E.getNetworksInfoByIds (GotNetworksInfo idsToLoad) idsToLoad
         )
 
 
@@ -826,12 +848,16 @@ loadNetworksForLoadedMessages shared model =
 
 deferNetworkRetry : List Int -> Model -> ( Model, Effect Msg )
 deferNetworkRetry networkIds model =
-    if List.isEmpty networkIds then
+    let
+        retryIds =
+            networkIds |> List.filter (\networkId -> not (Set.member networkId model.networkIdsRetryExhausted))
+    in
+    if List.isEmpty retryIds then
         ( model, E.none )
 
     else
-        ( { model | networkIdsWaitingForRetry = Set.union model.networkIdsWaitingForRetry (Set.fromList networkIds) }
-        , E.sendCmd <| Task.perform (\_ -> RetryNetworks networkIds) (Process.sleep Config.waterfallNetworkRetryDelayMs)
+        ( { model | networkIdsWaitingForRetry = Set.union model.networkIdsWaitingForRetry (Set.fromList retryIds) }
+        , E.sendCmd <| Task.perform (\_ -> RetryNetworks retryIds) (Process.sleep Config.waterfallNetworkRetryDelayMs)
         )
 
 
@@ -2260,12 +2286,28 @@ update shared user msg model =
 
         GotNetworksInfo requested (Err e) ->
             let
+                isRetry =
+                    List.all (\networkId -> Set.member networkId model.networkIdsRetryExhausted) requested
+
+                released =
+                    { model | networkIdsRequested = List.foldl Set.remove model.networkIdsRequested requested }
+
                 ( m2, retryEffect ) =
-                    deferNetworkRetry requested { model | networkIdsRequested = List.foldl Set.remove model.networkIdsRequested requested }
+                    if Utils.Api.ErrorHandling.isTemporaryConnectionError e && not isRetry then
+                        deferNetworkRetry requested released
+
+                    else
+                        ( { released | networkIdsRetryExhausted = Set.union released.networkIdsRetryExhausted (Set.fromList requested) }
+                        , E.none
+                        )
             in
             ( m2
             , E.batch
-                [ Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e
+                [ if isRetry && e.httpError /= Http.BadStatus 401 then
+                    E.none
+
+                  else
+                    Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e
                 , retryEffect
                 ]
             )
@@ -2277,19 +2319,30 @@ update shared user msg model =
                         |> List.map (\network -> ( network.id, network ))
                         |> Dict.fromList
 
+                returnedIds =
+                    networks |> List.map .id
+
                 m2 =
                     { model
                         | networksExtra = Dict.union newNetworks model.networksExtra
                         , networkIdsRequested = List.foldl Set.remove model.networkIdsRequested requested
+                        , networkIdsRetryExhausted = List.foldl Set.remove model.networkIdsRetryExhausted returnedIds
                     }
 
                 missingIds =
                     requested |> List.filter (\networkId -> not (Dict.member networkId (networksForView shared m2)))
             in
-            deferNetworkRetry missingIds m2
+            ( { m2 | networkIdsRetryExhausted = Set.union m2.networkIdsRetryExhausted (Set.fromList missingIds) }
+            , E.none
+            )
 
         RetryNetworks networkIds ->
-            loadNetworksForLoadedMessages shared { model | networkIdsWaitingForRetry = List.foldl Set.remove model.networkIdsWaitingForRetry networkIds }
+            loadNetworksForIds shared
+                { model
+                    | networkIdsWaitingForRetry = List.foldl Set.remove model.networkIdsWaitingForRetry networkIds
+                    , networkIdsRetryExhausted = Set.union model.networkIdsRetryExhausted (Set.fromList networkIds)
+                }
+                networkIds
 
         GotSignals (Err err) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження сигналів" err )

@@ -32,7 +32,7 @@ const dutyNetwork: Network = {
   status: 'NetworkActive',
 };
 
-function createClassicDutyNetworkInbox() {
+function createClassicDutyNetworkInbox(networkIds = [7]) {
   const inbox = createLoadedInboxResponse();
   const message: InboxMessage = {
     ...inbox.inbox_items[0][1],
@@ -42,7 +42,7 @@ function createClassicDutyNetworkInbox() {
     createdAtOrder: null,
     hasDateInHeader: false,
     unitIds: [],
-    networkIds: [7],
+    networkIds,
     networkName: null,
     deviceName: null,
     parentMessages: [],
@@ -482,6 +482,104 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     expect(networkRequests).toBe(2);
     await page.waitForTimeout(1500);
     expect(networkRequests).toBe(2);
+  });
+
+  test('#3598 classic Duty stops retrying after the one automatic temporary-error retry', async ({
+    page,
+  }) => {
+    const inbox = createClassicDutyNetworkInbox();
+    await installRerDutyShortStateMocks(page, { inboxResponse: inbox });
+    await useRoles(page, ['Rer']);
+    await page.route('**/api/rer-importer/signal-profile-batch', (route) =>
+      route.fulfill({ json: { data: {} } }),
+    );
+    let networkRequests = 0;
+    await page.route('**/api/sigint/network-info-batch-id', async (route) => {
+      networkRequests += 1;
+      await route.fulfill({ status: 503, json: {} });
+    });
+    await page.goto('/rer-duty');
+    const errorToast = page.getByRole('alert').filter({ hasText: 'Помилка завантаження мереж' });
+    await expect(errorToast).toHaveCount(1);
+    const initialToastHeader = await errorToast.locator('.toast-header').textContent();
+    await expect.poll(() => networkRequests, { timeout: 10000 }).toBe(2);
+    await page.waitForTimeout(6500);
+    expect(networkRequests).toBe(2);
+    await expect(errorToast).toHaveCount(1);
+    await expect(errorToast.locator('.toast-header')).toHaveText(initialToastHeader!);
+  });
+
+  test('#3598 classic Duty logs out when its automatic network retry returns 401', async ({
+    page,
+  }) => {
+    await installRerDutyShortStateMocks(page, {
+      inboxResponse: createClassicDutyNetworkInbox(),
+    });
+    await useRoles(page, ['Rer']);
+    let networkRequests = 0;
+    await page.route('**/api/sigint/network-info-batch-id', async (route) => {
+      networkRequests += 1;
+      await route.fulfill({ status: networkRequests === 1 ? 503 : 401, json: {} });
+    });
+    await page.route(/\/api\/user\/logout(?:\?.*)?$/, (route) =>
+      route.fulfill({ contentType: 'text/html', body: 'Logged out' }),
+    );
+    const logoutRequest = page.waitForRequest(/\/api\/user\/logout(?:\?.*)?$/);
+    await page.goto('/rer-duty');
+    await logoutRequest;
+    await expect(page).toHaveURL(/\/api\/user\/logout(?:\?|$)/);
+    expect(networkRequests).toBe(2);
+    await page.waitForTimeout(6500);
+    expect(networkRequests).toBe(2);
+  });
+
+  test('#3598 classic Duty does not retry permanent network hydration failures', async ({
+    page,
+  }) => {
+    const inbox = createClassicDutyNetworkInbox();
+    await installRerDutyShortStateMocks(page, { inboxResponse: inbox });
+    await useRoles(page, ['Rer']);
+    let networkRequests = 0;
+    await page.route('**/api/sigint/network-info-batch-id', async (route) => {
+      networkRequests += 1;
+      await route.fulfill({ status: 403, json: {} });
+    });
+    await page.goto('/rer-duty');
+    await expect.poll(() => networkRequests).toBe(1);
+    await page.waitForTimeout(6500);
+    expect(networkRequests).toBe(1);
+  });
+
+  test('#3598 classic Duty does not retry empty network hydration responses', async ({ page }) => {
+    const inbox = createClassicDutyNetworkInbox();
+    await installRerDutyShortStateMocks(page, { inboxResponse: inbox });
+    await useRoles(page, ['Rer']);
+    let networkRequests = 0;
+    await page.route('**/api/sigint/network-info-batch-id', async (route) => {
+      networkRequests += 1;
+      await route.fulfill({ json: [] });
+    });
+    await page.goto('/rer-duty');
+    await expect.poll(() => networkRequests).toBe(1);
+    await page.waitForTimeout(6500);
+    expect(networkRequests).toBe(1);
+  });
+
+  test('#3598 classic Duty does not retry omitted IDs from a partial network response', async ({
+    page,
+  }) => {
+    const inbox = createClassicDutyNetworkInbox([7, 8]);
+    await installRerDutyShortStateMocks(page, { inboxResponse: inbox });
+    await useRoles(page, ['Rer']);
+    let networkRequests = 0;
+    await page.route('**/api/sigint/network-info-batch-id', async (route) => {
+      networkRequests += 1;
+      await route.fulfill({ json: [transformCamelToSnake(dutyNetwork)] });
+    });
+    await page.goto('/rer-duty');
+    await expect(page.getByText(/Duty recovery network/)).toBeVisible();
+    await page.waitForTimeout(6500);
+    expect(networkRequests).toBe(1);
   });
 
   for (const enabled of [true, false]) {
