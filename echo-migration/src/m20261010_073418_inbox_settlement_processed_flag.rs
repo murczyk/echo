@@ -20,6 +20,21 @@ alter table sigint_inbox_item_settlement
     drop constraint sigint_inbox_item_settlement_check,
     add constraint sigint_inbox_item_settlement_check
         check (is_undefined is not true or settlement_id is null);
+
+create function sigint_inbox_item_settlement_requeue_deleted()
+returns trigger language plpgsql as $$
+begin
+    new.is_undefined = null;
+    return new;
+end;
+$$;
+
+create trigger sigint_inbox_item_settlement_requeue_deleted
+before update of settlement_id on sigint_inbox_item_settlement
+for each row
+when (old.settlement_id is not null and new.settlement_id is null
+      and new.is_undefined is false)
+execute function sigint_inbox_item_settlement_requeue_deleted();
                 "#,
             )
             .await
@@ -32,6 +47,10 @@ alter table sigint_inbox_item_settlement
             .get_connection()
             .execute_unprepared(
                 r#"
+drop trigger sigint_inbox_item_settlement_requeue_deleted
+    on sigint_inbox_item_settlement;
+drop function sigint_inbox_item_settlement_requeue_deleted();
+
 update sigint_inbox_item_settlement
 set is_undefined = null
 where is_undefined is false;

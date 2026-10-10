@@ -1201,6 +1201,68 @@ returning id
 
     #[tokio::test]
     #[serial_test::serial]
+    async fn requeues_deleted_settlement_links_3383() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let (row, _, settlement_id) =
+            insert_settlement_stats_test_fixture(&txn).await.unwrap();
+        insert_active_test_battle_line(&txn).await.unwrap();
+        persist_settlement_resolution(&txn, row.clone(), Some(settlement_id))
+            .await
+            .unwrap();
+        let linked = sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(linked.is_undefined, Some(false));
+        persist_settlement_resolution(&txn, linked, None)
+            .await
+            .unwrap();
+        let unresolved =
+            sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(unresolved.is_undefined, Some(true));
+        persist_settlement_resolution(&txn, unresolved, Some(settlement_id))
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+
+        crate::entities::settlement::Entity::delete_by_id(settlement_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let pending = sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(pending.settlement_id, None);
+        assert_eq!(pending.is_undefined, None);
+
+        let mut cursor = None;
+        assert!(run_inbox_settlement_worker_once(&env, &mut cursor)
+            .await
+            .unwrap());
+        let unresolved =
+            sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(unresolved.settlement_id, None);
+        assert_eq!(unresolved.is_undefined, Some(true));
+        assert!(!run_inbox_settlement_worker_once(&env, &mut cursor)
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
     async fn processed_settlement_flag_migration_roundtrips_3383() {
         use echo_migration::MigratorTrait;
 

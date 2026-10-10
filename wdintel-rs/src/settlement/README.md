@@ -23,6 +23,11 @@ Its rollback restores the original settlement-name index and retains alias data.
 Lookup changes do not reprocess historical links or change JSON text extraction
 and AI prompts. Alias edits take effect on subsequent database lookups.
 
+Inbox links store `is_undefined = false` after a match and `true` after an
+unsuccessful resolution. Deleting a linked canonical settlement clears both
+`settlement_id` and `is_undefined`, returning the link to the pending queue.
+An explicit unsuccessful resolution keeps `true` when clearing an existing link.
+
 Regression coverage: `wdintel-rs/src/settlement/tests.rs`,
 `wdintel-rs/src/ai_settlement/aliases/tests.rs`,
 `wdintel-rs/src/battle_line/mod.rs`, and
