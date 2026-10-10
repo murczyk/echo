@@ -903,9 +903,14 @@ for (const width of [1280, 320]) {
     });
     await page.goto('/');
     const selector = page.getByRole('combobox', { name: 'Глибина аналізу' });
-    await expect(selector).toContainText('Збалансований');
+    await expect(selector).toHaveText('Збалансований');
+    await selector.hover();
+    await page.waitForTimeout(800);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
     await selector.click();
-    await page.getByRole('option', { name: 'Глибокий · до 30 хв' }).click();
+    await expect(page.getByRole('option')).toHaveText(['Швидкий', 'Збалансований', 'Глибокий']);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await page.getByRole('option', { name: 'Глибокий', exact: true }).click();
     await page.getByPlaceholder('Повідомлення').fill('Докладне дослідження');
     await page.getByRole('button', { name: 'Надіслати', exact: true }).click();
     await expect.poll(() => submitted).toEqual(['deep']);

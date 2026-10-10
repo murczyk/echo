@@ -1,7 +1,7 @@
 # Agent reasoning and research budgets
 
-The composer offers **Швидкий** (2 minutes), **Збалансований** (5 minutes),
-and **Глибокий** (30 minutes). Balanced is the default. Successful submission,
+The composer shows only **Швидкий**, **Збалансований**, and **Глибокий**.
+Their limits remain 2, 5, and 30 minutes. Balanced is the default. Successful submission,
 changing provider, and opening another conversation reset the composer to
 Balanced. Retry preserves the failed request's preset. Each follow-up makes
 its own selection; an active request's policy cannot change.
@@ -41,7 +41,7 @@ The optional host setting `ai_agent_reasoning_presets_enabled = true` enables
 the selector. Without it, existing installations retain their behavior.
 Only engines listed in `ai_agent_reasoning_verified_engine_ids` receive the
 variable effort mappings above. Other engines receive time limits with their
-existing fixed reasoning configuration; the selector explains this distinction.
+existing fixed reasoning configuration.
 Engine IDs must be verified against their **actual configured endpoint** before
 being listed. A catalogue entry or SDK fixture is insufficient evidence.
 Queue labels and elapsed execution times are shown independently of this flag.
