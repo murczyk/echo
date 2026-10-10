@@ -13661,7 +13661,9 @@ aiAgentActivityPresentationEncoder struct =
 
 
 type alias AiAgentProviderItem =
-    { id : String
+    { reasoningAvailable : Bool
+    , reasoningPresets : List (AiAgentReasoningPresetItem)
+    , id : String
     , name : String
     , modelName : String
     }
@@ -13670,14 +13672,63 @@ type alias AiAgentProviderItem =
 aiAgentProviderItemEncoder : AiAgentProviderItem -> Json.Encode.Value
 aiAgentProviderItemEncoder struct =
     Json.Encode.object
-        [ ( "id", (Json.Encode.string) struct.id )
+        [ ( "reasoningAvailable", (Json.Encode.bool) struct.reasoningAvailable )
+        , ( "reasoningPresets", (Json.Encode.list (aiAgentReasoningPresetItemEncoder)) struct.reasoningPresets )
+        , ( "id", (Json.Encode.string) struct.id )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "modelName", (Json.Encode.string) struct.modelName )
         ]
 
 
+type AiAgentReasoningPreset
+    = Fast
+    | Balanced
+    | Deep
+
+
+aiAgentReasoningPresetEncoder : AiAgentReasoningPreset -> Json.Encode.Value
+aiAgentReasoningPresetEncoder enum =
+    case enum of
+        Fast ->
+            Json.Encode.string "fast"
+        Balanced ->
+            Json.Encode.string "balanced"
+        Deep ->
+            Json.Encode.string "deep"
+
+type alias AiAgentReasoningPresetItem =
+    { preset : AiAgentReasoningPreset
+    , maxRuntimeSeconds : Int
+    , reasoningEffort : Maybe (String)
+    }
+
+
+aiAgentReasoningPresetItemEncoder : AiAgentReasoningPresetItem -> Json.Encode.Value
+aiAgentReasoningPresetItemEncoder struct =
+    Json.Encode.object
+        [ ( "preset", (aiAgentReasoningPresetEncoder) struct.preset )
+        , ( "maxRuntimeSeconds", (Json.Encode.int) struct.maxRuntimeSeconds )
+        , ( "reasoningEffort", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reasoningEffort )
+        ]
+
+
+type alias AiAgentCompletionMetadata =
+    { coverageLimited : Bool
+    , reason : String
+    }
+
+
+aiAgentCompletionMetadataEncoder : AiAgentCompletionMetadata -> Json.Encode.Value
+aiAgentCompletionMetadataEncoder struct =
+    Json.Encode.object
+        [ ( "coverageLimited", (Json.Encode.bool) struct.coverageLimited )
+        , ( "reason", (Json.Encode.string) struct.reason )
+        ]
+
+
 type alias AiAgentConfigurationRsp =
-    { featureEnabled : Bool
+    { reasoningPresetsEnabled : Bool
+    , featureEnabled : Bool
     , defaultAiEngineId : Maybe (String)
     , providers : List (AiAgentProviderItem)
     }
@@ -13686,7 +13737,8 @@ type alias AiAgentConfigurationRsp =
 aiAgentConfigurationRspEncoder : AiAgentConfigurationRsp -> Json.Encode.Value
 aiAgentConfigurationRspEncoder struct =
     Json.Encode.object
-        [ ( "featureEnabled", (Json.Encode.bool) struct.featureEnabled )
+        [ ( "reasoningPresetsEnabled", (Json.Encode.bool) struct.reasoningPresetsEnabled )
+        , ( "featureEnabled", (Json.Encode.bool) struct.featureEnabled )
         , ( "defaultAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.defaultAiEngineId )
         , ( "providers", (Json.Encode.list (aiAgentProviderItemEncoder)) struct.providers )
         ]
@@ -14269,7 +14321,11 @@ aiAgentMapEditRspEncoder struct =
 
 
 type alias AiAgentMessageItem =
-    { requestId : String
+    { reasoningPreset : Maybe (AiAgentReasoningPreset)
+    , maxRuntimeSeconds : Maybe (Int)
+    , startedAt : Maybe (Int)
+    , completionMetadata : Maybe (AiAgentCompletionMetadata)
+    , requestId : String
     , requestState : String
     , role : String
     , content : String
@@ -14283,7 +14339,11 @@ type alias AiAgentMessageItem =
 aiAgentMessageItemEncoder : AiAgentMessageItem -> Json.Encode.Value
 aiAgentMessageItemEncoder struct =
     Json.Encode.object
-        [ ( "requestId", (Json.Encode.string) struct.requestId )
+        [ ( "reasoningPreset", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentReasoningPresetEncoder)) struct.reasoningPreset )
+        , ( "maxRuntimeSeconds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.maxRuntimeSeconds )
+        , ( "startedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.startedAt )
+        , ( "completionMetadata", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentCompletionMetadataEncoder)) struct.completionMetadata )
+        , ( "requestId", (Json.Encode.string) struct.requestId )
         , ( "requestState", (Json.Encode.string) struct.requestState )
         , ( "role", (Json.Encode.string) struct.role )
         , ( "content", (Json.Encode.string) struct.content )
@@ -14317,7 +14377,8 @@ aiAgentConversationDetailEncoder struct =
 
 
 type alias AiAgentRequestCreateReq =
-    { conversationId : Maybe (String)
+    { reasoningPreset : Maybe (AiAgentReasoningPreset)
+    , conversationId : Maybe (String)
     , aiEngineId : Maybe (String)
     , prompt : String
     , mapEdit : Maybe (AiAgentMapEditTarget)
@@ -14327,7 +14388,8 @@ type alias AiAgentRequestCreateReq =
 aiAgentRequestCreateReqEncoder : AiAgentRequestCreateReq -> Json.Encode.Value
 aiAgentRequestCreateReqEncoder struct =
     Json.Encode.object
-        [ ( "conversationId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.conversationId )
+        [ ( "reasoningPreset", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentReasoningPresetEncoder)) struct.reasoningPreset )
+        , ( "conversationId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.conversationId )
         , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
         , ( "prompt", (Json.Encode.string) struct.prompt )
         , ( "mapEdit", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentMapEditTargetEncoder)) struct.mapEdit )
@@ -26228,14 +26290,64 @@ aiAgentActivityPresentationDecoder =
 aiAgentProviderItemDecoder : Json.Decode.Decoder AiAgentProviderItem
 aiAgentProviderItemDecoder =
     Json.Decode.succeed AiAgentProviderItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningAvailable" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningPresets" (Json.Decode.list (aiAgentReasoningPresetItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
 
 
+aiAgentReasoningPresetDecoder : Json.Decode.Decoder AiAgentReasoningPreset
+aiAgentReasoningPresetDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "fast" ->
+                            Json.Decode.succeed Fast
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "balanced" ->
+                            Json.Decode.succeed Balanced
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "deep" ->
+                            Json.Decode.succeed Deep
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+aiAgentReasoningPresetItemDecoder : Json.Decode.Decoder AiAgentReasoningPresetItem
+aiAgentReasoningPresetItemDecoder =
+    Json.Decode.succeed AiAgentReasoningPresetItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "preset" (aiAgentReasoningPresetDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maxRuntimeSeconds" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningEffort" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiAgentCompletionMetadataDecoder : Json.Decode.Decoder AiAgentCompletionMetadata
+aiAgentCompletionMetadataDecoder =
+    Json.Decode.succeed AiAgentCompletionMetadata
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coverageLimited" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reason" (Json.Decode.string)))
+
+
 aiAgentConfigurationRspDecoder : Json.Decode.Decoder AiAgentConfigurationRsp
 aiAgentConfigurationRspDecoder =
     Json.Decode.succeed AiAgentConfigurationRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningPresetsEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "featureEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "defaultAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "providers" (Json.Decode.list (aiAgentProviderItemDecoder))))
@@ -26532,6 +26644,10 @@ aiAgentMapEditRspDecoder =
 aiAgentMessageItemDecoder : Json.Decode.Decoder AiAgentMessageItem
 aiAgentMessageItemDecoder =
     Json.Decode.succeed AiAgentMessageItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningPreset" (Json.Decode.nullable (aiAgentReasoningPresetDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maxRuntimeSeconds" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "startedAt" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completionMetadata" (Json.Decode.nullable (aiAgentCompletionMetadataDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestState" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.string)))
@@ -26556,6 +26672,7 @@ aiAgentConversationDetailDecoder =
 aiAgentRequestCreateReqDecoder : Json.Decode.Decoder AiAgentRequestCreateReq
 aiAgentRequestCreateReqDecoder =
     Json.Decode.succeed AiAgentRequestCreateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningPreset" (Json.Decode.nullable (aiAgentReasoningPresetDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversationId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))

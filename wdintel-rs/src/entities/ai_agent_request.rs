@@ -28,6 +28,10 @@ pub struct Model {
     pub started_at: Option<DateTime>,
     pub completed_at: Option<DateTime>,
     pub updated_at: DateTime,
+    #[sea_orm(column_type = "JsonBinary", nullable)]
+    pub execution_policy: Option<Json>,
+    #[sea_orm(column_type = "JsonBinary", nullable)]
+    pub completion_metadata: Option<Json>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

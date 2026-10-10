@@ -5291,12 +5291,32 @@ export type AiAgentActivityPresentation = {
 };
 
 export type AiAgentProviderItem = {
+  reasoningAvailable: boolean;
+  reasoningPresets: Array<AiAgentReasoningPresetItem>;
   id: string;
   name: string;
   modelName: string;
 };
 
+export type AiAgentReasoningPreset =
+  | 'fast'
+  | 'balanced'
+  | 'deep'
+;
+
+export type AiAgentReasoningPresetItem = {
+  preset: AiAgentReasoningPreset;
+  maxRuntimeSeconds: number;
+  reasoningEffort: string | null;
+};
+
+export type AiAgentCompletionMetadata = {
+  coverageLimited: boolean;
+  reason: string;
+};
+
 export type AiAgentConfigurationRsp = {
+  reasoningPresetsEnabled: boolean;
   featureEnabled: boolean;
   defaultAiEngineId: string | null;
   providers: Array<AiAgentProviderItem>;
@@ -5533,6 +5553,10 @@ export type AiAgentMapEditRsp = {
 };
 
 export type AiAgentMessageItem = {
+  reasoningPreset: AiAgentReasoningPreset | null;
+  maxRuntimeSeconds: number | null;
+  startedAt: number | null;
+  completionMetadata: AiAgentCompletionMetadata | null;
   requestId: string;
   requestState: string;
   role: string;
@@ -5553,6 +5577,7 @@ export type AiAgentConversationDetail = {
 };
 
 export type AiAgentRequestCreateReq = {
+  reasoningPreset: AiAgentReasoningPreset | null;
   conversationId: string | null;
   aiEngineId: string | null;
   prompt: string;

@@ -163,7 +163,7 @@ pub(super) async fn package(
         .c(h!())
 }
 
-async fn submit_extractor(
+pub(super) async fn submit_extractor(
     env: &Env,
     job: &Job,
     source: &Source,
@@ -202,6 +202,7 @@ async fn submit_extractor(
         response.status(),
         reqwest::StatusCode::TOO_MANY_REQUESTS
             | reqwest::StatusCode::SERVICE_UNAVAILABLE
+            | reqwest::StatusCode::INSUFFICIENT_STORAGE
     ) {
         return Ok(None);
     }

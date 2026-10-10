@@ -287,6 +287,7 @@ pub const AI_AGENT_DISPATCHER_IDENTITY_FILE: &str =
 pub const AI_AGENT_DISPATCHER_KNOWN_HOSTS_FILE: &str =
     "/etc/echo/ai-agent/known_hosts";
 pub const AI_AGENT_DISPATCHER_TIMEOUT_SEC: u64 = 10 * 60;
+pub const AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC: u64 = 30 * 60;
 pub const AI_AGENT_DISPATCHER_CONTROL_TIMEOUT_SEC: u64 = 30;
 pub const AI_AGENT_DISPATCHER_MAX_FRAME_BYTES: usize = 1024 * 1024;
 pub const AI_AGENT_DISPATCHER_CONTROL_MAX_FRAMES: usize = 32;
@@ -302,9 +303,12 @@ pub const AI_AGENT_PROVIDER_CAPABILITY_CALLS_REDIS_PREFIX: &str =
 pub const AI_AGENT_PROVIDER_CAPABILITY_CORRELATION_REDIS_PREFIX: &str =
     "ai-agent:provider-capability-correlation:";
 pub const AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC: u64 = 11 * 60;
+pub const AI_AGENT_GLM_5_3_PROVIDER_CAPABILITY_TTL_SEC: u64 =
+    AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC + 60;
 pub const AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT: i64 = 256;
 pub const AI_AGENT_PROVIDER_REQUEST_MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const AI_AGENT_PROVIDER_STREAM_MAX_BYTES: usize = 16 * 1024 * 1024;
 pub const AI_AGENT_PROVIDER_ERROR_MAX_BYTES: usize = 64 * 1024;
 pub const AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS: usize = 4 * 1024;
 pub const AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE: &str =
@@ -312,14 +316,26 @@ pub const AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE: &str =
 pub const AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE: &str =
     "Provider output token limit reached";
 pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
+pub const AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC: u64 =
+    AI_AGENT_DISPATCHER_TIMEOUT_SEC;
 pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";
 pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
 pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
+pub const AI_AGENT_OPENAI_GPT_6_1_SOL: &str = "gpt-6.1-sol";
+pub const AI_AGENT_FAST_RUNTIME_SEC: u64 = 120;
+pub const AI_AGENT_BALANCED_RUNTIME_SEC: u64 = 300;
+pub const AI_AGENT_DEEP_RUNTIME_SEC: u64 = 1800;
+pub const AI_AGENT_FAST_FINALIZATION_SEC: u64 = 30;
+pub const AI_AGENT_BALANCED_FINALIZATION_SEC: u64 = 60;
+pub const AI_AGENT_DEEP_FINALIZATION_SEC: u64 = 120;
+pub const AI_AGENT_DEADLINE_CLEANUP_SEC: u64 = 5;
+pub const AI_AGENT_REASONING_PURPOSE_HEADER: &str = "x-echo-ai-purpose";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
 pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.09.1";
+pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.10.1";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -1564,7 +1580,17 @@ pub struct Config {
     pub network_invalidation_worker_night_shift_start_hour: Option<u32>,
     pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
     pub ai_agent_dispatcher: Option<AiAgentDispatcherConfig>,
+    pub ai_agent_glm_checkpoint_provider: Option<AiAgentGlmCheckpointProvider>,
+    pub ai_agent_reasoning_presets_enabled: Option<bool>,
+    pub ai_agent_reasoning_verified_engine_ids: Option<Vec<uuid::Uuid>>,
     pub ocr: Option<OcrConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum AiAgentGlmCheckpointProvider {
+    Glm,
+    Luna,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]

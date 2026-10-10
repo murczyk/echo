@@ -290,6 +290,20 @@ assistant messages into an in-memory Pi session. Echo supplies each provider's
 context before generation and between complete tool rounds, accounting for the
 system prompt, tool schemas and provider output allowance. Checkpoints preserve
 evidence, citations and pagination; empty or truncated checkpoints are rejected.
+Interrupted checkpoint streams are retried once with the same input and output
+cap. Partial checkpoints never replace evidence; cancellation, content filters,
+and other provider failures end the checkpoint without this retry.
+A non-reducing prefix checkpoint can fall back once to all completed evidence,
+including the latest tool batch, within the same input and output guards.
+An optional gateway checkpoint engine keeps the primary report engine unchanged;
+it can also reuse the primary engine without replacing its runtime profile.
+Both use the same request-scoped capability.
+With this engine, an output-limit failure triggers one fresh evidence checkpoint
+and one primary-engine retry with tools disabled within the existing request
+deadline and limits. Its focused synthesis prompt preserves tenant instructions,
+request time, scope and citation rules without the tool workflow guidance.
+Checkpoint generation has a separate `checkpointMaxTokens` output cap, defaulting
+to the normal answer cap. Its failure cause survives SDK error conversion.
 Each tool response and retained tool context remain bounded, with discarded
 allowance released after compaction. The runner
 also emits normalized

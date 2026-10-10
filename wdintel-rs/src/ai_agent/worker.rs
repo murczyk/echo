@@ -42,8 +42,15 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 enum RunOutcome {
-    Completed(String),
+    Completed(String, Option<super::types::AiAgentCompletionMetadata>),
     Cancelled,
+}
+
+struct CheckpointProvider {
+    ai_engine_id: Uuid,
+    model_name: String,
+    context_window: i32,
+    max_tokens: i32,
 }
 
 struct WorkerLease {
@@ -416,8 +423,9 @@ async fn process_claimed_request(
         );
     }
     match result {
-        Ok(RunOutcome::Completed(response)) => {
-            if let Err(err) = complete_request(env, request_id, response).await
+        Ok(RunOutcome::Completed(response, metadata)) => {
+            if let Err(err) =
+                complete_request(env, request_id, response, metadata).await
             {
                 error!(
                     "AI agent completion persistence failed for {request_id}: {err:#?}"
@@ -442,9 +450,29 @@ async fn run_request(
     request: &ai_agent_request::Model,
     cancellation: &CancellationToken,
 ) -> Result<RunOutcome, AppError> {
+    let ai_engine =
+        access::allowed_engine(&env.dbx, Some(request.ai_engine_id))
+            .await
+            .c(h!())?;
+    let policy = super::reasoning::request_policy(request).c(h!())?;
+    let timeout = policy
+        .as_ref()
+        .and_then(|policy| super::reasoning::deadline_millis(request, policy))
+        .map(|deadline| {
+            StdDuration::from_millis(std::cmp::max(
+                deadline.saturating_sub(Utc::now().timestamp_millis()),
+                1,
+            ) as u64)
+                + StdDuration::from_secs(
+                    crate::config::AI_AGENT_DEADLINE_CLEANUP_SEC,
+                )
+        })
+        .unwrap_or_else(|| {
+            request_execution_timeout(&ai_engine.model_name, &ai_engine.url)
+        });
     match tokio::time::timeout(
-        StdDuration::from_secs(AI_AGENT_DISPATCHER_TIMEOUT_SEC),
-        run_request_inner(env, request, cancellation),
+        timeout,
+        run_request_inner(env, request, cancellation, ai_engine),
     )
     .await
     {
@@ -468,6 +496,17 @@ async fn run_request(
             })
         }
     }
+}
+
+fn request_execution_timeout(model_name: &str, url: &str) -> StdDuration {
+    let seconds = if model_name == crate::config::AI_AGENT_GLM_5_3
+        && crate::ai_engine::client::is_government_url(url)
+    {
+        crate::config::AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC
+    } else {
+        AI_AGENT_DISPATCHER_TIMEOUT_SEC
+    };
+    StdDuration::from_secs(seconds)
 }
 
 async fn append_request_preparation(
@@ -518,8 +557,13 @@ async fn run_request_inner(
     env: &Env,
     request: &ai_agent_request::Model,
     cancellation: &CancellationToken,
+    ai_engine: crate::entities::ai_engine::Model,
 ) -> Result<RunOutcome, AppError> {
-    let request_started_at = Utc::now();
+    let request_started_at = request
+        .started_at
+        .map(|started| started.and_utc())
+        .unwrap_or_else(Utc::now);
+    let execution_policy = super::reasoning::request_policy(request).c(h!())?;
     if cancellation.is_cancelled() {
         return Err(interrupted_error());
     }
@@ -541,8 +585,6 @@ async fn run_request_inner(
             "AI agent harness was disabled before execution".to_string(),
         ));
     }
-    let ai_engine =
-        access::allowed_engine(&env.dbx, Some(request.ai_engine_id)).await?;
     let runtime_profile =
         ai_agent_engine_runtime_profile::Entity::find_by_id(ai_engine.id)
             .one(&env.dbx)
@@ -604,6 +646,21 @@ async fn run_request_inner(
                 "AI engine is not supported by the agent harness".to_string(),
             )
         })?;
+    let mut checkpoint = checkpoint_provider(env, &ai_engine, &runtime_profile)
+        .await
+        .c(h!())?;
+    if execution_policy.is_some() {
+        checkpoint = Some(CheckpointProvider {
+            ai_engine_id: ai_engine.id,
+            model_name: ai_engine.model_name.clone(),
+            context_window: runtime_profile.context_window_tokens,
+            max_tokens: checkpoint_output_tokens(&ai_engine, &runtime_profile),
+        });
+    }
+    let checkpoint_max_tokens = checkpoint.as_ref().map_or_else(
+        || checkpoint_output_tokens(&ai_engine, &runtime_profile),
+        |checkpoint| checkpoint.max_tokens,
+    );
     let gateway_capability =
         if provider_transport == access::AgentProviderTransport::EchoGateway {
             Some(
@@ -614,8 +671,20 @@ async fn run_request_inner(
                     correlation_id,
                     ai_engine.id,
                     ai_engine.model_name.clone(),
+                    checkpoint
+                        .as_ref()
+                        .filter(|checkpoint| {
+                            execution_policy.is_some()
+                                || checkpoint.model_name != ai_engine.model_name
+                        })
+                        .map(|checkpoint| auth::CheckpointProviderGrant {
+                            ai_engine_id: checkpoint.ai_engine_id,
+                            model_name: checkpoint.model_name.clone(),
+                            max_output_tokens: checkpoint.max_tokens,
+                        }),
                 )
-                .await?,
+                .await
+                .c(h!())?,
             )
         } else {
             None
@@ -631,6 +700,7 @@ async fn run_request_inner(
             "modelName": ai_engine.model_name,
             "contextWindow": runtime_profile.context_window_tokens,
             "maxTokens": runtime_profile.max_output_tokens,
+            "checkpointMaxTokens": checkpoint_max_tokens,
             "compactionReserveTokens": runtime_profile.compaction_reserve_tokens,
             "compactionKeepRecentTokens": runtime_profile.compaction_keep_recent_tokens,
             "bootstrapToken": bootstrap_token,
@@ -652,6 +722,17 @@ async fn run_request_inner(
         ai_engine.token,
         gateway_capability,
     );
+    if let Some(policy) = &execution_policy {
+        runner_payload["executionPolicy"] =
+            serde_json::to_value(policy).c(h!())?;
+        runner_payload["deadlineAt"] =
+            json!(super::reasoning::deadline_millis(request, policy));
+    }
+    if let Some(checkpoint) = checkpoint {
+        runner_payload["checkpointModelName"] = json!(checkpoint.model_name);
+        runner_payload["checkpointContextWindow"] =
+            json!(checkpoint.context_window);
+    }
     if let Some(map_edit) = map_edit {
         runner_payload["mapEdit"] = serde_json::to_value(map_edit).c(h!())?;
     }
@@ -669,6 +750,7 @@ async fn run_request_inner(
     let mut runner_event_count = 0_usize;
     let mut runner_event_bytes = 0_usize;
     let mut terminal_seen = false;
+    let mut completion_metadata = None;
     loop {
         tokio::select! {
             envelope = stream.next() => {
@@ -697,6 +779,10 @@ async fn run_request_inner(
                         });
                     }
                     if let Some((event_type, payload)) = events::normalize_runner_event(event) {
+                        if event_type == "completion_metadata" {
+                            if execution_policy.is_none() { continue; }
+                            completion_metadata = Some(serde_json::from_value(payload.clone()).c(h!())?);
+                        }
                         let update = events::assistant_text_update(&event_type, &payload);
                         let (response_bytes, next_chars) = match &update {
                             Some(events::AssistantTextUpdate::Replace(text)) => {
@@ -787,7 +873,7 @@ async fn run_request_inner(
     if request_is_cancelled(env, request.id).await? {
         return Ok(RunOutcome::Cancelled);
     }
-    Ok(RunOutcome::Completed(response))
+    Ok(RunOutcome::Completed(response, completion_metadata))
 }
 
 fn bounded_runner_payload(
@@ -807,6 +893,85 @@ fn bounded_runner_payload(
             });
         }
         history.drain(..2);
+    }
+}
+
+async fn checkpoint_provider(
+    env: &Env,
+    ai_engine: &crate::entities::ai_engine::Model,
+    runtime_profile: &ai_agent_engine_runtime_profile::Model,
+) -> anyhow::Result<Option<CheckpointProvider>> {
+    if ai_engine.model_name != crate::config::AI_AGENT_GLM_5_3
+        || !crate::ai_engine::client::is_government_url(&ai_engine.url)
+    {
+        return Ok(None);
+    }
+    if env.config.ai_agent_glm_checkpoint_provider
+        == Some(crate::config::AiAgentGlmCheckpointProvider::Glm)
+    {
+        return Ok(Some(CheckpointProvider {
+            ai_engine_id: ai_engine.id,
+            model_name: ai_engine.model_name.clone(),
+            context_window: runtime_profile.context_window_tokens,
+            max_tokens: checkpoint_output_tokens(ai_engine, runtime_profile),
+        }));
+    }
+    let ai_engine = access::allowed_engines(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .filter(|ai_engine| {
+            ai_engine.model_name == crate::config::AI_AGENT_OPENAI_GPT_6_LUNA
+                && crate::ai_engine::client::is_government_url(&ai_engine.url)
+        })
+        .min_by_key(|ai_engine| ai_engine.id);
+    let Some(ai_engine) = ai_engine else {
+        return Ok(None);
+    };
+    let checkpoint_profile =
+        ai_agent_engine_runtime_profile::Entity::find_by_id(ai_engine.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Checkpoint provider runtime profile is not configured"
+                )
+            })
+            .c(h!())?;
+    let max_tokens = std::cmp::min(
+        checkpoint_profile.max_output_tokens,
+        runtime_profile.compaction_reserve_tokens,
+    );
+    anyhow::ensure!(
+        max_tokens >= 256
+            && max_tokens < checkpoint_profile.context_window_tokens - 1_024,
+        "Checkpoint provider runtime profile is invalid"
+    );
+    Ok(Some(CheckpointProvider {
+        ai_engine_id: ai_engine.id,
+        model_name: ai_engine.model_name,
+        context_window: checkpoint_profile.context_window_tokens,
+        max_tokens,
+    }))
+}
+
+fn checkpoint_output_tokens(
+    ai_engine: &crate::entities::ai_engine::Model,
+    runtime_profile: &ai_agent_engine_runtime_profile::Model,
+) -> i32 {
+    if ai_engine.model_name == crate::config::AI_AGENT_GLM_5_3
+        && crate::ai_engine::client::is_government_url(&ai_engine.url)
+    {
+        std::cmp::max(
+            runtime_profile.max_output_tokens,
+            std::cmp::min(
+                crate::config::AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS,
+                runtime_profile.compaction_reserve_tokens,
+            ),
+        )
+    } else {
+        runtime_profile.max_output_tokens
     }
 }
 
@@ -972,6 +1137,7 @@ async fn complete_request(
     env: &Env,
     request_id: Uuid,
     response: String,
+    metadata: Option<super::types::AiAgentCompletionMetadata>,
 ) -> Result<bool, AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
     let request = ai_agent_request::Entity::find_by_id(request_id)
@@ -995,6 +1161,11 @@ async fn complete_request(
     let mut request = request.into_active_model();
     request.state = Set("completed".to_string());
     request.response = Set(Some(response.clone()));
+    request.completion_metadata = Set(metadata
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .c(h!())?);
     request.completed_at = Set(Some(now));
     request.updated_at = Set(now);
     request.update(&txn).await.c(h!())?;
@@ -1012,7 +1183,7 @@ async fn complete_request(
         &txn,
         request_id,
         "completion",
-        json!({ "responseLength": response.chars().count() }),
+        json!({ "responseLength": response.chars().count(), "completionMetadata": metadata }),
     )
     .await?;
     review::enqueue_in_transaction(&txn, request_id).await?;
@@ -1327,7 +1498,120 @@ async fn reconcile_abandoned_containers(env: &Env) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::{ai_agent_allowed_engine, ai_engine};
     use serial_test::serial;
+
+    #[actix_web::test]
+    #[serial]
+    async fn issue_3724_selected_glm_checkpoints_with_luna_still_allowed() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let mut env = env.as_ref().clone();
+        let allowed_engines = ai_agent_allowed_engine::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        ai_agent_allowed_engine::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let mut engines = Vec::new();
+        for (name, output_tokens) in [
+            (crate::config::AI_AGENT_GLM_5_3, 16_384),
+            (crate::config::AI_AGENT_OPENAI_GPT_6_LUNA, 8_192),
+        ] {
+            let engine = ai_engine::ActiveModel {
+                id: Set(Uuid::now_v7()),
+                name: Set(format!("checkpoint-{name}-{}", Uuid::now_v7())),
+                model_name: Set(name.to_string()),
+                url: Set(crate::config::AI_GOV_UA_API_BASE.to_string()),
+                enabled: Set(true),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            ai_agent_allowed_engine::ActiveModel {
+                ai_engine_id: Set(engine.id),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            let profile = ai_agent_engine_runtime_profile::ActiveModel {
+                ai_engine_id: Set(engine.id),
+                context_window_tokens: Set(65_536),
+                max_output_tokens: Set(output_tokens),
+                compaction_reserve_tokens: Set(16_384),
+                compaction_keep_recent_tokens: Set(8_192),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            engines.push((engine, profile));
+        }
+        let (glm, profile) = &engines[0];
+        env.config.ai_agent_glm_checkpoint_provider = None;
+        let checkpoint = checkpoint_provider(&env, glm, profile)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(checkpoint.ai_engine_id, engines[1].0.id);
+        assert_eq!(checkpoint.max_tokens, 8_192);
+        env.config.ai_agent_glm_checkpoint_provider =
+            Some(crate::config::AiAgentGlmCheckpointProvider::Glm);
+        let checkpoint = checkpoint_provider(&env, glm, profile)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(checkpoint.ai_engine_id, glm.id);
+        assert_eq!(checkpoint.model_name, glm.model_name);
+        assert_eq!(checkpoint.context_window, 65_536);
+        assert_eq!(checkpoint.max_tokens, 16_384);
+        assert!(checkpoint_provider(&env, &engines[1].0, &engines[1].1)
+            .await
+            .unwrap()
+            .is_none());
+        for (engine, _) in engines {
+            ai_engine::Entity::delete_by_id(engine.id)
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+        }
+        for engine in allowed_engines {
+            engine.into_active_model().insert(&env.dbx).await.unwrap();
+        }
+    }
+
+    #[test]
+    fn issue_3724_scoped_long_execution_to_government_glm() {
+        let regular = StdDuration::from_secs(AI_AGENT_DISPATCHER_TIMEOUT_SEC);
+        let government = crate::config::AI_GOV_UA_API_BASE;
+        assert_eq!(
+            request_execution_timeout(
+                crate::config::AI_AGENT_GLM_5_3,
+                government,
+            ),
+            StdDuration::from_secs(
+                crate::config::AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC
+            )
+        );
+        assert_eq!(
+            request_execution_timeout(
+                crate::config::AI_AGENT_GLM_5_3,
+                "https://example.invalid/v1",
+            ),
+            regular
+        );
+        assert_eq!(
+            request_execution_timeout(
+                crate::config::AI_AGENT_OPENAI_GPT_6_LUNA,
+                government,
+            ),
+            regular
+        );
+    }
 
     #[test]
     fn cleanup_periods_match_product_contract() {

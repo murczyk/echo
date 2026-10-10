@@ -5,6 +5,9 @@
         { "table": "public.system_settings", "strategy": "cdc_backfill" }
       ]
     },
+    "echo:m20261009_201221_ai_agent_reasoning_policy": {
+      "changes": [{ "table": "public.ai_agent_request", "strategy": "excluded" }]
+    },
     "echo:m20261008_113430_sigint_unit_orbit_combat_type": {
       "changes": [
         { "table": "public.sigint_unit_orbit_combat_type", "strategy": "replicated_snapshot" },

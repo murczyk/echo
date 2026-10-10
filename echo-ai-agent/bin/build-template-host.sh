@@ -80,6 +80,7 @@ push_template_files() {
     "$BUNDLE_DIR/runner/echo-ai-agent-runner" \
     "$BUNDLE_DIR/runner/runner.ts" \
     "$BUNDLE_DIR/runner/context-compaction.ts" \
+    "$BUNDLE_DIR/runner/execution-policy.ts" \
     "$BUNDLE_DIR/runner/citations.ts" \
     "$BUNDLE_DIR/runner/attachments.ts" \
     "$BUNDLE_DIR/runner/devices.ts" \
