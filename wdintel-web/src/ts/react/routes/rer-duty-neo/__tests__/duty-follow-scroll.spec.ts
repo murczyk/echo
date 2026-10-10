@@ -7,7 +7,7 @@ import {
   feedFollowEaseOutCubic,
   feedFollowScrollFrame,
   getFeedFollowScrollBehavior,
-} from '../../shared/message-feed/feed-follow-scroll';
+} from '../../shared/message-feed';
 describe('getFeedFollowScrollBehavior', () => {
   afterEach(() => {
     vi.restoreAllMocks();

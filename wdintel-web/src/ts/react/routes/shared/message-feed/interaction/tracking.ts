@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { useFeedScrollDiagnostics } from './message-feed-diagnostics';
+import { useFeedScrollDiagnostics } from '../internal/diagnostics';
 import {
   distanceToBottom,
-  isAtPhysicalBottom,
   effectiveBottomLoadBufferPx,
   FLUSH_PENDING_SCROLL_IDLE_MS,
+  isAtPhysicalBottom,
   LOAD_NEWER_SCROLL_IDLE_MS,
-  type ScrollStateOpts,
-  type WindowedFeedScrollRefs,
-} from './windowed-feed-scroll-shared';
+} from '../internal/scroll-math';
+import type { ScrollStateOpts, WindowedFeedScrollRefs } from '../internal/internal.types';
 
 export function useWindowedFeedScrollTracking(args: {
   refs: WindowedFeedScrollRefs;

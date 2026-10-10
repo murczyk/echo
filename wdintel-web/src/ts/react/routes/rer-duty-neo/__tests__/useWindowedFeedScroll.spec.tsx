@@ -4,13 +4,13 @@
 import { act, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useWindowedFeedScroll } from '../../shared/message-feed/useWindowedFeedScroll';
-import { useRerDutyNavigation } from '../useRerDutyNavigation';
 import {
   ScrollNavigationIntent,
+  useWindowedFeedScroll,
   type AnchorSnapshot,
   type ReachedBottomContext,
-} from '../../shared/message-feed/windowed-feed-scroll-shared';
+} from '../../shared/message-feed';
+import { useRerDutyNavigation } from '../useRerDutyNavigation';
 
 const renderedItemRefs = new Map<number, (node: HTMLDivElement | null) => void>();
 let latestScrollHandle: ReturnType<typeof useWindowedFeedScroll> | null = null;

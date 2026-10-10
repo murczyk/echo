@@ -43,14 +43,15 @@ import {
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
 import { feedListRenderStateEqual } from './utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
-import { useWindowedFeedScroll } from '../shared/message-feed/useWindowedFeedScroll';
-import { MessageFeed, MessageFeedRows } from '../shared/message-feed/MessageFeed';
-import type { MessageFeedPolicy } from '../shared/message-feed/message-feed.types';
 import {
+  MessageFeed,
+  MessageFeedRows,
   ScrollNavigationIntent,
+  useWindowedFeedScroll,
   type AnchorSnapshot,
   type ExplicitScrollNavigation,
-} from '../shared/message-feed/windowed-feed-scroll-shared';
+  type MessageFeedPolicy,
+} from '../shared/message-feed';
 import { useFeedIdleViewportOffload } from './useFeedIdleViewportOffload';
 import {
   recordDutyScrollDebugEvent,

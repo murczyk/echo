@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react';
-import type { FeedScrollMetrics } from '../shared/message-feed/message-feed.types';
+import type { FeedScrollMetrics } from '../shared/message-feed';
 
 export type DutyScrollDebugActivity =
   'unreadCount' | 'tailCount' | 'newerMessages' | 'olderMessages';

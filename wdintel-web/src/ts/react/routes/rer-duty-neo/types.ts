@@ -15,10 +15,7 @@ import type { MessageCardBotTagAction } from '../shared/message-card/message-car
 import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
 import type { DutyWorkspaceFabAvoidance } from './duty-scroll-fab-position';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
-import type {
-  AnchorSnapshot,
-  ReachedBottomContext,
-} from '../shared/message-feed/windowed-feed-scroll-shared';
+import type { AnchorSnapshot, ReachedBottomContext } from '../shared/message-feed';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 
 export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' | 'exhausted';

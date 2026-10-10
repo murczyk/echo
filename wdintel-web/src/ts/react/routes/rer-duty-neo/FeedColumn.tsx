@@ -26,10 +26,7 @@ import type { FeedColumnModel } from './types';
 import { DutyScrollDebugPanel } from './DutyScrollDebugPanel';
 import { registerDutyScrollDebugBellPress } from './duty-scroll-debug';
 import { clearFeedColumnFab, publishFeedColumnFab } from './feedColumnFab';
-import type {
-  ExplicitScrollNavigation,
-  ScrollNavigationIntent,
-} from '../shared/message-feed/windowed-feed-scroll-shared';
+import type { ExplicitScrollNavigation, ScrollNavigationIntent } from '../shared/message-feed';
 
 export type FeedColumnProps = {
   column: FeedColumnModel;

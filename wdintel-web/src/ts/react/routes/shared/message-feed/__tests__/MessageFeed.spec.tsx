@@ -2,14 +2,14 @@
 import { act, startTransition, Suspense } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MessageFeed } from '../MessageFeed';
-import { useWindowedFeedScroll } from '../useWindowedFeedScroll';
 import {
+  MessageFeed,
   ScrollNavigationIntent,
+  useWindowedFeedScroll,
+  type MessageFeedPolicy,
   type UseWindowedFeedScrollOptions,
   type WindowedFeedScrollHandle,
-} from '../windowed-feed-scroll-shared';
-import type { MessageFeedPolicy } from '../message-feed.types';
+} from '..';
 
 let scroll: WindowedFeedScrollHandle;
 let itemHeight = 50;

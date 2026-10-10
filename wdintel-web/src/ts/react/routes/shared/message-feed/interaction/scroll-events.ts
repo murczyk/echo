@@ -3,9 +3,9 @@ import {
   distanceToBottom,
   hasViewportSizeChanged,
   isAtPhysicalBottom,
-} from './windowed-feed-scroll-shared';
-import { useFeedScrollDiagnostics } from './message-feed-diagnostics';
-import type { FeedScrollHelpers } from './message-feed-internals';
+} from '../internal/scroll-math';
+import { useFeedScrollDiagnostics } from '../internal/diagnostics';
+import type { FeedScrollHelpers } from '../internal/internal.types';
 
 export function useMessageFeedScrollEvents({
   refs,

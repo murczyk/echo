@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useFeedScrollDiagnostics } from './message-feed-diagnostics';
-import type { FeedScrollHelpers } from './message-feed-internals';
+import { useFeedScrollDiagnostics } from '../internal/diagnostics';
+import type { FeedScrollHelpers } from '../internal/internal.types';
 
 const ANCHOR_RESTORE_LAYOUT_STABLE_FRAMES = 3;
 

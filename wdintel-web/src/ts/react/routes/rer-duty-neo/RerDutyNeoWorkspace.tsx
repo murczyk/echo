@@ -15,7 +15,7 @@ import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
 import { DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET } from '../shared/manage-message/floating-control-geometry';
 import { useObservedWidth } from '../../hooks/use-observed-width';
 import { shouldUseActiveFeedLayout } from './duty-editor-layout';
-import type { AnchorSnapshot } from '../shared/message-feed/windowed-feed-scroll-shared';
+import type { AnchorSnapshot } from '../shared/message-feed';
 
 function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
   if (narrow) return '100%';

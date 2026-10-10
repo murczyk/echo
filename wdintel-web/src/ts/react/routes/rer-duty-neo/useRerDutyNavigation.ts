@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 
-import { getFeedFollowScrollBehavior } from '../shared/message-feed/feed-follow-scroll';
-import { ScrollNavigationIntent } from '../shared/message-feed/windowed-feed-scroll-shared';
-import type { ExplicitScrollNavigation } from '../shared/message-feed/windowed-feed-scroll-shared';
+import {
+  getFeedFollowScrollBehavior,
+  ScrollNavigationIntent,
+  type ExplicitScrollNavigation,
+} from '../shared/message-feed';
 
 export type PendingFeedLanding = {
   generation: number;

@@ -1,37 +1,34 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
-import { useFeedScrollDiagnostics } from './message-feed-diagnostics';
-import { useWindowedFeedScrollAnchors } from './useWindowedFeedScrollAnchors';
-import { useWindowedFeedScrollRefs } from './useWindowedFeedScrollRefs';
-import { useWindowedFeedScrollFollow } from './useWindowedFeedScrollFollow';
-import { useWindowedFeedScrollTracking } from './useWindowedFeedScrollTracking';
-import { useMessageFeedInput } from './useMessageFeedInput';
-import { useMessageFeedAnchorSettle } from './useMessageFeedAnchorSettle';
-import { useMessageFeedLayout } from './useMessageFeedLayout';
-import { useMessageFeedScrollEvents } from './useMessageFeedScrollEvents';
-import { useMessageFeedSpacer } from './useMessageFeedSpacer';
-import {
-  centeredItemScrollTop,
-  getTargetCardElement,
-  isItemFullyVisible,
-} from './message-feed-focus';
-import { stabilizeMessageAtContainerTop, useMessageFeedViewport } from './message-feed-viewport';
+import { useFeedScrollDiagnostics } from './internal/diagnostics';
+import { useWindowedFeedScrollRefs } from './internal/refs';
+import { useWindowedFeedScrollFollow } from './interaction/follow';
+import { useMessageFeedInput } from './interaction/input';
+import { useMessageFeedScrollEvents } from './interaction/scroll-events';
+import { useWindowedFeedScrollTracking } from './interaction/tracking';
+import { useWindowedFeedScrollAnchors } from './viewport/anchors';
+import { useMessageFeedAnchorSettle } from './viewport/settle';
+import { useMessageFeedLayout } from './viewport/layout';
+import { useMessageFeedSpacer } from './viewport/spacer';
+import { centeredItemScrollTop, getTargetCardElement, isItemFullyVisible } from './viewport/focus';
+import { stabilizeMessageAtContainerTop, useMessageFeedViewport } from './viewport/preservation';
 import {
   DEFAULT_AT_BOTTOM_THRESHOLD_PX,
   DEFAULT_BOTTOM_LOAD_BUFFER_PX,
   DEFAULT_TOP_LOAD_BUFFER_PX,
   nowMs,
+} from './internal/scroll-math';
+import type { ScrollStateOpts, TopStatus } from './internal/internal.types';
+import {
   ScrollNavigationIntent,
-  type ScrollStateOpts,
-  type TopStatus,
   type UseWindowedFeedScrollOptions,
   type WindowedFeedScrollHandle,
-} from './windowed-feed-scroll-shared';
+} from './message-feed.types';
 
 export type {
   UseWindowedFeedScrollOptions,
   WindowedFeedScrollHandle,
   WindowedFeedScrollItem,
-} from './windowed-feed-scroll-shared';
+} from './message-feed.types';
 
 export function useWindowedFeedScroll({
   itemIds,

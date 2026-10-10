@@ -1,7 +1,7 @@
 import { Box, Skeleton } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { MessageFeed } from '../../shared/message-feed/MessageFeed';
+import { MessageFeed } from '../../shared/message-feed';
 import { useAnalysisMessageFeed } from './useAnalysisMessageFeed';
 import { AnalysisMessageCardItem, type BotTagAction } from './AnalysisMessageCardItem';
 import { isNullOrUndefined, isPresent } from '../../../utils/misc';

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useLayoutEffect, type HTMLAttributes, type ReactNode } from 'react';
-import type { WindowedFeedScrollHandle } from './windowed-feed-scroll-shared';
+import type { WindowedFeedScrollHandle } from './message-feed.types';
 import './message-feed.css';
 
 type FeedElementAttributes<T extends HTMLElement> = HTMLAttributes<T> & {

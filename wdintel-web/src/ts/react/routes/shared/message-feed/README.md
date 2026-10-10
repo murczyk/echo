@@ -5,6 +5,21 @@ component owns the native scroller/list and keyed rows; the hook owns element
 registration, visible anchors, resize compensation, edge detection, follow,
 focused positioning, page alignment, and cancellation. Neither imports a host.
 
+## Package boundary
+
+Host code imports components, hooks, navigation helpers, and public contracts
+from `shared/message-feed`. The package entry point is `index.ts`; hosts must not
+import files from the implementation directories directly.
+
+- `viewport/` owns anchors, focus geometry, layout compensation, viewport
+  preservation, settling, and spacer state.
+- `interaction/` owns reader input, scroll events, position tracking, and live
+  tail following.
+- `internal/` owns mutable refs, diagnostics adapters, private hook contracts,
+  constants, and scroll geometry helpers.
+- `__tests__/` verifies the package API and shared feed behavior. Host-specific
+  tests remain beside Duty and Analysis.
+
 ## Host contracts
 
 - Supply stable numeric ids in display order. Keep data fetching, request

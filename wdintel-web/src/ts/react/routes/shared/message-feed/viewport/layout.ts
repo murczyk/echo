@@ -1,12 +1,8 @@
 import { useLayoutEffect, useRef } from 'react';
-import {
-  areNumberArraysEqual,
-  hasViewportSizeChanged,
-  nowMs,
-  ScrollNavigationIntent,
-} from './windowed-feed-scroll-shared';
-import type { FeedLayoutOptions } from './message-feed-internals';
-import { useFeedScrollDiagnostics } from './message-feed-diagnostics';
+import { areNumberArraysEqual, hasViewportSizeChanged, nowMs } from '../internal/scroll-math';
+import type { FeedLayoutOptions } from '../internal/internal.types';
+import { useFeedScrollDiagnostics } from '../internal/diagnostics';
+import { ScrollNavigationIntent } from '../message-feed.types';
 
 export function useMessageFeedLayout(options: FeedLayoutOptions) {
   const {

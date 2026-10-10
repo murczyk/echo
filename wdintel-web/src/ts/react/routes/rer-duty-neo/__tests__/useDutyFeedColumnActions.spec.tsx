@@ -9,7 +9,7 @@ import {
   type DutyFeedColumnActionsDeps,
   useDutyFeedColumnActions,
 } from '../useDutyFeedColumnActions';
-import { ScrollNavigationIntent } from '../../shared/message-feed/windowed-feed-scroll-shared';
+import { ScrollNavigationIntent } from '../../shared/message-feed';
 import type { FeedColumnModel } from '../types';
 import type { MessageFeedState } from '../utils';
 

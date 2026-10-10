@@ -1,7 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import type { InboxMessage } from '../../../../../Bindings';
-import { useWindowedFeedScroll } from '../../shared/message-feed/useWindowedFeedScroll';
-import type { MessageFeedPolicy } from '../../shared/message-feed/message-feed.types';
+import { useWindowedFeedScroll, type MessageFeedPolicy } from '../../shared/message-feed';
 import type { AnalysisDirectMessageNavigation } from '../types';
 import { ANALYSIS_MESSAGES_PAGE_SIZE, getFirstLoadedMessagesPageIndex } from '../helpers';
 

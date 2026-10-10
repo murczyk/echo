@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import type { WindowedFeedScrollRefs } from './windowed-feed-scroll-shared';
-import type { FeedScrollMetrics } from './message-feed.types';
+import type { FeedScrollMetrics } from '../message-feed.types';
+import type { WindowedFeedScrollRefs } from './internal.types';
 
 export function useFeedScrollDiagnostics(refs: WindowedFeedScrollRefs) {
   return useMemo(

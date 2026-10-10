@@ -1,23 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useFeedScrollDiagnostics } from './message-feed-diagnostics';
+import { useFeedScrollDiagnostics } from '../internal/diagnostics';
 import {
   FEED_FOLLOW_LAYOUT_STABLE_FRAMES,
   FEED_FOLLOW_LAYOUT_STABLE_MAX_MS,
   FEED_SMOOTH_FOLLOW_MS,
   feedFollowScrollFrame,
   getFeedFollowScrollBehavior,
-} from './feed-follow-scroll';
+} from './follow-scroll';
 import {
   distanceToBottom,
-  isAtPhysicalBottom,
   INITIAL_BOTTOM_SETTLE_FRAMES,
   INITIAL_BOTTOM_SETTLE_TIMEOUT_MS,
+  isAtPhysicalBottom,
   nowMs,
-  ScrollNavigationIntent,
-  type ExplicitScrollNavigation,
-  type ScrollStateOpts,
-  type WindowedFeedScrollRefs,
-} from './windowed-feed-scroll-shared';
+} from '../internal/scroll-math';
+import type { ScrollStateOpts, WindowedFeedScrollRefs } from '../internal/internal.types';
+import { ScrollNavigationIntent, type ExplicitScrollNavigation } from '../message-feed.types';
 
 export function useWindowedFeedScrollFollow(args: {
   refs: WindowedFeedScrollRefs;

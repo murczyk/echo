@@ -3,7 +3,7 @@ import type {
   TopStatus,
   WindowedFeedScrollCallbacks,
   WindowedFeedScrollRefs,
-} from './windowed-feed-scroll-shared';
+} from './internal.types';
 
 /**
  * All mutable scroll state in one bag so the anchor / follow / tracking hooks can share it.

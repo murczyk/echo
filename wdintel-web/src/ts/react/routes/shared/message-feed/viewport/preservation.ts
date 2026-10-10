@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
-import type { AnchorSnapshot, WindowedFeedScrollRefs } from './windowed-feed-scroll-shared';
-import type { useWindowedFeedScrollAnchors } from './useWindowedFeedScrollAnchors';
+import type { WindowedFeedScrollRefs } from '../internal/internal.types';
+import type { AnchorSnapshot } from '../message-feed.types';
+import type { useWindowedFeedScrollAnchors } from './anchors';
 
 export type MessageViewportCapture =
   | { position: 'leading-edge' }

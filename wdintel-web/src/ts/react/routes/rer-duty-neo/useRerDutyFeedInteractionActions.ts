@@ -8,10 +8,12 @@ import {
   messageOrderTimestamp,
   type MessageFeedState,
 } from './utils';
-import { getFeedFollowScrollBehavior } from '../shared/message-feed/feed-follow-scroll';
-import { ScrollNavigationIntent } from '../shared/message-feed/windowed-feed-scroll-shared';
+import {
+  getFeedFollowScrollBehavior,
+  ScrollNavigationIntent,
+  type ExplicitScrollNavigation,
+} from '../shared/message-feed';
 import type { ExplicitFeedNavigation } from './useRerDutyNavigation';
-import type { ExplicitScrollNavigation } from '../shared/message-feed/windowed-feed-scroll-shared';
 
 type Params = {
   messageFeeds: MessageFeedState[];

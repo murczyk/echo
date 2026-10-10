@@ -1,13 +1,13 @@
 import { useCallback, useMemo } from 'react';
-import { useFeedScrollDiagnostics } from './message-feed-diagnostics';
+import { useFeedScrollDiagnostics } from '../internal/diagnostics';
 import {
   distanceToBottom,
-  isAtPhysicalBottom,
-  hasViewportSizeChanged,
   effectiveBottomLoadBufferPx,
-  type VisibleAnchor,
-  type WindowedFeedScrollRefs,
-} from './windowed-feed-scroll-shared';
+  hasViewportSizeChanged,
+  isAtPhysicalBottom,
+} from '../internal/scroll-math';
+import type { WindowedFeedScrollRefs } from '../internal/internal.types';
+import type { VisibleAnchor } from '../message-feed.types';
 
 const MAX_SYNC_ANCHOR_CORRECTIONS = 5;
 
