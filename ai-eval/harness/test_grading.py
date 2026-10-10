@@ -16,6 +16,35 @@ def retrieval(body, messages=None):
             'response': {'inbox_items': [[item['id'], item] for item in messages or []]}}
 
 
+def unit_case():
+    with open('ai-eval/2026-10-10-unit-search/cases.json') as handle:
+        return next(item for item in json.load(handle) if item['id'] == 'unit-report-glued')
+
+
+class UnitSearch(unittest.TestCase):
+    def test_text_only_search_fails_unit_case(self):
+        sample = unit_case()
+        events = [retrieval({'since_date_inclusive_ms': 1, 'till_date_inclusive_ms': 2, 'search': '"104 дшп"'}),
+                  {'type': 'eval_answer', 'text': 'Немає підтверджених відомостей.'}]
+        failures = grade(sample, events)['failures']
+        self.assertIn('unit_filter_search_missing', failures)
+        self.assertIn('required_evidence_not_retrieved', failures)
+        self.assertIn('unsupported_answer', failures)
+
+    def test_unit_request_outside_the_day_is_widening(self):
+        sample = next(item for item in json.load(open('ai-eval/2026-10-10-unit-search/cases.json'))
+                      if item['id'] == 'unit-empty-period')
+        start, end = sample['expect']['dateBounds']
+        events = [retrieval({'since_date_inclusive_ms': start - 7 * 86400000, 'till_date_inclusive_ms': end, 'selected_unit_ids': [79989]}),
+                  {'type': 'eval_answer', 'text': 'Нічого за період.'}]
+        self.assertIn('explicit_period_widened', grade(sample, events)['failures'])
+
+    def test_unit_filter_counts_as_unit_search(self):
+        sample = unit_case()
+        events = [retrieval({'since_date_inclusive_ms': 1, 'till_date_inclusive_ms': 2, 'selected_unit_ids': [79989]})]
+        self.assertEqual(grade(sample, events)['unitSearches'], 1)
+
+
 class CoverageAndCitations(unittest.TestCase):
     def test_one_millisecond_search_does_not_prove_absence(self):
         sample = case('empty-search')

@@ -45,5 +45,26 @@ class SearchRegression(unittest.TestCase):
         self.assertEqual(found(search='кедр', before_id_noninclusive=2), [1])
 
 
+class UnitFilters(unittest.TestCase):
+    def test_unit_filter_uses_metadata_not_body_and_lookup_tolerates_spacing(self):
+        settings = {'binary': str(ROOT / 'target/debug/wdintel-rs'),
+                    'psql': ['sudo', '-n', '-u', 'postgres', 'psql', '-d', os.environ.get('TEST_DB_NAME', 'wd')]}
+        case = {'groups': ['visible'], 'units': [{'id': 7, 'name': 'шр 3 дшб 104 дшп', 'active': True}],
+                'messages': [dict(id=1, text='Просто розмова', callsigns=[], groupKey='visible', uid='a', unit='X', unitIds=[7],
+                                  timestamp=1_790_000_000_000),
+                             dict(id=2, text='3 дшб 104 дшп', callsigns=[], groupKey='visible', uid='b',
+                                  timestamp=1_790_000_000_000)]}
+        base = dict(since_date_inclusive_ms=1_789_999_000_000, till_date_inclusive_ms=1_790_001_000_000)
+        ids = lambda **body: [item[0] for item in response(case, '/api/rer-importer/get-inbox', {**base, **body}, settings)['inbox_items']]
+        self.assertEqual(ids(selected_unit_ids=[7]), [1])
+        self.assertEqual(ids(selected_units=['X']), [1])
+        self.assertEqual(ids(search='104'), [2])
+        found = response(case, '/api/sigint/units', {'filter_text': '3дшб104дшп'}, settings)
+        self.assertEqual([unit['id'] for unit in found['units']], [7])
+        case['units'].append({'id': 8, 'name': '3 дшб 105 дшп', 'active': True})
+        found = response(case, '/api/sigint/units', {'filter_text': '3 дшб 104 дшп'}, settings)
+        self.assertEqual([unit['id'] for unit in found['units']], [7, 8])
+
+
 if __name__ == '__main__':
     unittest.main()

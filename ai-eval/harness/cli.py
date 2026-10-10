@@ -237,7 +237,7 @@ def run(args):
                 'datasetSha256': digest(directory / 'dataset.json'), 'runnerFingerprint': runner_fingerprint(args.runner_ref),
                 'engine': engine['model_name'], 'mode': args.mode, 'repeat': args.repeat,
                 'cases': [case['id'] for case in cases], 'createdAt': datetime.now(timezone.utc).isoformat()}
-    skills = [skill for skill in query_plan(str(args.binary), {})['skills'] if skill['skill'] in manifest['skills']]
+    skills = [skill for skill in query_plan(str(args.binary), {})['skills'] if skill['skill'] in manifest['skills'] and skill['skill'] not in args.exclude_skill]
     profile = make_payload(cases[0], engine, skills)
     metadata['runtimeProfile'] = {key: profile[key] for key in ('contextWindow', 'maxTokens', 'compactionReserveTokens', 'compactionKeepRecentTokens')}
     metadata['routeRegistrySha256'] = digest(ROOT / 'wdintel-rs/src/ai_agent/route_registry.rs')
@@ -306,6 +306,8 @@ def main():
     execute.add_argument('--concurrency', type=int, default=2)
     execute.add_argument('--timeout', type=int, default=300)
     execute.add_argument('--runner-ref')
+    execute.add_argument('--exclude-skill', action='append', default=[],
+                         help='omit a suite skill, e.g. unit_lookup for a baseline runner that predates it')
     execute.add_argument('--mode', choices=['fixture', 'local'], default='fixture')
     execute.add_argument('--binary', type=Path, default=ROOT / 'target/debug/wdintel-rs')
     comparison = commands.add_parser('compare')
