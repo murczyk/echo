@@ -215,14 +215,16 @@ fn validate_responses_body(
     {
         return None;
     }
-    if object.get("tools").is_some_and(|tools| {
-        tools.as_array().is_none_or(|tools| {
-            tools.iter().any(|tool| {
-                tool.get("type").and_then(Value::as_str) != Some("function")
-            })
-        })
-    }) {
-        return None;
+    if let Some(tools) = object.get_mut("tools") {
+        for tool in tools.as_array_mut()? {
+            let tool = tool.as_object_mut()?;
+            if tool.get("type")?.as_str()? != "function" {
+                return None;
+            }
+            if tool.get("strict").is_none_or(Value::is_null) {
+                tool.insert("strict".to_string(), json!(false));
+            }
+        }
     }
     if object.get("tool_choice").is_some_and(|choice| {
         !matches!(choice.as_str(), Some("none" | "auto" | "required"))
@@ -796,6 +798,50 @@ mod tests {
         invalid["messages"][1]["role"] = json!("assistant");
         assert!(!checkpoint_request_is_allowed(&invalid, Some(8192)));
         assert!(checkpoint_request_is_allowed(&invalid, None));
+    }
+
+    #[test]
+    fn issue_3724_responses_kept_search_filters_optional() {
+        let parameters = json!({
+            "type": "object",
+            "properties": {
+                "period": {"type": "object"},
+                "selectedCallsigns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1
+                }
+            },
+            "required": ["period"],
+            "additionalProperties": false
+        });
+        let mut body = json!({
+            "model": "gpt-6-sol",
+            "input": [{"role": "user", "content": "Read the latest messages"}],
+            "tools": [{"type": "function", "name": "echo_inbox_messages", "parameters": parameters}]
+        });
+        for strict in [
+            None,
+            Some(Value::Null),
+            Some(json!(false)),
+            Some(json!(true)),
+        ] {
+            if let Some(strict) = &strict {
+                body["tools"][0]["strict"] = strict.clone();
+            }
+            let (accepted, _) = validate_responses_body(
+                &serde_json::to_vec(&body).unwrap(),
+                "gpt-6-sol",
+            )
+            .unwrap();
+            assert_eq!(
+                accepted["tools"][0]["strict"],
+                strict
+                    .filter(|value| !value.is_null())
+                    .unwrap_or(json!(false))
+            );
+            assert_eq!(accepted["tools"][0]["parameters"], parameters);
+        }
     }
 
     #[test]
