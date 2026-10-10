@@ -67,6 +67,33 @@
   transform: var(--logo-coin-shadow-back-transform);
 }
 
+@media (max-resolution: 1.25dppx) {
+  .app-navbar-logo .logo-coin__idle,
+  .app-navbar-logo .logo-coin__disc {
+    transform-style: flat;
+  }
+
+  .app-navbar-logo .logo-coin__disc,
+  .app-navbar-logo .logo-coin[data-logo-coin-side='back'] .logo-coin__disc {
+    transform: none;
+    transition: none;
+  }
+
+  .app-navbar-logo .logo-coin__face {
+    backface-visibility: visible;
+    transform: none;
+  }
+
+  .app-navbar-logo .logo-coin__face--back,
+  .app-navbar-logo .logo-coin[data-logo-coin-side='back'] .logo-coin__face--front {
+    display: none;
+  }
+
+  .app-navbar-logo .logo-coin[data-logo-coin-side='back'] .logo-coin__face--back {
+    display: flex;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .logo-coin__disc {
     transform: none;
