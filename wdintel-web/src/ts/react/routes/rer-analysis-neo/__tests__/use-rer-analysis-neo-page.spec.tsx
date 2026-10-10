@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, InboxWindowRsp, SavedFilter, User } from '../../../../../Bindings';
 import type { AnalysisPageViewModel } from '../types';
-import { createResetQueryState } from '../helpers';
+import { buildInboxReq, createResetQueryState } from '../helpers';
 import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
 
 const userSettingsMock = vi.hoisted(() => ({
@@ -19,6 +19,7 @@ const systemSettingsMock = vi.hoisted(() => ({
 const currentUserMock = vi.hoisted(() => ({ fetchCurrentUser: vi.fn() }));
 const inboxMessagesMock = vi.hoisted(() => ({
   fetchInboxWindow: vi.fn(),
+  fetchInboxItemContext: vi.fn(),
 }));
 
 const useAnalysisDataMock = vi.hoisted(() => vi.fn());
@@ -69,6 +70,7 @@ vi.mock('../../../services/api/system-settings', () => ({
 
 vi.mock('../../../services/api/inbox-messages', () => ({
   fetchInboxWindow: inboxMessagesMock.fetchInboxWindow,
+  fetchInboxItemContext: inboxMessagesMock.fetchInboxItemContext,
 }));
 
 vi.mock('../use-analysis-data', () => ({
@@ -345,6 +347,10 @@ describe('useRerAnalysisNeoPage', () => {
     });
     currentUserMock.fetchCurrentUser.mockReset();
     currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester' } as User);
+    inboxMessagesMock.fetchInboxItemContext.mockReset();
+    inboxMessagesMock.fetchInboxItemContext.mockResolvedValue({
+      message: [50, { ...buildDirectLinkWindow().inbox.inboxItems[0][1], date: '2026-08-20' }],
+    });
     inboxMessagesMock.fetchInboxWindow.mockReset();
     inboxMessagesMock.fetchInboxWindow.mockResolvedValue(null);
 
@@ -990,6 +996,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.hideBotTags).toBe(true);
   });
   it('keeps the direct-link error when the regular message list clears its error', async () => {
+    inboxMessagesMock.fetchInboxItemContext.mockResolvedValueOnce({ message: null });
     window.history.replaceState({}, '', `${window.location.pathname}?m=missing-uid`);
 
     renderHook();
@@ -1000,6 +1007,7 @@ describe('useRerAnalysisNeoPage', () => {
     );
     expect(latest?.directMessageLoading).toBe(false);
 
+    expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
     const clearRegularListError = useAnalysisDataMock.mock.calls.at(-1)?.[0].onError;
     await act(async () => {
       clearRegularListError('');
@@ -1046,6 +1054,11 @@ describe('useRerAnalysisNeoPage', () => {
           'IMSCreatedAt',
         );
         expect(latest?.queryState).toMatchObject({ fromDateTimeStr: from, toDateTimeStr: to });
+        const period = buildInboxReq(latest!.queryState, [], true);
+        expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0][0].inboxReq).toMatchObject({
+          sinceDateInclusiveMs: period.sinceDateInclusiveMs,
+          tillDateInclusiveMs: period.tillDateInclusiveMs,
+        });
         expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
         expect(new URL(window.location.href).searchParams.get('m')).toBe('target-uid');
         expect(new URL(window.location.href).searchParams.get('fromDateTime')).toBe(from);
@@ -1076,14 +1089,80 @@ describe('useRerAnalysisNeoPage', () => {
       });
       await flushEffects();
       expect(latest?.queryState).toMatchObject({
-        fromDateTimeStr: '2026-08-28T00:00',
-        toDateTimeStr: '2026-08-29T00:00',
+        fromDateTimeStr: '2026-08-20T00:00',
+        toDateTimeStr: '2026-08-21T00:00',
         ...patch,
       });
       expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].focusedWindow).toBeNull();
       expect(latest?.directMessageNavigation).toBeNull();
       expect(latest?.messagesLoading).toBe(false);
       expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/2726
+  it.each([{ fromDateTimeStr: '2026-08-27T00:00' }, { search: 'user search' }])(
+    'ignores a late UUID lookup after a user edit: %j',
+    async (patch) => {
+      const request = deferred<{ message: [number, InboxMessage] }>();
+      inboxMessagesMock.fetchInboxItemContext.mockReturnValueOnce(request.promise);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?m=target-uid&fromDateTime=2026-08-28T00%3A00&toDateTime=2026-08-29T00%3A00`,
+      );
+      renderHook();
+      await flushEffects();
+      expect(inboxMessagesMock.fetchInboxItemContext).toHaveBeenCalledWith({
+        messageUid: 'target-uid',
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      await act(async () => {
+        latest?.updateQueryState(patch);
+        request.resolve({ message: buildDirectLinkWindow().inbox.inboxItems[0] });
+      });
+      await flushEffects();
+      expect(latest?.queryState).toMatchObject({
+        fromDateTimeStr: '2026-08-28T00:00',
+        toDateTimeStr: '2026-08-29T00:00',
+        ...patch,
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      expect(latest?.directMessageLoading).toBe(false);
+      expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/pull/3754
+  it.each(['missing', 'error'])(
+    'restores the original period when the bounded window is %s',
+    async (outcome) => {
+      const request = deferred<InboxWindowRsp | null>();
+      inboxMessagesMock.fetchInboxWindow.mockReturnValueOnce(request.promise);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?m=target-uid&fromDateTime=2026-08-28T00%3A00&toDateTime=2026-08-29T00%3A00`,
+      );
+      renderHook();
+      await flushEffects();
+      expect(latest?.queryState.fromDateTimeStr).toBe('2026-08-20T00:00');
+      await act(async () => {
+        if (outcome === 'missing') request.resolve(null);
+        else request.reject(new Error('window failed'));
+      });
+      await flushEffects();
+      expect(latest?.queryState).toMatchObject({
+        fromDateTimeStr: '2026-08-28T00:00',
+        toDateTimeStr: '2026-08-29T00:00',
+      });
+      expect(new URL(window.location.href).searchParams.get('fromDateTime')).toBe(
+        '2026-08-28T00:00',
+      );
+      expect(new URL(window.location.href).searchParams.get('toDateTime')).toBe('2026-08-29T00:00');
+      expect(latest?.directMessageError).toBeTruthy();
+      expect(latest?.directMessageNavigation).toBeNull();
+      expect(latest?.directMessageLoading).toBe(false);
     },
   );
 

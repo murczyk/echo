@@ -477,8 +477,6 @@ export function useAnalysisMessageList({
           ...inboxReq,
           beforeIdNoninclusive: direction === 'earlier' ? boundaryMessage[0] : null,
           sinceIdNoninclusive: direction === 'later' ? boundaryMessage[0] : null,
-          sinceDateInclusiveMs: null,
-          tillDateInclusiveMs: null,
           newestFirst: direction === 'earlier',
         });
         if (isStale()) return false;

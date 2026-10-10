@@ -363,6 +363,16 @@ export async function installAnalysisNeoApiMocks(
       return;
     }
 
+    if (pathname === '/api/rer-importer/inbox-item-context') {
+      const reference = route.request().postDataJSON().message_uid;
+      const message = options.inboxResponse?.inbox_items.find(
+        ([id, item]) =>
+          String(id) === reference || item.messageUid === reference || item.idUuid === reference,
+      );
+      await fulfillJson(route, { message: message ?? null });
+      return;
+    }
+
     if (pathname === '/api/rer-importer/get-inbox') {
       await fulfillJson(
         route,
