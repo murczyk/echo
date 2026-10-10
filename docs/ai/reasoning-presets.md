@@ -114,7 +114,7 @@ Provider references: [GLM Chat Completions](https://docs.z.ai/api-reference/llm/
 
 ## Checkpoint exhaustion recovery
 
-Harness `2026.10.10.2` limits checkpoint work to six provider calls per
+Harness `2026.10.10.3` limits checkpoint work to six provider calls per
 compaction cycle, including transport retries, within the original research
 deadline. Checkpoints target a concise summary and tighten that target on a
 reduced-prefix retry. A truncated or empty summary never replaces evidence.
@@ -124,6 +124,9 @@ input/output usage, configured output cap, stop reason, and duration.
 For requests with a reasoning preset, exhausted checkpoint output, non-reducing
 compaction, or insufficient context headroom stops research and produces a
 partial answer from already retrieved sources and the latest valid checkpoint.
+A fitting checkpoint can supply synthesis when raw records are too large;
+citations still require evidence collected during the current request. History
+alone does not replace that evidence.
 Final synthesis has no tools and lasts at most the preset's finalization
 allowance, also bounded by the original deadline. If synthesis times out,
 truncates, or lacks valid citations, Echo returns labeled source excerpts.
@@ -139,7 +142,7 @@ once, counted in the same six-call budget.
 Deploy from stable. Drain the selected namespace, back up the binary/config and
 namespace release, and keep AI admission disabled across the backend and harness
 upgrade. Update Echo and then use `ai-control-panel upgrade` for that namespace
-with release `2026.10.10.2`; restore admission only after versions and connection
+with release `2026.10.10.3`; restore admission only after versions and connection
 checks agree. Validate Kharkiv before Siversk with a request that actually
 compacts context. Keep other namespaces pinned. No migration or collection sync
 is needed. Roll back the harness and application as a pair while admission is
