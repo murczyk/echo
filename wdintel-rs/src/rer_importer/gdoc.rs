@@ -170,14 +170,27 @@ pub async fn load_callsigns(
         .iter()
         .map(|(callsign, _)| callsign.id)
         .collect_vec();
-    let reported_network_ids = load_reported_network_ids(&env.dbx, catalog_ids)
-        .await
-        .c(h!())?;
-    let catalog = CatalogLookup::new(catalog_rows, reported_network_ids);
+    let catalog_id_set = catalog_ids.iter().copied().collect::<HashSet<_>>();
+    let reported_network_ids =
+        load_reported_network_ids(&env.dbx, catalog_ids.clone())
+            .await
+            .c(h!())?;
+    let mut catalog = CatalogLookup::new(catalog_rows, reported_network_ids);
     let network_callsigns =
         load_network_callsigns_for_requests(&env.dbx, &requests, &catalog)
             .await
             .c(h!())?;
+    let linked_catalog_ids = network_callsigns
+        .iter()
+        .filter_map(|network_callsign| network_callsign.sigint_callsign_id)
+        .filter(|catalog_id| !catalog_id_set.contains(catalog_id))
+        .unique()
+        .collect_vec();
+    catalog.add_hints(
+        load_catalog_callsigns_by_ids(&env.dbx, linked_catalog_ids)
+            .await
+            .c(h!())?,
+    );
     let network_unit_names =
         load_network_unit_names(&env.dbx, &network_callsigns)
             .await
@@ -325,7 +338,29 @@ async fn load_catalog_callsigns(
                 )
                 .filter(sigint_callsign::Column::Deleted.eq(false))
                 .filter(sigint_unit::Column::Deleted.eq(false))
-                .filter(sigint_unit::Column::Active.eq(true))
+                .all(dbx)
+                .await
+                .c(h!())?,
+        );
+    }
+    catalog_rows.sort_by_key(|(callsign, _)| callsign.id);
+    Ok(catalog_rows)
+}
+
+async fn load_catalog_callsigns_by_ids(
+    dbx: &DatabaseConnection,
+    mut catalog_ids: Vec<i64>,
+) -> Result<Vec<CatalogRow>, AppError> {
+    let mut catalog_rows = Vec::new();
+    while !catalog_ids.is_empty() {
+        let (catalog_id_chunk, remaining_catalog_ids) = cap_vector(catalog_ids);
+        catalog_ids = remaining_catalog_ids;
+        catalog_rows.extend(
+            sigint_callsign::Entity::find()
+                .find_also_related(sigint_unit::Entity)
+                .filter(sigint_callsign::Column::Id.is_in(catalog_id_chunk))
+                .filter(sigint_callsign::Column::Deleted.eq(false))
+                .filter(sigint_unit::Column::Deleted.eq(false))
                 .all(dbx)
                 .await
                 .c(h!())?,
@@ -509,7 +544,6 @@ async fn load_network_unit_names(
         let units = sigint_unit::Entity::find()
             .filter(sigint_unit::Column::Id.is_in(unit_id_chunk))
             .filter(sigint_unit::Column::Deleted.eq(false))
-            .filter(sigint_unit::Column::Active.eq(true))
             .all(dbx)
             .await
             .c(h!())?;
@@ -581,6 +615,21 @@ impl CatalogLookup {
             info_by_callsign,
             hint_by_id,
             ids_by_callsign,
+        }
+    }
+
+    fn add_hints(&mut self, catalog_rows: Vec<CatalogRow>) {
+        for (callsign, unit) in catalog_rows {
+            let Some(unit) = unit else {
+                continue;
+            };
+            self.hint_by_id.insert(
+                callsign.id,
+                CatalogHint {
+                    position: callsign.position,
+                    formation: unit.name,
+                },
+            );
         }
     }
 
@@ -740,8 +789,321 @@ fn cap_vector<T>(mut source: Vec<T>) -> (Vec<T>, Vec<T>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::sigint_network_callsign;
+    use crate::entities::{
+        sigint_callsign, sigint_network_callsign, sigint_unit,
+    };
+    use crate::functest::tests::{cleanup, mk_sigint_network, mk_sigint_unit};
     use crate::rer_importer::types::CallsignNetworks;
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    use serial_test::serial;
+
+    async fn insert_catalog_callsign(
+        dbx: &DatabaseConnection,
+        callsign: &str,
+        position: &str,
+        unit_id: i64,
+        deleted: bool,
+    ) -> sigint_callsign::Model {
+        sigint_callsign::ActiveModel {
+            callsign: Set(callsign.to_string()),
+            position: Set(position.to_string()),
+            comment: Set(String::new()),
+            full_name: Set(String::new()),
+            unit_id: Set(unit_id),
+            deleted: Set(deleted),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            source_id: Set(None),
+            developing: Set(false),
+            radio_freq: Set(String::new()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn insert_network_callsign(
+        dbx: &DatabaseConnection,
+        network_id: i64,
+        callsign: &str,
+        catalog_id: Option<i64>,
+        unit_id: Option<i64>,
+        position: Option<&str>,
+    ) -> sigint_network_callsign::Model {
+        sigint_network_callsign::ActiveModel {
+            sigint_network_id: Set(network_id),
+            sigint_callsign: Set(callsign.to_string()),
+            sigint_callsign_id: Set(catalog_id),
+            unit_id: Set(unit_id),
+            position: Set(position.map(str::to_string)),
+            deleted: Set(false),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            sigint_origin_id: Set(None),
+            comment: Set(None),
+            source_id: Set(None),
+            radio_freq: Set(None),
+            developing: Set(false),
+            unit_developing: Set(false),
+            main_radio_station: Set(false),
+            command_control: Set(false),
+            full_name: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn callsign_hints_enrich_explicit_links_and_exclude_deleted_sources()
+    {
+        let env = cleanup().await.unwrap();
+        let dbx = &env.dbx;
+        let network = mk_sigint_network(dbx, Default::default()).await.unwrap();
+        let other_network =
+            mk_sigint_network(dbx, Default::default()).await.unwrap();
+        let inactive_unit = mk_sigint_unit(
+            dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Inactive catalog unit".to_string()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let direct_inactive_unit = mk_sigint_unit(
+            dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Inactive network unit".to_string()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let active_unit = mk_sigint_unit(
+            dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Active unit".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let deleted_unit = mk_sigint_unit(
+            dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Deleted unit".to_string()),
+                deleted: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let renamed = insert_catalog_callsign(
+            dbx,
+            "RENAMED",
+            "catalog position",
+            inactive_unit.id,
+            false,
+        )
+        .await;
+        let deleted_catalog = insert_catalog_callsign(
+            dbx,
+            "DELETED",
+            "deleted position",
+            inactive_unit.id,
+            true,
+        )
+        .await;
+        let deleted_unit_catalog = insert_catalog_callsign(
+            dbx,
+            "DELETED-UNIT",
+            "deleted unit position",
+            deleted_unit.id,
+            false,
+        )
+        .await;
+        let active_catalog = insert_catalog_callsign(
+            dbx,
+            "ACTIVE",
+            "active catalog position",
+            active_unit.id,
+            false,
+        )
+        .await;
+        let inactive_text_catalog = insert_catalog_callsign(
+            dbx,
+            "INACTIVE-TEXT",
+            "inactive text catalog position",
+            inactive_unit.id,
+            false,
+        )
+        .await;
+        insert_network_callsign(
+            dbx,
+            network.id,
+            "CURRENT",
+            Some(renamed.id),
+            Some(direct_inactive_unit.id),
+            Some("network position"),
+        )
+        .await;
+        insert_network_callsign(
+            dbx,
+            network.id,
+            "ACTIVE",
+            Some(active_catalog.id),
+            None,
+            None,
+        )
+        .await;
+        insert_network_callsign(
+            dbx,
+            network.id,
+            "RENAMED-HINT",
+            Some(renamed.id),
+            None,
+            None,
+        )
+        .await;
+        insert_network_callsign(
+            dbx,
+            network.id,
+            "INACTIVE-TEXT",
+            Some(inactive_text_catalog.id),
+            None,
+            None,
+        )
+        .await;
+        insert_network_callsign(
+            dbx,
+            network.id,
+            "DELETED-CATALOG",
+            Some(deleted_catalog.id),
+            None,
+            None,
+        )
+        .await;
+        insert_network_callsign(
+            dbx,
+            network.id,
+            "DELETED-DIRECT",
+            Some(renamed.id),
+            Some(deleted_unit.id),
+            None,
+        )
+        .await;
+        insert_network_callsign(
+            dbx,
+            network.id,
+            "DELETED-UNIT",
+            Some(deleted_unit_catalog.id),
+            Some(deleted_unit.id),
+            None,
+        )
+        .await;
+        insert_network_callsign(
+            dbx,
+            other_network.id,
+            "CURRENT",
+            Some(renamed.id),
+            None,
+            Some("other network position"),
+        )
+        .await;
+
+        let responses = load_callsigns(
+            &env,
+            vec![
+                CallsignNetworks {
+                    callsign: "CURRENT".to_string(),
+                    network_ids: vec![network.id],
+                },
+                CallsignNetworks {
+                    callsign: "DELETED-CATALOG".to_string(),
+                    network_ids: vec![network.id],
+                },
+                CallsignNetworks {
+                    callsign: "RENAMED-HINT".to_string(),
+                    network_ids: vec![network.id],
+                },
+                CallsignNetworks {
+                    callsign: "DELETED-UNIT".to_string(),
+                    network_ids: vec![network.id],
+                },
+                CallsignNetworks {
+                    callsign: "DELETED-DIRECT".to_string(),
+                    network_ids: vec![network.id],
+                },
+                CallsignNetworks {
+                    callsign: "ACTIVE".to_string(),
+                    network_ids: vec![network.id],
+                },
+                CallsignNetworks {
+                    callsign: "INACTIVE-TEXT".to_string(),
+                    network_ids: vec![network.id],
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        assert!(responses[0].res.is_empty());
+        assert_eq!(responses[0].network_hints.len(), 1);
+        assert_eq!(responses[0].network_hints[0].position, "network position");
+        assert_eq!(
+            responses[0].network_hints[0].formation,
+            "Inactive network unit"
+        );
+        assert_eq!(responses[1].network_hints.len(), 1);
+        assert_eq!(responses[1].network_hints[0].position, "");
+        assert_eq!(responses[1].network_hints[0].formation, "");
+        assert!(responses[2].res.is_empty());
+        assert_eq!(responses[2].network_hints[0].position, "catalog position");
+        assert_eq!(
+            responses[2].network_hints[0].formation,
+            "Inactive catalog unit"
+        );
+        assert_eq!(responses[3].network_hints.len(), 1);
+        assert_eq!(responses[3].network_hints[0].position, "");
+        assert_eq!(responses[3].network_hints[0].formation, "");
+        assert_eq!(responses[4].network_hints[0].position, "catalog position");
+        assert_eq!(
+            responses[4].network_hints[0].formation,
+            "Inactive catalog unit"
+        );
+        assert_eq!(responses[5].res.len(), 1);
+        assert_eq!(
+            responses[5].network_hints[0].position,
+            "active catalog position"
+        );
+        assert_eq!(responses[5].network_hints[0].formation, "Active unit");
+        assert_eq!(responses[6].res.len(), 1);
+        assert_eq!(responses[6].res[0].id, inactive_text_catalog.id);
+        assert_eq!(
+            responses[6].res[0].position,
+            "inactive text catalog position"
+        );
+        assert_eq!(responses[6].res[0].unit_id, Some(inactive_unit.id));
+        assert_eq!(responses[6].res[0].unit_1, "Inactive catalog unit");
+        assert_eq!(responses[6].network_hints.len(), 1);
+        assert_eq!(responses[6].network_hints[0].network_id, network.id);
+        assert_eq!(
+            responses[6].network_hints[0].position,
+            "inactive text catalog position"
+        );
+        assert_eq!(
+            responses[6].network_hints[0].formation,
+            "Inactive catalog unit"
+        );
+    }
 
     fn request(callsign: &str, network_ids: Vec<i64>) -> CallsignRequest {
         prepare_callsign_requests(vec![CallsignNetworks {
