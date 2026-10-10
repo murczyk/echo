@@ -74,9 +74,7 @@ test('ECHO-3633 centers the combined login logo @regression', async ({ page }) =
 
   const triggerBox = await page.locator('.logo-coin-trigger').boundingBox();
   const coinBox = await page.locator('.logo-coin__disc').boundingBox();
-  const wordmarkBox = await page
-    .locator('.logo-coin-trigger img[src="/img/echo-logo-white.svg"]')
-    .boundingBox();
+  const wordmarkBox = await page.locator('.login-wordmark').boundingBox();
   expect(triggerBox).not.toBeNull();
   expect(coinBox).not.toBeNull();
   expect(wordmarkBox).not.toBeNull();
