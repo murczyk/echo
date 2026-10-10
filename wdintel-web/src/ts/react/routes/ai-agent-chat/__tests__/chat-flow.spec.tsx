@@ -200,6 +200,62 @@ afterEach(async () => {
   resetSharedMapDocuments();
 });
 describe('AiAgentChat request queue', () => {
+  it('#3724 requires explicit Deep selection and preserves it on retry', async () => {
+    mocks.configuration.mockResolvedValue({
+      enabled: true,
+      reasoningPresetsEnabled: true,
+      defaultProviderId: PROVIDER.id,
+      providers: [
+        {
+          ...PROVIDER,
+          reasoningAvailable: true,
+          reasoningPresets: [
+            { preset: 'fast', maxRuntimeSeconds: 120, reasoningEffort: 'low' },
+            { preset: 'balanced', maxRuntimeSeconds: 300, reasoningEffort: 'high' },
+            { preset: 'deep', maxRuntimeSeconds: 1800, reasoningEffort: 'max' },
+          ],
+        },
+      ],
+    });
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<AiAgentChat />));
+    await flush();
+    const selector = () =>
+      container.querySelector('[role="combobox"][aria-label="Глибина аналізу"]') as HTMLElement;
+    expect(selector().textContent).toContain('Збалансований');
+    await act(async () => selector().dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+    await flush();
+    const deep = Array.from(document.body.querySelectorAll('[role="option"]')).find((item) =>
+      item.textContent?.includes('Глибокий'),
+    )!;
+    await act(async () => deep.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-deep',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    setTextarea('Досліди докладно');
+    submitForm();
+    await flush();
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reasoningPreset: 'deep' }),
+    );
+    expect(selector().textContent).toContain('Збалансований');
+    await act(async () => streamEvent('request-deep', 1, 'error', 'provider failure'));
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-retry',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    await act(async () => clickButton('Спробувати ще раз'));
+    await flush();
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reasoningPreset: 'deep' }),
+    );
+    expect(container.textContent).toContain('до 30 хв');
+  });
+
   // The map workspace is lazy and pulls in milsymbol; load it once up front so
   // its first transform does not count against an individual test.
   beforeAll(async () => {

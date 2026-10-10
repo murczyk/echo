@@ -323,10 +323,19 @@ pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
 pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
 pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
+pub const AI_AGENT_OPENAI_GPT_6_1_SOL: &str = "gpt-6.1-sol";
+pub const AI_AGENT_FAST_RUNTIME_SEC: u64 = 120;
+pub const AI_AGENT_BALANCED_RUNTIME_SEC: u64 = 300;
+pub const AI_AGENT_DEEP_RUNTIME_SEC: u64 = 1800;
+pub const AI_AGENT_FAST_FINALIZATION_SEC: u64 = 30;
+pub const AI_AGENT_BALANCED_FINALIZATION_SEC: u64 = 60;
+pub const AI_AGENT_DEEP_FINALIZATION_SEC: u64 = 120;
+pub const AI_AGENT_DEADLINE_CLEANUP_SEC: u64 = 5;
+pub const AI_AGENT_REASONING_PURPOSE_HEADER: &str = "x-echo-ai-purpose";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
 pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.09.14";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.10.1";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -1572,6 +1581,8 @@ pub struct Config {
     pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
     pub ai_agent_dispatcher: Option<AiAgentDispatcherConfig>,
     pub ai_agent_glm_checkpoint_provider: Option<AiAgentGlmCheckpointProvider>,
+    pub ai_agent_reasoning_presets_enabled: Option<bool>,
+    pub ai_agent_reasoning_verified_engine_ids: Option<Vec<uuid::Uuid>>,
     pub ocr: Option<OcrConfig>,
 }
 

@@ -588,6 +588,155 @@ async fn issue_3724_checkpoint_capability_shared_limits_and_revocation() {
 
 #[actix_web::test]
 #[serial]
+async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
+{
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let settings = checkpoint_test_settings(&env).await;
+    let correlation_id = Uuid::now_v7();
+    let (request, _) =
+        checkpoint_request_fixture(&env, &fixture, correlation_id).await;
+    let engine = ai_engine::Entity::find_by_id(request.ai_engine_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut config = env.config.clone();
+    config.ai_agent_reasoning_presets_enabled = Some(true);
+    config.ai_agent_reasoning_verified_engine_ids = Some(vec![engine.id]);
+    let policy = reasoning::resolve(
+        &config,
+        &engine,
+        crate::ai_agent::types::AiAgentReasoningPreset::Balanced,
+    );
+    let mut request = request.into_active_model();
+    request.started_at = Set(Some(chrono::Utc::now().naive_utc()));
+    request.execution_policy =
+        Set(Some(serde_json::to_value(&policy).unwrap()));
+    let request = request.update(&env.dbx).await.unwrap();
+    let token = issue_test_provider(&env, &request, Some(&engine)).await;
+    let authorization = authorize_provider_call(
+        &env,
+        &token,
+        &engine.model_name,
+        ProviderPurpose::Checkpoint,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        authorization
+            .execution_policy
+            .as_ref()
+            .unwrap()
+            .checkpoint_effort
+            .as_deref(),
+        Some("low")
+    );
+    assert_eq!(authorization.checkpoint_max_tokens, Some(8192));
+    let deadline = authorization.deadline_at;
+    let calls_key =
+        provider_capability_calls_key(&sha256::digest(token.as_bytes()));
+    env.redis
+        .clone()
+        .set::<_, _, ()>(
+            &calls_key,
+            AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT - 1,
+        )
+        .await
+        .unwrap();
+    let research = authorize_provider_call(
+        &env,
+        &token,
+        &engine.model_name,
+        ProviderPurpose::Research,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(research.research_limit_reached);
+    let synthesis = authorize_provider_call(
+        &env,
+        &token,
+        &engine.model_name,
+        ProviderPurpose::Synthesis,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(synthesis.deadline_at, deadline);
+    assert!(!synthesis.research_limit_reached);
+    assert!(authorize_provider_call(
+        &env,
+        &token,
+        &engine.model_name,
+        ProviderPurpose::Synthesis
+    )
+    .await
+    .unwrap()
+    .is_none());
+    revoke_correlation(&env, Some(fixture.agent.id), correlation_id)
+        .await
+        .unwrap();
+    let mut request = request.into_active_model();
+    request.started_at = Set(Some(
+        (chrono::Utc::now() - chrono::Duration::seconds(241)).naive_utc(),
+    ));
+    let request = request.update(&env.dbx).await.unwrap();
+    let limited = issue_test_provider(&env, &request, Some(&engine)).await;
+    for purpose in [ProviderPurpose::Research, ProviderPurpose::Checkpoint] {
+        assert!(
+            authorize_provider_call(
+                &env,
+                &limited,
+                &engine.model_name,
+                purpose
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .research_limit_reached
+        );
+    }
+    assert!(
+        !authorize_provider_call(
+            &env,
+            &limited,
+            &engine.model_name,
+            ProviderPurpose::Synthesis,
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .research_limit_reached
+    );
+    revoke_correlation(&env, Some(fixture.agent.id), correlation_id)
+        .await
+        .unwrap();
+    let mut request = request.into_active_model();
+    request.started_at = Set(Some(
+        (chrono::Utc::now() - chrono::Duration::seconds(301)).naive_utc(),
+    ));
+    let request = request.update(&env.dbx).await.unwrap();
+    let expired = issue_test_provider(&env, &request, Some(&engine)).await;
+    assert!(authorize_provider_call(
+        &env,
+        &expired,
+        &engine.model_name,
+        ProviderPurpose::Synthesis
+    )
+    .await
+    .unwrap()
+    .is_none());
+    revoke_correlation(&env, Some(fixture.agent.id), correlation_id)
+        .await
+        .unwrap();
+    restore_checkpoint_test_settings(&env, settings).await;
+    fixture.cleanup(&env).await;
+}
+
+#[actix_web::test]
+#[serial]
 async fn issue_3724_checkpoint_capability_checked_live_request_and_access() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let fixture = AgentFixture::new(&env).await;

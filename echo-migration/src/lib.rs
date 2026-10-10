@@ -463,6 +463,8 @@ mod m20261006_160533_rer_report_enabled;
 mod m20261006_164921_sigint_inbox_item_freq_datetime_index;
 mod m20261008_080110_rer_report_admin;
 
+mod m20261009_201221_ai_agent_reasoning_policy;
+
 pub struct Migrator;
 
 mod m20261008_051638_ai_position_highlight_flags;
@@ -1100,6 +1102,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261008_051638_ai_position_highlight_flags::Migration),
             Box::new(m20261008_080110_rer_report_admin::Migration),
             Box::new(m20261008_113430_sigint_unit_orbit_combat_type::Migration),
+            Box::new(m20261009_201221_ai_agent_reasoning_policy::Migration),
         ]
     }
 }

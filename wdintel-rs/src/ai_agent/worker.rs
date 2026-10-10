@@ -42,7 +42,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 enum RunOutcome {
-    Completed(String),
+    Completed(String, Option<super::types::AiAgentCompletionMetadata>),
     Cancelled,
 }
 
@@ -423,8 +423,9 @@ async fn process_claimed_request(
         );
     }
     match result {
-        Ok(RunOutcome::Completed(response)) => {
-            if let Err(err) = complete_request(env, request_id, response).await
+        Ok(RunOutcome::Completed(response, metadata)) => {
+            if let Err(err) =
+                complete_request(env, request_id, response, metadata).await
             {
                 error!(
                     "AI agent completion persistence failed for {request_id}: {err:#?}"
@@ -453,8 +454,22 @@ async fn run_request(
         access::allowed_engine(&env.dbx, Some(request.ai_engine_id))
             .await
             .c(h!())?;
-    let timeout =
-        request_execution_timeout(&ai_engine.model_name, &ai_engine.url);
+    let policy = super::reasoning::request_policy(request).c(h!())?;
+    let timeout = policy
+        .as_ref()
+        .and_then(|policy| super::reasoning::deadline_millis(request, policy))
+        .map(|deadline| {
+            StdDuration::from_millis(std::cmp::max(
+                deadline.saturating_sub(Utc::now().timestamp_millis()),
+                1,
+            ) as u64)
+                + StdDuration::from_secs(
+                    crate::config::AI_AGENT_DEADLINE_CLEANUP_SEC,
+                )
+        })
+        .unwrap_or_else(|| {
+            request_execution_timeout(&ai_engine.model_name, &ai_engine.url)
+        });
     match tokio::time::timeout(
         timeout,
         run_request_inner(env, request, cancellation, ai_engine),
@@ -544,7 +559,11 @@ async fn run_request_inner(
     cancellation: &CancellationToken,
     ai_engine: crate::entities::ai_engine::Model,
 ) -> Result<RunOutcome, AppError> {
-    let request_started_at = Utc::now();
+    let request_started_at = request
+        .started_at
+        .map(|started| started.and_utc())
+        .unwrap_or_else(Utc::now);
+    let execution_policy = super::reasoning::request_policy(request).c(h!())?;
     if cancellation.is_cancelled() {
         return Err(interrupted_error());
     }
@@ -627,9 +646,17 @@ async fn run_request_inner(
                 "AI engine is not supported by the agent harness".to_string(),
             )
         })?;
-    let checkpoint = checkpoint_provider(env, &ai_engine, &runtime_profile)
+    let mut checkpoint = checkpoint_provider(env, &ai_engine, &runtime_profile)
         .await
         .c(h!())?;
+    if execution_policy.is_some() {
+        checkpoint = Some(CheckpointProvider {
+            ai_engine_id: ai_engine.id,
+            model_name: ai_engine.model_name.clone(),
+            context_window: runtime_profile.context_window_tokens,
+            max_tokens: checkpoint_output_tokens(&ai_engine, &runtime_profile),
+        });
+    }
     let checkpoint_max_tokens = checkpoint.as_ref().map_or_else(
         || checkpoint_output_tokens(&ai_engine, &runtime_profile),
         |checkpoint| checkpoint.max_tokens,
@@ -647,7 +674,8 @@ async fn run_request_inner(
                     checkpoint
                         .as_ref()
                         .filter(|checkpoint| {
-                            checkpoint.model_name != ai_engine.model_name
+                            execution_policy.is_some()
+                                || checkpoint.model_name != ai_engine.model_name
                         })
                         .map(|checkpoint| auth::CheckpointProviderGrant {
                             ai_engine_id: checkpoint.ai_engine_id,
@@ -694,6 +722,12 @@ async fn run_request_inner(
         ai_engine.token,
         gateway_capability,
     );
+    if let Some(policy) = &execution_policy {
+        runner_payload["executionPolicy"] =
+            serde_json::to_value(policy).c(h!())?;
+        runner_payload["deadlineAt"] =
+            json!(super::reasoning::deadline_millis(request, policy));
+    }
     if let Some(checkpoint) = checkpoint {
         runner_payload["checkpointModelName"] = json!(checkpoint.model_name);
         runner_payload["checkpointContextWindow"] =
@@ -716,6 +750,7 @@ async fn run_request_inner(
     let mut runner_event_count = 0_usize;
     let mut runner_event_bytes = 0_usize;
     let mut terminal_seen = false;
+    let mut completion_metadata = None;
     loop {
         tokio::select! {
             envelope = stream.next() => {
@@ -744,6 +779,10 @@ async fn run_request_inner(
                         });
                     }
                     if let Some((event_type, payload)) = events::normalize_runner_event(event) {
+                        if event_type == "completion_metadata" {
+                            if execution_policy.is_none() { continue; }
+                            completion_metadata = Some(serde_json::from_value(payload.clone()).c(h!())?);
+                        }
                         let update = events::assistant_text_update(&event_type, &payload);
                         let (response_bytes, next_chars) = match &update {
                             Some(events::AssistantTextUpdate::Replace(text)) => {
@@ -834,7 +873,7 @@ async fn run_request_inner(
     if request_is_cancelled(env, request.id).await? {
         return Ok(RunOutcome::Cancelled);
     }
-    Ok(RunOutcome::Completed(response))
+    Ok(RunOutcome::Completed(response, completion_metadata))
 }
 
 fn bounded_runner_payload(
@@ -1098,6 +1137,7 @@ async fn complete_request(
     env: &Env,
     request_id: Uuid,
     response: String,
+    metadata: Option<super::types::AiAgentCompletionMetadata>,
 ) -> Result<bool, AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
     let request = ai_agent_request::Entity::find_by_id(request_id)
@@ -1121,6 +1161,11 @@ async fn complete_request(
     let mut request = request.into_active_model();
     request.state = Set("completed".to_string());
     request.response = Set(Some(response.clone()));
+    request.completion_metadata = Set(metadata
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .c(h!())?);
     request.completed_at = Set(Some(now));
     request.updated_at = Set(now);
     request.update(&txn).await.c(h!())?;
@@ -1138,7 +1183,7 @@ async fn complete_request(
         &txn,
         request_id,
         "completion",
-        json!({ "responseLength": response.chars().count() }),
+        json!({ "responseLength": response.chars().count(), "completionMetadata": metadata }),
     )
     .await?;
     review::enqueue_in_transaction(&txn, request_id).await?;
@@ -1462,6 +1507,14 @@ mod tests {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let mut env = env.as_ref().clone();
+        let allowed_engines = ai_agent_allowed_engine::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        ai_agent_allowed_engine::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
         let mut engines = Vec::new();
         for (name, output_tokens) in [
             (crate::config::AI_AGENT_GLM_5_3, 16_384),
@@ -1520,6 +1573,15 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+        for (engine, _) in engines {
+            ai_engine::Entity::delete_by_id(engine.id)
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+        }
+        for engine in allowed_engines {
+            engine.into_active_model().insert(&env.dbx).await.unwrap();
+        }
     }
 
     #[test]

@@ -11,6 +11,7 @@ import {
   type AssistantMessage,
   type Context,
 } from "@earendil-works/pi-ai/compat";
+import { PURPOSE_HEADER, type ExecutionPolicy } from "./execution-policy.ts";
 import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
 
 type AgentMessage = AgentSession["messages"][number];
@@ -22,6 +23,7 @@ interface ContextSettings {
   prompt: string;
   maxTokens: number;
   checkpointMaxTokens?: number;
+  executionPolicy?: ExecutionPolicy;
   checkpointEngine?: NonNullable<AgentSession["model"]>;
   compactionReserveTokens: number;
   compactionKeepRecentTokens: number;
@@ -150,6 +152,8 @@ function interruptedCheckpoint(response: AssistantMessage): boolean {
 function checkpointFailureReason(response: AssistantMessage): string {
   if (interruptedCheckpoint(response)) return "interrupted_stream";
   const error = response.errorMessage ?? "";
+  if (/Provider research budget exhausted/.test(error))
+    return "research_budget_exhausted";
   if (/content_filter/i.test(error)) return "content_filter";
   if (/context window|context length|input exceeds/i.test(error))
     return "context_limit";
@@ -173,6 +177,17 @@ async function summarizeCheckpoint(
     signal,
     maxRetries: 2,
     cacheRetention: "none" as const,
+    ...(settings.executionPolicy
+      ? {
+          headers: { [PURPOSE_HEADER]: "checkpoint" },
+          reasoning:
+            settings.executionPolicy.checkpointEffort &&
+            settings.executionPolicy.checkpointEffort !== "none"
+              ? (settings.executionPolicy.checkpointEffort as
+                  "low" | "medium" | "high" | "max")
+              : undefined,
+        }
+      : {}),
   };
   signal?.throwIfAborted();
   let response = await summarize(checkpointEngine, context, options);

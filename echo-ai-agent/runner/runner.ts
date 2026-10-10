@@ -1,5 +1,36 @@
-import { DEVICE_ROUTES, DEVICE_PARAMETERS, DEVICE_DESCRIPTIONS, DEVICE_GUIDANCE, deviceRequest, collectFileCitations, fileCitationHref, validateFileCitations, prepareFileCitations, stripUnknownFileCitations, compactDeviceEvidence, collectFileSections, type FileSection, type FileCitation } from "./devices.ts";
-import { ATTACHMENT_ROUTES, ATTACHMENT_PARAMETERS, ATTACHMENT_DESCRIPTION, attachmentRequest } from "./attachments.ts";
+import {
+  ResearchBudget,
+  SynthesisAuthorizationError,
+  PURPOSE_HEADER,
+  validateExecutionPolicy,
+  budgetFallback,
+  chooseBudgetAnswer,
+  isProviderAuthorizationError,
+  synthesizeBudgetEvidence,
+  type ExecutionPolicy,
+} from "./execution-policy.ts";
+import {
+  DEVICE_ROUTES,
+  DEVICE_PARAMETERS,
+  DEVICE_DESCRIPTIONS,
+  DEVICE_GUIDANCE,
+  deviceRequest,
+  collectFileCitations,
+  fileCitationHref,
+  validateFileCitations,
+  prepareFileCitations,
+  stripUnknownFileCitations,
+  compactDeviceEvidence,
+  collectFileSections,
+  type FileSection,
+  type FileCitation,
+} from "./devices.ts";
+import {
+  ATTACHMENT_ROUTES,
+  ATTACHMENT_PARAMETERS,
+  ATTACHMENT_DESCRIPTION,
+  attachmentRequest,
+} from "./attachments.ts";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -40,7 +71,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.09.14";
+const HARNESS_RELEASE = "2026.10.10.1";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -78,6 +109,8 @@ const RUNNER_PAYLOAD_FIELDS = new Set([
   "checkpointMaxTokens",
   "checkpointModelName",
   "checkpointContextWindow",
+  "executionPolicy",
+  "deadlineAt",
   "compactionReserveTokens",
   "compactionKeepRecentTokens",
   "expectedIdentity",
@@ -144,6 +177,8 @@ interface RunnerPayload {
   checkpointMaxTokens: number;
   checkpointModelName?: string;
   checkpointContextWindow?: number;
+  executionPolicy?: ExecutionPolicy;
+  deadlineAt?: number;
   compactionReserveTokens: number;
   compactionKeepRecentTokens: number;
   expectedIdentity?: JsonObject;
@@ -336,8 +371,15 @@ export function validatePayload(
   if (testMode && !expectedIdentity) {
     throw new Error("expectedIdentity is required for connection test");
   }
-  const mapEdit = value.mapEdit === undefined ? undefined : validateMapEdit(value.mapEdit);
+  const mapEdit =
+    value.mapEdit === undefined ? undefined : validateMapEdit(value.mapEdit);
+  const executionPolicy = validateExecutionPolicy(
+    value.executionPolicy,
+    value.deadlineAt,
+  );
   return {
+    executionPolicy,
+    deadlineAt: value.deadlineAt as number | undefined,
     prompt,
     modelName: requestedModel,
     providerTransport,
@@ -2410,20 +2452,40 @@ export async function writeModelsFile(
             payload.providerTransport === "echo_gateway"
               ? `https://${payload.echoPublicHost}${PROVIDER_GATEWAY_PATH}`
               : VLLM_BASE_URL,
-          api: "openai-completions",
+          api: payload.executionPolicy?.api ?? "openai-completions",
           apiKey: payload.providerApiKey ?? "echo-local-tokenless",
-          compat: {
-            supportsDeveloperRole: false,
-            supportsReasoningEffort: explicitNoReasoning,
-          },
+          compat:
+            payload.executionPolicy?.api === "openai-responses"
+              ? {}
+              : {
+                  supportsDeveloperRole: false,
+                  supportsReasoningEffort:
+                    Boolean(payload.executionPolicy?.reasoningEffort) ||
+                    explicitNoReasoning,
+                },
           models: [
             {
               id: payload.modelName,
               name: payload.modelName,
-              reasoning: explicitNoReasoning,
-              ...(explicitNoReasoning
-                ? { thinkingLevelMap: { off: "none" } }
-                : {}),
+              reasoning:
+                Boolean(payload.executionPolicy?.reasoningEffort) ||
+                explicitNoReasoning,
+              ...(payload.executionPolicy?.reasoningEffort
+                ? {
+                    thinkingLevelMap: {
+                      off:
+                        payload.executionPolicy.reasoningEffort === "none"
+                          ? "none"
+                          : null,
+                      low: "low",
+                      medium: "medium",
+                      high: "high",
+                      max: "max",
+                    },
+                  }
+                : explicitNoReasoning
+                  ? { thinkingLevelMap: { off: "none" } }
+                  : {}),
               input: ["text"],
               contextWindow: payload.contextWindow,
               maxTokens: payload.maxTokens,
@@ -2876,6 +2938,81 @@ export async function testConnection(
   });
 }
 
+async function completeLimitedResearch(options: {
+  payload: RunnerPayload;
+  budget: ResearchBudget;
+  selectedEngine: NonNullable<AgentSession["model"]>;
+  evidence: { messages: CitedMessage[]; files: FileSection[] };
+  deliveredCitationsThisTurn: MessageCitation[];
+  deliveredFiles: Map<string, FileCitation>;
+  mapRegistry: MapRegistry;
+  cancellation: AbortSignal;
+}): Promise<void> {
+  const {
+    payload,
+    budget,
+    evidence,
+    deliveredCitationsThisTurn,
+    deliveredFiles,
+    mapRegistry,
+  } = options;
+  emit({ type: "progress", summary: "Підсумовую зібрані джерела" });
+  const signal = AbortSignal.any([
+    options.cancellation,
+    budget.finalization.signal,
+  ]);
+  const candidate = await synthesizeBudgetEvidence({
+    engine: options.selectedEngine,
+    apiKey: payload.providerApiKey ?? "echo-local-tokenless",
+    policy: budget.policy,
+    systemPrompt: outputRetrySystemPrompt(payload),
+    prompt: JSON.stringify({
+      conversation: payload.history
+        .slice(-4)
+        .map(({ role, content }) => ({ role, content })),
+      request: payload.prompt,
+    }),
+    evidence,
+    maxTokens: payload.maxTokens,
+    signal,
+  }).catch((error) => {
+    if (error instanceof SynthesisAuthorizationError) throw error;
+    return null;
+  });
+  if (options.cancellation.aborted) return;
+  const availableCitations = citationsForCanonical(
+    deliveredCitationsThisTurn,
+    payload.history.flatMap((entry) => entry.citations ?? []),
+  );
+  const text = chooseBudgetAnswer(
+    candidate, evidence, availableCitations, deliveredFiles.keys(),
+  );
+  const maps = mapRegistry.list();
+  const finalize = (text: string) =>
+    stripUnknownFileCitations(
+      stripUnpublishedMapLinks(preserveMapReferences("", text, maps), maps),
+      deliveredFiles.values(),
+    );
+  const notice =
+    budget.policy.preset === "deep"
+      ? "Досягнуто межі дослідження. Охоплення джерел неповне; уточніть запит, щоб продовжити."
+      : "Досягнуто межі дослідження. Охоплення джерел неповне; оберіть глибокий аналіз, щоб продовжити.";
+  const notices = mapOutcomeNotices(
+    mapRegistry,
+    Boolean(payload.mapEdit),
+  ).notices;
+  const snapshot = (answer: string) =>
+    assistantSnapshotEvent("", [finalize(answer), notice, ...notices].join("\n\n"));
+  const event = snapshot(text) ?? snapshot(budgetFallback(evidence));
+  if (!event) throw new Error("limited answer exceeds the snapshot limit");
+  emit(event);
+  emit({
+    type: "completion_metadata",
+    coverageLimited: true,
+    reason: budget.reason,
+  });
+}
+
 export async function runAgent(payload: RunnerPayload): Promise<void> {
   emit({ type: "progress", summary: "Готую сеанс аналізу" });
   const runtimeDirectory = await mkdtemp(
@@ -2884,9 +3021,22 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
   let session: any;
   let unsubscribe: (() => void) | undefined;
   let toolLimitError: Error | undefined;
-  const mapRegistry = new MapRegistry(payload.history.flatMap((entry) => entry.maps ?? []));
+  let authorizationFailure: Error | undefined;
+  const mapRegistry = new MapRegistry(
+    payload.history.flatMap((entry) => entry.maps ?? []),
+  );
   let cancelled = false;
+  const budget =
+    payload.executionPolicy && payload.deadlineAt
+      ? new ResearchBudget(payload.executionPolicy, payload.deadlineAt, () => {
+          if (session) void session.abort().catch(() => undefined);
+        })
+      : undefined;
   const cancellation = new AbortController();
+  const assertResearch = () => {
+    if (authorizationFailure) throw authorizationFailure;
+    budget?.assertResearch();
+  };
   const cancel = async () => {
     if (cancelled) return;
     cancelled = true;
@@ -2942,10 +3092,21 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       noPromptTemplates: true,
       noThemes: true,
       noContextFiles: true,
-      systemPrompt: systemPrompt(payload, { mapScripts: Boolean(scriptRunner) }),
+      systemPrompt: systemPrompt(payload, {
+        mapScripts: Boolean(scriptRunner),
+      }),
     });
     await resourceLoader.reload();
-    const countInvocation = createToolInvocationGuard();
+    const countToolInvocation = createToolInvocationGuard();
+    const countInvocation = () => {
+      assertResearch();
+      try {
+        countToolInvocation();
+      } catch (error) {
+        budget?.limit("tool_limit");
+        throw error;
+      }
+    };
     const compactResponse = createToolResponseCompactor();
     const deliveredCitationsThisTurn: MessageCitation[] = [];
     const recordSources = (citations: MessageCitation[]) => {
@@ -2987,7 +3148,10 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       agentDir: runtimeDirectory,
       modelRuntime,
       model: selectedModel,
-      thinkingLevel: "off",
+      thinkingLevel: (payload.executionPolicy?.reasoningEffort === "none"
+        ? "off"
+        : (payload.executionPolicy?.reasoningEffort ?? "off")) as
+        "off" | "low" | "medium" | "high" | "max",
       noTools: "all",
       tools: tools.map((tool) => tool.name),
       customTools: tools,
@@ -2995,107 +3159,229 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       sessionManager,
       settingsManager,
     }));
+    const researchSignal = budget
+      ? AbortSignal.any([cancellation.signal, budget.research.signal])
+      : cancellation.signal;
+    if (budget) {
+      const previousStream = session.agent.streamFunction;
+      session.agent.streamFunction = (
+        engine: any,
+        context: any,
+        options: any,
+      ) =>
+        previousStream(engine, context, {
+          ...options,
+          signal: options?.signal
+            ? AbortSignal.any([options.signal, researchSignal])
+            : researchSignal,
+          headers: { ...options?.headers, [PURPOSE_HEADER]: "research" },
+        });
+    }
     const currentTurnAssistantMessages: unknown[] = [];
     const emitAssistant = { current: true };
     unsubscribe = subscribeToEvents(
       session,
       new Map(tools.map((tool) => [tool.name, tool.label])),
-      observeMapOutcome(mapRegistry, createToolLifecycleGuard((error) => {
-        toolLimitError ??= error;
-        void session.abort().catch(() => undefined);
-      })),
-      (message) => currentTurnAssistantMessages.push(message),
+      observeMapOutcome(
+        mapRegistry,
+        createToolLifecycleGuard((error) => {
+          toolLimitError ??= error;
+          if (error.message === "tool invocation limit reached")
+            budget?.limit("tool_limit");
+          void session.abort().catch(() => undefined);
+        }),
+      ),
+      (message) => {
+        currentTurnAssistantMessages.push(message);
+        const errorMessage = (message as { errorMessage?: string })?.errorMessage;
+        if (budget && isProviderAuthorizationError(errorMessage))
+          authorizationFailure ??= new Error("Provider authorization failed");
+        if (
+          /Provider research budget exhausted/.test(
+            String(errorMessage ?? ""),
+          )
+        )
+          budget?.limit("tool_limit");
+      },
       () => emitAssistant.current,
     );
-    const contextCompaction = installContextCompaction(session, { ...payload, checkpointEngine, signal: cancellation.signal },
-      () => emit({ type: "progress", summary: "Скорочую контекст і продовжую аналіз" }),
-      (messages) => compactResponse.reset(messages));
-    currentTurnAssistantMessages.length = 0;
-    emit({ type: "progress", summary: "Аналізую запит" });
-    let recoveredOutput = false;
+    const contextCompaction = installContextCompaction(
+      session,
+      { ...payload, checkpointEngine, signal: researchSignal },
+      () =>
+        emit({
+          type: "progress",
+          summary: "Скорочую контекст і продовжую аналіз",
+        }),
+      (messages) => compactResponse.reset(messages),
+    );
     try {
-      await session.prompt(payload.prompt, {
-        expandPromptTemplates: false,
-        source: "rpc",
-      });
+      assertResearch();
+      currentTurnAssistantMessages.length = 0;
+      emit({ type: "progress", summary: "Аналізую запит" });
+      let recoveredOutput = false;
+      try {
+        await session.prompt(payload.prompt, {
+          expandPromptTemplates: false,
+          source: "rpc",
+        });
+        if (toolLimitError) throw toolLimitError;
+        if (cancelled) return;
+        assertResearch();
+        if (contextCompaction.failure()) throw contextCompaction.failure();
+        recoveredOutput = await recoverFinalOutputLimit(
+          session,
+          payload,
+          currentTurnAssistantMessages,
+          contextCompaction,
+          emitAssistant,
+        );
+      } catch (error) {
+        if (toolLimitError) throw toolLimitError;
+        throw error;
+      }
       if (toolLimitError) throw toolLimitError;
       if (cancelled) return;
+      assertResearch();
       if (contextCompaction.failure()) throw contextCompaction.failure();
-      recoveredOutput = await recoverFinalOutputLimit(session, payload, currentTurnAssistantMessages, contextCompaction, emitAssistant);
+      validateFinalAssistantMessage(currentTurnAssistantMessages);
+      const draft = turnAssistantText(currentTurnAssistantMessages);
+      publishReferencedDrafts(draft, mapRegistry, emit);
+      const historyCitations = payload.history.flatMap(
+        (entry) => entry.citations ?? [],
+      );
+      const repairCitations = citationsForRepair(
+        deliveredCitationsThisTurn,
+        historyCitations,
+        payload.prompt,
+      );
+      const canonicalCitations = citationsForCanonical(
+        deliveredCitationsThisTurn,
+        historyCitations,
+      );
+      const fileRepairNeeded =
+        deliveredFiles.size > 0 &&
+        ![...deliveredFiles.keys()].some((href) => draft.includes(href));
+      const repair =
+        needsCitationRepair(draft, repairCitations) || fileRepairNeeded
+          ? await repairMissingCitations(
+              session,
+              draft,
+              repairCitations,
+              currentTurnAssistantMessages,
+              emitAssistant,
+              mapRegistry
+                .list()
+                .filter((document) => document.published)
+                .map((document) => document.reference),
+              [...deliveredFiles.values()],
+            )
+          : null;
+      if (cancelled) return;
+      assertResearch();
+      // Citation and map-link safeguards apply to every candidate answer.
+      const finalize = (candidate: string, citationRepair: string | null) =>
+        stripUnknownFileCitations(
+          stripUnpublishedMapLinks(
+            preserveMapReferences(
+              draft,
+              preserveRequestedCitation(
+                chooseCitedAnswer(
+                  fileRepairNeeded &&
+                    citationRepair &&
+                    [...deliveredFiles.keys()].some((href) =>
+                      citationRepair.includes(href),
+                    )
+                    ? citationRepair
+                    : candidate,
+                  citationRepair,
+                  repairCitations,
+                  canonicalCitations,
+                ),
+                repairCitations,
+                deliveredCitationsThisTurn.length,
+              ),
+              mapRegistry.list(),
+            ),
+            mapRegistry.list(),
+          ),
+          deliveredFiles.values(),
+        );
+      const finalText = finalize(draft, repair);
+      const outcome = mapOutcomeNotices(mapRegistry, Boolean(payload.mapEdit));
+      const repairedOutcome =
+        outcome.failedEdit !== null
+          ? await repairMapOutcome(
+              session,
+              outcome.failedEdit,
+              currentTurnAssistantMessages,
+              emitAssistant,
+            )
+          : null;
+      if (cancelled) return;
+      assertResearch();
+      // The model rewrite is not trusted to state the failure; the notice stays.
+      const notices = outcome.notices;
+      // The rewrite gets the same citation repair as the original answer.
+      const outcomeCitationRepair =
+        repairedOutcome && needsCitationRepair(repairedOutcome, repairCitations)
+          ? await repairMissingCitations(
+              session,
+              repairedOutcome,
+              repairCitations,
+              currentTurnAssistantMessages,
+              emitAssistant,
+              mapRegistry
+                .list()
+                .filter((document) => document.published)
+                .map((document) => document.reference),
+              [...deliveredFiles.values()],
+            )
+          : null;
+      if (cancelled) return;
+      assertResearch();
+      const answer = repairedOutcome
+        ? finalize(repairedOutcome, outcomeCitationRepair)
+        : finalText;
+      const truthfulText = notices.length
+        ? `${answer}\n\n${notices.join("\n")}`
+        : answer;
+      const snapshot = assistantSnapshotEvent(
+        recoveredOutput ? "" : draft,
+        truthfulText,
+      );
+      if (recoveredOutput && !snapshot)
+        throw new Error("recovered answer exceeds the snapshot limit");
+      if (snapshot) emit(snapshot);
     } catch (error) {
-      if (toolLimitError) throw toolLimitError;
-      throw error;
+      if (cancelled) return;
+      if (authorizationFailure) throw authorizationFailure;
+      if (isProviderAuthorizationError(error)) throw error;
+      if (
+        /research_budget_exhausted|Provider research budget exhausted/.test(
+          String(error),
+        )
+      )
+        budget?.limit("tool_limit");
+      if (!budget?.reason) throw error;
+      emitAssistant.current = false;
+      void session.abort().catch(() => undefined);
+      await completeLimitedResearch({
+        payload,
+        budget,
+        selectedEngine: selectedModel,
+        evidence: {
+          messages: [...deliveredMessages.values()],
+          files: [...deliveredFileSections.values()],
+        },
+        deliveredCitationsThisTurn,
+        deliveredFiles,
+        mapRegistry,
+        cancellation: cancellation.signal,
+      });
     }
-    if (toolLimitError) throw toolLimitError;
-    if (cancelled) return;
-    if (contextCompaction.failure()) throw contextCompaction.failure();
-    validateFinalAssistantMessage(currentTurnAssistantMessages);
-    const draft = turnAssistantText(currentTurnAssistantMessages);
-    publishReferencedDrafts(draft, mapRegistry, emit);
-    const historyCitations = payload.history.flatMap(
-      (entry) => entry.citations ?? [],
-    );
-    const repairCitations = citationsForRepair(
-      deliveredCitationsThisTurn,
-      historyCitations,
-      payload.prompt,
-    );
-    const canonicalCitations = citationsForCanonical(
-      deliveredCitationsThisTurn,
-      historyCitations,
-    );
-    const fileRepairNeeded = deliveredFiles.size > 0 && ![...deliveredFiles.keys()].some((href) => draft.includes(href));
-    const repair = needsCitationRepair(draft, repairCitations) || fileRepairNeeded
-      ? await repairMissingCitations(
-          session,
-          draft,
-          repairCitations,
-          currentTurnAssistantMessages,
-          emitAssistant,
-          mapRegistry.list().filter((document) => document.published).map((document) => document.reference),
-          [...deliveredFiles.values()],
-        )
-      : null;
-    if (cancelled) return;
-    // Citation and map-link safeguards apply to every candidate answer.
-    const finalize = (candidate: string, citationRepair: string | null) =>
-      stripUnknownFileCitations(stripUnpublishedMapLinks(preserveMapReferences(draft, preserveRequestedCitation(
-        chooseCitedAnswer(
-          fileRepairNeeded && citationRepair && [...deliveredFiles.keys()].some((href) => citationRepair.includes(href)) ? citationRepair : candidate,
-          citationRepair,
-          repairCitations,
-          canonicalCitations,
-        ),
-        repairCitations,
-        deliveredCitationsThisTurn.length,
-      ), mapRegistry.list()), mapRegistry.list()), deliveredFiles.values());
-    const finalText = finalize(draft, repair);
-    const outcome = mapOutcomeNotices(mapRegistry, Boolean(payload.mapEdit));
-    const repairedOutcome = outcome.failedEdit !== null
-      ? await repairMapOutcome(session, outcome.failedEdit, currentTurnAssistantMessages, emitAssistant)
-      : null;
-    if (cancelled) return;
-    // The model rewrite is not trusted to state the failure; the notice stays.
-    const notices = outcome.notices;
-    // The rewrite gets the same citation repair as the original answer.
-    const outcomeCitationRepair = repairedOutcome && needsCitationRepair(repairedOutcome, repairCitations)
-      ? await repairMissingCitations(
-          session,
-          repairedOutcome,
-          repairCitations,
-          currentTurnAssistantMessages,
-          emitAssistant,
-          mapRegistry.list().filter((document) => document.published).map((document) => document.reference),
-          [...deliveredFiles.values()],
-        )
-      : null;
-    if (cancelled) return;
-    const answer = repairedOutcome ? finalize(repairedOutcome, outcomeCitationRepair) : finalText;
-    const truthfulText = notices.length ? `${answer}\n\n${notices.join("\n")}` : answer;
-    const snapshot = assistantSnapshotEvent(recoveredOutput ? "" : draft, truthfulText);
-    if (recoveredOutput && !snapshot) throw new Error("recovered answer exceeds the snapshot limit");
-    if (snapshot) emit(snapshot);
   } finally {
+    budget?.dispose();
     mapRegistry.discardDrafts();
     unsubscribe?.();
     session?.dispose();

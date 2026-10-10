@@ -13,6 +13,7 @@ pub mod maps;
 pub mod middleware;
 pub mod profile;
 pub mod provider_gateway;
+pub(crate) mod reasoning;
 mod review;
 mod route_registry;
 pub mod types;
@@ -176,12 +177,18 @@ pub async fn configuration(
         .await?
         .into_iter()
         .map(|ai_engine| AiAgentProviderItem {
+            reasoning_available: reasoning::reasoning_available(
+                &env.config,
+                &ai_engine,
+            ),
+            reasoning_presets: reasoning::presets(&env.config, &ai_engine),
             id: ai_engine.id.to_string(),
             name: ai_engine.name,
             model_name: ai_engine.model_name,
         })
         .collect();
     Ok(Json(AiAgentConfigurationRsp {
+        reasoning_presets_enabled: reasoning::enabled(&env.config),
         feature_enabled: settings.feature_enabled,
         default_ai_engine_id: settings
             .default_ai_engine_id
@@ -354,7 +361,24 @@ pub async fn create_request(
             "AI agent harness is disabled".to_string(),
         ));
     }
-    access::allowed_engine_by_id(&txn, ai_engine_id).await?;
+    let ai_engine = access::allowed_engine_by_id(&txn, ai_engine_id).await?;
+    if req.reasoning_preset.is_some() && !reasoning::enabled(&env.config) {
+        return Err(AppError::BL {
+            msg: "Вибір глибини аналізу недоступний на цьому сервері"
+                .to_string(),
+        });
+    }
+    let execution_policy = reasoning::enabled(&env.config)
+        .then(|| {
+            reasoning::resolve(
+                &env.config,
+                &ai_engine,
+                req.reasoning_preset.unwrap_or_default(),
+            )
+        })
+        .map(serde_json::to_value)
+        .transpose()
+        .c(h!())?;
     let conversation = match existing_conversation {
         Some(conversation) => {
             owned_conversation_locked(&txn, human.id, conversation.id).await?
@@ -374,6 +398,8 @@ pub async fn create_request(
     let request_id = Uuid::now_v7();
     ai_agent_request::ActiveModel {
         id: Set(request_id),
+        execution_policy: Set(execution_policy),
+        completion_metadata: Set(None),
         conversation_id: Set(conversation.id),
         human_login_id: Set(human.id),
         agent_login_id: Set(None),
@@ -761,8 +787,24 @@ pub(super) async fn conversation_detail(
     let mut maps = maps::load_summaries(dbx, &request_ids).await.c(h!())?;
     let mut messages = Vec::new();
     for request in requests {
+        let policy = reasoning::request_policy(&request).c(h!())?;
+        let completion_metadata: Option<AiAgentCompletionMetadata> = request
+            .completion_metadata
+            .clone()
+            .map(serde_json::from_value)
+            .transpose()
+            .c(h!())?;
+        let started_at = request
+            .started_at
+            .map(|started| started.and_utc().timestamp_millis());
         let request_state = request.state;
         messages.push(AiAgentMessageItem {
+            reasoning_preset: policy.as_ref().map(|policy| policy.preset),
+            max_runtime_seconds: policy
+                .as_ref()
+                .map(|policy| policy.max_runtime_seconds as i32),
+            started_at,
+            completion_metadata: completion_metadata.clone(),
             request_id: request.id.to_string(),
             request_state: request_state.clone(),
             role: "user".to_string(),
@@ -776,6 +818,12 @@ pub(super) async fn conversation_detail(
         if request.response.is_some() || !request_maps.is_empty() {
             let response = request.response.unwrap_or_default();
             messages.push(AiAgentMessageItem {
+                reasoning_preset: policy.as_ref().map(|policy| policy.preset),
+                max_runtime_seconds: policy
+                    .as_ref()
+                    .map(|policy| policy.max_runtime_seconds as i32),
+                started_at,
+                completion_metadata,
                 request_id: request.id.to_string(),
                 request_state,
                 role: "assistant".to_string(),

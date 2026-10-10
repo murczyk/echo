@@ -171,15 +171,30 @@ async fn authorize_agent_request(
             "Agent request credential is invalid",
         ));
     };
-    let request_is_active = ai_agent_request::Entity::find_by_id(request_id)
+    let active_request = ai_agent_request::Entity::find_by_id(request_id)
         .filter(ai_agent_request::Column::State.eq("running"))
         .filter(ai_agent_request::Column::CancellationRequested.eq(false))
         .filter(ai_agent_request::Column::AgentLoginId.eq(login_id))
         .filter(ai_agent_request::Column::CorrelationId.eq(correlation_id))
         .one(&env.dbx)
         .await
-        .map_err(actix_web::error::ErrorInternalServerError)?
-        .is_some();
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let request_is_active = match active_request {
+        Some(request) => match super::reasoning::request_policy(&request)
+            .map_err(actix_web::error::ErrorInternalServerError)?
+        {
+            Some(policy) => {
+                super::reasoning::deadline_millis(&request, &policy)
+                    .is_some_and(|deadline| {
+                        chrono::Utc::now().timestamp_millis()
+                            < deadline
+                                - policy.finalization_seconds as i64 * 1000
+                    })
+            }
+            None => true,
+        },
+        None => false,
+    };
     if !request_is_active {
         return Err(actix_web::error::ErrorForbidden(
             "Agent request credential is no longer active",

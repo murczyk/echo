@@ -1204,6 +1204,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(
                 crate::ai_agent::provider_gateway::chat_completions,
             )
+            .service(crate::ai_agent::provider_gateway::responses)
             .service(crate::ai_agent::admin::get_settings)
             .service(crate::ai_agent::admin::update_settings)
             .service(crate::ai_agent::admin::get_dispatcher)

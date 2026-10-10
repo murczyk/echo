@@ -106,6 +106,7 @@ ln -sfn "$PI_ROOT/node_modules/.bin/pi" /usr/local/bin/pi
 install -d -m 0755 /usr/local/sbin
 install -m 0644 "$STAGE/runner.ts" "$PI_ROOT/runner.ts"
 install -m 0644 "$STAGE/context-compaction.ts" "$PI_ROOT/context-compaction.ts"
+install -m 0644 "$STAGE/execution-policy.ts" "$PI_ROOT/execution-policy.ts"
 install -m 0644 "$STAGE/citations.ts" "$PI_ROOT/citations.ts"
 install -m 0644 "$STAGE/attachments.ts" "$PI_ROOT/attachments.ts"
 install -m 0644 "$STAGE/devices.ts" "$PI_ROOT/devices.ts"
