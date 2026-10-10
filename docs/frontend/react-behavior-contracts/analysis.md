@@ -92,9 +92,13 @@
 ## Analysis direct-link dates
 
 Opening `/rer-analysis-neo?m=<message-reference>` resolves an accessible message
-through the existing inbox window lookup, independently of the date filter.
-Other filters and access restrictions still apply. Missing or inaccessible
-messages retain the normal range and show the existing error notification.
+through `/api/rer-importer/inbox-item-context`, independently of the date filter.
+Access restrictions still apply. The selected period is set before requesting
+surrounding messages through `/api/rer-importer/get-inbox` with `around_message_ref`.
+That request retains all filters and requires valid, ordered date boundaries. Missing or inaccessible
+messages retain the normal range and show the existing error notification. If
+the bounded window is unavailable or fails, restore the previous period; a stale
+response must never restore dates after user navigation.
 
 The initial range uses the resolved role defaults (one day with Rer access,
 90 days otherwise), or explicit URL dates, and the saved Analysis time basis.
@@ -116,7 +120,10 @@ Otherwise the range moves around the message while preserving its size:
 Adjusted dates are persisted in the URL with the message reference and other
 filters. Role/settings initialization and automatic adjustment preserve focus.
 User date or search edits leave direct-message navigation and invalidate a
-pending lookup. Existing context pagination is unchanged.
+pending lookup or surrounding-message response. Earlier/later pages keep the same
+date boundaries. The before/after counts and pagination totals describe only that
+period; widening the date selection explicitly loads and counts the wider period.
+No direct-link request counts all history.
 
 Regression coverage:
 

@@ -33,7 +33,7 @@ import {
   writeMessagesPageIndexToWindowUrl,
   getFirstLoadedMessagesPageIndex,
 } from './helpers';
-import { fetchInboxWindow } from '../../services/api/inbox-messages';
+import { fetchInboxItemContext, fetchInboxWindow } from '../../services/api/inbox-messages';
 import type {
   AnalysisCallsignFrequencyMatchesRsp,
   InboxMessage,
@@ -359,13 +359,42 @@ export function useRerAnalysisNeoPage(
     } else {
       setTargetMessageLoading(true);
     }
-    void fetchInboxWindow({
-      messageRef: targetMessageUid,
-      inboxReq: buildInboxReq(directMessageWindowQueryState, [], true),
-    })
+    const requestQueryState = {
+      ...directMessageWindowQueryState,
+      ...directQueryBoundaryRef.current,
+    };
+    const publishPeriod = (period: AnalysisQueryState) => {
+      directQueryBoundaryRef.current = {
+        fromDateTimeStr: period.fromDateTimeStr,
+        toDateTimeStr: period.toDateTimeStr,
+        search: period.search,
+      };
+      setQueryState((current) => ({
+        ...current,
+        fromDateTimeStr: period.fromDateTimeStr,
+        toDateTimeStr: period.toDateTimeStr,
+      }));
+      pushQueryStateToUrl(period, newestFirst, { leftPanelOpen, rightPanelOpen });
+    };
+    let periodAdjusted = false;
+    const restorePeriod = () => {
+      if (periodAdjusted) publishPeriod(requestQueryState);
+    };
+    void fetchInboxItemContext({ messageUid: targetMessageUid })
+      .then((context) => {
+        if (!isCurrentRequest() || context.message == null) return null;
+        const next = adjustQueryDateRangeForDirectMessage(requestQueryState, context.message[1]);
+        periodAdjusted = next !== requestQueryState;
+        if (periodAdjusted) publishPeriod(next);
+        return fetchInboxWindow({
+          messageRef: targetMessageUid,
+          inboxReq: buildInboxReq(next, [], true),
+        });
+      })
       .then((res) => {
         if (!isCurrentRequest()) return;
         if (res == null) {
+          restorePeriod();
           if (isContextRefresh) {
             setTargetMessageWindow(null);
             setTargetMessageContextActive(false);
@@ -382,26 +411,12 @@ export function useRerAnalysisNeoPage(
         setDirectMessageError(null);
         targetMessageLoadedRef.current = true;
         targetMessageIdRef.current = res.targetMessageId;
-        const targetMessage = res.inbox.inboxItems.find(
-          ([messageId]) => messageId === res.targetMessageId,
-        )?.[1];
-        if (targetMessage != null) {
-          setQueryState((current) => {
-            const next = adjustQueryDateRangeForDirectMessage(current, targetMessage);
-            if (next === current) return current;
-            directQueryBoundaryRef.current = {
-              fromDateTimeStr: next.fromDateTimeStr,
-              toDateTimeStr: next.toDateTimeStr,
-              search: next.search,
-            };
-            return next;
-          });
-        }
         setTargetMessageWindow(res);
         if (isContextRefresh) setTargetMessageContextResponsePending(false);
       })
       .catch((err) => {
         if (!isCurrentRequest()) return;
+        restorePeriod();
         if (!targetMessageLoadedRef.current) {
           setTargetMessageContextActive(false);
         }
