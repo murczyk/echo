@@ -181,6 +181,7 @@ init flagsResult route =
       , rerNetworkDetailsPreferredView = Shared.Model.Neo
       , location = Nothing
       , serverInfo = Nothing
+      , serverInfoLoaded = False
       , changelogPreview = Nothing
       , changelogLastSeenLoaded = False
       , changelogLastSeen = Nothing
@@ -404,10 +405,10 @@ update req msg model =
             )
 
         GotServerInfo (Err _) ->
-            ( model, E.none )
+            ( { model | serverInfoLoaded = True }, E.none )
 
         GotServerInfo (Ok v) ->
-            ( { model | serverInfo = Just v }, E.none )
+            ( { model | serverInfo = Just v, serverInfoLoaded = True }, E.none )
 
         GotChangelogIndex (Err err) ->
             ( model
