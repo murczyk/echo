@@ -58,6 +58,12 @@ test('@smoke @regression ECHO-3464 guides first-time 2FA setup and preserves con
   await submitCredentials(page);
 
   const heading = page.getByRole('heading', { name: 'Налаштуйте двофакторну автентифікацію' });
+  await expect(page.locator('.login-panel--2fa-setup')).toBeVisible();
+  await expect(page.locator('.login-qr')).toBeVisible();
+  await expect(page.getByLabel('6-значний код')).toHaveClass(/login-input/);
+  await expect(page.getByRole('button', { name: 'підтвердити' })).toHaveClass(
+    /login-primary-action/,
+  );
   await expect(heading).toBeFocused();
   await expect(page.getByRole('listitem')).toHaveText([
     /Microsoft Authenticator, Google Authenticator, Authy або Duo Mobile/,
@@ -82,10 +88,13 @@ test('@smoke @regression ECHO-3464 guides first-time 2FA setup and preserves con
 test('ECHO-3464 keeps returning-user verification concise and focused @regression', async ({
   page,
 }) => {
+  await page.addInitScript(() => localStorage.setItem('echo-theme-mode', 'dark'));
   await installLoginMocks(page, { Needs2fa: { challenge_id: CHALLENGE_ID } });
 
   await submitCredentials(page);
 
+  await expect(page.locator('.login-page')).toHaveAttribute('data-login-theme', 'dark');
+  await expect(page.locator('.login-panel--2fa-verify')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Підтвердіть вхід' })).toBeVisible();
   await expect(
     page.getByText('Введіть 6-значний код із застосунку-автентифікатора.'),
@@ -120,4 +129,7 @@ test('ECHO-3464 keeps first-time 2FA controls reachable on a short mobile screen
     await locator.scrollIntoViewIfNeeded();
     await expect(locator).toBeInViewport();
   }
+  const attribution = page.locator('.login-attribution');
+  await attribution.scrollIntoViewIfNeeded();
+  await expect(attribution).toBeInViewport();
 });
