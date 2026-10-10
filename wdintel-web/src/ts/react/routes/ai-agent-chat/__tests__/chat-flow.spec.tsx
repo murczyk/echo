@@ -253,7 +253,7 @@ describe('AiAgentChat request queue', () => {
     expect(mocks.submit).toHaveBeenLastCalledWith(
       expect.objectContaining({ reasoningPreset: 'deep' }),
     );
-    expect(container.textContent).toContain('до 30 хв');
+    expect(container.textContent).toContain('Ви · Глибокий');
   });
 
   // The map workspace is lazy and pulls in milsymbol; load it once up front so

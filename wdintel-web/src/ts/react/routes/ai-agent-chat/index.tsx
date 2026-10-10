@@ -557,9 +557,7 @@ function ConversationMessage({
     >
       <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
         Ви
-        {message.reasoningPreset
-          ? ` · ${REASONING_LABELS[message.reasoningPreset]}${message.maxRuntimeSeconds ? ` · до ${message.maxRuntimeSeconds / 60} хв` : ''}`
-          : ''}
+        {message.reasoningPreset ? ` · ${REASONING_LABELS[message.reasoningPreset]}` : ''}
       </Typography>
       <Typography component="div" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
         {message.content}
@@ -1615,35 +1613,23 @@ export function AiAgentChat({
                   </Select>
                   {configuration.reasoningPresetsEnabled &&
                   selectedProvider?.reasoningPresets?.length ? (
-                    <Tooltip
-                      disableInteractive
-                      title={
-                        selectedProvider.reasoningAvailable
-                          ? 'Глибина міркувань і максимальний час дослідження. Час у черзі не враховується.'
-                          : 'Провайдер має фіксовану глибину міркувань; режим обмежує час дослідження.'
+                    <Select
+                      variant="standard"
+                      disableUnderline
+                      value={reasoningPreset}
+                      disabled={interactionLocked}
+                      onChange={(event) =>
+                        setReasoningPreset(event.target.value as AiAgentReasoningPreset)
                       }
+                      inputProps={{ 'aria-label': 'Глибина аналізу' }}
+                      sx={{ fontSize: '0.75rem', color: 'text.secondary' }}
                     >
-                      <span>
-                        <Select
-                          variant="standard"
-                          disableUnderline
-                          value={reasoningPreset}
-                          disabled={interactionLocked}
-                          onChange={(event) =>
-                            setReasoningPreset(event.target.value as AiAgentReasoningPreset)
-                          }
-                          inputProps={{ 'aria-label': 'Глибина аналізу' }}
-                          sx={{ fontSize: '0.75rem', color: 'text.secondary' }}
-                        >
-                          {selectedProvider.reasoningPresets.map((option) => (
-                            <MenuItem key={option.preset} value={option.preset}>
-                              {REASONING_LABELS[option.preset]} · до {option.maxRuntimeSeconds / 60}{' '}
-                              хв
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </span>
-                    </Tooltip>
+                      {selectedProvider.reasoningPresets.map((option) => (
+                        <MenuItem key={option.preset} value={option.preset}>
+                          {REASONING_LABELS[option.preset]}
+                        </MenuItem>
+                      ))}
+                    </Select>
                   ) : null}
                 </Stack>
                 <Stack direction="row" alignItems="center" spacing={1}>
