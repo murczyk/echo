@@ -124,6 +124,25 @@ pub struct AiSettlementTestMessageVersionItem {
 pub struct AiSettlementWorkerSettingsItem {
     pub enabled: bool,
     pub ai_engine_id: Option<String>,
+    pub groups_except: bool,
+    pub group_master_keys: Vec<String>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    sea_orm::FromQueryResult,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSettlementGroupItem {
+    pub master_key: String,
+    pub name: Option<String>,
 }
 
 #[derive(
@@ -136,6 +155,7 @@ pub struct AiSettlementPageRsp {
     pub engines: Vec<AiSettlementEngineItem>,
     pub messages: Vec<AiSettlementTestMessageItem>,
     pub worker: AiSettlementWorkerSettingsItem,
+    pub groups: Vec<AiSettlementGroupItem>,
 }
 
 #[derive(
@@ -207,4 +227,8 @@ pub struct SaveAiSettlementParsingReq {
 pub struct SaveAiSettlementWorkerSettingsReq {
     pub enabled: bool,
     pub ai_engine_id: Option<String>,
+    #[serde(default)]
+    pub groups_except: bool,
+    #[serde(default)]
+    pub group_master_keys: Vec<String>,
 }

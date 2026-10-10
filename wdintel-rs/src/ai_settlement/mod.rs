@@ -1,4 +1,5 @@
 pub mod aliases;
+mod groups;
 pub mod types;
 pub mod worker;
 
@@ -8,6 +9,7 @@ use crate::config::{
     AI_SETTLEMENT_MAX_CHARS, AI_SETTLEMENT_MAX_CONCURRENT_REQUESTS,
     AI_SETTLEMENT_MAX_SETTLEMENTS, AI_SETTLEMENT_MESSAGE_MAX_CHARS,
     AI_SETTLEMENT_PROMPT_MAX_CHARS, AI_SETTLEMENT_SETTINGS_ID,
+    AI_SETTLEMENT_WORKER_SETTINGS_CHANNEL,
 };
 use crate::entities::{
     ai_engine, ai_settlement_parse_result, ai_settlement_settings,
@@ -234,9 +236,14 @@ pub async fn save_ai_settlement_worker_settings(
     let req = req.into_inner();
     let ai_engine_id = validate_worker_engine_id(req.enabled, req.ai_engine_id)
         .context(h!())?;
-    let settings = save_worker_settings(&env.dbx, req.enabled, ai_engine_id)
-        .await
-        .context(h!())?;
+    let group_filter = groups::GroupFilter {
+        except: req.groups_except,
+        master_keys: req.group_master_keys,
+    };
+    let settings =
+        save_worker_settings(&env.dbx, req.enabled, ai_engine_id, group_filter)
+            .await
+            .context(h!())?;
     Ok(Json(worker_settings_item(&settings)))
 }
 
@@ -256,6 +263,8 @@ async fn load_page(
         AiSettlementWorkerSettingsItem {
             enabled: false,
             ai_engine_id: None,
+            groups_except: false,
+            group_master_keys: Vec::new(),
         },
     );
     let engines = ai_engine::Entity::find()
@@ -296,6 +305,7 @@ async fn load_page(
         prompt_overridden: prompt_override
             .is_some_and(|prompt| !prompt.is_empty()),
         worker,
+        groups: groups::list_active_groups(dbx).await.c(h!())?,
         engines: engines
             .into_iter()
             .map(|engine| AiSettlementEngineItem {
@@ -323,6 +333,11 @@ fn worker_settings_item(
         ai_engine_id: settings
             .worker_ai_engine_id
             .map(|ai_engine_id| ai_engine_id.to_string()),
+        groups_except: settings.worker_groups_except.unwrap_or_default(),
+        group_master_keys: settings
+            .worker_group_master_keys
+            .clone()
+            .unwrap_or_default(),
     }
 }
 
@@ -370,19 +385,52 @@ async fn save_worker_settings(
     dbx: &DatabaseConnection,
     enabled: bool,
     ai_engine_id: Option<Uuid>,
+    mut group_filter: groups::GroupFilter,
 ) -> Result<ai_settlement_settings::Model, AppError> {
     let transaction = dbx.begin().await.c(h!())?;
     lock_worker_engine(&transaction, ai_engine_id)
         .await
         .context(h!())?;
-    let now = Utc::now().naive_utc();
+    group_filter.master_keys.sort();
+    group_filter.master_keys.dedup();
+    if !groups::validate_groups(&transaction, &group_filter.master_keys)
+        .await
+        .c(h!())?
+    {
+        return Err(AppError::BL {
+            msg: "Вибрані групи видалено або архівовано. Оновіть перелік груп."
+                .to_string(),
+        });
+    }
+    persist_worker_settings(&transaction, enabled, ai_engine_id, group_filter)
+        .await
+        .c(h!())?;
+    let settings =
+        ai_settlement_settings::Entity::find_by_id(AI_SETTLEMENT_SETTINGS_ID)
+            .one(&transaction)
+            .await
+            .c(h!())?
+            .c(h!())?;
+    notify_worker_settings_changed(&transaction).await.c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(settings)
+}
+
+async fn persist_worker_settings(
+    transaction: &DatabaseTransaction,
+    enabled: bool,
+    ai_engine_id: Option<Uuid>,
+    group_filter: groups::GroupFilter,
+) -> anyhow::Result<()> {
     ai_settlement_settings::Entity::insert(
         ai_settlement_settings::ActiveModel {
             id: Set(AI_SETTLEMENT_SETTINGS_ID),
             prompt: Set(String::new()),
-            updated_at: Set(now),
+            updated_at: Set(Utc::now().naive_utc()),
             worker_enabled: Set(enabled),
             worker_ai_engine_id: Set(ai_engine_id),
+            worker_groups_except: Set(Some(group_filter.except)),
+            worker_group_master_keys: Set(Some(group_filter.master_keys)),
         },
     )
     .on_conflict(
@@ -390,21 +438,30 @@ async fn save_worker_settings(
             .update_columns([
                 ai_settlement_settings::Column::WorkerEnabled,
                 ai_settlement_settings::Column::WorkerAiEngineId,
+                ai_settlement_settings::Column::WorkerGroupsExcept,
+                ai_settlement_settings::Column::WorkerGroupMasterKeys,
                 ai_settlement_settings::Column::UpdatedAt,
             ])
             .to_owned(),
     )
-    .exec(&transaction)
+    .exec(transaction)
     .await
     .c(h!())?;
-    let settings =
-        ai_settlement_settings::Entity::find_by_id(AI_SETTLEMENT_SETTINGS_ID)
-            .one(&transaction)
-            .await
-            .c(h!())?
-            .c(h!())?;
-    transaction.commit().await.c(h!())?;
-    Ok(settings)
+    Ok(())
+}
+
+async fn notify_worker_settings_changed(
+    transaction: &DatabaseTransaction,
+) -> anyhow::Result<()> {
+    transaction
+        .execute_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DbBackend::Postgres,
+            "select pg_notify($1, '')",
+            [AI_SETTLEMENT_WORKER_SETTINGS_CHANNEL.into()],
+        ))
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 pub(crate) fn effective_prompt(prompt: &str) -> &str {
@@ -954,6 +1011,8 @@ async fn save_prompt(
             updated_at: Set(now),
             worker_enabled: NotSet,
             worker_ai_engine_id: NotSet,
+            worker_groups_except: NotSet,
+            worker_group_master_keys: NotSet,
         },
     )
     .on_conflict(
@@ -967,6 +1026,7 @@ async fn save_prompt(
     .exec(transaction)
     .await
     .c(h!())?;
+    notify_worker_settings_changed(transaction).await.c(h!())?;
     Ok(())
 }
 
@@ -1328,7 +1388,13 @@ mod tests {
         let dbx = env.dbx.clone();
         let ai_engine_id = ai_engine.id;
         let mut save_task = tokio::spawn(async move {
-            save_worker_settings(&dbx, true, Some(ai_engine_id)).await
+            save_worker_settings(
+                &dbx,
+                true,
+                Some(ai_engine_id),
+                Default::default(),
+            )
+            .await
         });
         assert!(tokio::time::timeout(
             std::time::Duration::from_millis(100),
@@ -1377,6 +1443,10 @@ mod tests {
             updated_at: Set(now),
             worker_enabled: Set(true),
             worker_ai_engine_id: Set(None),
+            worker_groups_except: Set(Some(true)),
+            worker_group_master_keys: Set(Some(vec![
+                "preserved-group".to_string()
+            ])),
         }
         .insert(&env.dbx)
         .await
@@ -1394,6 +1464,11 @@ mod tests {
         assert!(settings.prompt.is_empty());
         assert!(settings.worker_enabled);
         assert_eq!(settings.worker_ai_engine_id, None);
+        assert_eq!(settings.worker_groups_except, Some(true));
+        assert_eq!(
+            settings.worker_group_master_keys,
+            Some(vec!["preserved-group".to_string()])
+        );
         let page = super::load_page(&env.dbx).await.unwrap();
         assert_eq!(page.prompt, AI_SETTLEMENT_DEFAULT_PROMPT);
         assert!(!page.prompt_overridden);

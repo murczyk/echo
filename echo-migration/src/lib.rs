@@ -476,6 +476,7 @@ mod m20261009_144937_settlement_renamed_names;
 mod m20261010_073418_inbox_settlement_processed_flag;
 mod m20261010_085100_settlement_alias;
 mod m20261010_094039_settlement_alias_lookup_indexes;
+mod m20261010_110158_ai_settlement_worker_groups;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1117,6 +1118,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261010_073418_inbox_settlement_processed_flag::Migration),
             Box::new(m20261010_085100_settlement_alias::Migration),
             Box::new(m20261010_094039_settlement_alias_lookup_indexes::Migration),
+            Box::new(m20261010_110158_ai_settlement_worker_groups::Migration),
         ]
     }
 }

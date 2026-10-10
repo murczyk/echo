@@ -1,10 +1,10 @@
-use super::{effective_prompt, parse_settlements};
+use super::{effective_prompt, groups::GroupFilter, parse_settlements};
 use crate::ai_engine::{request_ai_response, AiEngineMessage};
 use crate::config::{
     AI_CHAT_ROLE_SYSTEM, AI_CHAT_ROLE_USER, AI_SETTLEMENT_SETTINGS_ID,
     AI_SETTLEMENT_WORKER_IDLE_SLEEP_MS, AI_SETTLEMENT_WORKER_MAX_ATTEMPTS,
     AI_SETTLEMENT_WORKER_MAX_ERROR_CHARS, AI_SETTLEMENT_WORKER_RETRY_BASE_SECS,
-    AI_SETTLEMENT_WORKER_RETRY_MAX_SECS,
+    AI_SETTLEMENT_WORKER_RETRY_MAX_SECS, AI_SETTLEMENT_WORKER_SETTINGS_CHANNEL,
 };
 use crate::entities::{
     ai_engine, ai_settlement_settings, ai_settlement_worker_job,
@@ -18,7 +18,7 @@ use crate::types::{error, info, Env, ShortContext};
 use crate::utils::worker_watch;
 use anyhow::Context;
 use chrono::{Duration as ChronoDuration, Utc};
-use sea_orm::sea_query::OnConflict;
+use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::{NotSet, Set},
@@ -36,6 +36,7 @@ pub(crate) struct WorkerConfig {
     pub prompt: String,
     pub ai_engine: ai_engine::Model,
     settings_updated_at: chrono::NaiveDateTime,
+    group_filter: GroupFilter,
 }
 
 pub async fn enqueue_if_enabled<C>(
@@ -45,7 +46,7 @@ pub async fn enqueue_if_enabled<C>(
 where
     C: ConnectionTrait,
 {
-    let enabled =
+    let settings =
         ai_settlement_settings::Entity::find_by_id(AI_SETTLEMENT_SETTINGS_ID)
             .filter(ai_settlement_settings::Column::WorkerEnabled.eq(true))
             .filter(
@@ -53,9 +54,15 @@ where
             )
             .one(dbx)
             .await
-            .c(h!())?
-            .is_some();
-    if !enabled {
+            .c(h!())?;
+    let Some(settings) = settings else {
+        return Ok(());
+    };
+    if !GroupFilter::from_settings(&settings)
+        .allows(dbx, sigint_inbox_item_id)
+        .await
+        .c(h!())?
+    {
         return Ok(());
     }
     ai_settlement_worker_job::Entity::insert(
@@ -83,29 +90,61 @@ where
 }
 
 pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
-    let mut redis = env.redis.clone();
     info!("ai_settlement_worker started");
-    loop {
-        if cancellation_token.is_cancelled() {
-            info!("ai_settlement_worker received cancellation token");
-            break;
+    while !cancellation_token.is_cancelled() {
+        tokio::select! {
+            _ = cancellation_token.cancelled() => break,
+            result = run_with_settings_listener(&env, &cancellation_token) => {
+                if let Err(error) = result {
+                    error!("ai_settlement_worker listener failed: {error:#}");
+                }
+            }
         }
+        tokio::select! {
+            _ = cancellation_token.cancelled() => break,
+            _ = tokio::time::sleep(Duration::from_millis(AI_SETTLEMENT_WORKER_IDLE_SLEEP_MS)) => {}
+        }
+    }
+}
+
+async fn run_with_settings_listener(
+    env: &Env,
+    cancellation_token: &CancellationToken,
+) -> anyhow::Result<()> {
+    let mut listener = sqlx::postgres::PgListener::connect_with(
+        env.dbx.get_postgres_connection_pool(),
+    )
+    .await
+    .c(h!())?;
+    listener
+        .listen(AI_SETTLEMENT_WORKER_SETTINGS_CHANNEL)
+        .await
+        .c(h!())?;
+    let mut redis = env.redis.clone();
+    loop {
         let _loop_guard = worker_watch::loop_guard("ai_settlement_worker");
-        let processed =
-            match process_next(&env.ai_engine_client, &env.dbx, &mut redis)
-                .await
-            {
+        let processed = tokio::select! {
+            biased;
+            _ = cancellation_token.cancelled() => return Ok(()),
+            notification = listener.try_recv() => {
+                notification.c(h!())?;
+                info!("ai_settlement_worker restarted after settings change or listener reconnection");
+                continue;
+            }
+            result = process_next(&env.ai_engine_client, &env.dbx, &mut redis) => match result {
                 Ok(processed) => processed,
                 Err(error) => {
                     error!("ai_settlement_worker failed: {error:#?}");
                     false
                 }
-            };
+            }
+        };
         if processed {
             continue;
         }
         tokio::select! {
-            _ = cancellation_token.cancelled() => break,
+            _ = cancellation_token.cancelled() => return Ok(()),
+            notification = listener.try_recv() => { notification.c(h!())?; }
             _ = tokio::time::sleep(Duration::from_millis(
                 AI_SETTLEMENT_WORKER_IDLE_SLEEP_MS,
             )) => {}
@@ -121,7 +160,10 @@ async fn process_next(
     let Some(config) = load_worker_config(dbx).await.context(h!())? else {
         return Ok(false);
     };
-    let Some(job) = load_next_job(dbx).await.context(h!())? else {
+    let Some(job) = load_next_job(dbx, &config.group_filter)
+        .await
+        .context(h!())?
+    else {
         return Ok(false);
     };
     let message = signal_message::Entity::find_by_id(job.sigint_inbox_item_id)
@@ -254,17 +296,25 @@ pub(crate) async fn load_worker_config(
         prompt: effective_prompt(&settings.prompt).to_string(),
         ai_engine,
         settings_updated_at: settings.updated_at,
+        group_filter: GroupFilter::from_settings(&settings),
     }))
 }
 
 async fn load_next_job(
     dbx: &DatabaseConnection,
+    group_filter: &GroupFilter,
 ) -> Result<Option<ai_settlement_worker_job::Model>, AppError> {
-    Ok(ai_settlement_worker_job::Entity::find()
-        .filter(
-            ai_settlement_worker_job::Column::NextAttemptAt
-                .lte(Utc::now().naive_utc()),
-        )
+    let mut jobs = ai_settlement_worker_job::Entity::find().filter(
+        ai_settlement_worker_job::Column::NextAttemptAt
+            .lte(Utc::now().naive_utc()),
+    );
+    if let Some(condition) = group_filter.condition(Expr::col((
+        ai_settlement_worker_job::Entity,
+        ai_settlement_worker_job::Column::SigintInboxItemId,
+    ))) {
+        jobs = jobs.filter(condition);
+    }
+    Ok(jobs
         .order_by_asc(ai_settlement_worker_job::Column::NextAttemptAt)
         .order_by_asc(ai_settlement_worker_job::Column::CreatedAt)
         .order_by_asc(ai_settlement_worker_job::Column::SigintInboxItemId)
@@ -305,6 +355,15 @@ async fn complete_job(
     if !worker_config_is_current(&transaction, expected_config)
         .await
         .context(h!())?
+    {
+        transaction.commit().await.c(h!())?;
+        return Ok(false);
+    }
+    if !expected_config
+        .group_filter
+        .allows(&transaction, sigint_inbox_item_id)
+        .await
+        .c(h!())?
     {
         transaction.commit().await.c(h!())?;
         return Ok(false);
@@ -465,6 +524,15 @@ async fn fail_job(
         transaction.commit().await.c(h!())?;
         return Ok(());
     }
+    if !expected_config
+        .group_filter
+        .allows(&transaction, sigint_inbox_item_id)
+        .await
+        .c(h!())?
+    {
+        transaction.commit().await.c(h!())?;
+        return Ok(());
+    }
     let attempts = job.attempts + 1;
     let error_text = truncate_error(error_text);
     if attempts >= AI_SETTLEMENT_WORKER_MAX_ATTEMPTS {
@@ -546,6 +614,10 @@ fn truncate_error(error: String) -> String {
 }
 
 #[cfg(test)]
+#[path = "worker_group_tests.rs"]
+mod group_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{
         complete_job, enqueue_if_enabled, fail_job, load_worker_config,
@@ -595,7 +667,9 @@ mod tests {
         assert_eq!(retry_delay_secs(20), 300);
     }
 
-    async fn enable_worker(dbx: &sea_orm::DatabaseConnection) -> WorkerConfig {
+    pub(super) async fn enable_worker(
+        dbx: &sea_orm::DatabaseConnection,
+    ) -> WorkerConfig {
         let now = chrono::Utc::now().naive_utc();
         let ai_engine_id = uuid::Uuid::now_v7();
         ai_engine::ActiveModel {
@@ -623,6 +697,8 @@ mod tests {
             prompt: Set("test prompt".to_string()),
             worker_enabled: Set(true),
             worker_ai_engine_id: Set(Some(ai_engine_id)),
+            worker_groups_except: Set(None),
+            worker_group_master_keys: Set(None),
             updated_at: Set(now),
         }
         .insert(dbx)

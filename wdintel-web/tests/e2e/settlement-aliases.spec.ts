@@ -16,7 +16,8 @@ async function installAliases(page: Page, aliases: SettlementAliasItem[] = []) {
         promptOverridden: false,
         engines: [],
         messages: [],
-        worker: { enabled: false, aiEngineId: null },
+        worker: { enabled: false, aiEngineId: null, groupsExcept: false, groupMasterKeys: [] },
+        groups: [],
       },
     }),
   );

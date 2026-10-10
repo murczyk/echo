@@ -8,12 +8,19 @@ import {
   MenuItem,
   Stack,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 
-import type { AiSettlementEngineItem, AiSettlementWorkerSettingsItem } from '../../../../Bindings';
+import type {
+  AiSettlementEngineItem,
+  AiSettlementGroupItem,
+  AiSettlementWorkerSettingsItem,
+} from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerAutocomplete } from '../../components/PowerAutocomplete';
 import { PowerButton } from '../../components/PowerButton';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { saveAiSettlementWorkerSettings } from '../../services/api/ai-settlements';
@@ -24,15 +31,19 @@ function errorMessage(error: unknown): string {
 
 export function AiSettlementWorkerSettings({
   engines,
+  groups,
   settings,
   onSaved,
 }: {
   engines: AiSettlementEngineItem[];
+  groups: AiSettlementGroupItem[];
   settings: AiSettlementWorkerSettingsItem;
   onSaved: (settings: AiSettlementWorkerSettingsItem) => void;
 }) {
   const [enabled, setEnabled] = useState(settings.enabled);
   const [aiEngineId, setAiEngineId] = useState(settings.aiEngineId ?? '');
+  const [groupsExcept, setGroupsExcept] = useState(settings.groupsExcept);
+  const [groupMasterKeys, setGroupMasterKeys] = useState(settings.groupMasterKeys);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { notify } = usePowerSnackbar();
@@ -40,6 +51,8 @@ export function AiSettlementWorkerSettings({
   useEffect(() => {
     setEnabled(settings.enabled);
     setAiEngineId(settings.aiEngineId ?? '');
+    setGroupsExcept(settings.groupsExcept);
+    setGroupMasterKeys(settings.groupMasterKeys);
   }, [settings]);
 
   async function save() {
@@ -53,11 +66,15 @@ export function AiSettlementWorkerSettings({
       const saved = await saveAiSettlementWorkerSettings({
         enabled,
         aiEngineId: aiEngineId || null,
+        groupsExcept,
+        groupMasterKeys,
       });
       onSaved(saved);
       notify({ severity: 'success', message: 'Налаштування воркера збережено.' });
     } catch (saveError) {
-      setError(`Помилка збереження воркера: ${errorMessage(saveError)}`);
+      const message = `Помилка збереження воркера: ${errorMessage(saveError)}`;
+      setError(message);
+      notify({ severity: 'error', message });
     } finally {
       setSaving(false);
     }
@@ -113,6 +130,56 @@ export function AiSettlementWorkerSettings({
               </MenuItem>
             ))}
           </TextField>
+
+          <section className="flex flex-col gap-echo-md" aria-labelledby="settlement-worker-groups">
+            <Typography component="h3" variant="h6" id="settlement-worker-groups">
+              Групи для обробки
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              value={groupsExcept ? 'except' : 'only'}
+              disabled={saving}
+              aria-label="Режим обробки груп"
+              onChange={(_, value: string | null) => {
+                if (value !== null) setGroupsExcept(value === 'except');
+              }}
+            >
+              <ToggleButton value="only">Лише</ToggleButton>
+              <ToggleButton value="except">Окрім</ToggleButton>
+            </ToggleButtonGroup>
+            <PowerAutocomplete
+              options={groups}
+              value={groupMasterKeys.map(
+                (masterKey) =>
+                  groups.find((group) => group.masterKey === masterKey) ?? {
+                    masterKey,
+                    name: `Недоступна група (${masterKey})`,
+                  },
+              )}
+              disabled={saving}
+              disableCloseOnSelect
+              getOptionLabel={(group) => group.name || group.masterKey}
+              getOptionKey={(group) => group.masterKey}
+              isOptionEqualToValue={(group, selected) => group.masterKey === selected.masterKey}
+              onChange={(_, selected) =>
+                setGroupMasterKeys(selected.map((group) => group.masterKey))
+              }
+              noOptionsText="Немає активних груп"
+              clearText="Очистити"
+              openText="Відкрити"
+              closeText="Закрити"
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Групи"
+                  helperText="Без вибраних груп — без обмежень. Лише — обробляти вибрані; Окрім — пропускати вибрані."
+                />
+              )}
+            />
+            <Typography color="text.secondary" variant="body2">
+              Збереження налаштувань перезапускає воркер із новими обмеженнями.
+            </Typography>
+          </section>
 
           <PowerButton
             type="button"

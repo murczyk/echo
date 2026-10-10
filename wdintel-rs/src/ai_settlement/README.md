@@ -26,3 +26,28 @@ The table is excluded from analytics replication; normal deployment synchronizes
 the packaged exclusions before migrations. Rollback drops the alias table and
 its records, so export aliases before reverting this migration if they must
 be retained.
+
+## Worker group restrictions
+
+The **Воркер** tab at `/admin/ai/settlements` includes **Групи для обробки**.
+Select active, non-deleted, non-archived Signal groups and choose **Лише** to
+process messages belonging to any selected group, or **Окрім** to exclude
+messages belonging to any selected group, including messages shared with other
+groups. An empty selection means no restrictions in either mode.
+
+**Зберегти** persists the configuration and sends a transactional PostgreSQL
+notification to restart processing across backend and worker processes. An
+in-flight request is cancelled; its job remains pending and stale results cannot
+be saved. Existing excluded jobs remain pending, while new excluded messages
+are not queued. Changing the restriction can make pending jobs eligible again;
+messages skipped before enqueueing require explicit reprocessing.
+
+Apply `m20261010_110158_ai_settlement_worker_groups` before updating the backend.
+The nullable settings columns default to unrestricted processing in application
+code and are excluded from analytics replication. Rollback removes the saved
+restriction. Archived or deleted selections are retained until explicitly
+removed, so an unavailable group never silently turns **Лише** into unrestricted
+processing; saving requires replacing or removing unavailable selections.
+
+Behavior coverage: `wdintel-rs/src/ai_settlement/worker_group_tests.rs` and
+`wdintel-web/tests/e2e/settlement-worker-groups.spec.ts`.

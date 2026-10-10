@@ -363,6 +363,11 @@
         { "table": "public.ai_settlement_worker_job", "strategy": "excluded" }
       ]
     },
+    "echo:m20261010_110158_ai_settlement_worker_groups": {
+      "changes": [
+        { "table": "public.ai_settlement_settings", "strategy": "excluded" }
+      ]
+    },
     "echo:m20260827_180023_add_login_totp_secret": {
       "changes": [
         { "table": "public.login_totp", "strategy": "excluded" }

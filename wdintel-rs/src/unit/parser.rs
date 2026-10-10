@@ -509,7 +509,7 @@ fn capture_unit_and_locality(
         '_if: {
             lazy_static! {
                 static ref RE: Regex = Regex::new(
-                    r#"(?P<unit>.*?(?:\d+\s+(?:ЗА|АК|А))?)(?P<locality> [А-ЯЄІЇ'\s]+(?:-[А-ЯЄІЇ'\s]+)+)"#
+                    r#"(?P<unit>.*\d+\s+(?:ЗА|АК|А)|.*)(?P<locality> [А-ЯЄІЇ'\s]+(?:-[А-ЯЄІЇ'\s]+)+)"#
                 )
                 .unwrap();
             }
@@ -1072,11 +1072,17 @@ mod tests {
             }
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));
-        for suffix in ["6 А", "6 ЗА", "6 АК"] {
-            let unit = format!("УКХ р/м управління 1 мсб {suffix}");
-            let body = format!(
-                "{unit} КАМ'ЯНКА-ПАВЛІВКА-КРАСНЕ ПЕРШЕ\nНВ\nНВ\n— Принял."
-            );
+        for (unit, locality) in [
+            ("управління 1 мсб 6 А", "КАМ'ЯНКА-ПАВЛІВКА-КРАСНЕ ПЕРШЕ"),
+            ("управління 1 мсб 6 ЗА", "КАМ'ЯНКА-ПАВЛІВКА-КРАСНЕ ПЕРШЕ"),
+            ("управління 1 мсб 6 АК", "КАМ'ЯНКА-ПАВЛІВКА-КРАСНЕ ПЕРШЕ"),
+            ("БАРС-БРЯНСК", "КАМ'ЯНКА-ПАВЛІВКА-КРАСНЕ ПЕРШЕ"),
+            ("БАРС-И", "КАМ'ЯНКА-ПАВЛІВКА-КРАСНЕ ПЕРШЕ"),
+            ("БАРС-БРЯНСК 6 ЗА", "КРАСНЕ ПЕРШЕ-КАМ'ЯНКА-ПАВЛІВКА"),
+            ("БАРС-И 6 ЗА", "КРАСНЕ ПЕРШЕ-КАМ'ЯНКА-ПАВЛІВКА"),
+        ] {
+            let unit = format!("УКХ р/м {unit}");
+            let body = format!("{unit} {locality}\nНВ\nНВ\n— Принял.");
             let parsed =
                 extract_unit(settlements.clone(), &body, vec![]).unwrap();
             assert_eq!(parsed.unit.as_deref(), Some(unit.as_str()));

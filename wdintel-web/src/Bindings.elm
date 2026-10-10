@@ -15415,6 +15415,8 @@ aiSettlementTestMessageVersionItemEncoder struct =
 type alias AiSettlementWorkerSettingsItem =
     { enabled : Bool
     , aiEngineId : Maybe (String)
+    , groupsExcept : Bool
+    , groupMasterKeys : List (String)
     }
 
 
@@ -15423,6 +15425,22 @@ aiSettlementWorkerSettingsItemEncoder struct =
     Json.Encode.object
         [ ( "enabled", (Json.Encode.bool) struct.enabled )
         , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        , ( "groupsExcept", (Json.Encode.bool) struct.groupsExcept )
+        , ( "groupMasterKeys", (Json.Encode.list (Json.Encode.string)) struct.groupMasterKeys )
+        ]
+
+
+type alias AiSettlementGroupItem =
+    { masterKey : String
+    , name : Maybe (String)
+    }
+
+
+aiSettlementGroupItemEncoder : AiSettlementGroupItem -> Json.Encode.Value
+aiSettlementGroupItemEncoder struct =
+    Json.Encode.object
+        [ ( "masterKey", (Json.Encode.string) struct.masterKey )
+        , ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
         ]
 
 
@@ -15432,6 +15450,7 @@ type alias AiSettlementPageRsp =
     , engines : List (AiSettlementEngineItem)
     , messages : List (AiSettlementTestMessageItem)
     , worker : AiSettlementWorkerSettingsItem
+    , groups : List (AiSettlementGroupItem)
     }
 
 
@@ -15443,6 +15462,7 @@ aiSettlementPageRspEncoder struct =
         , ( "engines", (Json.Encode.list (aiSettlementEngineItemEncoder)) struct.engines )
         , ( "messages", (Json.Encode.list (aiSettlementTestMessageItemEncoder)) struct.messages )
         , ( "worker", (aiSettlementWorkerSettingsItemEncoder) struct.worker )
+        , ( "groups", (Json.Encode.list (aiSettlementGroupItemEncoder)) struct.groups )
         ]
 
 
@@ -15545,6 +15565,8 @@ saveAiSettlementParsingReqEncoder struct =
 type alias SaveAiSettlementWorkerSettingsReq =
     { enabled : Bool
     , aiEngineId : Maybe (String)
+    , groupsExcept : Bool
+    , groupMasterKeys : List (String)
     }
 
 
@@ -15553,6 +15575,8 @@ saveAiSettlementWorkerSettingsReqEncoder struct =
     Json.Encode.object
         [ ( "enabled", (Json.Encode.bool) struct.enabled )
         , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        , ( "groupsExcept", (Json.Encode.bool) struct.groupsExcept )
+        , ( "groupMasterKeys", (Json.Encode.list (Json.Encode.string)) struct.groupMasterKeys )
         ]
 
 
@@ -27292,6 +27316,15 @@ aiSettlementWorkerSettingsItemDecoder =
     Json.Decode.succeed AiSettlementWorkerSettingsItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groupsExcept" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groupMasterKeys" (Json.Decode.list (Json.Decode.string))))
+
+
+aiSettlementGroupItemDecoder : Json.Decode.Decoder AiSettlementGroupItem
+aiSettlementGroupItemDecoder =
+    Json.Decode.succeed AiSettlementGroupItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "masterKey" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
 
 
 aiSettlementPageRspDecoder : Json.Decode.Decoder AiSettlementPageRsp
@@ -27302,6 +27335,7 @@ aiSettlementPageRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engines" (Json.Decode.list (aiSettlementEngineItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (aiSettlementTestMessageItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "worker" (aiSettlementWorkerSettingsItemDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list (aiSettlementGroupItemDecoder))))
 
 
 aiSettlementPromptStateDecoder : Json.Decode.Decoder AiSettlementPromptState
@@ -27357,6 +27391,8 @@ saveAiSettlementWorkerSettingsReqDecoder =
     Json.Decode.succeed SaveAiSettlementWorkerSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groupsExcept" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groupMasterKeys" (Json.Decode.list (Json.Decode.string))))
 
 
 aiPositionEngineItemDecoder : Json.Decode.Decoder AiPositionEngineItem

@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type {
   AiSettlementParseResultItem,
+  AiSettlementGroupItem,
   AiSettlementTestMessageItem,
   AiSettlementTestMessageVersionItem,
   AiSettlementWorkerSettingsItem,
@@ -93,7 +94,10 @@ export function AdminAiSettlementsPage() {
   const [workerSettings, setWorkerSettings] = useState<AiSettlementWorkerSettingsItem>({
     enabled: false,
     aiEngineId: null,
+    groupsExcept: false,
+    groupMasterKeys: [],
   });
+  const [groups, setGroups] = useState<AiSettlementGroupItem[]>([]);
   const [tab, setTab] = useState<AiSettlementTab>('prompt');
   const [promptPanelOpen, setPromptPanelOpen] = useState(true);
   const [screen, setScreen] = useState<AiSettlementScreen>({ kind: 'list' });
@@ -123,8 +127,11 @@ export function AdminAiSettlementsPage() {
       setPromptOverridden(page.promptOverridden);
       setSelectedEngineIds(page.engines.map((engine) => engine.id));
       setWorkerSettings(page.worker);
+      setGroups(page.groups);
     } catch (loadError) {
-      setError(`Помилка завантаження ШІ-парсингу населених пунктів: ${errorMessage(loadError)}`);
+      const message = `Помилка завантаження ШІ-парсингу населених пунктів: ${errorMessage(loadError)}`;
+      setError(message);
+      notify({ severity: 'error', message });
     } finally {
       setLoading(false);
     }
@@ -392,6 +399,7 @@ export function AdminAiSettlementsPage() {
             {tab === 'worker' ? (
               <AiSettlementWorkerSettings
                 engines={engines}
+                groups={groups}
                 settings={workerSettings}
                 onSaved={setWorkerSettings}
               />

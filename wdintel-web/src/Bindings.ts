@@ -5983,6 +5983,13 @@ export type AiSettlementTestMessageVersionItem = {
 export type AiSettlementWorkerSettingsItem = {
   enabled: boolean;
   aiEngineId: string | null;
+  groupsExcept: boolean;
+  groupMasterKeys: Array<string>;
+};
+
+export type AiSettlementGroupItem = {
+  masterKey: string;
+  name: string | null;
 };
 
 export type AiSettlementPageRsp = {
@@ -5991,6 +5998,7 @@ export type AiSettlementPageRsp = {
   engines: Array<AiSettlementEngineItem>;
   messages: Array<AiSettlementTestMessageItem>;
   worker: AiSettlementWorkerSettingsItem;
+  groups: Array<AiSettlementGroupItem>;
 };
 
 export type AiSettlementPromptState = {
@@ -6030,6 +6038,8 @@ export type SaveAiSettlementParsingReq = {
 export type SaveAiSettlementWorkerSettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
+  groupsExcept: boolean;
+  groupMasterKeys: Array<string>;
 };
 
 export type AiPositionEngineItem = {
