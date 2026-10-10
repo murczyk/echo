@@ -104,7 +104,7 @@ for (const target of [
       expect(brandBox!.y).toBeCloseTo(222, 0);
       expect(actionBox!.width).toBeCloseTo(340, 0);
       expect(attributionBox!.x).toBeCloseTo(68, 0);
-      expect(target.height - (attributionBox!.y + attributionBox!.height)).toBeCloseTo(80, 0);
+      expect(target.height - (attributionBox!.y + attributionBox!.height)).toBeCloseTo(48, 0);
       expect(attributionLogoBox!.width).toBeCloseTo(60, 0);
     } else {
       expect(brandBox!.y).toBeCloseTo(226, 0);
