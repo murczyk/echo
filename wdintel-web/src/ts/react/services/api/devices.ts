@@ -1,5 +1,7 @@
 import type {
   DeviceAnalyticsSummaryReq,
+  LocateDeviceFileReq,
+  LocateDeviceFileRsp,
   ListDeviceSyncSessionsReq,
   ListDeviceSyncSessionsRsp,
   GetDeviceSyncSessionReq,
@@ -346,4 +348,9 @@ export async function getDeviceSyncSessionSummaries(
     options,
   );
   return transformSnakeToCamel<DeviceSyncSessionSummariesRsp>(data);
+}
+
+export async function locateDeviceFile(req: LocateDeviceFileReq, options?: RequestOptions) {
+  const data = await postJson('/api/device/files/locate', req, options);
+  return transformSnakeToCamel<LocateDeviceFileRsp>(data);
 }

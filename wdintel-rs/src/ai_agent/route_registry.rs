@@ -147,6 +147,13 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
     },
     ReadOnlyRoute {
         method: "POST",
+        path: "/api/sigint/units",
+        skill: "unit_lookup",
+        label: "Шукаю підрозділи",
+        request_kind: "unitLookup",
+    },
+    ReadOnlyRoute {
+        method: "POST",
         path: "/api/rer-importer/messages-by-id",
         skill: "messages_by_id",
         label: "Читаю повідомлення",
@@ -287,6 +294,7 @@ mod tests {
                     | "mapDocument"
                     | "mapEdit"
                     | "positionLookup"
+                    | "unitLookup"
                     | "attachmentSearch"
                     | "attachmentRead"
                     | "attachmentInspect"

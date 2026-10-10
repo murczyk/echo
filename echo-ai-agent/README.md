@@ -379,3 +379,10 @@ access-checked message bodies and group metadata in batches; previews revalidate
 access on hover/focus. Dates use event time in Europe/Kyiv, omit unknown times,
 and omit the year only when it is current. Full preview bodies are independent
 of the compacted tool context. See the [citation rollout](DEPLOYMENT.md#message-citations-release-202609271).
+
+Failed message lookups show “Не вдалося завантажити джерело” and allow a manual
+retry of failed sources while preserving successful batches. Missing messages
+and denied access show “Джерело недоступне”. A failed preview revalidation hides
+the cached preview until a new lookup succeeds. Regression coverage lives in
+`wdintel-web/src/ts/react/routes/ai-agent-chat/__tests__/CitationMarkdown.spec.tsx`
+and `wdintel-web/tests/e2e/ai-agent-citations.spec.ts`.

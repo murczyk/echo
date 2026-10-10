@@ -221,6 +221,7 @@ pub const AI_POSITION_KNOWLEDGE_WINDOW_DAYS: i64 = 30;
 /// Messages per page when a knowledge recompute links a position to the
 /// scope's other messages.
 pub const AI_POSITION_KNOWLEDGE_LINK_BATCH: i64 = 500;
+pub const AI_POSITION_KNOWLEDGE_LOOKUP_BATCH_SIZE: usize = 256;
 /// Most message cards a knowledge change announces for refresh.
 pub const AI_POSITION_KNOWLEDGE_EVENT_MAX_MESSAGES: u64 = 1_000;
 /// Facts within this distance describe the same place.
@@ -402,7 +403,7 @@ pub const AI_AGENT_REASONING_PURPOSE_HEADER: &str = "x-echo-ai-purpose";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
 pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.10.3";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.10.5";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -569,6 +570,7 @@ pub const DEVICE_FILE_SEARCH_NAME_QUERY_MAX_CHARS: usize = 255;
 
 pub const DEVICE_DOCUMENT_SEARCH_LIMIT: i64 = 20;
 pub const DEVICE_DOCUMENT_SEARCH_MAX_LIMIT: i64 = 50;
+pub const DEVICE_DOCUMENT_SEARCH_CANDIDATE_LIMIT: i64 = 10_000;
 pub const DEVICE_DOCUMENT_READ_LIMIT: i64 = 4;
 pub const DEVICE_DOCUMENT_READ_MAX_LIMIT: i64 = 8;
 pub const DEVICE_DOCUMENT_QUERY_MAX_CHARS: usize = 1000;

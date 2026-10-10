@@ -20,6 +20,7 @@ import {
   dailyActivityRequestBody,
   directionFindingsRequestBody,
   inboxMessagesRequestBody,
+  unitLookupRequestBody,
   interceptionContextRequestBody,
   messagesByIdRequestBody,
   normalizedToolLifecycleEvent,
@@ -616,6 +617,43 @@ test("passes an inherited callsign through applicable analysis tools", () => {
   });
 });
 
+test("passes unit filters to inbox requests and validates them", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const params = {
+    period: { kind: "relative_days", days: 1 },
+    selectedUnitIds: [79989, 79989, 5],
+    selectedUnits: [" 8 дшр 3 дшб 104 дшп 76 дшд пдв "],
+  };
+  const body = inboxMessagesRequestBody(params, context);
+  assert.deepEqual(body.selected_unit_ids, [79989, 5]);
+  assert.deepEqual(body.selected_units, ["8 дшр 3 дшб 104 дшп 76 дшд пдв"]);
+  assert.equal(body.search, undefined);
+  assert.throws(() => inboxMessagesRequestBody({ ...params, selectedUnitIds: [] }, context));
+  assert.throws(() => inboxMessagesRequestBody({ ...params, selectedUnitIds: [0] }, context));
+  assert.throws(() => inboxMessagesRequestBody({ ...params, selectedUnits: [" "] }, context));
+});
+
+test("builds bounded read-only unit lookup requests", () => {
+  assert.deepEqual(unitLookupRequestBody({ query: " 3 дшб 104 дшп " }), {
+    filter_text: "3 дшб 104 дшп",
+    search_mode: "Relaxed",
+    include_inactive: false,
+    limit: 20,
+  });
+  assert.equal(unitLookupRequestBody({ query: "x", afterUnitId: 20 }).after_unit_id, 20);
+  assert.throws(() => unitLookupRequestBody({ query: "x", afterUnitId: 0 }));
+  assert.throws(() => unitLookupRequestBody({ query: " " }));
+  assert.throws(() => unitLookupRequestBody({ query: "x", limit: 500 }));
+});
+
+test("unit lookup responses respect the character budget and expose a cursor", () => {
+  const units = Array.from({ length: 20 }, (_, index) => ({ id: index + 1, name: "x".repeat(150), comment: "y".repeat(5000), active: true }));
+  const text = compactToolResponse({ skill: "unit_lookup", requestKind: "unitLookup" }, { units, total_count: 40, show_load_more: true }, 20, 3000);
+  assert.ok(text.length <= 3000);
+  const result = JSON.parse(text);
+  assert.equal(result.nextCursor, result.units.at(-1).id);
+});
+
 test("builds nested callsign-frequency requests from discovered callsigns", () => {
   const context = validatePayload(normalPayload, false).timeContext!;
   assert.deepEqual(
@@ -953,7 +991,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.10.10.3",
+    harnessRelease: "2026.10.10.5",
   });
 });
 

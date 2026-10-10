@@ -13,6 +13,7 @@ export function DeviceFileContentHeader({
   file,
   preview,
   sessionScoped = false,
+  revisionPinned = false,
   mobile = false,
   zoom,
   onZoomChange,
@@ -21,6 +22,7 @@ export function DeviceFileContentHeader({
   file: DeviceFileTreeEntry;
   preview: ReturnType<typeof useDeviceFilePreview>;
   sessionScoped?: boolean;
+  revisionPinned?: boolean;
   mobile?: boolean;
   zoom?: number;
   onZoomChange?: (zoom: number) => void;
@@ -55,7 +57,8 @@ export function DeviceFileContentHeader({
       {file.revision != null ? (
         <span className="inline-flex shrink-0 items-center gap-echo-xs whitespace-nowrap rounded-echo-sm bg-echo-success/20 px-echo-sm py-echo-xs text-echo-xs text-[color:color-mix(in_srgb,var(--echo-color-success)_60%,var(--echo-color-text))]">
           <span aria-hidden="true" className="size-echo-xs rounded-full bg-current" />
-          Ревізія {file.revision} · {sessionScoped ? 'Із вибраної сесії' : 'Поточна'}
+          Ревізія {file.revision} ·{' '}
+          {revisionPinned ? 'За посиланням' : sessionScoped ? 'Із вибраної сесії' : 'Поточна'}
         </span>
       ) : null}
       <DeviceFileContentActions

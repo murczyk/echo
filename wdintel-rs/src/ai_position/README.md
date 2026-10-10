@@ -113,6 +113,15 @@ conflict indication; this does not claim a newly confirmed position. The card on
 entirely from groups the viewer can read. The admin page hides mentions and
 knowledge of private groups the admin cannot read.
 
+Message and attachment previews deduplicate knowledge lookups by scope and
+name, then load at most `AI_POSITION_KNOWLEDGE_LOOKUP_BATCH_SIZE` keys per
+query. This bounds SQL expression depth even for documents with thousands of
+position mentions. All batches retain the same source-group access checks.
+The subprocess regression in
+`wdintel-rs/src/ai_position/knowledge_lookup_tests.rs` exercises 20,000 repeated
+and distinct names with a normal 2 MiB thread stack, including inaccessible
+knowledge and exact scope matching.
+
 Changing a group's AORs, or deleting or restoring an AOR, recomputes the
 affected positions in the old and new AORs.
 

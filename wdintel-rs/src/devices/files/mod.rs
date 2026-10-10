@@ -29,6 +29,7 @@ pub(in crate::devices) use types::{
     RootEntry, SearchEntry, SearchFilesCommand, SearchFilesResult,
     SubtreeFileCount, SubtreeFileCountsCommand, TreeEntry,
 };
+pub(crate) mod locate;
 pub mod types;
 
 use std::time::Instant;

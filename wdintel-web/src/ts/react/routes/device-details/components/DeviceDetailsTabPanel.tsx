@@ -1,7 +1,7 @@
 import { Box, Paper, Tab, Tabs, CircularProgress } from '@mui/material';
 import type { ReactNode } from 'react';
 
-import type { DeviceFileTreeEntry } from '../../../../../Bindings';
+import type { AiAgentFileCitation, DeviceFileTreeEntry } from '../../../../../Bindings';
 import { DeviceFileContentPane } from '../../device-files';
 import { DeviceFileJournal } from '../../device-files/components/DeviceFileJournal';
 import type { DeviceAnalyticsTagFilter } from '../../device-files/types';
@@ -23,6 +23,8 @@ export function DeviceDetailsTabPanel({
   mobile = false,
   activeTab,
   selectedFile,
+  revisionPinned = false,
+  citation,
   journal,
   deviceId,
   syncId = null,
@@ -42,6 +44,8 @@ export function DeviceDetailsTabPanel({
   mobile?: boolean;
   activeTab: DeviceDetailsTab;
   selectedFile: DeviceFileTreeEntry | null;
+  revisionPinned?: boolean;
+  citation?: AiAgentFileCitation;
   journal: DeviceFileJournalState;
   deviceId: string;
   syncId?: string | null;
@@ -159,6 +163,8 @@ export function DeviceDetailsTabPanel({
               <DeviceFileContentPane
                 deviceId={deviceId}
                 file={selectedFile ?? null}
+                revisionPinned={revisionPinned}
+                citation={citation}
                 sessionScoped={syncId !== null}
               />
             )}

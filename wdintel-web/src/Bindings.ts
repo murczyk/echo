@@ -2073,6 +2073,19 @@ export type DeviceFile = {
   tags: Array<AnalyticsTag>;
 };
 
+export type LocateDeviceFileReq = {
+  deviceId: string;
+  fileId: string;
+  revision: number | null;
+};
+
+export type LocateDeviceFileRsp = {
+  file: DeviceFileTreeEntry;
+  ancestors: Array<DeviceFileTreeEntry>;
+  rootEntryId: string;
+  currentRevision: number;
+};
+
 export type ListDeviceFileRootsReq = {
   syncId: string | null;
   deviceId: string;

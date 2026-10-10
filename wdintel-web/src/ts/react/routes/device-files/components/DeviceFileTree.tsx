@@ -15,7 +15,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import type { CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 
 import type { DeviceFileRoot, DeviceFileTreeEntry } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -91,6 +91,10 @@ function DeviceFileRow({
   files: DeviceFilesState;
 }) {
   const selected = files.selectedFile?.entryId === entry.entryId;
+  const row = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (selected) row.current?.scrollIntoView({ block: 'nearest' });
+  }, [selected]);
   return (
     <Box
       component="li"
@@ -106,6 +110,9 @@ function DeviceFileRow({
       }}
     >
       <ListItemButton
+        ref={row}
+        data-testid={`device-file-${entry.entryId}`}
+        aria-current={selected ? 'true' : undefined}
         component="button"
         selected={selected}
         aria-pressed={selected}

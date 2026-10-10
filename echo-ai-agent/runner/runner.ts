@@ -43,7 +43,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { countKnownReports, createMapTools, EDIT_GUIDANCE, knownReportsGuidance, MapRegistry, MAP_GUIDANCE, normalizeToolArguments, SCRIPT_GUIDANCE, preserveMapReferences, publishReferencedDrafts, stripUnpublishedMapLinks, validateMapEdit, validateMapSummaries, type MapEditContext, type MapSummary } from "./maps.ts";
-import { INBOX_SEARCH_DESCRIPTION, POSITION_LOOKUP_DESCRIPTION, SEARCH_GUIDANCE } from "./search-guidance.ts";
+import { INBOX_SEARCH_DESCRIPTION, INBOX_UNIT_IDS_DESCRIPTION, INBOX_UNITS_DESCRIPTION, POSITION_LOOKUP_DESCRIPTION, SEARCH_GUIDANCE, UNIT_LOOKUP_DESCRIPTION } from "./search-guidance.ts";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -72,7 +72,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.10.3";
+const HARNESS_RELEASE = "2026.10.10.5";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -142,6 +142,7 @@ interface SkillDefinition {
     | "callsignFrequencyMatches"
     | "dailyActivity"
     | "inboxMessages"
+    | "unitLookup"
     | "interceptionContext"
     | "messageIds"
     | "mapRecords"
@@ -545,6 +546,7 @@ export function validateSkill(value: unknown): SkillDefinition {
     route.requestKind !== "interceptionContext" &&
     route.requestKind !== "messageIds" &&
     route.requestKind !== "positionLookup" &&
+    route.requestKind !== "unitLookup" &&
     !Object.values(DEVICE_ROUTES).some((entry) => entry.kind === route.requestKind) &&
     !Object.values(ATTACHMENT_ROUTES).some((entry) => entry.kind === route.requestKind) &&
     route.requestKind !== "mapRecords" &&
@@ -576,6 +578,7 @@ export function validateSkill(value: unknown): SkillDefinition {
     (route.requestKind === "interceptionContext" &&
       skill !== "interception_context") ||
     (route.requestKind === "messageIds" && skill !== "messages_by_id") ||
+    (route.requestKind === "unitLookup" && (skill !== "unit_lookup" || path !== "/api/sigint/units")) ||
     (route.requestKind === "positionLookup" && (skill !== "position_lookup" || path !== "/api/positions/lookup")) ||
     (route.requestKind === "mapRecords" && (skill !== "map_prepare" || path !== "/api/ai-agent/maps/prepare")) ||
     (route.requestKind === "mapDocument" && (skill !== "map_get" || path !== "/api/ai-agent/maps/get")) ||
@@ -1021,6 +1024,38 @@ function selectedCallsignsBody(input: JsonObject): JsonObject {
   return { selected_callsigns: [...new Set(callsigns)] };
 }
 
+function selectedUnitsBody(input: JsonObject): JsonObject {
+  const body: JsonObject = {};
+  if (input.selectedUnitIds !== undefined) {
+    const ids = input.selectedUnitIds;
+    if (
+      !Array.isArray(ids) ||
+      ids.length < 1 ||
+      ids.length > 128 ||
+      ids.some((id) => !Number.isSafeInteger(id) || (id as number) < 1)
+    ) {
+      throw new Error("selectedUnitIds must contain 1 to 128 positive integers");
+    }
+    body.selected_unit_ids = [...new Set(ids as number[])];
+  }
+  if (input.selectedUnits !== undefined) {
+    if (
+      !Array.isArray(input.selectedUnits) ||
+      input.selectedUnits.length < 1 ||
+      input.selectedUnits.length > 128
+    ) {
+      throw new Error("selectedUnits must contain 1 to 128 entries");
+    }
+    const units = input.selectedUnits.map((unit) => {
+      const trimmed = requireString(unit, "selected unit", 200).trim();
+      if (!trimmed) throw new Error("selected unit must not be blank");
+      return trimmed;
+    });
+    body.selected_units = [...new Set(units)];
+  }
+  return body;
+}
+
 export function analysisPeriodRequestBody(
   params: unknown,
   timeContext: TimeContext,
@@ -1192,6 +1227,20 @@ const INBOX_MESSAGES_PARAMETERS = Type.Object(
         maxItems: 128,
       }),
     ),
+    selectedUnitIds: Type.Optional(
+      Type.Array(Type.Integer({ minimum: 1 }), {
+        minItems: 1,
+        maxItems: 128,
+        description: INBOX_UNIT_IDS_DESCRIPTION,
+      }),
+    ),
+    selectedUnits: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
+        minItems: 1,
+        maxItems: 128,
+        description: INBOX_UNITS_DESCRIPTION,
+      }),
+    ),
     cursor: Type.Optional(
       Type.Integer({
         minimum: 1,
@@ -1234,6 +1283,8 @@ export function inboxMessagesRequestBody(
           "period",
           "selectedGroups",
           "selectedCallsigns",
+          "selectedUnitIds",
+          "selectedUnits",
           "search",
           "cursor",
           "maxItems",
@@ -1256,6 +1307,7 @@ export function inboxMessagesRequestBody(
     skip_group_stats: true,
     ...selectedGroupsBody(input),
     ...selectedCallsignsBody(input),
+    ...selectedUnitsBody(input),
   };
   if (input.search !== undefined) {
     body.search = requireString(input.search, "search", 2000).trim();
@@ -1388,6 +1440,68 @@ const POSITION_LOOKUP_PARAMETERS = Type.Object(
   },
   { additionalProperties: false },
 );
+
+const UNIT_LOOKUP_PARAMETERS = Type.Object(
+  {
+    query: Type.String({ minLength: 1, maxLength: 120, description: "Unit designation, e.g. «3 дшб 104 дшп»; spaces between number and abbreviation are optional" }),
+    includeInactive: Type.Optional(Type.Boolean()),
+    afterUnitId: Type.Optional(Type.Integer({ minimum: 1, description: "Use only the nextCursor returned by the prior page." })),
+  },
+  { additionalProperties: false },
+);
+
+export function unitLookupRequestBody(params: unknown): JsonObject {
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    throw new Error("unit lookup input must be an object");
+  }
+  const input = params as JsonObject;
+  if (Object.keys(input).some((key) => !["query", "includeInactive", "afterUnitId"].includes(key))) {
+    throw new Error("unit lookup input contains an unsupported field");
+  }
+  const query = requireString(input.query, "query", 120).trim();
+  if (!query) throw new Error("query must not be blank");
+  if (input.includeInactive !== undefined && typeof input.includeInactive !== "boolean") {
+    throw new Error("includeInactive must be a boolean");
+  }
+  if (input.afterUnitId !== undefined && (!Number.isSafeInteger(input.afterUnitId) || (input.afterUnitId as number) < 1)) {
+    throw new Error("afterUnitId must be a positive integer");
+  }
+  return {
+    filter_text: query,
+    search_mode: "Relaxed",
+    include_inactive: input.includeInactive === true,
+    limit: 20,
+    ...(input.afterUnitId === undefined ? {} : { after_unit_id: input.afterUnitId }),
+  };
+}
+
+const UNIT_LOOKUP_FIELDS = ["id", "name", "active", "company", "battalion", "regiment", "brigade", "division", "corps", "army", "comment"];
+
+function compactUnitLookup(value: unknown, maxCharacters: number): string {
+  const response = (value && typeof value === "object" ? value : {}) as JsonObject;
+  const rows = (Array.isArray(response.units) ? response.units : []).slice(0, 20).map((unit) => {
+    const row = (unit && typeof unit === "object" ? unit : {}) as JsonObject;
+    return Object.fromEntries(
+      UNIT_LOOKUP_FIELDS.filter((key) => row[key] !== undefined && row[key] !== "").map((key) => [
+        key,
+        typeof row[key] === "string" ? (row[key] as string).slice(0, 200) : row[key],
+      ]),
+    );
+  });
+  const encode = (kept: JsonObject[]) => {
+    const more = response.show_load_more === true || kept.length < rows.length;
+    const last = kept.at(-1)?.id;
+    return JSON.stringify({
+      totalCount: response.total_count ?? null,
+      units: kept,
+      ...(more && typeof last === "number" ? { nextCursor: last } : {}),
+    });
+  };
+  let kept = rows as JsonObject[];
+  while (kept.length > 1 && encode(kept).length > maxCharacters) kept = kept.slice(0, -1);
+  const encoded = encode(kept);
+  return encoded.length <= maxCharacters ? encoded : "{}";
+}
 
 export function positionLookupRequestBody(params: unknown): JsonObject {
   if (!params || typeof params !== "object" || Array.isArray(params)) {
@@ -1834,6 +1948,7 @@ export function compactToolResponse(
   ) {
     return compactMessageBearingResponse(route.skill, value, maxCharacters);
   }
+  if (route.requestKind === "unitLookup") return compactUnitLookup(value, maxCharacters);
   if (route.requestKind === "deviceSearch" || route.requestKind === "positionLookup") return compactDeviceEvidence(value, maxCharacters);
   if (route.requestKind.startsWith("attachment") || route.requestKind.startsWith("deviceFile")) {
     const document = structuredClone(value) as JsonObject;
@@ -1980,6 +2095,8 @@ function routeDescription(route: SkillDefinition): string {
       return "Read accessible messages by their numeric IDs.";
     case "positionLookup":
       return POSITION_LOOKUP_DESCRIPTION;
+    case "unitLookup":
+      return UNIT_LOOKUP_DESCRIPTION;
     default:
       return `Read Echo data for ${route.skill.replaceAll("_", " ")} using the fixed read-only route.`;
   }
@@ -2007,6 +2124,8 @@ function routeParameters(route: SkillDefinition) {
       return MESSAGE_IDS_PARAMETERS;
     case "positionLookup":
       return POSITION_LOOKUP_PARAMETERS;
+    case "unitLookup":
+      return UNIT_LOOKUP_PARAMETERS;
     case "json":
       return Type.Object({
         body: Type.Any({ description: "JSON request body" }),
@@ -2045,6 +2164,8 @@ function routeRequestBody(
       return messagesByIdRequestBody(params);
     case "positionLookup":
       return positionLookupRequestBody(params);
+    case "unitLookup":
+      return unitLookupRequestBody(params);
     default:
       return "body" in params ? params.body : undefined;
   }
@@ -3301,6 +3422,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
                   citationRepair,
                   repairCitations,
                   canonicalCitations,
+                  deliveredFiles.keys(),
                 ),
                 repairCitations,
                 deliveredCitationsThisTurn.length,

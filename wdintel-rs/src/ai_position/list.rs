@@ -10,7 +10,7 @@ use super::types::{
 };
 use crate::config::{
     AI_POSITION_FEEDBACK_VERDICTS, AI_POSITION_KINDS,
-    AI_POSITION_KNOWLEDGE_WINDOW_DAYS,
+    AI_POSITION_KNOWLEDGE_LOOKUP_BATCH_SIZE, AI_POSITION_KNOWLEDGE_WINDOW_DAYS,
 };
 use crate::config::{
     AI_POSITION_LIST_DEFAULT_LIMIT, AI_POSITION_LIST_FILTER_MAX_CHARS,
@@ -27,10 +27,10 @@ use actix_web::{post, web::Json};
 use anyhow::Context;
 use chrono::NaiveDateTime;
 use sea_orm::{
-    ColumnTrait, DatabaseBackend, DatabaseConnection, EntityTrait,
-    FromQueryResult, QueryFilter, QueryOrder, Statement, Value,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection,
+    EntityTrait, FromQueryResult, QueryFilter, QueryOrder, Statement, Value,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use uuid::Uuid;
 
 /// Characters of source text shown on each side of a mention.
@@ -920,48 +920,50 @@ async fn position_highlights(
 
 /// Visible knowledge for the mentions without coordinates of their own.
 async fn load_knowledge_for(
-    dbx: &DatabaseConnection,
+    dbx: &impl ConnectionTrait,
     mentions: &[crate::entities::ai_position_mention::Model],
     coordinates: &HashMap<Uuid, Vec<AiPositionCoordinateItem>>,
     scopes: &HashMap<String, Vec<knowledge::Scope>>,
     allowed_groups: &HashSet<String>,
 ) -> anyhow::Result<Vec<ai_position_knowledge::Model>> {
-    let mut wanted = sea_orm::Condition::any();
-    let mut any = false;
+    let mut keys = BTreeSet::new();
     for mention in mentions
         .iter()
         .filter(|mention| !coordinates.contains_key(&mention.id))
     {
         for scope in mention_scopes(scopes, mention) {
-            any = true;
+            keys.insert((
+                scope.kind,
+                scope.key.as_str(),
+                mention.name_key.as_str(),
+            ));
+        }
+    }
+    let keys: Vec<_> = keys.into_iter().collect();
+    let mut result = Vec::new();
+    for keys in keys.chunks(AI_POSITION_KNOWLEDGE_LOOKUP_BATCH_SIZE) {
+        let mut wanted = sea_orm::Condition::any();
+        for (scope_kind, scope_key, name_key) in keys {
             wanted = wanted.add(
                 sea_orm::Condition::all()
                     .add(
-                        ai_position_knowledge::Column::ScopeKind.eq(scope.kind),
+                        ai_position_knowledge::Column::ScopeKind
+                            .eq(*scope_kind),
                     )
-                    .add(
-                        ai_position_knowledge::Column::ScopeKey
-                            .eq(scope.key.clone()),
-                    )
-                    .add(
-                        ai_position_knowledge::Column::NameKey
-                            .eq(mention.name_key.clone()),
-                    ),
+                    .add(ai_position_knowledge::Column::ScopeKey.eq(*scope_key))
+                    .add(ai_position_knowledge::Column::NameKey.eq(*name_key)),
             );
         }
+        let rows = ai_position_knowledge::Entity::find()
+            .filter(wanted)
+            .all(dbx)
+            .await
+            .c(h!())?;
+        result.extend(rows.into_iter().filter(|row| {
+            knowledge_visible(&row.source_group_keys, allowed_groups)
+        }));
     }
-    if !any {
-        return Ok(Vec::new());
-    }
-    let rows = ai_position_knowledge::Entity::find()
-        .filter(wanted)
-        .all(dbx)
-        .await
-        .c(h!())?;
-    Ok(rows
-        .into_iter()
-        .filter(|row| knowledge_visible(&row.source_group_keys, allowed_groups))
-        .collect())
+    Ok(result)
 }
 
 /// A mention's knowledge: one of its scopes, built from facts within the
@@ -998,6 +1000,10 @@ fn mention_scopes<'a>(
         .and_then(|group| scopes.get(group))
         .map_or(&[], Vec::as_slice)
 }
+
+#[cfg(test)]
+#[path = "knowledge_lookup_tests.rs"]
+mod knowledge_lookup_tests;
 
 #[cfg(test)]
 mod tests {

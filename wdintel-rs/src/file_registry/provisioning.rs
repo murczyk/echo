@@ -48,7 +48,9 @@ pub async fn oneoff_create_database(mode: Mode) -> Result<(), AppError> {
         .try_get(0)
         .c(h!())?;
     match client
-        .batch_execute(&format!("create database {quoted_database}"))
+        .batch_execute(&format!(
+            "create database {quoted_database} template template0 encoding 'UTF8' lc_collate 'C.UTF-8' lc_ctype 'C.UTF-8'"
+        ))
         .await
     {
         Ok(()) => {

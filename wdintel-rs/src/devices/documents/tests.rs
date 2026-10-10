@@ -121,6 +121,7 @@ fn request(file: &file_entry::Model) -> DeviceDocumentReadReq {
 }
 
 mod authorization;
+mod file_links;
 mod lifecycle;
 mod maps;
 mod positions;
