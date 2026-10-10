@@ -103,6 +103,7 @@ type alias Model =
     , rerNetworkDetailsPreferredView : RerNetworkDetailsPreferredView
     , location : Maybe LocationRes
     , serverInfo : Maybe B.ServerInfo
+    , serverInfoLoaded : Bool
     , changelogPreview : Maybe ChangelogPreview
     , changelogLastSeenLoaded : Bool
     , changelogLastSeen : Maybe String

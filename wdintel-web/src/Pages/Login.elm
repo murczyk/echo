@@ -566,8 +566,8 @@ totpPanel model pending =
     ]
 
 
-body : Bool -> Bool -> Shared.Components.Toast.Model -> Model -> List (Html Msg)
-body isDark deltaLoginFlag sharedToasts model =
+body : Bool -> Bool -> Bool -> Shared.Components.Toast.Model -> Model -> List (Html Msg)
+body isDark serverInfoLoaded deltaLoginFlag sharedToasts model =
     let
         isTotpSetup =
             case model.pending2fa of
@@ -590,6 +590,7 @@ body isDark deltaLoginFlag sharedToasts model =
                     , placeholder "логін"
                     , value model.loginInp
                     , onInput SetLoginInp
+                    , autofocus interactive
                     , disabled (not fieldsEnabled)
                     , isInvalidCls "login" model.formErrors
                     ]
@@ -679,7 +680,10 @@ body isDark deltaLoginFlag sharedToasts model =
                     totpPanel model pending
 
                 Nothing ->
-                    if deltaLoginFlag then
+                    if not serverInfoLoaded then
+                        []
+
+                    else if deltaLoginFlag then
                         deltaFormChildren
 
                     else
@@ -734,5 +738,11 @@ view shared model =
             isFeatureDeltaEnabled shared.serverInfo
     in
     { title = "логін"
-    , body = body (isDarkMode shared.themeMode) featureDelta shared.toasts model
+    , body =
+        body
+            (isDarkMode shared.themeMode)
+            shared.serverInfoLoaded
+            featureDelta
+            shared.toasts
+            model
     }

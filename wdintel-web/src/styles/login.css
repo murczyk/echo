@@ -45,7 +45,7 @@
 }
 
 .login-main--expanded {
-  padding-top: clamp(48px, 10vh, 96px);
+  padding: 36px 24px 140px;
 }
 
 .login-form {
@@ -119,11 +119,15 @@
 }
 
 .login-form--setup {
+  --login-coin-size: 56px;
+  --login-wordmark-width: 140px;
+  --login-brand-gap: 11px;
   width: min(100%, 480px);
 }
 
 .login-form--setup .login-actions {
   width: 420px;
+  margin-top: 14px;
 }
 
 .login-action-slot {
@@ -351,6 +355,26 @@
   outline: none;
 }
 
+.login-panel--2fa-setup .login-heading {
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.login-panel--2fa-setup .login-2fa-copy {
+  margin-bottom: 12px;
+}
+
+.login-panel--2fa-setup .login-2fa-steps,
+.login-panel--2fa-setup .login-helper-text,
+.login-panel--2fa-setup .login-manual-key {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.login-panel--2fa-setup .login-2fa-steps li + li {
+  margin-top: 4px;
+}
+
 .login-description,
 .login-2fa-steps,
 .login-helper-text {
@@ -386,6 +410,27 @@
   background: #fff;
 }
 
+.login-panel--2fa-setup .login-qr-wrap {
+  margin-bottom: 12px;
+}
+
+.login-panel--2fa-setup .login-qr {
+  width: 160px;
+  height: 160px;
+}
+
+.login-panel--2fa-setup .login-helper-text {
+  margin-bottom: 6px;
+}
+
+.login-panel--2fa-setup .login-manual-key {
+  margin-bottom: 10px;
+}
+
+.login-panel--2fa-setup .login-helper-text--warning {
+  margin-bottom: 12px;
+}
+
 .login-helper-text {
   width: 100%;
   margin-bottom: 8px;
@@ -415,7 +460,7 @@
 
 .login-attribution {
   position: absolute;
-  bottom: 80px;
+  bottom: 48px;
   left: 68px;
   z-index: 1;
   display: flex;
