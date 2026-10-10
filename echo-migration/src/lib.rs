@@ -470,6 +470,8 @@ pub struct Migrator;
 mod m20261008_051638_ai_position_highlight_flags;
 mod m20261008_113430_sigint_unit_orbit_combat_type;
 mod m20261009_074414_system_settings_hide_networks;
+mod m20261009_100730_rer_csv_body_index;
+mod m20261009_100730_rer_csv_processing;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1105,6 +1107,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261008_113430_sigint_unit_orbit_combat_type::Migration),
             Box::new(m20261009_074414_system_settings_hide_networks::Migration),
             Box::new(m20261009_201221_ai_agent_reasoning_policy::Migration),
+            Box::new(m20261009_100730_rer_csv_body_index::Migration),
+            Box::new(m20261009_100730_rer_csv_processing::Migration),
         ]
     }
 }

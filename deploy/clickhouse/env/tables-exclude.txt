@@ -133,3 +133,6 @@ public.attachment_chunk
 public.attachment_job
 
 public.device_document_settings
+
+# Admin CSV import recovery state.
+public.rer_csv_import_message
