@@ -558,7 +558,7 @@ export function AppNavbar({
                       style={{ height: '28px', width: '28px' }}
                     >
                       <img
-                        src="/img/kraken-mark.png"
+                        src="/img/login-echo-mark.svg"
                         alt="Echo"
                         style={{ width: '28px', height: '28px' }}
                       />
@@ -568,13 +568,12 @@ export function AppNavbar({
                       style={{
                         width: '28px',
                         height: '28px',
-                        backgroundColor: '#000',
                         borderRadius: '50%',
                       }}
                     >
                       <img
                         src="/img/riskdept.svg"
-                        style={{ width: '25px', height: '25px', zIndex: 1 }}
+                        style={{ width: '28px', height: '28px', zIndex: 1 }}
                         alt="Risk Department"
                       />
                     </div>
