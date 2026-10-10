@@ -156,6 +156,8 @@ where
     let desired = location_texts(location_v2);
     let existing = sigint_inbox_item_settlement::Entity::find()
         .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
+        .order_by_asc(sigint_inbox_item_settlement::Column::Id)
+        .lock(LockType::Update)
         .all(dbx)
         .await
         .c(h!())?;
@@ -1100,6 +1102,97 @@ returning id
         row.try_get("", "id").c(h!())
     }
 
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn resolves_renamed_links_and_preserves_undefined_forests_3383() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        *env.settlements.write().unwrap() =
+            crate::location::load_settlements_data_config(
+                vec!["settlements_json/kharkivska_oblast.json".to_string()],
+                Mode::Test,
+            )
+            .unwrap();
+        let setup = env.dbx.begin().await.unwrap();
+        insert_active_test_battle_line(&setup).await.unwrap();
+        setup.execute_unprepared(
+            "update battle_line_version set geometry = ST_GeomFromText('GEOMETRYCOLLECTION(LINESTRING(37 49,37 51))', 4326) where retired_at is null",
+        ).await.unwrap();
+        let message = crate::functest::tests::mk_signal_message(
+            &setup,
+            signal_message::ActiveModel {
+                body: Set(Some("#3383 settlement links".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let location_v2 =
+            "|АНИЩИНЕ|ІВАЩИНЕ|РИБАЛКІНЕ|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|";
+        let item = sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            location_v2: Set(Some(location_v2.to_string())),
+            parsed_unit_v2: Set(false),
+            ..Default::default()
+        }
+        .insert(&setup)
+        .await
+        .unwrap();
+        reconcile_item_locations(
+            &setup,
+            item.id,
+            item.id_uuid,
+            Some(location_v2),
+        )
+        .await
+        .unwrap();
+        setup.commit().await.unwrap();
+        let mut cursor = None;
+        assert!(run_inbox_settlement_worker_once(&env, &mut cursor)
+            .await
+            .unwrap());
+        let rows = sigint_inbox_item_settlement::Entity::find()
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item.id))
+            .order_by_asc(sigint_inbox_item_settlement::Column::SettlementText)
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 5);
+        for (text, settlement_id) in [
+            ("ІВАЩИНЕ", Some(98911)),
+            ("АНИЩИНЕ", Some(79948)),
+            ("ВЕРХНЄ ГОРІХОВЕ", None),
+            ("ЗАЛИВНИЙ", None),
+            ("РИБАЛКІНЕ", Some(65447)),
+        ] {
+            let row =
+                rows.iter().find(|row| row.settlement_text == text).unwrap();
+            assert_eq!(row.settlement_id, settlement_id);
+            assert_eq!(
+                row.is_undefined,
+                settlement_id.is_none().then_some(true)
+            );
+        }
+        reconcile_item_locations(
+            &env.dbx,
+            item.id,
+            item.id_uuid,
+            Some(location_v2),
+        )
+        .await
+        .unwrap();
+        assert!(!run_inbox_settlement_worker_once(&env, &mut cursor)
+            .await
+            .unwrap());
+        let retained = sigint_inbox_item_settlement::Entity::find()
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item.id))
+            .order_by_asc(sigint_inbox_item_settlement::Column::SettlementText)
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(retained, rows);
+    }
+
     #[test]
     fn oneoff_bounds_are_local_half_open_and_reject_inversion() {
         let today = chrono::NaiveDate::from_ymd_opt(2026, 8, 18).unwrap();
@@ -1416,6 +1509,83 @@ returning id
             .unwrap();
         assert_eq!(task.group_master_key, group_master_key);
         removal.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn reconciliation_invalidates_concurrently_resolved_removals_3383() {
+        use crate::entities::group_stats_recalculation_task;
+
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let setup = env.dbx.begin().await.unwrap();
+        let (row, group_master_key, settlement_id) =
+            insert_settlement_stats_test_fixture(&setup).await.unwrap();
+        let item_id = row.item_id;
+        let item_uuid = row.item_uuid;
+        setup.commit().await.unwrap();
+        let resolver = env.dbx.begin().await.unwrap();
+        persist_settlement_resolution(&resolver, row, Some(settlement_id))
+            .await
+            .unwrap();
+        let (backend_pid_tx, backend_pid_rx) = tokio::sync::oneshot::channel();
+        let reconciliation_env = env.clone();
+        let reconciliation = tokio::spawn(async move {
+            let transaction = reconciliation_env.dbx.begin().await.unwrap();
+            let backend = transaction
+                .query_one_raw(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    "select pg_backend_pid() as pid",
+                ))
+                .await
+                .unwrap()
+                .unwrap();
+            let backend_pid: i32 = backend.try_get("", "pid").unwrap();
+            backend_pid_tx.send(backend_pid).unwrap();
+            reconcile_item_locations(&transaction, item_id, item_uuid, None)
+                .await
+                .unwrap();
+            transaction.commit().await.unwrap();
+        });
+        wait_for_reconciliation_row_lock(&env, backend_pid_rx.await.unwrap())
+            .await;
+        resolver.commit().await.unwrap();
+        reconciliation.await.unwrap();
+        assert!(sigint_inbox_item_settlement::Entity::find()
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        let task = group_stats_recalculation_task::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(task.group_master_key, group_master_key);
+    }
+
+    async fn wait_for_reconciliation_row_lock(env: &Env, backend_pid: i32) {
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let row = env.dbx
+                    .query_one_raw(Statement::from_sql_and_values(
+                        DatabaseBackend::Postgres,
+                        "select exists(select 1 from pg_stat_activity where pid = $1 and wait_event_type = 'Lock') as blocked",
+                        [backend_pid.into()],
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let blocked: bool = row.try_get("", "blocked").unwrap();
+                if blocked {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("reconciliation must wait for the resolver's row lock");
     }
 
     #[tokio::test]

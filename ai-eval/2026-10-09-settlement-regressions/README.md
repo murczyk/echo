@@ -59,7 +59,19 @@ The operational regression entry points are:
 - `wdintel-rs/src/location/mod.rs`: `settlement_context_and_spellings_3383`.
 - `wdintel-rs/src/battle_line/mod.rs`: rename resolution and migration safeguards.
 - `wdintel-rs/src/ai_settlement/worker.rs`: transactional append/reconciliation,
-  including forest text, stale-result rejection and retry protections.
+  including unchanged results, forest text, stale-result rejection and retries.
+- `wdintel-rs/src/battle_line/settlement_queue.rs`: pending renamed aliases
+  resolve to legacy SQL IDs; forest names become undefined and retain their
+  text and link identity across reconciliation retries. Reconciliation locks
+  existing links in ID order, so removing a concurrently resolved row still
+  invalidates group statistics.
+
+The #3383 parser fixtures also preserve army/corps suffixes before hyphenated
+location lists and complete catalog names containing context/country words,
+including Лесной, Нова Україна, Вільна Україна and Рідна Україна. Bare country
+names remain excluded. A named forest ends at an explicit settlement marker
+or phrase separator; a hyphen within its name does not expose a partial
+settlement match.
 
 ## Dictionary generation
 
@@ -67,6 +79,7 @@ The operational regression entry points are:
 owning `milgeo-rs` project, based on revision `b0e5d90`. The rename pairs
 are listed in the [parliamentary committee record](https://komsamovr.rada.gov.ua/meeting/stenogr/print/4220.html)
 for [Resolution 4483-IX](https://zakon.rada.gov.ua/laws/show/4483-20).
+Alias insertion preserves any existing upstream entry with the same name.
 Apply the patch there and run:
 
 ```sh

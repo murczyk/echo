@@ -443,9 +443,9 @@ fn normalize_location_context(
             Regex::new(r#"\b([\p{L}]+)\.?\s+(ОБЛ(?:АСТЬ)?|РАЙОН|Р-Н|РН)\b"#)
                 .unwrap();
     }
+    let location = location.to_uppercase().replace('’', "'");
+    let location = remove_named_forests(&location, &settlements_data.2);
     let location = location
-        .to_uppercase()
-        .replace('’', "'")
         .replace("Ы", "І")
         .replace("ОБЛ.", "ОБЛАСТЬ")
         .replace("РАЙ.", "РАЙОН")
@@ -475,28 +475,129 @@ fn normalize_location_context(
                 " ".to_string()
             }
         });
-    let location = remove_named_forests(&location);
     let location = JUNK_CHAR_RE.replace_all(&location, " ").to_string();
-    let location = JUNK_WORD_RE.replace_all(&location, " ").to_string();
+    let location = remove_blacklisted_location_words(
+        &location,
+        &settlements_data.2,
+        &JUNK_WORD_RE,
+    );
     (location, allow_fuzzy)
 }
 
-fn remove_named_forests(location: &str) -> String {
-    lazy_static! {
-        static ref NAMED_FOREST_RE: Regex =
-            Regex::new(r#"\b(?:ЛІС|ЛЕС)\s+[^,;()/\n–—-]+"#).unwrap();
-    }
-    let location =
-        NAMED_FOREST_RE.replace_all(location, |captures: &regex::Captures| {
-            let next =
-                captures[0].split_whitespace().nth(1).unwrap_or_default();
-            if crate::config::LOCATION_FOREST_CONTEXT_WORDS.contains(&next) {
-                captures[0].to_string()
+fn remove_blacklisted_location_words(
+    location: &str,
+    trie: &Trie<SettlementDetails>,
+    blacklist: &Regex,
+) -> String {
+    let names = exact_settlement_name_ranges(location, trie);
+    blacklist
+        .replace_all(location, |captures: &regex::Captures| {
+            let word = captures.get(0).unwrap();
+            let is_context_word = crate::config::LOCATION_COUNTRY_NAMES
+                .contains(&word.as_str())
+                || crate::config::LOCATION_CONTEXT_WORDS
+                    .contains(&word.as_str());
+            if is_context_word
+                && names.iter().any(|name| {
+                    name.start <= word.start() && word.end() <= name.end
+                })
+            {
+                word.as_str().to_string()
             } else {
                 " ".to_string()
             }
-        });
-    location.to_string()
+        })
+        .to_string()
+}
+
+fn exact_settlement_name_ranges(
+    location: &str,
+    trie: &Trie<SettlementDetails>,
+) -> Vec<std::ops::Range<usize>> {
+    lazy_static! {
+        static ref WORD_RE: Regex = Regex::new(r#"[\p{L}']+"#).unwrap();
+    }
+    let words = WORD_RE.find_iter(location).collect_vec();
+    let mut names = vec![];
+    for start in 0..words.len() {
+        let mut name = String::new();
+        for end in start..words.len().min(start + trie.max_word_count()) {
+            if end > start {
+                let separator =
+                    &location[words[end - 1].end()..words[end].start()];
+                if !separator
+                    .chars()
+                    .all(|ch| (ch.is_whitespace() && ch != '\n') || ch == '-')
+                {
+                    break;
+                }
+                name.push(' ');
+            }
+            name.push_str(words[end].as_str());
+            if trie
+                .find_matches(&name, None)
+                .data
+                .iter()
+                .any(|(_, settlement)| settlement.id.is_some())
+            {
+                names.push(words[start].start()..words[end].end());
+            }
+        }
+    }
+    names
+}
+
+fn remove_named_forests(
+    location: &str,
+    trie: &Trie<SettlementDetails>,
+) -> String {
+    lazy_static! {
+        static ref NAMED_FOREST_RE: Regex =
+            Regex::new(r#"\b(?:ЛІС|ЛЕС)[ \t]+"#).unwrap();
+        static ref FOREST_END_RE: Regex =
+            Regex::new(r#"\b(?:Н\.?П\.?|ЛІС|ЛЕС|НА|ВІД|БІЛЯ)\b|[,;()/\n–—]"#)
+                .unwrap();
+        static ref FOREST_DESCRIPTION_RE: Regex =
+            Regex::new(r#"\bЛЕСНО(?:Й|ГО)\s+МАССИВ(?:А)?\b"#).unwrap();
+    }
+    let location = FOREST_DESCRIPTION_RE.replace_all(location, " ");
+    let mut result = String::new();
+    let mut cursor = 0;
+    for forest in NAMED_FOREST_RE.find_iter(&location) {
+        if forest.start() < cursor
+            || forest_is_settlement_suffix(&location[..forest.end()], trie)
+        {
+            continue;
+        }
+        let name = &location[forest.end()..];
+        let next = name.split_whitespace().next().unwrap_or_default();
+        if crate::config::LOCATION_FOREST_CONTEXT_WORDS.contains(&next) {
+            continue;
+        }
+        result.push_str(&location[cursor..forest.start()]);
+        result.push(' ');
+        cursor = forest.end()
+            + FOREST_END_RE
+                .find(name)
+                .map_or(name.len(), |end| end.start());
+    }
+    result.push_str(&location[cursor..]);
+    result
+}
+
+fn forest_is_settlement_suffix(
+    prefix: &str,
+    trie: &Trie<SettlementDetails>,
+) -> bool {
+    let phrase = prefix
+        .split(['(', ')', ',', '/', ';', '\n', '–', '—'])
+        .next_back()
+        .unwrap_or_default();
+    let words = phrase.split_whitespace().collect_vec();
+    (2..=words.len().min(trie.max_word_count())).any(|span| {
+        let name = words[words.len() - span..].join(" ");
+        !trie.find_matches(&name, None).data.is_empty()
+    })
 }
 
 fn normalize_location_phrase(
@@ -1730,6 +1831,7 @@ mod tests {
                 vec!["ШЕВ’ЯКІВКА"],
             ),
             ("РФ/РБ/Украина/Россия/Беларусь", vec![]),
+            ("роти", vec![]),
             ("н.п. Українка; н.п. Південне", vec!["ПІВДЕННЕ", "УКРАЇНКА"]),
             ("південні околиці Вільча", vec!["ВІЛЬЧА"]),
             (
@@ -1744,6 +1846,9 @@ mod tests {
                 "ліс Верхнє Горіхове-ліс Заливний; н.п. Горіхове",
                 vec!["ГОРІХОВЕ"],
             ),
+            ("ліс Верхнє Горіхове н.п. Павлівка", vec!["ПАВЛІВКА"]),
+            ("ліс Верхнє Горіхове н.п. Вовчанськ", vec!["ВОВЧАНСЬК"]),
+            ("ліс Верхнє-Горіхове; н.п. Павлівка", vec!["ПАВЛІВКА"]),
             ("лісовий масив на захід від Вовчанська", vec!["ВОВЧАНСЬК"]),
             (
                 "ПЕРМОМАЙСЬКИЙ/ОХРИМІВКА",
@@ -1797,6 +1902,52 @@ mod tests {
                 );
             }
         }
+        let settlements = Arc::new(RwLock::new(
+            load_settlements_data_config(
+                vec![
+                    "settlements_json/kurska_oblast_rf.json".to_string(),
+                    "settlements_json/khersonska_oblast.json".to_string(),
+                    "settlements_json/luhanska_oblast.json".to_string(),
+                ],
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        for (input, expected) in [
+            ("н.п. Лесной", vec!["ЛЕСНОЙ"]),
+            ("лесной массив", vec![]),
+            ("н.п. Нова Україна", vec!["НОВА УКРАЇНА"]),
+            ("н.п. Вільна Україна", vec!["ВІЛЬНА УКРАЇНА"]),
+            ("н.п. Рідна Україна", vec!["РІДНА УКРАЇНА"]),
+            ("Україна; Росія; Білорусь", vec![]),
+            (
+                "Україна, Нова\tУкраїна; Вільна Україна / Рідна Україна",
+                vec!["ВІЛЬНА УКРАЇНА", "НОВА УКРАЇНА", "РІДНА УКРАЇНА"],
+            ),
+        ] {
+            let actual = parse_location_with_aor_id(
+                settlements.clone(),
+                input.to_string(),
+            )
+            .unwrap();
+            assert_eq!(test_settlements_array(actual), expected, "{input}");
+        }
+        let settlements = Arc::new(RwLock::new(
+            load_settlements_data_config(
+                vec!["settlements_json/sumska_oblast.json".to_string()],
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let actual = parse_location_with_aor_id(
+            settlements,
+            "н.п. Великий Ліс н.п. Буринь".to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            test_settlements_array(actual),
+            vec!["БУРИНЬ", "ВЕЛИКИЙ ЛІС"]
+        );
     }
 
     #[test]

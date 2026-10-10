@@ -509,7 +509,7 @@ fn capture_unit_and_locality(
         '_if: {
             lazy_static! {
                 static ref RE: Regex = Regex::new(
-                    r#"(?P<unit>.*?)(?P<locality> [А-ЯЄІЇ'\s]+(?:-[А-ЯЄІЇ'\s]+)+)"#
+                    r#"(?P<unit>.*?(?:\d+\s+(?:ЗА|АК|А))?)(?P<locality> [А-ЯЄІЇ'\s]+(?:-[А-ЯЄІЇ'\s]+)+)"#
                 )
                 .unwrap();
             }
@@ -1072,6 +1072,24 @@ mod tests {
             }
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));
+        for suffix in ["6 А", "6 ЗА", "6 АК"] {
+            let unit = format!("УКХ р/м управління 1 мсб {suffix}");
+            let body = format!(
+                "{unit} КАМ'ЯНКА-ПАВЛІВКА-КРАСНЕ ПЕРШЕ\nНВ\nНВ\n— Принял."
+            );
+            let parsed =
+                extract_unit(settlements.clone(), &body, vec![]).unwrap();
+            assert_eq!(parsed.unit.as_deref(), Some(unit.as_str()));
+            assert_eq!(
+                parsed
+                    .locality_v2
+                    .unwrap()
+                    .into_iter()
+                    .map(|settlement| settlement.name)
+                    .collect::<Vec<_>>(),
+                vec!["КАМ’ЯНКА", "КРАСНЕ ПЕРШЕ", "ПАВЛІВКА"]
+            );
+        }
     }
 
     #[test]

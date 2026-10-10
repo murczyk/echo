@@ -327,21 +327,26 @@ async fn complete_job(
     let settlements =
         merge_current_and_ai_settlements(current.clone(), ai_settlements);
     let changed = settlements != current;
+    let inbox_item_uuid = inbox_item.id_uuid;
+    let location_v2 = if changed {
+        Some(crate::location::utils::format_locations_list(settlements))
+    } else {
+        inbox_item.location_v2.clone()
+    };
     if changed {
-        let inbox_item_uuid = inbox_item.id_uuid;
-        let location_v2 =
-            crate::location::utils::format_locations_list(settlements);
         let mut inbox_item = inbox_item.into_active_model();
-        inbox_item.location_v2 = Set(Some(location_v2.clone()));
+        inbox_item.location_v2 = Set(location_v2.clone());
         inbox_item.update(&transaction).await.c(h!())?;
-        crate::battle_line::settlement_queue::reconcile_item_locations(
-            &transaction,
-            sigint_inbox_item_id,
-            inbox_item_uuid,
-            Some(&location_v2),
-        )
-        .await
-        .c(h!())?;
+    }
+    crate::battle_line::settlement_queue::reconcile_item_locations(
+        &transaction,
+        sigint_inbox_item_id,
+        inbox_item_uuid,
+        location_v2.as_deref(),
+    )
+    .await
+    .c(h!())?;
+    if changed {
         crate::stats::enqueue_group_stats_recalculation_for_message(
             &transaction,
             sigint_inbox_item_id,
@@ -543,7 +548,7 @@ fn truncate_error(error: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_job, fail_job, load_worker_config,
+        complete_job, enqueue_if_enabled, fail_job, load_worker_config,
         merge_current_and_ai_settlements, normalize_settlements,
         retry_delay_secs, WorkerConfig,
     };
@@ -745,6 +750,92 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn reconciles_unchanged_settlement_result_3383() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let config = enable_worker(&env.dbx).await;
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("#3383 unchanged result".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let location_v2 = "|ІВАЩИНЕ|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|";
+        let inbox_item = sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            location_v2: Set(Some(location_v2.to_string())),
+            parsed_unit_v2: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let mut retained = vec![];
+        for (text, settlement_id, is_undefined) in [
+            ("ІВАЩИНЕ", Some(98911), None),
+            ("ВЕРХНЄ ГОРІХОВЕ", None, Some(true)),
+            ("OBSOLETE", Some(79948), None),
+        ] {
+            let row = sigint_inbox_item_settlement::ActiveModel {
+                item_id: Set(message.id),
+                item_uuid: Set(inbox_item.id_uuid),
+                settlement_text: Set(text.to_string()),
+                settlement_id: Set(settlement_id),
+                is_undefined: Set(is_undefined),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            if text != "OBSOLETE" {
+                retained.push(row);
+            }
+        }
+        for _ in 0..2 {
+            enqueue_if_enabled(&env.dbx, message.id).await.unwrap();
+            assert!(!complete_job(
+                &env.dbx,
+                message.id,
+                "#3383 unchanged result",
+                &config,
+                crate::location::utils::to_location_list(location_v2),
+            )
+            .await
+            .unwrap());
+            let rows = sigint_inbox_item_settlement::Entity::find()
+                .filter(
+                    sigint_inbox_item_settlement::Column::ItemId.eq(message.id),
+                )
+                .order_by_asc(sigint_inbox_item_settlement::Column::Id)
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            assert_eq!(rows.len(), 3);
+            assert_eq!(&rows[..retained.len()], retained.as_slice());
+            assert_eq!(rows[2].settlement_text, "ЗАЛИВНИЙ");
+            assert_eq!(rows[2].settlement_id, None);
+            assert_eq!(rows[2].is_undefined, None);
+            assert_eq!(rows[2].item_uuid, inbox_item.id_uuid);
+            retained = rows;
+        }
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.location_v2.as_deref(), Some(location_v2));
+        assert!(ai_settlement_worker_job::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
