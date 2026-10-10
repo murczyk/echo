@@ -556,11 +556,12 @@
   }
 
   .login-attribution {
-    right: auto;
+    right: 16px;
     bottom: 42px;
-    left: 50%;
+    left: 16px;
+    justify-content: center;
     gap: 10px;
-    transform: translateX(-50%);
+    transform: none;
   }
 
   .login-attribution img {
