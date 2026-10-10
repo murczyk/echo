@@ -420,9 +420,22 @@ subscriptions _ =
 
 loginBrand : Bool -> Html Msg
 loginBrand isDark =
-    div [ class "login-brand logo-coin-trigger" ]
+    let
+        logoAnimationEnabled =
+            False
+    in
+    div
+        [ classList
+            [ ( "login-brand", True )
+            , ( "logo-coin-trigger", logoAnimationEnabled )
+            ]
+        ]
         [ node "echo-logo-coin"
-            [ class "logo-coin logo-coin--auto" ]
+            [ classList
+                [ ( "logo-coin", True )
+                , ( "logo-coin--auto", logoAnimationEnabled )
+                ]
+            ]
             [ div
                 [ class "logo-coin__idle" ]
                 [ div
