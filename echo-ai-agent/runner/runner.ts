@@ -1,6 +1,7 @@
 import {
   ResearchBudget,
   SynthesisAuthorizationError,
+  SynthesisContentFilterError,
   PURPOSE_HEADER,
   validateExecutionPolicy,
   budgetFallback,
@@ -65,13 +66,13 @@ import {
 } from "./citations.ts";
 import { createMapScriptRunner, MAP_PYTHON_ROOT } from "./map-script.ts";
 import { SidcResolver } from "./sidc-resolver.ts";
-import { installContextCompaction, type ContextCompaction } from "./context-compaction.ts";
+import { ContextCheckpointProviderError, ContextCompactionLimitError, installContextCompaction, type ContextCompaction } from "./context-compaction.ts";
 
 const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.10.1";
+const HARNESS_RELEASE = "2026.10.10.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -2947,6 +2948,7 @@ async function completeLimitedResearch(options: {
   deliveredFiles: Map<string, FileCitation>;
   mapRegistry: MapRegistry;
   cancellation: AbortSignal;
+  checkpoint?: string;
 }): Promise<void> {
   const {
     payload,
@@ -2973,10 +2975,11 @@ async function completeLimitedResearch(options: {
       request: payload.prompt,
     }),
     evidence,
+    checkpoint: options.checkpoint,
     maxTokens: payload.maxTokens,
     signal,
   }).catch((error) => {
-    if (error instanceof SynthesisAuthorizationError) throw error;
+    if (error instanceof SynthesisAuthorizationError || error instanceof SynthesisContentFilterError) throw error;
     return null;
   });
   if (options.cancellation.aborted) return;
@@ -2993,8 +2996,9 @@ async function completeLimitedResearch(options: {
       stripUnpublishedMapLinks(preserveMapReferences("", text, maps), maps),
       deliveredFiles.values(),
     );
-  const notice =
-    budget.policy.preset === "deep"
+  const notice = budget.reason === "context_limit"
+    ? "Не вдалося продовжити аналіз усіх джерел. Наведено часткову відповідь за вже зібраними матеріалами; охоплення джерел неповне. Уточніть запит, щоб продовжити."
+    : budget.policy.preset === "deep"
       ? "Досягнуто межі дослідження. Охоплення джерел неповне; уточніть запит, щоб продовжити."
       : "Досягнуто межі дослідження. Охоплення джерел неповне; оберіть глибокий аналіз, щоб продовжити.";
   const notices = mapOutcomeNotices(
@@ -3238,7 +3242,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         );
       } catch (error) {
         if (toolLimitError) throw toolLimitError;
-        throw error;
+        throw contextCompaction.failure() ?? error;
       }
       if (toolLimitError) throw toolLimitError;
       if (cancelled) return;
@@ -3357,12 +3361,15 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       if (cancelled) return;
       if (authorizationFailure) throw authorizationFailure;
       if (isProviderAuthorizationError(error)) throw error;
+      if (error instanceof ContextCheckpointProviderError) throw error;
       if (
         /research_budget_exhausted|Provider research budget exhausted/.test(
           String(error),
         )
       )
         budget?.limit("tool_limit");
+      if (error instanceof ContextCompactionLimitError)
+        budget?.limit("context_limit");
       if (!budget?.reason) throw error;
       emitAssistant.current = false;
       void session.abort().catch(() => undefined);
@@ -3378,6 +3385,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         deliveredFiles,
         mapRegistry,
         cancellation: cancellation.signal,
+        checkpoint: contextCompaction.latestCheckpoint(),
       });
     }
   } finally {

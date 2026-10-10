@@ -278,7 +278,10 @@ pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
         let metadata: super::types::AiAgentCompletionMetadata =
             serde_json::from_value(payload).ok()?;
         if !metadata.coverage_limited
-            || !matches!(metadata.reason.as_str(), "time_limit" | "tool_limit")
+            || !matches!(
+                metadata.reason.as_str(),
+                "time_limit" | "tool_limit" | "context_limit"
+            )
         {
             return None;
         }
@@ -514,6 +517,24 @@ mod tests {
         assert_eq!(response, payload["text"].as_str().unwrap());
         assert_eq!(response_chars, response.chars().count());
         assert!(!response.contains("draft"));
+    }
+
+    #[test]
+    fn issue_3724_preserves_context_limited_completion() {
+        let (_, payload) = normalize_runner_event(serde_json::json!({
+            "type": "completion_metadata",
+            "coverageLimited": true,
+            "reason": "context_limit"
+        }))
+        .unwrap();
+        assert_eq!(payload["reason"], "context_limit");
+        assert_eq!(payload["coverageLimited"], true);
+        assert!(normalize_runner_event(serde_json::json!({
+            "type": "completion_metadata",
+            "coverageLimited": true,
+            "reason": "provider_error"
+        }))
+        .is_none());
     }
 
     #[test]

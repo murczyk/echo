@@ -86,7 +86,7 @@ async function fixture(
         }
         if (
           checkpoint === "connection-error" ||
-          (checkpoint === "connection-once" && checkpointCalls <= 3)
+          (checkpoint === "connection-once" && checkpointCalls === 1)
         ) {
           response.writeHead(502, { "Content-Type": "application/json" });
           response.end(
@@ -121,6 +121,7 @@ async function fixture(
         }
         finishReason =
           checkpoint === "length" ||
+          (checkpoint === "length-once" && checkpointCalls === 1) ||
           (finalCalls > 0 &&
             checkpointSettings.finalOutput === "checkpoint-limit")
             ? "length"
@@ -803,6 +804,24 @@ test("#3724 includes system schemas and pending prompt when compacting restored 
   }
 });
 
+test("#3724 resumed after a truncated checkpoint with a tighter summary target", async () => {
+  const value = await fixture(7, "length-once");
+  try {
+    await value.session.prompt(value.prompt);
+    assert.ifError(value.contextFailure());
+    validateFinalAssistantMessage(value.session.messages);
+    assert.deepEqual(value.cursors, [0, 20, 40, 60, 80, 100, 120]);
+    const checkpoints = value.requests.filter((request) =>
+      request.messages[0].content.includes("Create a concise evidence checkpoint"),
+    );
+    assert.ok(checkpoints[0].messages[0].content.includes("1000 words"));
+    assert.ok(checkpoints[1].messages[0].content.includes("500 words"));
+    assert.deepEqual(value.errors, []);
+  } finally {
+    await value.close();
+  }
+});
+
 for (const mode of ["stream-once", "network-once", "connection-once"]) {
   test(`#3724 retries an interrupted checkpoint once without replacing evidence with partial text: ${mode}`, async () => {
     const value = await fixture(7, mode);
@@ -844,11 +863,7 @@ for (const mode of [
       assert.ok(value.contextFailure());
       assert.equal(
         value.checkpointCalls(),
-        mode === "connection-error"
-          ? 6
-          : ["filtered", "denied"].includes(mode)
-            ? 1
-            : 2,
+        ["filtered", "denied"].includes(mode) ? 1 : 2,
       );
       assert.equal(value.resetCalls(), 0);
       assert.equal(
