@@ -154,6 +154,7 @@ pub const AI_POSITION_KNOWLEDGE_WINDOW_DAYS: i64 = 30;
 /// Messages per page when a knowledge recompute links a position to the
 /// scope's other messages.
 pub const AI_POSITION_KNOWLEDGE_LINK_BATCH: i64 = 500;
+pub const AI_POSITION_KNOWLEDGE_LOOKUP_BATCH_SIZE: usize = 256;
 /// Most message cards a knowledge change announces for refresh.
 pub const AI_POSITION_KNOWLEDGE_EVENT_MAX_MESSAGES: u64 = 1_000;
 /// Facts within this distance describe the same place.
