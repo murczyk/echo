@@ -110,3 +110,43 @@ Provider references: [GLM Chat Completions](https://docs.z.ai/api-reference/llm/
 [GPT-6-Sol](https://developers.openai.com/api/docs/models/gpt-6-sol),
 [GPT-6.1-Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), and
 [Responses migration](https://developers.openai.com/api/docs/guides/migrate-to-responses).
+
+
+## Checkpoint exhaustion recovery
+
+Harness `2026.10.10.2` limits checkpoint work to six provider calls per
+compaction cycle, including transport retries, within the original research
+deadline. Checkpoints target a concise summary and tighten that target on a
+reduced-prefix retry. A truncated or empty summary never replaces evidence.
+The runner emits redacted checkpoint diagnostics on stderr: engine, attempt,
+input/output usage, configured output cap, stop reason, and duration.
+
+For requests with a reasoning preset, exhausted checkpoint output, non-reducing
+compaction, or insufficient context headroom stops research and produces a
+partial answer from already retrieved sources and the latest valid checkpoint.
+Final synthesis has no tools and lasts at most the preset's finalization
+allowance, also bounded by the original deadline. If synthesis times out,
+truncates, or lacks valid citations, Echo returns labeled source excerpts.
+Completion metadata records `coverageLimited: true`, `reason: "context_limit"`.
+The notice describes incomplete coverage without suggesting that Deep mode
+would fix it. Cancellation, authorization failures, and content filtering do
+not become successful partial answers, including synthesis after time/tool
+limits. Legacy requests without a reasoning policy still fail on exhausted
+compaction instead of producing partial answers; the bounded checkpoint retry
+policy also applies to them. Transient 429/5xx and interrupted streams retry
+once, counted in the same six-call budget.
+
+Deploy from stable. Drain the selected namespace, back up the binary/config and
+namespace release, and keep AI admission disabled across the backend and harness
+upgrade. Update Echo and then use `ai-control-panel upgrade` for that namespace
+with release `2026.10.10.2`; restore admission only after versions and connection
+checks agree. Validate Kharkiv before Siversk with a request that actually
+compacts context. Keep other namespaces pinned. No migration or collection sync
+is needed. Roll back the harness and application as a pair while admission is
+closed; the backend must understand `context_limit` whenever the new harness
+runs. Existing failed requests are not rewritten or automatically retried.
+
+Regression coverage: `echo-ai-agent/runner/checkpoint-recovery.test.ts` exercises
+the full runner through Responses and Chat Completions; compaction/policy tests
+cover retries, evidence integrity and bounded finalization; the chat-flow test
+checks restored partial answers and their coverage label.

@@ -303,3 +303,21 @@ test("#3724 Responses keeps encrypted reasoning and call IDs across a tool round
   assert.equal(replay.call_id, result.call_id);
   assert.equal(result.output, evidence.messages[0].text);
 });
+
+
+test("#3724 bounds early context recovery by the finalization allowance", (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1000 });
+  const budget = new ResearchBudget(policy, 121000, () => {});
+  try {
+    budget.limit("context_limit");
+    assert.equal(budget.research.signal.aborted, true);
+    t.mock.timers.tick(29999);
+    assert.equal(budget.finalization.signal.aborted, false);
+    budget.limit("tool_limit");
+    assert.equal(budget.reason, "context_limit");
+    t.mock.timers.tick(1);
+    assert.equal(budget.finalization.signal.aborted, true);
+  } finally {
+    budget.dispose();
+  }
+});

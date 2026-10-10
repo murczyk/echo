@@ -10,6 +10,8 @@
 
 ## NEXT
 
+- [#3724](https://github.com/echoua/echo/issues/3724) 🐞👷 ШІ: після вичерпання бюджету скорочення контексту повертається часткова відповідь із джерелами замість загальної помилки. Оновити Echo і harness до `2026.10.10.2` за [інструкцією](docs/ai/reasoning-presets.md#checkpoint-exhaustion-recovery).
+
 - [#3724](https://github.com/echoua/echo/issues/3724) 🐞 ШІ: виправлено пошук через OpenAI Responses — необов'язкові фільтри залишаються необов'язковими, щоб звіти не шукали за вигаданими позивними.
 - [#3724](https://github.com/echoua/echo/issues/3724) ✅👷 ШІ: додано швидкий (2 хв), збалансований (5 хв) і глибокий (30 хв) аналіз; після вичерпання часу зберігається часткова відповідь із джерелами. Для ввімкнення встановити Echo і harness `2026.10.10.1`, застосувати міграції та перевірити державні GLM/OpenAI перед налаштуванням режимів за [інструкцією](docs/ai/reasoning-presets.md#rollout-and-recovery).
 - [#3724](https://github.com/echoua/echo/issues/3724) ✅👷 ШІ: для GLM можна обрати GLM замість Luna для checkpoint зі збереженням відновлення звіту; після оновлення Echo і harness до `2026.10.09.14` встановити `ai_agent_glm_checkpoint_provider = "glm"` у конфігурації потрібного сервера за [інструкцією](docs/ai/kharkiv-canary.md#configuration-and-processing-scope).
