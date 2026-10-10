@@ -31,6 +31,7 @@ type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 type Params = {
   centerTab: AnalysisCenterTab;
   deferInitialLoad: boolean;
+  hideNetworks: boolean;
   focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
   leftPanelOpen?: boolean;
@@ -119,6 +120,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     centerTab,
     clearAnalysisResults,
     deferInitialLoad,
+    hideNetworks,
     focusedWindow = null,
     focusedMessageActive = false,
     getLoadedFilterSections,
@@ -212,6 +214,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       try {
         await reloadAnalysisData({
           clearAnalysisResults,
+          hideNetworks,
           focusedWindow,
           focusedMessageActive,
           invalidateCallsignGraph,

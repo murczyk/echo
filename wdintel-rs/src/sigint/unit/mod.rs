@@ -3816,6 +3816,7 @@ mod tests {
             show_peleng_distance_to_battleline: Set(false),
             hide_orbit_data: Set(false),
             disable_bot_tags: Set(None),
+            hide_networks: Set(None),
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),

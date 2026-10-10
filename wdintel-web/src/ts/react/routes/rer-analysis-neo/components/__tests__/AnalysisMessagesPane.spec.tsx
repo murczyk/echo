@@ -78,7 +78,7 @@ vi.mock('@mui/material', () => ({
 vi.mock('../../../shared/message-card/MessageCard', () => ({
   AnalysisMessageCard: (props: {
     id: number;
-    onCreateReport: (focusTarget: HTMLElement) => void;
+    onCreateReport: (etalonDisplayModel: unknown, focusTarget: HTMLElement) => void;
     onEditReport?: (id: number) => void;
     onDelete: () => void;
     onEditDetails: (focusTarget: HTMLElement) => void;
@@ -99,7 +99,23 @@ vi.mock('../../../shared/message-card/MessageCard', () => ({
           .map((comment) => `${comment.login}:${comment.comment}`)
           .join('|')}
       </span>
-      <button type="button" onClick={(event) => props.onCreateReport(event.currentTarget)}>
+      <button
+        type="button"
+        onClick={(event) =>
+          props.onCreateReport(
+            {
+              primaryKind: 'network',
+              displayValue: 'р/м Актуальна мережа',
+              copyEtalonValue: 'р/м Актуальна мережа',
+              copyLocationValue: null,
+              renderedNetworks: [{ networkId: 3, label: 'р/м Актуальна мережа', badge: false }],
+              showInlineLocationTooltip: false,
+              locationDisplayValue: null,
+            },
+            event.currentTarget,
+          )
+        }
+      >
         report-{props.id}
       </button>
       <button type="button" onClick={() => props.onEditReport?.(91)}>

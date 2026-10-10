@@ -41,7 +41,11 @@ import {
   type MessageEntityFilterKind,
   type TagsLayoutVariant,
 } from '../../rer-duty-neo/utils';
-import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
+import {
+  hideMessageCardNetworks,
+  resolveMessageCardEtalonDisplayModel,
+} from './message-card.utils';
+import type { MessageCardEtalonDisplayModel } from './message-card.utils';
 import type { AddPointHighlightBlacklistRequest } from './point-highlight-blacklist';
 import type {
   MessageTextPreviewLineLimit,
@@ -112,6 +116,7 @@ export type MessageCardProps = {
   /** Tag chips section visual density mode. */
   tagsLayout?: TagsLayoutVariant;
   hideBotTags?: boolean;
+  hideNetworks?: boolean;
   tagsLoading?: boolean;
   /** Baseline "now" when the card is off-screen; while visible, relative time updates every second. */
   referenceTimeMs: number | null;
@@ -142,9 +147,12 @@ export type MessageCardProps = {
   onCopyTextWithNetwork?: () => void;
   onCopyTextWithNetworkAndNote?: () => void;
   onCopyMessageLink?: () => void;
-  onCopyEtalon?: () => void;
-  onCopyLocation?: () => void;
-  onCreateReport?: (focusTarget: HTMLElement) => void;
+  onCopyEtalon?: (value: string) => void;
+  onCopyLocation?: (value: string) => void;
+  onCreateReport?: (
+    visibleEtalonDisplayModel: MessageCardEtalonDisplayModel,
+    focusTarget: HTMLElement,
+  ) => void;
   onEditReport?: (reportId: number) => void;
   onDelete?: () => void;
   onEditDetails?: (focusTarget: HTMLElement) => void;
@@ -179,6 +187,7 @@ function MessageCardComponent({
   analysisDestination = 'classic',
   tagsLayout = 'full',
   hideBotTags = false,
+  hideNetworks = false,
   tagsLoading = false,
   referenceTimeMs,
   authUserName,
@@ -257,9 +266,19 @@ function MessageCardComponent({
       }),
     [msg, featureStrictNetworks, networkDisplayMap, derivedNetworkMap, networks],
   );
-  const onCopyEtalonAction = etalonDisplayModel.copyEtalonValue == null ? undefined : onCopyEtalon;
+  const visibleEtalonDisplayModel = useMemo(
+    () =>
+      hideNetworks ? hideMessageCardNetworks(etalonDisplayModel, msg.unit) : etalonDisplayModel,
+    [hideNetworks, etalonDisplayModel, msg.unit],
+  );
+  const onCopyEtalonAction =
+    visibleEtalonDisplayModel.copyEtalonValue == null || onCopyEtalon == null
+      ? undefined
+      : () => onCopyEtalon(visibleEtalonDisplayModel.copyEtalonValue!);
   const onCopyLocationAction =
-    etalonDisplayModel.copyLocationValue == null ? undefined : onCopyLocation;
+    visibleEtalonDisplayModel.copyLocationValue == null || onCopyLocation == null
+      ? undefined
+      : () => onCopyLocation(visibleEtalonDisplayModel.copyLocationValue!);
   const pointEtalons = useMemo(() => getPointEtalonsFromMessage(msg, tagsMap), [msg, tagsMap]);
   const radioFeaturesAllowed = useRadioFeatures();
   const dutyExcludeMenuEnabled = useContext(DutyExcludeMenuContext);
@@ -345,17 +364,20 @@ function MessageCardComponent({
     displayTimestamp: messageTimeBasis === 'creation' ? displayTimestamp : undefined,
     messageTimeBasis,
     copiedFeedbackId,
-    etalonDisplayModel,
+    etalonDisplayModel: visibleEtalonDisplayModel,
     mapHref,
     analysisHref,
     rightInsetPx: rightHeaderInsetPx,
     onBookmark,
     onImportant,
-    onCreateReport,
+    onCreateReport:
+      onCreateReport == null
+        ? undefined
+        : (focusTarget) => onCreateReport(visibleEtalonDisplayModel, focusTarget),
     onCopyText,
     onCopyFreq: radioFeaturesAllowed ? onCopyFreq : undefined,
-    onCopyTextWithNetwork,
-    onCopyTextWithNetworkAndNote,
+    onCopyTextWithNetwork: hideNetworks ? undefined : onCopyTextWithNetwork,
+    onCopyTextWithNetworkAndNote: hideNetworks ? undefined : onCopyTextWithNetworkAndNote,
     onCopyMessageLink,
     onCopyEtalon: onCopyEtalonAction,
     onCopyLocation: onCopyLocationAction,
@@ -393,7 +415,7 @@ function MessageCardComponent({
               msg={msg}
               groupName={groupName}
               senderName={senderName}
-              etalonDisplayModel={etalonDisplayModel}
+              etalonDisplayModel={visibleEtalonDisplayModel}
               metadataTrigger={metadataTrigger}
             />
           }
@@ -403,6 +425,7 @@ function MessageCardComponent({
           tagsOrder={tagsOrder}
           tagContributionsOrganismId={tagContributionsOrganismId}
           hideBotTags={hideBotTags}
+          hideNetworks={hideNetworks}
           tagsLoading={tagsLoading}
           onToggleTag={onToggleTag}
           readOnly={readOnly}

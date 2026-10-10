@@ -699,6 +699,7 @@ type AnalysisCountsLoad = {
 export function startAnalysisCountsLoad(
   req: AnalysisStatsReq,
   context: {
+    hideNetworks?: boolean;
     isStale: () => boolean;
     onError: (message: string) => void;
     onUnauthorized: (error: unknown) => boolean;
@@ -760,7 +761,9 @@ export function startAnalysisCountsLoad(
     applyPatch({ unitsExactMatchesCount: 0, unitsNonExactMatchesCount: 0 });
   }
   requests.push(
-    ...ANALYSIS_COUNT_FIELDS.map(
+    ...ANALYSIS_COUNT_FIELDS.filter(
+      ([dimension]) => !context.hideNetworks || dimension !== 'networks',
+    ).map(
       ([dimension, field]) =>
         () =>
           load(
@@ -794,6 +797,7 @@ export function startAnalysisCountsLoad(
 }
 
 type ReloadParams = {
+  hideNetworks?: boolean;
   clearAnalysisResults: () => void;
   focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
@@ -931,6 +935,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       }
 
       activeCountsLoad = startAnalysisCountsLoad(analysisReq, {
+        hideNetworks: params.hideNetworks,
         isStale: isStaleReload,
         onError: params.onError,
         onUnauthorized: params.onUnauthorized,
@@ -1072,6 +1077,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             resolvedFreqsRsp = rebuiltFreqsRsp;
             activeCountsLoad?.abort();
             activeCountsLoad = startAnalysisCountsLoad(rebuiltAnalysisReq, {
+              hideNetworks: params.hideNetworks,
               isStale: isStaleReload,
               onError: params.onError,
               onUnauthorized: params.onUnauthorized,
@@ -1167,6 +1173,14 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
     const loadReferenceData = async () => {
       try {
+        if (params.hideNetworks) {
+          const units = await getUnitsList(params.signal ? { signal: params.signal } : undefined);
+          if (isStaleReload() || params.signal?.aborted) return;
+          params.setUnitsMap(Object.fromEntries(units.map((unit) => [unit.id, unit])));
+          params.setNetworks([]);
+          params.setOptions((current) => ({ ...current, networks: [] }));
+          return;
+        }
         const networksAnalysisReq = buildAnalysisReqForFilterSection(
           'networks',
           criticalData.resolvedAnalysisReq,

@@ -50,6 +50,7 @@ pub struct Model {
     pub hide_orbit_data: bool,
     pub show_peleng_distance_to_battleline: bool,
     pub disable_bot_tags: Option<bool>,
+    pub hide_networks: Option<bool>,
     pub duty_exclude_menu_enabled: Option<bool>,
     pub two_factor_auth_enabled: Option<bool>,
     pub analysis_aor_filter_enabled: Option<bool>,

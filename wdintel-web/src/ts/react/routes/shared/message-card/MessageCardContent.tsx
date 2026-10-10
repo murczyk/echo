@@ -273,6 +273,7 @@ export function MessageCardMessageBody({
   tagsOrder,
   tagContributionsOrganismId,
   hideBotTags = false,
+  hideNetworks = false,
   tagsLoading = false,
   onToggleTag,
   readOnly = false,
@@ -307,6 +308,7 @@ export function MessageCardMessageBody({
   tagsOrder?: number[];
   tagContributionsOrganismId?: number;
   hideBotTags?: boolean;
+  hideNetworks?: boolean;
   tagsLoading?: boolean;
   readOnly?: boolean;
   onToggleTag?: (tagId: number) => void;
@@ -784,6 +786,7 @@ export function MessageCardMessageBody({
     callsignInfoMap,
     networks,
     unitsMap,
+    hideNetworks,
     searchText,
     onOpenPointsOnMap,
     requestPointBlacklist,
@@ -1186,6 +1189,7 @@ function useMemoText(
   callsignInfoMap?: Record<string, CallsignInfoRes>,
   networks?: Network[],
   unitsMap?: Record<number, Unit>,
+  hideNetworks = false,
   searchText?: string | null,
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void,
   onRequestPointBlacklist?: (source: PointBlacklistRequestSource) => void,
@@ -1218,6 +1222,7 @@ function useMemoText(
           callsignInfoMap,
           networks,
           unitsMap,
+          hideNetworks,
           messageLinkGroupInfos,
           freq: msg.freq ?? null,
           networkIds: msg.networkIds ?? null,

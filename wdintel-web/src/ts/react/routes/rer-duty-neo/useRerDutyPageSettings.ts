@@ -22,6 +22,8 @@ export type RerDutyPageSettings = {
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
   hideBotTags: boolean;
+  hideNetworks: boolean;
+  networkVisibilityReady: boolean;
   dutyExcludeMenuEnabled: boolean;
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
@@ -49,6 +51,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
   const [hideBotTags, setHideBotTags] = useState(false);
+  const [hideNetworks, setHideNetworks] = useState(false);
   const [dutyExcludeMenuEnabled, setDutyExcludeMenuEnabled] = useState(false);
   const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(
     DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
@@ -132,6 +135,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
         setHideBotTags(settings.disableBotTags ?? false);
+        setHideNetworks(settings.hideNetworks ?? false);
         setDutyExcludeMenuEnabled(settings.dutyExcludeMenuEnabled ?? true);
         setDevicesSettingsStatus('success');
       })
@@ -140,6 +144,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setDevicesSectionEnabled(false);
         setAudioTranscriptionEnabled(false);
         setHideBotTags(false);
+        setHideNetworks(false);
         setDevicesSettingsStatus('error');
         setDeviceAccessError(error instanceof Error ? error.message : String(error));
       });
@@ -189,6 +194,8 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     audioTranscriptionCollapsed,
     audioTranscriptionEnabled,
     hideBotTags,
+    hideNetworks,
+    networkVisibilityReady: devicesSettingsStatus !== 'loading',
     dutyExcludeMenuEnabled,
     collapseMediaPreviews,
     mediaSummaryEnabled,

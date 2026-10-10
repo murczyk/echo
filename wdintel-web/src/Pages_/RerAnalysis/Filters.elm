@@ -488,7 +488,7 @@ view isDark _ model =
                 , withGreenCircle = False
                 }
                 tabFiltersPosts
-            , HtmlX.viewIf model.radioFeaturesAllowed <|
+            , HtmlX.viewIf (model.radioFeaturesAllowed && not model.hideNetworks) <|
                 filterMenuBlockCountOutOf
                     { unfold = model.unfoldNetworksFilter
                     , toggleMsg = ToggleUnfoldNetworksFilter

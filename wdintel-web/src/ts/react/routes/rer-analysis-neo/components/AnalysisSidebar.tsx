@@ -47,6 +47,7 @@ type Props = Pick<
   | 'groupsActivityLoadedPeriod'
   | 'groupsActivityPeriod'
   | 'groupsActivityLoading'
+  | 'hideNetworks'
   | 'isFilterSectionLoading'
   | 'mapAttrs'
   | 'analysisMapInSidebar'
@@ -104,6 +105,7 @@ export function AnalysisSidebar({
   groupsActivityLoadedPeriod,
   groupsActivityPeriod,
   groupsActivityLoading,
+  hideNetworks,
   isFilterSectionLoading,
   mapAttrs,
   analysisMapInSidebar,
@@ -444,6 +446,7 @@ export function AnalysisSidebar({
             <Box>
               <AnalysisStatsPane
                 groupsLoading={isFilterSectionLoading?.('groups') ?? false}
+                hideNetworks={hideNetworks}
                 onClearFreq={clearFreq}
                 onClearGroup={clearGroup}
                 onClearLocation={clearLocation}

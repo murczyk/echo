@@ -258,7 +258,7 @@ describe('loadFilterSectionData', () => {
 });
 
 describe('reloadAnalysisData', () => {
-  it('clears messages loading immediately after inbox resolves, without waiting for freqs', async () => {
+  it('#3598 skips network statistics while hidden and clears messages loading without waiting for freqs', async () => {
     const inboxDeferred = deferred<ReloadInboxRsp>();
     const freqsDeferred = deferred<{
       freqs: Array<{ freq: string; count: number; isNew: boolean }>;
@@ -292,6 +292,7 @@ describe('reloadAnalysisData', () => {
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
+      hideNetworks: true,
       invalidateCorrelatedFreqsCache,
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
@@ -369,7 +370,10 @@ describe('reloadAnalysisData', () => {
       [1, { networkIds: [] }],
     ]);
     expect(messagesLoadingTransitions).toContain(false);
-    await vi.waitFor(() => expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(10));
+    await vi.waitFor(() => expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(9));
+    expect(mocks.fetchAnalysisStatsCount.mock.calls.map(([dimension]) => dimension)).not.toContain(
+      'networks',
+    );
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(
       buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null),
     );
@@ -379,7 +383,7 @@ describe('reloadAnalysisData', () => {
     await reloadPromise;
     await flushPromises();
 
-    expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(10);
+    expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(9);
     expect(invalidateCorrelatedFreqsCache).toHaveBeenCalledTimes(1);
   });
   it('#3001 applies fast counters independently and drops a late counter after cancellation', async () => {
@@ -589,6 +593,9 @@ describe('reloadAnalysisData', () => {
     }
 
     expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(10);
+    expect(mocks.fetchAnalysisStatsCount.mock.calls.map(([dimension]) => dimension)).toContain(
+      'networks',
+    );
     expect(mocks.fetchAnalysisUnitMatchStatsCount).toHaveBeenCalledTimes(1);
     expect(maxActiveRequests).toBe(4);
     expect(counts?.groupsCount).toBe(1);
@@ -630,6 +637,7 @@ describe('reloadAnalysisData', () => {
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
+      hideNetworks: true,
       invalidateCorrelatedFreqsCache: vi.fn(),
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
@@ -737,6 +745,10 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchAnalysisCallsigns).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisCallsignInfos).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisFreqs).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(18));
+    expect(mocks.fetchAnalysisStatsCount.mock.calls.map(([dimension]) => dimension)).not.toContain(
+      'networks',
+    );
     expect(setMessages).toHaveBeenLastCalledWith([
       [22, { networkIds: [] }],
       [21, { networkIds: [] }],

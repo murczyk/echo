@@ -12,11 +12,13 @@ export function systemSettingsCurrentResponse({
   shortUrlEnabled = false,
   dutyExcludeMenuEnabled = true,
   analysisAorFilterEnabled = true,
+  hideNetworks = false,
 }: {
   enableAudioTranscription?: boolean;
   shortUrlEnabled?: boolean;
   dutyExcludeMenuEnabled?: boolean;
   analysisAorFilterEnabled?: boolean;
+  hideNetworks?: boolean;
 } = {}) {
   const settings: SystemSettingsCurrentRsp = {
     id: null,
@@ -52,6 +54,7 @@ export function systemSettingsCurrentResponse({
     disableBotTags: false,
     dutyExcludeMenuEnabled,
     analysisAorFilterEnabled,
+    hideNetworks,
     aiPositionHighlightsEnabled: false,
     twoFactorAuthEnabled: true,
   };

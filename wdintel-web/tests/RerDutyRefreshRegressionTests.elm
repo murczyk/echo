@@ -3,18 +3,25 @@ module RerDutyRefreshRegressionTests exposing (suite)
 import Bindings as B
 import Dict
 import Expect
+import Http
 import Json.Decode
 import Json.Encode
 import Le.Waterfall.MessagesTests exposing (messageStub)
 import Page
 import Pages.RerDuty
 import Pages_.RerDuty.Waterfall as Waterfall
+import Pages_.RerDuty.Waterfall.Message as WaterfallMessage
 import Pages_.RerDuty.Waterfall.Messages as Messages
 import Route
 import Set
 import Shared
+import Shared.Msg as SharedMsg
+import Shared.Model exposing (RerNetworkDetailsPreferredView(..))
 import String
 import Test exposing (Test, describe, test)
+import Test.Html.Query as HtmlQuery
+import Test.Html.Selector as Selector
+import Time
 import Url
 import Utils.RemoteData exposing (RemoteData(..))
 
@@ -22,7 +29,202 @@ import Utils.RemoteData exposing (RemoteData(..))
 suite : Test
 suite =
     describe "Rer Duty refresh regressions"
-        [ test "refresh enrichment stays isolated to the owning waterfall" <|
+        [ test "#3598 hidden network fallback ignores a missing frequency" <|
+            \_ ->
+                let
+                    viewParams message =
+                        { isDarkMode = False
+                        , user = { anonymousUser | roles = [ "Rer" ] }
+                        , waterfallId = "wf-a"
+                        , datasources = []
+                        , serverInfo = Nothing
+                        , networks = Dict.empty
+                        , zone = Time.utc
+                        , time = Nothing
+                        , profiles = Dict.empty
+                        , message = ( 1, message )
+                        , tags = []
+                        , callsignsInfo = Dict.empty
+                        , messageCallsignsInfo = Dict.empty
+                        , masterUnits = Dict.empty
+                        , networkDetailsViewPreference = Classic
+                        , signals = []
+                        , copied = Nothing
+                        , isMsgVisible = []
+                        , groupInfos = Dict.empty
+                        , messageNetworkIds = [ 7 ]
+                        , hideNetworks = True
+                        , onlyMyUnitTagsEnabled = False
+                        }
+
+                    check message expected =
+                        WaterfallMessage.view (viewParams message) ( 1, message ) (WaterfallMessage.init { id = 1 })
+                            |> HtmlQuery.fromHtml
+                            |> HtmlQuery.has [ Selector.text expected ]
+                in
+                Expect.all
+                    [ \_ -> check { messageStub | freq = Nothing, unit = Just "Analysis Unit" } "Analysis Unit"
+                    , \_ -> check { messageStub | freq = Nothing, unit = Nothing } "Не встановлена"
+                    ]
+                    ()
+        , test "#3598 unresolved settings defer network hydration" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-duty" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            route =
+                                Route.fromUrl () url
+
+                            ( shared, _ ) =
+                                Shared.init (Ok { isDark = False, now = 0 }) route
+
+                            ( waterfall, _ ) =
+                                Waterfall.init True "wf-a" Nothing
+
+                            ( updatedWaterfall, _ ) =
+                                Waterfall.update
+                                    shared
+                                    anonymousUser
+                                    (Waterfall.TickTimeTick (Time.millisToPosix 0))
+                                    { waterfall
+                                        | messages =
+                                            Messages.fromList
+                                                [ ( 1, { messageStub | networkIds = Just [ 7 ] } ) ]
+                                    }
+                        in
+                        Expect.equal Set.empty updatedWaterfall.networkIdsRequested
+        , test "#3598 failed initial settings allow deferred network hydration" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-duty" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            route =
+                                Route.fromUrl () url
+
+                            ( shared, _ ) =
+                                Shared.init (Ok { isDark = False, now = 0 }) route
+
+                            ( settingsFailed, _ ) =
+                                Shared.update route
+                                    (SharedMsg.GotSystemSettings (Err { httpError = Http.Timeout, formErrors = Dict.empty, errors = [] }))
+                                    shared
+
+                            ( waterfall, _ ) =
+                                Waterfall.init True "wf-a" Nothing
+
+                            ( updatedWaterfall, _ ) =
+                                Waterfall.update
+                                    settingsFailed
+                                    anonymousUser
+                                    (Waterfall.TickTimeTick (Time.millisToPosix 0))
+                                    { waterfall
+                                        | messages =
+                                            Messages.fromList
+                                                [ ( 1, { messageStub | networkIds = Just [ 7 ] } ) ]
+                                    }
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal True settingsFailed.systemSettingsLoaded
+                            , \_ -> Expect.equal (Set.singleton 7) updatedWaterfall.networkIdsRequested
+                            ]
+                            ()
+        , test "#3598 network hydration retries temporary failures once and exhausts omitted responses" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-duty" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            ( shared, _ ) =
+                                Shared.init (Ok { isDark = False, now = 0 }) (Route.fromUrl () url)
+
+                            ( waterfall, _ ) =
+                                Waterfall.init True "wf-a" Nothing
+
+                            ( failed, _ ) =
+                                Waterfall.update shared anonymousUser
+                                    (Waterfall.GotNetworksInfo [ 7 ] (Err { httpError = Http.Timeout, formErrors = Dict.empty, errors = [] }))
+                                    { waterfall | networkIdsRequested = Set.fromList [ 7, 8 ] }
+
+                            ( ticked, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.TickTimeTick (Time.millisToPosix 1000)) failed
+
+                            ( completed, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.GotNetworksInfo [ 8 ] (Ok [])) ticked
+
+                            ( retried, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.RetryNetworks [ 7 ]) completed
+
+                            ( exhausted, _ ) =
+                                Waterfall.update shared anonymousUser
+                                    (Waterfall.GotNetworksInfo [ 7 ] (Err { httpError = Http.Timeout, formErrors = Dict.empty, errors = [] }))
+                                    retried
+
+                            ( tickedExhausted, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.TickTimeTick (Time.millisToPosix 2000))
+                                    { exhausted
+                                        | messages =
+                                            Messages.fromList
+                                                [ ( 1, { messageStub | networkIds = Just [ 7, 8 ] } ) ]
+                                    }
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal (Set.singleton 8) failed.networkIdsRequested
+                            , \_ -> Expect.equal (Set.singleton 7) failed.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal Set.empty failed.networkIdsRetryExhausted
+                            , \_ -> Expect.equal failed.networkIdsWaitingForRetry ticked.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal Set.empty completed.networkIdsRequested
+                            , \_ -> Expect.equal (Set.singleton 7) completed.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal (Set.singleton 8) completed.networkIdsRetryExhausted
+                            , \_ -> Expect.equal Set.empty retried.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal (Set.fromList [ 7, 8 ]) retried.networkIdsRetryExhausted
+                            , \_ -> Expect.equal Set.empty retried.networkIdsRequested
+                            , \_ -> Expect.equal (Set.fromList [ 7, 8 ]) exhausted.networkIdsRetryExhausted
+                            , \_ -> Expect.equal Set.empty tickedExhausted.networkIdsRequested
+                            ]
+                            ()
+        , test "#3598 permanent network hydration failures are immediately exhausted" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-duty" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            ( shared, _ ) =
+                                Shared.init (Ok { isDark = False, now = 0 }) (Route.fromUrl () url)
+
+                            ( waterfall, _ ) =
+                                Waterfall.init True "wf-a" Nothing
+
+                            ( failed, _ ) =
+                                Waterfall.update shared anonymousUser
+                                    (Waterfall.GotNetworksInfo [ 7 ] (Err { httpError = Http.BadStatus 403, formErrors = Dict.empty, errors = [] }))
+                                    { waterfall | networkIdsRequested = Set.singleton 7 }
+
+                            ( ticked, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.TickTimeTick (Time.millisToPosix 1000))
+                                    { failed
+                                        | messages =
+                                            Messages.fromList
+                                                [ ( 1, { messageStub | networkIds = Just [ 7 ] } ) ]
+                                    }
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal Set.empty failed.networkIdsRequested
+                            , \_ -> Expect.equal Set.empty failed.networkIdsWaitingForRetry
+                            , \_ -> Expect.equal (Set.singleton 7) failed.networkIdsRetryExhausted
+                            , \_ -> Expect.equal Set.empty ticked.networkIdsRequested
+                            ]
+                            ()
+        , test "refresh enrichment stays isolated to the owning waterfall" <|
             \_ ->
                 case Url.fromString "http://localhost/rer-duty" of
                     Nothing ->

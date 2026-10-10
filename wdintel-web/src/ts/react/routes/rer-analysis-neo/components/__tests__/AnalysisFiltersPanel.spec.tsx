@@ -421,6 +421,18 @@ describe('AnalysisFiltersPanel', () => {
     expect(renderedFilterLabels).not.toContain('Мережі');
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('keeps frequencies but hides networks when network hiding is enabled', async () => {
+    const view = await renderComponent(buildProps({ hideNetworks: true }));
+    rendered.push(view);
+
+    const renderedFilterLabels = analysisFilterFieldSpy.mock.calls.map(
+      ([callProps]) => (callProps as { label: string }).label,
+    );
+    expect(renderedFilterLabels).toContain('Частоти');
+    expect(renderedFilterLabels).not.toContain('Мережі');
+  });
+
   it('passes Elm-parity disabled states into the frequency and network filters', async () => {
     const props = buildProps({
       includeOnlyNewFreqs: true,
@@ -1073,10 +1085,17 @@ describe('AnalysisFiltersPanel', () => {
     expect(updateQueryState).toHaveBeenCalledWith({ onlyWithMedia: true });
   });
 
-  it('shows the RER report filter only when enabled', async () => {
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('shows the RER report filter only when enabled and networks are visible', async () => {
     const hidden = await renderComponent(buildProps());
     rendered.push(hidden);
     expect(hidden.container.textContent).not.toContain('для звіту РЕР');
+
+    const networkHidden = await renderComponent(
+      buildProps({ hideNetworks: true, rerReportFilterEnabled: true }),
+    );
+    rendered.push(networkHidden);
+    expect(networkHidden.container.textContent).not.toContain('для звіту РЕР');
 
     const updateQueryState = vi.fn();
     const visible = await renderComponent(

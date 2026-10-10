@@ -57,6 +57,7 @@ type alias ViewParams =
     , audioTranscriptionEnabled : Bool
     , audioTranscriptionCollapsed : Bool
     , disableBotTags : Bool
+    , hideNetworks : Bool
     }
 
 
@@ -1458,7 +1459,24 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
         messageColumn =
             let
                 networkBlock =
-                    case message.networkIds of
+                    if vps.hideNetworks then
+                        div [ class "font-medium" ]
+                            [ message.unit
+                                |> Maybe.map trim
+                                |> Maybe.andThen
+                                    (\unit ->
+                                        if String.isEmpty unit then
+                                            Nothing
+
+                                        else
+                                            Just unit
+                                    )
+                                |> Maybe.withDefault "Не встановлена"
+                                |> text
+                            ]
+
+                    else
+                        case message.networkIds of
                         Just networkIds ->
                             let
                                 networkItems =
@@ -1528,7 +1546,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     ]
                   <|
                     (markedTextModel
-                        |> Shared.MarkedText.viewWithMessageHintResults messageHintResults Nothing (Dict.values vps.networks) message.freq message.text (vps.pointTokenClickUrlFor message) metadataLinks
+                        |> Shared.MarkedText.viewWithMessageHintResults messageHintResults Nothing (if vps.hideNetworks then [] else Dict.values vps.networks) message.freq message.text (vps.pointTokenClickUrlFor message) metadataLinks
                     )
                 ]
             ]
@@ -1561,7 +1579,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 |> List.map
                     (\callsign ->
                         ( callsign
-                        , MessageHint.resolve message.networkIds vps.networks vps.messageCallsignsInfo callsign
+                        , MessageHint.resolveWithVisibility vps.hideNetworks message.networkIds vps.networks vps.messageCallsignsInfo callsign
                         )
                     )
                 |> Dict.fromList

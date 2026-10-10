@@ -1,4 +1,4 @@
-module Pages.RerAnalysis exposing (Model, Msg, init, page, update)
+module Pages.RerAnalysis exposing (Model, Msg, getInboxReq, init, page, update)
 
 import Api
 import Auth
@@ -311,6 +311,7 @@ init user route _ =
             , audioTranscriptionEnabled = False
             , analysisAudioTranscriptionCollapsed = False
             , disableBotTags = False
+            , hideNetworks = False
             , withoutModelTags = False
             , editSidebar = Nothing
             , eventLastId = Nothing
@@ -431,14 +432,14 @@ getInboxReq model =
             Just model.unitsExactMatchOnly
     , onlyWithMedia = Just False
     , selectedNetworks =
-        if model.withoutNetwork then
+        if model.hideNetworks || model.withoutNetwork then
             Nothing
 
         else
             model.networksSelected
                 |> List.filterMap String.toInt
                 |> emptyToNothing
-    , withoutNetwork = Just model.withoutNetwork
+    , withoutNetwork = Just (not model.hideNetworks && model.withoutNetwork)
     , onlyWithNetwork = Nothing
     , withoutModelTags = Just model.withoutModelTags
     }
@@ -523,7 +524,7 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
                 else
                     Nothing
             , selectedNetworks =
-                if model.withoutNetwork then
+                if model.hideNetworks || model.withoutNetwork then
                     Nothing
 
                 else
@@ -531,7 +532,7 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
                         |> List.filterMap String.toInt
                         |> emptyToNothing
             , withoutNetwork =
-                if model.withoutNetwork then
+                if not model.hideNetworks && model.withoutNetwork then
                     Just True
 
                 else
@@ -789,8 +790,8 @@ allAnalysisCountRequests =
     [ MessageStatsCountRequest, UnitMatchStatsCountRequest ] ++ analysisStatsCountRequests
 
 
-analysisCountRequests : B.AnalysisStatsReq -> List StatsCountRequest
-analysisCountRequests req =
+analysisCountRequests : Bool -> B.AnalysisStatsReq -> List StatsCountRequest
+analysisCountRequests hideNetworks req =
     [ MessageStatsCountRequest ]
         ++ (if hasSelectedAnalysisUnits req then
                 [ UnitMatchStatsCountRequest ]
@@ -798,7 +799,11 @@ analysisCountRequests req =
             else
                 []
            )
-        ++ analysisStatsCountRequests
+        ++ List.filter
+            (\request ->
+                not hideNetworks || request /= StatsCountFieldRequest NetworksCountField
+            )
+            analysisStatsCountRequests
 
 
 analysisCountRequestEffect : Int -> B.AnalysisStatsReq -> StatsCountRequest -> Effect Msg
@@ -872,7 +877,7 @@ startAnalysisCountStats req model =
             model.statsCountGeneration + 1
 
         requests =
-            analysisCountRequests req
+            analysisCountRequests model.hideNetworks req
 
         activeRequests =
             List.take analysisCountMaxConcurrent requests
@@ -1240,7 +1245,7 @@ loadInitialFilterStats model =
                     List.length model.groupsSelected > 0
 
                 NetworksFilter ->
-                    model.radioFeaturesAllowed && List.length model.networksSelected > 0
+                    model.radioFeaturesAllowed && not model.hideNetworks && List.length model.networksSelected > 0
 
         all =
             [ AorsFilter, LocationsFilter, PostsFilter, UnitsFilter, FreqsFilter, CallsignsFilter, SendersFilter, GroupsFilter, NetworksFilter ]
@@ -1507,7 +1512,7 @@ loadNetworksForMessages shared model messages =
         missingIds =
             missingNetworkIdsForMessages shared model messages
     in
-    if List.isEmpty missingIds then
+    if not model.systemSettingsLoaded || model.hideNetworks || List.isEmpty missingIds then
         E.none
 
     else
@@ -1614,6 +1619,7 @@ update user shared route msg model =
                             | systemSettingsLoaded = True
                             , audioTranscriptionEnabled = rsp.enableAudioTranscription
                             , disableBotTags = rsp.disableBotTags
+                            , hideNetworks = rsp.hideNetworks
                             , analysisAorFilterEnabled = rsp.analysisAorFilterEnabled
                         }
 
@@ -1623,6 +1629,7 @@ update user shared route msg model =
                             , systemSettingsLoaded = True
                             , audioTranscriptionEnabled = rsp.enableAudioTranscription
                             , disableBotTags = rsp.disableBotTags
+                            , hideNetworks = rsp.hideNetworks
                             , analysisAorFilterEnabled = rsp.analysisAorFilterEnabled
                         }
 
@@ -2085,40 +2092,48 @@ update user shared route msg model =
             )
 
         GotStatsNetworks (Err e) ->
-            ( model
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e
-            )
+            if model.hideNetworks then
+                ( model, E.none )
+
+            else
+                ( model
+                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e
+                )
 
         GotStatsNetworks (Ok rsp) ->
-            let
-                findNetworkName networkId =
-                    rsp.networkNames
-                        |> List.filter (\name -> name.id == networkId)
-                        |> List.head
-                        |> Maybe.map .name
-                        |> Maybe.withDefault ("Network " ++ String.fromInt networkId)
-            in
-            ( { model
-                | networksStats = Success rsp.networks
-                , networkNames = rsp.networkNames
-                , selNetworkMenu =
-                    rsp.networks
-                        |> List.sortBy (\network -> findNetworkName network.networkId)
-                        |> List.map
-                            (\network ->
-                                let
-                                    networkName =
-                                        findNetworkName network.networkId
-                                in
-                                Select.customMenuItem
-                                    { item = String.fromInt network.networkId
-                                    , label = networkName
-                                    , view = Html.Styled.fromUnstyled (menuItemWithCount networkName network.count)
-                                    }
-                            )
-              }
-            , E.none
-            )
+            if model.hideNetworks then
+                ( model, E.none )
+
+            else
+                let
+                    findNetworkName networkId =
+                        rsp.networkNames
+                            |> List.filter (\name -> name.id == networkId)
+                            |> List.head
+                            |> Maybe.map .name
+                            |> Maybe.withDefault ("Network " ++ String.fromInt networkId)
+                in
+                ( { model
+                    | networksStats = Success rsp.networks
+                    , networkNames = rsp.networkNames
+                    , selNetworkMenu =
+                        rsp.networks
+                            |> List.sortBy (\network -> findNetworkName network.networkId)
+                            |> List.map
+                                (\network ->
+                                    let
+                                        networkName =
+                                            findNetworkName network.networkId
+                                    in
+                                    Select.customMenuItem
+                                        { item = String.fromInt network.networkId
+                                        , label = networkName
+                                        , view = Html.Styled.fromUnstyled (menuItemWithCount networkName network.count)
+                                        }
+                                )
+                    }
+                , E.none
+                )
 
         GotStatsMetadata (Err e) ->
             ( { model | metadataStats = Failure e }
@@ -2313,6 +2328,7 @@ update user shared route msg model =
                     , audioTranscriptionEnabled = model.audioTranscriptionEnabled
                     , audioTranscriptionCollapsed = model.analysisAudioTranscriptionCollapsed
                     , disableBotTags = model.disableBotTags
+                    , hideNetworks = model.hideNetworks
                     }
 
                 res =
@@ -4018,65 +4034,69 @@ update user shared route msg model =
                     ( model, E.none )
 
         SelNetworkMsg imsg ->
-            case ( model.from.datePosix, model.to.datePosix ) of
-                ( Just dtFromPosix, Just dtToPosix ) ->
-                    let
-                        ( mAction, imodel2, icmd ) =
-                            Select.update imsg model.selNetworkState
+            if model.hideNetworks then
+                ( model, E.none )
 
-                        ( updatedSelectedItems, state ) =
-                            Utils.Select.multiUpdMenuOpen mAction model.networksSelected imodel2
+            else
+                case ( model.from.datePosix, model.to.datePosix ) of
+                    ( Just dtFromPosix, Just dtToPosix ) ->
+                        let
+                            ( mAction, imodel2, icmd ) =
+                                Select.update imsg model.selNetworkState
 
-                        m2 =
-                            { model
-                                | selNetworkState = state
-                                , networksSelected = updatedSelectedItems
-                                , withoutNetwork =
-                                    if List.isEmpty updatedSelectedItems then
-                                        model.withoutNetwork
+                            ( updatedSelectedItems, state ) =
+                                Utils.Select.multiUpdMenuOpen mAction model.networksSelected imodel2
 
-                                    else
-                                        False
-                            }
+                            m2 =
+                                { model
+                                    | selNetworkState = state
+                                    , networksSelected = updatedSelectedItems
+                                    , withoutNetwork =
+                                        if List.isEmpty updatedSelectedItems then
+                                            model.withoutNetwork
 
-                        result =
-                            FiltersReloading.handleFilterState "networks" m2.focusedFilterItemsBeforeChange mAction m2.networksSelected m2.networksStats
+                                        else
+                                            False
+                                }
 
-                        ( m3, eff3 ) =
-                            case result of
-                                BeforeInteraction Outdated ->
-                                    ( setFocusedFilterSnapshot "networks" model.networksSelected { m2 | networksStats = Loading }
-                                    , E.getNetworks GotStatsNetworks (Query.analysisStatsParams dtFromPosix dtToPosix m2)
-                                    )
+                            result =
+                                FiltersReloading.handleFilterState "networks" m2.focusedFilterItemsBeforeChange mAction m2.networksSelected m2.networksStats
 
-                                BeforeInteraction UpToDate ->
-                                    ( setFocusedFilterSnapshot "networks" model.networksSelected m2, E.none )
+                            ( m3, eff3 ) =
+                                case result of
+                                    BeforeInteraction Outdated ->
+                                        ( setFocusedFilterSnapshot "networks" model.networksSelected { m2 | networksStats = Loading }
+                                        , E.getNetworks GotStatsNetworks (Query.analysisStatsParams dtFromPosix dtToPosix m2)
+                                        )
 
-                                AfterInteraction Outdated ->
-                                    let
-                                        ( m_, eff_ ) =
-                                            loadCoreStatsAndPushUrl m2
+                                    BeforeInteraction UpToDate ->
+                                        ( setFocusedFilterSnapshot "networks" model.networksSelected m2, E.none )
 
-                                        m1_ =
-                                            invalidateFiltersState NetworksFilter m_
-                                    in
-                                    ( clearFocusedFilterSnapshot m1_, eff_ )
+                                    AfterInteraction Outdated ->
+                                        let
+                                            ( m_, eff_ ) =
+                                                loadCoreStatsAndPushUrl m2
 
-                                AfterInteraction UpToDate ->
-                                    ( clearFocusedFilterSnapshot m2, E.none )
+                                            m1_ =
+                                                invalidateFiltersState NetworksFilter m_
+                                        in
+                                        ( clearFocusedFilterSnapshot m1_, eff_ )
 
-                                _ ->
-                                    ( m2, E.none )
-                    in
-                    ( m3
-                    , E.batch <|
-                        [ E.sendCmd <| Cmd.map SelNetworkMsg icmd
-                        , eff3
-                        ]
-                    )
+                                    AfterInteraction UpToDate ->
+                                        ( clearFocusedFilterSnapshot m2, E.none )
 
-                _ ->
-                    ( model, E.none )
+                                    _ ->
+                                        ( m2, E.none )
+                        in
+                        ( m3
+                        , E.batch <|
+                            [ E.sendCmd <| Cmd.map SelNetworkMsg icmd
+                            , eff3
+                            ]
+                        )
+
+                    _ ->
+                        ( model, E.none )
 
         FilterUnitsInp s ->
             ( { model | filterUnits = s }, E.none )

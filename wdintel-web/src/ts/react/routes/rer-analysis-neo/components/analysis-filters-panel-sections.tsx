@@ -58,6 +58,7 @@ type Props = Pick<
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   unitsExactMatchOnlyDefault: boolean | null;
   analysisAorFilterEnabled: boolean;
+  hideNetworks: boolean;
   rerReportFilterEnabled: boolean;
   toggleSection: (section: FilterSectionId) => void;
 };
@@ -236,6 +237,7 @@ export function AnalysisFiltersPanelSections({
   queryState,
   unitsExactMatchOnlyDefault,
   analysisAorFilterEnabled,
+  hideNetworks,
   rerReportFilterEnabled,
   setIncludeOnlyNewFreqs,
   toggleSection,
@@ -409,7 +411,7 @@ export function AnalysisFiltersPanelSections({
           onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
         />
       </FilterSection>
-      {radioFeaturesAllowed ? (
+      {radioFeaturesAllowed && !hideNetworks ? (
         <FilterSection
           title="Мережі"
           countLabel={countLabel(
@@ -679,7 +681,7 @@ export function AnalysisFiltersPanelSections({
             label="Важливі"
             sx={compactCheckboxLabelSx}
           />
-          {rerReportFilterEnabled ? (
+          {rerReportFilterEnabled && !hideNetworks ? (
             <FormControlLabel
               control={
                 <Checkbox

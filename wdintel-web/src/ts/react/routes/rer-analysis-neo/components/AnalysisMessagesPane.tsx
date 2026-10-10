@@ -131,6 +131,7 @@ type Props = {
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   messageTimeBasis?: MessageTimeBasis;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
@@ -374,6 +375,7 @@ type AnalysisMessageCardItemProps = {
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   messageTimeBasis?: MessageTimeBasis;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
@@ -415,6 +417,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   tagsLoading,
   tagsLayout,
   hideBotTags,
+  hideNetworks,
   messageTimeBasis,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   collapseMediaPreviews,
@@ -453,6 +456,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       tagsLoading={tagsLoading}
       tagsLayout={tagsLayout}
       hideBotTags={hideBotTags}
+      hideNetworks={hideNetworks}
       messageTimeBasis={messageTimeBasis}
       collapseMediaPreviews={collapseMediaPreviews}
       messageTextPreviewLines={messageTextPreviewLines}
@@ -513,25 +517,19 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
             }
           : undefined
       }
-      onCopyEtalon={
-        etalonDisplayModel.copyEtalonValue == null
-          ? undefined
-          : () => {
-              void copyMessageValue(etalonDisplayModel.copyEtalonValue).then(() => {
-                onCopyFeedback(`etalon-${id}`);
-              });
-            }
+      onCopyEtalon={(value) => {
+        void copyMessageValue(value).then(() => {
+          onCopyFeedback(`etalon-${id}`);
+        });
+      }}
+      onCopyLocation={(value) => {
+        void copyMessageValue(value).then(() => {
+          onCopyFeedback(`location-${id}`);
+        });
+      }}
+      onCreateReport={(visibleEtalonDisplayModel, focusTarget) =>
+        onCreateReport(id, visibleEtalonDisplayModel, focusTarget)
       }
-      onCopyLocation={
-        etalonDisplayModel.copyLocationValue == null
-          ? undefined
-          : () => {
-              void copyMessageValue(etalonDisplayModel.copyLocationValue).then(() => {
-                onCopyFeedback(`location-${id}`);
-              });
-            }
-      }
-      onCreateReport={(focusTarget) => onCreateReport(id, etalonDisplayModel, focusTarget)}
       onEditReport={onEditReport}
       onDelete={() => onDeleteOpen(id)}
       onEditDetails={(focusTarget) => onOpenEditor(id, focusTarget)}
@@ -601,6 +599,7 @@ function AnalysisMessagesPaneComponent({
   tagsLoading,
   tagsLayout,
   hideBotTags,
+  hideNetworks,
   messageTimeBasis,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   collapseMediaPreviews,
@@ -1317,6 +1316,7 @@ function AnalysisMessagesPaneComponent({
               tagsLoading={tagsLoading}
               tagsLayout={tagsLayout}
               hideBotTags={hideBotTags}
+              hideNetworks={hideNetworks}
               messageTimeBasis={messageTimeBasis}
               mediaSummaryEnabled={mediaSummaryEnabled}
               collapseMediaPreviews={collapseMediaPreviews}

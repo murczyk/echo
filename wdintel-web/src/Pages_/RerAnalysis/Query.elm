@@ -172,6 +172,12 @@ normalizeAnalysisStatsReqMetadata req =
 
 modelQueryState : Model -> B.RerAnalysisQueryState
 modelQueryState model =
+    (if model.hideNetworks then
+        \queryState -> { queryState | networksSelected = [], withoutNetwork = False }
+
+     else
+        identity
+    ) <|
     normalizeQueryStateNetworks <|
         normalizeQueryStateMetadata
             { dateFromStr = model.from.dateStr
@@ -288,7 +294,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
             partitionUnitSelections (normalizeUnitSelections model.unitsSelected)
 
         selectedNetworks =
-            if model.withoutNetwork then
+            if model.hideNetworks || model.withoutNetwork then
                 Nothing
 
             else
@@ -330,7 +336,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
         , deniedTags = Nothing
         , tagPresence = Nothing
         , selectedNetworks = selectedNetworks
-        , withoutNetwork = Just model.withoutNetwork
+        , withoutNetwork = Just (not model.hideNetworks && model.withoutNetwork)
         , onlyWithNetwork = Nothing
         , filterTagsOption = Nothing
         , unitsExactMatchOnly =

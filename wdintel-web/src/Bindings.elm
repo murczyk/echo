@@ -12883,6 +12883,7 @@ type alias SystemSettingsCurrentRsp =
     , showPelengDistanceToBattleline : Bool
     , hideOrbitData : Bool
     , disableBotTags : Bool
+    , hideNetworks : Bool
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
@@ -12924,6 +12925,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         , ( "hide_orbit_data", (Json.Encode.bool) struct.hideOrbitData )
         , ( "disable_bot_tags", (Json.Encode.bool) struct.disableBotTags )
+        , ( "hide_networks", (Json.Encode.bool) struct.hideNetworks )
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
@@ -12967,6 +12969,7 @@ type alias SystemSettingsItem =
     , showClassicAnalysis : Bool
     , showPelengDistanceToBattleline : Bool
     , disableBotTags : Bool
+    , hideNetworks : Bool
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
@@ -13016,6 +13019,7 @@ systemSettingsItemEncoder struct =
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
         , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         , ( "disable_bot_tags", (Json.Encode.bool) struct.disableBotTags )
+        , ( "hide_networks", (Json.Encode.bool) struct.hideNetworks )
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
@@ -13070,6 +13074,7 @@ type alias CreateSystemSettingsReq =
     , showClassicAnalysis : Bool
     , showPelengDistanceToBattleline : Bool
     , disableBotTags : Bool
+    , hideNetworks : Bool
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Maybe (Bool)
@@ -13114,6 +13119,7 @@ createSystemSettingsReqEncoder struct =
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
         , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         , ( "disable_bot_tags", (Json.Encode.bool) struct.disableBotTags )
+        , ( "hide_networks", (Json.Encode.bool) struct.hideNetworks )
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.aiPositionHighlightsEnabled )
@@ -25910,6 +25916,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hide_orbit_data" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_bot_tags" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hide_networks" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
@@ -25954,6 +25961,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_bot_tags" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hide_networks" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
@@ -26003,6 +26011,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_bot_tags" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hide_networks" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.nullable (Json.Decode.bool))))

@@ -34,6 +34,7 @@ export type UseAnalysisDataProps = {
   authUserName: string | null;
   currentUser: User | null;
   deferInitialLoad?: boolean;
+  hideNetworks?: boolean;
   focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
   leftPanelOpen?: boolean;
