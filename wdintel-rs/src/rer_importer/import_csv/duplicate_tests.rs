@@ -579,6 +579,98 @@ async fn issue_3650_legacy_duplicates_preserve_inboxes_and_reuse_missing_ones()
     .await;
 }
 
+#[tokio::test]
+#[serial_test::serial]
+async fn issue_3650_legacy_recovery_restores_missing_timestamp() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let context = csv_context(&env).await;
+    let mut redis = env.redis.clone();
+    let body = "02.10.2026 10:16:00\nlegacy CSV missing timestamp";
+    let timestamp = validate_historical_record(
+        context.lnow,
+        &RerCsvRecord {
+            source_record: 1,
+            body: body.into(),
+        },
+    )
+    .timestamp
+    .unwrap();
+    let id = insert_rer_csv_message(&context, body.into(), timestamp, &env.dbx)
+        .await
+        .unwrap();
+    let original = messages(&env.dbx, body).await.remove(0);
+    assert_legacy_timestamp_recovery(&context, body, id, timestamp, &original)
+        .await;
+    for (reused, duplicates) in [(1, 0), (0, 1)] {
+        assert_counts(
+            &import_bodies(&context, &mut redis, &[body], None)
+                .await
+                .unwrap(),
+            0,
+            reused,
+            duplicates,
+            0,
+        );
+        assert_eq!(messages(&env.dbx, body).await, vec![original.clone()]);
+    }
+    assert_eq!(
+        sigint_inbox_item::Entity::find_by_id(id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .datetime,
+        Some(timestamp)
+    );
+}
+
+async fn assert_legacy_timestamp_recovery(
+    context: &RerCsvImportContext<'_>,
+    body: &str,
+    id: i64,
+    timestamp: NaiveDateTime,
+    original: &signal_message::Model,
+) {
+    for tracked in [false, true] {
+        signal_message::ActiveModel {
+            id: Set(id),
+            timestamp: Set(None),
+            ..Default::default()
+        }
+        .update(context.dbx)
+        .await
+        .unwrap();
+        assert!(persistence::persist_rer_csv_message(
+            context,
+            body.into(),
+            None,
+        )
+        .await
+        .unwrap()
+        .is_none());
+        assert_eq!(
+            rer_csv_import_message::Entity::find_by_id(id)
+                .one(context.dbx)
+                .await
+                .unwrap()
+                .is_some(),
+            tracked
+        );
+        let outcome = persistence::persist_rer_csv_message(
+            context,
+            body.into(),
+            Some(timestamp),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(
+            matches!(outcome, RerCsvPersistence::Reused(existing_id) if existing_id == id)
+        );
+        assert_eq!(messages(context.dbx, body).await, vec![original.clone()]);
+    }
+}
+
 async fn assert_later_legacy_inbox_prevents_recovery(
     context: &RerCsvImportContext<'_>,
     redis: &mut redis::aio::ConnectionManager,

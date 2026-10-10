@@ -22,6 +22,7 @@ impl RerCsvPersistence {
 #[derive(FromQueryResult)]
 struct ExistingCsvMessage {
     id: i64,
+    timestamp: Option<NaiveDateTime>,
     tracked: bool,
     completed: bool,
     has_inbox: bool,
@@ -58,7 +59,7 @@ async fn find_existing_csv_message(
     ExistingCsvMessage::find_by_statement(Statement::from_sql_and_values(
         DbBackend::Postgres,
         r#"
-select m.id, p.message_id is not null as tracked,
+select m.id, m.timestamp, p.message_id is not null as tracked,
        p.completed_at is not null as completed,
        exists(select 1 from sigint_inbox_item i
               where i.id = m.id or i.id = any(p.inbox_item_ids)) as has_inbox
@@ -80,6 +81,27 @@ limit 1
     .one(txn)
     .await
     .c(h!())
+}
+
+async fn restore_csv_message_timestamp(
+    txn: &DatabaseTransaction,
+    message: &ExistingCsvMessage,
+    timestamp: Option<NaiveDateTime>,
+) -> anyhow::Result<bool> {
+    if message.timestamp.is_some() {
+        return Ok(true);
+    }
+    let Some(timestamp) = timestamp else {
+        return Ok(false);
+    };
+    txn.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "update signal_message set timestamp = $2 where id = $1 and timestamp is null",
+        [message.id.into(), timestamp.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(true)
 }
 
 async fn track_csv_message(
@@ -118,6 +140,13 @@ pub(super) async fn persist_rer_csv_message(
                 RerCsvPersistence::Duplicate(message.id)
             }
             Some(message) => {
+                if !restore_csv_message_timestamp(&txn, &message, timestamp)
+                    .await
+                    .context(h!())?
+                {
+                    txn.commit().await.c(h!())?;
+                    return Ok(None);
+                }
                 track_csv_message(context, &txn, message.id)
                     .await
                     .context(h!())?;
