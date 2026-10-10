@@ -137,6 +137,65 @@ test("#3724 returns a cited fallback when synthesis ignores cancellation", async
   assert.ok(fallback.includes("не завершено"));
 });
 
+test("#3724 synthesizes from a checkpoint when collected raw evidence exceeds context", async () => {
+  const oversized = {
+    ...evidence,
+    messages: [
+      {
+        ...evidence.messages[0],
+        text: "Verified source text. ".repeat(40_000),
+      },
+    ],
+  };
+  const checkpoint =
+    "Verified source summary [джерело](/rer-analysis-neo?m=source-42)";
+  for (const scenario of [
+    { evidence: oversized, checkpoint, expectedCalls: 1 },
+    { evidence: oversized, checkpoint: undefined, expectedCalls: 0 },
+    {
+      evidence: oversized,
+      checkpoint: checkpoint.repeat(10_000),
+      expectedCalls: 0,
+    },
+    { evidence: { messages: [], files: [] }, checkpoint, expectedCalls: 0 },
+  ]) {
+    let calls = 0;
+    const answer = await synthesizeBudgetEvidence(
+      {
+        engine,
+        apiKey: "fixture-capability",
+        policy,
+        systemPrompt: "Summarize evidence",
+        prompt: "Report",
+        evidence: scenario.evidence,
+        checkpoint: scenario.checkpoint,
+        maxTokens: 8192,
+        signal: new AbortController().signal,
+      },
+      async (_engine, context) => {
+        calls++;
+        assert.equal(context.messages.length, 2);
+        assert.ok(JSON.stringify(context.messages[1]).includes(checkpoint));
+        return {
+          stopReason: "stop",
+          content: [{ type: "text", text: checkpoint }],
+        } as any;
+      },
+    );
+    assert.equal(calls, scenario.expectedCalls);
+    if (scenario.expectedCalls) {
+      assert.equal(
+        chooseBudgetAnswer(answer, oversized, evidence.messages),
+        checkpoint,
+      );
+      assert.equal(
+        chooseBudgetAnswer("Uncited summary", oversized, evidence.messages),
+        budgetFallback(oversized),
+      );
+    } else assert.equal(answer, null);
+  }
+});
+
 test("#3724 does not turn revoked provider access into a completed partial answer", async () => {
   for (const summarize of [
     async () =>

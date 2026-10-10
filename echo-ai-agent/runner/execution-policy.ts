@@ -211,6 +211,8 @@ export async function synthesizeBudgetEvidence(
 ): Promise<string | null> {
   const { engine, policy, signal } = options;
   if (signal.aborted) return null;
+  const records = evidenceRecords(options.evidence);
+  if (!records.length) return null;
   const messages: Context["messages"] = [
     { role: "user", content: options.prompt, timestamp: Date.now() },
   ];
@@ -233,8 +235,7 @@ export async function synthesizeBudgetEvidence(
       messages.push(checkpoint);
     }
   }
-  let sourceCount = 0;
-  for (const record of evidenceRecords(options.evidence).reverse()) {
+  for (const record of records.reverse()) {
     const message = {
       role: "user" as const,
       content: JSON.stringify(record),
@@ -244,9 +245,8 @@ export async function synthesizeBudgetEvidence(
     if (tokens > remaining) continue;
     remaining -= tokens;
     messages.push(message);
-    sourceCount += 1;
   }
-  if (sourceCount === 0) return null;
+  if (messages.length === 1) return null;
   let onAbort: () => void = () => undefined;
   const aborted = new Promise<null>((resolve) => {
     onAbort = () => resolve(null);
