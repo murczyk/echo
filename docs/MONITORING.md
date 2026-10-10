@@ -24,6 +24,9 @@ document with its new link.
 
 ## For agents over SSH
 
+Use `ssh signoz-echo`; `ssh signoz-echo hostname` returns
+`ct-signoz-echo`.
+
 The central logs are in the `signoz_logs.logs_v2` ClickHouse table on
 `signoz-echo`. Useful fields are:
 
@@ -153,6 +156,31 @@ AND resources_string['service.name'] = {service_name:String}
 Common Echo services include `wdintel-rs`, `wdintel-rs-bgworker`,
 `wdintel-rs-report-worker`, `postgresql`, `echo-signal-bot`, and
 `echo-whatsapp-bot`.
+
+### Alert API credentials
+
+Alert management needs an authenticated SigNoz API key with alert-write
+permission. The existing active `claude` service account has an `api` key and
+the `signoz-editor` role; that role can create and update alerts. An Admin
+credential is also sufficient. SSH and ClickHouse credentials are separate
+from API authentication.
+
+The existing service-account key is stored in `factor_api_key` in
+`/var/lib/signoz/signoz.db`, linked to `service_account` and
+`service_account_role`. Read it only on `signoz-echo` with a SQLite
+`mode=ro` connection and put it in `SIGNOZ_API_KEY` for the temporary remote
+process. Use `SIGNOZ_URL=http://127.0.0.1:8080` there. Never print the key,
+copy it into this repository, change authentication tables, or use
+`SIGNOZ_JWT_SECRET` as an API credential. Check account status, expiry and
+permissions again when using the key.
+
+The [OCR storage runbook](../echo-document-extractor/STORAGE_RECOVERY.md#monitoring-and-rollback)
+owns its alert installer and thresholds. It targets
+`ct-echo-document-extractor/worker` and sends to `mattermost monitoring`:
+spool warnings/critical above 160/180 GiB, and free-space warnings/critical
+below 40/25 GiB, sustained for five minutes. Verify saved rules through the
+authenticated API after applying them. An enabled rule in `inactive` state
+is healthy when its threshold is not currently met.
 
 ### Audit messenger media storage
 

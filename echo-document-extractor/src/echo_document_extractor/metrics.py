@@ -102,6 +102,11 @@ class ServiceMetrics:
             "Tracked spool bytes",
             registry=self.registry,
         )
+        self.storage_deferrals = Counter(
+            "echo_document_extractor_storage_deferrals_total",
+            "Upstream storage admission deferrals without consuming retry attempts",
+            registry=self.registry,
+        )
         self.spool_free_bytes = Gauge(
             "echo_document_extractor_spool_free_bytes",
             "Free bytes on the spool filesystem",

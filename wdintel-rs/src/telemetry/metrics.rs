@@ -155,6 +155,7 @@ pub struct Metrics {
     media_summary_attempts: Counter<u64>,
     media_summary_duration: Histogram<f64>,
     media_summary_coordinate_drops: Counter<u64>,
+    ocr_storage_deferrals: Counter<u64>,
 }
 
 impl Metrics {
@@ -385,6 +386,11 @@ impl Metrics {
             .with_unit("1")
             .build();
 
+        let ocr_storage_deferrals = meter
+            .u64_counter(crate::config::OCR_STORAGE_DEFERRALS_COUNT)
+            .with_description("OCR storage admission deferrals")
+            .with_unit("1")
+            .build();
         Self {
             provider,
             synchronized_files,
@@ -419,7 +425,12 @@ impl Metrics {
             media_summary_attempts,
             media_summary_duration,
             media_summary_coordinate_drops,
+            ocr_storage_deferrals,
         }
+    }
+
+    pub(crate) fn record_ocr_storage_deferral(&self) {
+        self.ocr_storage_deferrals.add(1, &[]);
     }
 
     pub(crate) fn record_media_summary_attempt(

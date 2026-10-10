@@ -383,6 +383,8 @@ pub const OCR_MAX_IN_FLIGHT_JOBS: usize = 4;
 pub const OCR_MAX_ATTEMPTS: i32 = 8;
 pub const OCR_RETRY_BASE_SECS: i64 = 10;
 pub const OCR_RETRY_MAX_SECS: i64 = 15 * 60;
+pub const OCR_STORAGE_DEFERRALS_COUNT: &str =
+    "echo.ocr.storage_deferrals.count";
 pub const OCR_MAX_ERROR_CHARS: usize = 1_200;
 pub const OCR_HTTP_TIMEOUT_SECS: u64 = 10 * 60;
 pub const OCR_STATUS_TIMEOUT_SECS: u64 = 15;

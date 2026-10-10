@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import sqlite3
@@ -27,7 +28,7 @@ from echo_document_extractor.package_archive import validate_package_zip
 from echo_document_extractor.pipeline import _resolve_inputs
 from echo_document_extractor.service_config import RuntimeConfig, ServiceLimits, ServiceSettings
 from echo_document_extractor.storage import StoragePressureError, ensure_capacity, parse_manifest
-from echo_document_extractor.worker import _all_remote_model_families_failed, _job_inputs
+from echo_document_extractor.worker import Worker, _all_remote_model_families_failed, _job_inputs
 
 TOKEN = "a" * 48
 
@@ -282,6 +283,115 @@ def test_queue_claims_up_to_configured_active_job_limit(tmp_path: Path) -> None:
     assert queue.claim("worker", 30, max_active_jobs=2) is not None
     assert queue.claim("worker", 30, max_active_jobs=2) is not None
     assert queue.claim("worker", 30, max_active_jobs=2) is None
+
+
+async def test_native_storage_admission_preserves_job_and_retry_budget_3743(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worker = Worker(runtime_config(tmp_path), start_metrics=False)
+    root = worker.service.spool_dir / "native-job"
+    (root / "inputs").mkdir(parents=True)
+    source = root / "inputs" / "page.png"
+    source.write_bytes(png_bytes())
+    manifest = {"inputs": [source.name], "metadata": {"attachment_native": True}}
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    job, _ = worker.queue.submit("native-job", "local-key", "digest", root, source.stat().st_size, 1)
+    html = b"<html><body><section>Recovered OCR text</section></body></html>"
+    result = io.BytesIO()
+    with zipfile.ZipFile(result, "w") as archive:
+        archive.writestr("document.html", html)
+        archive.writestr("manifest.json", json.dumps({
+            "file_hashes": {"document.html": hashlib.sha256(html).hexdigest()}
+        }))
+    keys = []
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            keys.append(request.headers["Idempotency-Key"])
+            assert source.read_bytes() in request.content
+            if len(keys) <= 6:
+                return httpx.Response(507)
+            return httpx.Response(202, json={"id": "upstream-job"})
+        if request.url.path.endswith("/result"):
+            return httpx.Response(200, content=result.getvalue())
+        return httpx.Response(200, json={"state": "completed", "quality_status": "accepted"})
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client(
+        transport=httpx.MockTransport(upstream), **kwargs
+    ))
+    monkeypatch.setenv("ECHO_NATIVE_OCR_BASE_URL", "http://upstream.test")
+    monkeypatch.setenv("ECHO_NATIVE_OCR_TOKEN", TOKEN)
+    for _ in range(6):
+        running = worker.queue.claim(worker.owner, 300)
+        assert running and running.id == job.id and running.attempts == 1
+        before = time.time()
+        await worker.process(running)
+        deferred = worker.queue.get(job.id)
+        assert deferred.state == "retry_wait" and deferred.attempts == 0
+        assert deferred.retry_at >= before + 60
+        assert deferred.lease_owner is None and deferred.lease_expires_at is None
+        assert deferred.idempotency_key == job.idempotency_key
+        assert source.is_file() and (root / "manifest.json").read_text() == json.dumps(manifest)
+        with worker.queue.connect() as connection:
+            connection.execute("UPDATE jobs SET retry_at = 0 WHERE id = ?", (job.id,))
+    await worker.process(worker.queue.claim(worker.owner, 300))
+    completed = worker.queue.get(job.id)
+    assert completed.state == "completed" and completed.attempts == 1
+    validate_package_zip(Path(completed.result_path))
+    with zipfile.ZipFile(completed.result_path) as archive:
+        assert b"Recovered OCR text" in archive.read("document.html")
+    assert keys == ["native-native-job-0"] * 7
+    assert worker.metrics.storage_deferrals._value.get() == 6
+
+
+@pytest.mark.parametrize("loss", ["owner", "expired", "cancel"])
+def test_storage_deferral_respects_lease_and_cancellation(tmp_path: Path, loss: str) -> None:
+    queue = JobQueue(tmp_path / "jobs.sqlite3")
+    job, _ = queue.submit("job", "key", "digest", tmp_path, 1, 1)
+    queue.claim("worker", 300)
+    if loss == "cancel":
+        queue.cancel(job.id)
+        deferred = queue.defer_storage(job.id, "worker", "HTTP 507", 60)
+        assert deferred.state == "cancelled" and deferred.retry_at is None
+        assert deferred.attempts == 0 and deferred.lease_owner is None
+    else:
+        if loss == "expired":
+            with queue.connect() as connection:
+                connection.execute("UPDATE jobs SET lease_expires_at = 0 WHERE id = ?", (job.id,))
+        before = queue.get(job.id)
+        with pytest.raises(RuntimeError, match="lease was lost"):
+            queue.defer_storage(job.id, "other" if loss == "owner" else "worker", "HTTP 507", 60)
+        assert queue.get(job.id) == before
+
+
+@pytest.mark.parametrize("method,status", [("POST", 400), ("POST", 503), ("GET", 507)])
+async def test_unrelated_upstream_errors_keep_existing_retry_behavior(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str, status: int
+) -> None:
+    worker = Worker(runtime_config(tmp_path), start_metrics=False)
+    source = tmp_path / "page.png"
+    source.write_bytes(png_bytes())
+    (tmp_path / "manifest.json").write_text("{}")
+    job, _ = worker.queue.submit("job", "key", "digest", tmp_path, 1, 1)
+    client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(
+            status if request.method == method else 202, json={"id": "upstream"}
+        )), **kwargs
+    ))
+    monkeypatch.setenv("ECHO_NATIVE_OCR_BASE_URL", "http://upstream.test")
+    monkeypatch.setenv("ECHO_NATIVE_OCR_TOKEN", TOKEN)
+
+    async def extract(running):
+        return (await worker._native_image(running, source, tmp_path, 0))[1]
+
+    monkeypatch.setattr(worker, "_extract", extract)
+    await worker.process(worker.queue.claim(worker.owner, 300))
+    failed = worker.queue.get(job.id)
+    assert failed.attempts == 1
+    assert failed.state == ("retry_wait" if status == 503 else "failed")
+    assert worker.metrics.storage_deferrals._value.get() == 0
 
 
 def test_gemma_request_stops_at_bounded_end_marker() -> None:
