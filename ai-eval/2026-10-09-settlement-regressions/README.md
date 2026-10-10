@@ -21,6 +21,14 @@ New link rows start pending; the settlement worker marks them undefined
 after catalog resolution. An independently mentioned н.п. Горіхове remains
 recognizable.
 
+Settlement links use `is_undefined = NULL` while pending, `false` after a
+successful worker or one-off match, and `true` after an unresolved result.
+Apply `m20261010_073418_inbox_settlement_processed_flag` before starting the
+updated worker. Existing linked rows with `NULL` remain linked and are not
+requeued or backfilled. Stop updated workers before rollback. Migration
+rollback restores `false` flags to `NULL` before restoring the previous
+constraint; it retains settlement IDs and text.
+
 `baseline-prompt.txt` is the exact effective saved prompt override;
 `baseline.json` records the engine and dictionary selection. AOR 2 uses the
 server default: Харківська, Донецька, Луганська and Білгородська. Курська is
@@ -93,8 +101,11 @@ installed in `wdintel-rs/data/`. Compared with the prior artifacts, each has
 exactly five added entries and no removed or changed rows: Анищине, Іващине,
 Рибалкине, Рибалчине and operational spelling Рибалкіне. Existing IDs and
 coordinates are retained for old/new physical aliases. JSON IDs are separate
-from PostgreSQL IDs; coordinate resolution maps all variants to legacy SQL
-IDs 79948, 98911 and 65447.
+from PostgreSQL IDs. Exact PostgreSQL names now resolve to their own rows:
+Анищине, Іващине and Рибалчине use IDs 2000000001, 2000000002 and 2000000003.
+Other dictionary variants still use coordinate fallback to legacy SQL IDs
+79948, 98911 and 65447. Explicit aliases in `settlement_alias` resolve to their
+referenced PostgreSQL IDs within the configured AOR/default catalog.
 
 ## Rollout and recovery
 

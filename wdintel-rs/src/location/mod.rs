@@ -254,7 +254,7 @@ fn select_settlements_data(
     }
 }
 
-fn select_settlements_sources<'a>(
+pub(crate) fn select_settlements_sources<'a>(
     config: &'a SettlementsDataConfig,
     m_aor_ids: Option<&[i64]>,
 ) -> Vec<&'a SettlementsData> {

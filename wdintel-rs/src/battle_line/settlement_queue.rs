@@ -1,8 +1,7 @@
 use crate::battle_line::types::BattleLineLocationResult;
 use crate::battle_line::{
     active_battle_line_id, ensure_active_battle_line, lock_updates,
-    normalize_settlement_name, resolve_inbox_item_aors,
-    resolve_locations_to_settlements_with_db,
+    resolve_inbox_item_aors, resolve_locations_to_settlements_with_db,
 };
 use crate::config::{
     get_tz, INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE,
@@ -17,6 +16,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::location::utils::to_location_list;
+use crate::settlement::normalize_name;
 use crate::types::{info, warn, Env, Mode, ShortContext};
 use crate::utils::parse_local_datetime;
 use crate::{h, OneoffLinkInboxSettlementsPs};
@@ -69,7 +69,7 @@ impl SettlementResolutionCache {
         SettlementResolutionCacheKey {
             active_battle_line_version_id,
             aor_ids,
-            settlement_text: normalize_settlement_name(settlement_text),
+            settlement_text: normalize_name(settlement_text),
         }
     }
 
@@ -545,7 +545,7 @@ where
     let matched = settlement_id.is_some();
     let mut row = row.into_active_model();
     row.settlement_id = Set(settlement_id);
-    row.is_undefined = Set((!matched).then_some(true));
+    row.is_undefined = Set(Some(!matched));
     row.update(dbx).await.c(h!())?;
     Ok(item_id)
 }
@@ -791,7 +791,7 @@ async fn process_oneoff_item_in_transaction(
             )
             .col_expr(
                 sigint_inbox_item_settlement::Column::IsUndefined,
-                Expr::value((!matched).then_some(true)),
+                Expr::value(Some(!matched)),
             )
             .filter(
                 sigint_inbox_item_settlement::Column::ItemId
@@ -1127,8 +1127,16 @@ returning id
         )
         .await
         .unwrap();
+        crate::entities::settlement_alias::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            settlement_id: Set(79948),
+            text: Set("Село_3383_перевірка".to_string()),
+        }
+        .insert(&setup)
+        .await
+        .unwrap();
         let location_v2 =
-            "|АНИЩИНЕ|ІВАЩИНЕ|РИБАЛКІНЕ|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|";
+            "|АНИЩИНЕ|ІВАЩИНЕ|РИБАЛКІНЕ|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|СЕЛО_3383_ПЕРЕВІРКА|";
         let item = sigint_inbox_item::ActiveModel {
             id: Set(message.id),
             location_v2: Set(Some(location_v2.to_string())),
@@ -1157,10 +1165,11 @@ returning id
             .all(&env.dbx)
             .await
             .unwrap();
-        assert_eq!(rows.len(), 5);
+        assert_eq!(rows.len(), 6);
         for (text, settlement_id) in [
-            ("ІВАЩИНЕ", Some(98911)),
-            ("АНИЩИНЕ", Some(79948)),
+            ("ІВАЩИНЕ", Some(2_000_000_002)),
+            ("АНИЩИНЕ", Some(2_000_000_001)),
+            ("СЕЛО_3383_ПЕРЕВІРКА", Some(79948)),
             ("ВЕРХНЄ ГОРІХОВЕ", None),
             ("ЗАЛИВНИЙ", None),
             ("РИБАЛКІНЕ", Some(65447)),
@@ -1168,10 +1177,7 @@ returning id
             let row =
                 rows.iter().find(|row| row.settlement_text == text).unwrap();
             assert_eq!(row.settlement_id, settlement_id);
-            assert_eq!(
-                row.is_undefined,
-                settlement_id.is_none().then_some(true)
-            );
+            assert_eq!(row.is_undefined, Some(settlement_id.is_none()));
         }
         reconcile_item_locations(
             &env.dbx,
@@ -1191,6 +1197,57 @@ returning id
             .await
             .unwrap();
         assert_eq!(retained, rows);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn processed_settlement_flag_migration_roundtrips_3383() {
+        use echo_migration::MigratorTrait;
+
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let (row, _, settlement_id) =
+            insert_settlement_stats_test_fixture(&txn).await.unwrap();
+        persist_settlement_resolution(&txn, row.clone(), Some(settlement_id))
+            .await
+            .unwrap();
+        let migration = echo_migration::Migrator::migrations()
+            .into_iter()
+            .find(|migration| {
+                migration.name()
+                    == "m20261010_073418_inbox_settlement_processed_flag"
+            })
+            .unwrap();
+        let manager = echo_migration::SchemaManager::new(&txn);
+        migration.down(&manager).await.unwrap();
+        let restored = sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(restored.settlement_id, Some(settlement_id));
+        assert_eq!(restored.is_undefined, None);
+        let rejected = txn.begin().await.unwrap();
+        assert!(persist_settlement_resolution(
+            &rejected,
+            restored.clone(),
+            Some(settlement_id)
+        )
+        .await
+        .is_err());
+        rejected.rollback().await.unwrap();
+        migration.up(&manager).await.unwrap();
+        persist_settlement_resolution(&txn, restored, Some(settlement_id))
+            .await
+            .unwrap();
+        let rejected = txn.begin().await.unwrap();
+        let mut invalid = row.into_active_model();
+        invalid.settlement_id = Set(Some(settlement_id));
+        invalid.is_undefined = Set(Some(true));
+        assert!(invalid.update(&rejected).await.is_err());
+        rejected.rollback().await.unwrap();
+        txn.rollback().await.unwrap();
     }
 
     #[test]
@@ -1268,6 +1325,16 @@ returning id
         assert_eq!(cached.chosen_settlement_id, Some(2_133));
         assert!(resolution_cache.get(8, &[2, 3], "КУП’ЯНСЬК").is_none());
         assert!(resolution_cache.get(7, &[2], "КУП’ЯНСЬК").is_none());
+        let cached = resolution_cache.get(7, &[2, 3], "КУП’ЯНСЬК").unwrap();
+        resolution_cache.insert(
+            7,
+            &[2, 3],
+            BattleLineLocationResult {
+                location: "#3383 Straße".to_string(),
+                ..cached
+            },
+        );
+        assert!(resolution_cache.get(7, &[2, 3], "#3383 STRASSE").is_none());
     }
 
     #[tokio::test]
@@ -1401,7 +1468,7 @@ returning id
             .unwrap()
             .unwrap();
         assert_eq!(row.settlement_id, Some(new_settlement_id));
-        assert_eq!(row.is_undefined, None);
+        assert_eq!(row.is_undefined, Some(false));
         assert_eq!(
             stats,
             OneoffLinkInboxSettlementsStats {

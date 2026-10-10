@@ -5916,6 +5916,42 @@ export type SaveAiCallsignWorkerSettingsReq = {
   aiEngineId: string | null;
 };
 
+export type SettlementAliasSettlement = {
+  id: number;
+  name: string;
+  district: string | null;
+  region: string | null;
+};
+
+export type SettlementAliasItem = {
+  id: string;
+  settlement: SettlementAliasSettlement;
+  text: string;
+};
+
+export type ListSettlementAliasesReq = {
+  afterId: string | null;
+};
+
+export type ListSettlementAliasesRsp = {
+  items: Array<SettlementAliasItem>;
+  nextId: string | null;
+};
+
+export type SearchAliasSettlementsReq = {
+  query: string;
+};
+
+export type SaveSettlementAliasReq = {
+  id: string | null;
+  settlementId: number;
+  text: string;
+};
+
+export type SettlementAliasIdReq = {
+  id: string;
+};
+
 export type AiSettlementEngineItem = {
   id: string;
   name: string;

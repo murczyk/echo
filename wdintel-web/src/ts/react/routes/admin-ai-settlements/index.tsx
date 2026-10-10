@@ -37,10 +37,11 @@ import { AiSettlementMessageEditor } from './AiSettlementMessageEditor';
 import { AiSettlementPromptPanel } from './AiSettlementPromptPanel';
 import { AiSettlementsTable } from './AiSettlementsTable';
 import { AiSettlementWorkerSettings } from './AiSettlementWorkerSettings';
+import { SettlementAliasesPanel } from './SettlementAliasesPanel';
 
 type AiSettlementScreen =
   { kind: 'list' } | { kind: 'create' } | { kind: 'edit'; message: AiSettlementTestMessageItem };
-type AiSettlementTab = 'prompt' | 'worker';
+type AiSettlementTab = 'prompt' | 'worker' | 'aliases';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -327,6 +328,12 @@ export function AdminAiSettlementsPage() {
               id="ai-settlements-tab-worker"
               aria-controls="ai-settlements-panel-worker"
             />
+            <Tab
+              value="aliases"
+              label="Словник синонімів"
+              id="ai-settlements-tab-aliases"
+              aria-controls="ai-settlements-panel-aliases"
+            />
           </Tabs>
         }
         titleActionsGap={2}
@@ -389,6 +396,14 @@ export function AdminAiSettlementsPage() {
                 onSaved={setWorkerSettings}
               />
             ) : null}
+          </Box>
+          <Box
+            id="ai-settlements-panel-aliases"
+            role="tabpanel"
+            aria-labelledby="ai-settlements-tab-aliases"
+            hidden={tab !== 'aliases'}
+          >
+            {tab === 'aliases' ? <SettlementAliasesPanel /> : null}
           </Box>
         </Box>
 

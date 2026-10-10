@@ -15240,6 +15240,106 @@ saveAiCallsignWorkerSettingsReqEncoder struct =
         ]
 
 
+type alias SettlementAliasSettlement =
+    { id : Int
+    , name : String
+    , district : Maybe (String)
+    , region : Maybe (String)
+    }
+
+
+settlementAliasSettlementEncoder : SettlementAliasSettlement -> Json.Encode.Value
+settlementAliasSettlementEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "district", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.district )
+        , ( "region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.region )
+        ]
+
+
+type alias SettlementAliasItem =
+    { id : String
+    , settlement : SettlementAliasSettlement
+    , text : String
+    }
+
+
+settlementAliasItemEncoder : SettlementAliasItem -> Json.Encode.Value
+settlementAliasItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "settlement", (settlementAliasSettlementEncoder) struct.settlement )
+        , ( "text", (Json.Encode.string) struct.text )
+        ]
+
+
+type alias ListSettlementAliasesReq =
+    { afterId : Maybe (String)
+    }
+
+
+listSettlementAliasesReqEncoder : ListSettlementAliasesReq -> Json.Encode.Value
+listSettlementAliasesReqEncoder struct =
+    Json.Encode.object
+        [ ( "afterId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.afterId )
+        ]
+
+
+type alias ListSettlementAliasesRsp =
+    { items : List (SettlementAliasItem)
+    , nextId : Maybe (String)
+    }
+
+
+listSettlementAliasesRspEncoder : ListSettlementAliasesRsp -> Json.Encode.Value
+listSettlementAliasesRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (settlementAliasItemEncoder)) struct.items )
+        , ( "nextId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextId )
+        ]
+
+
+type alias SearchAliasSettlementsReq =
+    { query : String
+    }
+
+
+searchAliasSettlementsReqEncoder : SearchAliasSettlementsReq -> Json.Encode.Value
+searchAliasSettlementsReqEncoder struct =
+    Json.Encode.object
+        [ ( "query", (Json.Encode.string) struct.query )
+        ]
+
+
+type alias SaveSettlementAliasReq =
+    { id : Maybe (String)
+    , settlementId : Int
+    , text : String
+    }
+
+
+saveSettlementAliasReqEncoder : SaveSettlementAliasReq -> Json.Encode.Value
+saveSettlementAliasReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.id )
+        , ( "settlementId", (Json.Encode.int) struct.settlementId )
+        , ( "text", (Json.Encode.string) struct.text )
+        ]
+
+
+type alias SettlementAliasIdReq =
+    { id : String
+    }
+
+
+settlementAliasIdReqEncoder : SettlementAliasIdReq -> Json.Encode.Value
+settlementAliasIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        ]
+
+
 type alias AiSettlementEngineItem =
     { id : String
     , name : String
@@ -27099,6 +27199,56 @@ saveAiCallsignWorkerSettingsReqDecoder =
     Json.Decode.succeed SaveAiCallsignWorkerSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+
+
+settlementAliasSettlementDecoder : Json.Decode.Decoder SettlementAliasSettlement
+settlementAliasSettlementDecoder =
+    Json.Decode.succeed SettlementAliasSettlement
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "district" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "region" (Json.Decode.nullable (Json.Decode.string))))
+
+
+settlementAliasItemDecoder : Json.Decode.Decoder SettlementAliasItem
+settlementAliasItemDecoder =
+    Json.Decode.succeed SettlementAliasItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement" (settlementAliasSettlementDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+
+
+listSettlementAliasesReqDecoder : Json.Decode.Decoder ListSettlementAliasesReq
+listSettlementAliasesReqDecoder =
+    Json.Decode.succeed ListSettlementAliasesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "afterId" (Json.Decode.nullable (Json.Decode.string))))
+
+
+listSettlementAliasesRspDecoder : Json.Decode.Decoder ListSettlementAliasesRsp
+listSettlementAliasesRspDecoder =
+    Json.Decode.succeed ListSettlementAliasesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (settlementAliasItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nextId" (Json.Decode.nullable (Json.Decode.string))))
+
+
+searchAliasSettlementsReqDecoder : Json.Decode.Decoder SearchAliasSettlementsReq
+searchAliasSettlementsReqDecoder =
+    Json.Decode.succeed SearchAliasSettlementsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "query" (Json.Decode.string)))
+
+
+saveSettlementAliasReqDecoder : Json.Decode.Decoder SaveSettlementAliasReq
+saveSettlementAliasReqDecoder =
+    Json.Decode.succeed SaveSettlementAliasReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlementId" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+
+
+settlementAliasIdReqDecoder : Json.Decode.Decoder SettlementAliasIdReq
+settlementAliasIdReqDecoder =
+    Json.Decode.succeed SettlementAliasIdReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
 
 
 aiSettlementEngineItemDecoder : Json.Decode.Decoder AiSettlementEngineItem

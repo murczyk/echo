@@ -473,6 +473,9 @@ mod m20261009_074414_system_settings_hide_networks;
 mod m20261009_100730_rer_csv_body_index;
 mod m20261009_100730_rer_csv_processing;
 mod m20261009_144937_settlement_renamed_names;
+mod m20261010_073418_inbox_settlement_processed_flag;
+mod m20261010_085100_settlement_alias;
+mod m20261010_094039_settlement_alias_lookup_indexes;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1111,6 +1114,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20261009_100730_rer_csv_body_index::Migration),
             Box::new(m20261009_100730_rer_csv_processing::Migration),
             Box::new(m20261009_144937_settlement_renamed_names::Migration),
+            Box::new(m20261010_073418_inbox_settlement_processed_flag::Migration),
+            Box::new(m20261010_085100_settlement_alias::Migration),
+            Box::new(m20261010_094039_settlement_alias_lookup_indexes::Migration),
         ]
     }
 }

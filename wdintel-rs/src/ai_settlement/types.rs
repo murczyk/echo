@@ -2,6 +2,78 @@ use crate::types::{Deserialize, Serialize};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 
 #[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    sea_orm::FromQueryResult,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlementAliasSettlement {
+    pub id: i32,
+    pub name: String,
+    pub district: Option<String>,
+    pub region: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlementAliasItem {
+    pub id: String,
+    pub settlement: SettlementAliasSettlement,
+    pub text: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSettlementAliasesReq {
+    pub after_id: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSettlementAliasesRsp {
+    pub items: Vec<SettlementAliasItem>,
+    pub next_id: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchAliasSettlementsReq {
+    pub query: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveSettlementAliasReq {
+    pub id: Option<String>,
+    pub settlement_id: i32,
+    pub text: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlementAliasIdReq {
+    pub id: String,
+}
+
+#[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 #[serde(rename_all = "camelCase")]

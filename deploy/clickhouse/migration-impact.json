@@ -27,6 +27,11 @@
         }
       ]
     },
+    "echo:m20261010_094039_settlement_alias_lookup_indexes": { "changes": [] },
+    "echo:m20261010_085100_settlement_alias": {
+      "changes": [{ "table": "public.settlement_alias", "strategy": "excluded" }]
+    },
+    "echo:m20261010_073418_inbox_settlement_processed_flag": { "changes": [] },
     "echo:m20261009_144937_settlement_renamed_names": { "changes": [] },
     "echo:m20261008_051638_ai_position_highlight_flags": {
       "changes": [

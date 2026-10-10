@@ -69,6 +69,7 @@ pub mod rer_report_admin;
 pub mod secret;
 pub mod server;
 pub mod session;
+pub mod settlement;
 pub mod sigint;
 mod stats;
 pub mod storage;

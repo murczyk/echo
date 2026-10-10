@@ -1,3 +1,4 @@
+pub mod aliases;
 pub mod types;
 pub mod worker;
 
