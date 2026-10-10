@@ -34,14 +34,24 @@ function ArchiveFolder({
   depth,
   expanded,
   onToggle,
+  onSelect,
+  entryId,
+  selected = false,
   children,
 }: {
   name: string;
   depth: number;
   expanded: boolean;
   onToggle: () => void;
+  onSelect?: () => void;
+  entryId?: string;
+  selected?: boolean;
   children: ReactNode;
 }) {
+  const row = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (selected) row.current?.scrollIntoView({ block: 'nearest' });
+  }, [selected]);
   return (
     <li className="min-w-0" style={{ '--device-tree-depth': depth } as CSSProperties}>
       <div
@@ -57,10 +67,14 @@ function ArchiveFolder({
           {expanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
         </PowerIconButton>
         <ListItemButton
+          ref={row}
           component="button"
+          data-testid={entryId ? `device-file-${entryId}` : undefined}
+          selected={selected}
+          aria-current={selected ? 'true' : undefined}
           aria-label={name}
           aria-expanded={expanded}
-          onClick={onToggle}
+          onClick={onSelect ?? onToggle}
           className="min-w-0 gap-echo-sm rounded-echo-sm!"
         >
           {expanded ? (
@@ -210,6 +224,12 @@ export function DeviceArchiveTree(props: ArchiveTreeProps) {
       name={props.file.name}
       depth={props.depth}
       expanded={expanded}
+      entryId={props.file.entryId}
+      selected={props.selectedEntryId === props.file.entryId}
+      onSelect={() => {
+        props.onSelectFile(props.file);
+        setExpanded(true);
+      }}
       onToggle={() => setExpanded((value) => !value)}
     >
       {error ? (

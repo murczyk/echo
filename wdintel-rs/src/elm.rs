@@ -313,6 +313,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::devices::files::types::FileBreadcrumb,
             crate::devices::files::types::DeviceFileTreeEntry,
             crate::devices::files::types::DeviceFile,
+            crate::devices::files::locate::LocateDeviceFileReq,
+            crate::devices::files::locate::LocateDeviceFileRsp,
             crate::devices::files::types::ListDeviceFileRootsReq,
             crate::devices::files::types::ListDeviceFileRootsRsp,
             crate::devices::files::preview::types::DeviceFileGeodataPreviewRsp,

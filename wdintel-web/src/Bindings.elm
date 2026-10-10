@@ -5358,6 +5358,40 @@ deviceFileEncoder struct =
         ]
 
 
+type alias LocateDeviceFileReq =
+    { deviceId : String
+    , fileId : String
+    , revision : Maybe (Int)
+    }
+
+
+locateDeviceFileReqEncoder : LocateDeviceFileReq -> Json.Encode.Value
+locateDeviceFileReqEncoder struct =
+    Json.Encode.object
+        [ ( "deviceId", (Json.Encode.string) struct.deviceId )
+        , ( "fileId", (Json.Encode.string) struct.fileId )
+        , ( "revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.revision )
+        ]
+
+
+type alias LocateDeviceFileRsp =
+    { file : DeviceFileTreeEntry
+    , ancestors : List (DeviceFileTreeEntry)
+    , rootEntryId : String
+    , currentRevision : Int
+    }
+
+
+locateDeviceFileRspEncoder : LocateDeviceFileRsp -> Json.Encode.Value
+locateDeviceFileRspEncoder struct =
+    Json.Encode.object
+        [ ( "file", (deviceFileTreeEntryEncoder) struct.file )
+        , ( "ancestors", (Json.Encode.list (deviceFileTreeEntryEncoder)) struct.ancestors )
+        , ( "rootEntryId", (Json.Encode.string) struct.rootEntryId )
+        , ( "currentRevision", (Json.Encode.int) struct.currentRevision )
+        ]
+
+
 type alias ListDeviceFileRootsReq =
     { syncId : Maybe (String)
     , deviceId : String

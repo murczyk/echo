@@ -317,11 +317,13 @@ export function chooseCitedAnswer(
   repair: string | null,
   citations: MessageCitation[],
   canonicalCitations: MessageCitation[] = citations,
+  sourceLinks: Iterable<string> = [],
 ): string {
-  const canonicalDraft = canonicalizeAnswer(draft, canonicalCitations);
+  const retainedLinks = [...sourceLinks];
+  const canonicalDraft = canonicalizeAnswer(draft, canonicalCitations, retainedLinks);
   if (!needsCitationRepair(draft, citations) || repair === null)
     return canonicalDraft;
-  const canonicalRepair = canonicalizeAnswer(repair, canonicalCitations);
+  const canonicalRepair = canonicalizeAnswer(repair, canonicalCitations, retainedLinks);
   return answerUsesCitation(canonicalRepair, citations)
     ? canonicalRepair
     : canonicalDraft;

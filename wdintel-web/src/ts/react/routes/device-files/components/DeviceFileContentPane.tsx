@@ -1,3 +1,4 @@
+import type { AiAgentFileCitation } from '../../../../../Bindings';
 import { DeviceDocumentDetails } from './DeviceDocumentPreview';
 import FolderZipOutlinedIcon from '@mui/icons-material/FolderZipOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
@@ -205,11 +206,15 @@ function SelectedFilePane({
   deviceId,
   file,
   sessionScoped,
+  revisionPinned = false,
+  citation,
   mobile,
 }: {
   deviceId: string;
   file: DeviceFileSelection;
   sessionScoped: boolean;
+  revisionPinned?: boolean;
+  citation?: AiAgentFileCitation;
   mobile: boolean;
 }) {
   const preview = useDeviceFilePreview({ deviceId, file });
@@ -233,6 +238,7 @@ function SelectedFilePane({
         file={file}
         preview={preview}
         sessionScoped={sessionScoped}
+        revisionPinned={revisionPinned}
         mobile={mobile}
         zoom={zoomable ? zoom : undefined}
         onZoomChange={setZoom}
@@ -256,13 +262,15 @@ function SelectedFilePane({
                     }
                   : undefined
               }
-              source={{
-                deviceId,
-                fileId: file.fileId,
-                revision: file.revision,
-                extractionRevision: null,
-                section: null,
-              }}
+              source={
+                citation ?? {
+                  deviceId,
+                  fileId: file.fileId,
+                  revision: file.revision,
+                  extractionRevision: null,
+                  section: null,
+                }
+              }
             />
           )}
         {!fullscreen && content}
@@ -291,11 +299,15 @@ export function DeviceFileContentPane({
   deviceId,
   file,
   sessionScoped = false,
+  revisionPinned = false,
+  citation,
   mobile = false,
 }: {
   deviceId: string;
   file: DeviceFileSelection | null;
   sessionScoped?: boolean;
+  revisionPinned?: boolean;
+  citation?: AiAgentFileCitation;
   mobile?: boolean;
 }) {
   return (
@@ -310,6 +322,8 @@ export function DeviceFileContentPane({
             deviceId={deviceId}
             file={file}
             sessionScoped={sessionScoped}
+            revisionPinned={revisionPinned}
+            citation={citation}
             mobile={mobile}
           />
         </PowerSnackbarProvider>

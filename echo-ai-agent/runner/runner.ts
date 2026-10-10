@@ -72,7 +72,7 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.10.4";
+const HARNESS_RELEASE = "2026.10.10.5";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -3422,6 +3422,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
                   citationRepair,
                   repairCitations,
                   canonicalCitations,
+                  deliveredFiles.keys(),
                 ),
                 repairCitations,
                 deliveredCitationsThisTurn.length,

@@ -1367,6 +1367,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::devices::update)
             .service(crate::devices::settings::update)
             .service(crate::devices::files::roots)
+            .service(crate::devices::files::locate::locate)
             .service(crate::devices::files::sessions::list)
             .service(crate::devices::files::sessions::get)
             .service(crate::devices::files::sessions::summaries)

@@ -1250,3 +1250,59 @@ test('@smoke @regression device files previews read only, explains unavailable s
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test('@regression #3757 file URL expands ancestors and highlights a file beyond the first page', async ({
+  page,
+}) => {
+  const tracker = await installMocks(page);
+  tracker.releaseSubtreeCounts();
+  const fileId = '018f0000-0000-7000-8000-000000000099';
+  const file = {
+    ...entry({
+      entryId: fileId,
+      parentEntryId: DOCUMENTS_ID,
+      kind: 'file',
+      name: 'linked.txt',
+      absolutePath: '/documents/linked.txt',
+    }),
+    file_id: fileId,
+    revision: 2,
+    has_content: false,
+  };
+  await page.route('**/api/device/files/locate', (route) => {
+    expect(route.request().postDataJSON()).toEqual({ deviceId: DEVICE_ID, fileId, revision: 2 });
+    return route.fulfill({
+      json: {
+        file,
+        ancestors: [
+          entry({
+            entryId: DOCUMENTS_ID,
+            parentEntryId: POSIX_ROOT_ID,
+            kind: 'directory',
+            name: 'documents',
+          }),
+        ],
+        rootEntryId: POSIX_ROOT_ID,
+        currentRevision: 3,
+      },
+    });
+  });
+  const href = `/devices/${DEVICE_ID}?file=${fileId}&revision=2`;
+  await page.goto(href);
+  await expect(page.getByRole('tab', { name: 'Файли', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.getByTestId(`device-file-${fileId}`)).toHaveAttribute('aria-current', 'true');
+  await expect(page.getByTestId('device-file-content-pane')).toContainText('linked.txt');
+  await expect(page.getByTestId('device-file-content-pane')).toContainText(
+    'Ревізія 2 · За посиланням',
+  );
+  await page.reload();
+  await expect(page.getByTestId(`device-file-${fileId}`)).toHaveAttribute('aria-current', 'true');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('device-file-content-pane')).toBeVisible();
+  await page.getByRole('button', { name: 'До файлів', exact: true }).click();
+  await expect(page).toHaveURL(`/devices/${DEVICE_ID}`);
+  await expect(page.getByTestId(`device-file-${fileId}`)).toBeVisible();
+});
