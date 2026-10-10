@@ -509,7 +509,7 @@ fn capture_unit_and_locality(
         '_if: {
             lazy_static! {
                 static ref RE: Regex = Regex::new(
-                    r#"(?P<unit>.*)(?P<locality> [А-ЯЄІЇ'\s]+-[А-ЯЄІЇ'\s]+)"#
+                    r#"(?P<unit>.*\d+\s+(?:ЗА|АК|А)|.*)(?P<locality> [А-ЯЄІЇ'\s]+(?:-[А-ЯЄІЇ'\s]+)+)"#
                 )
                 .unwrap();
             }
@@ -1019,6 +1019,83 @@ mod tests {
             )
             .unwrap(),
         ))
+    }
+
+    #[test]
+    fn settlement_header_regressions_3383() {
+        #[derive(Deserialize)]
+        struct HeaderFixture {
+            case: usize,
+            message: String,
+            expected_rust_settlements: Vec<String>,
+        }
+        #[derive(Deserialize)]
+        struct Baseline {
+            default_settlements_sources: Vec<String>,
+        }
+        let fixtures: Vec<HeaderFixture> = serde_json::from_str(include_str!(
+            "../../../ai-eval/2026-10-09-settlement-regressions/messages.json"
+        ))
+        .unwrap();
+        let baseline: Baseline = serde_json::from_str(include_str!(
+            "../../../ai-eval/2026-10-09-settlement-regressions/baseline.json"
+        ))
+        .unwrap();
+        let paths = crate::config::get_settlement_paths(Some(
+            baseline.default_settlements_sources.join(","),
+        ))
+        .unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(paths, Mode::Test)
+                .unwrap(),
+        ));
+        let mut failures = vec![];
+        for fixture in fixtures {
+            let parsed =
+                extract_unit(settlements.clone(), &fixture.message, vec![])
+                    .unwrap();
+            let mut actual = parsed
+                .locality_v2
+                .unwrap_or_default()
+                .into_iter()
+                .map(|settlement| settlement.name)
+                .collect::<Vec<_>>();
+            actual.sort();
+            if actual != fixture.expected_rust_settlements {
+                failures.push(format!(
+                    "case {}: expected {:?}, got {:?}, locality {:?}",
+                    fixture.case,
+                    fixture.expected_rust_settlements,
+                    actual,
+                    parsed.locality
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+        for (unit, locality) in [
+            ("управління 1 мсб 6 А", "КАМ'ЯНКА-ПАВЛІВКА-КРАСНЕ ПЕРШЕ"),
+            ("управління 1 мсб 6 ЗА", "КАМ'ЯНКА-ПАВЛІВКА-КРАСНЕ ПЕРШЕ"),
+            ("управління 1 мсб 6 АК", "КАМ'ЯНКА-ПАВЛІВКА-КРАСНЕ ПЕРШЕ"),
+            ("БАРС-БРЯНСК", "КАМ'ЯНКА-ПАВЛІВКА-КРАСНЕ ПЕРШЕ"),
+            ("БАРС-И", "КАМ'ЯНКА-ПАВЛІВКА-КРАСНЕ ПЕРШЕ"),
+            ("БАРС-БРЯНСК 6 ЗА", "КРАСНЕ ПЕРШЕ-КАМ'ЯНКА-ПАВЛІВКА"),
+            ("БАРС-И 6 ЗА", "КРАСНЕ ПЕРШЕ-КАМ'ЯНКА-ПАВЛІВКА"),
+        ] {
+            let unit = format!("УКХ р/м {unit}");
+            let body = format!("{unit} {locality}\nНВ\nНВ\n— Принял.");
+            let parsed =
+                extract_unit(settlements.clone(), &body, vec![]).unwrap();
+            assert_eq!(parsed.unit.as_deref(), Some(unit.as_str()));
+            assert_eq!(
+                parsed
+                    .locality_v2
+                    .unwrap()
+                    .into_iter()
+                    .map(|settlement| settlement.name)
+                    .collect::<Vec<_>>(),
+                vec!["КАМ’ЯНКА", "КРАСНЕ ПЕРШЕ", "ПАВЛІВКА"]
+            );
+        }
     }
 
     #[test]
@@ -1853,7 +1930,7 @@ mod tests {
             "Цаповка, Бєлгородська обл.)".to_string()
         );
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
-        assert_eq!(locality_v2_txt, vec!["БЄЛГОРОДКА", "ХАПОВКА"]);
+        assert!(locality_v2_txt.is_empty());
         assert_eq!(
             Vec::<String>::new(),
             parse_library_unit(&String::from(body))

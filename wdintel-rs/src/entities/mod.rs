@@ -176,6 +176,7 @@ pub mod seaql_im_migrations;
 pub mod secret_group_organism;
 pub mod secret_group_user;
 pub mod settlement;
+pub mod settlement_alias;
 pub mod sigint_activity_decision_changelog;
 pub mod sigint_bookmark;
 pub mod sigint_callsign;

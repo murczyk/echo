@@ -10,8 +10,35 @@ import type {
   SaveAiSettlementParsingReq,
   SaveAiSettlementWorkerSettingsReq,
   UpdateAiSettlementTestMessageReq,
+  ListSettlementAliasesRsp,
+  SaveSettlementAliasReq,
+  SettlementAliasItem,
+  SettlementAliasSettlement,
 } from '../../../../Bindings';
-import { postJson, postVoid } from './client';
+import { postJson, postVoid, type RequestOptions } from './client';
+
+export function listSettlementAliases(afterId: string | null): Promise<ListSettlementAliasesRsp> {
+  return postJson<ListSettlementAliasesRsp>('/api/admin/ai-settlements/aliases/list', { afterId });
+}
+
+export function searchAliasSettlements(
+  query: string,
+  options?: RequestOptions,
+): Promise<SettlementAliasSettlement[]> {
+  return postJson<SettlementAliasSettlement[]>(
+    '/api/admin/ai-settlements/aliases/settlements',
+    { query },
+    options,
+  );
+}
+
+export function saveSettlementAlias(req: SaveSettlementAliasReq): Promise<SettlementAliasItem> {
+  return postJson<SettlementAliasItem>('/api/admin/ai-settlements/aliases/save', req);
+}
+
+export function deleteSettlementAlias(id: string): Promise<void> {
+  return postVoid('/api/admin/ai-settlements/aliases/delete', { id });
+}
 
 export function getAiSettlementPage(): Promise<AiSettlementPageRsp> {
   return postJson<AiSettlementPageRsp>('/api/admin/ai-settlements/page');

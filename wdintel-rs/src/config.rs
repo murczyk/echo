@@ -91,12 +91,79 @@ pub const AI_CALLSIGN_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_CALLSIGN_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-10-callsign-prompt/prompt.txt");
 pub const AI_SETTLEMENT_SETTINGS_ID: i16 = 1;
+pub const LOCATION_REGION_MAX_DISTANCE: usize = 2;
+pub const LOCATION_FUZZY_MIN_CHARS: usize = 5;
+pub const LOCATION_FUZZY_DISTANCE_DIVISOR: usize = 7;
+pub const LOCATION_FOREST_CONTEXT_WORDS: &[&str] =
+    &["НА", "ВІД", "БІЛЯ", "МАСИВ", "МАССИВ"];
+pub const LOCATION_COUNTRY_NAMES: &[&str] = &[
+    "УКРАЇНА",
+    "УКРАИНА",
+    "UKRAINE",
+    "РОСІЯ",
+    "РОССИЯ",
+    "RUSSIA",
+    "РФ",
+    "БІЛОРУСЬ",
+    "БЕЛАРУСЬ",
+    "БЕЛАРУССИЯ",
+    "BELARUS",
+    "РБ",
+];
+pub const LOCATION_CONTEXT_WORDS: &[&str] = &[
+    "УПРАВЛІННЯ",
+    "ПІДРОЗДІЛ",
+    "ПІДРОЗДІЛУ",
+    "ПІДРОЗДІЛОМ",
+    "СКЛАДУ",
+    "ВЗАЄМОДІЇ",
+    "ПОСТІВ",
+    "СПОСТЕРЕЖЕННЯ",
+    "ПОВІТРЯНИМ",
+    "ПРОСТОРОМ",
+    "ЛІСОВИЙ",
+    "ЛІСОВОГО",
+    "ЛЕСНОЙ",
+    "ЛЕСНОГО",
+    "МАСИВ",
+    "МАСИВУ",
+    "МАССИВ",
+    "МАССИВА",
+    "ПІВДЕННІ",
+    "ПІВДЕННИХ",
+    "ПІВНІЧНІ",
+    "ПІВНІЧНИХ",
+    "СХІДНІ",
+    "СХІДНИХ",
+    "ЗАХІДНІ",
+    "ЗАХІДНИХ",
+    "ЮЖНЫЕ",
+    "ЮЖНЫХ",
+    "СЕВЕРНЫЕ",
+    "СЕВЕРНЫХ",
+    "ВОСТОЧНЫЕ",
+    "ВОСТОЧНЫХ",
+    "ЗАПАДНЫЕ",
+    "ЗАПАДНЫХ",
+    "РН",
+    "НП",
+    "ЗРБАТР",
+];
 pub const AI_SETTLEMENT_PROMPT_MAX_CHARS: usize = 100_000;
 pub const AI_SETTLEMENT_MESSAGE_MAX_CHARS: usize = 100_000;
 pub const AI_SETTLEMENT_MAX_SETTLEMENTS: usize = 500;
 pub const AI_SETTLEMENT_MAX_CHARS: usize = 255;
 pub const AI_SETTLEMENT_MAX_CONCURRENT_REQUESTS: usize = 4;
+pub const SETTLEMENT_ALIAS_MAX_CHARS: usize = 255;
+pub const SETTLEMENT_ALIAS_PAGE_SIZE: u64 = 100;
+pub const SETTLEMENT_SEARCH_MIN_CHARS: usize = 3;
+pub const SETTLEMENT_SEARCH_LIMIT: i64 = 50;
+pub const SETTLEMENT_LOOKUP_BATCH_SIZE: usize = 100;
+pub const SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS: f64 = 2_000.0;
+pub const SETTLEMENT_EARTH_RADIUS_METERS: f64 = 6_371_008.8;
 pub const AI_SETTLEMENT_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+pub const AI_SETTLEMENT_WORKER_SETTINGS_CHANNEL: &str =
+    "ai_settlement_worker_settings_changed";
 pub const AI_SETTLEMENT_WORKER_RETRY_BASE_SECS: i64 = 5;
 pub const AI_SETTLEMENT_WORKER_RETRY_MAX_SECS: i64 = 300;
 pub const AI_SETTLEMENT_WORKER_MAX_ATTEMPTS: i32 = 8;
@@ -1094,8 +1161,6 @@ pub const BATTLE_LINE_EARTH_RADIUS_METERS: f64 = 6_371_008.8;
 pub const BATTLE_LINE_CLIP_EXTENT_METERS: f64 = 50_000_000.0;
 pub const BATTLE_LINE_AOR_ANCHOR_LATITUDE: f64 = 48.510_548_612_698_46;
 pub const BATTLE_LINE_AOR_ANCHOR_LONGITUDE: f64 = 32.225_445_087_959_685;
-pub const BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS: f64 =
-    2_000.0;
 // These temporary limits should be lifted once location parsing is improved.
 pub const BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS: f64 = 75_000.0;
 pub const BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS: f64 = 150_000.0;
@@ -1190,6 +1255,7 @@ DELETE FROM sigint_callsign;
 DELETE FROM sigint_network_description;
 DELETE FROM sigint_network;
 DELETE FROM sigint_settlement;
+DELETE FROM settlement_alias;
 DELETE FROM sigint_signal_changelog;
 DELETE FROM sigint_signal;
 DELETE FROM sigint_unit_changelog;

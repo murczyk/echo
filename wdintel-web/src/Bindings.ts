@@ -5916,6 +5916,42 @@ export type SaveAiCallsignWorkerSettingsReq = {
   aiEngineId: string | null;
 };
 
+export type SettlementAliasSettlement = {
+  id: number;
+  name: string;
+  district: string | null;
+  region: string | null;
+};
+
+export type SettlementAliasItem = {
+  id: string;
+  settlement: SettlementAliasSettlement;
+  text: string;
+};
+
+export type ListSettlementAliasesReq = {
+  afterId: string | null;
+};
+
+export type ListSettlementAliasesRsp = {
+  items: Array<SettlementAliasItem>;
+  nextId: string | null;
+};
+
+export type SearchAliasSettlementsReq = {
+  query: string;
+};
+
+export type SaveSettlementAliasReq = {
+  id: string | null;
+  settlementId: number;
+  text: string;
+};
+
+export type SettlementAliasIdReq = {
+  id: string;
+};
+
 export type AiSettlementEngineItem = {
   id: string;
   name: string;
@@ -5947,6 +5983,13 @@ export type AiSettlementTestMessageVersionItem = {
 export type AiSettlementWorkerSettingsItem = {
   enabled: boolean;
   aiEngineId: string | null;
+  groupsExcept: boolean;
+  groupMasterKeys: Array<string>;
+};
+
+export type AiSettlementGroupItem = {
+  masterKey: string;
+  name: string | null;
 };
 
 export type AiSettlementPageRsp = {
@@ -5955,6 +5998,7 @@ export type AiSettlementPageRsp = {
   engines: Array<AiSettlementEngineItem>;
   messages: Array<AiSettlementTestMessageItem>;
   worker: AiSettlementWorkerSettingsItem;
+  groups: Array<AiSettlementGroupItem>;
 };
 
 export type AiSettlementPromptState = {
@@ -5994,6 +6038,8 @@ export type SaveAiSettlementParsingReq = {
 export type SaveAiSettlementWorkerSettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
+  groupsExcept: boolean;
+  groupMasterKeys: Array<string>;
 };
 
 export type AiPositionEngineItem = {
