@@ -11,6 +11,7 @@
 ## NEXT
 
 - [#3598](https://github.com/echoua/echo/issues/3598) ✅ Адмін: додано можливість приховувати функціонал мереж на рівні сервера.
+- [#3743](https://github.com/echoua/echo/issues/3743) 🐞👷 OCR: нестача місця на спільному екстракторі більше не вичерпує спроби подання; збільшити GPU-квоту до 300 GiB і spool до 200 GiB, оновити Python та стабільний backend і адресно відновити завдання за [інструкцією](echo-document-extractor/STORAGE_RECOVERY.md).
 - [#3724](https://github.com/echoua/echo/issues/3724) 🐞 ШІ: виправлено пошук через OpenAI Responses — необов'язкові фільтри залишаються необов'язковими, щоб звіти не шукали за вигаданими позивними.
 - [#3724](https://github.com/echoua/echo/issues/3724) ✅👷 ШІ: додано швидкий (2 хв), збалансований (5 хв) і глибокий (30 хв) аналіз; після вичерпання часу зберігається часткова відповідь із джерелами. Для ввімкнення встановити Echo і harness `2026.10.10.1`, застосувати міграції та перевірити державні GLM/OpenAI перед налаштуванням режимів за [інструкцією](docs/ai/reasoning-presets.md#rollout-and-recovery).
 - [#3724](https://github.com/echoua/echo/issues/3724) ✅👷 ШІ: для GLM можна обрати GLM замість Luna для checkpoint зі збереженням відновлення звіту; після оновлення Echo і harness до `2026.10.09.14` встановити `ai_agent_glm_checkpoint_provider = "glm"` у конфігурації потрібного сервера за [інструкцією](docs/ai/kharkiv-canary.md#configuration-and-processing-scope).
