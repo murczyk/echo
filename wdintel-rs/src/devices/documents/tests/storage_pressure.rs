@@ -252,4 +252,46 @@ async fn device_document_storage_pressure_recovery_is_scoped_3743() {
     let job = queue::claim(&env, "extract").await.unwrap().unwrap();
     assert_eq!(job.file_id, eligible);
     assert_eq!(job.attempts, 1);
+
+    let extractor = Uuid::now_v7();
+    execute(db,"update file_document_job set payload=jsonb_build_object('extractorJobId',$2::text) where file_id=$1",vec![accepted.into(),extractor.to_string().into()]).await.unwrap();
+    let published = Uuid::now_v7();
+    execute(db,"insert into file_document_generation(id,file_id,revision,complete,parser_version,summary) values($2,$1,1,true,'previous-parser','Published result')",vec![accepted.into(),published.into()]).await.unwrap();
+    execute(
+        db,
+        "update file_document set published_generation=$2 where file_id=$1",
+        vec![accepted.into(), published.into()],
+    )
+    .await
+    .unwrap();
+    let before = recovery_snapshot(&env, accepted).await;
+    #[derive(FromQueryResult)]
+    struct Candidate {
+        id: Uuid,
+        extractor_id: String,
+        generation: Uuid,
+    }
+    let candidates: Vec<Candidate> = rows(db,"select id,generation,coalesce(payload->>'extractorJobId',$2) as extractor_id from file_document_job where file_id=any($1)",vec![vec![accepted,stale,completed,leased,unrelated].into(),extractor.to_string().into()]).await.unwrap();
+    let requested = json!(candidates
+        .iter()
+        .map(|row| json!({"id":row.id,"extractor_id":row.extractor_id,"generation":row.generation}))
+        .collect::<Vec<_>>());
+    #[derive(FromQueryResult)]
+    struct Recovered {
+        id: Uuid,
+    }
+    let recovered: Vec<Recovered> = rows(
+        db,
+        include_str!("../recover_upstream_storage_pressure.sql"),
+        vec![requested.into()],
+    )
+    .await
+    .unwrap();
+    assert_eq!(recovered.len(), 1);
+    let after = recovery_snapshot(&env, accepted).await;
+    assert_eq!(before.snapshot, after.snapshot);
+    let state = retry_state(&env, recovered[0].id).await;
+    assert_eq!(state.state, "queued");
+    assert_eq!(state.attempts, 0);
+    assert_eq!(state.extractor_job_id, Some(extractor.to_string()));
 }

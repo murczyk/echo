@@ -18,6 +18,10 @@ An accepted local job can also fail during OCR with an upstream 507 from
 extractor and requires separate capacity recovery there. This procedure does
 not retry already accepted jobs or repair the upstream GPU service.
 
+For that separate incident, follow the [shared OCR storage recovery
+procedure](../../../../echo-document-extractor/STORAGE_RECOVERY.md), including
+retained native jobs and direct OCR submissions.
+
 1. Save the current `wd.device_document_settings` row, eligible `wd_files`
    document/job rows, native configuration and an online SQLite backup in a
    root-only directory. Disable only the device pipeline's `enabled` flag and

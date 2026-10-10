@@ -366,6 +366,19 @@ async fn submit_job(
     let status = response.status();
     if !status.is_success() {
         let error = response.text().await.unwrap_or_default();
+        if status == reqwest::StatusCode::INSUFFICIENT_STORAGE {
+            postpone_for_dependency(
+                &env.dbx,
+                job,
+                format!("OCR submission returned HTTP {status}: {error}"),
+            )
+            .await
+            .context(h!())?;
+            if let Some(metrics) = &env.metrics {
+                metrics.record_ocr_storage_deferral();
+            }
+            return Ok(());
+        }
         retry_job(
             env,
             job,
@@ -885,17 +898,284 @@ fn truncate_error(error: String) -> String {
 mod tests {
     use super::{
         idempotency_key, retry_delay, retry_job, retry_submission_error,
+        submit_job,
     };
     use crate::entities::{ocr_job, signal_message_media};
     use crate::ocr::OcrRuntimeConfig;
+    use actix_web::{web, App, HttpResponse, HttpServer};
     use chrono::Utc;
     use sea_orm::{
         ActiveModelTrait,
         ActiveValue::{NotSet, Set},
-        EntityTrait,
+        ConnectionTrait, EntityTrait, IntoActiveModel,
     };
+    use std::sync::{atomic::AtomicUsize, atomic::Ordering, Arc, Mutex};
     use uuid::Uuid;
 
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn direct_storage_admission_preserves_generation_3743() {
+        let (env, media, mut job) = storage_pressure_fixture().await;
+        let now = job.discovered_at;
+        let generation = job.discovered_at;
+        let keys = Arc::new(Mutex::new(Vec::new()));
+        let (server, address, accepted) = storage_pressure_server(keys.clone());
+        let handle = server.handle();
+        let server = tokio::spawn(server);
+        let config = OcrRuntimeConfig {
+            base_url: format!("http://{address}"),
+            instance_id: "test".into(),
+            token: "token".into(),
+            max_in_flight_jobs: 1,
+            gateway_url: None,
+            gateway_signing_key: None,
+        };
+        for _ in 0..10 {
+            submit_job(&env, &config, job.clone()).await.unwrap();
+            job = ocr_job::Entity::find_by_id(media.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(job.state, "retry_wait");
+            assert_eq!(job.attempts, 0);
+            assert_eq!(job.discovered_at, generation);
+            assert!(job.extractor_job_id.is_none());
+            assert!(job.next_attempt_at > now);
+        }
+        submit_job(&env, &config, job.clone()).await.unwrap();
+        job = ocr_job::Entity::find_by_id(media.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.state, "submitted");
+        assert_eq!(job.extractor_job_id, Some(accepted));
+        assert_eq!(job.attempts, 0);
+        assert_eq!(job.discovered_at, generation);
+        let recorded = keys.lock().unwrap().clone();
+        assert_eq!(recorded, vec![idempotency_key(&config, &job); 11]);
+        let mut queued = job.clone().into_active_model();
+        queued.state = Set("queued".into());
+        queued.extractor_job_id = Set(None);
+        let queued = queued.update(&env.dbx).await.unwrap();
+        submit_job(&env, &config, queued).await.unwrap();
+        job = ocr_job::Entity::find_by_id(media.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.attempts, 1);
+        assert_eq!(job.discovered_at, generation);
+        handle.stop(true).await;
+        server.await.unwrap().unwrap();
+        verify_direct_storage_recovery(&env, &media, job, config).await;
+    }
+
+    async fn storage_pressure_fixture() -> (
+        crate::types::Env,
+        signal_message_media::Model,
+        ocr_job::Model,
+    ) {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let mut env = env.as_ref().clone();
+        env.s3 = Some(
+            opendal::Operator::new(opendal::services::Memory::default())
+                .unwrap()
+                .finish(),
+        );
+        let storage = crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "ocr-test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        };
+        env.s3_config = Some(crate::storage::S3Config::from(&storage));
+        env.config.s3_config = Some(storage.clone());
+        let now = Utc::now().naive_utc();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set("image/png".into()),
+            file_name: Set(Some("canary.png".into())),
+            size_bytes: Set(1),
+            created_at: Set(now),
+            is_encrypted: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        crate::storage::upload_encrypted_to_s3_with_operator(
+            &env.s3,
+            env.s3_config.as_ref().unwrap(),
+            &storage.strongbox_key,
+            &crate::messenger::media::media_object_key(&media),
+            web::Bytes::from_static(b"x"),
+        )
+        .await
+        .unwrap();
+        let job = ocr_job::ActiveModel {
+            media_id: Set(media.id),
+            state: Set("queued".into()),
+            discovered_at: Set(now),
+            next_attempt_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        (env, media, job)
+    }
+
+    fn storage_pressure_server(
+        keys: Arc<Mutex<Vec<String>>>,
+    ) -> (actix_web::dev::Server, std::net::SocketAddr, Uuid) {
+        let seen = keys.clone();
+        let index = Arc::new(AtomicUsize::new(0));
+        let accepted = Uuid::now_v7();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = HttpServer::new(move || {
+            let index = index.clone();
+            let seen = seen.clone();
+            App::new().route("/v1/jobs", web::post().to(move |request: actix_web::HttpRequest, body: web::Bytes| {
+                let attempt = index.fetch_add(1, Ordering::SeqCst);
+                seen.lock().unwrap().push(request.headers().get("Idempotency-Key").unwrap().to_str().unwrap().to_owned());
+                async move {
+                    assert!(!body.is_empty());
+                    if attempt < 10 {
+                        HttpResponse::InsufficientStorage().body("spool full")
+                    } else if attempt == 10 {
+                        HttpResponse::Accepted().json(serde_json::json!({
+                            "id": accepted, "state": "queued", "quality_status": null,
+                            "error_summary": null, "page_progress": {"processed": 0, "total": 1}
+                        }))
+                    } else {
+                        HttpResponse::BadRequest().body("malformed input")
+                    }
+                }
+            }))
+        }).workers(1).disable_signals().listen(listener).unwrap().run();
+        (server, address, accepted)
+    }
+
+    async fn verify_direct_storage_recovery(
+        env: &crate::types::Env,
+        media: &signal_message_media::Model,
+        job: ocr_job::Model,
+        mut config: OcrRuntimeConfig,
+    ) {
+        use base64::Engine;
+        let generation = job.discovered_at;
+        let mut job = job.into_active_model();
+        job.state = Set("failed".into());
+        job.last_error = Set(Some(
+            "OCR submission returned HTTP 507 Insufficient Storage: full"
+                .into(),
+        ));
+        job.html_s3_key = Set(Some("published.html".into()));
+        job.ai_engine_name = Set(Some("selected engine".into()));
+        job.model_name = Set(Some("selected model".into()));
+        job.ocr_request_profile = Set(Some("selected profile".into()));
+        let mut job = job.update(&env.dbx).await.unwrap();
+        let sql = include_str!("recover_storage_pressure.sql");
+        let request = |generation, extractor, accepted| {
+            serde_json::json!([{
+                "media_id": media.id, "generation": generation,
+                "extractor_id": extractor, "accepted": accepted
+            }])
+        };
+        for expected in [0, 1] {
+            let requested = request(
+                if expected == 0 {
+                    generation - chrono::Duration::seconds(1)
+                } else {
+                    generation
+                },
+                None::<Uuid>,
+                false,
+            );
+            let recovered = env
+                .dbx
+                .query_all(&sea_orm::Statement::from_sql_and_values(
+                    sea_orm::DatabaseBackend::Postgres,
+                    sql,
+                    [requested.into()],
+                ))
+                .await
+                .unwrap();
+            assert_eq!(recovered.len(), expected);
+        }
+        job = ocr_job::Entity::find_by_id(media.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.discovered_at, generation);
+        assert_eq!(job.html_s3_key.as_deref(), Some("published.html"));
+        let old = job.clone();
+        let extractor = Uuid::now_v7();
+        let mut job = job.into_active_model();
+        job.state = Set("failed".into());
+        job.extractor_job_id = Set(Some(extractor));
+        job.update(&env.dbx).await.unwrap();
+        let requested = request(generation, Some(extractor), true);
+        let recovered = env
+            .dbx
+            .query_all(&sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                sql,
+                [requested.into()],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(recovered.len(), 1);
+        let mut job = ocr_job::Entity::find_by_id(media.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(job.discovered_at > generation);
+        assert!(job.extractor_job_id.is_none());
+        assert_eq!(job.ai_engine_name, old.ai_engine_name);
+        assert_eq!(job.model_name, old.model_name);
+        assert_eq!(job.html_s3_key, old.html_s3_key);
+        assert_ne!(
+            idempotency_key(&config, &job),
+            idempotency_key(&config, &old)
+        );
+        config.gateway_url = Some("http://gateway.test".into());
+        config.gateway_signing_key = Some("signing-key".into());
+        job.ai_engine_id = Some(Uuid::now_v7());
+        let manifest: serde_json::Value = serde_json::from_str(
+            &super::dynamic_manifest(&config, &job, media)
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        let token = manifest["ocr"]["grant"].as_str().unwrap();
+        let claims: serde_json::Value = serde_json::from_slice(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(token.split('.').next().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            claims["generation"],
+            job.discovered_at.and_utc().timestamp_micros()
+        );
+        assert!(claims["expiresAt"].as_i64().unwrap() > Utc::now().timestamp());
+    }
     #[test]
     fn ocr_retry_delay_is_bounded() {
         assert_eq!(retry_delay(1), 10);
