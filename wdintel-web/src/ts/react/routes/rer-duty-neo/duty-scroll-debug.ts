@@ -1,40 +1,10 @@
 import { useCallback, useSyncExternalStore } from 'react';
+import type { FeedScrollMetrics } from '../shared/message-feed/message-feed.types';
 
 export type DutyScrollDebugActivity =
   'unreadCount' | 'tailCount' | 'newerMessages' | 'olderMessages';
 
-export type DutyScrollDebugMetrics = {
-  capturedAtMs: number;
-  scrollTop: number;
-  previousScrollTop: number;
-  scrollDelta: number;
-  scrollHeight: number;
-  clientHeight: number;
-  bottomDistance: number;
-  topLoadBufferPx: number;
-  bottomLoadBufferPx: number;
-  atBottomThresholdPx: number;
-  atTop: boolean;
-  atBottom: boolean;
-  physicallyAtBottom: boolean;
-  nearBottom: boolean;
-  liveBottomFollow: boolean;
-  bottomSettleActive: boolean;
-  loadOlderTriggered: boolean;
-  loadNewerTriggered: boolean;
-  visibleAnchorCount: number;
-  firstVisibleId: number | null;
-  lastVisibleId: number | null;
-  anchorId: number | null;
-  anchorOffsetTop: number | null;
-  itemCount: number;
-  firstItemId: number | null;
-  lastItemId: number | null;
-  enabled: boolean;
-  isWatchMode: boolean;
-  overflowAnchor: string;
-  scrollBehavior: string;
-};
+export type DutyScrollDebugMetrics = FeedScrollMetrics;
 
 export type DutyScrollDebugEvent = {
   sequence: number;

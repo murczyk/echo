@@ -10,7 +10,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type RefObject,
 } from 'react';
 import type { ProfilerOnRenderCallback } from 'react';
 import { flushSync } from 'react-dom';
@@ -44,14 +43,21 @@ import {
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
 import { feedListRenderStateEqual } from './utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
-import { useWindowedFeedScroll } from './useWindowedFeedScroll';
+import { useWindowedFeedScroll } from '../shared/message-feed/useWindowedFeedScroll';
+import { MessageFeed, MessageFeedRows } from '../shared/message-feed/MessageFeed';
+import type { MessageFeedPolicy } from '../shared/message-feed/message-feed.types';
 import {
   ScrollNavigationIntent,
   type AnchorSnapshot,
   type ExplicitScrollNavigation,
-} from './windowed-feed-scroll-shared';
+} from '../shared/message-feed/windowed-feed-scroll-shared';
 import { useFeedIdleViewportOffload } from './useFeedIdleViewportOffload';
-import { recordDutyScrollDebugTiming, useDutyScrollDebugEnabled } from './duty-scroll-debug';
+import {
+  recordDutyScrollDebugEvent,
+  recordDutyScrollDebugMetrics,
+  recordDutyScrollDebugTiming,
+  useDutyScrollDebugEnabled,
+} from './duty-scroll-debug';
 import { useFeedColumnFab } from './feedColumnFab';
 import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../hooks/duty-settings-defaults';
 
@@ -61,6 +67,15 @@ const LOAD_OLDER_BUFFER_PX = 160;
 const LOAD_NEWER_BUFFER_PX = 640;
 /** Consider "at bottom" when within this many pixels of the scroll end (watch mode / read-state). */
 const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
+const DUTY_FEED_POLICY: MessageFeedPolicy = {
+  initialPosition: 'end',
+  followAtBottom: true,
+  aboveLoadBufferPx: LOAD_OLDER_BUFFER_PX,
+  belowLoadBufferPx: LOAD_NEWER_BUFFER_PX,
+  atBottomThresholdPx: DUTY_FEED_AT_BOTTOM_THRESHOLD_PX,
+  underfilledEdgeLoading: true,
+};
+const getMessageId = ([id]: [number, InboxMessage]) => id;
 // Hoisted stable empty array: passing `[]` inline as a prop would allocate a fresh reference
 // every render, defeating React.memo / useMemo bailouts downstream in MessageCard.
 const EMPTY_MESSAGE_COMMENTS: MessageComment[] = [];
@@ -337,7 +352,6 @@ type DutyMessageListProps = {
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
-  listRef: RefObject<HTMLDivElement>;
   /** When non-null, only these ids mount MessageCards; others use height placeholders. */
   mountedItemIds: Set<number> | null;
   placeholderHeightPx: (id: number) => number;
@@ -382,19 +396,14 @@ const DutyMessageList = memo(
     onOpenPointsOnMap,
     onAddPointHighlightBlacklist,
     setItemRef,
-    listRef,
     mountedItemIds,
     placeholderHeightPx,
   }: DutyMessageListProps) {
     return (
-      <div
-        ref={listRef}
-        data-duty-feed-list="true"
-        data-duty-idle-offload={mountedItemIds != null ? 'true' : undefined}
-        className="m-0 list-none rer-duty pt-2 px-echo-md"
-        style={{ boxSizing: 'border-box' }}
-      >
-        {items.map(([id, msg]) => {
+      <MessageFeedRows
+        items={items}
+        getMessageId={getMessageId}
+        renderMessage={([id, msg]) => {
           const mountCard = mountedItemIds == null || mountedItemIds.has(id);
           return (
             <div key={id} ref={setItemRef(id)} data-duty-message-id={id}>
@@ -447,8 +456,8 @@ const DutyMessageList = memo(
               )}
             </div>
           );
-        })}
-      </div>
+        }}
+      />
     );
   },
   (prev, next) =>
@@ -488,7 +497,6 @@ const DutyMessageList = memo(
     prev.onOpenPointsOnMap === next.onOpenPointsOnMap &&
     prev.onAddPointHighlightBlacklist === next.onAddPointHighlightBlacklist &&
     prev.setItemRef === next.setItemRef &&
-    prev.listRef === next.listRef &&
     prev.mountedItemIds === next.mountedItemIds &&
     prev.placeholderHeightPx === next.placeholderHeightPx,
 );
@@ -706,6 +714,12 @@ export const FeedColumnContent = memo(
     );
     const scroll = useWindowedFeedScroll({
       itemIds,
+      policy: DUTY_FEED_POLICY,
+      diagnostics: {
+        enabled: debugEnabled,
+        event: recordDutyScrollDebugEvent,
+        metrics: recordDutyScrollDebugMetrics,
+      },
       initialAnchorSnapshot: initialScrollAnchorSnapshot,
       onAnchorSnapshotChange: handleAnchorSnapshotChange,
       debugFeedId: feed.id,
@@ -729,9 +743,6 @@ export const FeedColumnContent = memo(
         onPhysicalBottomChange?.(atBottom);
       },
       onVisibleMessageIds,
-      topLoadBufferPx: LOAD_OLDER_BUFFER_PX,
-      bottomLoadBufferPx: LOAD_NEWER_BUFFER_PX,
-      atBottomThresholdPx: DUTY_FEED_AT_BOTTOM_THRESHOLD_PX,
       resetKey: feed.referenceTimeMs ?? feed.id,
       unreadPrefetchNeeded,
       pendingNewerFlushNeeded,
@@ -836,7 +847,6 @@ export const FeedColumnContent = memo(
             onAddPointHighlightBlacklist ? stableOnAddPointHighlightBlacklist : undefined
           }
           setItemRef={scroll.setItemRef}
-          listRef={scroll.listRef}
           mountedItemIds={idleOffload.mountedItemIds}
           placeholderHeightPx={idleOffload.placeholderHeightPx}
         />
@@ -866,47 +876,50 @@ export const FeedColumnContent = memo(
           isolation: 'isolate',
         }}
       >
-        <Box
-          ref={scroll.scrollerRef}
-          data-duty-feed-scroller="true"
-          component="div"
-          className="rer-duty-feed-scroll"
-          tabIndex={0}
-          onScroll={scroll.handleScroll}
-          sx={{
-            flex: 1,
-            minHeight: narrowScreen ? 0 : 400,
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            scrollbarGutter: 'stable',
-            boxSizing: 'border-box',
+        <MessageFeed
+          scroll={scroll}
+          items={feed.items}
+          getMessageId={getMessageId}
+          itemSelector="[data-duty-message-id]"
+          scrollerProps={{
+            'data-duty-feed-scroller': 'true',
+            className: 'rer-duty-feed-scroll',
+            tabIndex: 0,
+            style: { flex: 1, minHeight: narrowScreen ? 0 : 400, scrollbarGutter: 'stable' },
           }}
+          listProps={{
+            'data-duty-feed-list': 'true',
+            'data-duty-idle-offload': idleOffload.mountedItemIds != null ? 'true' : undefined,
+            className: 'm-0 list-none rer-duty pt-2 px-echo-md',
+          }}
+          beforeList={
+            feed.loadingOlder ? (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 1,
+                  py: 1.5,
+                  color: 'text.secondary',
+                }}
+              >
+                <CircularProgress size={18} />
+                <Typography variant="body2">{`Завантаження старіших${ELLIPSIS}`}</Typography>
+              </Box>
+            ) : feed.hasReachedStart ? (
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ textAlign: 'center', py: 1.5 }}
+              >
+                Немає старіших повідомлень
+              </Typography>
+            ) : null
+          }
         >
-          {feed.loadingOlder ? (
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 1,
-                py: 1.5,
-                color: 'text.secondary',
-              }}
-            >
-              <CircularProgress size={18} />
-              <Typography variant="body2">{`Завантаження старіших${ELLIPSIS}`}</Typography>
-            </Box>
-          ) : feed.hasReachedStart ? (
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ textAlign: 'center', py: 1.5 }}
-            >
-              Немає старіших повідомлень
-            </Typography>
-          ) : null}
           {profiledMessageList}
-        </Box>
+        </MessageFeed>
         <FeedColumnScrollFab
           feedId={feed.id}
           loadingNewer={loadingNewer}

@@ -51,6 +51,67 @@ async function addFrequencies(page: Page, panel: Locator, values: string[]): Pro
 }
 
 test.describe('Duty characterization workflows @regression', () => {
+  test('#3689 retains mounted cards in four feeds under CPU load and mounts only the active mobile tab', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await installRerDutyShortStateMocks(page, {
+      inboxResponse: buildInboxResponse(Array.from({ length: 40 }, (_, index) => index + 1)),
+    });
+    const cpu = await page.context().newCDPSession(page);
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await cpu.send('Performance.enable');
+    const startedAt = Date.now();
+    await page.goto('/rer-duty-neo');
+    for (let count = 2; count <= 4; count += 1) {
+      await page.getByRole('button', { name: 'Додати стрічку' }).click();
+      await expect(page.locator('[data-duty-feed-column]')).toHaveCount(count);
+    }
+    const columns = page.locator('[data-duty-feed-column]');
+    for (let index = 0; index < 4; index += 1) {
+      await expect(columns.nth(index).locator('[data-duty-message-id]')).toHaveCount(40);
+    }
+    await page.evaluate(() => {
+      const cards = Array.from(document.querySelectorAll('[data-duty-message-id]'));
+      (window as Window & { feedBenchmarkCards?: Element[] }).feedBenchmarkCards = cards;
+    });
+    await page.setViewportSize({ width: 1800, height: 1000 });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const previous =
+            (window as Window & { feedBenchmarkCards?: Element[] }).feedBenchmarkCards ?? [];
+          const cards = Array.from(document.querySelectorAll('[data-duty-message-id]'));
+          return cards.length === 160 && cards.every((card, index) => card === previous[index]);
+        }),
+      )
+      .toBe(true);
+    const metrics = await cpu.send('Performance.getMetrics');
+    console.info(
+      'message-feed workload',
+      JSON.stringify({
+        elapsedMs: Date.now() - startedAt,
+        metrics: metrics.metrics.filter(({ name }) =>
+          [
+            'TaskDuration',
+            'ScriptDuration',
+            'LayoutDuration',
+            'RecalcStyleDuration',
+            'Nodes',
+          ].includes(name),
+        ),
+      }),
+    );
+    await page.setViewportSize({ width: 375, height: 667 });
+    await expect(page.getByRole('tab')).toHaveCount(4);
+    for (let index = 0; index < 4; index += 1) {
+      await page.getByRole('tab').nth(index).click();
+      await expect(columns).toHaveCount(1);
+      await expect(columns.locator('[data-duty-message-id]')).toHaveCount(40);
+    }
+    await cpu.detach();
+  });
+
   test('@smoke persists the four-feed workspace and closes the selected middle feed', async ({
     page,
   }) => {

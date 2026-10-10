@@ -1,4 +1,10 @@
 import type { MutableRefObject, RefObject, UIEventHandler } from 'react';
+import type {
+  FeedScrollDiagnostics,
+  MessageFeedFocus,
+  MessageFeedNavigationTarget,
+  MessageFeedPolicy,
+} from './message-feed.types';
 
 export type WindowedFeedScrollItem = { id: number };
 
@@ -14,6 +20,8 @@ export type AnchorSnapshot = {
   itemIds: readonly number[];
   scrollTop: number;
   scrollHeight: number;
+  clientWidth?: number;
+  clientHeight?: number;
 };
 
 export type TopStatus = 'loading' | 'reached-start' | 'none';
@@ -72,9 +80,20 @@ export type WindowedFeedScrollCallbacks = {
   onAtBottomChange?: (atBottom: boolean) => void;
   onPhysicalBottomChange?: (atBottom: boolean) => void;
   onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
+  onFirstVisibleMessage?: (id: number, index: number) => void;
 };
 
 export type UseWindowedFeedScrollOptions = {
+  diagnostics?: FeedScrollDiagnostics;
+  policy?: MessageFeedPolicy;
+  focus?: MessageFeedFocus | null;
+  navigationTarget?: MessageFeedNavigationTarget | null;
+  viewportPreservationKey?: number;
+  onViewportCaptureChange?: (capture: (() => void) | null) => void;
+  onFirstVisibleMessage?: (id: number, index: number) => void;
+  loadEdgesOnLayout?: boolean;
+  positionResetKey?: string | number;
+  preservePositionOnReset?: boolean;
   itemIds: readonly number[];
   initialAnchorSnapshot?: AnchorSnapshot | null;
   onAnchorSnapshotChange?: (snapshot: AnchorSnapshot | null) => void;
@@ -115,10 +134,12 @@ export type UseWindowedFeedScrollOptions = {
 };
 
 export type WindowedFeedScrollHandle = {
+  bottomSpacerPx: number;
+  getItemElement: (id: number) => HTMLElement | null;
   scrollerRef: RefObject<HTMLDivElement>;
-  listRef: RefObject<HTMLDivElement>;
+  listRef: MutableRefObject<HTMLElement | null>;
   handleScroll: UIEventHandler<HTMLDivElement>;
-  setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
+  setItemRef: (id: number) => (node: HTMLElement | null) => void;
   scrollToBottom: (
     behavior?: ScrollBehavior,
     intent?: ScrollNavigationIntent,
@@ -128,9 +149,10 @@ export type WindowedFeedScrollHandle = {
 };
 
 export type WindowedFeedScrollRefs = {
+  diagnosticsRef: MutableRefObject<FeedScrollDiagnostics | undefined>;
   scrollerRef: MutableRefObject<HTMLDivElement | null>;
-  listRef: MutableRefObject<HTMLDivElement | null>;
-  itemRefsRef: MutableRefObject<Map<number, HTMLDivElement>>;
+  listRef: MutableRefObject<HTMLElement | null>;
+  itemRefsRef: MutableRefObject<Map<number, HTMLElement>>;
   itemIdsRef: MutableRefObject<readonly number[]>;
   anchorSnapshotRef: MutableRefObject<AnchorSnapshot | null>;
   callbacksRef: MutableRefObject<WindowedFeedScrollCallbacks>;
@@ -160,12 +182,13 @@ export type WindowedFeedScrollRefs = {
     | ((
         debugReason: string,
         intent: ScrollNavigationIntent,
-        options?: { enableFollow?: boolean },
+        options?: { enableFollow?: boolean; behavior?: ScrollBehavior },
         navigation?: ExplicitScrollNavigation,
       ) => void)
     | null
   >;
   isRestoringAnchorRef: MutableRefObject<boolean>;
+  restoredScrollTopRef: MutableRefObject<number | null>;
   previousItemIdsRef: MutableRefObject<readonly number[]>;
   previousResetKeyRef: MutableRefObject<string | number | null>;
   previousTopStatusRef: MutableRefObject<TopStatus>;
@@ -206,6 +229,32 @@ export function areNumberArraysEqual(a: readonly number[], b: readonly number[])
 
 export function distanceToBottom(el: HTMLElement): number {
   return Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
+}
+
+export function hasViewportSizeChanged(
+  scroller: HTMLElement,
+  snapshot: AnchorSnapshot | null,
+): boolean {
+  return (
+    snapshot !== null &&
+    (((snapshot.clientWidth ?? 0) > 0 && snapshot.clientWidth !== scroller.clientWidth) ||
+      ((snapshot.clientHeight ?? 0) > 0 && snapshot.clientHeight !== scroller.clientHeight))
+  );
+}
+
+export function isAtPhysicalBottom(scroller: HTMLElement): boolean {
+  const distance = distanceToBottom(scroller);
+  if (distance <= 1) return true;
+  if (distance > 2 || !scroller.lastElementChild) return false;
+  // CSS zoom can compound rounding of the integer scrollHeight/clientHeight.
+  const viewport = scroller.getBoundingClientRect();
+  const content = scroller.lastElementChild.getBoundingClientRect();
+  if (viewport.height <= 0 || content.height <= 0) return false;
+  const scale = scroller.offsetHeight > 0 ? viewport.height / scroller.offsetHeight : 1;
+  const style = getComputedStyle(scroller);
+  const trailingInset =
+    (parseFloat(style.paddingBottom) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+  return Math.abs(content.bottom + trailingInset * scale - viewport.bottom) <= 1;
 }
 
 /**

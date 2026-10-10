@@ -4,28 +4,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  dutyFollowEaseOutCubic,
-  dutyFollowScrollFrame,
-  getDutyFollowScrollBehavior,
-} from '../duty-follow-scroll';
-describe('getDutyFollowScrollBehavior', () => {
+  feedFollowEaseOutCubic,
+  feedFollowScrollFrame,
+  getFeedFollowScrollBehavior,
+} from '../../shared/message-feed/feed-follow-scroll';
+describe('getFeedFollowScrollBehavior', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it('returns smooth when reduced motion is not preferred', () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
-    expect(getDutyFollowScrollBehavior()).toBe('smooth');
+    expect(getFeedFollowScrollBehavior()).toBe('smooth');
   });
 
   it('returns auto when reduced motion is preferred', () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: true }) as MediaQueryList);
-    expect(getDutyFollowScrollBehavior()).toBe('auto');
+    expect(getFeedFollowScrollBehavior()).toBe('auto');
   });
 });
-describe('dutyFollowScrollFrame', () => {
+describe('feedFollowScrollFrame', () => {
   it('eases from start toward the live edge over the duration', () => {
-    const mid = dutyFollowScrollFrame({
+    const mid = feedFollowScrollFrame({
       startedAtMs: 0,
       nowMs: 225,
       fromScrollTop: 100,
@@ -39,7 +39,7 @@ describe('dutyFollowScrollFrame', () => {
   });
 
   it('rebases from the current position over remaining time when max grows', () => {
-    const before = dutyFollowScrollFrame({
+    const before = feedFollowScrollFrame({
       startedAtMs: 0,
       nowMs: 400,
       fromScrollTop: 100,
@@ -47,7 +47,7 @@ describe('dutyFollowScrollFrame', () => {
       clientHeight: 100,
       durationMs: 450,
     });
-    const after = dutyFollowScrollFrame({
+    const after = feedFollowScrollFrame({
       startedAtMs: 0,
       nowMs: 400,
       fromScrollTop: 100,
@@ -66,7 +66,7 @@ describe('dutyFollowScrollFrame', () => {
     expect(after.scrollTop).toBeCloseTo(before.scrollTop, 5);
     expect(after.scrollTop - before.scrollTop).toBeLessThan(1);
 
-    const later = dutyFollowScrollFrame({
+    const later = feedFollowScrollFrame({
       startedAtMs: after.startedAtMs,
       nowMs: 425,
       fromScrollTop: after.fromScrollTop,
@@ -81,7 +81,7 @@ describe('dutyFollowScrollFrame', () => {
   });
 
   it('finishes at max scrollTop', () => {
-    const end = dutyFollowScrollFrame({
+    const end = feedFollowScrollFrame({
       startedAtMs: 0,
       nowMs: 450,
       fromScrollTop: 100,
@@ -93,8 +93,8 @@ describe('dutyFollowScrollFrame', () => {
   });
 
   it('ease-out cubic is 0 at start and 1 at end', () => {
-    expect(dutyFollowEaseOutCubic(0)).toBe(0);
-    expect(dutyFollowEaseOutCubic(1)).toBe(1);
-    expect(dutyFollowEaseOutCubic(0.5)).toBeGreaterThan(0.5);
+    expect(feedFollowEaseOutCubic(0)).toBe(0);
+    expect(feedFollowEaseOutCubic(1)).toBe(1);
+    expect(feedFollowEaseOutCubic(0.5)).toBeGreaterThan(0.5);
   });
 });

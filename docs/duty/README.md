@@ -71,7 +71,7 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 
 | Concern                                          | File                                                                                                                            |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| Zones, load arming, anchor restore               | [`useWindowedFeedScroll.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useWindowedFeedScroll.ts)                       |
+| Zones, load arming, anchor restore               | [`useWindowedFeedScroll.ts`](../../wdintel-web/src/ts/react/routes/shared/message-feed/useWindowedFeedScroll.ts)                       |
 | Duty buffers (640 / 160 / 25)                    | [`FeedColumnContent.tsx`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/FeedColumnContent.tsx)                             |
 | Near-bottom badge options, reach-bottom / follow | [`index.tsx`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/index.tsx)                                                     |
 | Poll catch-up, cursor, `catchUpFeedUnreadToTail` | [`useRerDutyFeedState.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedState.ts)                           |

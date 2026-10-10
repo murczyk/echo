@@ -1,0 +1,68 @@
+# Shared message feed
+
+Duty and Analysis compose `MessageFeed` with `useWindowedFeedScroll`. The
+component owns the native scroller/list and keyed rows; the hook owns element
+registration, visible anchors, resize compensation, edge detection, follow,
+focused positioning, page alignment, and cancellation. Neither imports a host.
+
+## Host contracts
+
+- Supply stable numeric ids in display order. Keep data fetching, request
+  generations, errors/toasts, pagination and window trimming in the host.
+- Map physical above/below edges to chronological requests. Analysis reverses
+  this mapping when newest-first is selected; Duty always shows newest last.
+- Retain card memoization and offload placeholders through `renderMessage` or
+  `MessageFeedRows`. Slots and native attributes preserve host presentation.
+- Attach item wrappers through `setItemRef`, or use `data-message-id` with the
+  component registry. Duty retains `data-duty-message-id` for existing tools.
+- Use `scrollToItem` for a mounted target and `scrollToBottom` for tail landing.
+  The host loads missing context first and wakes any offloaded viewport.
+  Navigation owners provide generation/current checks and landing callbacks.
+- A controlled `focus` retains centered positioning through layout changes.
+  Reader scroll input releases it; card actions do not. The shared bottom
+  spacer makes boundary targets centerable. Hidden viewports wait for geometry.
+- `navigationTarget` aligns a loaded page at the leading edge; it does not fetch.
+  `onFirstVisibleMessage` lets hosts calculate page indicators or unread state.
+- Capture before refresh with `onViewportCaptureChange`; increment
+  `viewportPreservationKey` to restore the leading/trailing edge or reading card.
+  `resetKey` cancels old viewport work. `positionResetKey` resets page landing,
+  except when `preservePositionOnReset` marks an accumulated page.
+- Inject optional diagnostics. Debug stores remain host-owned.
+
+## Policies
+
+| Policy | Duty | Analysis |
+| --- | --- | --- |
+| Initial position | End after settings arrive | Start |
+| Follow at bottom | Existing watch/auto-scroll gates | Disabled |
+| Above/below buffers | 160 / 640px | 480 / 480px |
+| Below-edge strategy | Scroll idle, expanded unread runway | Immediate, fixed buffer |
+| Underfilled input loading | Enabled | Disabled |
+| Resize during below-edge load | Defer transient append compensation | Preserve the reading anchor |
+
+The 25px UI-bottom threshold is not physical-bottom permission to follow.
+`deferResizeWhileLoadingBelow` retains Duty's append behavior; Analysis disables
+it so media/editor height changes remain compensated during a page request.
+Released focus retains only spacer height needed to avoid clamping the reader;
+scrolling away or adding real content removes surplus space.
+Duty retains its 40-card window and idle offload; Analysis retains accumulated
+20-message pages. These data policies are not implemented by the viewport.
+
+## Verification and next stage
+
+Shared integration tests live in
+`wdintel-web/src/ts/react/routes/shared/message-feed/__tests__/MessageFeed.spec.tsx`.
+Host coverage remains in
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useWindowedFeedScroll.spec.tsx`
+and `wdintel-web/src/ts/react/routes/rer-analysis-neo/components/__tests__/AnalysisMessagesPane.spec.tsx`.
+Browser coverage is in `wdintel-web/tests/e2e/message-feed-unification.spec.ts`,
+`wdintel-web/tests/e2e/rer-duty-scroll-stability.spec.ts`,
+`wdintel-web/tests/e2e/rer-duty-workflows.spec.ts`,
+`wdintel-web/tests/e2e/analysis-neo.spec.ts`, and
+`wdintel-web/tests/e2e/analysis-workflows.spec.ts`. Run browser suites separately
+from frontend generation/builds to avoid dev-server reloads during navigation
+assertions.
+
+This stage preserves existing copied-link destinations. Duty links targeting
+Duty, search, Important lists, replies and mentions are subsequent producers
+of navigation requests, not additional scroll implementations.

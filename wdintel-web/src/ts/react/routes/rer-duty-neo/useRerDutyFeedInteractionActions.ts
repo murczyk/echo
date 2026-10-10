@@ -8,10 +8,10 @@ import {
   messageOrderTimestamp,
   type MessageFeedState,
 } from './utils';
-import { getDutyFollowScrollBehavior } from './duty-follow-scroll';
-import { ScrollNavigationIntent } from './windowed-feed-scroll-shared';
+import { getFeedFollowScrollBehavior } from '../shared/message-feed/feed-follow-scroll';
+import { ScrollNavigationIntent } from '../shared/message-feed/windowed-feed-scroll-shared';
 import type { ExplicitFeedNavigation } from './useRerDutyNavigation';
-import type { ExplicitScrollNavigation } from './windowed-feed-scroll-shared';
+import type { ExplicitScrollNavigation } from '../shared/message-feed/windowed-feed-scroll-shared';
 
 type Params = {
   messageFeeds: MessageFeedState[];
@@ -155,7 +155,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
             navigation?.onUnavailable();
             return;
           }
-          column.scrollToEnd(getDutyFollowScrollBehavior(), {
+          column.scrollToEnd(getFeedFollowScrollBehavior(), {
             wakeIdleOffload: true,
             intent: ScrollNavigationIntent.Explicit,
             navigation,

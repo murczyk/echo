@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 
-import { getDutyFollowScrollBehavior } from './duty-follow-scroll';
-import { ScrollNavigationIntent } from './windowed-feed-scroll-shared';
-import type { ExplicitScrollNavigation } from './windowed-feed-scroll-shared';
+import { getFeedFollowScrollBehavior } from '../shared/message-feed/feed-follow-scroll';
+import { ScrollNavigationIntent } from '../shared/message-feed/windowed-feed-scroll-shared';
+import type { ExplicitScrollNavigation } from '../shared/message-feed/windowed-feed-scroll-shared';
 
 export type PendingFeedLanding = {
   generation: number;
@@ -67,7 +67,7 @@ export function useRerDutyDeferredLanding(params: DeferredLandingParams) {
           delete params.pendingScrollToEndRef.current[feedId];
           delete params.scheduledScrollToEndRef.current[feedId];
           if (!refs[feedId]) return;
-          refs[feedId]?.scrollToEnd(getDutyFollowScrollBehavior(), {
+          refs[feedId]?.scrollToEnd(getFeedFollowScrollBehavior(), {
             intent: ScrollNavigationIntent.AutomaticFollow,
           });
         });

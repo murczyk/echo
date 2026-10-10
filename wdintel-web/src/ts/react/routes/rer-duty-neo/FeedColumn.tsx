@@ -29,7 +29,7 @@ import { clearFeedColumnFab, publishFeedColumnFab } from './feedColumnFab';
 import type {
   ExplicitScrollNavigation,
   ScrollNavigationIntent,
-} from './windowed-feed-scroll-shared';
+} from '../shared/message-feed/windowed-feed-scroll-shared';
 
 export type FeedColumnProps = {
   column: FeedColumnModel;
