@@ -1086,8 +1086,8 @@ mod tests {
         job.html_s3_key = Set(Some("published.html".into()));
         job.ai_engine_name = Set(Some("selected engine".into()));
         job.model_name = Set(Some("selected model".into()));
-        job.ocr_request_profile = Set(Some("selected profile".into()));
-        let mut job = job.update(&env.dbx).await.unwrap();
+        job.ocr_request_profile = Set(Some("openai_vision".into()));
+        job.update(&env.dbx).await.unwrap();
         let sql = include_str!("recover_storage_pressure.sql");
         let request = |generation, extractor, accepted| {
             serde_json::json!([{
@@ -1107,7 +1107,7 @@ mod tests {
             );
             let recovered = env
                 .dbx
-                .query_all(&sea_orm::Statement::from_sql_and_values(
+                .query_all_raw(sea_orm::Statement::from_sql_and_values(
                     sea_orm::DatabaseBackend::Postgres,
                     sql,
                     [requested.into()],
@@ -1116,7 +1116,7 @@ mod tests {
                 .unwrap();
             assert_eq!(recovered.len(), expected);
         }
-        job = ocr_job::Entity::find_by_id(media.id)
+        let job = ocr_job::Entity::find_by_id(media.id)
             .one(&env.dbx)
             .await
             .unwrap()
@@ -1132,7 +1132,7 @@ mod tests {
         let requested = request(generation, Some(extractor), true);
         let recovered = env
             .dbx
-            .query_all(&sea_orm::Statement::from_sql_and_values(
+            .query_all_raw(sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
                 sql,
                 [requested.into()],

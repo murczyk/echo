@@ -121,8 +121,11 @@ SIGNOZ_URL=... SIGNOZ_API_KEY=... python3 echo-document-extractor/bin/install-st
 The rules target GPU worker telemetry and the existing `mattermost monitoring`
 channel. Spool warning/critical thresholds are 160/180 GiB; free-space thresholds
 are below 40/25 GiB, sustained for five minutes. Activation requires an
-authenticated SigNoz admin API credential. The installer verifies the stored
-rules. See [SigNoz metric alerts](https://signoz.io/docs/alerts-management/metrics-based-alerts/).
+authenticated SigNoz API credential with alert-write permission. An active
+Editor service-account key is available through
+[the monitoring note](../docs/MONITORING.md#alert-api-credentials).
+The installer verifies the stored rules.
+See [SigNoz metric alerts](https://signoz.io/docs/alerts-management/metrics-based-alerts/).
 
 If code deployment fails, pause dispatch, restore the previous compatible
 package or source, restart the drained services, verify readiness, and restore

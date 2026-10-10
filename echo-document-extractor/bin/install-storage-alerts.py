@@ -22,7 +22,7 @@ def storage_rule(metric: str, op: str, warning: int, critical: int) -> dict:
         }
     ]
     aggregation["filter"]["expression"] = "service.instance.id = 'ct-echo-document-extractor/worker'"
-    condition["alertOnAbsent"] = False
+    condition["alertOnAbsent"] = None
     condition["thresholds"]["spec"] = [
         {
             "name": severity,
