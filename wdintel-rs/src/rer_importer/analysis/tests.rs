@@ -28,6 +28,146 @@ struct GroupFixture {
     datasource_group: datasource_group::Model,
 }
 
+#[tokio::test]
+#[ignore = "requires the isolated callsign benchmark database"]
+async fn capture_callsign_page_production_builder_plans() {
+    let output = std::path::PathBuf::from(
+        std::env::var("CALLSIGN_PLAN_OUTPUT").unwrap(),
+    );
+    std::fs::create_dir_all(&output).unwrap();
+    let env = crate::server::new_env(crate::types::Mode::Test)
+        .await
+        .unwrap();
+    let state = env
+        .dbx
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT master_key, creator FROM callsign_benchmark_state",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let master_key: String = state.try_get_by("master_key").unwrap();
+    let login: uuid::Uuid = state.try_get_by("creator").unwrap();
+    let network_id: i64 = env
+        .dbx
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT id FROM sigint_network WHERE name = 'BENCH-NET-000'",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get_by("id")
+        .unwrap();
+    let req = mk_analysis_stats_req(1_786_060_800_000, 1_791_320_400_000);
+
+    let broad = AnalysisCallsignPageReq {
+        req: req.clone(),
+        query: String::new(),
+        page_size: Some(50),
+        cursor: None,
+        order: AnalysisCallsignPageOrder::CountDesc,
+    };
+    let broad_first = stats::fetch_callsigns_page_for_login(
+        &broad,
+        &login,
+        &env.dbx,
+        vec![master_key.clone()],
+    )
+    .await
+    .unwrap();
+    let broad_second = AnalysisCallsignPageReq {
+        cursor: broad_first.next_cursor,
+        ..broad.clone()
+    };
+    let partial = AnalysisCallsignPageReq {
+        req: req.clone(),
+        query: "CS-099".to_string(),
+        page_size: Some(50),
+        cursor: None,
+        order: AnalysisCallsignPageOrder::MatchThenName,
+    };
+    let partial_first = stats::fetch_callsigns_page_for_login(
+        &partial,
+        &login,
+        &env.dbx,
+        vec![master_key.clone()],
+    )
+    .await
+    .unwrap();
+    let partial_second = AnalysisCallsignPageReq {
+        cursor: partial_first.next_cursor,
+        ..partial.clone()
+    };
+    let mut partial_deep = partial.clone();
+    for _ in 0..10 {
+        let page = stats::fetch_callsigns_page_for_login(
+            &partial_deep,
+            &login,
+            &env.dbx,
+            vec![master_key.clone()],
+        )
+        .await
+        .unwrap();
+        partial_deep.cursor = page.next_cursor;
+    }
+    let exact = AnalysisCallsignPageReq {
+        query: "CS-099000".to_string(),
+        ..partial.clone()
+    };
+    let case_variant = AnalysisCallsignPageReq {
+        query: "cs-099".to_string(),
+        ..partial.clone()
+    };
+    let no_match = AnalysisCallsignPageReq {
+        query: "NO-SUCH-CALLSIGN".to_string(),
+        ..partial.clone()
+    };
+    let mut narrow_req = req;
+    narrow_req.selected_freqs = Some(vec!["100.000".to_string()]);
+    narrow_req.selected_networks = Some(vec![network_id]);
+    let narrow = AnalysisCallsignPageReq {
+        req: narrow_req,
+        ..broad.clone()
+    };
+
+    for (name, page_req) in [
+        ("broad-first", broad),
+        ("broad-second", broad_second),
+        ("partial-first", partial),
+        ("partial-second", partial_second),
+        ("partial-deep", partial_deep),
+        ("exact-first", exact),
+        ("case-variant-first", case_variant),
+        ("no-match", no_match),
+        ("narrow-first", narrow),
+    ] {
+        let statement = stats::callsign_page_statement_for_test(
+            &page_req,
+            &login,
+            vec![master_key.clone()],
+        )
+        .unwrap();
+        std::fs::write(output.join(format!("{name}.sql")), &statement.sql)
+            .unwrap();
+        for run in 1..=3 {
+            let mut explain = statement.clone();
+            explain.sql = format!(
+                "EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMARY ON) {}",
+                explain.sql,
+            );
+            let plan = env.dbx.query_all_raw(explain).await.unwrap();
+            let plan = plan
+                .iter()
+                .map(|row| row.try_get_by_index::<String>(0).unwrap())
+                .collect::<Vec<_>>()
+                .join("\n");
+            std::fs::write(output.join(format!("{name}-{run}.plan")), plan)
+                .unwrap();
+        }
+    }
+}
 struct NetworkFixture {
     network: sigint_network::Model,
 }
@@ -1239,6 +1379,22 @@ async fn fetch_callsign_counts_for_req(
             .await
             .context(h!())?;
     Ok(callsign_counts(callsigns))
+}
+
+async fn fetch_callsign_page_for_req(
+    env: &Arc<Env>,
+    req: AnalysisCallsignPageReq,
+) -> Result<AnalysisCallsignPageRsp, AppError> {
+    let (login, master_keys) =
+        analysis_login_and_master_keys(env).await.context(h!())?;
+    Ok(stats::fetch_callsigns_page_for_login(
+        &req,
+        &login,
+        &env.dbx,
+        master_keys,
+    )
+    .await
+    .context(h!())?)
 }
 
 async fn fetch_tag_counts_for_req(
@@ -4235,6 +4391,274 @@ async fn rer_analysis_sender_callsign_and_post_filters_recalculate_values() {
         fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap();
     assert!(!freq_counts.contains_key("942.1"));
     assert!(freq_counts.contains_key("942.2"));
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_callsign_page_paginates_full_order_and_escapes_literal_search(
+) {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    for (index, callsign) in [
+        "PAGER-ALPHA",
+        "PAGER-BRAVO",
+        "PAGER-CHARLIE",
+        "A-PAGER",
+        "PAGER",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let message = mk_analysis_message(
+            db,
+            &format!("callsign-page-{index}"),
+            "943.1",
+            test_dt(2026, 3, 1, 10, index as u32),
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        set_message_callsigns(db, message.id, serde_json::json!([callsign]))
+            .await
+            .unwrap();
+    }
+    let variant = mk_analysis_message(
+        db,
+        "callsign-page-variant",
+        "943.1",
+        test_dt(2026, 3, 1, 10, 3),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_callsigns(db, variant.id, serde_json::json!(["pager-alpha"]))
+        .await
+        .unwrap();
+    let literal = mk_analysis_message(
+        db,
+        "callsign-page-literal",
+        "943.2",
+        test_dt(2026, 3, 1, 10, 9),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_callsigns(db, literal.id, serde_json::json!(["PCT%_\\'"]))
+        .await
+        .unwrap();
+
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_callsigns = Some(vec!["DOES-NOT-EXIST".to_string()]);
+    let page = AnalysisCallsignPageReq {
+        req,
+        query: "PAGER".to_string(),
+        page_size: Some(1),
+        cursor: None,
+        order: AnalysisCallsignPageOrder::MatchThenName,
+    };
+    let mut cursor = None;
+    let mut first_cursor = None;
+    let mut labels = Vec::new();
+    let mut alpha = None;
+    for _ in 0..5 {
+        let current = fetch_callsign_page_for_req(
+            &fixture.env,
+            AnalysisCallsignPageReq {
+                cursor: cursor.clone(),
+                ..page.clone()
+            },
+        )
+        .await
+        .unwrap();
+        let entry = current.entries.into_iter().next().unwrap();
+        if entry.label == "PAGER-ALPHA" {
+            alpha = Some(entry.clone());
+        }
+        if labels.is_empty() {
+            first_cursor = current.next_cursor.clone();
+        }
+        labels.push(entry.label);
+        cursor = current.next_cursor;
+    }
+    assert_eq!(
+        labels,
+        vec![
+            "PAGER",
+            "A-PAGER",
+            "PAGER-ALPHA",
+            "PAGER-BRAVO",
+            "PAGER-CHARLIE"
+        ]
+    );
+    assert!(cursor.is_none());
+    let alpha = alpha.unwrap();
+    assert_eq!(alpha.count, 2);
+    assert_eq!(
+        alpha.values.iter().cloned().collect::<BTreeSet<_>>(),
+        BTreeSet::from(["PAGER-ALPHA".to_string(), "pager-alpha".to_string()])
+    );
+    let literal_page = fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            query: "PCT%_\\'".to_string(),
+            page_size: Some(50),
+            cursor: None,
+            ..page.clone()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(literal_page.entries.len(), 1);
+    assert_eq!(literal_page.entries[0].label, "PCT%_\\'");
+
+    for index in 0..101 {
+        let message = mk_analysis_message(
+            db,
+            &format!("callsign-page-size-{index}"),
+            "943.3",
+            test_dt(2026, 3, 1, 10, 0),
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        set_message_callsigns(
+            db,
+            message.id,
+            serde_json::json!([format!("SIZE-{index:03}")]),
+        )
+        .await
+        .unwrap();
+    }
+    let size_page = AnalysisCallsignPageReq {
+        req: analysis_stats_req0(&fixture),
+        query: "SIZE-".to_string(),
+        page_size: None,
+        cursor: None,
+        order: AnalysisCallsignPageOrder::MatchThenName,
+    };
+    let default_size =
+        fetch_callsign_page_for_req(&fixture.env, size_page.clone())
+            .await
+            .unwrap();
+    assert_eq!(default_size.entries.len(), 50);
+    assert!(default_size.has_more);
+    let max_size = fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            page_size: Some(200),
+            ..size_page
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(max_size.entries.len(), 100);
+    assert!(max_size.has_more);
+
+    assert!(fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            page_size: Some(2),
+            cursor: first_cursor.clone(),
+            ..page.clone()
+        },
+    )
+    .await
+    .is_err());
+    assert!(fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            order: AnalysisCallsignPageOrder::CountDesc,
+            cursor: first_cursor.clone(),
+            ..page.clone()
+        },
+    )
+    .await
+    .is_err());
+    assert!(fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            query: "PAGER-BRAVO".to_string(),
+            cursor: first_cursor,
+            ..page.clone()
+        },
+    )
+    .await
+    .is_err());
+    for cursor in ["!", "e30"] {
+        let error = fetch_callsign_page_for_req(
+            &fixture.env,
+            AnalysisCallsignPageReq {
+                cursor: Some(cursor.to_owned()),
+                ..page.clone()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            crate::error::AppError::Form(errors) if errors.contains_key("cursor")
+        ));
+    }
+
+    let count_page = AnalysisCallsignPageReq {
+        order: AnalysisCallsignPageOrder::CountDesc,
+        ..page
+    };
+    let count_first =
+        fetch_callsign_page_for_req(&fixture.env, count_page.clone())
+            .await
+            .unwrap();
+    assert_eq!(count_first.entries[0].label, "PAGER-ALPHA");
+    assert_eq!(count_first.entries[0].count, 2);
+    assert_eq!(
+        count_first.entries[0]
+            .values
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["PAGER-ALPHA".to_string(), "pager-alpha".to_string()])
+    );
+    let count_second = fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            cursor: count_first.next_cursor.clone(),
+            ..count_page.clone()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(count_second.entries[0].label, "A-PAGER");
+    assert_eq!(count_second.entries[0].count, 1);
+    assert_eq!(count_second.entries[0].values, vec!["A-PAGER"]);
+
+    let mut callsign_facet_changed = count_page;
+    callsign_facet_changed.req.selected_callsigns =
+        Some(vec!["DOES-NOT-EXIST".to_string()]);
+    let count_second_with_callsign_facet_changed = fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            cursor: count_first.next_cursor,
+            ..callsign_facet_changed
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        count_second_with_callsign_facet_changed.entries[0].label,
+        "A-PAGER"
+    );
+    assert_eq!(
+        count_second_with_callsign_facet_changed.entries,
+        count_second.entries
+    );
 }
 
 #[tokio::test]
@@ -8189,6 +8613,285 @@ async fn analytics_read_outcome_distinguishes_unconfigured_and_unavailable() {
     assert_eq!(result.value, "postgres");
     assert_eq!(result.postgres_reason, Some("analytics_unavailable"));
     assert!(result.postgres_fallback_permit.is_some());
+}
+
+#[tokio::test]
+#[serial]
+async fn analysis_split_count_endpoints_preserve_totals_and_device_authorization(
+) {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let (login, _) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+    set_login_roles(&fixture.env.dbx, login, serde_json::json!(["Rer"])).await;
+    let store = RedisSessionStore::new(
+        crate::redis_conn_string(&fixture.env.config).unwrap(),
+    )
+    .await
+    .unwrap();
+    let app = actix_test::init_service(
+        App::new()
+            .app_data(Data::from(fixture.env.clone()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(store, Key::generate()))
+            .route(
+                "/test/count-login/{login}",
+                web::post().to(activity_daily_test_login),
+            )
+            .service(count_stats)
+            .service(message_stats_count)
+            .service(unit_match_stats_count)
+            .service(group_stats_count)
+            .service(sender_stats_count)
+            .service(post_stats_count)
+            .service(freq_stats_count)
+            .service(callsign_stats_count)
+            .service(tag_stats_count)
+            .service(unit_stats_count)
+            .service(location_stats_count)
+            .service(aor_stats_count)
+            .service(network_stats_count),
+    )
+    .await;
+    let endpoints = [
+        "messages",
+        "units/matches",
+        "groups",
+        "senders",
+        "posts",
+        "freqs",
+        "callsigns",
+        "tags",
+        "units",
+        "locations",
+        "aors",
+        "networks",
+    ];
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_aors = Some(vec![fixture.north_aor.id]);
+    for endpoint in endpoints {
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/rer/analysis/stats/{endpoint}/count"))
+                .set_json(&req)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{endpoint}");
+    }
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri(&format!("/test/count-login/{login}"))
+            .to_request(),
+    )
+    .await;
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let combined: serde_json::Value = actix_test::call_and_read_body_json(
+        &app,
+        actix_test::TestRequest::post()
+            .uri("/api/rer/analysis/stats/count")
+            .cookie(cookie.clone())
+            .set_json(&req)
+            .to_request(),
+    )
+    .await;
+    for endpoint in endpoints {
+        let result: serde_json::Value = actix_test::call_and_read_body_json(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/rer/analysis/stats/{endpoint}/count"))
+                .cookie(cookie.clone())
+                .set_json(&req)
+                .to_request(),
+        )
+        .await;
+        let expected = match endpoint {
+            "messages" => {
+                serde_json::json!({ "count_overall": combined["count_overall"], "count_selected": combined["count_selected"] })
+            }
+            "units/matches" => {
+                serde_json::json!({ "exact_matches_count": combined["units_exact_matches_count"], "non_exact_matches_count": combined["units_non_exact_matches_count"] })
+            }
+            dimension => combined[format!("{dimension}_count")].clone(),
+        };
+        assert_eq!(result, expected, "{endpoint}");
+    }
+    set_devices_section_enabled(&fixture.env.dbx, true).await;
+    req.selected_device_names = Some(vec!["restricted-device".to_string()]);
+    for endpoint in endpoints {
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/rer/analysis/stats/{endpoint}/count"))
+                .cookie(cookie.clone())
+                .set_json(&req)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{endpoint}");
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn analysis_split_count_fallbacks_share_capacity_and_release_it_between_waves(
+) {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let mut env = (*fixture.env).clone();
+    env.config.analytics = Some(
+        serde_json::from_value(serde_json::json!({
+            "pg_host": "unavailable",
+            "pg_user": "unavailable",
+            "pg_password": "unavailable",
+            "pg_dbname": "unavailable"
+        }))
+        .unwrap(),
+    );
+    let req = analysis_stats_req0(&fixture);
+    let login = uuid::Uuid::new_v4();
+    let active = std::sync::atomic::AtomicUsize::new(0);
+    let maximum = std::sync::atomic::AtomicUsize::new(0);
+    let active = &active;
+    let maximum = &maximum;
+    let available = ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits();
+    let load = |request, operation| {
+        counts::read_with_fallback(
+            &env,
+            login,
+            request,
+            operation,
+            |_db| async { panic!("unavailable analytics must not be queried") },
+            |db| async move {
+                let concurrent = active.fetch_add(1, Ordering::SeqCst) + 1;
+                maximum.fetch_max(concurrent, Ordering::SeqCst);
+                db.execute_unprepared("select pg_sleep(0.02)")
+                    .await
+                    .c(h!())?;
+                active.fetch_sub(1, Ordering::SeqCst);
+                Ok::<_, AppError>(())
+            },
+        )
+    };
+    let (first, second, third) = tokio::join!(
+        load(&req, "analysis stats groups count"),
+        load(&req, "analysis stats senders count"),
+        load(&req, "analysis stats units count"),
+    );
+    first.unwrap();
+    second.unwrap();
+    third.unwrap();
+    assert_eq!(maximum.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits(),
+        available
+    );
+    load(&req, "analysis stats networks count").await.unwrap();
+    maximum.store(0, Ordering::SeqCst);
+    let mut other_req = req.clone();
+    other_req.selected_groups = Some(vec!["other-filter".to_string()]);
+    let (first, second) = tokio::join!(
+        load(&req, "analysis stats groups count"),
+        load(&other_req, "analysis stats groups count"),
+    );
+    first.unwrap();
+    second.unwrap();
+    assert_eq!(maximum.load(Ordering::SeqCst), 2);
+    maximum.store(0, Ordering::SeqCst);
+    let mut postgres_req = other_req.clone();
+    postgres_req.search = Some("postgres-only filter".to_string());
+    let (first, second, third) = tokio::join!(
+        load(&postgres_req, "analysis stats groups count"),
+        load(&postgres_req, "analysis stats senders count"),
+        load(&postgres_req, "analysis stats units count"),
+    );
+    first.unwrap();
+    second.unwrap();
+    third.unwrap();
+    assert_eq!(maximum.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits(),
+        available
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn analysis_split_postgres_only_counts_serialize_without_outage_capacity()
+{
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    assert!(fixture.env.analytics.is_none());
+    assert!(fixture.env.config.analytics.is_none());
+    let req = analysis_stats_req0(&fixture);
+    let mut search_req = req.clone();
+    search_req.search = Some("postgres-only filter".to_string());
+    let mut creation_req = req.clone();
+    creation_req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    let login = uuid::Uuid::new_v4();
+    let available = ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits();
+
+    for req in [req, search_req, creation_req] {
+        let active = std::sync::atomic::AtomicUsize::new(0);
+        let maximum = std::sync::atomic::AtomicUsize::new(0);
+        let active = &active;
+        let maximum = &maximum;
+        let load = |operation| {
+            counts::read_with_fallback(
+                &fixture.env,
+                login,
+                &req,
+                operation,
+                |_db| async {
+                    panic!("PostgreSQL-only request used analytics")
+                },
+                |db| async move {
+                    assert_eq!(
+                        ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE
+                            .available_permits(),
+                        available
+                    );
+                    let concurrent = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    maximum.fetch_max(concurrent, Ordering::SeqCst);
+                    db.execute_unprepared("select pg_sleep(0.02)")
+                        .await
+                        .c(h!())?;
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    Ok::<_, AppError>(())
+                },
+            )
+        };
+        let (first, second, third, fourth) = tokio::join!(
+            load("analysis stats groups count"),
+            load("analysis stats senders count"),
+            load("analysis stats units count"),
+            load("analysis stats networks count"),
+        );
+        first.unwrap();
+        second.unwrap();
+        third.unwrap();
+        fourth.unwrap();
+        assert_eq!(maximum.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn analysis_split_count_failure_opens_the_circuit_for_later_dimensions() {
+    let states = RwLock::new(HashMap::new());
+    let groups = analytics_retry_state_for_operation(
+        &states,
+        "analysis stats groups count",
+    );
+    analytics_retry_attempt(&groups)
+        .unwrap()
+        .record_failure(core::time::Duration::from_secs(30));
+    let units = analytics_retry_state_for_operation(
+        &states,
+        "analysis stats units matches count",
+    );
+    assert!(analytics_retry_attempt(&units).is_none());
+    let inbox = analytics_retry_state_for_operation(&states, "analysis inbox");
+    assert!(analytics_retry_attempt(&inbox).is_some());
 }
 
 #[test]

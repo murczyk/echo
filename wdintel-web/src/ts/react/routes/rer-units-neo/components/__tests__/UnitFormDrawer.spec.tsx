@@ -13,6 +13,7 @@ vi.mock('../../../../services/api/units', () => ({
   DEFAULT_LIST_UNITS_REQ: {},
   getCreateUnitDuplicateCandidates: vi.fn(),
   getUnitsPage: vi.fn(),
+  getUnitCombatTypes: vi.fn().mockResolvedValue({ combatTypes: [] }),
 }));
 
 const duplicate = {
@@ -42,6 +43,8 @@ const duplicate = {
   hasOrbit: true,
   orbitUnitIds: ['orbit-id'],
   orbitUnitGenerativeNames: ['106 пдд / МВО'],
+  combatTypeId: null,
+  combatTypeName: null,
 } satisfies Unit;
 
 function findButton(label: string): HTMLButtonElement {

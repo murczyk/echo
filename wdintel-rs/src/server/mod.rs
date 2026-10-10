@@ -539,6 +539,27 @@ fn spawn_device_file_sync_expiry_worker(
     );
 }
 
+fn spawn_device_file_preview_workers(
+    bg_set: &mut JoinSet<()>,
+    env: Arc<Env>,
+    cancellation: CancellationToken,
+) {
+    let cleanup_env = env.as_ref().clone();
+    let cleanup_cancellation = cancellation.clone();
+    spawn_named_worker("device_file_preview_cleanup", bg_set, async move {
+        crate::devices::files::preview::cleanup_nofail(
+            cleanup_env,
+            cleanup_cancellation,
+        )
+        .await;
+    });
+    let preview_env = env.as_ref().clone();
+    spawn_named_worker("device_file_preview_conversion", bg_set, async move {
+        crate::devices::files::preview::run_nofail(preview_env, cancellation)
+            .await;
+    });
+}
+
 fn spawn_palitra_conversion_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     spawn_named_worker("palitra_conversion_worker", bg_set, async move {
         crate::palitra::conversion_worker::palitra_conversion_worker_nofail(
@@ -908,6 +929,11 @@ fn spawn_background_workers(
         .await;
     });
     if env.file_registry_db.is_some() {
+        spawn_device_file_preview_workers(
+            bg_set,
+            env.clone(),
+            cancel_token.clone(),
+        );
         let audio_cleanup_runtime = env.device_audio.clone();
         let audio_cleanup_cancellation = cancel_token.clone();
         spawn_named_worker("device_audio_cleanup", bg_set, async move {
@@ -929,11 +955,13 @@ fn spawn_background_workers(
         );
         if let Some(runtime) = env.device_file_content.clone() {
             let content_cleanup_cancellation = cancel_token.clone();
+            let content_cleanup_env = env.clone();
             spawn_named_worker(
                 "device_file_content_cleanup_worker",
                 bg_set,
                 async move {
                     crate::devices::files::content::worker::run_nofail(
+                        content_cleanup_env,
                         runtime,
                         content_cleanup_cancellation,
                     )
@@ -1067,10 +1095,13 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::analysis::network_stats)
             .service(crate::rer_importer::analysis::network_stats_count)
             .service(crate::rer_importer::analysis::count_stats)
+            .service(crate::rer_importer::analysis::message_stats_count)
+            .service(crate::rer_importer::analysis::unit_match_stats_count)
             .service(crate::rer_importer::analysis::location_stats)
             .service(crate::rer_importer::analysis::unit_stats)
             .service(crate::rer_importer::analysis::tag_stats)
             .service(crate::rer_importer::analysis::callsign_stats)
+            .service(crate::rer_importer::analysis::callsign_page)
             .service(crate::rer_importer::analysis::metadata_stats)
             .service(crate::rer_importer::analysis::freq_stats)
             .service(crate::rer_importer::analysis::post_stats)
@@ -1173,6 +1204,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(
                 crate::ai_agent::provider_gateway::chat_completions,
             )
+            .service(crate::ai_agent::provider_gateway::responses)
             .service(crate::ai_agent::admin::get_settings)
             .service(crate::ai_agent::admin::update_settings)
             .service(crate::ai_agent::admin::get_dispatcher)
@@ -1273,6 +1305,12 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::users::user_test_api_login)
             .service(crate::users::api_user)
             .service(crate::users::api_user_info)
+            .service(crate::rer_report_admin::rer_report_access_list)
+            .service(crate::rer_report_admin::rer_report_access_replace)
+            .service(crate::rer_report_admin::rer_report_metadata_list)
+            .service(crate::rer_report_admin::rer_report_metadata_create)
+            .service(crate::rer_report_admin::rer_report_metadata_update)
+            .service(crate::rer_report_admin::rer_report_metadata_delete)
             .service(crate::users::user_logout)
             .service(crate::users::settings_save)
             .service(crate::users::display_name::save)
@@ -1343,6 +1381,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::files::complete_sync_session)
             .service(crate::devices::files::sync_session_items)
             .service(crate::devices::files::content::routes())
+            .service(crate::devices::files::preview::routes())
             .service(crate::devices::analytics::list_tags)
             .service(crate::devices::analytics::create_tag)
             .service(crate::devices::analytics::update_tag)
@@ -1393,6 +1432,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::zone::my_admin_group_edit_reference)
             .service(crate::sigint::zone::my_admin_group_update)
             .service(crate::sigint::unit::list_units)
+            .service(crate::sigint::unit::combat_type::list_combat_types)
             .service(crate::sigint::unit::unit_status_counts)
             .service(crate::sigint::unit::list_units_by_id)
             .service(crate::sigint::unit::create_unit)
@@ -1778,6 +1818,15 @@ pub async fn main_server(
     }
     .run();
 
+    let audio_runtime = env.device_audio.clone();
+    let audio_cancellation = cancel_token.clone();
+    let audio_preparation = tokio::spawn(async move {
+        crate::devices::audio::run_preparation(
+            audio_runtime,
+            audio_cancellation,
+        )
+        .await;
+    });
     let task_completion_future = async move {
         if should_start_bgworkers && mode == Mode::Live {
             std::future::pending::<()>().await;
@@ -1816,6 +1865,7 @@ pub async fn main_server(
             },
             _ = task_completion_future => {
                 info!("[Main] All background tasks finished. Stopping actix server.");
+                cancel_token.cancel();
                 server_handle.stop(true).await;
             }
             _ = server => {
@@ -1824,6 +1874,7 @@ pub async fn main_server(
             }
         }
     }).await.c(h!());
+    audio_preparation.await.c(h!())?;
     if let Some(metrics) = &env.metrics {
         metrics.shutdown();
     }

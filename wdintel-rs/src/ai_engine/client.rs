@@ -71,12 +71,42 @@ impl AiEngineClient {
     pub async fn send(
         &self,
         engine: &ai_engine::Model,
-        mut body: Value,
+        body: Value,
         timeout: Duration,
     ) -> anyhow::Result<reqwest::Response> {
-        let endpoint = super::chat_completions_url(&engine.url).c(h!())?;
+        self.send_agent_request(engine, body, timeout, false)
+            .await
+            .c(h!())
+    }
+
+    pub async fn send_responses(
+        &self,
+        engine: &ai_engine::Model,
+        body: Value,
+        timeout: Duration,
+    ) -> anyhow::Result<reqwest::Response> {
+        self.send_agent_request(engine, body, timeout, true)
+            .await
+            .c(h!())
+    }
+
+    async fn send_agent_request(
+        &self,
+        engine: &ai_engine::Model,
+        mut body: Value,
+        timeout: Duration,
+        responses: bool,
+    ) -> anyhow::Result<reqwest::Response> {
+        let mut endpoint = super::chat_completions_url(&engine.url).c(h!())?;
+        if responses {
+            let prefix =
+                endpoint.path().strip_suffix("/chat/completions").c(h!())?;
+            endpoint.set_path(&format!("{prefix}/responses"));
+        }
         if is_government_url(&engine.url) {
-            adapt_government_request(&engine.model_name, &mut body);
+            if !responses {
+                adapt_government_request(&engine.model_name, &mut body);
+            }
             let settings = self.government_settings().await.c(h!())?;
             return self
                 .send_government(endpoint, Some(body), timeout, settings)

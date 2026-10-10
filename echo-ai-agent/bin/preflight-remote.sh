@@ -2,7 +2,7 @@
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-set -euo pipefail
+set -exuo pipefail
 
 EXPECTED_HOSTNAME=${1:?expected hostname is required}
 EXPECTED_OS_ID=${2:?expected OS ID is required}

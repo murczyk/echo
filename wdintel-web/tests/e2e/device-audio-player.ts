@@ -103,6 +103,12 @@ export async function expectAudioFilter(page: Page, checked: boolean) {
   );
 }
 
+export async function toggleAudioStartTime(page: Page) {
+  await page.getByRole('button', { name: 'Налаштування списку аудіо' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Показувати дату й час початку' }).click();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+}
+
 export async function selectAudio(page: Page, id: string) {
   const back = page.getByRole('button', { name: 'До аудіо', exact: true });
   if (await back.isVisible()) await back.click();

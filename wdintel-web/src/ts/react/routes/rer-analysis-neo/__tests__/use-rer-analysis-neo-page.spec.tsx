@@ -404,6 +404,88 @@ describe('useRerAnalysisNeoPage', () => {
     );
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it.each([
+    { request: 'user', directLink: false },
+    { request: 'settings', directLink: false },
+    { request: 'user', directLink: true },
+    { request: 'settings', directLink: true },
+  ])(
+    'preserves report filters while $request access is pending or fails (direct link: $directLink)',
+    async ({ request, directLink }) => {
+      currentUserMock.fetchCurrentUser.mockResolvedValue({
+        name: 'tester',
+        roles: ['Rer'],
+        rerReportEligible: true,
+      } as User);
+      systemSettingsMock.currentSystemSettings.mockResolvedValue({ rerReportEnabled: true });
+      const accessRequest = deferred<never>();
+      const lookup =
+        request === 'user'
+          ? currentUserMock.fetchCurrentUser
+          : systemSettingsMock.currentSystemSettings;
+      lookup.mockReturnValueOnce(accessRequest.promise);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?onlyWithNetwork=true${directLink ? '&m=target-uid' : ''}`,
+      );
+      renderHook(['Rer']);
+      await flushEffects();
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+        queryState: { onlyWithNetwork: true },
+        deferInitialLoad: true,
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      await act(async () => accessRequest.reject(new Error('access unavailable')));
+      await flushEffects();
+      expect(latest?.queryState.onlyWithNetwork).toBe(true);
+      expect(new URLSearchParams(window.location.search).get('onlyWithNetwork')).toBe('true');
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+        queryState: { onlyWithNetwork: true },
+        deferInitialLoad: true,
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      expect(latest?.error).not.toBeNull();
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it.each([
+    { eligible: true, globallyEnabled: true, expected: true },
+    { eligible: false, globallyEnabled: true, expected: false },
+    { eligible: true, globallyEnabled: false, expected: false },
+  ])(
+    'gates the RER report filter for $eligible eligibility and $globallyEnabled global setting',
+    async ({ eligible, globallyEnabled, expected }) => {
+      window.history.replaceState({}, '', `${window.location.pathname}?onlyWithNetwork=true`);
+      currentUserMock.fetchCurrentUser.mockResolvedValue({
+        name: 'tester',
+        roles: ['Rer'],
+        rerReportEligible: eligible,
+      } as User);
+      systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
+        id: 7,
+        rerAnalysisUnitsExactMatchOnlyDefault: false,
+        rerDutyTestEnabled: false,
+        rerDutyInsertHistoricalInterceptions: false,
+        rerDutyTestSinceMs: 0,
+        rerDutyTestLimit: 1,
+        rerDutyPollIntervalSec: 1,
+        rerShortUrlEnabled: false,
+        enableAudioTranscription: true,
+        rerReportEnabled: globallyEnabled,
+      });
+
+      renderHook(['Rer']);
+      await flushEffects();
+
+      expect(latest?.rerReportFilterEnabled).toBe(expected);
+      expect(latest?.queryState.onlyWithNetwork).toBe(expected);
+      expect(new URLSearchParams(window.location.search).has('onlyWithNetwork')).toBe(expected);
+    },
+  );
+
   // Regression: https://github.com/echoua/echo/issues/3568
   it.each([['Cyber'], ['Cyber', 'UnitsEditor', 'NetworkEditor', 'CallsignsEditor']])(
     'ignores restored radio filters and hidden tabs for %j',
@@ -439,7 +521,7 @@ describe('useRerAnalysisNeoPage', () => {
         onlyWithMetadata: false,
       });
       expect(latest?.centerTab).toBe('messages');
-      expect(latest?.rightSidebarTab).toBe('stats');
+      expect(latest?.rightSidebarTab).toBe('callsigns');
     },
   );
   it('opens the first available sidebar tab when the right panel is toggled while map stays in the center', async () => {
@@ -460,7 +542,7 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
   });
 
   // Regression: https://github.com/echoua/echo/issues/3461
@@ -598,12 +680,12 @@ describe('useRerAnalysisNeoPage', () => {
     await act(async () => latest?.toggleRightPanel());
     await flushEffects();
     expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
-    expect(currentAnalysisData?.loadFilterSection).toHaveBeenCalledWith('groups');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
+    expect(currentAnalysisData?.loadFilterSection).not.toHaveBeenCalledWith('callsigns');
 
     await act(async () => latest?.setRightSidebarTab('callsigns'));
     await flushEffects();
-    expect(currentAnalysisData?.loadFilterSection).toHaveBeenCalledWith('callsigns');
+    expect(currentAnalysisData?.loadFilterSection).not.toHaveBeenCalledWith('callsigns');
     await act(async () => latest?.toggleRightPanel());
     await flushEffects();
 
@@ -653,7 +735,7 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.leftPanelOpen).toBe(false);
     expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
     window.history.replaceState({}, '', originalUrl);
   });
   it('writes panel visibility to query parameters', async () => {
@@ -1407,7 +1489,7 @@ describe('useRerAnalysisNeoPage', () => {
     });
     await flushEffects();
 
-    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
     expect(latest?.rightPanelOpen).toBe(true);
   });
 });

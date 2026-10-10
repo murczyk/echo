@@ -1,0 +1,12 @@
+[Unit]
+Description=Kharkiv private connection to shared document extractor
+Requires=echo-document-extractor-relay-firewall.service
+After=network-online.target echo-document-extractor-relay-firewall.service
+
+[Socket]
+ListenStream=10.190.254.39:8000
+FreeBind=true
+NoDelay=true
+
+[Install]
+WantedBy=sockets.target

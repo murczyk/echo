@@ -17,6 +17,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use uuid::Uuid;
 
+mod combat_type;
 mod dictionary;
 mod duplicate_candidate_review;
 mod duplicate_units;
@@ -501,6 +502,9 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
         }
         Some(tui::StartAction::FixLinkedUnitEchelonNumbers) => {
             echelon_number_fix::run(mode).await.c(h!())
+        }
+        Some(tui::StartAction::PopulateLinkedSigintUnitCombatTypes) => {
+            combat_type::run(mode).await.c(h!())
         }
         Some(tui::StartAction::MarkLinkedSigintUnitsPresentInOrbit) => {
             present_in_orbit::run(mode).await.c(h!())

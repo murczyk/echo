@@ -116,7 +116,7 @@ describe('text-document-preview', () => {
     });
 
     expect(container.textContent).toContain('Помилка перегляду');
-    expect(container.textContent).toContain('network error');
+    expect(container.textContent).toContain('Перевірте з’єднання та повторіть спробу.');
     root.unmount();
   });
   it('renders markdown safely without html, scripts, or images', async () => {

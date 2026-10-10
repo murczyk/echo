@@ -811,6 +811,32 @@ export type AnalysisStatsReq = {
   messageTimeBasis: MessageTimeBasis | null;
 };
 
+export type AnalysisCallsignPageOrder =
+  | 'count_desc'
+  | 'match_then_name'
+;
+
+export type AnalysisCallsignPageReq = {
+  req: AnalysisStatsReq;
+  query: string;
+  pageSize: number | null;
+  cursor: string | null;
+  order: AnalysisCallsignPageOrder;
+};
+
+export type AnalysisCallsignPageEntry = {
+  value: string;
+  label: string;
+  values: Array<string>;
+  count: number;
+};
+
+export type AnalysisCallsignPageRsp = {
+  entries: Array<AnalysisCallsignPageEntry>;
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
 export type AnalysisCallsignFrequencyMatchesReq = {
   req: AnalysisStatsReq;
   callsigns: Array<string>;
@@ -1700,6 +1726,7 @@ export type User = {
   goiHost: string | null;
   goiIntegrations: Array<GoiUserIntegration>;
   lastReleaseSeen: string | null;
+  rerReportEligible: boolean;
 };
 
 export type AuthorIdentity = {
@@ -2055,6 +2082,32 @@ export type ListDeviceFileRootsRsp = {
   roots: Array<DeviceFileRoot>;
 };
 
+export type DeviceFileGeodataPreviewRsp = {
+  fileId: string;
+  revision: number;
+  generation: string | null;
+  status: DeviceFileGeodataPreviewStatus;
+  retryable: boolean;
+  retryAfterMs: number | null;
+  resultSizeBytes: number | null;
+  resultUrl: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+};
+
+export type DeviceFileGeodataPreviewStatus =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'retry_wait'
+  | 'ready'
+  | 'failed'
+;
+
+export type RetryDeviceFileGeodataPreviewReq = {
+  expectedGeneration: string;
+};
+
 export type DeviceFileSubtreeCount = {
   entryId: string;
   fileCount: number;
@@ -2250,6 +2303,7 @@ export type DeviceSyncSessionSummariesRsp = {
 export type DeviceAudio = {
   id: string;
   deviceId: string;
+  name: string;
   recordingStartedAt: string;
   recordingEndedAt: string;
   durationSeconds: number;
@@ -2267,6 +2321,26 @@ export type DeviceAudioDetails = {
   transcription: DeviceAudioTranscription;
   canEdit: boolean;
 };
+
+export type DeviceAudioPreparation = {
+  content: DeviceAudioPreparationState;
+  wave: DeviceAudioPreparationState;
+  spectrogram: DeviceAudioPreparationState;
+  retryAfterMs: number;
+};
+
+export type PrepareDeviceAudioReq = {
+  deviceId: string;
+  audioId: string;
+  retry: boolean;
+};
+
+export type DeviceAudioPreparationState =
+  | 'queued'
+  | 'preparing'
+  | 'ready'
+  | 'failed'
+;
 
 export type ReceiveDeviceAudioReq = {
   deviceId: string;
@@ -3184,6 +3258,8 @@ export type ListUnitsSortBy =
   | 'UnitMilitaryDistrictDesc'
   | 'UnitArmyRegionAsc'
   | 'UnitArmyRegionDesc'
+  | 'UnitCombatTypeAsc'
+  | 'UnitCombatTypeDesc'
   | 'UnitCommentAsc'
   | 'UnitCommentDesc'
   | 'UnitOrbitNoteAsc'
@@ -3213,6 +3289,8 @@ export type Unit = {
   army: string;
   militaryDistrict: string;
   armyRegion: string;
+  combatTypeId: string | null;
+  combatTypeName: string | null;
   comment: string;
   orbitNote: string | null;
   presentInOrbit: boolean | null;
@@ -3224,6 +3302,15 @@ export type Unit = {
   hasOrbit: boolean;
   orbitUnitIds: Array<string>;
   orbitUnitGenerativeNames: Array<string>;
+};
+
+export type UnitCombatType = {
+  id: string;
+  name: string;
+};
+
+export type UnitCombatTypesRsp = {
+  combatTypes: Array<UnitCombatType>;
 };
 
 export type ListUnitsReq = {
@@ -3248,6 +3335,7 @@ export type ListUnitsReq = {
   filterArmy: string | null;
   filterMilitaryDistrict: string | null;
   filterArmyRegion: string | null;
+  filterCombatType: string | null;
   filterComment: string | null;
   filterOrbitNote: string | null;
   filterIsDeduplicateCandidate: boolean | null;
@@ -3315,6 +3403,7 @@ export type CreateUnitReq = {
   army: string;
   militaryDistrict: string;
   armyRegion: string;
+  combatTypeId: string | null;
   active: boolean;
   isDeduplicateCandidate: boolean | null;
   comment: string;
@@ -4806,6 +4895,16 @@ export type CountStatsRsp = {
   networksCount: number;
 };
 
+export type MessageStatsCountRsp = {
+  countOverall: number;
+  countSelected: number;
+};
+
+export type UnitMatchStatsCountRsp = {
+  exactMatchesCount: number;
+  nonExactMatchesCount: number;
+};
+
 export type GroupStatsRsp = {
   groups: Array<AnalysisStatsGroup>;
   groupNames: Array<SignalGroupEntry>;
@@ -4998,6 +5097,43 @@ export type RerDutyTestReplayStatusRsp = {
   nextEmitAtMs: number | null;
 };
 
+export type RerReportAccessListRsp = {
+  loginIds: Array<string>;
+};
+
+export type ReplaceRerReportAccessListReq = {
+  loginIds: Array<string>;
+};
+
+export type RerReportMetadataItem = {
+  id: number;
+  sigintUnitId: number;
+  sigintUnitName: string;
+  locations: Array<string>;
+  labels: Array<string>;
+};
+
+export type RerReportMetadataListRsp = {
+  items: Array<RerReportMetadataItem>;
+};
+
+export type CreateRerReportMetadataReq = {
+  sigintUnitId: number;
+  locations: Array<string>;
+  labels: Array<string>;
+};
+
+export type UpdateRerReportMetadataReq = {
+  id: number;
+  sigintUnitId: number;
+  locations: Array<string>;
+  labels: Array<string>;
+};
+
+export type DeleteRerReportMetadataReq = {
+  id: number;
+};
+
 export type AiGovUaSettingsRsp = {
   enabled: boolean;
   tenantId: string;
@@ -5152,12 +5288,32 @@ export type AiAgentActivityPresentation = {
 };
 
 export type AiAgentProviderItem = {
+  reasoningAvailable: boolean;
+  reasoningPresets: Array<AiAgentReasoningPresetItem>;
   id: string;
   name: string;
   modelName: string;
 };
 
+export type AiAgentReasoningPreset =
+  | 'fast'
+  | 'balanced'
+  | 'deep'
+;
+
+export type AiAgentReasoningPresetItem = {
+  preset: AiAgentReasoningPreset;
+  maxRuntimeSeconds: number;
+  reasoningEffort: string | null;
+};
+
+export type AiAgentCompletionMetadata = {
+  coverageLimited: boolean;
+  reason: string;
+};
+
 export type AiAgentConfigurationRsp = {
+  reasoningPresetsEnabled: boolean;
   featureEnabled: boolean;
   defaultAiEngineId: string | null;
   providers: Array<AiAgentProviderItem>;
@@ -5394,6 +5550,10 @@ export type AiAgentMapEditRsp = {
 };
 
 export type AiAgentMessageItem = {
+  reasoningPreset: AiAgentReasoningPreset | null;
+  maxRuntimeSeconds: number | null;
+  startedAt: number | null;
+  completionMetadata: AiAgentCompletionMetadata | null;
   requestId: string;
   requestState: string;
   role: string;
@@ -5414,6 +5574,7 @@ export type AiAgentConversationDetail = {
 };
 
 export type AiAgentRequestCreateReq = {
+  reasoningPreset: AiAgentReasoningPreset | null;
   conversationId: string | null;
   aiEngineId: string | null;
   prompt: string;

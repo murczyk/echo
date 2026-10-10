@@ -57,7 +57,7 @@ export type UseAnalysisDataResult = {
   correlatedFreqs: CorrelatedFreq[];
   correlatedFreqsLoaded: boolean;
   correlatedFreqsLoading: boolean;
-  counts: CountStatsRsp | null;
+  counts: Partial<CountStatsRsp> | null;
   countsLoading: boolean;
   aorEntries: AnalysisAorEntry[];
   filtersLoading: boolean;
@@ -140,6 +140,7 @@ export type UseAnalysisDataResult = {
   summaryLoaded: boolean;
   summaryHasLoadedOnce: boolean;
   rightSidebarLoading: boolean;
+  rightSidebarOutdated?: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;

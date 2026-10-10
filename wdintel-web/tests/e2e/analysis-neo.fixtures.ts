@@ -12,6 +12,7 @@ type AnalysisNeoMockOptions = {
   inboxResponse?: InboxMessagesRspRaw | null;
   signalGroups?: string[];
   networkInfoResponse?: unknown[];
+  callsignPageResponse?: (request: { cursor?: string | null; query?: string }) => unknown;
 };
 
 function jsonBody(body: unknown): string {
@@ -27,25 +28,6 @@ async function fulfillJson(route: Route, body: unknown, delayMs = 0): Promise<vo
     contentType: 'application/json; charset=utf-8',
     body: jsonBody(body),
   });
-}
-
-function emptyCountResponse() {
-  return {
-    count_overall: 2,
-    count_selected: 1,
-    groups_count: 0,
-    senders_count: 0,
-    freqs_count: 1,
-    posts_count: 0,
-    callsigns_count: 0,
-    units_count: 0,
-    units_exact_matches_count: 0,
-    units_non_exact_matches_count: 0,
-    locations_count: 0,
-    tags_count: 0,
-    aors_count: 0,
-    networks_count: 0,
-  };
 }
 
 function emptyInboxResponse() {
@@ -247,6 +229,7 @@ export async function installAnalysisNeoApiMocks(
         goi_host: null,
         goi_integrations: [],
         last_release_seen: null,
+        rer_report_eligible: false,
       });
       return;
     }
@@ -294,8 +277,18 @@ export async function installAnalysisNeoApiMocks(
       return;
     }
 
-    if (pathname === '/api/rer/analysis/stats/count') {
-      await fulfillJson(route, emptyCountResponse());
+    if (pathname === '/api/rer/analysis/stats/messages/count') {
+      await fulfillJson(route, { count_overall: 0, count_selected: 0 });
+      return;
+    }
+
+    if (pathname === '/api/rer/analysis/stats/units/matches/count') {
+      await fulfillJson(route, { exact_matches_count: 0, non_exact_matches_count: 0 });
+      return;
+    }
+
+    if (/^\/api\/rer\/analysis\/stats\/[^/]+\/count$/.test(pathname)) {
+      await fulfillJson(route, 0);
       return;
     }
 
@@ -316,6 +309,15 @@ export async function installAnalysisNeoApiMocks(
 
     if (pathname === '/api/rer/analysis/stats/callsigns') {
       await fulfillJson(route, { callsigns: [] }, options.sidebarDelayMs);
+      return;
+    }
+
+    if (pathname === '/api/rer/analysis/callsigns-page') {
+      const body = request.postDataJSON() as { cursor?: string | null; query?: string };
+      await fulfillJson(
+        route,
+        options.callsignPageResponse?.(body) ?? { entries: [], has_more: false, next_cursor: null },
+      );
       return;
     }
 

@@ -21,7 +21,7 @@ import {
 import { HttpRequestError, isAbortError } from '../../../../services/api/client';
 import { BaseLayerId, DEFAULT_BASE_LAYER_ID } from '../../../../../maps/base-layers';
 import { CoordinateMapPreviewControls } from '../CoordinateMapPreviewControls';
-import { KmzAttachmentPreviewMap } from '../KmzAttachmentPreviewMap';
+import { MapFileSurface } from './MapFilePreview';
 import { fetchCachedDocumentResponse } from '../document-preview-utils';
 import {
   MAX_KMZ_PREVIEW_SOURCE_BYTES,
@@ -283,7 +283,7 @@ export function KmzAttachmentPreviewRenderer({
     });
   const stage =
     preview && hasGeometry(preview) ? (
-      <KmzAttachmentPreviewMap preview={preview} baseLayerId={baseLayerId} />
+      <MapFileSurface preview={preview} baseLayerId={baseLayerId} />
     ) : (
       <Box
         sx={{

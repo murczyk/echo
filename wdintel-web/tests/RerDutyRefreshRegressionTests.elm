@@ -275,4 +275,5 @@ anonymousUser =
     , goiHost = Nothing
     , goiIntegrations = []
     , lastReleaseSeen = Nothing
+    , rerReportEligible = False
     }

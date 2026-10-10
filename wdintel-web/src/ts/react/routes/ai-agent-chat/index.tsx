@@ -21,6 +21,8 @@ import {
 import { FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AiAgentActivityPresentation,
+  AiAgentReasoningPreset,
+  AiAgentCompletionMetadata,
   AiAgentMapEditTarget,
   AiAgentMapSummary,
   AiAgentMessageCitation,
@@ -76,6 +78,10 @@ import { streamAiAgentEventsWithReconnect } from './stream';
 type Source = { title: string; url: string | null };
 
 export type LiveRequest = {
+  reasoningPreset?: AiAgentReasoningPreset | null;
+  maxRuntimeSeconds?: number | null;
+  startedAt?: number | null;
+  completionMetadata?: AiAgentCompletionMetadata | null;
   id: string;
   conversationId: string;
   prompt: string;
@@ -100,6 +106,12 @@ type PendingSubmission = {
   id: string;
   prompt: string;
   createdAt: number;
+};
+
+const REASONING_LABELS: Record<AiAgentReasoningPreset, string> = {
+  fast: 'Швидкий',
+  balanced: 'Збалансований',
+  deep: 'Глибокий',
 };
 
 const TERMINAL_STATES = new Set<AiAgentRequestState>(['completed', 'failed', 'cancelled']);
@@ -228,6 +240,10 @@ export function activeRequestsFromConversation(
       id: message.requestId,
       conversationId: conversation.id,
       prompt: message.content,
+      reasoningPreset: message.reasoningPreset,
+      maxRuntimeSeconds: message.maxRuntimeSeconds,
+      startedAt: message.startedAt,
+      completionMetadata: message.completionMetadata,
       createdAt: message.createdAt,
       state: message.requestState,
       assistantText: assistantByRequestId.get(message.requestId)?.content ?? '',
@@ -300,7 +316,13 @@ export function applyAiAgentEvent(request: LiveRequest, event: AiAgentEvent): Li
 
   switch (event.type) {
     case 'request_start':
-      return { ...next, state: TERMINAL_STATES.has(request.state) ? request.state : 'running' };
+      return {
+        ...next,
+        startedAt: request.startedAt ?? event.createdAt,
+        state: TERMINAL_STATES.has(request.state) ? request.state : 'running',
+      };
+    case 'completion_metadata':
+      return { ...next, completionMetadata: event.completionMetadata };
     case 'assistant_delta':
       return { ...next, assistantText: request.assistantText + (event.text ?? '') };
     case 'assistant_snapshot':
@@ -487,17 +509,29 @@ function ConversationMessage({
   retryDisabled = false,
 }: {
   message: AiAgentMessage;
-  onRetry?: (prompt: string) => void;
+  onRetry?: (prompt: string, preset?: AiAgentReasoningPreset | null) => void;
   retryDisabled?: boolean;
 }) {
   if (message.role === 'assistant') {
     return (
-      <AssistantMessage
-        content={message.content}
-        citations={message.citations}
-        fileCitations={message.fileCitations}
-        maps={message.maps}
-      />
+      <Stack spacing={0.5}>
+        {message.startedAt ? (
+          <Typography variant="caption" color="text.secondary">
+            <RequestDuration
+              createdAt={message.startedAt}
+              finishedAt={message.createdAt}
+              active={false}
+            />
+            {message.completionMetadata?.coverageLimited ? ' · Охоплення джерел неповне' : ''}
+          </Typography>
+        ) : null}
+        <AssistantMessage
+          content={message.content}
+          citations={message.citations}
+          fileCitations={message.fileCitations}
+          maps={message.maps}
+        />
+      </Stack>
     );
   }
 
@@ -523,6 +557,9 @@ function ConversationMessage({
     >
       <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
         Ви
+        {message.reasoningPreset
+          ? ` · ${REASONING_LABELS[message.reasoningPreset]}${message.maxRuntimeSeconds ? ` · до ${message.maxRuntimeSeconds / 60} хв` : ''}`
+          : ''}
       </Typography>
       <Typography component="div" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
         {message.content}
@@ -544,7 +581,7 @@ function ConversationMessage({
           color="inherit"
           startIcon={<RefreshIcon />}
           disabled={retryDisabled}
-          onClick={() => onRetry(message.content)}
+          onClick={() => onRetry(message.content, message.reasoningPreset)}
           sx={{ mt: 0.5, color: 'text.secondary' }}
         >
           Спробувати ще раз
@@ -655,10 +692,14 @@ function LiveRequestView({
   cancelling: boolean;
   onCancel: (id: string) => void;
   onReconnect: (request: LiveRequest) => void;
-  onRetry: (prompt: string) => void;
+  onRetry: (prompt: string, preset?: AiAgentReasoningPreset | null) => void;
   retryDisabled: boolean;
 }) {
   const prompt: AiAgentMessage = {
+    reasoningPreset: request.reasoningPreset,
+    maxRuntimeSeconds: request.maxRuntimeSeconds,
+    startedAt: request.startedAt,
+    completionMetadata: request.completionMetadata,
     id: `${request.id}-live-user`,
     requestId: request.id,
     requestState: request.state,
@@ -683,11 +724,15 @@ function LiveRequestView({
         status={presentation.title}
         detail={presentation.detail}
         duration={
-          <RequestDuration
-            createdAt={request.createdAt}
-            finishedAt={request.finishedAt}
-            active={active}
-          />
+          request.state === 'queued' ? (
+            'У черзі'
+          ) : (
+            <RequestDuration
+              createdAt={request.startedAt ?? request.createdAt}
+              finishedAt={request.finishedAt}
+              active={active}
+            />
+          )
         }
         controls={
           active ? (
@@ -715,6 +760,7 @@ export function AiAgentChat({
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AiAgentMessage[]>([]);
   const [providerId, setProviderId] = useState('');
+  const [reasoningPreset, setReasoningPreset] = useState<AiAgentReasoningPreset>('balanced');
   const [draft, setDraft] = useState('');
   const [liveRequests, setLiveRequests] = useState<LiveRequest[]>([]);
   const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission | null>(null);
@@ -943,6 +989,7 @@ export function AiAgentChat({
   }
 
   function activateConversation(conversation: AiAgentConversationDetail) {
+    setReasoningPreset('balanced');
     clearLiveRequests();
     activeConversationIdRef.current = conversation.id;
     setActiveConversationId(conversation.id);
@@ -980,6 +1027,10 @@ export function AiAgentChat({
               )
             : request),
           state: userMessage.requestState,
+          reasoningPreset: userMessage.reasoningPreset ?? request.reasoningPreset,
+          maxRuntimeSeconds: userMessage.maxRuntimeSeconds ?? request.maxRuntimeSeconds,
+          startedAt: userMessage.startedAt ?? request.startedAt,
+          completionMetadata: assistantMessage?.completionMetadata ?? request.completionMetadata,
           assistantText: assistantMessage?.content ?? request.assistantText,
           citations: assistantMessage?.citations ?? request.citations,
           fileCitations: assistantMessage?.fileCitations ?? request.fileCitations,
@@ -1011,6 +1062,7 @@ export function AiAgentChat({
   }
 
   function startNewConversation(replace = false) {
+    setReasoningPreset('balanced');
     requestedConversationIdRef.current = null;
     resetConversationView();
     writeConversationUrl(null, replace);
@@ -1111,11 +1163,17 @@ export function AiAgentChat({
     await submitPrompt(draft.trim());
   }
 
-  function retryRequest(prompt: string) {
-    void submitPrompt(prompt, { preserveDraft: true });
+  function retryRequest(prompt: string, preset?: AiAgentReasoningPreset | null) {
+    void submitPrompt(prompt, { preserveDraft: true, preset: preset ?? 'balanced' });
   }
 
-  async function submitPrompt(prompt: string, { preserveDraft = false } = {}) {
+  async function submitPrompt(
+    prompt: string,
+    {
+      preserveDraft = false,
+      preset = reasoningPreset,
+    }: { preserveDraft?: boolean; preset?: AiAgentReasoningPreset } = {},
+  ) {
     if (
       !prompt ||
       !providerId ||
@@ -1150,9 +1208,11 @@ export function AiAgentChat({
         conversationId: activeConversationIdRef.current,
         providerId,
         message: prompt,
+        ...(configuration?.reasoningPresetsEnabled ? { reasoningPreset: preset } : {}),
         ...(mapEdit ? { mapEdit } : {}),
       });
       if (mapEdit) editedMapsRef.current.set(created.id, mapEdit);
+      if (mountedRef.current) setReasoningPreset('balanced');
       if (!mountedRef.current) return;
       void refreshConversationList();
       if (viewSequence !== viewSequenceRef.current) return;
@@ -1167,6 +1227,10 @@ export function AiAgentChat({
           conversationId: created.conversationId,
           prompt,
           createdAt,
+          reasoningPreset: configuration?.reasoningPresetsEnabled ? preset : null,
+          maxRuntimeSeconds: selectedProvider?.reasoningPresets?.find(
+            (option) => option.preset === preset,
+          )?.maxRuntimeSeconds,
           state: created.state,
           assistantText: '',
           progress: [],
@@ -1508,37 +1572,80 @@ export function AiAgentChat({
                 justifyContent="space-between"
                 sx={{ mt: 0.5 }}
               >
-                <Select
-                  variant="standard"
-                  disableUnderline
-                  value={providerId}
-                  disabled={interactionLocked || Boolean(activeConversationId)}
-                  onChange={(event) => setProviderId(event.target.value)}
-                  inputProps={{ 'aria-label': 'Провайдер ШІ' }}
-                  sx={{
-                    maxWidth: '70%',
-                    minWidth: 0,
-                    color: 'text.secondary',
-                    fontSize: '0.75rem',
-                    opacity: 0.65,
-                    '& .MuiSelect-select': { py: 0.25, pr: 3 },
-                  }}
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  alignItems="center"
+                  flexWrap="wrap"
+                  sx={{ minWidth: 0 }}
                 >
-                  {configuration.providers.map((provider) => (
-                    <MenuItem
-                      key={provider.id}
-                      value={provider.id}
-                      disabled={providerOptionDisabled(
-                        provider.enabled,
-                        activeConversationId,
-                        providerId,
-                        provider.id,
-                      )}
+                  <Select
+                    variant="standard"
+                    disableUnderline
+                    value={providerId}
+                    disabled={interactionLocked || Boolean(activeConversationId)}
+                    onChange={(event) => {
+                      setProviderId(event.target.value);
+                      setReasoningPreset('balanced');
+                    }}
+                    inputProps={{ 'aria-label': 'Провайдер ШІ' }}
+                    sx={{
+                      maxWidth: { xs: 150, sm: 240 },
+                      minWidth: 0,
+                      color: 'text.secondary',
+                      fontSize: '0.75rem',
+                      opacity: 0.65,
+                      '& .MuiSelect-select': { py: 0.25, pr: 3 },
+                    }}
+                  >
+                    {configuration.providers.map((provider) => (
+                      <MenuItem
+                        key={provider.id}
+                        value={provider.id}
+                        disabled={providerOptionDisabled(
+                          provider.enabled,
+                          activeConversationId,
+                          providerId,
+                          provider.id,
+                        )}
+                      >
+                        {provider.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  {configuration.reasoningPresetsEnabled &&
+                  selectedProvider?.reasoningPresets?.length ? (
+                    <Tooltip
+                      disableInteractive
+                      title={
+                        selectedProvider.reasoningAvailable
+                          ? 'Глибина міркувань і максимальний час дослідження. Час у черзі не враховується.'
+                          : 'Провайдер має фіксовану глибину міркувань; режим обмежує час дослідження.'
+                      }
                     >
-                      {provider.name}
-                    </MenuItem>
-                  ))}
-                </Select>
+                      <span>
+                        <Select
+                          variant="standard"
+                          disableUnderline
+                          value={reasoningPreset}
+                          disabled={interactionLocked}
+                          onChange={(event) =>
+                            setReasoningPreset(event.target.value as AiAgentReasoningPreset)
+                          }
+                          inputProps={{ 'aria-label': 'Глибина аналізу' }}
+                          sx={{ fontSize: '0.75rem', color: 'text.secondary' }}
+                        >
+                          {selectedProvider.reasoningPresets.map((option) => (
+                            <MenuItem key={option.preset} value={option.preset}>
+                              {REASONING_LABELS[option.preset]} · до {option.maxRuntimeSeconds / 60}{' '}
+                              хв
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </span>
+                    </Tooltip>
+                  ) : null}
+                </Stack>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   {activeRequestExists ? (
                     <PowerButton

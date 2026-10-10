@@ -12,25 +12,38 @@ import {
   Paper,
   Skeleton,
   Stack,
+  Typography,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   AnalysisCallsignFrequencyMatch,
   AnalysisCallsignFrequencyMatchesRsp,
+  AnalysisStatsReq,
 } from '../../../../../Bindings';
 import { CompactText, CompactTitle } from '../../../components/CompactTypography';
 import { SearchableMultiOptionAutocomplete } from '../../../components/SearchableMultiOptionAutocomplete';
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import {
   normalizeCallsignFilterValues,
   normalizeCallsignLookupValue,
 } from '../../../utils/callsign-normalization';
+import { useCallsignPage } from '../use-callsign-page';
 import type { AnalysisFilterOption } from '../types';
 
 const DEFAULT_MIN_MATCHES = 2;
 const MIN_MATCHES = 1;
 const MAX_MATCHES = 99;
+
+function callsignQuantity(value: number) {
+  const lastTwoDigits = value % 100;
+  const lastDigit = value % 10;
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return 'позивних';
+  if (lastDigit === 1) return 'позивний';
+  if (lastDigit >= 2 && lastDigit <= 4) return 'позивні';
+  return 'позивних';
+}
 
 type CallsignOption = {
   id: number;
@@ -39,12 +52,28 @@ type CallsignOption = {
   values: string[];
 };
 
+function stableScopeValue(value: unknown): string {
+  if (value == null) return 'null';
+  if (Array.isArray(value)) return `[${value.map(stableScopeValue).join(',')}]`;
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries
+      .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableScopeValue(entryValue)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
 type Props = {
-  callsignOptions: AnalysisFilterOption[];
+  analysisReq?: AnalysisStatsReq | null;
+  callsignOptions?: AnalysisFilterOption[];
   onAddFreq: (freq: string) => void;
   onSearch: (
     callsigns: string[],
     minMatches: number,
+    signal?: AbortSignal,
   ) => Promise<AnalysisCallsignFrequencyMatchesRsp | null>;
   onToggleFreq: (freq: string) => void;
   selectedFreqs: readonly string[];
@@ -133,32 +162,72 @@ function FrequencyMatchCard({
 }
 
 export function AnalysisCallsignFrequencySearch({
-  callsignOptions,
+  analysisReq = null,
+  callsignOptions = [],
   onAddFreq,
   onSearch,
   onToggleFreq,
   selectedFreqs,
 }: Props) {
+  const { notify } = useOptionalPowerSnackbar();
   const headingId = useId().replace(/:/g, '-');
   const [collapsed, setCollapsed] = useState(false);
+  const [suggestionsActivated, setSuggestionsActivated] = useState(false);
   const [selectedCallsigns, setSelectedCallsigns] = useState<string[]>([]);
+  const selectedValuesRef = useRef<Record<string, string[]>>({});
   const [minMatches, setMinMatches] = useState(DEFAULT_MIN_MATCHES);
-  const [loading, setLoading] = useState(false);
+  const [loadingScope, setLoadingScope] = useState<string | null>(null);
   const [results, setResults] = useState<AnalysisCallsignFrequencyMatch[] | null>(null);
+  const [resultsScope, setResultsScope] = useState<string | null>(null);
   const requestIdRef = useRef(0);
+  const requestAbortRef = useRef<AbortController | null>(null);
+  const notifyCallsignLoadError = useCallback(
+    (loadError: unknown) => {
+      notify({
+        severity: 'error',
+        message:
+          loadError instanceof Error && loadError.message
+            ? loadError.message
+            : 'Не вдалося завантажити позивні.',
+      });
+    },
+    [notify],
+  );
+  const suggestions = useCallsignPage({
+    active: !collapsed && suggestionsActivated,
+    analysisReq,
+    onError: notifyCallsignLoadError,
+  });
+  const suggestionError =
+    suggestions.error instanceof Error
+      ? suggestions.error.message
+      : suggestions.error
+        ? 'Не вдалося завантажити позивні.'
+        : null;
+  const activateSuggestions = useCallback(() => setSuggestionsActivated(true), []);
   const options = useMemo<CallsignOption[]>(() => {
     const uniqueOptions = new Map<string, string>();
     const optionValues = new Map<string, string[]>();
-    for (const option of callsignOptions) {
-      const value = normalizeCallsignLookupValue(option.value);
+    for (const entry of [
+      ...callsignOptions,
+      ...suggestions.entries.map((item) => ({
+        value: item.value,
+        label: item.label,
+        values: item.values,
+      })),
+    ]) {
+      const value = normalizeCallsignLookupValue(entry.value);
       if (value.length > 0 && !uniqueOptions.has(value)) {
-        uniqueOptions.set(value, option.label.trim() || value);
-        optionValues.set(value, normalizeCallsignFilterValues(option.values ?? [value]));
+        uniqueOptions.set(value, entry.label.trim() || value);
+        optionValues.set(value, normalizeCallsignFilterValues(entry.values ?? [entry.value]));
       }
     }
     for (const callsign of selectedCallsigns) {
       const value = normalizeCallsignLookupValue(callsign);
-      if (!uniqueOptions.has(value)) uniqueOptions.set(value, callsign);
+      if (!uniqueOptions.has(value)) {
+        uniqueOptions.set(value, callsign);
+        optionValues.set(value, selectedValuesRef.current[value] ?? [value]);
+      }
     }
     return Array.from(uniqueOptions, ([value, label], id) => ({
       id,
@@ -166,68 +235,137 @@ export function AnalysisCallsignFrequencySearch({
       value,
       values: optionValues.get(value) ?? [value],
     }));
-  }, [callsignOptions, selectedCallsigns]);
+  }, [callsignOptions, selectedCallsigns, suggestions.entries]);
   const selectedIds = selectedCallsigns
     .map((callsign) => options.find((option) => option.value === callsign)?.id)
     .filter((id): id is number => id !== undefined);
   const canSearch = selectedCallsigns.length >= minMatches;
+  const callsignsStillRequired = Math.max(minMatches - selectedCallsigns.length, 0);
+  const suggestionNoOptionsText = suggestionError
+    ? 'Не вдалося завантажити позивні.'
+    : suggestions.query.trim() === ''
+      ? 'Введіть позивний для пошуку.'
+      : 'За вашим запитом позивних не знайдено.';
   const selectedCallsignValues = normalizeCallsignFilterValues(
     selectedCallsigns.flatMap(
-      (callsign) => options.find((option) => option.value === callsign)?.values ?? [callsign],
+      (callsign) =>
+        options.find((option) => option.value === callsign)?.values ??
+        selectedValuesRef.current[callsign] ?? [callsign],
     ),
   );
+  const matchingScope = useMemo(
+    () =>
+      stableScopeValue({
+        analysisReq,
+        callsigns: selectedCallsignValues,
+        minMatches,
+      }),
+    [analysisReq, minMatches, selectedCallsignValues],
+  );
+  const matchingScopeRef = useRef(matchingScope);
+  matchingScopeRef.current = matchingScope;
+  const loading = loadingScope === matchingScope;
+  const visibleResults = resultsScope === matchingScope ? results : null;
+
+  useLayoutEffect(() => {
+    requestIdRef.current += 1;
+    requestAbortRef.current?.abort();
+    requestAbortRef.current = null;
+    setLoadingScope(null);
+    setResults(null);
+    setResultsScope(null);
+    return () => {
+      requestIdRef.current += 1;
+      requestAbortRef.current?.abort();
+      requestAbortRef.current = null;
+    };
+  }, [matchingScope]);
 
   const search = async () => {
     if (!canSearch || loading) return;
     const requestId = requestIdRef.current + 1;
+    const abortController = new AbortController();
     requestIdRef.current = requestId;
+    requestAbortRef.current?.abort();
+    requestAbortRef.current = abortController;
     setResults(null);
-    setLoading(true);
-    const response = await onSearch(selectedCallsignValues, minMatches);
-    if (requestId !== requestIdRef.current) return;
-    if (response) setResults(response.frequencies);
-    setLoading(false);
+    setResultsScope(null);
+    setLoadingScope(matchingScope);
+    const response = await onSearch(selectedCallsignValues, minMatches, abortController.signal);
+    if (requestId !== requestIdRef.current || matchingScopeRef.current !== matchingScope) return;
+    requestAbortRef.current = null;
+    if (response) {
+      setResults(response.frequencies);
+      setResultsScope(matchingScope);
+    }
+    setLoadingScope(null);
   };
 
   return (
-    <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 2,
-          mb: collapsed ? 0 : 1.5,
-        }}
-      >
-        <CompactTitle id={headingId} component="h2">
-          Пошук частот
-        </CompactTitle>
+    <Paper variant="outlined" component="section" aria-labelledby={headingId} className="p-echo-lg">
+      <div className="flex items-start justify-between gap-echo-sm">
+        <div>
+          <Typography id={headingId} component="h2" variant="subtitle1" sx={{ fontWeight: 700 }}>
+            Частоти за позивними
+          </Typography>
+          <Typography component="p" variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            Знайти частоти зі спільними позивними.
+          </Typography>
+        </div>
         <IconButton
           size="small"
           aria-expanded={!collapsed}
-          aria-label={collapsed ? 'Розгорнути Пошук частот' : 'Згорнути Пошук частот'}
+          aria-label={
+            collapsed ? 'Розгорнути Частоти за позивними' : 'Згорнути Частоти за позивними'
+          }
           onClick={() => setCollapsed((current) => !current)}
         >
           {collapsed ? <ExpandMoreIcon fontSize="small" /> : <ExpandLessIcon fontSize="small" />}
         </IconButton>
-      </Box>
+      </div>
       <Collapse in={!collapsed} unmountOnExit>
-        <Stack spacing={1.5}>
+        <Stack spacing={1.5} className="mt-echo-md">
           <SearchableMultiOptionAutocomplete
             label="Позивні"
             options={options}
             valueIds={selectedIds}
             getOptionLabel={(option) => option.label}
+            loading={suggestions.pending}
+            loadingText="Завантаження позивних…"
+            noOptionsText={suggestionNoOptionsText}
+            onInputChange={(query) => {
+              activateSuggestions();
+              suggestions.setQuery(query);
+            }}
+            onOpen={activateSuggestions}
+            serverSearch
             onValueIdsChange={(valueIds) => {
-              setSelectedCallsigns(
-                valueIds
-                  .map((id) => options.find((option) => option.id === id)?.value)
-                  .filter((value): value is string => value !== undefined),
+              const selected = valueIds
+                .map((id) => options.find((option) => option.id === id))
+                .filter((option): option is CallsignOption => option !== undefined);
+              selectedValuesRef.current = Object.fromEntries(
+                selected.map((option) => [option.value, option.values]),
               );
-              setResults(null);
+              setSelectedCallsigns(selected.map((option) => option.value));
             }}
           />
+          {callsignsStillRequired > 0 ? (
+            <CompactText color="text.secondary">
+              {`Оберіть ще ${callsignsStillRequired} ${callsignQuantity(callsignsStillRequired)}.`}
+            </CompactText>
+          ) : null}
+          {suggestionError ? (
+            <Stack direction="row" spacing={0.5} alignItems="center">
+              <CompactText color="error">{suggestionError}</CompactText>
+              <Button
+                size="small"
+                disabled={!suggestions.canRetry || suggestions.pending}
+                onClick={() => void suggestions.retry()}
+              >
+                Повторити
+              </Button>
+            </Stack>
+          ) : null}
           <Box
             sx={{
               display: 'grid',
@@ -253,7 +391,6 @@ export function AnalysisCallsignFrequencySearch({
                 disabled={minMatches <= MIN_MATCHES}
                 onClick={() => {
                   setMinMatches((current) => Math.max(MIN_MATCHES, current - 1));
-                  setResults(null);
                 }}
               >
                 <RemoveIcon fontSize="small" />
@@ -267,7 +404,6 @@ export function AnalysisCallsignFrequencySearch({
                 disabled={minMatches >= MAX_MATCHES}
                 onClick={() => {
                   setMinMatches((current) => Math.min(MAX_MATCHES, current + 1));
-                  setResults(null);
                 }}
               >
                 <AddIcon fontSize="small" />
@@ -282,15 +418,10 @@ export function AnalysisCallsignFrequencySearch({
           >
             Знайти
           </Button>
-          {!canSearch && selectedCallsigns.length > 0 ? (
-            <CompactText color="text.secondary">
-              {`Оберіть щонайменше ${minMatches} позивні.`}
-            </CompactText>
-          ) : null}
-          {results ? (
-            results.length > 0 ? (
+          {visibleResults ? (
+            visibleResults.length > 0 ? (
               <Stack spacing={1}>
-                {results.map((frequency) => (
+                {visibleResults.map((frequency) => (
                   <FrequencyMatchCard
                     key={frequency.freq}
                     frequency={frequency}

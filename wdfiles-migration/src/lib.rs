@@ -26,6 +26,9 @@ mod m20260921_122222_device_sync_session_history;
 mod m20261003_152726_create_device_audio;
 mod m20261006_082251_device_documents;
 mod m20261006_082252_file_history_search;
+mod m20261007_162050_file_preview;
+mod m20261008_124822_device_audio_preparation;
+mod m20261008_183827_file_preview_archive_members;
 
 pub struct Migrator;
 
@@ -74,6 +77,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20261003_152726_create_device_audio::Migration),
             Box::new(m20261006_082251_device_documents::Migration),
             Box::new(m20261006_082252_file_history_search::Migration),
+            Box::new(m20261007_162050_file_preview::Migration),
+            Box::new(m20261008_124822_device_audio_preparation::Migration),
+            Box::new(m20261008_183827_file_preview_archive_members::Migration),
         ]
     }
 }

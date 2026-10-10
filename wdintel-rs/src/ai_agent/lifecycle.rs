@@ -1916,6 +1916,8 @@ mod tests {
         .await
         .unwrap();
         let request = ai_agent_request::ActiveModel {
+            execution_policy: Set(None),
+            completion_metadata: Set(None),
             id: Set(Uuid::now_v7()),
             conversation_id: Set(conversation.id),
             human_login_id: Set(human.id),

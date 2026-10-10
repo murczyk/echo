@@ -436,9 +436,11 @@ acquire_analytics_reconcile_lock() {
   require_cmd flock
   old_umask=$(umask)
   umask 000
-  : >>"$ANALYTICS_RECONCILE_LOCK_FILE"
+  if [[ ! -e "$ANALYTICS_RECONCILE_LOCK_FILE" ]]; then
+    : >>"$ANALYTICS_RECONCILE_LOCK_FILE"
+  fi
   umask "$old_umask"
-  exec 8>>"$ANALYTICS_RECONCILE_LOCK_FILE"
+  exec 8<"$ANALYTICS_RECONCILE_LOCK_FILE"
   if ((wait_seconds > 0)); then
     if ! flock -w "$wait_seconds" 8; then
       if [[ ${ANALYTICS_RECONCILE_LOCK_BUSY_IS_SUCCESS:-false} == true ]]; then

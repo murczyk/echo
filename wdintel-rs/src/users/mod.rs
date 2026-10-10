@@ -820,6 +820,10 @@ async fn api_user(
     let goi = user_goi_state(&env.dbx, login_obj.organism_id, &user_id)
         .await
         .c(h!())?;
+    let rer_report_eligible =
+        crate::rer_report_admin::user_is_eligible(&env.dbx, &user_id)
+            .await
+            .c(h!())?;
     Ok(Json(User {
         id: login_obj.id.to_string(),
         delta_login,
@@ -833,6 +837,7 @@ async fn api_user(
         goi_host: goi.host,
         goi_integrations: goi.integrations,
         last_release_seen: login_obj.last_release_seen,
+        rer_report_eligible,
     }))
 }
 
@@ -901,6 +906,10 @@ async fn api_user_info(
     let goi = user_goi_state(&env.dbx, login_obj.organism_id, &login_obj.id)
         .await
         .c(h!())?;
+    let rer_report_eligible =
+        crate::rer_report_admin::user_is_eligible(&env.dbx, &login_obj.id)
+            .await
+            .c(h!())?;
     Ok(Json(User {
         id: login_obj.id.to_string(),
         delta_login,
@@ -914,6 +923,7 @@ async fn api_user_info(
         goi_host: goi.host,
         goi_integrations: goi.integrations,
         last_release_seen: login_obj.last_release_seen,
+        rer_report_eligible,
     }))
 }
 

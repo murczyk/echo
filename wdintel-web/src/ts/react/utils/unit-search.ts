@@ -62,6 +62,8 @@ function createSyntheticUnsetUnit(): Unit {
     hasOrbit: false,
     orbitUnitIds: [],
     orbitUnitGenerativeNames: [],
+    combatTypeId: null,
+    combatTypeName: null,
   };
 }
 

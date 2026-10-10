@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import type { DeviceFileTreeEntry } from '../../../../Bindings';
+import type { DeviceFileSelection } from './device-file-archive';
 
 import { useDeviceFileCounts } from './use-device-file-counts';
 import { useDeviceFileTree } from './use-device-file-tree';
@@ -18,10 +18,11 @@ export function useDeviceFiles({
   enabled: boolean;
   tagFilter: DeviceAnalyticsTagFilter;
 }) {
+  const [archiveEpoch, setArchiveEpoch] = useState(0);
   const [selection, setSelection] = useState<{
     deviceId: string;
     syncId: string | null;
-    file: DeviceFileTreeEntry;
+    file: DeviceFileSelection;
   } | null>(null);
   const selectedFile =
     enabled && selection?.deviceId === deviceId && selection.syncId === syncId
@@ -29,7 +30,7 @@ export function useDeviceFiles({
       : null;
   const clearSelectedFile = useCallback(() => setSelection(null), []);
   const selectFile = useCallback(
-    (file: DeviceFileTreeEntry) => setSelection({ deviceId, syncId, file }),
+    (file: DeviceFileSelection) => setSelection({ deviceId, syncId, file }),
     [deviceId, syncId],
   );
   useEffect(() => setSelection(null), [deviceId, syncId, enabled]);
@@ -57,6 +58,7 @@ export function useDeviceFiles({
   }, [counts.enqueue, load.roots]);
   const refreshVisible = useCallback(async () => {
     setSelection(null);
+    setArchiveEpoch((value) => value + 1);
     counts.reset();
     counts.enqueue({
       parentEntryId: null,
@@ -65,7 +67,17 @@ export function useDeviceFiles({
     await Promise.all([load.refreshVisible(), tree.refreshExpanded()]);
   }, [counts.enqueue, counts.reset, load.refreshVisible, load.roots, tree.refreshExpanded]);
 
-  return { ...load, tree, counts, refreshVisible, selectedFile, selectFile, clearSelectedFile };
+  return {
+    ...load,
+    deviceId,
+    archiveEpoch,
+    tree,
+    counts,
+    refreshVisible,
+    selectedFile,
+    selectFile,
+    clearSelectedFile,
+  };
 }
 
 export type DeviceFilesState = ReturnType<typeof useDeviceFiles>;

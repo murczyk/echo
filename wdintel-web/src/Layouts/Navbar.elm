@@ -268,7 +268,11 @@ view user activeName shared route { toContentMsg, model, content } =
                         Encode.object
                             [ ( "serverInfo"
                               , case shared.serverInfo of
-                                    Just info -> Encode.object [ ( "mode", Encode.string info.mode ) ]
+                                    Just info ->
+                                        Encode.object
+                                            [ ( "mode", Encode.string info.mode )
+                                            , ( "version", Encode.string info.version )
+                                            ]
                                     Nothing -> Encode.null
                               )
                             , ( "themeMode", Encode.string (Shared.Model.themeModeToString shared.themeMode) )

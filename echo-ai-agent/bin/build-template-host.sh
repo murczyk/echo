@@ -2,14 +2,12 @@
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-set -euo pipefail
+set -exuo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 BUNDLE_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 # shellcheck disable=SC1091
-source "$BUNDLE_DIR/config/host.env"
-# shellcheck disable=SC1091
-source "$BUNDLE_DIR/versions.env"
+source "$BUNDLE_DIR/bin/load-host-config.sh"
 
 dangerously_acknowledge=${1:-}
 if [[ -n ${2:-} ]]; then
@@ -81,6 +79,8 @@ push_template_files() {
     "$BUNDLE_DIR/template/configure-network.sh" \
     "$BUNDLE_DIR/runner/echo-ai-agent-runner" \
     "$BUNDLE_DIR/runner/runner.ts" \
+    "$BUNDLE_DIR/runner/context-compaction.ts" \
+    "$BUNDLE_DIR/runner/execution-policy.ts" \
     "$BUNDLE_DIR/runner/citations.ts" \
     "$BUNDLE_DIR/runner/attachments.ts" \
     "$BUNDLE_DIR/runner/devices.ts" \
@@ -121,7 +121,7 @@ fi
 artifact_dir=$(mktemp -d /tmp/echo-ai-agent-template.XXXXXX)
 prepare_node
 prepare_pi
-incus launch "$DEBIAN_IMAGE" "$AGENT_TEMPLATE" --profile "$AGENT_PROFILE"
+incus launch "$DEBIAN_IMAGE" "$AGENT_TEMPLATE" --profile "$AGENT_PROFILE" < /dev/null
 template_created=1
 incus exec "$AGENT_TEMPLATE" -- cloud-init status --wait
 incus exec "$AGENT_TEMPLATE" -- test ! -S /dev/incus/sock \

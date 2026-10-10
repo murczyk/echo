@@ -2099,6 +2099,73 @@ analysisStatsReqEncoder struct =
         ]
 
 
+type AnalysisCallsignPageOrder
+    = CountDesc
+    | MatchThenName
+
+
+analysisCallsignPageOrderEncoder : AnalysisCallsignPageOrder -> Json.Encode.Value
+analysisCallsignPageOrderEncoder enum =
+    case enum of
+        CountDesc ->
+            Json.Encode.string "count_desc"
+        MatchThenName ->
+            Json.Encode.string "match_then_name"
+
+type alias AnalysisCallsignPageReq =
+    { req : AnalysisStatsReq
+    , query : String
+    , pageSize : Maybe (Int)
+    , cursor : Maybe (String)
+    , order : AnalysisCallsignPageOrder
+    }
+
+
+analysisCallsignPageReqEncoder : AnalysisCallsignPageReq -> Json.Encode.Value
+analysisCallsignPageReqEncoder struct =
+    Json.Encode.object
+        [ ( "req", (analysisStatsReqEncoder) struct.req )
+        , ( "query", (Json.Encode.string) struct.query )
+        , ( "page_size", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.pageSize )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        , ( "order", (analysisCallsignPageOrderEncoder) struct.order )
+        ]
+
+
+type alias AnalysisCallsignPageEntry =
+    { value : String
+    , label : String
+    , values : List (String)
+    , count : Int
+    }
+
+
+analysisCallsignPageEntryEncoder : AnalysisCallsignPageEntry -> Json.Encode.Value
+analysisCallsignPageEntryEncoder struct =
+    Json.Encode.object
+        [ ( "value", (Json.Encode.string) struct.value )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "values", (Json.Encode.list (Json.Encode.string)) struct.values )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias AnalysisCallsignPageRsp =
+    { entries : List (AnalysisCallsignPageEntry)
+    , hasMore : Bool
+    , nextCursor : Maybe (String)
+    }
+
+
+analysisCallsignPageRspEncoder : AnalysisCallsignPageRsp -> Json.Encode.Value
+analysisCallsignPageRspEncoder struct =
+    Json.Encode.object
+        [ ( "entries", (Json.Encode.list (analysisCallsignPageEntryEncoder)) struct.entries )
+        , ( "has_more", (Json.Encode.bool) struct.hasMore )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        ]
+
+
 type alias AnalysisCallsignFrequencyMatchesReq =
     { req : AnalysisStatsReq
     , callsigns : List (String)
@@ -4400,6 +4467,7 @@ type alias User =
     , goiHost : Maybe (String)
     , goiIntegrations : List (GoiUserIntegration)
     , lastReleaseSeen : Maybe (String)
+    , rerReportEligible : Bool
     }
 
 
@@ -4418,6 +4486,7 @@ userEncoder struct =
         , ( "goi_host", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.goiHost )
         , ( "goi_integrations", (Json.Encode.list (goiUserIntegrationEncoder)) struct.goiIntegrations )
         , ( "last_release_seen", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastReleaseSeen )
+        , ( "rer_report_eligible", (Json.Encode.bool) struct.rerReportEligible )
         ]
 
 
@@ -5315,6 +5384,73 @@ listDeviceFileRootsRspEncoder struct =
         ]
 
 
+type alias DeviceFileGeodataPreviewRsp =
+    { fileId : String
+    , revision : Int
+    , generation : Maybe (String)
+    , status : DeviceFileGeodataPreviewStatus
+    , retryable : Bool
+    , retryAfterMs : Maybe (Int)
+    , resultSizeBytes : Maybe (Int)
+    , resultUrl : Maybe (String)
+    , errorCode : Maybe (String)
+    , errorMessage : Maybe (String)
+    }
+
+
+deviceFileGeodataPreviewRspEncoder : DeviceFileGeodataPreviewRsp -> Json.Encode.Value
+deviceFileGeodataPreviewRspEncoder struct =
+    Json.Encode.object
+        [ ( "file_id", (Json.Encode.string) struct.fileId )
+        , ( "revision", (Json.Encode.int) struct.revision )
+        , ( "generation", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.generation )
+        , ( "status", (deviceFileGeodataPreviewStatusEncoder) struct.status )
+        , ( "retryable", (Json.Encode.bool) struct.retryable )
+        , ( "retry_after_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.retryAfterMs )
+        , ( "result_size_bytes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.resultSizeBytes )
+        , ( "result_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.resultUrl )
+        , ( "error_code", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.errorCode )
+        , ( "error_message", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.errorMessage )
+        ]
+
+
+type DeviceFileGeodataPreviewStatus
+    = GeodataIdle
+    | GeodataQueued
+    | GeodataRunning
+    | GeodataRetryWait
+    | GeodataReady
+    | GeodataFailed
+
+
+deviceFileGeodataPreviewStatusEncoder : DeviceFileGeodataPreviewStatus -> Json.Encode.Value
+deviceFileGeodataPreviewStatusEncoder enum =
+    case enum of
+        GeodataIdle ->
+            Json.Encode.string "idle"
+        GeodataQueued ->
+            Json.Encode.string "queued"
+        GeodataRunning ->
+            Json.Encode.string "running"
+        GeodataRetryWait ->
+            Json.Encode.string "retry_wait"
+        GeodataReady ->
+            Json.Encode.string "ready"
+        GeodataFailed ->
+            Json.Encode.string "failed"
+
+type alias RetryDeviceFileGeodataPreviewReq =
+    { expectedGeneration : String
+    }
+
+
+retryDeviceFileGeodataPreviewReqEncoder : RetryDeviceFileGeodataPreviewReq -> Json.Encode.Value
+retryDeviceFileGeodataPreviewReqEncoder struct =
+    Json.Encode.object
+        [ ( "expected_generation", (Json.Encode.string) struct.expectedGeneration )
+        ]
+
+
 type alias DeviceFileSubtreeCount =
     { entryId : String
     , fileCount : Int
@@ -5808,6 +5944,7 @@ deviceSyncSessionSummariesRspEncoder struct =
 type alias DeviceAudio =
     { id : String
     , deviceId : String
+    , name : String
     , recordingStartedAt : String
     , recordingEndedAt : String
     , durationSeconds : Float
@@ -5821,6 +5958,7 @@ deviceAudioEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.string) struct.id )
         , ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "name", (Json.Encode.string) struct.name )
         , ( "recording_started_at", (Json.Encode.string) struct.recordingStartedAt )
         , ( "recording_ended_at", (Json.Encode.string) struct.recordingEndedAt )
         , ( "duration_seconds", (Json.Encode.float) struct.durationSeconds )
@@ -5858,6 +5996,59 @@ deviceAudioDetailsEncoder struct =
         , ( "can_edit", (Json.Encode.bool) struct.canEdit )
         ]
 
+
+type alias DeviceAudioPreparation =
+    { content : DeviceAudioPreparationState
+    , wave : DeviceAudioPreparationState
+    , spectrogram : DeviceAudioPreparationState
+    , retryAfterMs : Int
+    }
+
+
+deviceAudioPreparationEncoder : DeviceAudioPreparation -> Json.Encode.Value
+deviceAudioPreparationEncoder struct =
+    Json.Encode.object
+        [ ( "content", (deviceAudioPreparationStateEncoder) struct.content )
+        , ( "wave", (deviceAudioPreparationStateEncoder) struct.wave )
+        , ( "spectrogram", (deviceAudioPreparationStateEncoder) struct.spectrogram )
+        , ( "retry_after_ms", (Json.Encode.int) struct.retryAfterMs )
+        ]
+
+
+type alias PrepareDeviceAudioReq =
+    { deviceId : String
+    , audioId : String
+    , retry : Bool
+    }
+
+
+prepareDeviceAudioReqEncoder : PrepareDeviceAudioReq -> Json.Encode.Value
+prepareDeviceAudioReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "audio_id", (Json.Encode.string) struct.audioId )
+        , ( "retry", (Json.Encode.bool) struct.retry )
+        ]
+
+
+type DeviceAudioPreparationState
+    = Queued
+    | Preparing
+    | Ready
+    | Failed
+
+
+deviceAudioPreparationStateEncoder : DeviceAudioPreparationState -> Json.Encode.Value
+deviceAudioPreparationStateEncoder enum =
+    case enum of
+        Queued ->
+            Json.Encode.string "queued"
+        Preparing ->
+            Json.Encode.string "preparing"
+        Ready ->
+            Json.Encode.string "ready"
+        Failed ->
+            Json.Encode.string "failed"
 
 type alias ReceiveDeviceAudioReq =
     { deviceId : String
@@ -8198,6 +8389,8 @@ type ListUnitsSortBy
     | UnitMilitaryDistrictDesc
     | UnitArmyRegionAsc
     | UnitArmyRegionDesc
+    | UnitCombatTypeAsc
+    | UnitCombatTypeDesc
     | UnitCommentAsc
     | UnitCommentDesc
     | UnitOrbitNoteAsc
@@ -8277,6 +8470,10 @@ listUnitsSortByEncoder enum =
             Json.Encode.string "UnitArmyRegionAsc"
         UnitArmyRegionDesc ->
             Json.Encode.string "UnitArmyRegionDesc"
+        UnitCombatTypeAsc ->
+            Json.Encode.string "UnitCombatTypeAsc"
+        UnitCombatTypeDesc ->
+            Json.Encode.string "UnitCombatTypeDesc"
         UnitCommentAsc ->
             Json.Encode.string "UnitCommentAsc"
         UnitCommentDesc ->
@@ -8319,6 +8516,8 @@ type alias Unit =
     , army : String
     , militaryDistrict : String
     , armyRegion : String
+    , combatTypeId : Maybe (String)
+    , combatTypeName : Maybe (String)
     , comment : String
     , orbitNote : Maybe (String)
     , presentInOrbit : Maybe (Bool)
@@ -8351,6 +8550,8 @@ unitEncoder struct =
         , ( "army", (Json.Encode.string) struct.army )
         , ( "military_district", (Json.Encode.string) struct.militaryDistrict )
         , ( "army_region", (Json.Encode.string) struct.armyRegion )
+        , ( "combat_type_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.combatTypeId )
+        , ( "combat_type_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.combatTypeName )
         , ( "comment", (Json.Encode.string) struct.comment )
         , ( "orbit_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.orbitNote )
         , ( "present_in_orbit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.presentInOrbit )
@@ -8362,6 +8563,32 @@ unitEncoder struct =
         , ( "has_orbit", (Json.Encode.bool) struct.hasOrbit )
         , ( "orbit_unit_ids", (Json.Encode.list (Json.Encode.string)) struct.orbitUnitIds )
         , ( "orbit_unit_generative_names", (Json.Encode.list (Json.Encode.string)) struct.orbitUnitGenerativeNames )
+        ]
+
+
+type alias UnitCombatType =
+    { id : String
+    , name : String
+    }
+
+
+unitCombatTypeEncoder : UnitCombatType -> Json.Encode.Value
+unitCombatTypeEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias UnitCombatTypesRsp =
+    { combatTypes : List (UnitCombatType)
+    }
+
+
+unitCombatTypesRspEncoder : UnitCombatTypesRsp -> Json.Encode.Value
+unitCombatTypesRspEncoder struct =
+    Json.Encode.object
+        [ ( "combat_types", (Json.Encode.list (unitCombatTypeEncoder)) struct.combatTypes )
         ]
 
 
@@ -8387,6 +8614,7 @@ type alias ListUnitsReq =
     , filterArmy : Maybe (String)
     , filterMilitaryDistrict : Maybe (String)
     , filterArmyRegion : Maybe (String)
+    , filterCombatType : Maybe (String)
     , filterComment : Maybe (String)
     , filterOrbitNote : Maybe (String)
     , filterIsDeduplicateCandidate : Maybe (Bool)
@@ -8422,6 +8650,7 @@ listUnitsReqEncoder struct =
         , ( "filter_army", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterArmy )
         , ( "filter_military_district", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterMilitaryDistrict )
         , ( "filter_army_region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterArmyRegion )
+        , ( "filter_combat_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterCombatType )
         , ( "filter_comment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterComment )
         , ( "filter_orbit_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterOrbitNote )
         , ( "filter_is_deduplicate_candidate", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.filterIsDeduplicateCandidate )
@@ -8563,6 +8792,7 @@ type alias CreateUnitReq =
     , army : String
     , militaryDistrict : String
     , armyRegion : String
+    , combatTypeId : Maybe (String)
     , active : Bool
     , isDeduplicateCandidate : Maybe (Bool)
     , comment : String
@@ -8590,6 +8820,7 @@ createUnitReqEncoder struct =
         , ( "army", (Json.Encode.string) struct.army )
         , ( "military_district", (Json.Encode.string) struct.militaryDistrict )
         , ( "army_region", (Json.Encode.string) struct.armyRegion )
+        , ( "combat_type_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.combatTypeId )
         , ( "active", (Json.Encode.bool) struct.active )
         , ( "is_deduplicate_candidate", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeduplicateCandidate )
         , ( "comment", (Json.Encode.string) struct.comment )
@@ -12447,6 +12678,34 @@ countStatsRspEncoder struct =
         ]
 
 
+type alias MessageStatsCountRsp =
+    { countOverall : Int
+    , countSelected : Int
+    }
+
+
+messageStatsCountRspEncoder : MessageStatsCountRsp -> Json.Encode.Value
+messageStatsCountRspEncoder struct =
+    Json.Encode.object
+        [ ( "count_overall", (Json.Encode.int) struct.countOverall )
+        , ( "count_selected", (Json.Encode.int) struct.countSelected )
+        ]
+
+
+type alias UnitMatchStatsCountRsp =
+    { exactMatchesCount : Int
+    , nonExactMatchesCount : Int
+    }
+
+
+unitMatchStatsCountRspEncoder : UnitMatchStatsCountRsp -> Json.Encode.Value
+unitMatchStatsCountRspEncoder struct =
+    Json.Encode.object
+        [ ( "exact_matches_count", (Json.Encode.int) struct.exactMatchesCount )
+        , ( "non_exact_matches_count", (Json.Encode.int) struct.nonExactMatchesCount )
+        ]
+
+
 type alias GroupStatsRsp =
     { groups : List (AnalysisStatsGroup)
     , groupNames : List (SignalGroupEntry)
@@ -12899,6 +13158,108 @@ rerDutyTestReplayStatusRspEncoder struct =
         ]
 
 
+type alias RerReportAccessListRsp =
+    { loginIds : List (String)
+    }
+
+
+rerReportAccessListRspEncoder : RerReportAccessListRsp -> Json.Encode.Value
+rerReportAccessListRspEncoder struct =
+    Json.Encode.object
+        [ ( "login_ids", (Json.Encode.list (Json.Encode.string)) struct.loginIds )
+        ]
+
+
+type alias ReplaceRerReportAccessListReq =
+    { loginIds : List (String)
+    }
+
+
+replaceRerReportAccessListReqEncoder : ReplaceRerReportAccessListReq -> Json.Encode.Value
+replaceRerReportAccessListReqEncoder struct =
+    Json.Encode.object
+        [ ( "login_ids", (Json.Encode.list (Json.Encode.string)) struct.loginIds )
+        ]
+
+
+type alias RerReportMetadataItem =
+    { id : Int
+    , sigintUnitId : Int
+    , sigintUnitName : String
+    , locations : List (String)
+    , labels : List (String)
+    }
+
+
+rerReportMetadataItemEncoder : RerReportMetadataItem -> Json.Encode.Value
+rerReportMetadataItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "sigint_unit_name", (Json.Encode.string) struct.sigintUnitName )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "labels", (Json.Encode.list (Json.Encode.string)) struct.labels )
+        ]
+
+
+type alias RerReportMetadataListRsp =
+    { items : List (RerReportMetadataItem)
+    }
+
+
+rerReportMetadataListRspEncoder : RerReportMetadataListRsp -> Json.Encode.Value
+rerReportMetadataListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (rerReportMetadataItemEncoder)) struct.items )
+        ]
+
+
+type alias CreateRerReportMetadataReq =
+    { sigintUnitId : Int
+    , locations : List (String)
+    , labels : List (String)
+    }
+
+
+createRerReportMetadataReqEncoder : CreateRerReportMetadataReq -> Json.Encode.Value
+createRerReportMetadataReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "labels", (Json.Encode.list (Json.Encode.string)) struct.labels )
+        ]
+
+
+type alias UpdateRerReportMetadataReq =
+    { id : Int
+    , sigintUnitId : Int
+    , locations : List (String)
+    , labels : List (String)
+    }
+
+
+updateRerReportMetadataReqEncoder : UpdateRerReportMetadataReq -> Json.Encode.Value
+updateRerReportMetadataReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "labels", (Json.Encode.list (Json.Encode.string)) struct.labels )
+        ]
+
+
+type alias DeleteRerReportMetadataReq =
+    { id : Int
+    }
+
+
+deleteRerReportMetadataReqEncoder : DeleteRerReportMetadataReq -> Json.Encode.Value
+deleteRerReportMetadataReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        ]
+
+
 type alias AiGovUaSettingsRsp =
     { enabled : Bool
     , tenantId : String
@@ -13294,7 +13655,9 @@ aiAgentActivityPresentationEncoder struct =
 
 
 type alias AiAgentProviderItem =
-    { id : String
+    { reasoningAvailable : Bool
+    , reasoningPresets : List (AiAgentReasoningPresetItem)
+    , id : String
     , name : String
     , modelName : String
     }
@@ -13303,14 +13666,63 @@ type alias AiAgentProviderItem =
 aiAgentProviderItemEncoder : AiAgentProviderItem -> Json.Encode.Value
 aiAgentProviderItemEncoder struct =
     Json.Encode.object
-        [ ( "id", (Json.Encode.string) struct.id )
+        [ ( "reasoningAvailable", (Json.Encode.bool) struct.reasoningAvailable )
+        , ( "reasoningPresets", (Json.Encode.list (aiAgentReasoningPresetItemEncoder)) struct.reasoningPresets )
+        , ( "id", (Json.Encode.string) struct.id )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "modelName", (Json.Encode.string) struct.modelName )
         ]
 
 
+type AiAgentReasoningPreset
+    = Fast
+    | Balanced
+    | Deep
+
+
+aiAgentReasoningPresetEncoder : AiAgentReasoningPreset -> Json.Encode.Value
+aiAgentReasoningPresetEncoder enum =
+    case enum of
+        Fast ->
+            Json.Encode.string "fast"
+        Balanced ->
+            Json.Encode.string "balanced"
+        Deep ->
+            Json.Encode.string "deep"
+
+type alias AiAgentReasoningPresetItem =
+    { preset : AiAgentReasoningPreset
+    , maxRuntimeSeconds : Int
+    , reasoningEffort : Maybe (String)
+    }
+
+
+aiAgentReasoningPresetItemEncoder : AiAgentReasoningPresetItem -> Json.Encode.Value
+aiAgentReasoningPresetItemEncoder struct =
+    Json.Encode.object
+        [ ( "preset", (aiAgentReasoningPresetEncoder) struct.preset )
+        , ( "maxRuntimeSeconds", (Json.Encode.int) struct.maxRuntimeSeconds )
+        , ( "reasoningEffort", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reasoningEffort )
+        ]
+
+
+type alias AiAgentCompletionMetadata =
+    { coverageLimited : Bool
+    , reason : String
+    }
+
+
+aiAgentCompletionMetadataEncoder : AiAgentCompletionMetadata -> Json.Encode.Value
+aiAgentCompletionMetadataEncoder struct =
+    Json.Encode.object
+        [ ( "coverageLimited", (Json.Encode.bool) struct.coverageLimited )
+        , ( "reason", (Json.Encode.string) struct.reason )
+        ]
+
+
 type alias AiAgentConfigurationRsp =
-    { featureEnabled : Bool
+    { reasoningPresetsEnabled : Bool
+    , featureEnabled : Bool
     , defaultAiEngineId : Maybe (String)
     , providers : List (AiAgentProviderItem)
     }
@@ -13319,7 +13731,8 @@ type alias AiAgentConfigurationRsp =
 aiAgentConfigurationRspEncoder : AiAgentConfigurationRsp -> Json.Encode.Value
 aiAgentConfigurationRspEncoder struct =
     Json.Encode.object
-        [ ( "featureEnabled", (Json.Encode.bool) struct.featureEnabled )
+        [ ( "reasoningPresetsEnabled", (Json.Encode.bool) struct.reasoningPresetsEnabled )
+        , ( "featureEnabled", (Json.Encode.bool) struct.featureEnabled )
         , ( "defaultAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.defaultAiEngineId )
         , ( "providers", (Json.Encode.list (aiAgentProviderItemEncoder)) struct.providers )
         ]
@@ -13902,7 +14315,11 @@ aiAgentMapEditRspEncoder struct =
 
 
 type alias AiAgentMessageItem =
-    { requestId : String
+    { reasoningPreset : Maybe (AiAgentReasoningPreset)
+    , maxRuntimeSeconds : Maybe (Int)
+    , startedAt : Maybe (Int)
+    , completionMetadata : Maybe (AiAgentCompletionMetadata)
+    , requestId : String
     , requestState : String
     , role : String
     , content : String
@@ -13916,7 +14333,11 @@ type alias AiAgentMessageItem =
 aiAgentMessageItemEncoder : AiAgentMessageItem -> Json.Encode.Value
 aiAgentMessageItemEncoder struct =
     Json.Encode.object
-        [ ( "requestId", (Json.Encode.string) struct.requestId )
+        [ ( "reasoningPreset", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentReasoningPresetEncoder)) struct.reasoningPreset )
+        , ( "maxRuntimeSeconds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.maxRuntimeSeconds )
+        , ( "startedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.startedAt )
+        , ( "completionMetadata", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentCompletionMetadataEncoder)) struct.completionMetadata )
+        , ( "requestId", (Json.Encode.string) struct.requestId )
         , ( "requestState", (Json.Encode.string) struct.requestState )
         , ( "role", (Json.Encode.string) struct.role )
         , ( "content", (Json.Encode.string) struct.content )
@@ -13950,7 +14371,8 @@ aiAgentConversationDetailEncoder struct =
 
 
 type alias AiAgentRequestCreateReq =
-    { conversationId : Maybe (String)
+    { reasoningPreset : Maybe (AiAgentReasoningPreset)
+    , conversationId : Maybe (String)
     , aiEngineId : Maybe (String)
     , prompt : String
     , mapEdit : Maybe (AiAgentMapEditTarget)
@@ -13960,7 +14382,8 @@ type alias AiAgentRequestCreateReq =
 aiAgentRequestCreateReqEncoder : AiAgentRequestCreateReq -> Json.Encode.Value
 aiAgentRequestCreateReqEncoder struct =
     Json.Encode.object
-        [ ( "conversationId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.conversationId )
+        [ ( "reasoningPreset", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentReasoningPresetEncoder)) struct.reasoningPreset )
+        , ( "conversationId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.conversationId )
         , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
         , ( "prompt", (Json.Encode.string) struct.prompt )
         , ( "mapEdit", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentMapEditTargetEncoder)) struct.mapEdit )
@@ -19786,6 +20209,7 @@ userDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_host" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_integrations" (Json.Decode.list (goiUserIntegrationDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_release_seen" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_report_eligible" (Json.Decode.bool)))
 
 
 authorIdentityDecoder : Json.Decode.Decoder AuthorIdentity
@@ -20302,6 +20726,86 @@ listDeviceFileRootsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roots" (Json.Decode.list (deviceFileRootDecoder))))
 
 
+deviceFileGeodataPreviewRspDecoder : Json.Decode.Decoder DeviceFileGeodataPreviewRsp
+deviceFileGeodataPreviewRspDecoder =
+    Json.Decode.succeed DeviceFileGeodataPreviewRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generation" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (deviceFileGeodataPreviewStatusDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retryable" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retry_after_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "result_size_bytes" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "result_url" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error_code" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error_message" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceFileGeodataPreviewStatusDecoder : Json.Decode.Decoder DeviceFileGeodataPreviewStatus
+deviceFileGeodataPreviewStatusDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "idle" ->
+                            Json.Decode.succeed GeodataIdle
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "queued" ->
+                            Json.Decode.succeed GeodataQueued
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "running" ->
+                            Json.Decode.succeed GeodataRunning
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "retry_wait" ->
+                            Json.Decode.succeed GeodataRetryWait
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ready" ->
+                            Json.Decode.succeed GeodataReady
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "failed" ->
+                            Json.Decode.succeed GeodataFailed
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+retryDeviceFileGeodataPreviewReqDecoder : Json.Decode.Decoder RetryDeviceFileGeodataPreviewReq
+retryDeviceFileGeodataPreviewReqDecoder =
+    Json.Decode.succeed RetryDeviceFileGeodataPreviewReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected_generation" (Json.Decode.string)))
+
+
 browseDeviceFilesReqDecoder : Json.Decode.Decoder BrowseDeviceFilesReq
 browseDeviceFilesReqDecoder =
     Json.Decode.succeed BrowseDeviceFilesReq
@@ -20659,6 +21163,7 @@ deviceAudioDecoder =
     Json.Decode.succeed DeviceAudio
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "recording_started_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "recording_ended_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duration_seconds" (Json.Decode.float)))
@@ -20680,6 +21185,64 @@ deviceAudioDetailsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription" (deviceAudioTranscriptionDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_edit" (Json.Decode.bool)))
 
+
+deviceAudioPreparationDecoder : Json.Decode.Decoder DeviceAudioPreparation
+deviceAudioPreparationDecoder =
+    Json.Decode.succeed DeviceAudioPreparation
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content" (deviceAudioPreparationStateDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "wave" (deviceAudioPreparationStateDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "spectrogram" (deviceAudioPreparationStateDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retry_after_ms" (Json.Decode.int)))
+
+
+prepareDeviceAudioReqDecoder : Json.Decode.Decoder PrepareDeviceAudioReq
+prepareDeviceAudioReqDecoder =
+    Json.Decode.succeed PrepareDeviceAudioReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retry" (Json.Decode.bool)))
+
+
+deviceAudioPreparationStateDecoder : Json.Decode.Decoder DeviceAudioPreparationState
+deviceAudioPreparationStateDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "queued" ->
+                            Json.Decode.succeed Queued
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "preparing" ->
+                            Json.Decode.succeed Preparing
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ready" ->
+                            Json.Decode.succeed Ready
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "failed" ->
+                            Json.Decode.succeed Failed
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 receiveDeviceAudioReqDecoder : Json.Decode.Decoder ReceiveDeviceAudioReq
 receiveDeviceAudioReqDecoder =
@@ -22620,6 +23183,24 @@ listUnitsSortByDecoder =
             |> Json.Decode.andThen
                 (\x ->
                     case x of
+                        "UnitCombatTypeAsc" ->
+                            Json.Decode.succeed UnitCombatTypeAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitCombatTypeDesc" ->
+                            Json.Decode.succeed UnitCombatTypeDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
                         "UnitCommentAsc" ->
                             Json.Decode.succeed UnitCommentAsc
                         unexpected ->
@@ -22713,6 +23294,8 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "military_district" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army_region" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "combat_type_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "combat_type_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "present_in_orbit" (Json.Decode.nullable (Json.Decode.bool))))
@@ -22724,6 +23307,19 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_orbit" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_ids" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_generative_names" (Json.Decode.list (Json.Decode.string))))
+
+
+unitCombatTypeDecoder : Json.Decode.Decoder UnitCombatType
+unitCombatTypeDecoder =
+    Json.Decode.succeed UnitCombatType
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+unitCombatTypesRspDecoder : Json.Decode.Decoder UnitCombatTypesRsp
+unitCombatTypesRspDecoder =
+    Json.Decode.succeed UnitCombatTypesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "combat_types" (Json.Decode.list (unitCombatTypeDecoder))))
 
 
 listUnitsReqDecoder : Json.Decode.Decoder ListUnitsReq
@@ -22750,6 +23346,7 @@ listUnitsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_army" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_military_district" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_army_region" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_combat_type" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_comment" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_orbit_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_is_deduplicate_candidate" (Json.Decode.nullable (Json.Decode.bool))))
@@ -22835,6 +23432,7 @@ createUnitReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "military_district" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army_region" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "combat_type_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_deduplicate_candidate" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
@@ -25192,6 +25790,20 @@ countStatsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "networks_count" (Json.Decode.int)))
 
 
+messageStatsCountRspDecoder : Json.Decode.Decoder MessageStatsCountRsp
+messageStatsCountRspDecoder =
+    Json.Decode.succeed MessageStatsCountRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count_overall" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count_selected" (Json.Decode.int)))
+
+
+unitMatchStatsCountRspDecoder : Json.Decode.Decoder UnitMatchStatsCountRsp
+unitMatchStatsCountRspDecoder =
+    Json.Decode.succeed UnitMatchStatsCountRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exact_matches_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "non_exact_matches_count" (Json.Decode.int)))
+
+
 groupStatsRspDecoder : Json.Decode.Decoder GroupStatsRsp
 groupStatsRspDecoder =
     Json.Decode.succeed GroupStatsRsp
@@ -25418,6 +26030,57 @@ rerDutyTestReplayStatusRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_emit_at_ms" (Json.Decode.nullable (Json.Decode.int))))
 
 
+rerReportAccessListRspDecoder : Json.Decode.Decoder RerReportAccessListRsp
+rerReportAccessListRspDecoder =
+    Json.Decode.succeed RerReportAccessListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_ids" (Json.Decode.list (Json.Decode.string))))
+
+
+replaceRerReportAccessListReqDecoder : Json.Decode.Decoder ReplaceRerReportAccessListReq
+replaceRerReportAccessListReqDecoder =
+    Json.Decode.succeed ReplaceRerReportAccessListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_ids" (Json.Decode.list (Json.Decode.string))))
+
+
+rerReportMetadataItemDecoder : Json.Decode.Decoder RerReportMetadataItem
+rerReportMetadataItemDecoder =
+    Json.Decode.succeed RerReportMetadataItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (Json.Decode.string))))
+
+
+rerReportMetadataListRspDecoder : Json.Decode.Decoder RerReportMetadataListRsp
+rerReportMetadataListRspDecoder =
+    Json.Decode.succeed RerReportMetadataListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (rerReportMetadataItemDecoder))))
+
+
+createRerReportMetadataReqDecoder : Json.Decode.Decoder CreateRerReportMetadataReq
+createRerReportMetadataReqDecoder =
+    Json.Decode.succeed CreateRerReportMetadataReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (Json.Decode.string))))
+
+
+updateRerReportMetadataReqDecoder : Json.Decode.Decoder UpdateRerReportMetadataReq
+updateRerReportMetadataReqDecoder =
+    Json.Decode.succeed UpdateRerReportMetadataReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (Json.Decode.string))))
+
+
+deleteRerReportMetadataReqDecoder : Json.Decode.Decoder DeleteRerReportMetadataReq
+deleteRerReportMetadataReqDecoder =
+    Json.Decode.succeed DeleteRerReportMetadataReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+
+
 aiGovUaSettingsRspDecoder : Json.Decode.Decoder AiGovUaSettingsRsp
 aiGovUaSettingsRspDecoder =
     Json.Decode.succeed AiGovUaSettingsRsp
@@ -25618,14 +26281,64 @@ aiAgentActivityPresentationDecoder =
 aiAgentProviderItemDecoder : Json.Decode.Decoder AiAgentProviderItem
 aiAgentProviderItemDecoder =
     Json.Decode.succeed AiAgentProviderItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningAvailable" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningPresets" (Json.Decode.list (aiAgentReasoningPresetItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
 
 
+aiAgentReasoningPresetDecoder : Json.Decode.Decoder AiAgentReasoningPreset
+aiAgentReasoningPresetDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "fast" ->
+                            Json.Decode.succeed Fast
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "balanced" ->
+                            Json.Decode.succeed Balanced
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "deep" ->
+                            Json.Decode.succeed Deep
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+aiAgentReasoningPresetItemDecoder : Json.Decode.Decoder AiAgentReasoningPresetItem
+aiAgentReasoningPresetItemDecoder =
+    Json.Decode.succeed AiAgentReasoningPresetItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "preset" (aiAgentReasoningPresetDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maxRuntimeSeconds" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningEffort" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiAgentCompletionMetadataDecoder : Json.Decode.Decoder AiAgentCompletionMetadata
+aiAgentCompletionMetadataDecoder =
+    Json.Decode.succeed AiAgentCompletionMetadata
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coverageLimited" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reason" (Json.Decode.string)))
+
+
 aiAgentConfigurationRspDecoder : Json.Decode.Decoder AiAgentConfigurationRsp
 aiAgentConfigurationRspDecoder =
     Json.Decode.succeed AiAgentConfigurationRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningPresetsEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "featureEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "defaultAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "providers" (Json.Decode.list (aiAgentProviderItemDecoder))))
@@ -25922,6 +26635,10 @@ aiAgentMapEditRspDecoder =
 aiAgentMessageItemDecoder : Json.Decode.Decoder AiAgentMessageItem
 aiAgentMessageItemDecoder =
     Json.Decode.succeed AiAgentMessageItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningPreset" (Json.Decode.nullable (aiAgentReasoningPresetDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maxRuntimeSeconds" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "startedAt" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completionMetadata" (Json.Decode.nullable (aiAgentCompletionMetadataDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestState" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.string)))
@@ -25946,6 +26663,7 @@ aiAgentConversationDetailDecoder =
 aiAgentRequestCreateReqDecoder : Json.Decode.Decoder AiAgentRequestCreateReq
 aiAgentRequestCreateReqDecoder =
     Json.Decode.succeed AiAgentRequestCreateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningPreset" (Json.Decode.nullable (aiAgentReasoningPresetDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversationId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))

@@ -17,7 +17,7 @@ const MAX_PDF_FILE_BYTES = MAX_PDF_FILE_MB * 1024 * 1024;
 
 import { fetchCachedDocumentResponse } from '../document-preview-utils';
 
-function formatPdfPreviewErrorMessage(error: string | null): string {
+export function formatPdfPreviewErrorMessage(error: string | null): string {
   if (error === 'PDF_FILE_TOO_LARGE') {
     return `Файл PDF завеликий для попереднього перегляду. Максимум: ${MAX_PDF_FILE_MB} МБ.`;
   }
@@ -30,11 +30,13 @@ export function PdfDocumentPreview({
   zoom,
   sizeBytes,
   onError,
+  signal,
 }: {
   href: string;
   zoom: number;
   sizeBytes?: number | null;
   onError?: (error: unknown) => void;
+  signal?: AbortSignal;
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -70,10 +72,14 @@ export function PdfDocumentPreview({
     setPdfBlobUrl(null);
 
     const abortController = new AbortController();
+    const abort = () => abortController.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     let disposed = false;
     let objectUrl: string | null = null;
 
     const load = async () => {
+      if (abortController.signal.aborted) return;
       try {
         if (sizeBytes != null && sizeBytes > MAX_PDF_FILE_BYTES) {
           throw new Error('PDF_FILE_TOO_LARGE');
@@ -99,7 +105,7 @@ export function PdfDocumentPreview({
             type: contentType ?? 'application/pdf',
           }),
         );
-        if (disposed) {
+        if (disposed || abortController.signal.aborted) {
           URL.revokeObjectURL(objectUrl);
           return;
         }
@@ -118,12 +124,13 @@ export function PdfDocumentPreview({
 
     return () => {
       disposed = true;
+      signal?.removeEventListener('abort', abort);
       abortController.abort();
       if (objectUrl != null) {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [href, sizeBytes, onError]);
+  }, [href, sizeBytes, onError, signal]);
 
   const renderedPageCount = Math.min(pageCount ?? 0, PDF_PAGE_RENDER_LIMIT);
   const isPreviewLimited = pageCount != null && pageCount > PDF_PAGE_RENDER_LIMIT;
@@ -175,10 +182,12 @@ export function PdfDocumentPreview({
           file={pdfBlobUrl}
           loading={null}
           onLoadSuccess={(pdf) => {
+            if (signal?.aborted) return;
             setPageCount(pdf.numPages);
             pdf
               .getPage(1)
               .then((page) => {
+                if (signal?.aborted) return;
                 const viewport = page.getViewport({ scale: 1 });
                 if (viewport.width > 0 && viewport.height > 0) {
                   setPageAspectRatio(viewport.height / viewport.width);
@@ -187,6 +196,7 @@ export function PdfDocumentPreview({
               .catch(() => {});
           }}
           onLoadError={(loadError) => {
+            if (signal?.aborted) return;
             onError?.(loadError);
             setError(loadError instanceof Error ? loadError.message : 'Не вдалося відкрити PDF');
           }}

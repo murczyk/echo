@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   audioDetail,
+  audioFixtureSql,
   listAudio,
   localAudioBackend,
   post,
@@ -15,10 +16,12 @@ import {
 } from './device-audio-backend';
 import type {
   DeviceAudio,
+  DeviceAudioPreparation,
   FileSyncSessionRsp,
   ListDeviceFileRootsRsp,
   ListDeviceSyncSessionsRsp,
   JournalDeviceFilesRsp,
+  User,
 } from '../../src/Bindings';
 import {
   audible,
@@ -29,6 +32,7 @@ import {
   remember,
   selectAudio,
   toggleAudioFilter,
+  toggleAudioStartTime,
   expectAudioFilter,
   toneWav,
 } from './device-audio-player';
@@ -65,7 +69,7 @@ test('@regression device audio accepts real TUS independently of FileSync and re
         await receiveAudio(
           backend.source,
           device.id,
-          `material-${index}`,
+          index === 1 ? `перехоплення_${'довга_назва_'.repeat(8)}.wav` : `material-${index}`,
           start,
           wavBytes(index === 0 ? 90 : 1),
           index === 0,
@@ -125,37 +129,52 @@ test('@regression device audio accepts real TUS independently of FileSync and re
             .locator('[data-audio-id]')
             .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-audio-id'))),
         ).toEqual(expected.map((row) => row.id));
+        for (const row of rows) {
+          await expect(sidebar.locator(`[data-audio-id="${row.id}"]`)).toHaveText(row.name);
+        }
+        await expect(sidebar.locator('time')).toHaveCount(0);
+        const settings = sidebar.getByRole('button', { name: 'Налаштування списку аудіо' });
+        await settings.click();
+        const showStart = page.getByRole('menuitemcheckbox', {
+          name: 'Показувати дату й час початку',
+        });
+        await expect(showStart).toHaveAttribute('aria-checked', 'false');
+        await expect(showStart).toBeFocused();
+        await expect(page.getByRole('menu').locator('..')).toHaveCSS('opacity', '1');
+        await page.screenshot({
+          path: testInfo.outputPath(`audio-settings-${timezoneId.replace('/', '-')}.png`),
+        });
+        await showStart.press('Space');
+        await expect(page.getByRole('menu')).toHaveCount(0);
         for (const row of [rows[0], rows[1]]) {
-          const expectedDates = await page.evaluate(
-            (row) =>
-              [row.recordingStartedAt, row.recordingEndedAt].map((value) =>
-                new Date(value)
-                  .toLocaleString('uk-UA', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hourCycle: 'h23',
-                  })
-                  .replace(',', ''),
-              ),
-            row,
+          const expectedStart = await page.evaluate(
+            (value) =>
+              new Date(value)
+                .toLocaleString('uk-UA', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                  hourCycle: 'h23',
+                })
+                .replace(',', ''),
+            row.recordingStartedAt,
           );
           const entry = sidebar.locator(`[data-audio-id="${row.id}"]`);
-          await expect(entry).toHaveText(expectedDates.join(' - '));
+          await expect(entry).toHaveText(expectedStart);
+          await expect(entry.locator('time')).toHaveCount(1);
+          await expect(entry.locator('time')).toHaveAttribute('datetime', row.recordingStartedAt);
           await expect(entry.getByRole('img', { name: 'Необроблене', exact: true })).toBeVisible();
-          expect(
-            await entry.locator('time').evaluateAll((times) => {
-              const [start, end] = times.map((time) => time.getBoundingClientRect());
-              return (
-                end.bottom - start.top <= parseFloat(getComputedStyle(times[0]).lineHeight) * 2 + 1
-              );
-            }),
-          ).toBe(true);
         }
-        await expect(sidebar).not.toContainText('material-');
+        await page.reload();
+        await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+        await expect(sidebar.locator('time')).toHaveCount(10);
+        await settings.click();
+        await expect(showStart).toHaveAttribute('aria-checked', 'true');
+        await page.keyboard.press('Escape');
+        await expect(settings).toBeFocused();
         const selected = sidebar.locator('[data-audio-id]').first();
         await selected.click();
         await page.getByRole('button', { name: 'Згорнути праву панель' }).click();
@@ -174,9 +193,8 @@ test('@regression device audio accepts real TUS independently of FileSync and re
                 const bounds = entry.getBoundingClientRect();
                 const times = [...entry.querySelectorAll('time')];
                 return (
-                  times.every((time) => time.getBoundingClientRect().right <= bounds.right) &&
-                  times[1].getBoundingClientRect().bottom - times[0].getBoundingClientRect().top <=
-                    parseFloat(getComputedStyle(times[0]).lineHeight) * 2 + 1
+                  times.length === 1 &&
+                  times.every((time) => time.getBoundingClientRect().right <= bounds.right)
                 );
               }),
             ),
@@ -187,6 +205,19 @@ test('@regression device audio accepts real TUS independently of FileSync and re
         );
         await page.screenshot({
           path: testInfo.outputPath(`audio-${timezoneId.replace('/', '-')}.png`),
+        });
+        await toggleAudioStartTime(page);
+        await expect(sidebar.locator('time')).toHaveCount(0);
+        await expect(sidebar.locator(`[data-audio-id="${rows[1].id}"]`)).toHaveText(rows[1].name);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+        await page.reload();
+        await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+        await expect(sidebar.locator(`[data-audio-id="${rows[1].id}"]`)).toHaveText(rows[1].name);
+        await expect(sidebar.locator('time')).toHaveCount(0);
+        await page.screenshot({
+          path: testInfo.outputPath(`audio-filenames-${timezoneId.replace('/', '-')}.png`),
         });
         await page.goto(`/devices/${empty.id}`);
         await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
@@ -252,8 +283,10 @@ test('@regression device audio accepts real TUS independently of FileSync and re
       await page.goto(`/devices/${withFiles.id}?sync_id=${sync.sync.syncId}`);
       await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
       const selected = page.locator('[data-audio-id]');
-      await expect(selected).toContainText('25.10.26 03:59:30');
-      await expect(selected).toContainText('25.10.26 03:01:00');
+      await expect(selected).toHaveText('independent.wav');
+      await toggleAudioStartTime(page);
+      await expect(selected).toHaveText('25.10.26 03:59:30');
+      await expect(selected.locator('time')).toHaveCount(1);
       await selected.click();
       await page.getByRole('button', { name: /Усі сесії/ }).click();
       await expect(selected).toHaveAttribute('aria-pressed', 'true');
@@ -511,6 +544,88 @@ test.describe('@regression native device audio playback', () => {
     await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
     await expect(page.locator('[data-audio-id]')).toHaveCount(11);
   }
+
+  async function withRevokedSourceAccess(run: () => Promise<void>) {
+    const identity = await backend.source.get('/api/user');
+    expect(identity.status()).toBe(200);
+    const actor = (await identity.json()) as Pick<User, 'id' | 'roles'>;
+    const roles = JSON.stringify(actor.roles).replaceAll("'", "''");
+    try {
+      await audioFixtureSql('main', `UPDATE login SET roles='[]'::jsonb WHERE id='${actor.id}';`);
+      await run();
+    } finally {
+      await audioFixtureSql(
+        'main',
+        `UPDATE login SET roles='${roles}'::jsonb WHERE id='${actor.id}';`,
+      );
+    }
+  }
+
+  test('queued preparation waits before loading and delayed graphics retain the playing native audio', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await expect
+      .poll(
+        async () =>
+          (
+            await post<DeviceAudioPreparation>(
+              backend.reader,
+              '/api/device/audio/playback/prepare',
+              { deviceId: device.id, audioId: wav.id },
+            )
+          ).spectrogram,
+        { timeout: 30_000 },
+      )
+      .toBe('ready');
+    let contentReady = false;
+    let graphicsReady = false;
+    await page.route('**/api/device/audio/playback/prepare', async (route) => {
+      const response = await route.fetch();
+      const result = await response.json();
+      await route.fulfill({
+        response,
+        json: {
+          ...result,
+          content: contentReady ? result.content : 'queued',
+          wave: graphicsReady ? result.wave : 'queued',
+          spectrogram: graphicsReady ? result.spectrogram : 'queued',
+          retry_after_ms: 500,
+        },
+      });
+    });
+    await open(page);
+    await page.locator(`[data-audio-id="${wav.id}"]`).click();
+    await expect(page.locator('[data-device-audio-player]')).toContainText('Підготовка аудіо');
+    const player = page.locator('[data-device-audio-player] custom-audio-player');
+    await expect(player).toHaveCount(0);
+    contentReady = true;
+    await ready(player);
+    const native = await player.evaluateHandle((element: CustomAudioPlayer) => element.audio);
+    await player.evaluate((element: CustomAudioPlayer) => {
+      element.audio.currentTime = 2;
+    });
+    await player.locator('#playPauseBtn').click();
+    await playing(player);
+    graphicsReady = true;
+    await expect(player).toHaveAttribute(
+      'wave-src',
+      `/api/device/audio/${device.id}/${wav.id}/wave`,
+    );
+    await expect(player).toHaveAttribute(
+      'spectrum-src',
+      `/api/device/audio/${device.id}/${wav.id}/spectrogram`,
+    );
+    expect(
+      await player.evaluate(
+        (element: CustomAudioPlayer, previous) => element.audio === previous,
+        native,
+      ),
+    ).toBe(true);
+    expect((await nativeState(player)).time).toBeGreaterThan(2);
+    expect((await nativeState(player)).paused).toBe(false);
+    await native.dispose();
+  });
 
   test('WAV sounds at beginning and end; pause, switch, reopen, settings and scroll preserve native semantics', async ({
     page,
@@ -850,7 +965,10 @@ test.describe('@regression native device audio playback', () => {
     page,
   }) => {
     test.setTimeout(60_000);
-    expect((await backend.source.get(contentUrl(wav.id))).status()).toBe(403);
+    expect((await backend.source.get(contentUrl(wav.id))).status()).toBe(200);
+    await withRevokedSourceAccess(async () => {
+      expect((await backend.source.get(contentUrl(wav.id))).status()).toBe(403);
+    });
     const foreign = await backend.login('foreign-cyber');
     expect((await foreign.get(contentUrl(wav.id))).status()).toBe(404);
     await open(page);
@@ -886,25 +1004,27 @@ test.describe('@regression native device audio playback', () => {
     page,
   }) => {
     test.setTimeout(60_000);
-    for (const actor of [backend.source, await backend.login('foreign-cyber')]) {
-      await open(page);
-      await page.route(`**${contentUrl(wav.id)}`, (route) => route.continue());
-      const player = await selectAudio(page, wav.id);
-      await ready(player);
-      const old = await remember(player);
-      await page.context().addCookies((await actor.storageState()).cookies);
-      await player.evaluate((element: CustomAudioPlayer) => element.retryCurrentSource());
-      await expect(page.locator('[data-device-audio-player] [role="alert"]')).toHaveText(
-        'Аудіо недоступне.',
-      );
-      await expect(page.locator('[data-device-audio-player] custom-audio-player')).toHaveCount(0);
-      expect(
-        await old.evaluate(
-          (element: CustomAudioPlayer) =>
-            element.audio.paused && !element.audio.getAttribute('src'),
-        ),
-      ).toBe(true);
-    }
+    await withRevokedSourceAccess(async () => {
+      for (const actor of [backend.source, await backend.login('foreign-cyber')]) {
+        await open(page);
+        await page.route(`**${contentUrl(wav.id)}`, (route) => route.continue());
+        const player = await selectAudio(page, wav.id);
+        await ready(player);
+        const old = await remember(player);
+        await page.context().addCookies((await actor.storageState()).cookies);
+        await player.evaluate((element: CustomAudioPlayer) => element.retryCurrentSource());
+        await expect(page.locator('[data-device-audio-player] [role="alert"]')).toHaveText(
+          'Аудіо недоступне.',
+        );
+        await expect(page.locator('[data-device-audio-player] custom-audio-player')).toHaveCount(0);
+        expect(
+          await old.evaluate(
+            (element: CustomAudioPlayer) =>
+              element.audio.paused && !element.audio.getAttribute('src'),
+          ),
+        ).toBe(true);
+      }
+    });
   });
 
   test('a real transport interruption during MP3 playback raises native MediaError and retries from zero', async ({

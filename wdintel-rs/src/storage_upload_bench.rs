@@ -270,7 +270,9 @@ async fn audit_upload_size_scaling() {
     let concurrency = env_number("ECHO_UPLOAD_BENCH_CONCURRENCY", 1) as usize;
     let repetitions = env_number("ECHO_UPLOAD_BENCH_REPETITIONS", 3);
     assert!((1..=16).contains(&concurrency));
-    assert!(size <= crate::config::DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES);
+    assert!(
+        size <= crate::devices::config::DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES
+    );
     let fixture = Arc::new(Fixture::new(size));
     let mut verified_negative_modes = std::collections::HashSet::new();
     for repetition in 0..repetitions {
@@ -390,8 +392,10 @@ async fn audit_upload_size_scaling() {
 async fn audit_plaintext_stream_rejects_corrupt_sources() {
     let size =
         env_number("ECHO_UPLOAD_BENCH_FAULT_SIZE_BYTES", 8 * 1024 * 1024 + 1);
-    assert!((1..=crate::config::DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES)
-        .contains(&size));
+    assert!(
+        (1..=crate::devices::config::DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES)
+            .contains(&size)
+    );
     let fixture = Fixture::new(size);
     let cases = [
         ("digest", fixture.size, [0; 32]),

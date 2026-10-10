@@ -1929,6 +1929,7 @@ mod tests {
 
     fn sigint_unit(battalion: &str) -> sigint_unit::Model {
         sigint_unit::Model {
+            combat_type_id: None,
             id: 1,
             battalion: battalion.to_string(),
             active: true,

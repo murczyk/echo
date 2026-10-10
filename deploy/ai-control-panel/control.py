@@ -64,7 +64,7 @@ def ssh(host, args):
     if not HOST_RE.fullmatch(host):
         raise ValueError('Enter an SSH alias or user@hostname; configure ports and jump hosts in SSH config')
     options = SSH_OPTIONS.copy()
-    if host == AGENT_HOST:
+    if host == 'echo@echo-ai-agent-vm.eagle-atria.ts.net':
         options += ['-o', 'HostKeyAlias=[echo-ai-agent-vm.eagle-atria.ts.net]:22031']
     return ['ssh', *options, host, shlex.join(args)]
 
@@ -494,7 +494,10 @@ def main():
     parser.add_argument('--repo',type=Path,required=True)
     parser.add_argument('--executable',type=Path,required=True)
     parser.add_argument('--mode',default='debug')
+    parser.add_argument('--agent-host',choices=['echo@echo-ai-agent-vm.eagle-atria.ts.net', 'echo@echo-ai-agents-ua.eagle-atria.ts.net'],default=AGENT_HOST)
     options = parser.parse_args()
+    globals()['AGENT_HOST'] = options.agent_host
+    globals()['AGENT_HOSTNAME'] = options.agent_host.split('@')[-1]
     request = json.load(sys.stdin)
     message(f'AI control panel: action={options.action}, mode={options.mode}, repo={options.repo.resolve()}, hosts={request.get("selected") or "all"}, added_hosts={request.get("hosts", [])}, release={request.get("release") or "catalog"}, reconcile_orphans={bool(request.get("reconcile_orphans"))}, dry_run={bool(request.get("dry_run"))}, probe={options.executable}')
     control = Control(options)

@@ -38,7 +38,7 @@ type Params = {
   invalidateCallsignGraph: (options?: { clearGraph?: boolean }) => void;
   optionsFreqsRef: React.MutableRefObject<string[]>;
   setAorEntries: Setter<import('./types').AnalysisAorEntry[]>;
-  setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
+  setCounts: Setter<Partial<import('../../../../Bindings').CountStatsRsp> | null>;
   setCorrelatedFreqs: Setter<import('../../../../Bindings').CorrelatedFreq[]>;
   setGroupInfos: Setter<Record<string, SignalGroupEntry>>;
   setGroupsActivity: Setter<import('../../../../Bindings').FreqDailyActivityCount | null>;
