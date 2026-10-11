@@ -502,7 +502,7 @@ mod tests {
                     lat: Set(47.55029916845189),
                     lng: Set(35.335663776872615),
                     certainty: Set("high".to_string()),
-                    evidence: Set(String::new()),
+                    evidence: Set("до \"Циркон 9\"".to_string()),
                     message_at: Set(now),
                     ..Default::default()
                 }
@@ -549,6 +549,9 @@ mod tests {
             assert_eq!(sources.len(), 1);
             assert_eq!(sources[0].mgrs, "36TXT7573468963");
             assert_eq!(sources[0].message_uuid, message_refs[0].1.to_string());
+            assert_eq!(sources[0].evidence, "до \"Циркон 9\"");
+            assert_eq!(sources[0].certainty, "high");
+            assert_eq!(sources[0].coordinate_text, "36T XT 75734 68963");
         }
         assert!(crate::ai_position::list::positions_by_message(
             &env.dbx,
@@ -585,6 +588,8 @@ mod tests {
                 && hidden.located.is_empty()
                 && hidden.other.is_empty()
         );
+        let known_id = known.id;
+        let group_key = group.master_key.clone();
         assert_last_known_body_and_document_positions_3676(
             &env.dbx,
             &mention_ids,
@@ -600,5 +605,21 @@ mod tests {
         .await
         .unwrap();
         assert!(far.known.is_empty());
+
+        ai_position_knowledge::Entity::delete_by_id(known_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let unlocated = crate::ai_position::list::positions_by_message(
+            &env.dbx,
+            vec![message_refs[1].0],
+            &std::iter::once(group_key).collect(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            unlocated.is_empty(),
+            "a mention without any location is not highlighted"
+        );
     }
 }

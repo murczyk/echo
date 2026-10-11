@@ -764,7 +764,8 @@ pub(crate) async fn list_knowledge(
     })
 }
 
-/// Highlight spans for message cards, by message id. A mention without
+/// Highlight spans for message cards, by message id. Mentions with no
+/// location at all are not highlighted. A mention without
 /// coordinates of its own shows where the position is known to be, from
 /// knowledge the viewer may see, retaining the last known location's date.
 pub(crate) async fn positions_by_message(
@@ -895,6 +896,9 @@ async fn position_highlights(
         } else {
             None
         };
+        if own.is_empty() && knowledge.is_none() {
+            continue;
+        }
         let coordinate_sources = knowledge.map_or_else(
             || own_sources.remove(&mention.id).unwrap_or_default(),
             |known| known_sources.get(&known.id).cloned().unwrap_or_default(),

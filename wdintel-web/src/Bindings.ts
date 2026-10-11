@@ -1671,6 +1671,9 @@ export type CnPositionCoordinateSource = {
   messageUuid: string;
   groupName: string;
   messageAt: number;
+  evidence: string;
+  certainty: string;
+  coordinateText: string;
 };
 
 export type CnHighlight = {

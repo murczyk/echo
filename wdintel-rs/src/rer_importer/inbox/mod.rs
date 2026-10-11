@@ -7973,7 +7973,7 @@ mod tests {
             .unwrap()
             .unwrap();
         for media_id in [None, Some(media.id)] {
-            ai_position_mention::ActiveModel {
+            let mention = ai_position_mention::ActiveModel {
                 sigint_inbox_item_id: Set(if media_id.is_none() {
                     Some(message.id)
                 } else {
@@ -7990,6 +7990,22 @@ mod tests {
                 group_is_secret: Set(false),
                 aor_ids: Set(vec![]),
                 model_name: Set("test".to_string()),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            // Only located positions are highlighted.
+            crate::entities::ai_position_coordinate::ActiveModel {
+                mention_id: Set(mention.id),
+                coordinate_text: Set("36T XT 75734 68963".to_string()),
+                coordinate_system: Set("mgrs".to_string()),
+                mgrs: Set("36TXT7573468963".to_string()),
+                lat: Set(47.55029916845189),
+                lng: Set(35.335663776872615),
+                certainty: Set("high".to_string()),
+                evidence: Set(String::new()),
+                message_at: Set(message.created_at),
                 ..Default::default()
             }
             .insert(&env.dbx)

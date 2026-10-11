@@ -4333,6 +4333,9 @@ type alias CnPositionCoordinateSource =
     , messageUuid : String
     , groupName : String
     , messageAt : Int
+    , evidence : String
+    , certainty : String
+    , coordinateText : String
     }
 
 
@@ -4343,6 +4346,9 @@ cnPositionCoordinateSourceEncoder struct =
         , ( "message_uuid", (Json.Encode.string) struct.messageUuid )
         , ( "group_name", (Json.Encode.string) struct.groupName )
         , ( "message_at", (Json.Encode.int) struct.messageAt )
+        , ( "evidence", (Json.Encode.string) struct.evidence )
+        , ( "certainty", (Json.Encode.string) struct.certainty )
+        , ( "coordinate_text", (Json.Encode.string) struct.coordinateText )
         ]
 
 
@@ -20290,6 +20296,9 @@ cnPositionCoordinateSourceDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uuid" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "evidence" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "certainty" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinate_text" (Json.Decode.string)))
 
 
 contentNodeDecoder : Json.Decode.Decoder ContentNode

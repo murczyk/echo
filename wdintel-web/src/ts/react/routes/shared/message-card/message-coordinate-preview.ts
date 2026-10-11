@@ -741,7 +741,7 @@ function mergeCoordinateSources(
   return Array.from(
     new Map(
       [...(previous.coordinateSources ?? []), ...(point.coordinateSources ?? [])].map((source) => [
-        source.messageUuid,
+        `${source.messageUuid}\u0000${source.evidence}`,
         source,
       ]),
     ).values(),

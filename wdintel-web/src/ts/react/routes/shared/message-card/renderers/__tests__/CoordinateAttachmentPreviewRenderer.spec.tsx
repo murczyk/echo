@@ -922,6 +922,57 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     );
   });
 
+  it('shows the evidence behind a position next to its source message', async () => {
+    const points = [
+      {
+        lat: 50.45044,
+        lng: 30.52355,
+        label: 'Позиція «Циркон 9»',
+        source: 'position' as const,
+        description: '36UXQ1234512345',
+        coordinateSources: [
+          {
+            mgrs: '36UXQ1234512345',
+            messageUuid: '019a4aa8-0000-7000-8000-000000000066',
+            groupName: 'Група джерела',
+            messageAt: 1720000000000,
+            evidence: '<b>до Циркон 9</b>',
+            certainty: 'high',
+            coordinateText: '36UXQ1234512345',
+          },
+        ],
+      },
+    ];
+    await act(async () => {
+      root.render(
+        <TestCoordinatePreviewDialog
+          open
+          points={points}
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+    });
+    const markerClick = leafletMock.markers[0]?.on.mock.calls[0]?.[1] as (() => void) | undefined;
+    await act(async () => {
+      markerClick?.();
+      await Promise.resolve();
+    });
+
+    const reasoning = document.body.querySelector(
+      '[data-coordinate-position-reasoning="true"]',
+    ) as HTMLElement;
+    expect(reasoning.textContent).toContain('<b>до Циркон 9</b>');
+    expect(reasoning.textContent).toContain('достовірність: висока');
+    expect(reasoning.querySelector('b')).toBeNull();
+  });
+
   it('keeps all points in view when coordinate metadata updates', async () => {
     const points = [
       { lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' as const },
