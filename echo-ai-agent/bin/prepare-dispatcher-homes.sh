@@ -15,6 +15,15 @@ die() {
 }
 
 [[ $EUID -eq 0 ]] || die "prepare-dispatcher-homes.sh must run as root"
+deployment_lock=/run/lock/echo-ai-agent-deploy.lock
+if [[ -e "$deployment_lock" || -L "$deployment_lock" ]]; then
+  [[ -f "$deployment_lock" && ! -L "$deployment_lock" ]] \
+    || die "unsafe deployment lock file: $deployment_lock"
+else
+  install -o root -g root -m 0644 /dev/null "$deployment_lock"
+fi
+chown root:root "$deployment_lock"
+chmod 0644 "$deployment_lock"
 install -d -o root -g "$DISPATCH_GROUP" -m 0750 "$DISPATCH_RUNTIME_ROOT"
 if [[ -e "$DISPATCH_LOCK_PATH" || -L "$DISPATCH_LOCK_PATH" ]]; then
   [[ -f "$DISPATCH_LOCK_PATH" && ! -L "$DISPATCH_LOCK_PATH" ]] \
@@ -53,7 +62,8 @@ for namespace_file in "$DISPATCH_NAMESPACE_DIR"/*; do
   if [[ -e "$runtime_home" ]]; then
     [[ -d "$runtime_home" && ! -L "$runtime_home" ]] \
       || die "unsafe dispatcher runtime home: $runtime_home"
-    find "$runtime_home" -mindepth 1 -depth -delete
+    find "$runtime_home" -mindepth 1 -depth \
+      ! \( -type f -name 'echo-ai-agent-*.lock' \) -delete
   fi
   install -d -o "$dispatcher_user" -g "$DISPATCH_GROUP" -m 0700 "$runtime_home"
 done

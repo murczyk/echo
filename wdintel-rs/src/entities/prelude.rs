@@ -12,6 +12,7 @@ pub use super::ai_agent_request_event::Entity as AiAgentRequestEvent;
 pub use super::ai_agent_security_review::Entity as AiAgentSecurityReview;
 pub use super::ai_agent_settings::Entity as AiAgentSettings;
 pub use super::ai_agent_user_link::Entity as AiAgentUserLink;
+pub use super::ai_agent_work_record::Entity as AiAgentWorkRecord;
 pub use super::ai_callsign_action::Entity as AiCallsignAction;
 pub use super::ai_callsign_feedback::Entity as AiCallsignFeedback;
 pub use super::ai_callsign_feedback_summary::Entity as AiCallsignFeedbackSummary;

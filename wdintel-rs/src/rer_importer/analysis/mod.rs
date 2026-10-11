@@ -6977,7 +6977,7 @@ async fn editable_comment_logins(
     Ok(logins)
 }
 
-async fn accessible_message_ids(
+pub(crate) async fn accessible_message_ids(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
     message_ids: &[i64],

@@ -14,6 +14,20 @@ pub struct ReadOnlyRoute {
 pub const ROUTES: &[ReadOnlyRoute] = &[
     ReadOnlyRoute {
         method: "POST",
+        path: "/api/ai-agent/work/list",
+        skill: "work_list",
+        label: "Переглядаю попередні дослідження",
+        request_kind: "workList",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/work/read",
+        skill: "work_read",
+        label: "Читаю збережені результати",
+        request_kind: "workRead",
+    },
+    ReadOnlyRoute {
+        method: "POST",
         path: "/api/device/ai/search",
         skill: "device_search",
         label: "Шукаю пристрої",
@@ -305,6 +319,8 @@ mod tests {
                     | "deviceFileRead"
                     | "deviceFileInspect"
                     | "deviceFileStatus"
+                    | "workList"
+                    | "workRead"
             ));
         }
         let daily_activity = ROUTES
