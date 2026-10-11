@@ -1556,3 +1556,162 @@ async fn map_revisions_edit_undo_redo_and_replay_without_side_effects() {
     let second: AiAgentMapDocument = test::read_body_json(response).await;
     assert_eq!(&second.records[0].sidc[3..4], "3");
 }
+
+#[actix_web::test]
+#[serial]
+async fn issue_3770_interrupted_history_and_completion_metadata_survive_storage(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let request = running_request(&env, &fixture).await;
+    for (kind, payload) in [
+        (
+            "assistant_delta",
+            serde_json::json!({"delta":"discarded draft"}),
+        ),
+        (
+            "assistant_snapshot",
+            serde_json::json!({"text":"saved evidence"}),
+        ),
+        (
+            "assistant_delta",
+            serde_json::json!({"delta":" with source"}),
+        ),
+        (
+            "completion_metadata",
+            serde_json::json!({"coverageLimited":true,"reason":"time_limit"}),
+        ),
+    ] {
+        assert!(crate::ai_agent::events::append_runner(
+            &env.dbx, request.id, kind, payload
+        )
+        .await
+        .unwrap());
+    }
+    for _ in 0..4 {
+        crate::ai_agent::events::append_runner(
+            &env.dbx,
+            request.id,
+            "assistant_delta",
+            serde_json::json!({"delta":"🧭\n".repeat(35_000)}),
+        )
+        .await
+        .unwrap();
+    }
+    let mut failed = request.clone().into_active_model();
+    failed.state = Set("failed".to_string());
+    failed.prompt = Set("Original subjects and search scope".to_string());
+    failed.update(&env.dbx).await.unwrap();
+    let mut cancelled = request.clone().into_active_model();
+    cancelled.id = Set(Uuid::now_v7());
+    cancelled.state = Set("cancelled".to_string());
+    cancelled.prompt = Set("Also search device files".to_string());
+    cancelled.queued_at = Set(request.queued_at + chrono::Duration::seconds(1));
+    cancelled.insert(&env.dbx).await.unwrap();
+    let mut followup = request.clone();
+    followup.id = Uuid::now_v7();
+    followup.queued_at = request.queued_at + chrono::Duration::seconds(2);
+    let history = crate::ai_agent::worker::load_history(&env, &followup)
+        .await
+        .unwrap();
+    assert_eq!(history.len(), 4);
+    assert_eq!(history[0]["content"], "Original subjects and search scope");
+    let draft = history[1]["content"].as_str().unwrap();
+    assert!(draft.contains("failed") && draft.contains("incomplete"));
+    assert!(draft.contains("saved evidence with source"));
+    assert!(!draft.contains("discarded draft"));
+    assert!(draft.contains("truncated to fit context"));
+    let payload = crate::ai_agent::worker::bounded_runner_payload(
+        serde_json::json!({"prompt":"Also search files","skills":[]}),
+        history.clone(),
+    )
+    .unwrap();
+    assert_eq!(
+        payload["history"][0]["content"],
+        "Original subjects and search scope"
+    );
+    assert!(
+        serde_json::to_vec(&payload).unwrap().len()
+            <= crate::config::AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES
+    );
+    assert_eq!(history[2]["content"], "Also search device files");
+    assert!(history[3]["content"]
+        .as_str()
+        .unwrap()
+        .contains("cancelled"));
+    let mut running = request.clone().into_active_model();
+    running.id = Set(Uuid::now_v7());
+    running.insert(&env.dbx).await.unwrap();
+    assert_eq!(
+        crate::ai_agent::worker::load_history(&env, &followup)
+            .await
+            .unwrap()
+            .len(),
+        4
+    );
+    let zone =
+        crate::functest::tests::mk_sigint_zone(&env.dbx, Default::default())
+            .await
+            .unwrap();
+    let mut human = fixture.human.clone().into_active_model();
+    human.sigint_zone_id = Set(Some(zone.id));
+    human.update(&env.dbx).await.unwrap();
+    let source = crate::functest::tests::mk_signal_message(
+        &env.dbx,
+        crate::entities::signal_message::ActiveModel {
+            id_uuid: Set(Some(Uuid::new_v4())),
+            datasource_group_id: Set(None),
+            login_id: Set(Some(fixture.human.id)),
+            sender: Set(Some(fixture.human.id.to_string())),
+            body: Set(Some("saved evidence".to_string())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    crate::ai_agent::events::append_in_transaction(&txn, request.id, "message_citations", serde_json::json!({"citations":[{"messageId":source.id,"messageIdentifier":source.id_uuid.unwrap().to_string()}]})).await.unwrap();
+    txn.commit().await.unwrap();
+    assert!(crate::ai_agent::worker::load_history(&env, &followup)
+        .await
+        .unwrap()[1]["content"]
+        .as_str()
+        .unwrap()
+        .contains("saved evidence"));
+    let mut source = source.into_active_model();
+    source.deleted = Set(true);
+    let source = source.update(&env.dbx).await.unwrap();
+    let revoked = crate::ai_agent::worker::load_history(&env, &followup)
+        .await
+        .unwrap();
+    assert_eq!(revoked[0]["content"], "Original subjects and search scope");
+    assert!(!revoked[1]["content"]
+        .as_str()
+        .unwrap()
+        .contains("saved evidence"));
+    assert_eq!(revoked[1]["citations"], serde_json::json!([]));
+    let mut source = source.into_active_model();
+    source.deleted = Set(false);
+    source.update(&env.dbx).await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    crate::ai_agent::events::append_in_transaction(&txn, request.id, "file_citations", serde_json::json!({
+        "citations": [{"deviceId":Uuid::new_v4(),"fileId":Uuid::new_v4(),"revision":1,"extractionRevision":null,"section":null}]
+    })).await.unwrap();
+    txn.commit().await.unwrap();
+    let history = crate::ai_agent::worker::load_history(&env, &followup)
+        .await
+        .unwrap();
+    assert_eq!(history[0]["content"], "Original subjects and search scope");
+    let hidden = history[1]["content"].as_str().unwrap();
+    assert!(
+        hidden.contains("unavailable") && !hidden.contains("saved evidence")
+    );
+    assert_eq!(history[1]["fileCitations"], serde_json::json!([]));
+    followup.queued_at = request.queued_at;
+    followup.id = request.id;
+    assert!(crate::ai_agent::worker::load_history(&env, &followup)
+        .await
+        .unwrap()
+        .is_empty());
+    fixture.cleanup(&env).await;
+}

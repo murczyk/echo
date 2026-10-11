@@ -18,13 +18,12 @@ use crate::config::{
 };
 use crate::entities::{
     ai_agent_container, ai_agent_conversation, ai_agent_engine_runtime_profile,
-    ai_agent_request, ai_agent_request_event,
+    ai_agent_request,
 };
 use crate::error::AppError;
 use crate::h;
 use crate::types::{error, info, Context, Env, ShortContext};
 use chrono::{Duration, Utc};
-use sea_orm::sea_query::{Expr, ExprTrait, Query};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
     DatabaseBackend, EntityTrait, FromQueryResult, IntoActiveModel,
@@ -435,6 +434,7 @@ async fn process_claimed_request(
         }
         Ok(RunOutcome::Cancelled) => {}
         Err(err) => {
+            error!("AI agent request failed for {request_id}: {err:#?}");
             if let Err(persist_err) = fail_request(env, request_id, &err).await
             {
                 error!(
@@ -876,7 +876,7 @@ async fn run_request_inner(
     Ok(RunOutcome::Completed(response, completion_metadata))
 }
 
-fn bounded_runner_payload(
+pub(super) fn bounded_runner_payload(
     mut payload: Value,
     mut history: Vec<Value>,
 ) -> Result<Value, AppError> {
@@ -891,6 +891,36 @@ fn bounded_runner_payload(
             return Err(AppError::BL {
                 msg: "AI agent request is too large for the runner".to_string(),
             });
+        }
+        if history.len() == 2 {
+            for index in [1, 0] {
+                let content =
+                    history[index]["content"].as_str().unwrap_or_default();
+                let content_bytes = serde_json::to_vec(content).c(h!())?.len();
+                let excess = serde_json::to_vec(&payload).c(h!())?.len()
+                    - AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES;
+                let budget = content_bytes.saturating_sub(excess);
+                if budget >= crate::config::AI_AGENT_HISTORY_MIN_TEXT_BYTES {
+                    history[index]["content"] = json!(
+                        events::truncate_serialized_text(content, budget)
+                            .c(h!())?
+                    );
+                    break;
+                }
+                history[index] = json!({"role":history[index]["role"],"content":"[Earlier text omitted to fit context.]"});
+                payload["history"] = json!(history);
+                if serde_json::to_vec(&payload).c(h!())?.len()
+                    <= AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES
+                {
+                    return Ok(payload);
+                }
+            }
+            payload["history"] = json!(history);
+            if serde_json::to_vec(&payload).c(h!())?.len()
+                <= AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES
+            {
+                return Ok(payload);
+            }
         }
         history.drain(..2);
     }
@@ -1047,29 +1077,16 @@ pub(super) async fn load_history(
         ]))
         .filter(
             Condition::any()
-                .add(ai_agent_request::Column::State.eq("completed"))
-                .add(Expr::exists(
-                    Query::select()
-                        .expr(Expr::val(1))
-                        .from(ai_agent_request_event::Entity)
-                        .and_where(
-                            Expr::col((
-                                ai_agent_request_event::Entity,
-                                ai_agent_request_event::Column::RequestId,
-                            ))
-                            .equals((
-                                ai_agent_request::Entity,
-                                ai_agent_request::Column::Id,
-                            )),
+                .add(ai_agent_request::Column::QueuedAt.lt(request.queued_at))
+                .add(
+                    Condition::all()
+                        .add(
+                            ai_agent_request::Column::QueuedAt
+                                .eq(request.queued_at),
                         )
-                        .and_where(
-                            ai_agent_request_event::Column::EventType
-                                .eq("map_artifact"),
-                        )
-                        .to_owned(),
-                )),
+                        .add(ai_agent_request::Column::Id.lt(request.id)),
+                ),
         )
-        .filter(ai_agent_request::Column::Id.ne(request.id))
         .order_by_desc(ai_agent_request::Column::QueuedAt)
         .order_by_desc(ai_agent_request::Column::Id)
         .limit(AI_AGENT_HISTORY_MAX_TURNS)
@@ -1090,41 +1107,100 @@ pub(super) async fn load_history(
         super::file_citations::load(&env.dbx, &request_ids)
             .await
             .c(h!())?;
+    let message_ids = citations
+        .values()
+        .flatten()
+        .map(|source| source.message_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let readable_messages = super::citations::readable_message_ids(
+        &env.dbx,
+        request.human_login_id,
+        &message_ids,
+    )
+    .await
+    .c(h!())?;
     let mut accessible = std::collections::HashSet::new();
     for prior in &requests {
-        if super::file_citations::readable(
-            env,
-            request.human_login_id,
-            file_citations
-                .get(&prior.id)
-                .map(Vec::as_slice)
-                .unwrap_or_default(),
-        )
-        .await
-        .c(h!())?
+        if citations
+            .get(&prior.id)
+            .into_iter()
+            .flatten()
+            .all(|source| readable_messages.contains(&source.message_id))
+            && super::file_citations::readable(
+                env,
+                request.human_login_id,
+                file_citations
+                    .get(&prior.id)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+            )
+            .await
+            .c(h!())?
         {
             accessible.insert(prior.id);
         }
     }
-    let requests = requests
-        .into_iter()
-        .rev()
-        .filter(|prior| accessible.contains(&prior.id));
-    Ok(requests
-        .flat_map(|request| {
-            let request_maps = maps.remove(&request.id).unwrap_or_default();
-            let response = request.response.filter(|response| !response.is_empty()).unwrap_or_else(|| request_maps.iter()
-                .map(|summary| format!("{}: [мапа](echo-map:{})", summary.title, summary.id))
-                .collect::<Vec<_>>().join("\n"));
-            let citations = super::citations::referenced(
-                citations.remove(&request.id).unwrap_or_default(), &response,
+    let mut history = Vec::new();
+    for prior in requests.into_iter().rev() {
+        history.push(json!({ "role": "user", "content": prior.prompt }));
+        let readable = accessible.contains(&prior.id);
+        let request_maps = if readable {
+            maps.remove(&prior.id).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let mut response = if readable {
+            match prior.response.filter(|response| !response.is_empty()) {
+                Some(response) => response,
+                None if prior.state != "completed" => {
+                    events::interrupted_text(&env.dbx, prior.id)
+                        .await
+                        .c(h!())?
+                }
+                None => String::new(),
+            }
+        } else {
+            "Previous output is unavailable under current access permissions."
+                .to_string()
+        };
+        if response.is_empty() {
+            response = request_maps
+                .iter()
+                .map(|summary| {
+                    format!(
+                        "{}: [мапа](echo-map:{})",
+                        summary.title, summary.id
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+        }
+        if prior.state != "completed" {
+            if response.is_empty() {
+                response = "No partial output was saved.".to_string();
+            }
+            response = format!(
+                "[Previous request {}; any text below is an incomplete, unverified draft.]\n{}",
+                prior.state, response,
             );
-            [
-                json!({ "role": "user", "content": request.prompt }),
-                json!({ "role": "assistant", "content": response, "citations": citations, "fileCitations": file_citations.remove(&request.id).unwrap_or_default(), "maps": request_maps }),
-            ]
-        })
-        .collect())
+        }
+        if response.is_empty() {
+            response = "[Previous request completed without a text answer.]"
+                .to_string();
+        }
+        let citations = super::citations::referenced(
+            citations.remove(&prior.id).unwrap_or_default(),
+            &response,
+        );
+        history.push(json!({
+            "role": "assistant", "content": response, "citations": citations,
+            "fileCitations": if readable { file_citations.remove(&prior.id).unwrap_or_default() } else { Vec::new() },
+            "maps": request_maps,
+        }));
+    }
+    Ok(history)
 }
 
 fn interrupted_error() -> AppError {
@@ -1635,6 +1711,24 @@ mod tests {
         let history = payload["history"].as_array().unwrap();
         assert_eq!(history.len(), 2);
         assert!(history[0]["content"].as_str().unwrap().starts_with('n'));
+        assert!(
+            serde_json::to_vec(&payload).unwrap().len()
+                <= AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES
+        );
+    }
+
+    #[test]
+    fn issue_3770_large_multibyte_draft_keeps_the_latest_question() {
+        let payload = bounded_runner_payload(
+            json!({"prompt":"Continue the research","context":"x".repeat(300_000)}),
+            vec![json!({"role":"user","content":"Original subjects"}),
+                 json!({"role":"assistant","content":"🧭\n".repeat(100_000)})],
+        ).unwrap();
+        assert_eq!(payload["history"][0]["content"], "Original subjects");
+        assert!(payload["history"][1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("truncated to fit context"));
         assert!(
             serde_json::to_vec(&payload).unwrap().len()
                 <= AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES

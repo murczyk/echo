@@ -153,3 +153,18 @@ Regression coverage: `echo-ai-agent/runner/checkpoint-recovery.test.ts` exercise
 the full runner through Responses and Chat Completions; compaction/policy tests
 cover retries, evidence integrity and bounded finalization; the chat-flow test
 checks restored partial answers and their coverage label.
+
+## Interrupted conversation history
+
+Failed and cancelled requests retain their original question in follow-up
+context, regardless of the next request's reasoning preset. When available,
+the latest saved assistant snapshot and later text deltas are restored as an
+explicitly incomplete, unverified draft. Published maps remain available.
+Current file-access checks still apply. This also recovers already stored
+partial answers from older failures; missing tool outputs cannot be reconstructed.
+
+The completion-event migration permits `completion_metadata` in the event
+journal. Without it, a valid budget-limited answer could fail during persistence.
+Apply the new migration before serving requests. Existing request outcomes
+remain unchanged. Regression coverage is in
+`wdintel-rs/src/ai_agent/bootstrap_tests.rs`.

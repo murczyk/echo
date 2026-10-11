@@ -230,6 +230,78 @@ pub async fn append_in_transaction(
     Ok(event)
 }
 
+pub(super) async fn interrupted_text(
+    dbx: &DatabaseConnection,
+    request_id: Uuid,
+) -> anyhow::Result<String> {
+    let snapshot = ai_agent_request_event::Entity::find()
+        .filter(ai_agent_request_event::Column::RequestId.eq(request_id))
+        .filter(
+            ai_agent_request_event::Column::EventType.eq("assistant_snapshot"),
+        )
+        .order_by_desc(ai_agent_request_event::Column::Sequence)
+        .one(dbx)
+        .await
+        .c(h!())?;
+    let mut after = snapshot.as_ref().map_or(0, |event| event.sequence);
+    let mut text = snapshot
+        .as_ref()
+        .and_then(|event| event.payload.get("text")?.as_str())
+        .unwrap_or_default()
+        .to_string();
+    loop {
+        let events = ai_agent_request_event::Entity::find()
+            .filter(ai_agent_request_event::Column::RequestId.eq(request_id))
+            .filter(ai_agent_request_event::Column::Sequence.gt(after))
+            .filter(
+                ai_agent_request_event::Column::EventType.eq("assistant_delta"),
+            )
+            .order_by_asc(ai_agent_request_event::Column::Sequence)
+            .limit(crate::config::AI_AGENT_HISTORY_EVENT_BATCH)
+            .all(dbx)
+            .await
+            .c(h!())?;
+        if events.is_empty() {
+            break;
+        }
+        for event in events {
+            after = event.sequence;
+            if let Some(delta) = assistant_delta(&event.payload) {
+                text.push_str(delta);
+            }
+        }
+        if text.len() >= crate::config::AI_AGENT_RESPONSE_MAX_BYTES {
+            break;
+        }
+    }
+    truncate_serialized_text(
+        &text,
+        crate::config::AI_AGENT_HISTORY_DRAFT_MAX_BYTES,
+    )
+}
+
+pub(super) fn truncate_serialized_text(
+    text: &str,
+    max_bytes: usize,
+) -> anyhow::Result<String> {
+    if serde_json::to_vec(text).c(h!())?.len() <= max_bytes {
+        return Ok(text.to_string());
+    }
+    let marker = "\n[Saved draft truncated to fit context.]";
+    let chars: Vec<_> = text.chars().collect();
+    let (mut low, mut high) = (0, chars.len());
+    while low < high {
+        let middle = (low + high).div_ceil(2);
+        let candidate = chars[..middle].iter().collect::<String>() + marker;
+        if serde_json::to_vec(&candidate).c(h!())?.len() <= max_bytes {
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
+    }
+    Ok(chars[..low].iter().collect::<String>() + marker)
+}
+
 fn prepare_payload(
     event_type: &str,
     payload: Value,
