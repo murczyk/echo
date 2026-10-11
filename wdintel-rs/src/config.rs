@@ -233,6 +233,8 @@ pub const AI_POSITION_KNOWLEDGE_HALF_LIFE_DAYS: f64 = 7.0;
 pub const AI_POSITION_KNOWLEDGE_CONFLICT_RATIO: f64 = 0.5;
 /// Sent once when the model's reply is not valid JSON.
 pub const AI_POSITION_REPAIR_PROMPT: &str = "Попередня відповідь не є валідним JSON за схемою. Поверни ту саму відповідь як валідний JSON: координати без значення не додавай (порожній список []).";
+/// Opens every sheet row in text flattened from a spreadsheet.
+pub const AI_POSITION_SPREADSHEET_MARKER: &str = "[sheet ";
 pub const AI_POSITION_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-10-02-position-prompt/prompt.txt");
 pub const AI_INTEL_REPORT_SETTINGS_ID: i16 = 1;

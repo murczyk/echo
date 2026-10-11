@@ -1,7 +1,9 @@
 //! One model call over a text, then deterministic grounding: names must
 //! occur in the text and coordinates must be coordinates the text contains.
 
-use super::normalize::{ground, is_generic_object, position_key};
+use super::normalize::{
+    ground, is_cell_label, is_generic_object, position_key,
+};
 use super::types::{AiPositionCoordinateItem, AiPositionFound, AiPositionSpan};
 use crate::ai_engine::{request_structured_ai_response, AiEngineMessage};
 use crate::config::{
@@ -11,7 +13,7 @@ use crate::config::{
     AI_POSITION_KINDS, AI_POSITION_MAX_COORDINATES, AI_POSITION_MAX_POSITIONS,
     AI_POSITION_NAME_MAX_CHARS, AI_POSITION_OUTPUT_TOKENS,
     AI_POSITION_REPAIR_PROMPT, AI_POSITION_SOURCE_MAX_CHARS,
-    AI_POSITION_TEMPERATURE,
+    AI_POSITION_SPREADSHEET_MARKER, AI_POSITION_TEMPERATURE,
 };
 use crate::entities::ai_engine;
 use crate::h;
@@ -213,6 +215,14 @@ async fn ground_positions(
     response: ModelResponse,
 ) -> Vec<AiPositionFound> {
     let source_coords = all_coords(text).await;
+    let chars: Vec<char> = text.chars().collect();
+    // The extractor prefixes `[sheet …]` only before the second and later rows of a
+    // chunk, so a chunk's first row is recognised by its leading `A1:` label instead.
+    let is_spreadsheet = text.contains(AI_POSITION_SPREADSHEET_MARKER)
+        || chars
+            .iter()
+            .position(|&c| c == ':')
+            .is_some_and(|colon| is_cell_label(&chars, 0, colon));
     let mut found: Vec<AiPositionFound> = Vec::new();
     for position in response
         .positions
@@ -236,6 +246,10 @@ async fn ground_positions(
             }
         }
         spans.sort();
+        // «E5:» in a flattened spreadsheet names a cell, not its value.
+        if is_spreadsheet {
+            spans.retain(|&(begin, end)| !is_cell_label(&chars, begin, end));
+        }
         // Another form of a name already found («РОЗУМОВКА»/«РОЗУМОВКУ»)
         // grounds the same occurrences.
         let repeated = found.iter().any(|item| {
@@ -465,6 +479,58 @@ mod tests {
         assert!((coordinate.lat - 47.9).abs() < 1.0, "{coordinate:?}");
         assert!((coordinate.lng - 35.6).abs() < 2.0, "{coordinate:?}");
         assert!(coordinate.span.is_some());
+    }
+
+    #[tokio::test]
+    async fn drops_spreadsheet_cell_labels_but_keeps_their_values() {
+        let text = "[sheet Лист1; row 5]\nC5: ОП73 | D5: 07.00 | E5: Береза 3";
+        let found = ground_positions(
+            text,
+            response(
+                r#"{"positions":[
+                {"name":"C5","coordinates":[]},
+                {"name":"ОП73","coordinates":[]},
+                {"name":"E5","coordinates":[]},
+                {"name":"Береза 3","coordinates":[]}
+            ]}"#,
+            ),
+        )
+        .await;
+        let names: Vec<_> =
+            found.iter().map(|item| item.name.as_str()).collect();
+        assert_eq!(names, ["ОП73", "Береза 3"]);
+    }
+
+    #[tokio::test]
+    async fn drops_cell_labels_in_unmarked_first_row() {
+        let found = ground_positions(
+            "C1: ОП73 | D1: 07.00",
+            response(
+                r#"{"positions":[
+                {"name":"C1","coordinates":[]},
+                {"name":"ОП73","coordinates":[]}
+            ]}"#,
+            ),
+        )
+        .await;
+        let names: Vec<_> =
+            found.iter().map(|item| item.name.as_str()).collect();
+        assert_eq!(names, ["ОП73"]);
+    }
+
+    #[tokio::test]
+    async fn keeps_label_like_names_outside_spreadsheets() {
+        let found = ground_positions(
+            "Позиції:\nC5: зайнято\nH42: резерв",
+            response(
+                r#"{"positions":[
+                {"name":"C5","coordinates":[]},
+                {"name":"H42","coordinates":[]}
+            ]}"#,
+            ),
+        )
+        .await;
+        assert_eq!(found.len(), 2);
     }
 
     #[tokio::test]
