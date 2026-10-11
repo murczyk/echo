@@ -39,6 +39,19 @@ pub(super) struct Metadata {
     pub playback_error: Option<String>,
 }
 
+/// The local cache has no room for a new object: either the size budget is
+/// spent on protected originals or the free-space floor was reached.
+#[derive(Debug)]
+pub(super) struct CacheFull(&'static str);
+
+impl std::fmt::Display for CacheFull {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for CacheFull {}
+
 pub(super) struct FileLock(std::fs::File);
 
 impl Drop for FileLock {
@@ -259,7 +272,7 @@ async fn check_capacity(
     if used.saturating_add(reserved).saturating_add(bytes)
         > config_cache.max_total_size_bytes
     {
-        bail!("messenger media local cache budget exhausted; protected originals were preserved");
+        return Err(CacheFull("messenger media local cache budget exhausted; protected originals were preserved").into());
     }
     let available = fs2::available_space(root).c(h!())?;
     if available
@@ -268,7 +281,10 @@ async fn check_capacity(
             .saturating_add(reserved)
             .saturating_add(bytes)
     {
-        bail!("messenger media local cache free-space floor reached");
+        return Err(CacheFull(
+            "messenger media local cache free-space floor reached",
+        )
+        .into());
     }
     Ok(())
 }

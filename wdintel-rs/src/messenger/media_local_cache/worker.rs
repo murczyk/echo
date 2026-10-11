@@ -79,7 +79,7 @@ async fn recent_batch(
         .filter(signal_message_media::Column::CreatedAt.gte(since));
     if let Some((created_at, id)) = cursor {
         query = query.filter(sea_orm::sea_query::Expr::cust_with_values(
-            "(signal_message_media.created_at, signal_message_media.id) > (?, ?)",
+            "(signal_message_media.created_at, signal_message_media.id) > ($1, $2)",
             [sea_orm::Value::from(created_at), sea_orm::Value::from(id)],
         ));
     }
@@ -239,4 +239,22 @@ async fn download_slot(entry: &files::Entry) -> Result<files::FileLock> {
         }
     }
     bail!("messenger media cache recovery downloads are busy")
+}
+
+#[cfg(test)]
+mod pagination_tests {
+    use super::*;
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn postgres_accepts_the_next_batch_cursor() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let since = Utc::now().naive_utc() + chrono::Duration::days(1);
+        assert!(recent_batch(&env, since, None).await.unwrap().is_empty());
+        assert!(recent_batch(&env, since, Some((since, uuid::Uuid::nil())))
+            .await
+            .unwrap()
+            .is_empty());
+    }
 }
