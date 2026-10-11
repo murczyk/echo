@@ -34,6 +34,7 @@ export type UseAnalysisDataProps = {
   authUserName: string | null;
   currentUser: User | null;
   deferInitialLoad?: boolean;
+  hideNetworks?: boolean;
   focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
   leftPanelOpen?: boolean;
@@ -57,7 +58,7 @@ export type UseAnalysisDataResult = {
   correlatedFreqs: CorrelatedFreq[];
   correlatedFreqsLoaded: boolean;
   correlatedFreqsLoading: boolean;
-  counts: CountStatsRsp | null;
+  counts: Partial<CountStatsRsp> | null;
   countsLoading: boolean;
   aorEntries: AnalysisAorEntry[];
   filtersLoading: boolean;

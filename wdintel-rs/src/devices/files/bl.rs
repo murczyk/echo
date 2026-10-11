@@ -519,7 +519,7 @@ pub(super) fn map_read_error(error: FilesystemError) -> AppError {
     }
 }
 
-mod mapping {
+pub(super) mod mapping {
     use super::super::types::FileEntryKind as FileEntryKindDto;
     use super::super::types::{
         BrowseDeviceFilesRsp, CountDeviceFileSubtreesRsp, DeviceFile,
@@ -673,7 +673,7 @@ mod mapping {
         }
     }
 
-    fn map_tree_entry(
+    pub(in crate::devices::files) fn map_tree_entry(
         entry: TreeEntry,
         path_components: Vec<String>,
         tags: Vec<AnalyticsTag>,

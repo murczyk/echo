@@ -15,7 +15,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import type { CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 
 import type { DeviceFileRoot, DeviceFileTreeEntry } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -25,6 +25,8 @@ import { PowerIconButton } from '../../../components/PowerIconButton';
 import { DeviceAnalyticsTagBadges } from './DeviceAnalyticsTagBadges';
 import type { DeviceFilesState } from '../use-device-files';
 import type { DeviceFileTreeBranch } from '../use-device-file-tree';
+import { isDeviceArchive } from '../device-file-archive';
+import { DeviceArchiveTree } from './DeviceArchiveTree';
 
 const fileCountFormatter = new Intl.NumberFormat('uk-UA');
 
@@ -89,6 +91,10 @@ function DeviceFileRow({
   files: DeviceFilesState;
 }) {
   const selected = files.selectedFile?.entryId === entry.entryId;
+  const row = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (selected) row.current?.scrollIntoView({ block: 'nearest' });
+  }, [selected]);
   return (
     <Box
       component="li"
@@ -104,6 +110,9 @@ function DeviceFileRow({
       }}
     >
       <ListItemButton
+        ref={row}
+        data-testid={`device-file-${entry.entryId}`}
+        aria-current={selected ? 'true' : undefined}
         component="button"
         selected={selected}
         aria-pressed={selected}
@@ -275,6 +284,15 @@ function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
                 node={toDirectoryNode(entry, node)}
                 depth={depth + 1}
                 files={files}
+              />
+            ) : isDeviceArchive(entry) ? (
+              <DeviceArchiveTree
+                key={`${entry.entryId}/${entry.revision}/${files.archiveEpoch}`}
+                deviceId={files.deviceId}
+                file={entry}
+                depth={depth + 1}
+                selectedEntryId={files.selectedFile?.entryId}
+                onSelectFile={files.selectFile}
               />
             ) : (
               <DeviceFileRow key={entry.entryId} entry={entry} depth={depth + 1} files={files} />

@@ -31,6 +31,7 @@ type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 type Params = {
   centerTab: AnalysisCenterTab;
   deferInitialLoad: boolean;
+  hideNetworks: boolean;
   focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
   leftPanelOpen?: boolean;
@@ -71,7 +72,7 @@ type Params = {
   replaceCurrentMessagePage: (messages: Array<[number, InboxMessage]>) => void;
   refreshMessageCounts: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
-  setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
+  setCounts: Setter<Partial<import('../../../../Bindings').CountStatsRsp> | null>;
   setCountsLoading: Setter<boolean>;
   setFiltersLoading: Setter<boolean>;
   setGroupInfos: Setter<Record<string, SignalGroupEntry>>;
@@ -119,6 +120,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     centerTab,
     clearAnalysisResults,
     deferInitialLoad,
+    hideNetworks,
     focusedWindow = null,
     focusedMessageActive = false,
     getLoadedFilterSections,
@@ -212,6 +214,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       try {
         await reloadAnalysisData({
           clearAnalysisResults,
+          hideNetworks,
           focusedWindow,
           focusedMessageActive,
           invalidateCallsignGraph,
@@ -276,7 +279,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           signal: abortController.signal,
         });
       } finally {
-        if (reloadAbortControllerRef.current === abortController) {
+        if (
+          reloadAbortControllerRef.current === abortController &&
+          abortController.signal.aborted
+        ) {
           reloadAbortControllerRef.current = null;
         }
       }

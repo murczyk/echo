@@ -179,4 +179,76 @@ describe('rer-analysis-neo callsign hints', () => {
     expect(result.catalogRows).toHaveLength(0);
     expect(result.exactNetworkHints).toHaveLength(1);
   });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('keeps only catalog hints when message network visibility is disabled', () => {
+    const callsignInfoMap = {
+      wolf: {
+        callsign: 'wolf',
+        res: [
+          {
+            id: 99,
+            callsign: 'wolf',
+            position: 'КАТАЛОГОВА ПОЗИЦІЯ',
+            comment: '',
+            unit1: 'Каталоговий підрозділ',
+            unit2: '',
+            unitId: 1,
+            networkIdsReportedIn: [10],
+          },
+        ],
+        networkHints: [
+          { id: 1, networkId: 10, position: 'МЕРЕЖЕВА ПОЗИЦІЯ', formation: 'МЕРЕЖЕВЕ З’ЄДНАННЯ' },
+          { id: 2, networkId: 20, position: 'ІНША МЕРЕЖА', formation: '' },
+        ],
+      },
+    };
+    const hidden = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      hideNetworks: true,
+      networkIds: [10],
+      networks,
+      unitsMap,
+      callsignInfoMap,
+    });
+    const visible = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networkIds: [10],
+      networks,
+      unitsMap,
+      callsignInfoMap,
+    });
+
+    expect(hidden).toMatchObject({
+      state: 'catalog',
+      exactNetworkHints: [],
+      otherNetworkHints: [],
+      networkNames: {},
+    });
+    expect(formatMessageCallsignHintTooltipData(hidden)).toMatchObject({
+      sections: [
+        {
+          header: 'Позивні з каталогу:',
+          items: ['🐷 КАТАЛОГОВА ПОЗИЦІЯ Каталоговий підрозділ '],
+        },
+      ],
+    });
+    expect(visible.state).toBe('message-network');
+
+    expect(
+      getMessageCallsignHintResult({
+        callsign: 'network-only',
+        hideNetworks: true,
+        networkIds: [10],
+        networks,
+        callsignInfoMap: {
+          'network-only': {
+            callsign: 'network-only',
+            res: [],
+            networkHints: callsignInfoMap.wolf.networkHints,
+          },
+        },
+      }),
+    ).toMatchObject({ state: 'unresolved', exactNetworkHints: [], otherNetworkHints: [] });
+  });
 });

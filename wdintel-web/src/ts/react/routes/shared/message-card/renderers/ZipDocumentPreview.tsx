@@ -9,8 +9,14 @@ import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import { CircularProgress, IconButton, Typography } from '@mui/material';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type {
+  FilePreviewLifecycleProps,
+  FilePreviewSource,
+} from '../attachment-preview/file-preview-source';
+import { FilePreviewRenderError } from '../attachment-preview/file-preview-source';
+import { HttpRequestError } from '../../../../services/api/client';
 import type { MessageCardDocument } from '../document-preview.types';
 import { fetchCachedDocumentResponse } from '../document-preview-utils';
 import { deriveDocumentDownloadName, deriveDocumentFileName } from '../message-card-document-utils';
@@ -145,19 +151,20 @@ function ZipRow({
   );
 }
 
-export function ZipDocumentPreview({
-  document,
-  navigation,
-  onClose,
-  isDownloadStarting,
-  onDownloadStart,
+export function ZipFilePreview({
+  source,
+  lifecycle,
+  checkAccess,
 }: {
-  document: MessageCardDocument;
-  navigation: MessageCardPreviewNavigation;
-  onClose: () => void;
-  isDownloadStarting: (key: string) => boolean;
-  onDownloadStart: (key: string) => boolean;
+  source: FilePreviewSource;
+  lifecycle?: FilePreviewLifecycleProps;
+  checkAccess?: () => Promise<boolean>;
 }) {
+  const signal = lifecycle?.signal;
+  const onError = lifecycle?.onError;
+  const isCurrent = lifecycle?.isCurrent;
+  const registerCleanup = lifecycle?.registerCleanup;
+  const downloadUrls = useRef(new Set<string>());
   const [listing, setListing] = useState<ZipListing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyIndex, setBusyIndex] = useState<number | null>(null);
@@ -165,18 +172,21 @@ export function ZipDocumentPreview({
   const archiveRef = useRef<ArrayBuffer | null>(null);
   const memberControllerRef = useRef<AbortController | null>(null);
   const requestGenerationRef = useRef(0);
-  const activeDocumentHrefRef = useRef(document.href);
-  activeDocumentHrefRef.current = document.href;
-  const fileName = useMemo(
-    () => deriveDocumentFileName(document, navigation.index),
-    [document, navigation.index],
-  );
-  const downloadName = useMemo(
-    () => deriveDocumentDownloadName(document, navigation.index),
-    [document, navigation.index],
-  );
+  const activeDocumentHrefRef = useRef(source.originalHref);
+  activeDocumentHrefRef.current = source.originalHref;
   useEffect(() => {
     const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    const cleanup = () => {
+      controller.abort();
+      memberControllerRef.current?.abort();
+      archiveRef.current = null;
+      if (signal || registerCleanup) for (const url of downloadUrls.current) revokeDownloadUrl(url);
+      downloadUrls.current.clear();
+    };
+    const unregister = registerCleanup?.(cleanup);
     const requestGeneration = ++requestGenerationRef.current;
     memberControllerRef.current?.abort();
     memberControllerRef.current = null;
@@ -192,10 +202,11 @@ export function ZipDocumentPreview({
     setBusyIndex(null);
     void (async () => {
       try {
-        if (document.sizeBytes != null && document.sizeBytes > ZIP_MAX_BYTES)
+        if (controller.signal.aborted || isCurrent?.() === false) return;
+        if (source.sizeBytes != null && source.sizeBytes > ZIP_MAX_BYTES)
           throw new Error(ZIP_TOO_LARGE_ERROR);
         const response = await fetchCachedDocumentResponse(
-          document.href,
+          source.originalHref,
           ZIP_MAX_BYTES,
           ZIP_TOO_LARGE_ERROR,
           controller.signal,
@@ -213,7 +224,21 @@ export function ZipDocumentPreview({
         if (!controller.signal.aborted && requestGenerationRef.current === requestGeneration)
           setListing(result);
       } catch (cause) {
-        if (requestGenerationRef.current !== requestGeneration) return;
+        if (
+          requestGenerationRef.current !== requestGeneration ||
+          signal?.aborted ||
+          isCurrent?.() === false
+        )
+          return;
+        if (!controller.signal.aborted || fetchTimedOut)
+          onError?.(
+            cause instanceof HttpRequestError
+              ? cause
+              : new FilePreviewRenderError(
+                  fetchTimedOut ? ZIP_FETCH_TIMEOUT_ERROR : messageForZipError(cause),
+                  fetchTimedOut || cause instanceof WorkerTaskTimeoutError,
+                ),
+          );
         const nextError = fetchTimedOut ? ZIP_FETCH_TIMEOUT_ERROR : messageForZipError(cause);
         if (nextError) setError(nextError);
       } finally {
@@ -222,16 +247,16 @@ export function ZipDocumentPreview({
     })();
     return () => {
       window.clearTimeout(timeout);
-      controller.abort();
-      memberControllerRef.current?.abort();
+      signal?.removeEventListener('abort', abort);
+      cleanup();
+      unregister?.();
       memberControllerRef.current = null;
-      archiveRef.current = null;
     };
-  }, [document.href, document.sizeBytes]);
+  }, [source.originalHref, source.sizeBytes, signal, onError, isCurrent, registerCleanup]);
   const downloadMember = useCallback(
     async (entry: ZipEntry) => {
       const archive = archiveRef.current;
-      if (!archive || busyIndex != null) return;
+      if (!archive || busyIndex != null || signal?.aborted || isCurrent?.() === false) return;
       const requestGeneration = requestGenerationRef.current;
       const controller = new AbortController();
       memberControllerRef.current?.abort();
@@ -254,16 +279,18 @@ export function ZipDocumentPreview({
         if (
           controller.signal.aborted ||
           requestGenerationRef.current !== requestGeneration ||
-          activeDocumentHrefRef.current !== document.href
+          activeDocumentHrefRef.current !== source.originalHref
         )
           return;
+        if (checkAccess && !(await checkAccess())) return;
+        if (signal?.aborted || isCurrent?.() === false) return;
         const url = URL.createObjectURL(new Blob([output]));
         const anchor = window.document.createElement('a');
         try {
           if (
             controller.signal.aborted ||
             requestGenerationRef.current !== requestGeneration ||
-            activeDocumentHrefRef.current !== document.href
+            activeDocumentHrefRef.current !== source.originalHref
           )
             return;
           anchor.href = url;
@@ -273,8 +300,10 @@ export function ZipDocumentPreview({
           anchor.click();
           const timer = window.setTimeout(() => {
             revokeDownloadUrl(url);
+            downloadUrls.current.delete(url);
           }, ZIP_DOWNLOAD_URL_CLEANUP_DELAY_MS);
           activeDownloadUrls.set(url, timer);
+          downloadUrls.current.add(url);
         } finally {
           anchor.remove();
           if (!activeDownloadUrls.has(url)) revokeDownloadUrl(url);
@@ -283,19 +312,21 @@ export function ZipDocumentPreview({
         if (
           !controller.signal.aborted &&
           requestGenerationRef.current === requestGeneration &&
-          activeDocumentHrefRef.current === document.href
-        )
+          activeDocumentHrefRef.current === source.originalHref
+        ) {
+          onError?.(cause);
           setMemberError(messageForZipError(cause) || 'Не вдалося розпакувати файл.');
+        }
       } finally {
         if (
           requestGenerationRef.current === requestGeneration &&
-          activeDocumentHrefRef.current === document.href
+          activeDocumentHrefRef.current === source.originalHref
         )
           setBusyIndex(null);
         if (memberControllerRef.current === controller) memberControllerRef.current = null;
       }
     },
-    [busyIndex, document.href],
+    [busyIndex, source.originalHref, signal, isCurrent, onError, checkAccess],
   );
   const loading = !listing && !error;
   const stage = (
@@ -340,6 +371,24 @@ export function ZipDocumentPreview({
       )}
     </div>
   );
+  return stage;
+}
+
+export function ZipDocumentPreview({
+  document,
+  navigation,
+  onClose,
+  isDownloadStarting,
+  onDownloadStart,
+}: {
+  document: MessageCardDocument;
+  navigation: MessageCardPreviewNavigation;
+  onClose: () => void;
+  isDownloadStarting: (key: string) => boolean;
+  onDownloadStart: (key: string) => boolean;
+}) {
+  const fileName = deriveDocumentFileName(document, navigation.index);
+  const downloadName = deriveDocumentDownloadName(document, navigation.index);
   return (
     <MessageCardAttachmentPreviewLayout
       navigation={navigation}
@@ -356,7 +405,18 @@ export function ZipDocumentPreview({
           onDownloadStart={onDownloadStart}
         />
       }
-      stage={stage}
+      stage={
+        <ZipFilePreview
+          source={{
+            key: document.href,
+            fileName,
+            extension: 'zip',
+            contentType: document.contentType ?? '',
+            sizeBytes: document.sizeBytes ?? null,
+            originalHref: document.href,
+          }}
+        />
+      }
     />
   );
 }

@@ -5,6 +5,7 @@ mod error;
 mod ltree;
 mod metadata;
 mod path;
+pub(crate) mod preview;
 pub(in crate::devices) mod query;
 pub(crate) mod sessions;
 pub(crate) mod sync;
@@ -28,6 +29,7 @@ pub(in crate::devices) use types::{
     RootEntry, SearchEntry, SearchFilesCommand, SearchFilesResult,
     SubtreeFileCount, SubtreeFileCountsCommand, TreeEntry,
 };
+pub(crate) mod locate;
 pub mod types;
 
 use std::time::Instant;

@@ -583,7 +583,7 @@ pub(crate) async fn upload_device_content_plaintext(
     }
     let writer = op
         .writer_with(full_key)
-        .chunk(crate::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES)
+        .chunk(crate::devices::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES)
         .await
         .c(h!())
         .map_err(|error| DeviceContentUploadError::Internal(error.into()))?;
@@ -595,7 +595,7 @@ pub(crate) async fn upload_device_content_plaintext(
     })?;
     let mut stream = tokio_util::io::ReaderStream::with_capacity(
         file.take(read_limit),
-        crate::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES,
+        crate::devices::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES,
     );
     let mut size = 0_u64;
     let mut first_byte = None;
@@ -822,8 +822,61 @@ async fn download_and_decrypt_messenger_media_from_s3_with_operator_inner(
         .map_err(|_| whole_object_decrypt_busy_error())?
         .map_err(|_| whole_object_decrypt_busy_error())?
     };
+    decrypt_known_object(
+        op,
+        &remote_key,
+        sb,
+        config,
+        object_size,
+        download_timeout,
+        Arc::new(decrypt_permit),
+    )
+    .await
+}
+
+pub(crate) async fn download_and_decrypt_with_admission(
+    op: &Operator,
+    config: &S3Config,
+    strongbox_key_b64: &str,
+    rel_path: &str,
+    download_timeout: Duration,
+    max_size: u64,
+    permit: Arc<tokio::sync::OwnedSemaphorePermit>,
+) -> Result<Vec<u8>, AppError> {
+    let remote_key = config.prefixed_key(rel_path);
+    let key = key_from_b64(strongbox_key_b64).c(h!())?;
+    let sb = StaticStrongBox::new(key.clone(), vec![key]);
+    let size = tokio::time::timeout(
+        download_timeout,
+        s3_object_size_with_limit(op, &remote_key, max_size),
+    )
+    .await
+    .c(h!())?
+    .c(h!())?;
+    Ok(decrypt_known_object(
+        op,
+        &remote_key,
+        sb,
+        config,
+        size,
+        Some(download_timeout),
+        permit,
+    )
+    .await
+    .c(h!())?)
+}
+
+async fn decrypt_known_object(
+    op: &Operator,
+    remote_key: &str,
+    sb: StaticStrongBox,
+    config: &S3Config,
+    object_size: u64,
+    download_timeout: Option<Duration>,
+    decrypt_permit: Arc<tokio::sync::OwnedSemaphorePermit>,
+) -> Result<Vec<u8>, AppError> {
     let download =
-        download_s3_object_with_known_size(op, &remote_key, object_size);
+        download_s3_object_with_known_size(op, remote_key, object_size);
     let encrypted = match download_timeout {
         Some(download_timeout) => tokio::time::timeout(download_timeout, download)
             .await
@@ -834,7 +887,8 @@ async fn download_and_decrypt_messenger_media_from_s3_with_operator_inner(
             })??,
         None => download.await?,
     };
-    let object_aad = aad(&config.bucket, &remote_key);
+    let object_aad = aad(&config.bucket, remote_key);
+    let remote_key = remote_key.to_owned();
     tokio::task::spawn_blocking(move || {
         let _decrypt_permit = decrypt_permit;
         sb.decrypt(&encrypted, object_aad.as_bytes())
@@ -1337,6 +1391,28 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(error, AppError::ServiceUnavailable { .. }));
+
+        let permit = Arc::new(tokio::sync::Semaphore::new(1))
+            .acquire_owned()
+            .await
+            .unwrap();
+        let size = op
+            .stat(&config.prefixed_key("object"))
+            .await
+            .unwrap()
+            .content_length();
+        let admitted = download_and_decrypt_with_admission(
+            &op,
+            &config,
+            &strongbox_key,
+            "object",
+            Duration::from_secs(1),
+            size,
+            Arc::new(permit),
+        )
+        .await
+        .unwrap();
+        assert_eq!(admitted, plaintext);
 
         let downloaded = download_and_decrypt_from_s3_with_operator(
             &Some(op),

@@ -43,6 +43,17 @@ The [harness evaluations](../ai-eval/HARNESS.md) exercise both retrieval paths,
 actual PostgreSQL search semantics, citations, spelling expansion, permissions
 and date limits. They include untagged production-derived examples for #3572.
 
+## Unit lookup
+
+A message's unit is header metadata (`unit_v2`) and links from reference
+networks; it is usually absent from the message text. For unit/formation
+questions the agent resolves the designation with `echo_unit_lookup` (route
+`unit_lookup`, `POST /api/sigint/units`, relaxed search, 20 results) and then
+makes a unit-only inbox request with `selectedUnitIds` (or exact header strings
+in `selectedUnits`), in parallel with text search. Evidence is combined by
+message ID; empty text search is never proof that the unit is absent. Release
+`2026.10.10.4`.
+
 ## Position lookup
 
 Release `2026.10.04.1` adds `echo_position_lookup` (route `position_lookup`,

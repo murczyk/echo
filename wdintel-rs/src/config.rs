@@ -24,33 +24,6 @@ pub const PG_WDFILE_POOL_MAX_CONNECTIONS: u32 = 10;
 pub const PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS: u32 = 1;
 pub const MIGRATION_ADVISORY_LOCK_NAME: &str = "echo:migrations";
 pub const FILE_REGISTRY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 60;
-pub(crate) const DEVICE_FILE_CONTENT_REUSE_MAX_BODY_BYTES: usize = 1024;
-pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_BYTES: u64 =
-    20 * 1024 * 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_PER_LOGIN: u64 =
-    4 * 1024 * 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_COUNT: usize = 256;
-pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_COUNT_PER_LOGIN: usize = 16;
-pub const DEVICE_FILE_CONTENT_SPOOL_MIN_FREE_BYTES: u64 = 1024 * 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_PROBE_SIZE_BYTES: usize = 16 * 1024;
-pub const DEVICE_FILE_CONTENT_UPLOAD_IDLE_TTL_SECS: u64 = 24 * 60 * 60;
-pub const DEVICE_FILE_CONTENT_UPLOAD_MAX_LIFETIME_SECS: u64 = 7 * 24 * 60 * 60;
-pub const DEVICE_FILE_CONTENT_FINALIZATION_MAX_CONCURRENT: usize = 2;
-pub const DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING: usize = 16;
-pub const DEVICE_FILE_CONTENT_FINALIZATION_WAIT_MILLIS: u64 = 1_000;
-pub const DEVICE_FILE_CONTENT_CLEANUP_BATCH_SIZE: usize = 100;
-pub const DEVICE_FILE_CONTENT_CLEANUP_POLL_INTERVAL_SECS: u64 = 30;
-pub const DEVICE_FILE_CONTENT_CLEANUP_RETRY_DELAY_SECS: u64 = 5 * 60;
-pub const DEVICE_FILE_CONTENT_ENCRYPTION_MAX_BYTES: u64 = 100 * 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_DOWNLOAD_MAX_ENCRYPTED_BYTES: u64 =
-    DEVICE_FILE_CONTENT_ENCRYPTION_MAX_BYTES + 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_DOWNLOAD_TIMEOUT_SECS: u64 = 60;
-pub const DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES: usize = 8 * 1024 * 1024;
-pub const DEVICE_FILE_CONTENT_LOCK_WAIT_MILLIS: u64 = 500;
-pub const DEVICE_FILE_CONTENT_LOCK_RETRY_MILLIS: u64 = 25;
-pub const DEVICE_FILE_CONTENT_BUSY_RETRY_AFTER_SECS: u64 = 1;
-pub const DEVICE_FILE_CONTENT_STORAGE_RETRY_AFTER_SECS: u64 = 5;
 pub const PGBACKREST_CONF_PATH: &str = "/etc/pgbackrest/pgbackrest.conf";
 pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
 pub const PGBACKREST_STANZA_CONF_PREFIX: &str = "pgbackrest-";
@@ -118,12 +91,79 @@ pub const AI_CALLSIGN_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_CALLSIGN_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-10-callsign-prompt/prompt.txt");
 pub const AI_SETTLEMENT_SETTINGS_ID: i16 = 1;
+pub const LOCATION_REGION_MAX_DISTANCE: usize = 2;
+pub const LOCATION_FUZZY_MIN_CHARS: usize = 5;
+pub const LOCATION_FUZZY_DISTANCE_DIVISOR: usize = 7;
+pub const LOCATION_FOREST_CONTEXT_WORDS: &[&str] =
+    &["НА", "ВІД", "БІЛЯ", "МАСИВ", "МАССИВ"];
+pub const LOCATION_COUNTRY_NAMES: &[&str] = &[
+    "УКРАЇНА",
+    "УКРАИНА",
+    "UKRAINE",
+    "РОСІЯ",
+    "РОССИЯ",
+    "RUSSIA",
+    "РФ",
+    "БІЛОРУСЬ",
+    "БЕЛАРУСЬ",
+    "БЕЛАРУССИЯ",
+    "BELARUS",
+    "РБ",
+];
+pub const LOCATION_CONTEXT_WORDS: &[&str] = &[
+    "УПРАВЛІННЯ",
+    "ПІДРОЗДІЛ",
+    "ПІДРОЗДІЛУ",
+    "ПІДРОЗДІЛОМ",
+    "СКЛАДУ",
+    "ВЗАЄМОДІЇ",
+    "ПОСТІВ",
+    "СПОСТЕРЕЖЕННЯ",
+    "ПОВІТРЯНИМ",
+    "ПРОСТОРОМ",
+    "ЛІСОВИЙ",
+    "ЛІСОВОГО",
+    "ЛЕСНОЙ",
+    "ЛЕСНОГО",
+    "МАСИВ",
+    "МАСИВУ",
+    "МАССИВ",
+    "МАССИВА",
+    "ПІВДЕННІ",
+    "ПІВДЕННИХ",
+    "ПІВНІЧНІ",
+    "ПІВНІЧНИХ",
+    "СХІДНІ",
+    "СХІДНИХ",
+    "ЗАХІДНІ",
+    "ЗАХІДНИХ",
+    "ЮЖНЫЕ",
+    "ЮЖНЫХ",
+    "СЕВЕРНЫЕ",
+    "СЕВЕРНЫХ",
+    "ВОСТОЧНЫЕ",
+    "ВОСТОЧНЫХ",
+    "ЗАПАДНЫЕ",
+    "ЗАПАДНЫХ",
+    "РН",
+    "НП",
+    "ЗРБАТР",
+];
 pub const AI_SETTLEMENT_PROMPT_MAX_CHARS: usize = 100_000;
 pub const AI_SETTLEMENT_MESSAGE_MAX_CHARS: usize = 100_000;
 pub const AI_SETTLEMENT_MAX_SETTLEMENTS: usize = 500;
 pub const AI_SETTLEMENT_MAX_CHARS: usize = 255;
 pub const AI_SETTLEMENT_MAX_CONCURRENT_REQUESTS: usize = 4;
+pub const SETTLEMENT_ALIAS_MAX_CHARS: usize = 255;
+pub const SETTLEMENT_ALIAS_PAGE_SIZE: u64 = 100;
+pub const SETTLEMENT_SEARCH_MIN_CHARS: usize = 3;
+pub const SETTLEMENT_SEARCH_LIMIT: i64 = 50;
+pub const SETTLEMENT_LOOKUP_BATCH_SIZE: usize = 100;
+pub const SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS: f64 = 2_000.0;
+pub const SETTLEMENT_EARTH_RADIUS_METERS: f64 = 6_371_008.8;
 pub const AI_SETTLEMENT_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+pub const AI_SETTLEMENT_WORKER_SETTINGS_CHANNEL: &str =
+    "ai_settlement_worker_settings_changed";
 pub const AI_SETTLEMENT_WORKER_RETRY_BASE_SECS: i64 = 5;
 pub const AI_SETTLEMENT_WORKER_RETRY_MAX_SECS: i64 = 300;
 pub const AI_SETTLEMENT_WORKER_MAX_ATTEMPTS: i32 = 8;
@@ -181,6 +221,7 @@ pub const AI_POSITION_KNOWLEDGE_WINDOW_DAYS: i64 = 30;
 /// Messages per page when a knowledge recompute links a position to the
 /// scope's other messages.
 pub const AI_POSITION_KNOWLEDGE_LINK_BATCH: i64 = 500;
+pub const AI_POSITION_KNOWLEDGE_LOOKUP_BATCH_SIZE: usize = 256;
 /// Most message cards a knowledge change announces for refresh.
 pub const AI_POSITION_KNOWLEDGE_EVENT_MAX_MESSAGES: u64 = 1_000;
 /// Facts within this distance describe the same place.
@@ -314,6 +355,7 @@ pub const AI_AGENT_DISPATCHER_IDENTITY_FILE: &str =
 pub const AI_AGENT_DISPATCHER_KNOWN_HOSTS_FILE: &str =
     "/etc/echo/ai-agent/known_hosts";
 pub const AI_AGENT_DISPATCHER_TIMEOUT_SEC: u64 = 10 * 60;
+pub const AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC: u64 = 30 * 60;
 pub const AI_AGENT_DISPATCHER_CONTROL_TIMEOUT_SEC: u64 = 30;
 pub const AI_AGENT_DISPATCHER_MAX_FRAME_BYTES: usize = 1024 * 1024;
 pub const AI_AGENT_DISPATCHER_CONTROL_MAX_FRAMES: usize = 32;
@@ -329,9 +371,12 @@ pub const AI_AGENT_PROVIDER_CAPABILITY_CALLS_REDIS_PREFIX: &str =
 pub const AI_AGENT_PROVIDER_CAPABILITY_CORRELATION_REDIS_PREFIX: &str =
     "ai-agent:provider-capability-correlation:";
 pub const AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC: u64 = 11 * 60;
+pub const AI_AGENT_GLM_5_3_PROVIDER_CAPABILITY_TTL_SEC: u64 =
+    AI_AGENT_GLM_5_3_EXECUTION_TIMEOUT_SEC + 60;
 pub const AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT: i64 = 256;
 pub const AI_AGENT_PROVIDER_REQUEST_MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const AI_AGENT_PROVIDER_STREAM_MAX_BYTES: usize = 16 * 1024 * 1024;
 pub const AI_AGENT_PROVIDER_ERROR_MAX_BYTES: usize = 64 * 1024;
 pub const AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS: usize = 4 * 1024;
 pub const AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE: &str =
@@ -339,14 +384,26 @@ pub const AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE: &str =
 pub const AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE: &str =
     "Provider output token limit reached";
 pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
+pub const AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC: u64 =
+    AI_AGENT_DISPATCHER_TIMEOUT_SEC;
 pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";
 pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
 pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
+pub const AI_AGENT_OPENAI_GPT_6_1_SOL: &str = "gpt-6.1-sol";
+pub const AI_AGENT_FAST_RUNTIME_SEC: u64 = 120;
+pub const AI_AGENT_BALANCED_RUNTIME_SEC: u64 = 300;
+pub const AI_AGENT_DEEP_RUNTIME_SEC: u64 = 1800;
+pub const AI_AGENT_FAST_FINALIZATION_SEC: u64 = 30;
+pub const AI_AGENT_BALANCED_FINALIZATION_SEC: u64 = 60;
+pub const AI_AGENT_DEEP_FINALIZATION_SEC: u64 = 120;
+pub const AI_AGENT_DEADLINE_CLEANUP_SEC: u64 = 5;
+pub const AI_AGENT_REASONING_PURPOSE_HEADER: &str = "x-echo-ai-purpose";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
 pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.09.1";
+pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.10.5";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -394,6 +451,8 @@ pub const OCR_MAX_IN_FLIGHT_JOBS: usize = 4;
 pub const OCR_MAX_ATTEMPTS: i32 = 8;
 pub const OCR_RETRY_BASE_SECS: i64 = 10;
 pub const OCR_RETRY_MAX_SECS: i64 = 15 * 60;
+pub const OCR_STORAGE_DEFERRALS_COUNT: &str =
+    "echo.ocr.storage_deferrals.count";
 pub const OCR_MAX_ERROR_CHARS: usize = 1_200;
 pub const OCR_HTTP_TIMEOUT_SECS: u64 = 10 * 60;
 pub const OCR_STATUS_TIMEOUT_SECS: u64 = 15;
@@ -511,6 +570,7 @@ pub const DEVICE_FILE_SEARCH_NAME_QUERY_MAX_CHARS: usize = 255;
 
 pub const DEVICE_DOCUMENT_SEARCH_LIMIT: i64 = 20;
 pub const DEVICE_DOCUMENT_SEARCH_MAX_LIMIT: i64 = 50;
+pub const DEVICE_DOCUMENT_SEARCH_CANDIDATE_LIMIT: i64 = 10_000;
 pub const DEVICE_DOCUMENT_READ_LIMIT: i64 = 4;
 pub const DEVICE_DOCUMENT_READ_MAX_LIMIT: i64 = 8;
 pub const DEVICE_DOCUMENT_QUERY_MAX_CHARS: usize = 1000;
@@ -556,6 +616,8 @@ pub const MULTIPART_IDLE_TIMEOUT_SECS: u64 = 30;
 pub const MULTIPART_MAX_CONCURRENT_BUFFERED_REQUESTS: usize = 2;
 pub const RER_CSV_PREFLIGHT_METADATA_HEADER: &str = "x-echo-rer-csv-metadata";
 pub const RER_CSV_IMPORT_SKIP_PREVIEW_CHARS: usize = 160;
+pub const RER_CSV_IMPORT_IDENTITY_LOCK_NAMESPACE: &str = "rer-csv-identity";
+pub const RER_CSV_IMPORT_PROCESSING_LOCK_NAMESPACE: &str = "rer-csv-processing";
 pub const STORAGE_UPLOAD_ENCRYPT_MAX_CONCURRENT_OPERATIONS: usize = 2;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this archive-download limit synchronized
 /// with `SIGINT_MESSAGE_MAX_ATTACHMENTS`, frontend
@@ -1101,8 +1163,6 @@ pub const BATTLE_LINE_EARTH_RADIUS_METERS: f64 = 6_371_008.8;
 pub const BATTLE_LINE_CLIP_EXTENT_METERS: f64 = 50_000_000.0;
 pub const BATTLE_LINE_AOR_ANCHOR_LATITUDE: f64 = 48.510_548_612_698_46;
 pub const BATTLE_LINE_AOR_ANCHOR_LONGITUDE: f64 = 32.225_445_087_959_685;
-pub const BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS: f64 =
-    2_000.0;
 // These temporary limits should be lifted once location parsing is improved.
 pub const BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS: f64 = 75_000.0;
 pub const BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS: f64 = 150_000.0;
@@ -1197,6 +1257,7 @@ DELETE FROM sigint_callsign;
 DELETE FROM sigint_network_description;
 DELETE FROM sigint_network;
 DELETE FROM sigint_settlement;
+DELETE FROM settlement_alias;
 DELETE FROM sigint_signal_changelog;
 DELETE FROM sigint_signal;
 DELETE FROM sigint_unit_changelog;
@@ -1477,6 +1538,9 @@ pub const ANALYTICS_POSTGRES_FALLBACK_MAX_CONCURRENT: usize = 8;
 pub const ANALYTICS_POSTGRES_FALLBACK_QUEUE_TIMEOUT_MS: u64 = 250;
 pub const ANALYTICS_MESSAGE_ID_SCOPE_CACHE_TTL_MS: u64 = 5_000;
 pub const ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES: usize = 2_048;
+pub const ANALYTICS_COUNT_FALLBACK_QUEUE_MAX_ENTRIES: usize = 2_048;
+pub const ANALYTICS_UNIT_FILTER_CACHE_TTL_MS: u64 = 5_000;
+pub const ANALYTICS_UNIT_FILTER_CACHE_MAX_ENTRIES: usize = 2_048;
 /// DUTY_FEED_COUNT_DEADLINE_SYNC: the frontend
 /// `DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS` in
 /// `dutyFeedRequestDeadline.ts` must cover this and
@@ -1512,8 +1576,6 @@ pub struct Config {
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
     pub file_registry: Option<FileRegistryConfig>,
-    #[serde(default)]
-    pub device_file_content: DeviceFileContentConfig,
     pub cookie_session_secret: String,
     /// Base64 32-byte StrongBox key for encrypting TOTP seeds in Redis and
     /// `login_totp`. Generate with `oneoff-generate-strongbox-key`.
@@ -1590,7 +1652,17 @@ pub struct Config {
     pub network_invalidation_worker_night_shift_start_hour: Option<u32>,
     pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
     pub ai_agent_dispatcher: Option<AiAgentDispatcherConfig>,
+    pub ai_agent_glm_checkpoint_provider: Option<AiAgentGlmCheckpointProvider>,
+    pub ai_agent_reasoning_presets_enabled: Option<bool>,
+    pub ai_agent_reasoning_verified_engine_ids: Option<Vec<uuid::Uuid>>,
     pub ocr: Option<OcrConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum AiAgentGlmCheckpointProvider {
+    Glm,
+    Luna,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -1612,139 +1684,6 @@ impl Default for MessengerMediaCacheConfig {
             min_free_space_bytes:
                 MESSENGER_MEDIA_LOCAL_CACHE_MIN_FREE_SPACE_BYTES,
         }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
-#[serde(default)]
-pub struct DeviceFileContentConfig {
-    pub upload_max_bytes: u64,
-    pub max_reserved_bytes: u64,
-    pub max_reserved_per_login: u64,
-    pub max_reserved_count: usize,
-    pub max_count_per_login: usize,
-    pub spool_min_free_bytes: u64,
-    pub probe_size_bytes: usize,
-    pub upload_idle_ttl_secs: u64,
-    pub upload_max_lifetime_secs: u64,
-    pub finalization_max_concurrent: usize,
-    pub cleanup_batch_size: usize,
-    pub cleanup_poll_interval_secs: u64,
-    pub cleanup_retry_delay_secs: u64,
-}
-
-impl Default for DeviceFileContentConfig {
-    fn default() -> Self {
-        Self {
-            upload_max_bytes: DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES,
-            max_reserved_bytes: DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_BYTES,
-            max_reserved_per_login:
-                DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_PER_LOGIN,
-            max_reserved_count: DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_COUNT,
-            max_count_per_login: DEVICE_FILE_CONTENT_UPLOAD_MAX_COUNT_PER_LOGIN,
-            spool_min_free_bytes: DEVICE_FILE_CONTENT_SPOOL_MIN_FREE_BYTES,
-            probe_size_bytes: DEVICE_FILE_CONTENT_PROBE_SIZE_BYTES,
-            upload_idle_ttl_secs: DEVICE_FILE_CONTENT_UPLOAD_IDLE_TTL_SECS,
-            upload_max_lifetime_secs:
-                DEVICE_FILE_CONTENT_UPLOAD_MAX_LIFETIME_SECS,
-            finalization_max_concurrent:
-                DEVICE_FILE_CONTENT_FINALIZATION_MAX_CONCURRENT,
-            cleanup_batch_size: DEVICE_FILE_CONTENT_CLEANUP_BATCH_SIZE,
-            cleanup_poll_interval_secs:
-                DEVICE_FILE_CONTENT_CLEANUP_POLL_INTERVAL_SECS,
-            cleanup_retry_delay_secs:
-                DEVICE_FILE_CONTENT_CLEANUP_RETRY_DELAY_SECS,
-        }
-    }
-}
-
-impl DeviceFileContentConfig {
-    pub fn validate(&self) -> Result<(), String> {
-        if self.upload_max_bytes == 0
-            || self.max_reserved_bytes == 0
-            || self.max_reserved_per_login == 0
-            || self.max_reserved_count == 0
-            || self.max_count_per_login == 0
-            || self.spool_min_free_bytes == 0
-            || self.probe_size_bytes == 0
-            || self.upload_idle_ttl_secs == 0
-            || self.upload_max_lifetime_secs == 0
-            || self.finalization_max_concurrent == 0
-            || self.cleanup_batch_size == 0
-            || self.cleanup_poll_interval_secs == 0
-            || self.cleanup_retry_delay_secs == 0
-        {
-            return Err("device_file_content values must be greater than zero"
-                .to_string());
-        }
-        if self.upload_max_bytes > self.max_reserved_bytes
-            || self.max_reserved_per_login > self.max_reserved_bytes
-        {
-            return Err(
-                "device_file_content byte limits must not exceed max_reserved_bytes"
-                    .to_string(),
-            );
-        }
-        if self.max_count_per_login > self.max_reserved_count {
-            return Err(
-                "device_file_content max_count_per_login must not exceed max_reserved_count"
-                    .to_string(),
-            );
-        }
-        if self.upload_idle_ttl_secs > self.upload_max_lifetime_secs {
-            return Err(
-                "device_file_content upload_idle_ttl_secs must not exceed upload_max_lifetime_secs"
-                    .to_string(),
-            );
-        }
-        self.validate_runtime_bounds()
-    }
-
-    fn validate_runtime_bounds(&self) -> Result<(), String> {
-        if i64::try_from(self.cleanup_batch_size).is_err() {
-            return Err(
-                "device_file_content cleanup_batch_size exceeds the SQL limit"
-                    .to_string(),
-            );
-        }
-        if self.finalization_max_concurrent
-            > tokio::sync::Semaphore::MAX_PERMITS
-        {
-            return Err(
-                "device_file_content finalization_max_concurrent exceeds the semaphore limit"
-                    .to_string(),
-            );
-        }
-        let now = chrono::Utc::now();
-        for seconds in [
-            self.upload_idle_ttl_secs,
-            self.upload_max_lifetime_secs,
-            self.cleanup_retry_delay_secs,
-        ] {
-            if i64::try_from(seconds)
-                .ok()
-                .and_then(chrono::Duration::try_seconds)
-                .and_then(|duration| now.checked_add_signed(duration))
-                .is_none()
-            {
-                return Err(
-                    "device_file_content durations exceed the supported timestamp range"
-                        .to_string(),
-                );
-            }
-        }
-        if std::time::Instant::now()
-            .checked_add(std::time::Duration::from_secs(
-                self.cleanup_poll_interval_secs,
-            ))
-            .is_none()
-        {
-            return Err(
-                "device_file_content cleanup_poll_interval_secs exceeds the timer range"
-                    .to_string(),
-            );
-        }
-        Ok(())
     }
 }
 

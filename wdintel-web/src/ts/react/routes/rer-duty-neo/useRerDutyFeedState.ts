@@ -66,6 +66,8 @@ export type FeedStateDeps = {
   disableAutoScroll: boolean;
   deviceAccess: DeviceAccess;
   radioFeaturesAllowed?: boolean;
+  hideNetworks?: boolean;
+  networkVisibilityReady?: boolean;
   onFeedRemoved?: (feedId: string) => void;
 };
 
@@ -212,7 +214,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     mergeResolvedCallsigns,
     retainFeedIds,
   } = useRerDutyCallsignInfo();
-  const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(messageFeeds);
+  const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(
+    messageFeeds,
+    deps.hideNetworks === true || deps.networkVisibilityReady === false,
+  );
 
   const showArrowResult = useCallback((feedId: string, message: string) => {
     const key = feedId;

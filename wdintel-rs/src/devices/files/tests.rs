@@ -201,6 +201,7 @@ async fn clear_file_entries(db: &DatabaseConnection) {
             file_document_job,
             file_document_generation,
             file_document,
+            file_preview,
             file_content,
             file_content_upload,
             file_revision,

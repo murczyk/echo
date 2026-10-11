@@ -48,7 +48,6 @@ export function AnalysisFiltersPanel({
     canResetFilters,
     cyberEchoEnabled,
     aorEntries,
-    countsLoading,
     filtersLoading,
     isFilterSectionEmptyLoading,
     isFilterSectionLoading,
@@ -63,6 +62,7 @@ export function AnalysisFiltersPanel({
     queryState,
     unitsExactMatchOnlyDefault,
     analysisAorFilterEnabled,
+    hideNetworks,
     rerReportFilterEnabled,
     saveInFlight,
     savedFilterName,
@@ -214,7 +214,6 @@ export function AnalysisFiltersPanel({
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <AnalysisFiltersPanelSections
                   counts={counts}
-                  countsLoading={countsLoading}
                   cyberEchoEnabled={cyberEchoEnabled}
                   derived={derived}
                   expandedSections={expandedSections}
@@ -228,6 +227,7 @@ export function AnalysisFiltersPanel({
                   queryState={queryState}
                   unitsExactMatchOnlyDefault={unitsExactMatchOnlyDefault}
                   analysisAorFilterEnabled={analysisAorFilterEnabled}
+                  hideNetworks={hideNetworks}
                   rerReportFilterEnabled={rerReportFilterEnabled}
                   setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
                   toggleSection={toggleSection}
@@ -277,7 +277,6 @@ export function AnalysisFiltersPanel({
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <AnalysisFiltersPanelSections
                   counts={counts}
-                  countsLoading={countsLoading}
                   cyberEchoEnabled={cyberEchoEnabled}
                   derived={derived}
                   expandedSections={expandedSections}
@@ -291,6 +290,7 @@ export function AnalysisFiltersPanel({
                   queryState={queryState}
                   unitsExactMatchOnlyDefault={unitsExactMatchOnlyDefault}
                   analysisAorFilterEnabled={analysisAorFilterEnabled}
+                  hideNetworks={hideNetworks}
                   rerReportFilterEnabled={rerReportFilterEnabled}
                   setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
                   toggleSection={toggleSection}

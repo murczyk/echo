@@ -6,6 +6,7 @@ import type { AiAgentFileCitation, DeviceDocumentReadRsp } from '../../../../../
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
 import { usePowerSnackbar } from '../../../components/PowerSnackbar';
+import type { FilePreviewLifecycleProps } from '../../shared/message-card/attachment-preview/file-preview-source';
 import { isAbortError } from '../../../services/api/client';
 import { deviceDocumentRequest, readDeviceDocument } from '../../../services/api/device-documents';
 import {
@@ -19,17 +20,29 @@ const CoordinatePreviewMapSurface = lazy(async () => ({
     .CoordinatePreviewMapSurface,
 }));
 
-export function DeviceDocumentPreview({ source }: { source: AiAgentFileCitation }) {
+export function DeviceDocumentPreview({
+  source,
+  lifecycle,
+}: {
+  source: AiAgentFileCitation;
+  lifecycle?: FilePreviewLifecycleProps;
+}) {
   const [result, setResult] = useState<DeviceDocumentReadRsp | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const pending = useRef<AbortController | null>(null);
   const { notify } = usePowerSnackbar();
   const key = JSON.stringify(source);
+  const signal = lifecycle?.signal;
+  const onError = lifecycle?.onError;
+  const isCurrent = lifecycle?.isCurrent;
   const load = useCallback(
     async (after: number | null = null, extractionRevision: string | null = null) => {
       pending.current?.abort();
       const controller = new AbortController();
+      const abort = () => controller.abort();
+      if (signal?.aborted || isCurrent?.() === false) return;
+      signal?.addEventListener('abort', abort, { once: true });
       pending.current = controller;
       setLoading(true);
       setError(null);
@@ -41,7 +54,7 @@ export function DeviceDocumentPreview({ source }: { source: AiAgentFileCitation 
           },
           controller.signal,
         );
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || isCurrent?.() === false) return;
         setResult((previous) =>
           after == null
             ? response
@@ -53,16 +66,18 @@ export function DeviceDocumentPreview({ source }: { source: AiAgentFileCitation 
               },
         );
       } catch (failure) {
-        if (controller.signal.aborted || isAbortError(failure)) return;
+        if (controller.signal.aborted || isAbortError(failure) || isCurrent?.() === false) return;
+        onError?.(failure);
         const message = 'Не вдалося прочитати файл. Перевірте доступ або повторіть спробу.';
         setResult(null);
         setError(message);
         notify({ severity: 'error', message });
       } finally {
+        signal?.removeEventListener('abort', abort);
         if (!controller.signal.aborted) setLoading(false);
       }
     },
-    [key, notify],
+    [key, notify, signal, onError, isCurrent],
   );
   useEffect(() => {
     setResult(null);
@@ -250,12 +265,18 @@ function documentState(state: string): string {
   );
 }
 
-export function DeviceDocumentDetails({ source }: { source: AiAgentFileCitation }) {
+export function DeviceDocumentDetails({
+  source,
+  lifecycle,
+}: {
+  source: AiAgentFileCitation;
+  lifecycle?: FilePreviewLifecycleProps;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <details className="p-echo-md" onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary className="cursor-pointer">Підсумок, текст і позиції</summary>
-      {open && <DeviceDocumentPreview source={source} />}
+      {open && <DeviceDocumentPreview source={source} lifecycle={lifecycle} />}
     </details>
   );
 }

@@ -21,6 +21,7 @@ function messagePage(firstId: number) {
 
 async function installPages(page: Page) {
   await installAnalysisNeoApiMocks(page);
+  await installMessageContext(page);
   const requests: Array<{
     before_id_noninclusive?: number | null;
     since_id_noninclusive?: number | null;
@@ -43,6 +44,16 @@ async function installPages(page: Page) {
     return route.fulfill({ json: response });
   });
   return requests;
+}
+
+async function installMessageContext(page: Page) {
+  await page.route('**/api/rer-importer/inbox-item-context', (route) => {
+    const reference = route.request().postDataJSON().message_uid;
+    const id = Number(/^feed-unification-(\d+)$/.exec(reference)?.[1]);
+    const response = Number.isFinite(id) ? messagePage(Math.ceil(id / 20) * 20) : null;
+    const message = response?.inbox_items.find(([, item]) => item.messageUid === reference) ?? null;
+    return route.fulfill({ json: { message } });
+  });
 }
 
 async function visibleAnchor(scroller: Locator) {
@@ -191,6 +202,7 @@ test.describe('Message feed unification @regression', () => {
       page,
     }) => {
       await installAnalysisNeoApiMocks(page);
+      await installMessageContext(page);
       const requests: Array<{ before_id_noninclusive?: number; since_id_noninclusive?: number }> =
         [];
       const pending = new Map<string, () => void>();

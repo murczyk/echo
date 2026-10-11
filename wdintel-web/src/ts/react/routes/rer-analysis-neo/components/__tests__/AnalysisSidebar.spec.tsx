@@ -109,6 +109,7 @@ function buildProps(
     groupsActivityLoadedPeriod: null,
     groupsActivityPeriod: 'selected',
     groupsActivityLoading: false,
+    hideNetworks: false,
     analysisMapInSidebar: false,
     mapAttrs: {
       daterange: '',

@@ -1,4 +1,4 @@
-module Pages_.RerAnalysis.Model exposing (FilterName(..), FocusedFilterSnapshot, GroupsActivityPeriod(..), MenuTab(..), Model, ReportTemplate(..), SendersType(..))
+module Pages_.RerAnalysis.Model exposing (FilterName(..), FocusedFilterSnapshot, GroupsActivityPeriod(..), MenuTab(..), Model, ReportTemplate(..), SendersType(..), StatsCountField(..), StatsCountRequest(..))
 
 import Bindings as B
 import Core.Types exposing (ApiError)
@@ -33,6 +33,12 @@ type alias Model =
     , freqs : RemoteData ApiError (List B.AnalysisStatsFreq)
     , callsigns : RemoteData ApiError (List B.AnalysisStatsCallsign)
     , counts : RemoteData ApiError B.CountStatsRsp
+    , statsCountGeneration : Int
+    , statsCountPending : List StatsCountRequest
+    , statsCountReady : List StatsCountRequest
+    , statsCountRemaining : Int
+    , statsCountPartial : B.CountStatsRsp
+    , statsCountError : Maybe ApiError
     , profiles : Dict String (Maybe B.SignalProfileRsp)
     , aorsSelected : List String
     , groupsSelected : List String
@@ -215,6 +221,7 @@ type alias Model =
     , audioTranscriptionEnabled : Bool
     , analysisAudioTranscriptionCollapsed : Bool
     , disableBotTags : Bool
+    , hideNetworks : Bool
     , withoutModelTags : Bool
     , editSidebar : Maybe Int
     , eventLastId : Maybe String
@@ -222,6 +229,25 @@ type alias Model =
     -- палітри
     , palitras : RemoteData ApiError (List B.PalitraReadV2)
     }
+
+
+type StatsCountField
+    = GroupsCountField
+    | SendersCountField
+    | FreqsCountField
+    | PostsCountField
+    | CallsignsCountField
+    | UnitsCountField
+    | LocationsCountField
+    | TagsCountField
+    | AorsCountField
+    | NetworksCountField
+
+
+type StatsCountRequest
+    = MessageStatsCountRequest
+    | UnitMatchStatsCountRequest
+    | StatsCountFieldRequest StatsCountField
 
 
 type MenuTab

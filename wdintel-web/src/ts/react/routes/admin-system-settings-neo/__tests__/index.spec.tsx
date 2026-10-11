@@ -133,6 +133,20 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     });
     await act(async () => root.unmount());
   });
+  it('keeps the exact-match setting as a selectable label-controlled switch', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#main');
+    const { container, root } = await renderPage();
+    const label = Array.from(container.querySelectorAll('label')).find((item) =>
+      item.textContent?.includes('Прапорець «точний збіг за еталонкою» на Аналізі увімкнений'),
+    );
+    const checkbox = label?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+
+    expect(label?.querySelector('button')).toBeNull();
+    expect(checkbox?.checked).toBe(true);
+    await act(async () => label?.click());
+    expect(checkbox?.checked).toBe(false);
+    await act(async () => root.unmount());
+  });
   it('loads report defaults and saves normalized report settings', async () => {
     const { container, root } = await renderPage();
     const hoursInput = container.querySelector<HTMLInputElement>('input[type="number"]');
@@ -181,6 +195,19 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     await act(async () => button(container, 'зберегти')?.click());
 
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ disableBotTags: true }));
+    await act(async () => root.unmount());
+  });
+  it('saves the #3598 hide-networks toggle', async () => {
+    const { container, root } = await renderPage();
+    const checkbox = Array.from(container.querySelectorAll('label'))
+      .find((label) => label.textContent?.includes('Приховати мережі'))
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+
+    expect(checkbox?.checked).toBe(false);
+    await act(async () => checkbox?.click());
+    await act(async () => button(container, 'зберегти')?.click());
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ hideNetworks: true }));
     await act(async () => root.unmount());
   });
   it('persists disabling test message replay immediately', async () => {

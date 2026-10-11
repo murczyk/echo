@@ -415,6 +415,7 @@ async fn inbox_window_bl(
     message_ref: &str,
     inbox_req: InboxMessagesReq,
 ) -> Result<Option<InboxWindowRsp>, AppError> {
+    validate_inbox_window_period(&inbox_req).context(h!())?;
     let rows = load_inbox_item_context_rows(&env.dbx, message_ref)
         .await
         .context(h!())?;
@@ -518,12 +519,19 @@ async fn count_inbox_window_messages(
     Ok(count)
 }
 
+fn validate_inbox_window_period(req: &InboxMessagesReq) -> anyhow::Result<()> {
+    let since = req.since_date_inclusive_ms.context(h!())?;
+    let till = req.till_date_inclusive_ms.context(h!())?;
+    anyhow::ensure!(since < till, "Message windows require an ordered period");
+    DateTime::from_timestamp_millis(since).context(h!())?;
+    DateTime::from_timestamp_millis(till).context(h!())?;
+    Ok(())
+}
+
 fn inbox_window_base_req(mut inbox_req: InboxMessagesReq) -> InboxMessagesReq {
     inbox_req.since_id_noninclusive = None;
     inbox_req.before_id_noninclusive = None;
     inbox_req.around_message_ref = None;
-    inbox_req.since_date_inclusive_ms = None;
-    inbox_req.till_date_inclusive_ms = None;
     inbox_req.nolimit = None;
     inbox_req.load_latest = None;
     inbox_req.calculate_freq_pelengs_summary = None;
@@ -5995,13 +6003,20 @@ mod tests {
             crate::users::get_organism_login_ids_by_id(&env.dbx, &login.id)
                 .await
                 .unwrap();
+        let period = InboxMessagesReq {
+            since_date_inclusive_ms: Some(now.and_utc().timestamp_millis()),
+            till_date_inclusive_ms: Some(
+                (now + Duration::seconds(43)).and_utc().timestamp_millis(),
+            ),
+            ..Default::default()
+        };
         let window = inbox_window_bl(
             &env,
             &login.id,
             &logins,
             false,
             &target_message_uuid.to_string(),
-            InboxMessagesReq::default(),
+            period.clone(),
         )
         .await
         .unwrap()
@@ -6021,6 +6036,63 @@ mod tests {
             .windows(2)
             .all(|messages| messages[0].0 < messages[1].0));
 
+        for sort_by in [
+            InboxMessagesSortBy::IMSDatetime,
+            InboxMessagesSortBy::IMSCreatedAt,
+        ] {
+            let bounded = InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    (now + Duration::seconds(5)).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    (now + Duration::seconds(38)).and_utc().timestamp_millis(),
+                ),
+                sort_by: Some(sort_by),
+                ..period.clone()
+            };
+            let window = inbox_window_bl(
+                &env,
+                &login.id,
+                &logins,
+                false,
+                &target_message_uuid.to_string(),
+                bounded,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(window.inbox.inbox_items.len(), 33);
+            assert_eq!(window.messages_before, 16);
+            assert_eq!(window.messages_after, 16);
+            assert!(!window.has_more_before);
+            assert!(!window.has_more_after);
+            assert_eq!(window.inbox.inbox_items[0].1.text, "window-5");
+            assert_eq!(window.inbox.inbox_items[32].1.text, "window-37");
+        }
+        for (since, till) in [
+            (None, None),
+            (period.since_date_inclusive_ms, None),
+            (None, period.till_date_inclusive_ms),
+            (Some(10), Some(10)),
+            (Some(20), Some(10)),
+            (Some(i64::MIN), Some(i64::MAX)),
+        ] {
+            assert!(inbox_window_bl(
+                &env,
+                &login.id,
+                &logins,
+                false,
+                &target_message_uuid.to_string(),
+                InboxMessagesReq {
+                    since_date_inclusive_ms: since,
+                    till_date_inclusive_ms: till,
+                    ..period.clone()
+                }
+            )
+            .await
+            .is_err());
+        }
+
         let filtered_window = inbox_window_bl(
             &env,
             &login.id,
@@ -6029,7 +6101,7 @@ mod tests {
             &target_message_uuid.to_string(),
             InboxMessagesReq {
                 selected_groups: Some(vec!["other-group".to_string()]),
-                ..Default::default()
+                ..period.clone()
             },
         )
         .await
@@ -6045,7 +6117,7 @@ mod tests {
             &target_message_uuid.to_string(),
             InboxMessagesReq {
                 selected_senders: Some(vec!["other-sender".to_string()]),
-                ..Default::default()
+                ..period.clone()
             },
         )
         .await
@@ -7901,7 +7973,7 @@ mod tests {
             .unwrap()
             .unwrap();
         for media_id in [None, Some(media.id)] {
-            ai_position_mention::ActiveModel {
+            let mention = ai_position_mention::ActiveModel {
                 sigint_inbox_item_id: Set(if media_id.is_none() {
                     Some(message.id)
                 } else {
@@ -7918,6 +7990,22 @@ mod tests {
                 group_is_secret: Set(false),
                 aor_ids: Set(vec![]),
                 model_name: Set("test".to_string()),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            // Only located positions are highlighted.
+            crate::entities::ai_position_coordinate::ActiveModel {
+                mention_id: Set(mention.id),
+                coordinate_text: Set("36T XT 75734 68963".to_string()),
+                coordinate_system: Set("mgrs".to_string()),
+                mgrs: Set("36TXT7573468963".to_string()),
+                lat: Set(47.55029916845189),
+                lng: Set(35.335663776872615),
+                certainty: Set("high".to_string()),
+                evidence: Set(String::new()),
+                message_at: Set(message.created_at),
                 ..Default::default()
             }
             .insert(&env.dbx)

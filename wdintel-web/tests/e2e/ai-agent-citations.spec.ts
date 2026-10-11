@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { createEmptyInboxResponse, installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
 // Regression: https://github.com/echoua/echo/issues/3064
-test('@smoke @regression #3064 saved AI citations show full previews and open analysis', async ({
+test('@smoke @regression #3064 #3757 AI citations recover failed lookups and revalidate previews', async ({
   page,
 }) => {
   await installAnalysisNeoApiMocks(page);
@@ -44,8 +44,11 @@ test('@smoke @regression #3064 saved AI citations show full previews and open an
   );
   const fullBody = 'Повний текст повідомлення. '.repeat(400) + 'КІНЕЦЬ ПОВІДОМЛЕННЯ';
   let available = true;
-  await page.route('**/api/rer-importer/messages-by-id-with-metadata', (route) =>
-    route.fulfill({
+  let failLookup = true;
+  await page.route('**/api/rer-importer/messages-by-id-with-metadata', (route) => {
+    if (failLookup)
+      return route.fulfill({ status: 502, contentType: 'text/plain', body: 'Bad Gateway' });
+    return route.fulfill({
       json: {
         ...createEmptyInboxResponse(),
         inbox_items: available
@@ -66,9 +69,14 @@ test('@smoke @regression #3064 saved AI citations show full previews and open an
           : [],
         signal_groups: [{ master_key: 'group', name: 'Натрій' }],
       },
-    }),
-  );
+    });
+  });
   await page.goto(`/?conversation=${conversation.id}`);
+  const chat = page.locator('ai-agent-chat');
+  await expect(chat).toContainText('Не вдалося завантажити джерело');
+  await expect(chat).not.toContainText('Джерело недоступне');
+  failLookup = false;
+  await chat.getByRole('button', { name: 'Повторити завантаження джерел' }).click();
   const chip = page.locator('ai-agent-chat').getByRole('link', { name: '26.09.2025 11:23 Натрій' });
   await expect(chip).toBeVisible({ timeout: 20000 });
   await chip.hover();
@@ -95,6 +103,13 @@ test('@smoke @regression #3064 saved AI citations show full previews and open an
   await page.locator('[role="alert"]').evaluateAll((nodes) => {
     for (const node of nodes) node.remove();
   });
+  failLookup = true;
+  await chip.hover();
+  await expect(chat).toContainText('Не вдалося завантажити джерело');
+  await expect(page.getByTestId('message-summary-preview-77')).toHaveCount(0);
+  failLookup = false;
+  await chat.getByRole('button', { name: 'Повторити завантаження джерел' }).click();
+  await expect(chip).toBeVisible();
   available = false;
   await chip.hover();
   await expect(page.locator('ai-agent-chat')).toContainText('Джерело недоступне');

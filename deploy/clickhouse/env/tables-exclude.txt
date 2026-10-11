@@ -37,6 +37,7 @@ public.api_integration_iggy_event
 public.api_integration_iggy_destination
 
 # PostgreSQL-only parsing configuration.
+public.settlement_alias
 public.sigint_comment_blacklist
 public.failed_inbox_unit
 public.failed_unit_label
@@ -133,3 +134,6 @@ public.attachment_chunk
 public.attachment_job
 
 public.device_document_settings
+
+# Admin CSV import recovery state.
+public.rer_csv_import_message

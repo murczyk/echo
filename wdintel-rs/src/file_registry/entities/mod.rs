@@ -21,6 +21,7 @@ pub mod file_document_job;
 pub mod file_document_position;
 pub mod file_document_revision_generation;
 pub mod file_entry;
+pub mod file_preview;
 pub mod file_revision;
 pub mod file_sync_batch;
 pub mod file_sync_item;

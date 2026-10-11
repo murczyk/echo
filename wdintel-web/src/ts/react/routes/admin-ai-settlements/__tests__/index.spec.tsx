@@ -74,7 +74,8 @@ beforeEach(() => {
         results: [],
       },
     ],
-    worker: { enabled: false, aiEngineId: 'engine-a' },
+    worker: { enabled: false, aiEngineId: 'engine-a', groupsExcept: false, groupMasterKeys: [] },
+    groups: [],
   });
   mocks.test.mockResolvedValue({
     results: [testResult],
@@ -88,7 +89,12 @@ beforeEach(() => {
     prompt: 'Default settlement prompt',
     promptOverridden: false,
   });
-  mocks.saveWorker.mockResolvedValue({ enabled: true, aiEngineId: 'engine-a' });
+  mocks.saveWorker.mockResolvedValue({
+    enabled: true,
+    aiEngineId: 'engine-a',
+    groupsExcept: false,
+    groupMasterKeys: [],
+  });
 });
 
 afterEach(() => {
@@ -245,6 +251,8 @@ describe('AdminAiSettlementsPage', () => {
     expect(mocks.saveWorker).toHaveBeenCalledWith({
       enabled: true,
       aiEngineId: 'engine-a',
+      groupsExcept: false,
+      groupMasterKeys: [],
     });
 
     await act(async () => root.unmount());

@@ -70,6 +70,7 @@ export type FeedColumnModel = {
     featureStrictNetworks: boolean;
     tagsLayout: TagsLayoutVariant;
     hideBotTags: boolean;
+    hideNetworks: boolean;
     /** When true, Duty cards hide heavy media behind reveal banners until opened. */
     collapseMediaPreviews?: boolean;
     mediaSummaryEnabled?: boolean;

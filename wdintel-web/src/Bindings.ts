@@ -1671,6 +1671,9 @@ export type CnPositionCoordinateSource = {
   messageUuid: string;
   groupName: string;
   messageAt: number;
+  evidence: string;
+  certainty: string;
+  coordinateText: string;
 };
 
 export type CnHighlight = {
@@ -2073,6 +2076,19 @@ export type DeviceFile = {
   tags: Array<AnalyticsTag>;
 };
 
+export type LocateDeviceFileReq = {
+  deviceId: string;
+  fileId: string;
+  revision: number | null;
+};
+
+export type LocateDeviceFileRsp = {
+  file: DeviceFileTreeEntry;
+  ancestors: Array<DeviceFileTreeEntry>;
+  rootEntryId: string;
+  currentRevision: number;
+};
+
 export type ListDeviceFileRootsReq = {
   syncId: string | null;
   deviceId: string;
@@ -2080,6 +2096,32 @@ export type ListDeviceFileRootsReq = {
 
 export type ListDeviceFileRootsRsp = {
   roots: Array<DeviceFileRoot>;
+};
+
+export type DeviceFileGeodataPreviewRsp = {
+  fileId: string;
+  revision: number;
+  generation: string | null;
+  status: DeviceFileGeodataPreviewStatus;
+  retryable: boolean;
+  retryAfterMs: number | null;
+  resultSizeBytes: number | null;
+  resultUrl: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+};
+
+export type DeviceFileGeodataPreviewStatus =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'retry_wait'
+  | 'ready'
+  | 'failed'
+;
+
+export type RetryDeviceFileGeodataPreviewReq = {
+  expectedGeneration: string;
 };
 
 export type DeviceFileSubtreeCount = {
@@ -2277,6 +2319,7 @@ export type DeviceSyncSessionSummariesRsp = {
 export type DeviceAudio = {
   id: string;
   deviceId: string;
+  name: string;
   recordingStartedAt: string;
   recordingEndedAt: string;
   durationSeconds: number;
@@ -2294,6 +2337,26 @@ export type DeviceAudioDetails = {
   transcription: DeviceAudioTranscription;
   canEdit: boolean;
 };
+
+export type DeviceAudioPreparation = {
+  content: DeviceAudioPreparationState;
+  wave: DeviceAudioPreparationState;
+  spectrogram: DeviceAudioPreparationState;
+  retryAfterMs: number;
+};
+
+export type PrepareDeviceAudioReq = {
+  deviceId: string;
+  audioId: string;
+  retry: boolean;
+};
+
+export type DeviceAudioPreparationState =
+  | 'queued'
+  | 'preparing'
+  | 'ready'
+  | 'failed'
+;
 
 export type ReceiveDeviceAudioReq = {
   deviceId: string;
@@ -4848,6 +4911,16 @@ export type CountStatsRsp = {
   networksCount: number;
 };
 
+export type MessageStatsCountRsp = {
+  countOverall: number;
+  countSelected: number;
+};
+
+export type UnitMatchStatsCountRsp = {
+  exactMatchesCount: number;
+  nonExactMatchesCount: number;
+};
+
 export type GroupStatsRsp = {
   groups: Array<AnalysisStatsGroup>;
   groupNames: Array<SignalGroupEntry>;
@@ -4930,6 +5003,7 @@ export type SystemSettingsCurrentRsp = {
   showPelengDistanceToBattleline: boolean;
   hideOrbitData: boolean;
   disableBotTags: boolean;
+  hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
@@ -4972,6 +5046,7 @@ export type SystemSettingsItem = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
+  hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
@@ -5017,6 +5092,7 @@ export type CreateSystemSettingsReq = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
+  hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean | null;
@@ -5231,12 +5307,32 @@ export type AiAgentActivityPresentation = {
 };
 
 export type AiAgentProviderItem = {
+  reasoningAvailable: boolean;
+  reasoningPresets: Array<AiAgentReasoningPresetItem>;
   id: string;
   name: string;
   modelName: string;
 };
 
+export type AiAgentReasoningPreset =
+  | 'fast'
+  | 'balanced'
+  | 'deep'
+;
+
+export type AiAgentReasoningPresetItem = {
+  preset: AiAgentReasoningPreset;
+  maxRuntimeSeconds: number;
+  reasoningEffort: string | null;
+};
+
+export type AiAgentCompletionMetadata = {
+  coverageLimited: boolean;
+  reason: string;
+};
+
 export type AiAgentConfigurationRsp = {
+  reasoningPresetsEnabled: boolean;
   featureEnabled: boolean;
   defaultAiEngineId: string | null;
   providers: Array<AiAgentProviderItem>;
@@ -5473,6 +5569,10 @@ export type AiAgentMapEditRsp = {
 };
 
 export type AiAgentMessageItem = {
+  reasoningPreset: AiAgentReasoningPreset | null;
+  maxRuntimeSeconds: number | null;
+  startedAt: number | null;
+  completionMetadata: AiAgentCompletionMetadata | null;
   requestId: string;
   requestState: string;
   role: string;
@@ -5493,6 +5593,7 @@ export type AiAgentConversationDetail = {
 };
 
 export type AiAgentRequestCreateReq = {
+  reasoningPreset: AiAgentReasoningPreset | null;
   conversationId: string | null;
   aiEngineId: string | null;
   prompt: string;
@@ -5831,6 +5932,42 @@ export type SaveAiCallsignWorkerSettingsReq = {
   aiEngineId: string | null;
 };
 
+export type SettlementAliasSettlement = {
+  id: number;
+  name: string;
+  district: string | null;
+  region: string | null;
+};
+
+export type SettlementAliasItem = {
+  id: string;
+  settlement: SettlementAliasSettlement;
+  text: string;
+};
+
+export type ListSettlementAliasesReq = {
+  afterId: string | null;
+};
+
+export type ListSettlementAliasesRsp = {
+  items: Array<SettlementAliasItem>;
+  nextId: string | null;
+};
+
+export type SearchAliasSettlementsReq = {
+  query: string;
+};
+
+export type SaveSettlementAliasReq = {
+  id: string | null;
+  settlementId: number;
+  text: string;
+};
+
+export type SettlementAliasIdReq = {
+  id: string;
+};
+
 export type AiSettlementEngineItem = {
   id: string;
   name: string;
@@ -5862,6 +5999,13 @@ export type AiSettlementTestMessageVersionItem = {
 export type AiSettlementWorkerSettingsItem = {
   enabled: boolean;
   aiEngineId: string | null;
+  groupsExcept: boolean;
+  groupMasterKeys: Array<string>;
+};
+
+export type AiSettlementGroupItem = {
+  masterKey: string;
+  name: string | null;
 };
 
 export type AiSettlementPageRsp = {
@@ -5870,6 +6014,7 @@ export type AiSettlementPageRsp = {
   engines: Array<AiSettlementEngineItem>;
   messages: Array<AiSettlementTestMessageItem>;
   worker: AiSettlementWorkerSettingsItem;
+  groups: Array<AiSettlementGroupItem>;
 };
 
 export type AiSettlementPromptState = {
@@ -5909,6 +6054,8 @@ export type SaveAiSettlementParsingReq = {
 export type SaveAiSettlementWorkerSettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
+  groupsExcept: boolean;
+  groupMasterKeys: Array<string>;
 };
 
 export type AiPositionEngineItem = {

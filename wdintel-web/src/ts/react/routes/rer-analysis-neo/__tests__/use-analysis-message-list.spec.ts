@@ -5,7 +5,7 @@ import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAnalysisMessageList } from '../use-analysis-message-list';
-import { emptyQueryState } from '../helpers';
+import { buildInboxReq, emptyQueryState } from '../helpers';
 import type { CallsignInfoRes, InboxMessage } from '../../../../../Bindings';
 
 const fetchAnalysisCallsignInfosMock = vi.hoisted(() => vi.fn());
@@ -77,6 +77,7 @@ function renderHook(
   newestFirst = true,
   initialDeferInitialLoad = false,
   initialSummaryCallsignsInfo: Record<string, CallsignInfoRes> = {},
+  focusedMessageId: number | null = null,
 ): Harness {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -98,6 +99,10 @@ function renderHook(
     harness.summaryCallsignsInfo = summaryCallsignsInfo;
     harness.latest = useAnalysisMessageList({
       deferInitialLoad,
+      focusedMessageId,
+      focusedMessageActive: focusedMessageId != null,
+      focusedHasMoreEarlier: true,
+      focusedHasMoreLater: true,
       loadMissingNetworksForMessages,
       newestFirst,
       onError: harness.onError,
@@ -126,6 +131,53 @@ describe('useAnalysisMessageList pagination', () => {
     fetchAnalysisCallsignInfosMock.mockResolvedValue([]);
     fetchInboxCountMock.mockReset();
     fetchInboxCountMock.mockResolvedValue({ quantity: 42, firstElementTs: null });
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/2726
+  it('keeps the selected period on both sides of a linked message', async () => {
+    const queryState = buildQueryState();
+    const h = renderHook(queryState, undefined, true, true, {}, 50);
+    harnesses.push(h);
+    act(() => h.latest.setMessages(page(50)));
+    fetchInboxMessagesMock.mockResolvedValue({
+      inboxItems: [],
+      callsigns: [],
+      signalGroups: [],
+      signalProfiles: {},
+      pageLimit: 20,
+    });
+    await act(async () => {
+      await h.latest.loadFocusedEarlier();
+    });
+    await act(async () => {
+      await h.latest.loadFocusedLater();
+    });
+    const period = buildInboxReq(queryState, [], true);
+    expect(fetchInboxMessagesMock).toHaveBeenCalledTimes(2);
+    expect(
+      fetchInboxMessagesMock.mock.calls.map(([request]) => ({
+        since: request.sinceDateInclusiveMs,
+        till: request.tillDateInclusiveMs,
+        before: request.beforeIdNoninclusive,
+        after: request.sinceIdNoninclusive,
+      })),
+    ).toEqual([
+      {
+        since: period.sinceDateInclusiveMs,
+        till: period.tillDateInclusiveMs,
+        before: 50,
+        after: null,
+      },
+      {
+        since: period.sinceDateInclusiveMs,
+        till: period.tillDateInclusiveMs,
+        before: null,
+        after: 50,
+      },
+    ]);
+    expect(h.latest.focusedHasMoreEarlier).toBe(false);
+    expect(h.latest.focusedHasMoreLater).toBe(false);
+    expect(fetchInboxCountMock).not.toHaveBeenCalled();
   });
 
   it('enriches visible callsigns from marked content without blocking messages', async () => {

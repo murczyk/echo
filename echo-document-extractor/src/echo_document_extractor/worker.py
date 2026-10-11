@@ -16,6 +16,7 @@ from .dependencies import DependencyChecker
 from .job_queue import Job, JobQueue
 from .metrics import ServiceMetrics
 from .models import Evidence
+from .native_ocr import StorageAdmissionFailure
 from .ocr import PaddleEvidenceProvider
 from .package_archive import create_package_zip
 from .pipeline import ExtractionCancelled, Extractor, InputManifest
@@ -185,6 +186,8 @@ class Worker:
                 self.metrics.job_duration.labels(state="cancelled", quality="none").observe(
                     time.monotonic() - started
                 )
+        except StorageAdmissionFailure as error:
+            self._defer_storage(job, error, heartbeat.lost)
         except Exception as error:
             try:
                 result = self.queue.fail(
@@ -208,6 +211,20 @@ class Worker:
                     )
         finally:
             self.progress.pop(job.id, None)
+
+    def _defer_storage(self, job: Job, error: StorageAdmissionFailure, lease_lost: bool) -> None:
+        if lease_lost:
+            return
+        try:
+            result = self.queue.defer_storage(
+                job.id, self.owner, str(error), self.service.worker.storage_retry_seconds
+            )
+        except RuntimeError:
+            return
+        if result.state == "retry_wait":
+            self.metrics.storage_deferrals.inc()
+        else:
+            self.metrics.jobs.labels(state="cancelled", quality="none").inc()
 
     async def _extract(self, job: Job) -> str:
         root = Path(job.spool_path)

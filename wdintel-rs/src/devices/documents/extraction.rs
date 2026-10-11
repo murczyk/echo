@@ -5,6 +5,10 @@ use crate::{
         worker::Package,
     },
     config::*,
+    devices::config::{
+        DEVICE_FILE_CONTENT_DOWNLOAD_MAX_ENCRYPTED_BYTES,
+        DEVICE_FILE_CONTENT_DOWNLOAD_TIMEOUT_SECS,
+    },
     h,
     types::{Env, ShortContext},
 };
@@ -33,6 +37,17 @@ async fn source_bytes(env: &Env, source: &Source) -> anyhow::Result<Vec<u8>> {
         size <= OCR_MAX_SOURCE_BYTES,
         "file exceeds extraction input limit"
     );
+    if let Some(bytes) =
+        crate::devices::files::content::local_cache::read_bytes(
+            env,
+            &source.object_key,
+            size,
+            source.is_encrypted,
+        )
+        .await
+    {
+        return Ok(bytes);
+    }
     let mut config = env.s3_config.clone().c(h!())?;
     config.prefix.clear();
     let bytes = if source.is_encrypted {
@@ -148,7 +163,7 @@ pub(super) async fn package(
         .c(h!())
 }
 
-async fn submit_extractor(
+pub(super) async fn submit_extractor(
     env: &Env,
     job: &Job,
     source: &Source,
@@ -187,6 +202,7 @@ async fn submit_extractor(
         response.status(),
         reqwest::StatusCode::TOO_MANY_REQUESTS
             | reqwest::StatusCode::SERVICE_UNAVAILABLE
+            | reqwest::StatusCode::INSUFFICIENT_STORAGE
     ) {
         return Ok(None);
     }
@@ -366,4 +382,31 @@ pub(super) async fn published(
         published: bool,
     }
     Ok(rows::<Published,_>(env.file_registry_db().c(h!())?.connection(),"select exists(select 1 from file_document_revision_generation where file_id=$1 and revision=$2 and generation=$3) as published",vec![job.file_id.into(),job.revision.into(),generation.into()]).await.c(h!())?.pop().c(h!())?.published)
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+
+    #[actix_web::test]
+    #[serial_test::serial]
+    async fn extraction_reads_retained_original_without_s3() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let mut env = env.as_ref().clone();
+        let directory = tempfile::tempdir().unwrap();
+        let bytes = b"document retained after upload";
+        crate::devices::files::content::local_cache::test_support::retain_without_storage(
+            &mut env, directory.path(), "devices/extraction-source", bytes, true,
+        ).await;
+        let source = Source {
+            name: "report.txt".to_owned(),
+            extension: Some("txt".to_owned()),
+            mime_type: Some("text/plain".to_owned()),
+            object_key: "devices/extraction-source".to_owned(),
+            source_size_bytes: bytes.len() as i64,
+            is_encrypted: true,
+        };
+        assert_eq!(source_bytes(&env, &source).await.unwrap(), bytes);
+    }
 }

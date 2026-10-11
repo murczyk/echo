@@ -34,9 +34,9 @@ def grade(case, events, failed=False):
         from maps import grade_maps
         return grade_maps(case, events, failed)
     retrieved, cited, inaccessible = set(), set(), set()
-    text_calls = tag_calls = 0
+    text_calls = tag_calls = unit_calls = 0
     searches = []
-    text_periods, tag_periods = [], []
+    text_periods, tag_periods, unit_periods = [], [], []
     pages = {}
     answers = [event["text"] for event in events if event.get("type") == "eval_answer"]
     answer = answers[-1] if answers else ""
@@ -49,6 +49,7 @@ def grade(case, events, failed=False):
         if event.get("path", "").endswith("get-inbox"):
             text_calls += bool(body.get("search") and not body.get("selected_callsigns"))
             tag_calls += bool(body.get("selected_callsigns") and not body.get("search"))
+            unit_calls += bool((body.get("selected_unit_ids") or body.get("selected_units")) and not body.get("search"))
             searches.append(body.get("search", "").lower())
             searches.extend(str(value).lower() for value in body.get("selected_callsigns", []))
             if "since_date_inclusive_ms" in body:
@@ -57,6 +58,8 @@ def grade(case, events, failed=False):
                     text_periods.append(period)
                 elif body.get("selected_callsigns") and not body.get("search"):
                     tag_periods.append(period)
+                elif (body.get("selected_unit_ids") or body.get("selected_units")) and not body.get("search"):
+                    unit_periods.append(period)
         response = event.get("response") or {}
         if event.get("path", "").endswith("get-inbox") and event.get("status") == 200:
             key = json.dumps({key: value for key, value in body.items() if key != "before_id_noninclusive"}, sort_keys=True)
@@ -92,6 +95,8 @@ def grade(case, events, failed=False):
         failures.append("execution")
     if expect.get("bothSearches", True) and not (text_calls and tag_calls):
         failures.append("complementary_search_missing")
+    if expect.get("unitSearch") and not unit_calls:
+        failures.append("unit_filter_search_missing")
     if not required.issubset(retrieved):
         failures.append("required_evidence_not_retrieved")
     if expect.get("requireCitations", bool(required)) and not (cited & required):
@@ -101,7 +106,7 @@ def grade(case, events, failed=False):
     if any(term.lower() not in " ".join(searches) for term in expect.get("searchTerms", [])):
         failures.append("spelling_candidate_missing")
     bounds = expect.get("dateBounds")
-    periods = text_periods + tag_periods
+    periods = text_periods + tag_periods + unit_periods
     if bounds and any(start < bounds[0] or end > bounds[1] for start, end in periods):
         failures.append("explicit_period_widened")
     instant = datetime.fromisoformat(case["asOf"].replace("Z", "+00:00")).astimezone(ZoneInfo("Europe/Kyiv"))
@@ -122,6 +127,6 @@ def grade(case, events, failed=False):
     if any(re.search(pattern, answer, re.I) for pattern in expect.get("forbiddenPatterns", [])):
         failures.append("unsupported_answer")
     return {"passed": not failures, "failures": failures, "retrievedIds": sorted(retrieved),
-            "citedIds": sorted(cited), "textSearches": text_calls, "tagSearches": tag_calls,
+            "citedIds": sorted(cited), "textSearches": text_calls, "unitSearches": unit_calls, "tagSearches": tag_calls,
             "toolErrors": sum(event.get("type") == "tool_end" and event.get("is_error", False) for event in events),
             "answer": answer}

@@ -79,6 +79,7 @@ pub(crate) async fn search(
     let history = req.history.unwrap_or(false);
     if !history {
         filters.push("src.kind='file'".into());
+        filters.push("src.parent_id is not null".into());
     }
     let table = if history {
         "file_revision"
@@ -102,7 +103,14 @@ pub(crate) async fn search(
     if matches.is_empty() {
         matches.push(("", "true".into()));
     }
-    let candidates=matches.into_iter().map(|(joins,predicate)|format!("(select src.id,src.revision from {table} src {joins} where {} and ({predicate}) order by src.id desc,src.revision desc limit {bound})",filters.join(" and "))).collect::<Vec<_>>().join(" union ");
+    let candidates = matches.into_iter().map(|(joins, predicate)| {
+        let select = format!("select src.id,src.revision from {table} src {joins} where {} and ({predicate})", filters.join(" and "));
+        if predicate == "true" {
+            format!("({select} order by src.id desc,src.revision desc limit {bound})")
+        } else {
+            filtered_candidates(&select, &bound)
+        }
+    }).collect::<Vec<_>>().join(" union ");
     let sql=format!("with candidates as ({candidates}) select {COLUMNS} from candidates matched join {table} src on src.id=matched.id and src.revision=matched.revision {JOINS} order by src.id desc,src.revision desc limit {bound}");
     let mut documents = rows::<DeviceDocumentItem, _>(&tx, &sql, values)
         .await
@@ -131,6 +139,16 @@ pub(crate) async fn search(
         documents,
         next_cursor,
     })
+}
+
+fn filtered_candidates(select: &str, bound: &str) -> String {
+    let cap = DEVICE_DOCUMENT_SEARCH_CANDIDATE_LIMIT;
+    format!("(with matched as materialized ({select} limit {cap}), selected as (
+      select id,revision from matched where (select count(*) from matched)<{cap}
+      union all
+      ({select} and (select count(*) from matched)>={cap}
+       order by src.id desc,src.revision desc limit {bound})
+    ) select id,revision from selected order by id desc,revision desc limit {bound})")
 }
 
 fn search_matches(

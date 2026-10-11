@@ -6,6 +6,7 @@ type AnalysisNeoMockOptions = {
   userRoles?: string[];
   enableAudioTranscription?: boolean;
   analysisAorFilterEnabled?: boolean;
+  hideNetworks?: boolean;
   summaryDelayMs?: number;
   sidebarDelayMs?: number;
   inboxDelayMs?: number;
@@ -28,25 +29,6 @@ async function fulfillJson(route: Route, body: unknown, delayMs = 0): Promise<vo
     contentType: 'application/json; charset=utf-8',
     body: jsonBody(body),
   });
-}
-
-function emptyCountResponse() {
-  return {
-    count_overall: 2,
-    count_selected: 1,
-    groups_count: 0,
-    senders_count: 0,
-    freqs_count: 1,
-    posts_count: 0,
-    callsigns_count: 0,
-    units_count: 0,
-    units_exact_matches_count: 0,
-    units_non_exact_matches_count: 0,
-    locations_count: 0,
-    tags_count: 0,
-    aors_count: 0,
-    networks_count: 0,
-  };
 }
 
 function emptyInboxResponse() {
@@ -259,6 +241,7 @@ export async function installAnalysisNeoApiMocks(
         systemSettingsCurrentResponse({
           enableAudioTranscription: options.enableAudioTranscription,
           analysisAorFilterEnabled: options.analysisAorFilterEnabled,
+          hideNetworks: options.hideNetworks,
         }),
       );
       return;
@@ -296,8 +279,18 @@ export async function installAnalysisNeoApiMocks(
       return;
     }
 
-    if (pathname === '/api/rer/analysis/stats/count') {
-      await fulfillJson(route, emptyCountResponse());
+    if (pathname === '/api/rer/analysis/stats/messages/count') {
+      await fulfillJson(route, { count_overall: 0, count_selected: 0 });
+      return;
+    }
+
+    if (pathname === '/api/rer/analysis/stats/units/matches/count') {
+      await fulfillJson(route, { exact_matches_count: 0, non_exact_matches_count: 0 });
+      return;
+    }
+
+    if (/^\/api\/rer\/analysis\/stats\/[^/]+\/count$/.test(pathname)) {
+      await fulfillJson(route, 0);
       return;
     }
 
@@ -367,6 +360,16 @@ export async function installAnalysisNeoApiMocks(
 
     if (pathname === '/api/rer-importer/get-inbox-group-stats') {
       await fulfillJson(route, { stats_per_minute: [] });
+      return;
+    }
+
+    if (pathname === '/api/rer-importer/inbox-item-context') {
+      const reference = route.request().postDataJSON().message_uid;
+      const message = options.inboxResponse?.inbox_items.find(
+        ([id, item]) =>
+          String(id) === reference || item.messageUid === reference || item.idUuid === reference,
+      );
+      await fulfillJson(route, { message: message ?? null });
       return;
     }
 

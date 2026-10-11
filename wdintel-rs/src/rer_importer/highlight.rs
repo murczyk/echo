@@ -56,6 +56,10 @@ pub struct CNPositionCoordinateSource {
     pub message_uuid: String,
     pub group_name: String,
     pub message_at: i64,
+    /// The model's quote from the source message that justified the location.
+    pub evidence: String,
+    pub certainty: String,
+    pub coordinate_text: String,
 }
 
 #[derive(

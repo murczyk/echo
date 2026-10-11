@@ -20,6 +20,7 @@ const EVENT_TYPES: &[&str] = &[
     "progress",
     "assistant_delta",
     "assistant_snapshot",
+    "completion_metadata",
     "tool_start",
     "tool_update",
     "tool_end",
@@ -44,6 +45,7 @@ const RUNNER_EVENT_TYPES: &[&str] = &[
     "progress",
     "assistant_delta",
     "assistant_snapshot",
+    "completion_metadata",
     "tool_start",
     "tool_update",
     "tool_end",
@@ -272,6 +274,19 @@ pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
         payload.remove("activityOnly");
     }
     payload = sanitize(payload);
+    if event_type == "completion_metadata" {
+        let metadata: super::types::AiAgentCompletionMetadata =
+            serde_json::from_value(payload).ok()?;
+        if !metadata.coverage_limited
+            || !matches!(
+                metadata.reason.as_str(),
+                "time_limit" | "tool_limit" | "context_limit"
+            )
+        {
+            return None;
+        }
+        payload = serde_json::to_value(metadata).ok()?;
+    }
     if event_type == "file_citations" {
         let citations = super::file_citations::parse(&payload)?;
         payload = serde_json::json!({ "citations": citations });
@@ -502,6 +517,24 @@ mod tests {
         assert_eq!(response, payload["text"].as_str().unwrap());
         assert_eq!(response_chars, response.chars().count());
         assert!(!response.contains("draft"));
+    }
+
+    #[test]
+    fn issue_3724_preserves_context_limited_completion() {
+        let (_, payload) = normalize_runner_event(serde_json::json!({
+            "type": "completion_metadata",
+            "coverageLimited": true,
+            "reason": "context_limit"
+        }))
+        .unwrap();
+        assert_eq!(payload["reason"], "context_limit");
+        assert_eq!(payload["coverageLimited"], true);
+        assert!(normalize_runner_event(serde_json::json!({
+            "type": "completion_metadata",
+            "coverageLimited": true,
+            "reason": "provider_error"
+        }))
+        .is_none());
     }
 
     #[test]

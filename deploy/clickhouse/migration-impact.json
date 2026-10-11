@@ -1,5 +1,17 @@
 {
   "migrations": {
+    "echo:m20261009_074414_system_settings_hide_networks": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20261009_201221_ai_agent_reasoning_policy": {
+      "changes": [{ "table": "public.ai_agent_request", "strategy": "excluded" }]
+    },
+    "echo:m20261009_100730_rer_csv_body_index": { "changes": [] },
+    "echo:m20261009_100730_rer_csv_processing": {
+      "changes": [{ "table": "public.rer_csv_import_message", "strategy": "excluded" }]
+    },
     "echo:m20261008_113430_sigint_unit_orbit_combat_type": {
       "changes": [
         { "table": "public.sigint_unit_orbit_combat_type", "strategy": "replicated_snapshot" },
@@ -15,6 +27,12 @@
         }
       ]
     },
+    "echo:m20261010_094039_settlement_alias_lookup_indexes": { "changes": [] },
+    "echo:m20261010_085100_settlement_alias": {
+      "changes": [{ "table": "public.settlement_alias", "strategy": "excluded" }]
+    },
+    "echo:m20261010_073418_inbox_settlement_processed_flag": { "changes": [] },
+    "echo:m20261009_144937_settlement_renamed_names": { "changes": [] },
     "echo:m20261008_051638_ai_position_highlight_flags": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_backfill" },
@@ -343,6 +361,11 @@
         { "table": "public.ai_settlement_test_message", "strategy": "excluded" },
         { "table": "public.ai_settlement_parse_result", "strategy": "excluded" },
         { "table": "public.ai_settlement_worker_job", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261010_110158_ai_settlement_worker_groups": {
+      "changes": [
+        { "table": "public.ai_settlement_settings", "strategy": "excluded" }
       ]
     },
     "echo:m20260827_180023_add_login_totp_secret": {

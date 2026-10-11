@@ -75,6 +75,41 @@ suite =
                             , \_ -> successModel.mapOpenMessages |> Expect.equal (Success [ ( 7, messageStub ) ])
                             ]
                             ()
+        , test "#3598 ignores restored network filters while network hiding is enabled" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-analysis" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            user =
+                                { id = "cyber", name = "cyber", roles = [ "Cyber" ], sigintZoneId = Nothing, organismId = Nothing, deltaLogin = Nothing, displayName = Nothing, goiConfiguredForOrganism = False, goiFullAccessForOrganism = False, goiHost = Nothing, goiIntegrations = [], lastReleaseSeen = Nothing, rerReportEligible = False }
+
+                            ( model, _ ) =
+                                RerAnalysis.init user (Route.fromUrl () url) ()
+
+                            hidden =
+                                { model | hideNetworks = True, networksSelected = [ "7" ], withoutNetwork = True }
+
+                            request =
+                                Query.analysisStatsParams (Time.millisToPosix 0) (Time.millisToPosix 1000) hidden
+
+                            inboxRequest =
+                                RerAnalysis.getInboxReq hidden
+
+                            queryState =
+                                Query.modelQueryState hidden
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal Nothing request.selectedNetworks
+                            , \_ -> Expect.equal (Just False) request.withoutNetwork
+                            , \_ -> Expect.equal Nothing inboxRequest.selectedNetworks
+                            , \_ -> Expect.equal (Just False) inboxRequest.withoutNetwork
+                            , \_ -> Expect.equal [] queryState.networksSelected
+                            , \_ -> Expect.equal False queryState.withoutNetwork
+                            ]
+                            ()
         , test "empty success does not advance the popup serial" <|
             \_ ->
                 case Url.fromString "http://localhost/rer-analysis" of

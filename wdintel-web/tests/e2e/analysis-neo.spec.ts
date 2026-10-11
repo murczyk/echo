@@ -16,30 +16,57 @@ async function setupAnalysisNeoPage(
 // Regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke @regression', () => {
   // Regression: https://github.com/echoua/echo/issues/2726
-  test('@regression opens an older linked message without widening the range and survives reload', async ({
-    page,
-  }) => {
-    await page.clock.setFixedTime(new Date('2026-09-28T12:00:00Z'));
-    const response = createLoadedInboxResponse();
-    const [messageId, message] = response.inbox_items[0];
-    Object.assign(message, { date: '24.09.2026', time: '12:34:56', timestamp: null });
-    await setupAnalysisNeoPage(page, { inboxResponse: response });
-    await page.goto(`/rer-analysis-neo?m=${message.messageUid}`);
-    const expectedParams = {
-      m: message.messageUid,
-      fromDateTime: '2026-09-24T00:00',
-      toDateTime: '2026-09-25T00:00',
-    };
-    const readParams = () => {
-      const params = new URL(page.url()).searchParams;
-      return Object.fromEntries(Object.keys(expectedParams).map((key) => [key, params.get(key)]));
-    };
-    await expect(page.locator(`[data-message-id="${messageId}"]`)).toBeVisible();
-    await expect.poll(readParams).toEqual(expectedParams);
-    await page.reload();
-    await expect(page.locator(`[data-message-id="${messageId}"]`)).toBeVisible();
-    await expect.poll(readParams).toEqual(expectedParams);
-  });
+  for (const { roles, from, to } of [
+    { roles: ['Rer'], from: '2026-09-24T00:00', to: '2026-09-25T00:00' },
+    { roles: ['Cyber'], from: '2026-08-10T00:00', to: '2026-11-08T00:00' },
+  ]) {
+    test(`@regression opens an older linked message in the ${roles[0]} period and survives reload`, async ({
+      page,
+    }) => {
+      await page.clock.setFixedTime(new Date('2026-12-28T12:00:00Z'));
+      const response = createLoadedInboxResponse();
+      const [messageId, message] = response.inbox_items[0];
+      Object.assign(message, { date: '24.09.2026', time: '12:34:56', timestamp: null });
+      await setupAnalysisNeoPage(page, { inboxResponse: response, userRoles: roles });
+      const expectedParams = { m: message.messageUid, fromDateTime: from, toDateTime: to };
+      const readParams = () => {
+        const params = new URL(page.url()).searchParams;
+        return Object.fromEntries(Object.keys(expectedParams).map((key) => [key, params.get(key)]));
+      };
+      const windows: Record<string, unknown>[] = [];
+      await page.route('**/api/rer-importer/get-inbox', async (route) => {
+        const request = route.request().postDataJSON();
+        if (request.around_message_ref) {
+          expect(readParams()).toEqual(expectedParams);
+          expect(request.since_date_inclusive_ms).toEqual(expect.any(Number));
+          expect(request.till_date_inclusive_ms).toEqual(expect.any(Number));
+          expect(request.since_date_inclusive_ms).toBeLessThan(Date.parse('2026-09-24T09:34:56Z'));
+          expect(request.till_date_inclusive_ms).toBeGreaterThan(
+            Date.parse('2026-09-24T09:34:56Z'),
+          );
+          windows.push(request);
+        }
+        await route.fulfill({
+          json: {
+            ...response,
+            around_message_messages_before: 0,
+            around_message_messages_after: 0,
+          },
+        });
+      });
+      await page.goto(`/rer-analysis-neo?m=${message.messageUid}`);
+      await expect(page.locator(`[data-message-id="${messageId}"]`)).toBeVisible();
+      await expect.poll(readParams).toEqual(expectedParams);
+      await page.reload();
+      await expect(page.locator(`[data-message-id="${messageId}"]`)).toBeVisible();
+      await expect.poll(readParams).toEqual(expectedParams);
+      expect(windows).toHaveLength(2);
+      expect(windows[1]).toMatchObject({
+        since_date_inclusive_ms: windows[0].since_date_inclusive_ms,
+        till_date_inclusive_ms: windows[0].till_date_inclusive_ms,
+      });
+    });
+  }
 
   test('analysis neo summary flow loads a known row', async ({ page }) => {
     await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });

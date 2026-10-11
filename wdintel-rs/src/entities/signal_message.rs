@@ -49,6 +49,8 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     Login,
+    #[sea_orm(has_one = "super::rer_csv_import_message::Entity")]
+    RerCsvImportMessage,
     #[sea_orm(has_many = "super::sigint_bookmark::Entity")]
     SigintBookmark,
     #[sea_orm(has_many = "super::sigint_comment::Entity")]
@@ -74,6 +76,12 @@ impl Related<super::datasource_group::Entity> for Entity {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::rer_csv_import_message::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::RerCsvImportMessage.def()
     }
 }
 

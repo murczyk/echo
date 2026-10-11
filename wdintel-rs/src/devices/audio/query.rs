@@ -26,6 +26,7 @@ pub(super) struct VisibleDevice {
 pub(super) struct AudioRow {
     pub id: Uuid,
     pub device_id: Uuid,
+    pub name: String,
     pub recording_started_at: chrono::DateTime<chrono::FixedOffset>,
     pub recording_ended_at: chrono::DateTime<chrono::FixedOffset>,
     pub duration_us: i64,
@@ -38,6 +39,7 @@ impl AudioRow {
         DeviceAudio {
             id: self.id.to_string(),
             device_id: self.device_id.to_string(),
+            name: self.name,
             recording_started_at: self
                 .recording_started_at
                 .with_timezone(&Utc)
@@ -65,6 +67,7 @@ pub(super) fn page_query(
         .columns([
             C::Id,
             C::DeviceId,
+            C::Name,
             C::RecordingStartedAt,
             C::RecordingEndedAt,
             C::DurationUs,
@@ -93,6 +96,7 @@ pub(super) fn page_query(
 pub(super) struct AudioDetailRow {
     id: Uuid,
     device_id: Uuid,
+    name: String,
     recording_started_at: chrono::DateTime<chrono::FixedOffset>,
     recording_ended_at: chrono::DateTime<chrono::FixedOffset>,
     duration_us: i64,
@@ -107,6 +111,7 @@ impl AudioDetailRow {
         let audio = AudioRow {
             id: self.id,
             device_id: self.device_id,
+            name: self.name,
             recording_started_at: self.recording_started_at,
             recording_ended_at: self.recording_ended_at,
             duration_us: self.duration_us,
@@ -136,6 +141,7 @@ pub(super) async fn audio_detail<C: ConnectionTrait>(
         .columns([
             C::Id,
             C::DeviceId,
+            C::Name,
             C::RecordingStartedAt,
             C::RecordingEndedAt,
             C::DurationUs,
@@ -571,6 +577,7 @@ pub(super) fn audio_summary(audio: &device_audio::Model) -> DeviceAudio {
     DeviceAudio {
         id: audio.id.to_string(),
         device_id: audio.device_id.to_string(),
+        name: audio.name.clone(),
         recording_started_at: audio
             .recording_started_at
             .with_timezone(&Utc)

@@ -196,7 +196,7 @@ export type AnalysisPageState = {
   showAnalysisCallsignAddForm: boolean;
   centerTab: AnalysisCenterTab;
   centerTabPending: boolean;
-  counts: CountStatsRsp | null;
+  counts: Partial<CountStatsRsp> | null;
   copiedFeedbackId: string | null;
   directMessageError: string | null;
   error: string | null;
@@ -271,6 +271,7 @@ export type AnalysisPageState = {
   queryState: AnalysisQueryState;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
   messageTextPreviewLines: 20 | 40 | null;

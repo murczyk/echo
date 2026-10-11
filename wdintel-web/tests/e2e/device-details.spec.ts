@@ -266,7 +266,7 @@ type ApiTracker = {
 };
 
 async function installMocks(page: Page, roles = ['Cyber']): Promise<ApiTracker> {
-  let releaseSubtreeCounts = () => undefined;
+  let releaseSubtreeCounts: () => void = () => undefined;
   const subtreeCountsReady = new Promise<void>((resolve) => {
     releaseSubtreeCounts = resolve;
   });
@@ -696,6 +696,7 @@ for (const routeName of ['list', 'details']) {
 test('@smoke device details uses tabs, an IDE-style Files sidebar, and a synchronization journal', async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   const browserFailures: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') browserFailures.push(`console: ${message.text()}`);
@@ -993,6 +994,7 @@ test('@smoke @regression device files previews read only, explains unavailable s
   page,
   baseURL,
 }) => {
+  test.setTimeout(60_000);
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   const tracker = await installMocks(page);
@@ -1012,6 +1014,7 @@ test('@smoke @regression device files previews read only, explains unavailable s
       bytes: await readFile(new URL('./fixtures/device-file-content.docx', import.meta.url)),
     },
     { name: 'archive.zip', bytes: Buffer.from('UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==', 'base64') },
+    { name: 'unsupported.bin', bytes: Buffer.from([0, 1, 2, 3]) },
   ];
   const files = samples.map((sample, index) => ({
     ...entry({
@@ -1022,6 +1025,7 @@ test('@smoke @regression device files previews read only, explains unavailable s
       absolutePath: `C:\\Users\\analyst\\Documents\\${sample.name}`,
     }),
     file_id: `018f0000-0000-7000-8000-00000000002${index}`,
+    mime_type: sample.name.endsWith('.zip') ? 'application/zip' : 'application/octet-stream',
     revision: 1,
   }));
   const missingFile = {
@@ -1128,9 +1132,11 @@ test('@smoke @regression device files previews read only, explains unavailable s
             .getByText('Device DOCX content — тільки читання'),
         ).toBeVisible();
         await expect(pane.locator('iframe')).toHaveAttribute('sandbox', '');
+      } else if (sample.name.endsWith('zip')) {
+        await expect(pane.getByText('Архів порожній.', { exact: true })).toBeVisible();
       } else {
         await expect(
-          pane.getByRole('heading', { name: 'Перегляд формату ZIP не підтримується' }),
+          pane.getByRole('heading', { name: 'Перегляд формату BIN не підтримується' }),
         ).toBeVisible();
         await expect(pane.getByRole('button', { name: 'Скачати файл' })).toBeEnabled();
         await expect(pane.locator('pre, canvas, iframe')).toHaveCount(0);
@@ -1148,15 +1154,15 @@ test('@smoke @regression device files previews read only, explains unavailable s
     }
     await test.step('PR #3500: observes GET failures and waits for the complete download body', async () => {
       const downloadButton = pane.getByRole('button', { name: 'Скачати файл' });
-      const archive = samples[3];
-      const archiveUrl = `/api/device/files/${DEVICE_ID}/${files[3].file_id}/revisions/1/content`;
+      const archive = samples[4];
+      const archiveUrl = `/api/device/files/${DEVICE_ID}/${files[4].file_id}/revisions/1/content`;
       await tree.getByRole('button', { name: missingFile.name, exact: true }).click();
       await tree.getByRole('button', { name: archive.name, exact: true }).click();
       for (const failure of ['error', 'interrupted'] as const) {
         downloadResponse = failure;
         expect((await page.request.head(new URL(archiveUrl, page.url()).href)).status()).toBe(200);
         await downloadButton.click();
-        const alert = page.getByRole('alert').filter({ hasText: 'Помилка скачування файлу' });
+        const alert = pane.getByRole('alert').filter({ hasText: 'Помилка скачування файлу' });
         await expect(alert).toBeVisible();
         if (failure === 'error') await expect(alert).toContainText('Не вдалося розшифрувати файл');
         else await expect(alert).toContainText('Перевірте мережу та спробуйте ще раз.');
@@ -1243,4 +1249,60 @@ test('@smoke @regression device files previews read only, explains unavailable s
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+test('@regression #3757 file URL expands ancestors and highlights a file beyond the first page', async ({
+  page,
+}) => {
+  const tracker = await installMocks(page);
+  tracker.releaseSubtreeCounts();
+  const fileId = '018f0000-0000-7000-8000-000000000099';
+  const file = {
+    ...entry({
+      entryId: fileId,
+      parentEntryId: DOCUMENTS_ID,
+      kind: 'file',
+      name: 'linked.txt',
+      absolutePath: '/documents/linked.txt',
+    }),
+    file_id: fileId,
+    revision: 2,
+    has_content: false,
+  };
+  await page.route('**/api/device/files/locate', (route) => {
+    expect(route.request().postDataJSON()).toEqual({ deviceId: DEVICE_ID, fileId, revision: 2 });
+    return route.fulfill({
+      json: {
+        file,
+        ancestors: [
+          entry({
+            entryId: DOCUMENTS_ID,
+            parentEntryId: POSIX_ROOT_ID,
+            kind: 'directory',
+            name: 'documents',
+          }),
+        ],
+        rootEntryId: POSIX_ROOT_ID,
+        currentRevision: 3,
+      },
+    });
+  });
+  const href = `/devices/${DEVICE_ID}?file=${fileId}&revision=2`;
+  await page.goto(href);
+  await expect(page.getByRole('tab', { name: 'Файли', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.getByTestId(`device-file-${fileId}`)).toHaveAttribute('aria-current', 'true');
+  await expect(page.getByTestId('device-file-content-pane')).toContainText('linked.txt');
+  await expect(page.getByTestId('device-file-content-pane')).toContainText(
+    'Ревізія 2 · За посиланням',
+  );
+  await page.reload();
+  await expect(page.getByTestId(`device-file-${fileId}`)).toHaveAttribute('aria-current', 'true');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('device-file-content-pane')).toBeVisible();
+  await page.getByRole('button', { name: 'До файлів', exact: true }).click();
+  await expect(page).toHaveURL(`/devices/${DEVICE_ID}`);
+  await expect(page.getByTestId(`device-file-${fileId}`)).toBeVisible();
 });

@@ -6,7 +6,7 @@ use sea_orm::{
 use uuid::Uuid;
 
 use super::{ReuseReceipt, ReuseRequest};
-use crate::config::DEVICE_FILE_CONTENT_STORAGE_RETRY_AFTER_SECS;
+use crate::devices::config::DEVICE_FILE_CONTENT_STORAGE_RETRY_AFTER_SECS;
 use crate::devices::files::content::protocol::ContentError;
 use crate::h;
 

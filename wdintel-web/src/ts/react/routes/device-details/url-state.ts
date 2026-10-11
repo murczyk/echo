@@ -11,5 +11,6 @@ export function selectDeviceSyncSession(syncId: string | null) {
   if (url.searchParams.get('sync_id') === syncId) return;
   if (syncId === null) url.searchParams.delete('sync_id');
   else url.searchParams.set('sync_id', syncId);
+  for (const key of ['file', 'revision', 'extraction', 'section']) url.searchParams.delete(key);
   navigateWithinSpa(`${url.pathname}${url.search}${url.hash}`);
 }

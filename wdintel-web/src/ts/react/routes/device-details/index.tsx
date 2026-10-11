@@ -1,4 +1,4 @@
-import { DeviceDocumentDeepLink } from '../device-files/components/DeviceDocumentPreview';
+import { useDeviceFileLink } from '../device-files/use-device-file-link';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
 import { Box, Skeleton, Tooltip } from '@mui/material';
@@ -104,7 +104,11 @@ export function DeviceDetailsPage({
   const isMobileLayout = useDeviceMobileLayout();
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<DeviceDetailsTab>('analytical');
+  const linkedFile = useDeviceFileLink();
+  const [activeTab, setActiveTab] = useState<DeviceDetailsTab>(linkedFile ? 'files' : 'analytical');
+  useEffect(() => {
+    if (linkedFile) setActiveTab('files');
+  }, [deviceId, linkedFile?.fileId, linkedFile?.revision]);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(syncId !== null);
   const [tagFilter, setTagFilter] = useState<DeviceAnalyticsTagFilter>({
@@ -159,8 +163,13 @@ export function DeviceDetailsPage({
     deviceId,
     syncId,
     enabled: activeTab === 'files' && sessions.ready,
+    linkedFile,
     tagFilter,
   });
+  const fileCitation =
+    linkedFile?.revision && files.revisionPinned
+      ? { ...linkedFile, deviceId, revision: linkedFile.revision }
+      : undefined;
   const journal = useDeviceFileJournal({
     deviceId,
     syncId,
@@ -177,6 +186,7 @@ export function DeviceDetailsPage({
     if (sessions.refreshVersion > 0) refreshRef.current();
   }, [sessions.refreshVersion]);
   const fileError = [
+    files.linkError,
     files.rootsError?.message,
     files.searchError?.message,
     files.searchLoadMoreError?.message,
@@ -303,7 +313,6 @@ export function DeviceDetailsPage({
         />
       )}
 
-      {device && <DeviceDocumentDeepLink key={deviceId} deviceId={deviceId} />}
       <DeviceAudioLeaveDialog guard={audioGuard} editor={audioEditor} />
       {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
       {device?.archived ? (
@@ -371,6 +380,7 @@ export function DeviceDetailsPage({
                       deviceId={deviceId}
                       syncId={syncId}
                       files={files}
+                      citation={fileCitation}
                       tagsState={tagsState}
                       tagFilter={tagFilter}
                       onTagFilterChange={setTagFilter}
@@ -379,6 +389,8 @@ export function DeviceDetailsPage({
                 }
                 activeTab={activeTab}
                 selectedFile={files.selectedFile}
+                revisionPinned={files.revisionPinned}
+                citation={fileCitation}
                 journal={journal}
                 deviceId={deviceId}
                 syncId={syncId}

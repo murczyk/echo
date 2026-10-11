@@ -522,6 +522,7 @@ export function useAnalysisData({
   authUserName,
   currentUser,
   deferInitialLoad = false,
+  hideNetworks = false,
   focusedWindow = null,
   focusedMessageActive = false,
   centerTab,
@@ -561,7 +562,7 @@ export function useAnalysisData({
   );
   const localInboxChangeOrigins = useLocalInboxChangeOrigins();
 
-  const loadMissingNetworksForMessages = useLoadMissingNetworksForMessages({
+  const hydrateNetworksForMessages = useLoadMissingNetworksForMessages({
     networksRef: referenceState.networksRef,
     onError,
     onUnauthorized,
@@ -569,6 +570,13 @@ export function useAnalysisData({
     setNetworks: referenceState.setNetworks,
     unitsMap: referenceState.unitsMap,
   });
+  const loadMissingNetworksForMessages = useCallback(
+    async (messageItems: Array<[number, InboxMessage]>) => {
+      if (hideNetworks) return;
+      await hydrateNetworksForMessages(messageItems);
+    },
+    [hideNetworks, hydrateNetworksForMessages],
+  );
 
   const messageList = useAnalysisMessageList({
     deferInitialLoad,
@@ -621,6 +629,7 @@ export function useAnalysisData({
     refreshTagFacet,
   } = useAnalysisFilterSections({
     queryState,
+    hideNetworks,
     optionsFreqValues,
     unitsMapRef: referenceState.unitsMapRef,
     onError,
@@ -1059,6 +1068,7 @@ export function useAnalysisData({
     buildReloadOrchestratorParams({
       centerTab,
       deferInitialLoad,
+      hideNetworks,
       focusedWindow,
       focusedMessageActive,
       leftPanelOpen,

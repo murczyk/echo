@@ -30,6 +30,7 @@ export type AnalysisFiltersPanelPage = Pick<
   | 'queryState'
   | 'unitsExactMatchOnlyDefault'
   | 'analysisAorFilterEnabled'
+  | 'hideNetworks'
   | 'rerReportFilterEnabled'
   | 'saveInFlight'
   | 'savedFilterName'

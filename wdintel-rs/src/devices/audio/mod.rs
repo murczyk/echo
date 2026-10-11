@@ -2,6 +2,7 @@ mod bl;
 mod content;
 mod cursor;
 mod ingest;
+mod preparation;
 mod probe;
 mod query;
 mod storage;
@@ -9,6 +10,7 @@ pub(crate) mod types;
 mod upload;
 mod worker;
 
+pub(crate) use preparation::run as run_preparation;
 pub(crate) use upload::routes as upload_routes;
 
 pub(crate) fn routes() -> impl actix_web::dev::HttpServiceFactory {
@@ -24,8 +26,29 @@ pub(crate) fn routes() -> impl actix_web::dev::HttpServiceFactory {
             .route(actix_web::web::post().to(save_transcription_http)),
         actix_web::web::resource("/api/device/audio/processing/set")
             .route(actix_web::web::post().to(set_processed_http)),
+        actix_web::web::resource("/api/device/audio/playback/prepare")
+            .route(actix_web::web::post().to(prepare_http)),
         content::routes(),
     )
+}
+
+async fn prepare_http(
+    env: actix_web::web::Data<crate::types::Env>,
+    user: actix_identity::Identity,
+    request: actix_web::web::Json<types::PrepareDeviceAudioReq>,
+) -> Result<HttpResponse, DeviceAudioHttpError> {
+    let actor = crate::users::login_id_from_identity(&user).c(h!())?;
+    Ok(HttpResponse::Ok().json(
+        preparation::prepare(
+            env.device_audio.clone(),
+            actor,
+            crate::devices::types::parse_uuid(&request.device_id),
+            crate::devices::types::parse_uuid(&request.audio_id),
+            request.retry,
+        )
+        .await
+        .c(h!())?,
+    ))
 }
 
 async fn list_http(
@@ -156,6 +179,22 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
+pub(super) const DEVICE_AUDIO_RECEIVE_CONCURRENCY: usize = 4;
+pub(super) const DEVICE_AUDIO_PROBE_CONCURRENCY: usize = 2;
+pub(super) const DEVICE_AUDIO_DECRYPT_CONCURRENCY: usize = 2;
+pub(super) const DEVICE_AUDIO_BACKGROUND_CONCURRENCY: usize = 2;
+pub(super) const DEVICE_AUDIO_INTERACTIVE_CONCURRENCY: usize = 2;
+pub(super) const DEVICE_AUDIO_PREPARATION_QUEUE_SIZE: usize = 256;
+pub(super) const DEVICE_AUDIO_FFMPEG_THREADS: &str = "1";
+pub(super) const DEVICE_AUDIO_RECEIVE_WAIT_SECS: u64 = 120;
+pub(super) const DEVICE_AUDIO_PREPARATION_WAIT_SECS: u64 = 120;
+pub(super) const DEVICE_AUDIO_PREPARATION_RETRY_SECS: u64 = 10;
+pub(super) const DEVICE_AUDIO_PREPARATION_POLL_MS: u64 = 1000;
+pub(super) const DEVICE_AUDIO_PREPARATION_SCAN_SECS: u64 = 30;
+pub(super) const DEVICE_AUDIO_PREPARATION_BATCH: u64 = 100;
+pub(super) const DEVICE_AUDIO_PREPARATION_MIN_FREE_BYTES: u64 =
+    1024 * 1024 * 1024;
+
 pub(super) const DEVICE_AUDIO_MAX_BYTES: u64 = 104_857_600;
 pub(super) const DEVICE_AUDIO_MAX_CIPHERTEXT_BYTES: u64 = 105_906_176;
 pub(super) const DEVICE_AUDIO_MAX_NAME_BYTES: usize = 1024;
@@ -167,9 +206,6 @@ pub(super) const DEVICE_AUDIO_PENDING_TTL: Duration =
     Duration::from_secs(4 * 60 * 60);
 pub(super) const DEVICE_AUDIO_COMPLETED_TTL: Duration =
     Duration::from_secs(8 * 60 * 60);
-pub(super) const DEVICE_AUDIO_RECEIVE_CONCURRENCY: usize = 2;
-pub(super) const DEVICE_AUDIO_PROBE_CONCURRENCY: usize = 1;
-pub(super) const DEVICE_AUDIO_DECRYPT_CONCURRENCY: usize = 1;
 pub(super) const DEVICE_AUDIO_DOWNLOAD_TIMEOUT: Duration =
     Duration::from_secs(60);
 pub(super) const DEVICE_AUDIO_HEARTBEAT_INTERVAL: Duration =
@@ -211,6 +247,8 @@ pub(crate) struct DeviceAudioRuntime {
     receive_permits: Arc<Semaphore>,
     probe_permits: Arc<Semaphore>,
     decrypt_permits: Arc<Semaphore>,
+    playback_decrypt_permits: Arc<Semaphore>,
+    preparation: Arc<preparation::Preparation>,
     namespace_scan: Arc<tokio::sync::Mutex<Option<tokio::fs::ReadDir>>>,
     metrics: Option<crate::telemetry::Metrics>,
     playback_cache: Arc<content::PlaybackCache>,
@@ -249,6 +287,11 @@ pub(crate) fn build_runtime(
         decrypt_permits: Arc::new(Semaphore::new(
             DEVICE_AUDIO_DECRYPT_CONCURRENCY,
         )),
+        playback_decrypt_permits: Arc::new(Semaphore::new(
+            DEVICE_AUDIO_BACKGROUND_CONCURRENCY
+                + DEVICE_AUDIO_INTERACTIVE_CONCURRENCY,
+        )),
+        preparation: Arc::new(preparation::Preparation::new()),
         namespace_scan: Arc::new(tokio::sync::Mutex::new(None)),
         metrics,
         playback_cache: Arc::new(content::PlaybackCache::default()),

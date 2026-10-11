@@ -31,10 +31,11 @@ and document coordinates. Clicking a position opens that complete map focused
 on its location; hovering shows the shared overview/detail map preview. Recognized
 document positions also join the message map, using their own or known coordinates.
 Clicking the map thumbnail fits all points. Positions without
-coordinates keep their tooltip without opening a map.
+coordinates, own or known, are not highlighted at all.
 
 The map's coordinate card links to the message supporting those coordinates,
-with the same hover preview as AI citations. Sources must belong to a current,
+with the same hover preview as AI citations, and shows the model's evidence
+quote, certainty and coordinate text for it. Sources must belong to a current,
 accessible group and an undeleted message; knowledge sources must also match
 the displayed MGRS, scope and fact window. The message preview rechecks access.
 
@@ -112,6 +113,15 @@ retain the last known location even after 30 days, with its source date and
 conflict indication; this does not claim a newly confirmed position. The card only uses knowledge built
 entirely from groups the viewer can read. The admin page hides mentions and
 knowledge of private groups the admin cannot read.
+
+Message and attachment previews deduplicate knowledge lookups by scope and
+name, then load at most `AI_POSITION_KNOWLEDGE_LOOKUP_BATCH_SIZE` keys per
+query. This bounds SQL expression depth even for documents with thousands of
+position mentions. All batches retain the same source-group access checks.
+The subprocess regression in
+`wdintel-rs/src/ai_position/knowledge_lookup_tests.rs` exercises 20,000 repeated
+and distinct names with a normal 2 MiB thread stack, including inaccessible
+knowledge and exact scope matching.
 
 Changing a group's AORs, or deleting or restoring an AOR, recomputes the
 affected positions in the old and new AORs.

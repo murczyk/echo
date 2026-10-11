@@ -1,6 +1,7 @@
 # Kharkiv government AI canary
 
-`echo-kharkiv2` uses government `glm-5.3` for agents, reviews, callsigns,
+`echo-kharkiv2` uses government `gpt-6-sol` as the default agent provider,
+with `glm-5.3` selectable for agents. GLM is also used for reviews, callsigns,
 settlements, positions, summaries, and report suggestions. Government
 `gpt-6-luna` supplies vision through the `openai_vision` OCR profile. Azure
 application credentials are reused from Tsur, decrypted for transfer, and
@@ -22,7 +23,7 @@ shared document extractor, including its existing Paddle and GPU routers.
 | Network | `vnet0`, reserved DHCP `10.190.254.39`, MAC `BC:24:11:37:24:01` |
 | Tailscale | `echo-ai-agents-ua.eagle-atria.ts.net`, `100.88.139.100` |
 | SSH | admin 22; forced dispatcher 22031 |
-| Harness | `2026.10.09.1`, matched by the canary Echo build |
+| Harness | `2026.10.10.1`, matched by the canary Echo build |
 | Capacity | six running containers total; each 2 CPUs, 4 GiB RAM, 20 GiB root |
 
 The `ua` host profile uses a dedicated disk and validates its hostname, OS,
@@ -79,26 +80,87 @@ and its extractor allowlist entry. Keep the direct Kharkiv entry.
 
 ## Configuration and processing scope
 
-Both government engines use the Tsur runtime profile: context 65,536 tokens,
-output 8,192, compaction reserve 16,384, recent history 8,192. GLM is the default
-and reviewer. Only the government engines are allowed for agent conversations;
+All government engines retain Tsur's context of 65,536 tokens, compaction
+reserve of 16,384 and recent history of 8,192. Kharkiv's GLM generation budget
+is 16,384 tokens, including reasoning and visible output; Sol and Luna use 8,192.
+Sol is the default agent provider; GLM remains selectable and is the reviewer.
+Only government engines are allowed for agent conversations;
 the old Gemma engine registration is retained for rollback.
 
-GLM agent requests explicitly use maximum reasoning. The runner checks complete
+Existing conversations retain their provider. Start a new conversation to use
+the changed default. Change the default through the AI agent admin settings,
+keeping GLM and Luna allowed and preserving their runtime profiles and webhook
+settings. Without [reasoning presets](reasoning-presets.md), Sol uses the Chat Completions tool transport with
+`reasoning_effort: none`. The government catalogue also lists `gpt-6.1-sol`,
+whose [tool calls require Responses API](https://developers.openai.com/api/docs/models/gpt-6.1-sol);
+it requires the verified Responses transport in the reasoning-presets rollout. Sol uses its own provider
+for checkpoints; Kharkiv's GLM requests also use GLM for checkpoints.
+
+Set the top-level `ai_agent_glm_checkpoint_provider = "glm"` in
+`/etc/echo/config.toml` and restart the API, background and report workers after
+installing the matching application and harness. This selects GLM with the
+same context and 16,384-token checkpoint cap, preserving the bounded final
+output-recovery retry. Luna remains enabled for vision. Omitting the setting,
+or setting it to `"luna"`, retains automatic Luna delegation when allowed.
+
+Without reasoning presets, GLM agent requests explicitly use maximum reasoning. The runner checks complete
 provider context, including the system prompt, tool schemas and the SDK safety
 margin, before generation. It checkpoints older evidence between completed tool
 rounds and resumes pagination with the original fixed period, findings and
 citations. Checkpoints are internal and never appear as assistant answers.
+If summarizing the older prefix does not shrink the request, one bounded
+fallback checkpoints all completed evidence, including the retained latest
+tool batch. The input guard, source audit and continuation cursors still apply.
+Complete tool results enter the checkpoint request; the SDK's default
+2,000-character tool-result truncation is bypassed. The complete serialized
+request must still fit the provider context budget.
+Without the GLM checkpoint override, when government Luna is enabled and allowed for agents, government GLM requests
+use Luna for internal checkpoints, with Luna's configured context and output
+budget (8,192 tokens on Kharkiv), bounded by GLM's compaction reserve. GLM retains
+maximum reasoning and its 16,384-token budget for report generation. Both engines
+share one request-scoped capability, cancellation, revocation and call counter.
+Luna's delegated scope rejects tools and output budgets above its grant. It is
+rechecked against the enabled engine allowlist on every request. If no allowed
+government Luna exists, legacy GLM checkpoints retain their separate output cap
+of up to 16,384 tokens. Other engines retain their normal checkpoint output cap.
+Checkpoint failures retain their cause
+even when the SDK records them as assistant errors.
+`content_filter` means the checkpoint provider stopped generation. The runner
+rejects its partial checkpoint and preserves the source audit; it does not
+retry that refusal. The provider response does not identify the triggering
+source passage.
+Provider SSE responses have a separate 16 MiB transport limit for per-token
+framing and reasoning metadata. JSON responses retain their 2 MiB limit;
+configured output limits still apply. Government GLM requests have a bounded
+thirty-minute execution deadline, with up to ten minutes per provider stream.
+Other engines retain ten minutes overall and five minutes per provider request.
+Provider credentials remain valid through the selected deadline, and their call
+counters expire with the credential so a long request cannot reset its limit.
 Empty, truncated or ineffective checkpoints fail without replacing source
 history. Cancellation also aborts checkpoint generation. Compaction releases
 only discarded tool-context allowance; citation registries, invocation limits
-and the ten-minute request deadline remain in force.
+and the engine's total execution deadline remain in force.
 
 If a report fails with an output-limit error, inspect the request's provider
 gateway logs. A shrinking `max_output_tokens` after successful tool pages
 indicates context exhaustion; increasing the output cap alone cannot fix it.
 The runner now reserves the full configured output allowance before sending a
-request. A genuine full-budget output-limit response remains a failed request.
+request. When a separate checkpoint engine is available, a full-budget
+output-limit response triggers one checkpoint of all active evidence followed
+by one primary-engine retry of the original prompt with tools disabled, so
+completed mutations cannot be replayed. The source audit stays
+intact; the exhausted assistant draft is excluded from the recovery checkpoint
+so its generated text cannot consume Luna's evidence allowance. A focused synthesis prompt retains tenant instructions, the fixed request
+time, scope, citations and completed links while omitting tool workflow guidance.
+It directs the engine to produce supported findings from the checkpoint.
+An interrupted checkpoint stream is retried once with unchanged evidence and
+output budget; partial text is rejected. Cancellation, content filters and
+other provider errors are not retried by this recovery.
+Only the working context is replaced. The primary engine, reasoning,
+output cap, tool and provider counters, and overall deadline remain unchanged.
+Checkpoint failure, cancellation, or another output-limit response ends the
+request; deployments without a separate checkpoint engine retain their prior
+failure behavior.
 
 All compatible workers are enabled. Attachment and device summaries and
 positions use GLM; OCR uses Luna. The local `wd_files` database uses Kharkiv's
@@ -116,12 +178,17 @@ prompts using the existing implementation.
 
 ## Upgrade and rollback
 
-For the context-exhaustion fix, build the matching application and immutable
-`2026.10.09.1` harness from `main`. Preserve the UA host profile and existing
+For the configurable checkpoint provider, build the matching application and immutable
+`2026.10.09.14` harness from `main`. Preserve the UA host profile and existing
 relay configuration. Drain Kharkiv AI requests, close admission, and select
 only `echo-kharkiv2` on `echo-ai-agents-ua` through the control panel. Apply
 pending application migrations through the normal targeted analytics health
 procedure, then verify the authenticated agent connection before reopening.
+Keep government Luna enabled, allowed for agents, and configured with its
+65,536-token context and 8,192-token output profile. Set only the government GLM
+runtime profile's `max_output_tokens` to 16,384;
+its context, reserve and recent-history values remain as listed above. An
+8,192-token budget can exhaust maximum reasoning before the first tool call.
 Validate the original fixed report period in a new conversation; retain the
 failed request and its audit. Rollback restores the saved application and
 `2026.10.08.3` namespace/template, preserving additive schema and new data.

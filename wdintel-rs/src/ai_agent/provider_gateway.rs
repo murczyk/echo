@@ -1,15 +1,17 @@
 use super::auth;
+use super::reasoning::{ProviderApi, ProviderPurpose};
 use crate::config::{
-    AI_AGENT_OPENAI_GPT_6_LUNA, AI_AGENT_OPENAI_GPT_6_SOL,
-    AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
+    AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC, AI_AGENT_OPENAI_GPT_6_LUNA,
+    AI_AGENT_OPENAI_GPT_6_SOL, AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
     AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE, AI_AGENT_PROVIDER_ERROR_MAX_BYTES,
-    AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS, AI_AGENT_PROVIDER_GATEWAY_PATH,
+    AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS,
     AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE,
     AI_AGENT_PROVIDER_REQUEST_MAX_BYTES, AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC,
-    AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES,
+    AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES, AI_AGENT_PROVIDER_STREAM_MAX_BYTES,
 };
 use crate::error::AppError;
-use crate::types::{info, warn, Env};
+use crate::h;
+use crate::types::{info, warn, Env, ShortContext};
 use actix_web::http::{header, StatusCode};
 use actix_web::{post, web, HttpRequest, HttpResponse};
 use bytes::Bytes;
@@ -23,35 +25,330 @@ pub async fn chat_completions(
     http_req: HttpRequest,
     payload: web::Payload,
 ) -> Result<HttpResponse, AppError> {
-    debug_assert_eq!(
-        AI_AGENT_PROVIDER_GATEWAY_PATH,
-        "/api/ai-agent/provider/v1/chat/completions"
-    );
+    provider_call(env, http_req, payload, ProviderApi::OpenaiCompletions).await
+}
+
+#[post("/api/ai-agent/provider/v1/responses")]
+pub async fn responses(
+    env: web::Data<Env>,
+    http_req: HttpRequest,
+    payload: web::Payload,
+) -> Result<HttpResponse, AppError> {
+    provider_call(env, http_req, payload, ProviderApi::OpenaiResponses).await
+}
+
+async fn provider_call(
+    env: web::Data<Env>,
+    http_req: HttpRequest,
+    payload: web::Payload,
+    api: ProviderApi,
+) -> Result<HttpResponse, AppError> {
+    let purpose = http_req
+        .headers()
+        .get(crate::config::AI_AGENT_REASONING_PURPOSE_HEADER);
+    let Some(purpose) = ProviderPurpose::parse(
+        purpose.map(|value| value.to_str().unwrap_or("invalid")),
+    ) else {
+        return Ok(provider_error(
+            StatusCode::BAD_REQUEST,
+            "Provider purpose is invalid",
+        ));
+    };
     let Some(capability) = bearer_capability(&http_req) else {
         return Ok(provider_error(
             StatusCode::UNAUTHORIZED,
             "Provider capability is invalid",
         ));
     };
-    let Some(ai_engine) =
-        auth::authorize_provider_capability(&env, capability).await?
-    else {
-        return Ok(provider_error(
-            StatusCode::UNAUTHORIZED,
-            "Provider capability is invalid or expired",
-        ));
-    };
-    let body = read_bounded_payload(payload).await?;
-    let Some((body, streamed)) =
-        validate_request_body(&body, &ai_engine.model_name)
+    let body = read_bounded_payload(payload).await.c(h!())?;
+    let Some(requested_model_name) = serde_json::from_slice::<Value>(&body)
+        .ok()
+        .and_then(|body| {
+            body.get("model").and_then(Value::as_str).map(str::to_owned)
+        })
     else {
         return Ok(provider_error(
             StatusCode::BAD_REQUEST,
             "Provider request is invalid",
         ));
     };
-    proxy_provider_request(&env.ai_engine_client, ai_engine, body, streamed)
-        .await
+    let Some(authorization) = auth::authorize_provider_call(
+        &env,
+        capability,
+        &requested_model_name,
+        purpose,
+    )
+    .await
+    .c(h!())?
+    else {
+        return Ok(provider_error(
+            StatusCode::UNAUTHORIZED,
+            "Provider capability is invalid or expired",
+        ));
+    };
+    if authorization.research_limit_reached {
+        return Ok(provider_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Provider research budget exhausted",
+        ));
+    }
+    let allowed_api = authorization
+        .execution_policy
+        .as_ref()
+        .map_or(ProviderApi::OpenaiCompletions, |policy| policy.api);
+    if api != allowed_api {
+        return Ok(provider_error(
+            StatusCode::BAD_REQUEST,
+            "Provider transport is unavailable for this request",
+        ));
+    }
+    let validated = match api {
+        ProviderApi::OpenaiCompletions => {
+            validate_request_body(&body, &authorization.ai_engine.model_name)
+        }
+        ProviderApi::OpenaiResponses => {
+            validate_responses_body(&body, &authorization.ai_engine.model_name)
+        }
+    };
+    let Some((mut body, streamed)) = validated else {
+        return Ok(provider_error(
+            StatusCode::BAD_REQUEST,
+            "Provider request is invalid",
+        ));
+    };
+    if !purpose_request_is_allowed(
+        &body,
+        api,
+        purpose,
+        authorization.checkpoint_max_tokens,
+    ) {
+        return Ok(provider_error(
+            StatusCode::BAD_REQUEST,
+            "Provider purpose request is invalid",
+        ));
+    }
+    let mut deadline = authorization.deadline_at;
+    if let Some(policy) = &authorization.execution_policy {
+        let effort = match purpose {
+            ProviderPurpose::Research => &policy.reasoning_effort,
+            ProviderPurpose::Checkpoint => &policy.checkpoint_effort,
+            ProviderPurpose::Synthesis => &policy.synthesis_effort,
+        };
+        let body = body.as_object_mut().c(h!())?;
+        body.remove("reasoning_effort");
+        body.remove("reasoning");
+        if let Some(effort) = effort {
+            match api {
+                ProviderApi::OpenaiCompletions => {
+                    body.insert("reasoning_effort".to_string(), json!(effort));
+                }
+                ProviderApi::OpenaiResponses => {
+                    body.insert(
+                        "reasoning".to_string(),
+                        json!({ "effort": effort }),
+                    );
+                    body.insert(
+                        "include".to_string(),
+                        json!(["reasoning.encrypted_content"]),
+                    );
+                }
+            }
+        }
+        if purpose != ProviderPurpose::Synthesis {
+            deadline = deadline.map(|deadline| {
+                deadline - policy.finalization_seconds as i64 * 1000
+            });
+        }
+    }
+    info!("AI agent provider policy request_id={} engine_id={} api={:?} purpose={:?} effort={:?}", authorization.request_id, authorization.ai_engine.id, api, purpose, body.get("reasoning_effort").or_else(|| body.get("reasoning")));
+    proxy_provider_call(
+        &env.ai_engine_client,
+        authorization.ai_engine,
+        body,
+        streamed,
+        api,
+        deadline,
+    )
+    .await
+}
+
+fn validate_responses_body(
+    body: &[u8],
+    expected_model_name: &str,
+) -> Option<(Value, bool)> {
+    if body.is_empty() || body.len() > AI_AGENT_PROVIDER_REQUEST_MAX_BYTES {
+        return None;
+    }
+    let mut body: Value = serde_json::from_slice(body).ok()?;
+    let object = body.as_object_mut()?;
+    if object.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "model"
+                | "input"
+                | "instructions"
+                | "tools"
+                | "tool_choice"
+                | "parallel_tool_calls"
+                | "stream"
+                | "max_output_tokens"
+                | "temperature"
+                | "top_p"
+                | "text"
+                | "include"
+                | "reasoning"
+                | "store"
+                | "prompt_cache_key"
+                | "prompt_cache_retention"
+                | "prompt_cache_options"
+        )
+    }) {
+        return None;
+    }
+    if object.get("model")?.as_str()? != expected_model_name {
+        return None;
+    }
+    let input = object.get("input")?.as_array()?;
+    if input.is_empty()
+        || input.len() > 512
+        || input.iter().any(|item| !responses_input_is_allowed(item))
+    {
+        return None;
+    }
+    if let Some(tools) = object.get_mut("tools") {
+        for tool in tools.as_array_mut()? {
+            let tool = tool.as_object_mut()?;
+            if tool.get("type")?.as_str()? != "function" {
+                return None;
+            }
+            if tool.get("strict").is_none_or(Value::is_null) {
+                tool.insert("strict".to_string(), json!(false));
+            }
+        }
+    }
+    if object.get("tool_choice").is_some_and(|choice| {
+        !matches!(choice.as_str(), Some("none" | "auto" | "required"))
+            && !(choice.get("type").and_then(Value::as_str) == Some("function")
+                && choice.get("name").is_some_and(Value::is_string))
+    }) {
+        return None;
+    }
+    let streamed = object
+        .get("stream")
+        .map(Value::as_bool)
+        .unwrap_or(Some(false))?;
+    object.insert("store".to_string(), json!(false));
+    Some((body, streamed))
+}
+
+fn responses_input_is_allowed(item: &Value) -> bool {
+    match item.get("type").and_then(Value::as_str) {
+        None | Some("message") => {
+            matches!(
+                item.get("role").and_then(Value::as_str),
+                Some("system" | "developer" | "user" | "assistant")
+            ) && item.get("content").is_some_and(|content| {
+                content.is_string()
+                    || content.as_array().is_some_and(|parts| {
+                        parts.iter().all(|part| {
+                            matches!(
+                                part.get("type").and_then(Value::as_str),
+                                Some("input_text" | "output_text")
+                            ) && part.get("text").is_some_and(Value::is_string)
+                        })
+                    })
+            })
+        }
+        Some("function_call") => ["call_id", "name", "arguments"]
+            .iter()
+            .all(|key| item.get(*key).is_some_and(Value::is_string)),
+        Some("function_call_output") => {
+            item.get("call_id").is_some_and(Value::is_string)
+                && item.get("output").is_some_and(Value::is_string)
+        }
+        Some("reasoning") => {
+            item.get("encrypted_content").is_some_and(Value::is_string)
+        }
+        _ => false,
+    }
+}
+
+fn purpose_request_is_allowed(
+    body: &Value,
+    api: ProviderApi,
+    purpose: ProviderPurpose,
+    checkpoint_max_tokens: Option<i32>,
+) -> bool {
+    if purpose == ProviderPurpose::Synthesis
+        && ["tools", "functions", "function_call"].iter().any(|key| {
+            body.get(*key).is_some_and(|value| {
+                value.as_array().is_none_or(|values| !values.is_empty())
+            })
+        })
+    {
+        return false;
+    }
+    if api == ProviderApi::OpenaiCompletions {
+        return checkpoint_request_is_allowed(body, checkpoint_max_tokens);
+    }
+    let Some(max_tokens) = checkpoint_max_tokens else {
+        return true;
+    };
+    body.get("max_output_tokens")
+        .and_then(Value::as_i64)
+        .is_some_and(|tokens| tokens > 0 && tokens <= i64::from(max_tokens))
+        && body.get("tools").is_none()
+        && body
+            .get("input")
+            .and_then(Value::as_array)
+            .is_some_and(|input| {
+                input.iter().all(|item| {
+                    matches!(
+                        item.get("role").and_then(Value::as_str),
+                        Some("user" | "system" | "developer")
+                    )
+                })
+            })
+}
+
+fn checkpoint_request_is_allowed(
+    body: &Value,
+    max_tokens: Option<i32>,
+) -> bool {
+    let Some(max_tokens) = max_tokens else {
+        return true;
+    };
+    let budgets = ["max_tokens", "max_completion_tokens"]
+        .into_iter()
+        .filter_map(|key| body.get(key))
+        .collect::<Vec<_>>();
+    if budgets.is_empty()
+        || !budgets.iter().all(|budget| {
+            budget.as_i64().is_some_and(|budget| {
+                budget > 0 && budget <= i64::from(max_tokens)
+            })
+        })
+    {
+        return false;
+    }
+    for key in ["tools", "tool_choice", "functions", "function_call"] {
+        if body.get(key).is_some() {
+            return false;
+        }
+    }
+    if body.get("n").is_some_and(|count| count.as_i64() != Some(1)) {
+        return false;
+    }
+    body.get("messages")
+        .and_then(Value::as_array)
+        .is_some_and(|messages| {
+            messages.iter().all(|message| {
+                matches!(
+                    message.get("role").and_then(Value::as_str),
+                    Some("system" | "user")
+                )
+            })
+        })
 }
 
 fn bearer_capability(http_req: &HttpRequest) -> Option<&str> {
@@ -134,30 +431,82 @@ fn normalize_reasoning_effort(
     }
 }
 
+fn provider_request_timeout(
+    ai_engine: &crate::entities::ai_engine::Model,
+    streamed: bool,
+) -> Duration {
+    let seconds = if streamed
+        && ai_engine.model_name == crate::config::AI_AGENT_GLM_5_3
+        && crate::ai_engine::client::is_government_url(&ai_engine.url)
+    {
+        AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC
+    } else {
+        AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC
+    };
+    Duration::from_secs(seconds)
+}
+
+#[cfg(test)]
 async fn proxy_provider_request(
     client: &crate::ai_engine::AiEngineClient,
     ai_engine: crate::entities::ai_engine::Model,
     body: Value,
     streamed: bool,
 ) -> Result<HttpResponse, AppError> {
+    proxy_provider_call(
+        client,
+        ai_engine,
+        body,
+        streamed,
+        ProviderApi::OpenaiCompletions,
+        None,
+    )
+    .await
+}
+
+async fn proxy_provider_call(
+    client: &crate::ai_engine::client::AiEngineClient,
+    ai_engine: crate::entities::ai_engine::Model,
+    body: Value,
+    streamed: bool,
+    api: ProviderApi,
+    deadline: Option<i64>,
+) -> Result<HttpResponse, AppError> {
     let started_at = Instant::now();
-    let reasoning_effort_present = body.get("reasoning_effort").is_some();
+    let reasoning_effort_present = body.get("reasoning_effort").is_some()
+        || body.get("reasoning").is_some();
     let message_count = body
         .get("messages")
+        .or_else(|| body.get("input"))
         .and_then(Value::as_array)
         .map_or(0, Vec::len);
     let max_output_tokens = body
         .get("max_completion_tokens")
+        .or_else(|| body.get("max_output_tokens"))
         .or_else(|| body.get("max_tokens"))
         .and_then(Value::as_u64);
     let request_bytes = body.to_string().len();
-    let response = client
-        .send(
-            &ai_engine,
-            body,
-            Duration::from_secs(AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC),
-        )
-        .await;
+    let timeout = provider_request_timeout(&ai_engine, streamed);
+    let timeout = deadline.map_or(timeout, |deadline| {
+        timeout.min(Duration::from_millis(
+            deadline
+                .saturating_sub(chrono::Utc::now().timestamp_millis())
+                .max(1) as u64,
+        ))
+    });
+    let response = tokio::time::timeout(timeout, async {
+        match api {
+            ProviderApi::OpenaiCompletions => {
+                client.send(&ai_engine, body, timeout).await
+            }
+            ProviderApi::OpenaiResponses => {
+                client.send_responses(&ai_engine, body, timeout).await
+            }
+        }
+    })
+    .await
+    .map_err(anyhow::Error::from)
+    .and_then(|response| response);
     let response = match response {
         Ok(response) => response,
         Err(err) => {
@@ -240,13 +589,25 @@ async fn proxy_provider_request(
         ));
     }
     let engine_id = ai_engine.id;
+    let response_limit = if streamed {
+        AI_AGENT_PROVIDER_STREAM_MAX_BYTES
+    } else {
+        AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES
+    };
+    let stream_deadline = deadline.map_or(timeout, |deadline| {
+        Duration::from_millis(
+            deadline
+                .saturating_sub(chrono::Utc::now().timestamp_millis())
+                .max(1) as u64,
+        )
+    });
     let stream = response.bytes_stream().scan(
         0_usize,
         move |response_bytes, chunk| {
             let result = match chunk {
                 Ok(chunk) => {
                     *response_bytes = response_bytes.saturating_add(chunk.len());
-                    if *response_bytes > AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES {
+                    if *response_bytes > response_limit {
                         warn!(
                             "AI agent provider gateway response limit exceeded engine_id={engine_id}"
                         );
@@ -257,9 +618,11 @@ async fn proxy_provider_request(
                         Ok(chunk)
                     }
                 }
-                Err(_) => {
+                Err(err) => {
                     warn!(
-                        "AI agent provider gateway response stream failed engine_id={engine_id}"
+                        "AI agent provider gateway response stream failed engine_id={engine_id} timeout={} duration_ms={}",
+                        err.is_timeout(),
+                        started_at.elapsed().as_millis()
                     );
                     Err(actix_web::error::ErrorBadGateway(
                         "Provider response was interrupted",
@@ -278,7 +641,31 @@ async fn proxy_provider_request(
             .insert_header((header::CACHE_CONTROL, "no-store"));
         response
     };
-    Ok(response.streaming(stream))
+    Ok(response.streaming(enforce_stream_deadline(stream, stream_deadline)))
+}
+
+fn enforce_stream_deadline(
+    stream: impl futures_util::Stream<Item = Result<Bytes, actix_web::Error>>,
+    timeout: Duration,
+) -> impl futures_util::Stream<Item = Result<Bytes, actix_web::Error>> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    futures_util::stream::unfold(
+        (Box::pin(stream), false),
+        move |(mut stream, finished)| async move {
+            if finished {
+                return None;
+            }
+            match tokio::time::timeout_at(deadline, stream.next()).await {
+                Ok(chunk) => chunk.map(|chunk| (chunk, (stream, false))),
+                Err(_) => Some((
+                    Err(actix_web::error::ErrorBadGateway(
+                        "Provider response deadline reached",
+                    )),
+                    (stream, true),
+                )),
+            }
+        },
+    )
 }
 
 #[derive(Default)]
@@ -389,6 +776,254 @@ fn provider_error(status: StatusCode, message: &'static str) -> HttpResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issue_3724_checkpoint_scope_rejected_tools_and_excess_output() {
+        let body = json!({"model":"gpt-6-luna","messages":[{"role":"system","content":"Checkpoint"},{"role":"user","content":"Evidence"}],"max_tokens":8192});
+        assert!(checkpoint_request_is_allowed(&body, Some(8192)));
+        for (field, value) in [
+            ("tools", json!([])),
+            ("max_tokens", json!(8193)),
+            ("max_completion_tokens", json!(8193)),
+            ("n", json!(2)),
+        ] {
+            let mut invalid = body.clone();
+            invalid[field] = value;
+            assert!(
+                !checkpoint_request_is_allowed(&invalid, Some(8192)),
+                "{field}"
+            );
+        }
+        let mut invalid = body.clone();
+        invalid["messages"][1]["role"] = json!("assistant");
+        assert!(!checkpoint_request_is_allowed(&invalid, Some(8192)));
+        assert!(checkpoint_request_is_allowed(&invalid, None));
+    }
+
+    #[test]
+    fn issue_3724_responses_kept_search_filters_optional() {
+        let parameters = json!({
+            "type": "object",
+            "properties": {
+                "period": {"type": "object"},
+                "selectedCallsigns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1
+                }
+            },
+            "required": ["period"],
+            "additionalProperties": false
+        });
+        let mut body = json!({
+            "model": "gpt-6-sol",
+            "input": [{"role": "user", "content": "Read the latest messages"}],
+            "tools": [{"type": "function", "name": "echo_inbox_messages", "parameters": parameters}]
+        });
+        for strict in [
+            None,
+            Some(Value::Null),
+            Some(json!(false)),
+            Some(json!(true)),
+        ] {
+            if let Some(strict) = &strict {
+                body["tools"][0]["strict"] = strict.clone();
+            }
+            let (accepted, _) = validate_responses_body(
+                &serde_json::to_vec(&body).unwrap(),
+                "gpt-6-sol",
+            )
+            .unwrap();
+            assert_eq!(
+                accepted["tools"][0]["strict"],
+                strict
+                    .filter(|value| !value.is_null())
+                    .unwrap_or(json!(false))
+            );
+            assert_eq!(accepted["tools"][0]["parameters"], parameters);
+        }
+    }
+
+    #[test]
+    fn issue_3724_responses_rejected_hosted_tools_and_stored_references() {
+        let body = json!({"model":"gpt-6-sol","input":[{"role":"user","content":"Find evidence"}],"tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}],"store":true});
+        let (accepted, _) = validate_responses_body(
+            &serde_json::to_vec(&body).unwrap(),
+            "gpt-6-sol",
+        )
+        .unwrap();
+        assert_eq!(accepted["store"], false);
+        for (field, value) in [
+            ("previous_response_id", json!("another-response")),
+            ("conversation", json!("another-conversation")),
+            ("background", json!(true)),
+            ("prompt", json!({"id":"stored-prompt"})),
+            ("tool_choice", json!({"type":"web_search"})),
+            ("tools", json!([{"type":"web_search"}])),
+            (
+                "input",
+                json!([{"type":"item_reference","id":"another-item"}]),
+            ),
+            (
+                "input",
+                json!([{"role":"user","content":[{"type":"input_file","file_id":"another-file"}]}]),
+            ),
+        ] {
+            let mut invalid = body.clone();
+            invalid[field] = value;
+            assert!(
+                validate_responses_body(
+                    &serde_json::to_vec(&invalid).unwrap(),
+                    "gpt-6-sol"
+                )
+                .is_none(),
+                "{field}"
+            );
+        }
+        assert!(!purpose_request_is_allowed(
+            &accepted,
+            ProviderApi::OpenaiResponses,
+            ProviderPurpose::Synthesis,
+            None
+        ));
+        assert!(!purpose_request_is_allowed(
+            &accepted,
+            ProviderApi::OpenaiResponses,
+            ProviderPurpose::Checkpoint,
+            Some(8192)
+        ));
+    }
+
+    fn checkpoint_stream_fixture() -> Bytes {
+        let frame = format!(
+            "data: {}\n\n",
+            json!({
+                "id": "checkpoint-fixture",
+                "model": "glm-5.3",
+                "system_fingerprint": "metadata".repeat(32),
+                "choices": [{"index": 0, "delta": {"reasoning_content": "x"}, "finish_reason": null}],
+            })
+        );
+        let finish = format!(
+            "data: {}\n\ndata: [DONE]\n\n",
+            json!({"choices": [{"index": 0, "delta": {"content": "Retained evidence https://example.invalid/?m=last"}, "finish_reason": "stop"}], "usage": {"completion_tokens": 8193}})
+        );
+        Bytes::from(frame.repeat(8192) + &finish)
+    }
+
+    async fn checkpoint_fixture_reply(
+        events: web::Data<Bytes>,
+        body: web::Json<Value>,
+    ) -> HttpResponse {
+        if body["stream"].as_bool().unwrap_or(false) {
+            HttpResponse::Ok()
+                .content_type("text/event-stream")
+                .body(events.get_ref().clone())
+        } else {
+            HttpResponse::Ok()
+                .content_type("application/json")
+                .body(json!({"content": "x".repeat(AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES)}).to_string())
+        }
+    }
+
+    fn checkpoint_fixture_server(
+        events: Bytes,
+    ) -> (actix_web::dev::Server, std::net::SocketAddr) {
+        use actix_web::{App, HttpServer};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = HttpServer::new(move || {
+            App::new().app_data(web::Data::new(events.clone())).route(
+                "/v1/chat/completions",
+                web::post().to(checkpoint_fixture_reply),
+            )
+        })
+        .workers(1)
+        .listen(listener)
+        .unwrap()
+        .run();
+        (server, address)
+    }
+
+    fn checkpoint_fixture_engine(
+        address: std::net::SocketAddr,
+    ) -> crate::entities::ai_engine::Model {
+        crate::entities::ai_engine::Model {
+            id: uuid::Uuid::now_v7(),
+            name: "checkpoint fixture".into(),
+            url: format!("http://{address}/v1"),
+            token: None,
+            model_name: "glm-5.3".into(),
+            created_at: chrono::Utc::now().naive_utc(),
+            updated_at: chrono::Utc::now().naive_utc(),
+            enabled: true,
+            callsign_enabled: false,
+            ocr_enabled: false,
+            ocr_request_profile: "default".into(),
+        }
+    }
+
+    #[actix_web::test]
+    async fn issue_3724_preserved_large_reasoning_stream_and_json_limit() {
+        use actix_web::body::to_bytes;
+        let interrupted = enforce_stream_deadline(
+            futures_util::stream::pending(),
+            Duration::from_millis(1),
+        )
+        .collect::<Vec<_>>()
+        .await;
+        assert_eq!(interrupted.len(), 1);
+        assert!(interrupted[0].is_err());
+        let events = checkpoint_stream_fixture();
+        assert!(events.len() > AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES);
+        let (server, address) = checkpoint_fixture_server(events.clone());
+        let handle = server.handle();
+        let task = actix_web::rt::spawn(server);
+        let client = crate::ai_engine::AiEngineClient::new(
+            sea_orm::DatabaseConnection::default(),
+            None,
+        )
+        .unwrap();
+        let ai_engine = checkpoint_fixture_engine(address);
+        let response = proxy_provider_request(
+            &client,
+            ai_engine.clone(),
+            json!({"stream": true}),
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(to_bytes(response.into_body()).await.unwrap(), events);
+        let response = proxy_provider_request(
+            &client,
+            ai_engine,
+            json!({"stream": false}),
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(to_bytes(response.into_body()).await.is_err());
+        handle.stop(true).await;
+        task.await.unwrap().unwrap();
+    }
+
+    #[test]
+    fn issue_3724_allowed_long_glm_streams_within_request_deadline() {
+        let mut ai_engine =
+            checkpoint_fixture_engine("127.0.0.1:1".parse().unwrap());
+        let regular =
+            Duration::from_secs(AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC);
+        assert_eq!(provider_request_timeout(&ai_engine, true), regular);
+        ai_engine.url = crate::config::AI_GOV_UA_API_BASE.to_string();
+        assert_eq!(
+            provider_request_timeout(&ai_engine, true),
+            Duration::from_secs(crate::config::AI_AGENT_DISPATCHER_TIMEOUT_SEC)
+        );
+        assert_eq!(provider_request_timeout(&ai_engine, false), regular);
+        ai_engine.model_name =
+            crate::config::AI_AGENT_OPENAI_GPT_6_LUNA.to_string();
+        assert_eq!(provider_request_timeout(&ai_engine, true), regular);
+    }
 
     #[actix_web::test]
     async fn open_event_stream_delivers_first_frame_with_compression_enabled() {

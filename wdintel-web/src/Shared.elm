@@ -181,12 +181,14 @@ init flagsResult route =
       , rerNetworkDetailsPreferredView = Shared.Model.Neo
       , location = Nothing
       , serverInfo = Nothing
+      , serverInfoLoaded = False
       , changelogPreview = Nothing
       , changelogLastSeenLoaded = False
       , changelogLastSeen = Nothing
       , masterUnits = NotAsked
       , now = flags.now
       , systemSettings = Nothing
+      , systemSettingsLoaded = False
       , timeZone = TimeZone.europe__kyiv ()
       , callsignsInfo = Dict.empty
       , posts = NotAsked
@@ -219,6 +221,7 @@ update req msg model =
             ( { model
                 | user = Just user
                 , userLoaded = True
+                , systemSettingsLoaded = False
                 , changelogLastSeenLoaded = True
                 , changelogLastSeen = user.lastReleaseSeen
               }
@@ -268,10 +271,10 @@ update req msg model =
             )
 
         GotSystemSettings (Ok settings) ->
-            ( { model | systemSettings = Just settings }, E.none )
+            ( { model | systemSettings = Just settings, systemSettingsLoaded = True }, E.none )
 
         GotSystemSettings (Err err) ->
-            ( { model | systemSettings = Nothing }
+            ( { model | systemSettingsLoaded = True }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження системних налаштувань" err
             )
 
@@ -404,10 +407,10 @@ update req msg model =
             )
 
         GotServerInfo (Err _) ->
-            ( model, E.none )
+            ( { model | serverInfoLoaded = True }, E.none )
 
         GotServerInfo (Ok v) ->
-            ( { model | serverInfo = Just v }, E.none )
+            ( { model | serverInfo = Just v, serverInfoLoaded = True }, E.none )
 
         GotChangelogIndex (Err err) ->
             ( model

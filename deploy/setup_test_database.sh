@@ -161,7 +161,7 @@ fi
 
 export TEST_DB_NAME="$DB_NAME"
 export TEST_WDFILE_DB_NAME="$FILE_REGISTRY_DB_NAME"
-createdb -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" "$FILE_REGISTRY_DB_NAME"
+createdb -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" --template=template0 --encoding=UTF8 --lc-collate=C.UTF-8 --lc-ctype=C.UTF-8 "$FILE_REGISTRY_DB_NAME"
 
 echo "Database setup complete!"
 

@@ -119,6 +119,7 @@ fn map_system_settings_item(
         show_peleng_distance_to_battleline: settings
             .show_peleng_distance_to_battleline,
         disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
+        hide_networks: settings.hide_networks.unwrap_or(false),
         two_factor_auth_enabled: settings
             .two_factor_auth_enabled
             .unwrap_or(true),
@@ -704,6 +705,7 @@ fn system_settings_active_model(
         enable_audio_transcription: Set(req.enable_audio_transcription),
         hide_orbit_data: Set(hide_orbit_data),
         disable_bot_tags: Set(Some(req.disable_bot_tags)),
+        hide_networks: Set(Some(req.hide_networks)),
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
         ai_position_highlights_enabled: Set(req.ai_position_highlights_enabled),
@@ -919,6 +921,7 @@ pub async fn current_system_settings(
                 .show_peleng_distance_to_battleline,
             hide_orbit_data: settings.hide_orbit_data,
             disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
+            hide_networks: settings.hide_networks.unwrap_or(false),
             two_factor_auth_enabled: settings
                 .two_factor_auth_enabled
                 .unwrap_or(true),
@@ -968,6 +971,7 @@ pub async fn current_system_settings(
             show_peleng_distance_to_battleline: false,
             hide_orbit_data: false,
             disable_bot_tags: false,
+            hide_networks: false,
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: false,
@@ -1261,6 +1265,42 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .deleted
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3598_hide_networks_persists_through_revisions_and_activation(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let legacy = insert_settings(&env.dbx, old_ts(), false).await;
+        let mut hidden = settings_req(false);
+        hidden.hide_networks = true;
+        let hidden =
+            create_system_settings_for_login(&env.dbx, &login, &hidden)
+                .await
+                .unwrap();
+
+        assert_eq!(hidden.hide_networks, Some(true));
+        let active =
+            get_active_system_settings(&env.dbx).await.unwrap().unwrap();
+        assert_eq!(active.hide_networks, Some(true));
+
+        let restored =
+            activate_system_settings_for_login(&env.dbx, &login, legacy.id)
+                .await
+                .unwrap();
+        assert_eq!(restored.hide_networks, None);
+        assert_eq!(
+            get_active_system_settings(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .hide_networks,
+            None
         );
     }
 
@@ -1657,6 +1697,7 @@ mod tests {
             show_classic_analysis: true,
             show_peleng_distance_to_battleline: false,
             disable_bot_tags: false,
+            hide_networks: false,
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: Some(false),
@@ -1735,6 +1776,7 @@ mod tests {
             show_peleng_distance_to_battleline: Set(false),
             hide_orbit_data: Set(false),
             disable_bot_tags: Set(None),
+            hide_networks: Set(None),
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),

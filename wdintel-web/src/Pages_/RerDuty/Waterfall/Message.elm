@@ -86,6 +86,7 @@ type alias ViewParams =
     , isMsgVisible : List Int
     , groupInfos : Dict String B.SignalGroupEntry
     , messageNetworkIds : List Int
+    , hideNetworks : Bool
     , onlyMyUnitTagsEnabled : Bool
     }
 
@@ -725,7 +726,7 @@ view ps messageTuple model =
         ]
 
 
-leftColumn : ( Int, B.InboxMessage ) -> { isDarkMode : Bool, user : B.User, waterfallId : String, datasources : List ( Int, B.Datasource ), serverInfo : Maybe B.ServerInfo, networks : Dict Int B.Network, zone : Time.Zone, time : Maybe Time.Posix, profiles : Dict String (Maybe B.SignalProfileEntry), message : ( Int, B.InboxMessage ), tags : List ( Int, B.Tag ), callsignsInfo : Dict String (List B.CallsignInfo), messageCallsignsInfo : Dict String B.CallsignInfoRes, masterUnits : Dict Int B.Unit, networkDetailsViewPreference : Shared.Model.RerNetworkDetailsPreferredView, signals : List B.Signal, isMsgVisible : List Int, groupInfos : Dict String B.SignalGroupEntry, messageNetworkIds : List Int, onlyMyUnitTagsEnabled : Bool, copied : Maybe ClipboardObject } -> { a | edited : Maybe { b | current : { c | extendedForm : Maybe String } }, isEditPopupOpen : Bool, id : Int, isDuplicate : Bool, isUnfolded : Bool } -> Html Msg
+leftColumn : ( Int, B.InboxMessage ) -> { isDarkMode : Bool, user : B.User, waterfallId : String, datasources : List ( Int, B.Datasource ), serverInfo : Maybe B.ServerInfo, networks : Dict Int B.Network, zone : Time.Zone, time : Maybe Time.Posix, profiles : Dict String (Maybe B.SignalProfileEntry), message : ( Int, B.InboxMessage ), tags : List ( Int, B.Tag ), callsignsInfo : Dict String (List B.CallsignInfo), messageCallsignsInfo : Dict String B.CallsignInfoRes, masterUnits : Dict Int B.Unit, networkDetailsViewPreference : Shared.Model.RerNetworkDetailsPreferredView, signals : List B.Signal, isMsgVisible : List Int, groupInfos : Dict String B.SignalGroupEntry, messageNetworkIds : List Int, hideNetworks : Bool, onlyMyUnitTagsEnabled : Bool, copied : Maybe ClipboardObject } -> { a | edited : Maybe { b | current : { c | extendedForm : Maybe String } }, isEditPopupOpen : Bool, id : Int, isDuplicate : Bool, isUnfolded : Bool } -> Html Msg
 leftColumn ( messageId, message ) ps model =
     let
         clipboardBlock msgType isBig =
@@ -1117,63 +1118,67 @@ rightColumn ( messageId, message ) ps model =
                                     |> Maybe.map .featureStrictNetworks
                                     |> Maybe.withDefault False
                         in
-                        case (if Core.Auth.canUseRadioFeatures ps.user then message.freq else Just "") of
-                            Nothing ->
-                                text " "
+                        if ps.hideNetworks then
+                            text <| " " ++ (message.unit |> def "Не встановлена")
 
-                            Just _ ->
-                                if List.isEmpty ps.messageNetworkIds then
-                                    if isStrict then
-                                        text "Не встановлена"
+                        else
+                            case (if Core.Auth.canUseRadioFeatures ps.user then message.freq else Just "") of
+                                Nothing ->
+                                    text " "
+
+                                Just _ ->
+                                    if List.isEmpty ps.messageNetworkIds then
+                                        if isStrict then
+                                            text "Не встановлена"
+
+                                        else
+                                            text <| " " ++ (message.unit |> def "Не встановлена")
 
                                     else
-                                        text <| " " ++ (message.unit |> def "Не встановлена")
+                                        div [] <|
+                                            List.map
+                                                (\networkId ->
+                                                    case Dict.get networkId ps.networks of
+                                                        Just network ->
+                                                            let
+                                                                networkText =
+                                                                    Core.Unit.createMasterUnitText ps.masterUnits network
 
-                                else
-                                    div [] <|
-                                        List.map
-                                            (\networkId ->
-                                                case Dict.get networkId ps.networks of
-                                                    Just network ->
-                                                        let
-                                                            networkText =
-                                                                Core.Unit.createMasterUnitText ps.masterUnits network
+                                                                networkUrl =
+                                                                    Utils.RerNetworkDetails.href ps.networkDetailsViewPreference networkId
 
-                                                            networkUrl =
-                                                                Utils.RerNetworkDetails.href ps.networkDetailsViewPreference networkId
-
-                                                            noUnitsBadge =
-                                                                case network.unitIds of
-                                                                    Nothing ->
-                                                                        span [ class "ml-2 badge badge-no-unit-sm" ] [ text "в дорозвідці" ]
-
-                                                                    Just ids ->
-                                                                        if List.isEmpty ids then
+                                                                noUnitsBadge =
+                                                                    case network.unitIds of
+                                                                        Nothing ->
                                                                             span [ class "ml-2 badge badge-no-unit-sm" ] [ text "в дорозвідці" ]
 
-                                                                        else
-                                                                            text ""
-                                                        in
-                                                        div [ class "flex items-center gap-1 font-medium group" ]
-                                                            [ span []
-                                                                [ text networkText
-                                                                , noUnitsBadge
-                                                                ]
-                                                            , a
-                                                                [ href networkUrl
-                                                                , target "_blank"
-                                                                , class "opacity-30 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
-                                                                , title "Відкрити мережу в новій вкладці"
-                                                                ]
-                                                                [ i [ class "bi bi-box-arrow-up-right text-sm" ] [] ]
-                                                            ]
+                                                                        Just ids ->
+                                                                            if List.isEmpty ids then
+                                                                                span [ class "ml-2 badge badge-no-unit-sm" ] [ text "в дорозвідці" ]
 
-                                                    _ ->
-                                                        div
-                                                            [ title <| "ID мережі " ++ String.fromInt networkId ]
-                                                            [ text "Невідома мережа" ]
-                                            )
-                                            uniqueMessageNetworkIds
+                                                                            else
+                                                                                text ""
+                                                            in
+                                                            div [ class "flex items-center gap-1 font-medium group" ]
+                                                                [ span []
+                                                                    [ text networkText
+                                                                    , noUnitsBadge
+                                                                    ]
+                                                                , a
+                                                                    [ href networkUrl
+                                                                    , target "_blank"
+                                                                    , class "opacity-30 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+                                                                    , title "Відкрити мережу в новій вкладці"
+                                                                    ]
+                                                                    [ i [ class "bi bi-box-arrow-up-right text-sm" ] [] ]
+                                                                ]
+
+                                                        _ ->
+                                                            div
+                                                                [ title <| "ID мережі " ++ String.fromInt networkId ]
+                                                                [ text "Невідома мережа" ]
+                                                )
+                                                uniqueMessageNetworkIds
 
                     metaFields =
                         let
@@ -1234,7 +1239,12 @@ rightColumn ( messageId, message ) ps model =
                             [ class "d-flex"
                             , style "font-size" ".9rem"
                             ]
-                            [ HtmlX.viewIf (not (Core.Auth.canUseRadioFeatures ps.user) || MaybeX.isJust message.freq) <|
+                            [ HtmlX.viewIf (ps.hideNetworks && Core.Auth.canUseRadioFeatures ps.user && not (MaybeX.isJust message.freq)) <|
+                                div [ class "me-2 fw-semibold inline-flex", style "gap" "4px" ]
+                                    [ i [ class "bi bi-people text-icons", title "Еталонна прив'язка" ] []
+                                    , networkBlock
+                                    ]
+                            , HtmlX.viewIf (not (Core.Auth.canUseRadioFeatures ps.user) || MaybeX.isJust message.freq) <|
                                 div []
                                     [ freqAndLocBlock
                                     , HtmlX.viewIf Config.featureShowCallsignsMetadata <|
@@ -1292,17 +1302,17 @@ rightColumn ( messageId, message ) ps model =
                                                 |> List.map
                                                     (\callsign ->
                                                         ( callsign
-                                                        , MessageHint.resolve (Just uniqueMessageNetworkIds) ps.networks ps.messageCallsignsInfo callsign
+                                                        , MessageHint.resolveWithVisibility ps.hideNetworks (Just uniqueMessageNetworkIds) ps.networks ps.messageCallsignsInfo callsign
                                                         )
                                                     )
                                                 |> Dict.fromList
                                     in
                                     Shared.MarkedText.new textMarked
-                                        |> Shared.MarkedText.viewWithMessageHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
+                                        |> Shared.MarkedText.viewWithMessageHintResults hintResultsDict (Just ps.signals) (if ps.hideNetworks then [] else Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
 
                                 Nothing ->
                                     Shared.MarkedText.fromPlainText message.text
-                                        |> Shared.MarkedText.viewWithMessageHintResults Dict.empty (Just ps.signals) (Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
+                                        |> Shared.MarkedText.viewWithMessageHintResults Dict.empty (Just ps.signals) (if ps.hideNetworks then [] else Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
                            )
                         ++ [ div
                                 [ class "flex flex-col items-start gap-2 mt-2"

@@ -9,6 +9,7 @@ type ShortStateFixtureOptions = {
   analysisAorFilterEnabled?: boolean;
   rerReportEligible?: boolean;
   rerReportEnabled?: boolean;
+  hideNetworks?: boolean;
   shortStateId?: string;
   shortState?: unknown;
   inboxResponse?: InboxMessagesRspRaw | null | Promise<InboxMessagesRspRaw | null>;
@@ -209,6 +210,7 @@ export async function installRerDutyShortStateMocks(
           dutyExcludeMenuEnabled: options.dutyExcludeMenuEnabled,
           analysisAorFilterEnabled: options.analysisAorFilterEnabled,
           rerReportEnabled: options.rerReportEnabled,
+          hideNetworks: options.hideNetworks,
         }),
       );
       resolveSystemSettingsReady();

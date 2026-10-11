@@ -48,6 +48,7 @@ beforeEach(async () => {
     audio: {
       id: 'one',
       deviceId: 'device',
+      name: 'recording.wav',
       recordingStartedAt: '2026-10-03T00:00:00Z',
       recordingEndedAt: '2026-10-03T00:00:01Z',
       durationSeconds: 1,
