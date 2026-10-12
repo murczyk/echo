@@ -5641,7 +5641,7 @@ pub(super) async fn count_aors_raw_with_db(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let login_value = login_id_from_identity(user)?;
+    let login_value = login_id_from_identity(user).context(h!())?;
     let units = resolve_or_borrow_analysis_unit_filters(
         source_db,
         &req.0,
@@ -5946,7 +5946,7 @@ fn build_aors_analytics_query_with_scope(
     ))
 }
 
-pub(super) fn build_aors_analytics_count_query_with_scope(
+fn build_aors_analytics_count_query_with_scope(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
@@ -5954,7 +5954,7 @@ pub(super) fn build_aors_analytics_count_query_with_scope(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
-) -> Result<Statement, AppError> {
+) -> anyhow::Result<Statement> {
     let links = build_analytics_aor_links_query(
         req,
         login_str,
@@ -5982,7 +5982,7 @@ fn build_analytics_aor_links_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
-) -> Result<SelectStatement, AppError> {
+) -> anyhow::Result<SelectStatement> {
     let req = request_without_facet_filter(req, AnalysisFacet::Aors);
     let link_alias = Alias::new("analytics_aor_message_link");
     let value_alias = Alias::new("analytics_aor_value");
@@ -6135,9 +6135,13 @@ fn build_aor_messages_query(
     .context(h!())?;
     let messages = filter_search(messages, &req.search).context(h!())?;
     let messages =
-        filter_selected_device_names(messages, &req.selected_device_names)?;
-    let messages = apply_metadata_filters(messages, req)?;
-    filter_selected_aors_for_scope(messages, &req.selected_aors, scope)
+        filter_selected_device_names(messages, &req.selected_device_names)
+            .context(h!())?;
+    let messages = apply_metadata_filters(messages, req).context(h!())?;
+    Ok(
+        filter_selected_aors_for_scope(messages, &req.selected_aors, scope)
+            .context(h!())?,
+    )
 }
 
 #[derive(FromQueryResult)]

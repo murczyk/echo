@@ -86,7 +86,7 @@ traffic remain canary/benchmark requirements on that deployment.
 
 An isolated local PostgreSQL 14 database,
 `wd_test_3780_index_benchmark`, held a synthetic unlogged table with the nine
-production columns and **38,774,958 rows**, matching the measured Pivnich link
+production columns and **38,774,958 rows**, approximating the measured Skhid link
 cardinality. Heap size was **5,092 MiB**. Sender, datasource-group, and timestamp
 values were generated; this was not a restored production distribution and
 the production servers run PostgreSQL 18.4.

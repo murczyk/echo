@@ -1199,14 +1199,18 @@ WHERE NOT network.deleted
         )
         .await
         .context(h!())?;
-    let (login, master_keys) = analysis_login_and_master_keys(env).await?;
+    let (login, master_keys) =
+        analysis_login_and_master_keys(env).await.context(h!())?;
     let statement = stats::build_aors_analytics_query(
         req,
         &login,
-        crate::utils::dt_from_millis(req.since_date_inclusive_ms)?,
-        crate::utils::dt_from_millis(req.till_date_noninclusive_ms)?,
+        crate::utils::dt_from_millis(req.since_date_inclusive_ms)
+            .context(h!())?,
+        crate::utils::dt_from_millis(req.till_date_noninclusive_ms)
+            .context(h!())?,
         master_keys,
-    )?;
+    )
+    .context(h!())?;
     let aors = AorQueryResult::find_by_statement(statement)
         .all(&env.dbx)
         .await
@@ -1242,26 +1246,72 @@ async fn fetch_analytics_aor_count_for_req(
     req: &AnalysisStatsReq,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<i64, AppError> {
-    let (login, master_keys) =
-        analysis_login_and_master_keys(env).await.context(h!())?;
-    let statement = stats::build_aors_analytics_count_query_with_scope(
-        req,
-        &login,
-        crate::utils::dt_from_millis(req.since_date_inclusive_ms)
-            .context(h!())?,
-        crate::utils::dt_from_millis(req.till_date_noninclusive_ms)
-            .context(h!())?,
+    let (login, _) = analysis_login_and_master_keys(env).await.context(h!())?;
+    let store = RedisSessionStore::new(
+        crate::redis_conn_string(&env.config).context(h!())?,
+    )
+    .await
+    .c(h!())?;
+    let app = actix_test::init_service(
+        App::new()
+            .app_data(Data::from(env.clone()))
+            .app_data(Data::new(scope.cloned()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(store, Key::generate()))
+            .route(
+                "/test/aor-login/{login}",
+                web::post().to(activity_daily_test_login),
+            )
+            .route(
+                "/test/aor-count",
+                web::post().to(analytics_aor_count_for_test),
+            ),
+    )
+    .await;
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri(&format!("/test/aor-login/{login}"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri("/test/aor-count")
+            .cookie(cookie)
+            .set_json(req)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    Ok(actix_test::read_body_json(response).await)
+}
+
+async fn analytics_aor_count_for_test(
+    req: Json<AnalysisStatsReq>,
+    user: Identity,
+    env: Data<Env>,
+    scope: Data<Option<AnalyticsMessageIdScope>>,
+) -> Result<Json<i64>, AppError> {
+    let login = login_id_from_identity(&user).context(h!())?;
+    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let count = stats::count_aors_raw_with_db(
+        &req,
+        &user,
+        &env.dbx,
+        &env.dbx,
         master_keys,
-        scope,
+        scope.get_ref().as_ref(),
         None,
     )
+    .await
     .context(h!())?;
-    Ok(AnalyticsCountQueryResult::find_by_statement(statement)
-        .one(&env.dbx)
-        .await
-        .context(h!())?
-        .context(h!())?
-        .count)
+    Ok(Json(count))
 }
 
 #[derive(FromQueryResult)]
@@ -7838,6 +7888,126 @@ async fn rer_analysis_analytics_aor_count_preserves_overlap_posts_and_scope() {
     ] {
         assert_eq!(
             fetch_analytics_aor_count_for_req(&fixture.env, &req, Some(&scope))
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_analytics_aor_count_preserves_time_and_live_aors() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let created_at = test_dt(2026, 3, 1, 10, 8);
+    let intercepted_at = test_dt(2026, 3, 1, 11, 8);
+    let message = mk_analysis_message(
+        db,
+        "msg-aor-time-boundaries",
+        "3780.1",
+        created_at,
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    sigint_inbox_item::ActiveModel {
+        id: Set(message.id),
+        datetime: Set(Some(intercepted_at)),
+        ..Default::default()
+    }
+    .update(db)
+    .await
+    .unwrap();
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_freqs = Some(vec!["3780.1".to_string()]);
+    let created = created_at.and_utc().timestamp_millis();
+    let intercepted = intercepted_at.and_utc().timestamp_millis();
+    let creation =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    for (basis, since, till, present) in [
+        (None, created, created + 60_000, false),
+        (creation, created, created + 60_000, true),
+        (None, intercepted, intercepted + 60_000, true),
+        (None, intercepted - 60_000, intercepted, false),
+        (creation, created - 60_000, created, false),
+        (creation, created + 1, created + 60_000, false),
+    ] {
+        req.message_time_basis = basis;
+        req.since_date_inclusive_ms = since;
+        req.till_date_noninclusive_ms = till;
+        let expected = if present {
+            BTreeMap::from([(fixture.north_aor.id, 1)])
+        } else {
+            BTreeMap::new()
+        };
+        assert_eq!(
+            fetch_aor_counts_for_req(&fixture.env, &req).await.unwrap(),
+            expected
+        );
+        assert_eq!(
+            fetch_analytics_aor_counts_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_analytics_aor_count_excludes_deleted_messages_and_aors() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let message = mk_analysis_message(
+        db,
+        "msg-aor-deletion",
+        "3780.1",
+        test_dt(2026, 3, 1, 10, 8),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_freqs = Some(vec!["3780.1".to_string()]);
+    for (message_deleted, aor_deleted, top_level, present) in [
+        (false, true, true, false),
+        (false, false, false, false),
+        (false, false, true, true),
+        (true, false, true, false),
+    ] {
+        signal_message::ActiveModel {
+            id: Set(message.id),
+            deleted: Set(message_deleted),
+            ..Default::default()
+        }
+        .update(db)
+        .await
+        .unwrap();
+        area_of_responsibility::ActiveModel {
+            id: Set(fixture.north_aor.id),
+            deleted: Set(aor_deleted),
+            is_top_level: Set(top_level),
+            ..Default::default()
+        }
+        .update(db)
+        .await
+        .unwrap();
+        let expected = if present {
+            BTreeMap::from([(fixture.north_aor.id, 1)])
+        } else {
+            BTreeMap::new()
+        };
+        assert_eq!(
+            fetch_aor_counts_for_req(&fixture.env, &req).await.unwrap(),
+            expected
+        );
+        assert_eq!(
+            fetch_analytics_aor_counts_for_req(&fixture.env, &req)
                 .await
                 .unwrap(),
             expected

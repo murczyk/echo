@@ -22,11 +22,19 @@ checks, and PostgreSQL fallback remain at their existing boundaries.
 Duplicate-link reconciliation now selects the group-link ID and message ID.
 The equality lookup uses a new PostgreSQL btree index on
 `(datasource_group_id, created_at, sender) INCLUDE (id, signal_message_id)`.
-Null senders retain `IS NULL` matching; multiple matches retain the safeguard
-that skips deletion. Successful reconciliation still requeues settlements for
+Null senders retain `IS NULL` matching. The lookup reads at most two candidates;
+multiple matches retain the safeguard that skips deletion, and the logged match
+count is a lower bound. Successful reconciliation still requeues settlements for
 the affected original message inside the existing transaction.
 
 ## Migration and release
+
+This batch was transferred into the main-based `3780-aor-perf` branch after
+validation on stable. For immediate deployment, integrate only this batch into
+a branch based on the current `stable`, then rerun the functional and
+catalog-aware migration checks with `GITHUB_BASE_REF=stable`. Review the other
+main-to-stable differences separately before including them in this performance
+rollout.
 
 Migration:
 `m20261012_082021_signal_message_group_duplicate_lookup_index`.
