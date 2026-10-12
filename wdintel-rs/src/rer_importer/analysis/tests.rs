@@ -1211,10 +1211,57 @@ WHERE NOT network.deleted
         .all(&env.dbx)
         .await
         .context(h!())?;
-    Ok(aors
+    let aors: BTreeMap<i64, i64> = aors
         .into_iter()
         .map(|aor| (aor.aor_id, aor.count))
-        .collect())
+        .collect();
+    for scope in [
+        None,
+        Some(AnalyticsMessageIdScope::From(0)),
+        Some(AnalyticsMessageIdScope::Inclusive {
+            min_id: 0,
+            max_id: i64::MAX,
+        }),
+        Some(AnalyticsMessageIdScope::Empty),
+    ] {
+        let count = fetch_analytics_aor_count_for_req(env, req, scope.as_ref())
+            .await
+            .context(h!())?;
+        let expected = if scope.is_some_and(|scope| scope.is_empty()) {
+            0
+        } else {
+            aors.len() as i64
+        };
+        assert_eq!(count, expected);
+    }
+    Ok(aors)
+}
+
+async fn fetch_analytics_aor_count_for_req(
+    env: &Arc<Env>,
+    req: &AnalysisStatsReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<i64, AppError> {
+    let (login, master_keys) =
+        analysis_login_and_master_keys(env).await.context(h!())?;
+    let statement = stats::build_aors_analytics_count_query_with_scope(
+        req,
+        &login,
+        crate::utils::dt_from_millis(req.since_date_inclusive_ms)
+            .context(h!())?,
+        crate::utils::dt_from_millis(req.till_date_noninclusive_ms)
+            .context(h!())?,
+        master_keys,
+        scope,
+        None,
+    )
+    .context(h!())?;
+    Ok(AnalyticsCountQueryResult::find_by_statement(statement)
+        .one(&env.dbx)
+        .await
+        .context(h!())?
+        .context(h!())?
+        .count)
 }
 
 #[derive(FromQueryResult)]
@@ -7707,6 +7754,95 @@ async fn rer_analysis_analytics_aor_query_matches_postgres_query() {
             .unwrap(),
         expected
     );
+
+    req.selected_aors = Some(vec![fixture.north_aor.id]);
+    assert_eq!(
+        fetch_analytics_aor_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        expected
+    );
+    req.selected_freqs = Some(vec!["888.8".to_string()]);
+    req.selected_groups =
+        Some(vec![fixture.secret_hidden.signal_group.master_key.clone()]);
+    assert!(fetch_analytics_aor_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_analytics_aor_count_preserves_overlap_posts_and_scope() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let message = mk_analysis_message(
+        &fixture.env.dbx,
+        "msg-overlapping-aors",
+        "999.9",
+        test_dt(2026, 3, 1, 10, 8),
+        &[&fixture.alpha, &fixture.beta],
+        &[fixture.network_south.network.id],
+        false,
+    )
+    .await
+    .unwrap();
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_freqs = Some(vec!["999.9".to_string()]);
+    let expected =
+        BTreeMap::from([(fixture.north_aor.id, 1), (fixture.south_aor.id, 1)]);
+    for (posts, expected) in [
+        (None, expected.clone()),
+        (Some(vec![]), BTreeMap::new()),
+        (Some(vec!["".to_string()]), expected),
+    ] {
+        req.selected_posts = posts;
+        assert_eq!(
+            fetch_aor_counts_for_req(&fixture.env, &req).await.unwrap(),
+            expected
+        );
+        assert_eq!(
+            fetch_analytics_aor_counts_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+    let post = sigint_post::ActiveModel {
+        name: Set("post-3780".to_string()),
+        deleted: Set(false),
+        created_at: Set(test_dt(2026, 3, 1, 10, 0)),
+        ..Default::default()
+    }
+    .insert(&fixture.env.dbx)
+    .await
+    .unwrap();
+    sigint_inbox_item::ActiveModel {
+        id: Set(message.id),
+        post_id: Set(Some(post.id)),
+        ..Default::default()
+    }
+    .update(&fixture.env.dbx)
+    .await
+    .unwrap();
+    req.selected_posts = Some(vec![post.name]);
+    for (scope, expected) in [
+        (AnalyticsMessageIdScope::From(message.id), 2),
+        (
+            AnalyticsMessageIdScope::Inclusive {
+                min_id: message.id,
+                max_id: message.id,
+            },
+            2,
+        ),
+        (AnalyticsMessageIdScope::From(message.id + 1), 0),
+    ] {
+        assert_eq!(
+            fetch_analytics_aor_count_for_req(&fixture.env, &req, Some(&scope))
+                .await
+                .unwrap(),
+            expected
+        );
+    }
 }
 
 #[tokio::test]

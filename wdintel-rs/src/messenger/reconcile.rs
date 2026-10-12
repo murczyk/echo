@@ -1524,7 +1524,16 @@ async fn delete_previous_duplicate_group_links(
         ),
         None => query.filter(signal_message_group::Column::Sender.is_null()),
     };
-    let group_links = query.all(txn).await.c(h!())?;
+    let group_links = query
+        .select_only()
+        .columns([
+            signal_message_group::Column::Id,
+            signal_message_group::Column::SignalMessageId,
+        ])
+        .into_tuple::<(i64, i64)>()
+        .all(txn)
+        .await
+        .c(h!())?;
     if group_links.len() > 1 {
         warn!(
             "skipped ambiguous duplicate group link reset: signal_message_id={} datasource_group_id={} created_at={} match_count={}",
@@ -1536,15 +1545,15 @@ async fn delete_previous_duplicate_group_links(
         return Ok(vec![]);
     }
     let mut deleted_signal_message_ids = Vec::with_capacity(group_links.len());
-    for group_link in group_links {
-        deleted_signal_message_ids.push(group_link.signal_message_id);
-        signal_message_group::Entity::delete_by_id(group_link.id)
+    for (group_link_id, signal_message_id) in group_links {
+        deleted_signal_message_ids.push(signal_message_id);
+        signal_message_group::Entity::delete_by_id(group_link_id)
             .exec(txn)
             .await
             .c(h!())?;
         crate::battle_line::settlement_queue::requeue_item_settlements(
             txn,
-            group_link.signal_message_id,
+            signal_message_id,
         )
         .await
         .c(h!())?;
@@ -2250,7 +2259,7 @@ mod tests {
         mk_sigint_bookmark, mk_sigint_comment, mk_sigint_important,
         mk_sigint_inbox_item, mk_sigint_inbox_item_network,
         mk_sigint_inbox_item_tag, mk_sigint_network, mk_sigint_network_freq,
-        mk_signal_group, mk_signal_message,
+        mk_signal_group, mk_signal_message, mk_signal_message_group,
     };
     use sea_orm::{
         ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, EntityTrait,
@@ -5892,6 +5901,76 @@ mod tests {
             .unwrap();
         txn.rollback().await.unwrap();
         holder.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn ambiguous_duplicate_group_links_preserve_original_messages() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let datasource = mk_datasource(&txn, Default::default()).await.unwrap();
+        let group_id = format!("ambiguous-duplicate-{}", Uuid::new_v4());
+        mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                master_key: Set(group_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group = mk_datasource_group(
+            &txn,
+            datasource_group::ActiveModel {
+                group_master_key: Set(group_id.clone()),
+                datasource_id: Set(datasource.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let source_message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group.id)),
+                sender: Set(Some("duplicate-sender".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for _ in 0..2 {
+            let original =
+                mk_signal_message(&txn, Default::default()).await.unwrap();
+            mk_signal_message_group(
+                &txn,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(original.id),
+                    group_master_key: Set(Some(group_id.clone())),
+                    datasource_group_id: Set(Some(datasource_group.id)),
+                    sender: Set(source_message.sender.clone()),
+                    created_at: Set(source_message.created_at),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        assert!(delete_previous_duplicate_group_links(&txn, &source_message)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            signal_message_group::Entity::find()
+                .filter(
+                    signal_message_group::Column::DatasourceGroupId
+                        .eq(datasource_group.id),
+                )
+                .count(&txn)
+                .await
+                .unwrap(),
+            2
+        );
+        txn.rollback().await.unwrap();
     }
 
     #[tokio::test]

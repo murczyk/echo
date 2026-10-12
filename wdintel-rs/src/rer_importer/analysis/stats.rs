@@ -5650,7 +5650,7 @@ pub(super) async fn count_aors_raw_with_db(
     )
     .await
     .context(h!())?;
-    let stmt = build_aors_analytics_query_with_scope(
+    let stmt = build_aors_analytics_count_query_with_scope(
         &req.0,
         &login_value,
         dt_since,
@@ -5658,13 +5658,14 @@ pub(super) async fn count_aors_raw_with_db(
         master_keys,
         scope,
         units.as_deref(),
-    )?;
-    let count = AorsRes::find_by_statement(stmt)
-        .all(db)
+    )
+    .context(h!())?;
+    let count = DistinctCountRes::find_by_statement(stmt)
+        .one(db)
         .await
         .context(h!())?
-        .len();
-    Ok(count as i64)
+        .context(h!())?;
+    Ok(count.count)
 }
 
 async fn count_aors_with_db(
@@ -5925,10 +5926,67 @@ fn build_aors_analytics_query_with_scope(
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Statement, AppError> {
+    let links = build_analytics_aor_links_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+        units,
+    )
+    .context(h!())?;
+    Ok(Statement::from_string(
+        DbBackend::Postgres,
+        format!(
+            "SELECT aor_id, COUNT(DISTINCT message_id) AS count \
+             FROM ({}) AS message_aors GROUP BY aor_id",
+            links.to_string(PostgresQueryBuilder),
+        ),
+    ))
+}
+
+pub(super) fn build_aors_analytics_count_query_with_scope(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
+) -> Result<Statement, AppError> {
+    let links = build_analytics_aor_links_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+        units,
+    )
+    .context(h!())?;
+    Ok(Statement::from_string(
+        DbBackend::Postgres,
+        format!(
+            "SELECT COUNT(DISTINCT aor_id) AS count FROM ({}) AS message_aors",
+            links.to_string(PostgresQueryBuilder),
+        ),
+    ))
+}
+
+fn build_analytics_aor_links_query(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
+) -> Result<SelectStatement, AppError> {
     let req = request_without_facet_filter(req, AnalysisFacet::Aors);
     let link_alias = Alias::new("analytics_aor_message_link");
     let value_alias = Alias::new("analytics_aor_value");
-    let mut message_aors = build_aor_messages_query(
+    let messages = build_aor_messages_query(
         &req,
         login_str,
         dt_since,
@@ -5936,23 +5994,26 @@ fn build_aors_analytics_query_with_scope(
         &master_keys,
         scope,
         units,
-    )?
+    )
+    .context(h!())?
     .select_only()
-    .column_as(signal_message::Column::Id, "message_id");
-    QuerySelect::query(&mut message_aors)
+    .column(signal_message::Column::Id)
+    .into_query();
+    let mut message_aors = Query::select()
+        .expr_as(
+            Expr::col((link_alias.clone(), Alias::new("sigint_inbox_item_id"))),
+            Alias::new("message_id"),
+        )
         .expr_as(
             Expr::col((link_alias.clone(), Alias::new("aor_id"))),
             Alias::new("aor_id"),
         )
-        .join_as(
-            JoinType::InnerJoin,
+        .from_as(
             (
                 Alias::new("echo_clickhouse_derived"),
                 Alias::new("message_aor_link"),
             ),
             link_alias.clone(),
-            Expr::col((link_alias.clone(), Alias::new("sigint_inbox_item_id")))
-                .equals((signal_message::Entity, signal_message::Column::Id)),
         )
         .join_as(
             JoinType::InnerJoin,
@@ -5962,6 +6023,10 @@ fn build_aors_analytics_query_with_scope(
                 value_alias.clone(),
                 area_of_responsibility::Column::Id,
             )),
+        )
+        .and_where(
+            Expr::col((link_alias.clone(), Alias::new("sigint_inbox_item_id")))
+                .in_subquery(messages),
         )
         .and_where(
             Expr::col((
@@ -5976,22 +6041,14 @@ fn build_aors_analytics_query_with_scope(
                 area_of_responsibility::Column::IsTopLevel,
             ))
             .eq(true),
-        );
+        )
+        .to_owned();
     if let Some(scope) = scope {
-        QuerySelect::query(&mut message_aors).cond_where(
+        message_aors.cond_where(
             scope.condition((link_alias, Alias::new("sigint_inbox_item_id"))),
         );
     }
-
-    let sql = format!(
-        "SELECT aor_id, COUNT(DISTINCT message_id) AS count \
-         FROM ({message_aors}) AS message_aors \
-         GROUP BY 1",
-        message_aors =
-            message_aors.into_query().to_string(PostgresQueryBuilder),
-    );
-
-    Ok(Statement::from_string(DbBackend::Postgres, sql))
+    Ok(message_aors)
 }
 
 fn build_aor_messages_query(
@@ -6009,13 +6066,17 @@ fn build_aor_messages_query(
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
         .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
-        )
-        .join(
             JoinType::InnerJoin,
             signal_message::Relation::SignalMessageGroup.def(),
         );
+    let messages = if req.selected_posts.is_some() {
+        messages.join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
+    } else {
+        messages
+    };
     let messages = match scope {
         Some(_) => messages,
         None => messages.filter(message_in_groups_exists(master_keys.to_vec())),

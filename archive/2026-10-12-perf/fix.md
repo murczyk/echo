@@ -2,6 +2,15 @@
 
 ## Outcome and scope
 
+The first batch is now applied to the current `3780-aor-perf` checkout.
+It covers AOR candidate membership/count-only work and duplicate-link
+indexing/projection. It was prepared and benchmarked against stable in a
+separate worktree, then transferred here while preserving this branch's
+existing changes. [Implementation evidence](implementation.md) records the
+measurements and validation; [release instructions](../../docs/performance/3780-aor-reconciliation.md)
+cover migration, canary, and recovery. Other batches below remain proposed;
+production has not been changed.
+
 Remove the query patterns behind the observed timeouts and memory failures, while keeping authorized message sets, exact facet counts, search behavior, and Duty freshness/order intact. Use [perf.md](perf.md) as the evidence baseline.
 
 This document proposes work; none of these changes has been applied to production. Numerical budgets below are benchmark/canary starting points, not validated production defaults.
