@@ -1524,10 +1524,20 @@ async fn delete_previous_duplicate_group_links(
         ),
         None => query.filter(signal_message_group::Column::Sender.is_null()),
     };
-    let group_links = query.all(txn).await.c(h!())?;
+    let group_links = query
+        .select_only()
+        .columns([
+            signal_message_group::Column::Id,
+            signal_message_group::Column::SignalMessageId,
+        ])
+        .limit(MESSENGER_RECONCILE_DUPLICATE_GROUP_LINK_LIMIT)
+        .into_tuple::<(i64, i64)>()
+        .all(txn)
+        .await
+        .c(h!())?;
     if group_links.len() > 1 {
         warn!(
-            "skipped ambiguous duplicate group link reset: signal_message_id={} datasource_group_id={} created_at={} match_count={}",
+            "skipped ambiguous duplicate group link reset: signal_message_id={} datasource_group_id={} created_at={} match_count_at_least={}",
             signal_message.id,
             datasource_group_id,
             signal_message.created_at,
@@ -1536,15 +1546,15 @@ async fn delete_previous_duplicate_group_links(
         return Ok(vec![]);
     }
     let mut deleted_signal_message_ids = Vec::with_capacity(group_links.len());
-    for group_link in group_links {
-        deleted_signal_message_ids.push(group_link.signal_message_id);
-        signal_message_group::Entity::delete_by_id(group_link.id)
+    for (group_link_id, signal_message_id) in group_links {
+        deleted_signal_message_ids.push(signal_message_id);
+        signal_message_group::Entity::delete_by_id(group_link_id)
             .exec(txn)
             .await
             .c(h!())?;
         crate::battle_line::settlement_queue::requeue_item_settlements(
             txn,
-            group_link.signal_message_id,
+            signal_message_id,
         )
         .await
         .c(h!())?;
@@ -2250,7 +2260,7 @@ mod tests {
         mk_sigint_bookmark, mk_sigint_comment, mk_sigint_important,
         mk_sigint_inbox_item, mk_sigint_inbox_item_network,
         mk_sigint_inbox_item_tag, mk_sigint_network, mk_sigint_network_freq,
-        mk_signal_group, mk_signal_message,
+        mk_signal_group, mk_signal_message, mk_signal_message_group,
     };
     use sea_orm::{
         ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, EntityTrait,
@@ -5892,6 +5902,178 @@ mod tests {
             .unwrap();
         txn.rollback().await.unwrap();
         holder.rollback().await.unwrap();
+    }
+
+    async fn duplicate_group_links_fixture(
+        txn: &DatabaseTransaction,
+        sender: Option<String>,
+        count: usize,
+    ) -> (signal_message::Model, Vec<signal_message_group::Model>) {
+        let datasource = mk_datasource(txn, Default::default()).await.unwrap();
+        let group_id = format!("duplicate-links-{}", Uuid::new_v4());
+        mk_signal_group(
+            txn,
+            signal_group::ActiveModel {
+                master_key: Set(group_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group = mk_datasource_group(
+            txn,
+            datasource_group::ActiveModel {
+                group_master_key: Set(group_id.clone()),
+                datasource_id: Set(datasource.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let source_message = mk_signal_message(
+            txn,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group.id)),
+                sender: Set(sender),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut links = Vec::new();
+        for _ in 0..count {
+            let original =
+                mk_signal_message(txn, Default::default()).await.unwrap();
+            links.push(
+                mk_signal_message_group(
+                    txn,
+                    signal_message_group::ActiveModel {
+                        signal_message_id: Set(original.id),
+                        group_master_key: Set(Some(group_id.clone())),
+                        datasource_group_id: Set(Some(datasource_group.id)),
+                        sender: Set(source_message.sender.clone()),
+                        created_at: Set(source_message.created_at),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        (source_message, links)
+    }
+
+    #[tokio::test]
+    async fn ambiguous_duplicate_group_links_preserve_original_messages() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        for sender in [None, Some("duplicate-sender".to_string())] {
+            let txn = env.dbx.begin().await.unwrap();
+            let (source_message, links) =
+                duplicate_group_links_fixture(&txn, sender, 3).await;
+            assert!(delete_previous_duplicate_group_links(
+                &txn,
+                &source_message
+            )
+            .await
+            .unwrap()
+            .is_empty());
+            for link in links {
+                assert_eq!(
+                    signal_message_group::Entity::find_by_id(link.id)
+                        .one(&txn)
+                        .await
+                        .unwrap(),
+                    Some(link)
+                );
+            }
+            txn.rollback().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn duplicate_group_link_reset_rolls_back_settlement_requeue() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        for sender in [None, Some("duplicate-sender".to_string())] {
+            let txn = env.dbx.begin().await.unwrap();
+            let (source_message, links) =
+                duplicate_group_links_fixture(&txn, sender, 1).await;
+            let original_link = &links[0];
+            mk_sigint_inbox_item(
+                &txn,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(original_link.signal_message_id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            let settlement = sigint_inbox_item_settlement::ActiveModel {
+                item_id: Set(original_link.signal_message_id),
+                settlement_text: Set("TEST".to_string()),
+                settlement_id: Set(None),
+                is_undefined: Set(Some(true)),
+                ..Default::default()
+            }
+            .insert(&txn)
+            .await
+            .unwrap();
+            let mut source_link = original_link.clone().into_active_model();
+            source_link.id = NotSet;
+            source_link.signal_message_id = Set(source_message.id);
+            source_link.signal_message_uuid = Set(source_message.id_uuid);
+            let source_link = source_link.insert(&txn).await.unwrap();
+            let mut other_sender_link =
+                original_link.clone().into_active_model();
+            other_sender_link.id = NotSet;
+            other_sender_link.sender = Set(Some("other-sender".to_string()));
+            let other_sender_link =
+                other_sender_link.insert(&txn).await.unwrap();
+
+            let edit = txn.begin().await.unwrap();
+            assert_eq!(
+                delete_previous_duplicate_group_links(&edit, &source_message)
+                    .await
+                    .unwrap(),
+                vec![original_link.signal_message_id]
+            );
+            assert!(signal_message_group::Entity::find_by_id(original_link.id)
+                .one(&edit)
+                .await
+                .unwrap()
+                .is_none());
+            let pending =
+                sigint_inbox_item_settlement::Entity::find_by_id(settlement.id)
+                    .one(&edit)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(pending.is_undefined, None);
+            for link in [source_link, other_sender_link] {
+                assert_eq!(
+                    signal_message_group::Entity::find_by_id(link.id)
+                        .one(&edit)
+                        .await
+                        .unwrap(),
+                    Some(link)
+                );
+            }
+            edit.rollback().await.unwrap();
+            assert_eq!(
+                signal_message_group::Entity::find_by_id(original_link.id)
+                    .one(&txn)
+                    .await
+                    .unwrap(),
+                Some(original_link.clone())
+            );
+            assert_eq!(
+                sigint_inbox_item_settlement::Entity::find_by_id(settlement.id)
+                    .one(&txn)
+                    .await
+                    .unwrap(),
+                Some(settlement)
+            );
+            txn.rollback().await.unwrap();
+        }
     }
 
     #[tokio::test]
