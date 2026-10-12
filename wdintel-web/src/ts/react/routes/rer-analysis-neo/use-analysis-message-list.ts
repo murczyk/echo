@@ -12,11 +12,7 @@ import type {
 import { fetchAnalysisCallsignInfos, fetchInboxMessages } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
-import {
-  ANALYSIS_MESSAGES_PAGE_SIZE,
-  buildInboxReq,
-  getFirstLoadedMessagesPageIndex,
-} from './helpers';
+import { ANALYSIS_MESSAGES_PAGE_SIZE, buildInboxReq } from './helpers';
 import { loadMissingMessageCommentsForMessages } from './use-analysis-data.comments';
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
 import { isAnalysisInboxPageExhausted, toErrorMessage } from './use-analysis-data.shared';
@@ -24,9 +20,11 @@ import { useAnalysisMessageCounts } from './use-analysis-message-counts';
 import { mergeSignalProfiles } from './use-analysis-data.reload';
 import type { AnalysisAorEntry, AnalysisMessagePageCursor, AnalysisQueryState } from './types';
 import { isNullOrUndefined } from '../../utils/misc';
+import { mergeMessageWindow } from '../shared/message-feed/windowing';
 
 type Params = {
   deferInitialLoad: boolean;
+  messageWindowLimit?: number;
   focusedHasMoreEarlier?: boolean;
   focusedHasMoreLater?: boolean;
   focusedMessageId?: number | null;
@@ -79,6 +77,7 @@ function transformPageMessages(
 
 export function useAnalysisMessageList({
   deferInitialLoad,
+  messageWindowLimit = 40,
   focusedHasMoreEarlier: initialFocusedHasMoreEarlier = false,
   focusedHasMoreLater: initialFocusedHasMoreLater = false,
   focusedMessageId = null,
@@ -107,6 +106,10 @@ export function useAnalysisMessageList({
   const [focusedLoadingLater, setFocusedLoadingLater] = useState(false);
   const [nolimitShown, setNolimitShown] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
+  const [firstLoadedMessageIndex, setFirstLoadedMessageIndex] = useState(0);
+  const [loadingBeforeWindow, setLoadingBeforeWindow] = useState(false);
+  const [loadingAfterWindow, setLoadingAfterWindow] = useState(false);
+  const highestVisitedPageRef = useRef(0);
   const messageCommentsRef = useRef(messageComments);
   const messageCommentsLoadVersionRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
@@ -211,11 +214,15 @@ export function useAnalysisMessageList({
     setFocusedLoadingEarlier(false);
     setFocusedLoadingLater(false);
     setMessagesPaging(false);
+    setLoadingBeforeWindow(false);
+    setLoadingAfterWindow(false);
   }, [invalidateCallsignEnrichment]);
 
   const invalidateMessagePaging = useCallback(() => {
     invalidateMessagePageRequests();
     pageCursorsRef.current = [FIRST_PAGE_CURSOR];
+    highestVisitedPageRef.current = 0;
+    setFirstLoadedMessageIndex(0);
     setPageIndex(0);
   }, [invalidateMessagePageRequests]);
 
@@ -277,10 +284,9 @@ export function useAnalysisMessageList({
   const replaceCurrentMessagePage = useCallback(
     (pageMessages: Array<[number, InboxMessage]>) => {
       setMessages((current) => {
-        const firstLoadedPageIndex = getFirstLoadedMessagesPageIndex(pageIndex, current.length);
         const pageStart = Math.max(
           0,
-          (pageIndex - firstLoadedPageIndex) * ANALYSIS_MESSAGES_PAGE_SIZE,
+          pageIndex * ANALYSIS_MESSAGES_PAGE_SIZE - firstLoadedMessageIndex,
         );
         const refreshedIds = new Set(pageMessages.map(([messageId]) => messageId));
         const retainedBefore = current
@@ -289,10 +295,18 @@ export function useAnalysisMessageList({
         const retainedAfter = current
           .slice(pageStart + ANALYSIS_MESSAGES_PAGE_SIZE)
           .filter(([messageId]) => !refreshedIds.has(messageId));
-        return [...retainedBefore, ...pageMessages, ...retainedAfter];
+        return mergeMessageWindow(
+          [],
+          [...retainedBefore, ...pageMessages, ...retainedAfter],
+          'below',
+          {
+            limit: messageWindowLimit,
+            getId: ([id]) => id,
+          },
+        ).items;
       });
     },
-    [pageIndex],
+    [firstLoadedMessageIndex, messageWindowLimit, pageIndex],
   );
 
   const loadMessageComments = useCallback(
@@ -349,7 +363,7 @@ export function useAnalysisMessageList({
     async (
       cursor: AnalysisMessagePageCursor,
       options: {
-        append?: boolean;
+        mode?: 'above' | 'below';
         keepCurrentOnEmpty?: boolean;
         targetPageIndex: number;
       },
@@ -362,6 +376,8 @@ export function useAnalysisMessageList({
       const isStale = () => requestId !== loadMoreMessagesRequestRef.current;
 
       setMessagesPaging(true);
+      if (options.mode === 'above') setLoadingBeforeWindow(true);
+      if (options.mode === 'below') setLoadingAfterWindow(true);
       try {
         const paginatedReq = {
           ...inboxReq,
@@ -374,17 +390,56 @@ export function useAnalysisMessageList({
         mergeMessageReferences(rsp);
         const pageMessages = transformPageMessages(rsp.inboxItems ?? [], cursor);
         if (options.keepCurrentOnEmpty && pageMessages.length === 0) {
-          setNoMoreToLoad(true);
+          if (options.mode !== 'above') setNoMoreToLoad(true);
           return pageMessages;
         }
         setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
-        setMessages((current) => (options.append ? [...current, ...pageMessages] : pageMessages));
-        setPageIndex(options.targetPageIndex);
+        if (options.mode) {
+          const merged = mergeMessageWindow(messages, pageMessages, options.mode, {
+            limit: messageWindowLimit,
+            getId: ([id]) => id,
+          });
+          setMessages(merged.items);
+          if (options.mode === 'below') {
+            setFirstLoadedMessageIndex(firstLoadedMessageIndex + merged.removedItems.length);
+            setPageIndex(options.targetPageIndex);
+            highestVisitedPageRef.current = Math.max(
+              highestVisitedPageRef.current,
+              options.targetPageIndex,
+            );
+          } else {
+            setFirstLoadedMessageIndex(
+              Math.max(0, firstLoadedMessageIndex - merged.addedItems.length),
+            );
+            if (merged.removedItems.length > 0) {
+              setPageIndex(
+                Math.max(
+                  options.targetPageIndex,
+                  pageIndex - Math.ceil(merged.removedItems.length / ANALYSIS_MESSAGES_PAGE_SIZE),
+                ),
+              );
+            }
+          }
+        } else {
+          setMessages(
+            mergeMessageWindow([], pageMessages, 'below', {
+              limit: messageWindowLimit,
+              getId: ([id]) => id,
+            }).items,
+          );
+          setFirstLoadedMessageIndex(options.targetPageIndex * ANALYSIS_MESSAGES_PAGE_SIZE);
+          setPageIndex(options.targetPageIndex);
+          highestVisitedPageRef.current = Math.max(
+            highestVisitedPageRef.current,
+            options.targetPageIndex,
+          );
+        }
         await loadMissingNetworksForMessages(pageMessages);
         if (isStale()) return null;
         await loadMessageComments(pageMessages, false);
         if (isStale()) return null;
-        setNoMoreToLoad(isAnalysisInboxPageExhausted(pageMessages, rsp.pageLimit));
+        if (options.mode !== 'above')
+          setNoMoreToLoad(isAnalysisInboxPageExhausted(pageMessages, rsp.pageLimit));
         return pageMessages;
       } catch (loadError) {
         if (isStale()) return null;
@@ -395,17 +450,23 @@ export function useAnalysisMessageList({
       } finally {
         if (!isStale()) {
           setMessagesPaging(false);
+          setLoadingBeforeWindow(false);
+          setLoadingAfterWindow(false);
         }
       }
     },
     [
       loadMessageComments,
       loadMissingNetworksForMessages,
+      firstLoadedMessageIndex,
+      messageWindowLimit,
       mergeMessageReferences,
+      messages,
       newestFirst,
       onError,
       onUnauthorized,
       optionsFreqValues,
+      pageIndex,
       queryState,
       setSummaryCallsignsInfo,
     ],
@@ -421,13 +482,12 @@ export function useAnalysisMessageList({
         : { beforeIdNoninclusive: null, sinceIdNoninclusive: lastMessage[0] };
 
       const fetched = await fetchPage(nextCursor, {
-        append,
+        mode: append ? 'below' : undefined,
         keepCurrentOnEmpty: true,
         targetPageIndex: pageIndex + 1,
       });
       if (fetched === null || fetched.length === 0) return false;
 
-      pageCursorsRef.current = pageCursorsRef.current.slice(0, pageIndex + 1);
       pageCursorsRef.current[pageIndex + 1] = nextCursor;
       return true;
     },
@@ -439,6 +499,27 @@ export function useAnalysisMessageList({
   }, [loadNextMessages]);
 
   const loadMoreMessages = useCallback(() => loadNextMessages(true), [loadNextMessages]);
+
+  const loadPreviousMessages = useCallback(async () => {
+    if (firstLoadedMessageIndex === 0 || messages.length === 0) return false;
+    const firstMessageId = messages[0][0];
+    const previousPageIndex = Math.max(
+      0,
+      Math.floor((firstLoadedMessageIndex - 1) / ANALYSIS_MESSAGES_PAGE_SIZE),
+    );
+    const previousCursor: AnalysisMessagePageCursor = {
+      beforeIdNoninclusive: newestFirst ? null : firstMessageId,
+      sinceIdNoninclusive: newestFirst ? firstMessageId : null,
+      requestNewestFirst: !newestFirst,
+      reverseResults: true,
+    };
+    const fetched = await fetchPage(previousCursor, {
+      mode: 'above',
+      keepCurrentOnEmpty: true,
+      targetPageIndex: previousPageIndex,
+    });
+    return fetched !== null && fetched.length > 0;
+  }, [fetchPage, firstLoadedMessageIndex, messages, newestFirst]);
 
   const loadFocusedMessages = useCallback(
     async (direction: 'earlier' | 'later') => {
@@ -627,6 +708,11 @@ export function useAnalysisMessageList({
     counts,
     getCurrentMessagePageCursor,
     hasLoadedInitialMessages,
+    firstLoadedMessageIndex,
+    hasMoreBeforeWindow: firstLoadedMessageIndex > 0,
+    hasMoreAfterWindow: pageIndex < highestVisitedPageRef.current || !noMoreToLoad,
+    loadingBeforeWindow,
+    loadingAfterWindow,
     invalidateMessagePageRequests,
     invalidateMessagePaging,
     loadAllMessages,
@@ -636,6 +722,7 @@ export function useAnalysisMessageList({
     loadLastPage,
     loadMessageComments,
     loadMoreMessages,
+    loadPreviousMessages,
     loadNextPage,
     loadPrevPage,
     messageComments,

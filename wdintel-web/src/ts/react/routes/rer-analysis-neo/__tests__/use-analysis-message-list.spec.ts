@@ -39,6 +39,14 @@ function page(id: number): Array<[number, InboxMessage]> {
   return [[id, buildMessage()]];
 }
 
+function pageRange(from: number, to: number): Array<[number, InboxMessage]> {
+  const step = from <= to ? 1 : -1;
+  return Array.from({ length: Math.abs(to - from) + 1 }, (_, index) => [
+    from + index * step,
+    buildMessage(),
+  ]);
+}
+
 function buildQueryState() {
   return {
     ...emptyQueryState(),
@@ -756,6 +764,88 @@ describe('useAnalysisMessageList pagination', () => {
 
     expect(h.latest.pageIndex).toBe(1);
     expect(h.latest.messages).toEqual([...page(1), ...page(2)]);
+  });
+
+  it.each([
+    {
+      newestFirst: true,
+      first: pageRange(60, 41),
+      second: pageRange(40, 21),
+      third: pageRange(20, 1),
+    },
+    {
+      newestFirst: false,
+      first: pageRange(1, 20),
+      second: pageRange(21, 40),
+      third: pageRange(41, 60),
+    },
+  ])(
+    'keeps a bounded window and refetches an evicted page when newestFirst=$newestFirst',
+    async ({ newestFirst, first, second, third }) => {
+      const h = renderHook(buildQueryState(), undefined, newestFirst);
+      harnesses.push(h);
+      act(() => h.latest.setMessages(first));
+      fetchInboxMessagesMock
+        .mockResolvedValueOnce({ inboxItems: second, callsigns: [], pageLimit: 20 })
+        .mockResolvedValueOnce({ inboxItems: third, callsigns: [], pageLimit: 20 })
+        .mockResolvedValueOnce({ inboxItems: [...first].reverse(), callsigns: [], pageLimit: 20 });
+
+      await act(async () => {
+        await h.latest.loadMoreMessages();
+      });
+      await act(async () => {
+        await h.latest.loadMoreMessages();
+      });
+
+      expect(h.latest.messages.map(([id]) => id)).toEqual([...second, ...third].map(([id]) => id));
+      expect(h.latest.firstLoadedMessageIndex).toBe(20);
+      expect(h.latest.pageIndex).toBe(2);
+      expect(h.latest.hasMoreBeforeWindow).toBe(true);
+
+      await act(async () => {
+        await h.latest.loadPreviousMessages();
+      });
+
+      expect(h.latest.messages.map(([id]) => id)).toEqual([...first, ...second].map(([id]) => id));
+      expect(h.latest.firstLoadedMessageIndex).toBe(0);
+      expect(h.latest.pageIndex).toBe(1);
+      expect(h.latest.hasMoreAfterWindow).toBe(true);
+    },
+  );
+
+  it('does not evict a bounded row for an overlapping next page', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    act(() => h.latest.setMessages(pageRange(40, 21)));
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: pageRange(21, 3),
+      callsigns: [],
+      pageLimit: 20,
+    });
+
+    await act(async () => {
+      await h.latest.loadMoreMessages();
+    });
+
+    expect(h.latest.messages.map(([id]) => id)).toEqual(pageRange(40, 3).map(([id]) => id));
+    expect(h.latest.firstLoadedMessageIndex).toBe(0);
+  });
+
+  it('clears bounded edge loading after a failed fetch without changing the window', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    const first = pageRange(60, 41);
+    act(() => h.latest.setMessages(first));
+    fetchInboxMessagesMock.mockRejectedValueOnce(new Error('offline'));
+
+    await act(async () => {
+      await h.latest.loadMoreMessages();
+    });
+
+    expect(h.latest.messages).toEqual(first);
+    expect(h.latest.loadingAfterWindow).toBe(false);
+    expect(h.latest.hasMoreAfterWindow).toBe(true);
+    expect(h.onError).toHaveBeenCalled();
   });
 
   it('replaces only the current page while preserving loaded history', async () => {

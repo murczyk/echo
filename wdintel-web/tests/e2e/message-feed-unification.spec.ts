@@ -46,6 +46,33 @@ async function installPages(page: Page) {
   return requests;
 }
 
+async function installFourPages(page: Page) {
+  await installAnalysisNeoApiMocks(page);
+  await installMessageContext(page);
+  const requests: Array<{
+    before_id_noninclusive?: number | null;
+    since_id_noninclusive?: number | null;
+    newest_first?: boolean;
+  }> = [];
+  await page.route('**/api/rer-importer/get-inbox-count', (route) =>
+    route.fulfill({ json: { quantity: 80, first_element_ts: null } }),
+  );
+  await page.route('**/api/rer-importer/get-inbox', (route) => {
+    const request = route.request().postDataJSON();
+    requests.push(request);
+    const firstId =
+      request.before_id_noninclusive === 161
+        ? 160
+        : request.before_id_noninclusive === 141
+          ? 140
+          : request.before_id_noninclusive === 121
+            ? 120
+            : 180;
+    return route.fulfill({ json: messagePage(firstId) });
+  });
+  return requests;
+}
+
 async function installMessageContext(page: Page) {
   await page.route('**/api/rer-importer/inbox-item-context', (route) => {
     const reference = route.request().postDataJSON().message_uid;
@@ -69,6 +96,20 @@ async function visibleAnchor(scroller: Locator) {
 
 // Regression: https://github.com/echoua/echo/issues/3689
 test.describe('Message feed unification @regression', () => {
+  test('Analysis keeps a bounded window while scrolling', async ({ page }) => {
+    const requests = await installFourPages(page);
+    await page.goto('/rer-analysis-neo');
+    const scroller = page.locator('[data-analysis-message-scroller]');
+    await expect(scroller.locator('[data-message-id]')).toHaveCount(20);
+    await scroller.locator('[data-message-feed-skeleton="below"]').scrollIntoViewIfNeeded();
+    await expect(scroller.locator('[data-message-id]')).toHaveCount(40);
+    await scroller.locator('[data-message-feed-skeleton="below"]').scrollIntoViewIfNeeded();
+    await expect(scroller.locator('[data-message-id="121"]')).toBeAttached();
+    await expect(scroller.locator('[data-message-id]')).toHaveCount(40);
+    await expect(scroller.locator('[data-message-id="180"]')).not.toBeAttached();
+    expect(requests.some((request) => request.before_id_noninclusive === 141)).toBe(true);
+  });
+
   test('Analysis accumulates pages without moving the reading anchor', async ({ page }) => {
     const requests = await installPages(page);
     let releasePage!: () => void;
