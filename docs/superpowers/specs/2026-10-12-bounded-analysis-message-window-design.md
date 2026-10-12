@@ -1,6 +1,6 @@
 # Bounded Analysis Message Window Design
 
-**Status:** Pending review
+**Status:** Approved for implementation planning
 
 **Issue:** [#3689](https://github.com/echoua/echo/issues/3689)
 
