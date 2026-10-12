@@ -253,7 +253,6 @@ export type AnalysisPageState = {
   newCallsigns: NewCallsignsRes;
   newCallsignsLoading: boolean;
   noMoreToLoad: boolean;
-  nolimitShown: boolean;
   pageIndex: number;
   messagePageNavigationTarget: number | null;
   messageViewportPreservationKey: number;
@@ -315,7 +314,6 @@ export type AnalysisPageActions = {
   loadCallsignGraph: () => void;
   loadCorrelatedFreqs: () => void;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => void;
-  loadAllMessages: () => Promise<void>;
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   loadFirstPage: () => Promise<void>;
   loadLastPage: () => Promise<void>;

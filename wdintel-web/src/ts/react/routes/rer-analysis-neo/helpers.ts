@@ -24,6 +24,7 @@ import type { AnalysisQueryState } from './types';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
 export const ANALYSIS_MESSAGES_PAGE_SIZE = 20;
+export const ANALYSIS_MESSAGE_WINDOW_LIMIT = 40;
 
 export function getFirstLoadedMessagesPageIndex(
   lastLoadedPageIndex: number,

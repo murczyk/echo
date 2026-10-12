@@ -355,7 +355,7 @@ test.describe('Message feed unification @regression', () => {
         const direction = (edge === 'above') === newestFirst ? 'later' : 'earlier';
         await expect.poll(() => pending.has(direction)).toBe(true);
         pending.get(direction)!();
-        await expect(scroller.locator('[data-message-id]')).toHaveCount(edge === 'above' ? 40 : 60);
+        await expect(scroller.locator('[data-message-id]')).toHaveCount(40);
         await expect
           .poll(async () => {
             const offset = await scroller
@@ -373,7 +373,7 @@ test.describe('Message feed unification @regression', () => {
         .evaluateAll((elements) =>
           elements.map((element) => element.getAttribute('data-message-id')),
         );
-      expect(new Set(ids).size).toBe(60);
+      expect(new Set(ids).size).toBe(40);
       expect(requests.some((request) => request.before_id_noninclusive === 121)).toBe(true);
       expect(requests.some((request) => request.since_id_noninclusive === 140)).toBe(true);
     });

@@ -86,6 +86,7 @@ function renderHook(
   initialDeferInitialLoad = false,
   initialSummaryCallsignsInfo: Record<string, CallsignInfoRes> = {},
   focusedMessageId: number | null = null,
+  focusedTargetMessageIndex: number | null = null,
 ): Harness {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -108,6 +109,7 @@ function renderHook(
     harness.latest = useAnalysisMessageList({
       deferInitialLoad,
       focusedMessageId,
+      focusedTargetMessageIndex,
       focusedMessageActive: focusedMessageId != null,
       focusedHasMoreEarlier: true,
       focusedHasMoreLater: true,
@@ -846,6 +848,80 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.loadingAfterWindow).toBe(false);
     expect(h.latest.hasMoreAfterWindow).toBe(true);
     expect(h.onError).toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    'keeps a bounded focused context in display order when newestFirst=%s',
+    async (newestFirst) => {
+      const h = renderHook(buildQueryState(), undefined, newestFirst, true, {}, 50);
+      harnesses.push(h);
+      act(() => h.latest.setMessages(pageRange(41, 60)));
+      fetchInboxMessagesMock
+        .mockResolvedValueOnce({ inboxItems: pageRange(40, 21), callsigns: [], pageLimit: 20 })
+        .mockResolvedValueOnce({ inboxItems: pageRange(61, 80), callsigns: [], pageLimit: 20 });
+
+      await act(async () => {
+        await h.latest.loadFocusedEarlier();
+      });
+      await act(async () => {
+        await h.latest.loadFocusedLater();
+      });
+
+      expect(h.latest.messages.map(([id]) => id)).toEqual(
+        (newestFirst ? pageRange(80, 41) : pageRange(41, 80)).map(([id]) => id),
+      );
+      expect(h.latest.messages).toHaveLength(40);
+    },
+  );
+
+  it.each([true, false])(
+    'keeps bounded focused coordinates after the target is evicted when newestFirst=%s',
+    async (newestFirst) => {
+      const h = renderHook(
+        buildQueryState(),
+        undefined,
+        newestFirst,
+        true,
+        {},
+        50,
+        newestFirst ? 50 : 49,
+      );
+      harnesses.push(h);
+      act(() => h.latest.setMessages(pageRange(41, 60)));
+      fetchInboxMessagesMock
+        .mockResolvedValueOnce({ inboxItems: pageRange(40, 21), callsigns: [], pageLimit: 20 })
+        .mockResolvedValueOnce({ inboxItems: pageRange(61, 80), callsigns: [], pageLimit: 20 })
+        .mockResolvedValueOnce({ inboxItems: pageRange(81, 100), callsigns: [], pageLimit: 20 });
+
+      await act(async () => {
+        await h.latest.loadFocusedEarlier();
+      });
+      await act(async () => {
+        await h.latest.loadFocusedLater();
+      });
+      await act(async () => {
+        await h.latest.loadFocusedLater();
+      });
+
+      expect(h.latest.messages).toHaveLength(40);
+      expect(h.latest.messages.some(([id]) => id === 50)).toBe(false);
+      expect(h.latest.messages.map(([id]) => id)).toEqual(
+        (newestFirst ? pageRange(100, 61) : pageRange(61, 100)).map(([id]) => id),
+      );
+      expect(h.latest.firstLoadedMessageIndex).toBe(newestFirst ? 0 : 60);
+      expect(h.latest.focusedHasMoreEarlier).toBe(true);
+    },
+  );
+
+  it('keeps a bounded feed after local or realtime insertion', () => {
+    const h = renderHook();
+    harnesses.push(h);
+    act(() => h.latest.setMessages(pageRange(60, 21)));
+
+    act(() => h.latest.setMessages((current) => [[61, buildMessage()], ...current]));
+
+    expect(h.latest.messages.map(([id]) => id)).toEqual(pageRange(61, 22).map(([id]) => id));
+    expect(h.latest.messages).toHaveLength(40);
   });
 
   it('replaces only the current page while preserving loaded history', async () => {

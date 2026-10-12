@@ -96,7 +96,6 @@ type Params = {
   newCallsignsLoadedKeyRef: React.MutableRefObject<string | null>;
   newCallsignsPendingKeyRef: React.MutableRefObject<string | null>;
   setNoMoreToLoad: Setter<boolean>;
-  setNolimitShown: Setter<boolean>;
   setOptions: Setter<AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, import('../../../../Bindings').CallsignInfoRes>>;
@@ -173,7 +172,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     setNewCallsignsLoading,
     setNewCallsignsLoadedKey,
     setNoMoreToLoad,
-    setNolimitShown,
     setOptions,
     setProfiles,
     setSummaryCallsignsInfo,
@@ -254,7 +252,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           setNewCallsignsLoadedKey,
           shouldLoadNewCallsigns,
           setNoMoreToLoad,
-          setNolimitShown,
           setOptions,
           setProfiles,
           setSummaryCallsignsInfo,
@@ -337,7 +334,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       setNewCallsignsLoading,
       setNewCallsignsLoadedKey,
       setNoMoreToLoad,
-      setNolimitShown,
       setOptions,
       setProfiles,
       setSummaryCallsignsInfo,

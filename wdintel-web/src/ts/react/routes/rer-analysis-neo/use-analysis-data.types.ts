@@ -78,7 +78,6 @@ export type UseAnalysisDataResult = {
   inboxReq: ReturnType<typeof buildInboxReq>;
   botTagAction: MessageCardBotTagAction | null;
   loadCallsignGraph: () => Promise<void>;
-  loadAllMessages: () => Promise<void>;
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
   invalidateFilterSectionLoadsForPatch: (
@@ -118,7 +117,6 @@ export type UseAnalysisDataResult = {
   newCallsigns: import('../../../../Bindings').NewCallsignsRes;
   newCallsignsLoading: boolean;
   noMoreToLoad: boolean;
-  nolimitShown: boolean;
   pageIndex: number;
   onUpdateLocalMessage: (
     messageId: number,

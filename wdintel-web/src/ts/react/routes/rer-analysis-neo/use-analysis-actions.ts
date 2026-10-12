@@ -52,7 +52,6 @@ type Params = {
   setNetworks: Setter<import('../../../../Bindings').Network[]>;
   setNewCallsigns: Setter<NewCallsignsRes>;
   setNoMoreToLoad: Setter<boolean>;
-  setNolimitShown: Setter<boolean>;
   setOptions: Setter<import('./types').AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, CallsignInfoRes>>;
@@ -98,7 +97,6 @@ export function useAnalysisActions(params: Params) {
     setNetworks: params.setNetworks,
     setNewCallsigns: params.setNewCallsigns,
     setNoMoreToLoad: params.setNoMoreToLoad,
-    setNolimitShown: params.setNolimitShown,
     setOptions: params.setOptions,
     setProfiles: params.setProfiles,
     setSummaryCallsignsInfo: params.setSummaryCallsignsInfo,
