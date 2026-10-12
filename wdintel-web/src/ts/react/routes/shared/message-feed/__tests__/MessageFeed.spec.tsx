@@ -1,15 +1,18 @@
 /** @vitest-environment happy-dom */
-import { act, startTransition, Suspense } from 'react';
+import { act, createRef, startTransition, Suspense } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   MessageFeed,
+  MessageFeedItem,
   ScrollNavigationIntent,
-  useWindowedFeedScroll,
+  type MessageFeedHandle,
   type MessageFeedPolicy,
   type UseWindowedFeedScrollOptions,
   type WindowedFeedScrollHandle,
 } from '..';
+import { useWindowedFeedScroll } from '../useWindowedFeedScroll';
+import { MessageFeedViewport } from '../MessageFeedViewport';
 
 let scroll: WindowedFeedScrollHandle;
 let itemHeight = 50;
@@ -52,7 +55,12 @@ function TestFeed({
   if (suspend) throw suspend;
   if (ids.length === 0) return <div>No messages</div>;
   return (
-    <MessageFeed scroll={scroll} items={ids} getMessageId={getId} renderMessage={renderMessage} />
+    <MessageFeedViewport
+      scroll={scroll}
+      items={ids}
+      getMessageId={getId}
+      renderMessage={renderMessage}
+    />
   );
 }
 
@@ -118,6 +126,230 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     container.remove();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('offers component-owned navigation through the public MessageFeed API', async () => {
+    const feedRef = createRef<MessageFeedHandle>();
+    await act(async () =>
+      root.render(
+        <MessageFeed
+          ref={feedRef}
+          items={[1, 2]}
+          getMessageId={getId}
+          scrollOptions={{
+            hasReachedStart: true,
+            onLoadOlder: () => undefined,
+            autoScrollAllowed: false,
+          }}
+        >
+          <div data-message-id="1">first</div>
+          <div data-message-id="2">second</div>
+        </MessageFeed>,
+      ),
+    );
+    expect(feedRef.current?.scrollToMessage(2)).toBe(
+      container.querySelector('[data-message-id="2"]'),
+    );
+  });
+
+  it('navigates to a composed child without a host-owned scroll hook', async () => {
+    const feedRef = createRef<MessageFeedHandle>();
+    await act(async () =>
+      root.render(
+        <MessageFeed
+          ref={feedRef}
+          items={[1, 2]}
+          getMessageId={getId}
+          scrollOptions={{
+            hasReachedStart: true,
+            onLoadOlder: () => undefined,
+            autoScrollAllowed: false,
+          }}
+        >
+          <div data-message-id="1">message 1</div>
+          <div data-message-id="2">message 2</div>
+        </MessageFeed>,
+      ),
+    );
+    const target = container.querySelector<HTMLElement>('[data-message-id="2"]');
+    expect(feedRef.current?.scrollToMessage(2)).toBe(target);
+  });
+
+  it('keeps native registered rows and scroll state separate across feed instances', async () => {
+    const firstRef = createRef<MessageFeedHandle>();
+    const secondRef = createRef<MessageFeedHandle>();
+    const scrollOptions = {
+      hasReachedStart: true,
+      onLoadOlder: () => undefined,
+      autoScrollAllowed: false,
+    };
+    await act(async () =>
+      root.render(
+        <>
+          <MessageFeed
+            ref={firstRef}
+            items={[11]}
+            getMessageId={getId}
+            itemSelector="[data-duty-message-id]"
+            scrollOptions={scrollOptions}
+          >
+            <MessageFeedItem id={11} data-duty-message-id="11">
+              <span>first card</span>
+            </MessageFeedItem>
+          </MessageFeed>
+          <MessageFeed
+            ref={secondRef}
+            items={[22]}
+            getMessageId={getId}
+            itemSelector="[data-duty-message-id]"
+            scrollOptions={scrollOptions}
+          >
+            <MessageFeedItem id={22} data-duty-message-id="22">
+              <span>second card</span>
+            </MessageFeedItem>
+          </MessageFeed>
+        </>,
+      ),
+    );
+    const firstRow = container.querySelector<HTMLElement>('[data-duty-message-id="11"]');
+    const secondRow = container.querySelector<HTMLElement>('[data-duty-message-id="22"]');
+    expect(firstRow?.firstElementChild?.textContent).toBe('first card');
+    expect(secondRow?.firstElementChild?.textContent).toBe('second card');
+    expect(firstRef.current?.getItemElement(11)).toBe(firstRow);
+    expect(firstRef.current?.getItemElement(22)).toBeNull();
+    expect(secondRef.current?.getItemElement(22)).toBe(secondRow);
+    expect(secondRef.current?.getItemElement(11)).toBeNull();
+    expect(firstRef.current?.getScrollerElement()).not.toBe(
+      secondRef.current?.getScrollerElement(),
+    );
+  });
+
+  it('shows an initial feed skeleton without registering placeholder cards as messages', async () => {
+    const feedRef = createRef<MessageFeedHandle>();
+    await act(async () =>
+      root.render(
+        <MessageFeed
+          ref={feedRef}
+          items={[] as number[]}
+          getMessageId={getId}
+          scrollOptions={{
+            hasReachedStart: true,
+            onLoadOlder: () => undefined,
+            enabled: false,
+          }}
+          isLoading
+          skeletonCount={3}
+        />,
+      ),
+    );
+    expect(container.querySelectorAll('[data-message-feed-skeleton-card]')).toHaveLength(3);
+    expect(
+      container.querySelector('[data-message-feed-skeleton="initial"]')?.getAttribute('role'),
+    ).toBe('status');
+    expect(container.querySelector('[data-message-feed-scroller]')?.getAttribute('aria-busy')).toBe(
+      'true',
+    );
+    expect(feedRef.current?.getItemElement(1)).toBeNull();
+    expect(container.querySelector('[data-message-id]')).toBeNull();
+  });
+
+  it('lands on a focused card after the initial skeleton is replaced', async () => {
+    const feedRef = createRef<MessageFeedHandle>();
+    const options = {
+      hasReachedStart: true,
+      onLoadOlder: () => undefined,
+      autoScrollAllowed: false,
+      focus: { messageId: 2, active: true },
+    };
+    await act(async () =>
+      root.render(
+        <MessageFeed
+          ref={feedRef}
+          items={[]}
+          getMessageId={getId}
+          scrollOptions={options}
+          isLoading
+        />,
+      ),
+    );
+    expect(feedRef.current?.getItemElement(2)).toBeNull();
+    await act(async () =>
+      root.render(
+        <MessageFeed
+          ref={feedRef}
+          items={[1, 2, 3, 4]}
+          getMessageId={getId}
+          scrollOptions={options}
+          renderMessage={renderMessage}
+        />,
+      ),
+    );
+    expect(feedRef.current?.getItemElement(2)).toBe(
+      container.querySelector('[data-message-id="2"]'),
+    );
+    expect(container.querySelector('[data-message-feed-skeleton]')).toBeNull();
+  });
+
+  it('keeps real card nodes and scroll position mounted beneath a refresh skeleton', async () => {
+    const feedRef = createRef<MessageFeedHandle>();
+    const scrollOptions = {
+      hasReachedStart: true,
+      onLoadOlder: () => undefined,
+      autoScrollAllowed: false,
+    };
+    const render = (isLoading: boolean) => (
+      <MessageFeed
+        ref={feedRef}
+        items={[1, 2, 3, 4]}
+        getMessageId={getId}
+        scrollOptions={scrollOptions}
+        isLoading
+        renderMessage={renderMessage}
+      />
+    );
+    await act(async () => root.render(render(false)));
+    const scroller = feedRef.current!.getScrollerElement()!;
+    const card = feedRef.current!.getItemElement(2);
+    await act(async () => {
+      scroller.scrollTop = 48;
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await act(async () => root.render(render(true)));
+    expect(feedRef.current?.getItemElement(2)).toBe(card);
+    expect(scroller.scrollTop).toBe(48);
+    expect(container.querySelector('[data-message-feed-skeleton="refresh"]')).not.toBeNull();
+    expect(scroller.getAttribute('data-message-feed-refreshing')).toBe('true');
+    await act(async () => root.render(render(false)));
+    expect(feedRef.current?.getItemElement(2)).toBe(card);
+    expect(scroller.scrollTop).toBe(48);
+  });
+
+  it('keeps edge skeletons out of the item registry and valid in a list', async () => {
+    const feedRef = createRef<MessageFeedHandle>();
+    await act(async () =>
+      root.render(
+        <MessageFeed
+          ref={feedRef}
+          items={[1]}
+          getMessageId={getId}
+          scrollOptions={{
+            hasReachedStart: true,
+            onLoadOlder: () => undefined,
+            autoScrollAllowed: false,
+          }}
+          loadingAbove
+          loadingBelow
+          listTag="ul"
+          renderMessage={(id) => <li data-message-id={id}>message {id}</li>}
+        />,
+      ),
+    );
+    expect(container.querySelectorAll('ul.message-feed-list > li')).toHaveLength(3);
+    expect(container.querySelectorAll('[data-message-feed-skeleton-card]')).toHaveLength(4);
+    expect(feedRef.current?.getItemElement(1)).toBe(
+      container.querySelector('[data-message-id="1"]'),
+    );
+    expect(feedRef.current?.getItemElement(2)).toBeNull();
   });
 
   it('preserves the reading card through prepend and viewport resize', async () => {

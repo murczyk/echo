@@ -73,6 +73,7 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   CircularProgress: () => <div>loading</div>,
+  Skeleton: () => <span data-skeleton />,
 }));
 
 vi.mock('../../../shared/message-card/MessageCard', () => ({
@@ -776,6 +777,22 @@ describe('AnalysisMessagesPane', () => {
 
     expect(scrollBox.scrollTop).toBe(880);
     expect(anchor.getBoundingClientRect().top).toBe(20);
+  });
+
+  it('keeps a mounted card while the feed owns the refresh skeleton', async () => {
+    const props = buildProps({ messages: [[7, buildMessage()]] });
+    const view = await renderComponent(props);
+    rendered.push(view);
+    const card = view.container.querySelector('[data-message-id="7"]');
+    await act(async () => {
+      view.root.render(<AnalysisMessagesPane {...props} isLoading />);
+    });
+    expect(view.container.querySelector('[data-message-id="7"]')).toBe(card);
+    expect(view.container.querySelector('[data-message-feed-skeleton="refresh"]')).not.toBeNull();
+    await act(async () => {
+      view.root.render(<AnalysisMessagesPane {...props} />);
+    });
+    expect(view.container.querySelector('[data-message-feed-skeleton="refresh"]')).toBeNull();
   });
 
   it('keeps page navigation authoritative during viewport preservation', async () => {

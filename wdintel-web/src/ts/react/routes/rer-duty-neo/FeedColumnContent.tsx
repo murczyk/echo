@@ -24,7 +24,7 @@ import type {
   Tag,
   Unit,
 } from '../../../../Bindings';
-import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../utils/misc';
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
 import type { FeedColumnModel } from './types';
 import { resolveDutyScrollFabPosition } from './duty-scroll-fab-position';
 import { PowerChip } from '../../components/PowerChip';
@@ -45,11 +45,12 @@ import { feedListRenderStateEqual } from './utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 import {
   MessageFeed,
+  MessageFeedItem,
   MessageFeedRows,
   ScrollNavigationIntent,
-  useWindowedFeedScroll,
   type AnchorSnapshot,
   type ExplicitScrollNavigation,
+  type MessageFeedHandle,
   type MessageFeedPolicy,
 } from '../shared/message-feed';
 import { useFeedIdleViewportOffload } from './useFeedIdleViewportOffload';
@@ -348,7 +349,6 @@ type DutyMessageListProps = {
   onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
-  setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
   /** When non-null, only these ids mount MessageCards; others use height placeholders. */
   mountedItemIds: Set<number> | null;
   placeholderHeightPx: (id: number) => number;
@@ -393,7 +393,6 @@ const DutyMessageList = memo(
     onMessageEdit,
     onOpenPointsOnMap,
     onAddPointHighlightBlacklist,
-    setItemRef,
     mountedItemIds,
     placeholderHeightPx,
   }: DutyMessageListProps) {
@@ -404,7 +403,7 @@ const DutyMessageList = memo(
         renderMessage={([id, msg]) => {
           const mountCard = mountedItemIds == null || mountedItemIds.has(id);
           return (
-            <div key={id} ref={setItemRef(id)} data-duty-message-id={id}>
+            <MessageFeedItem id={id} data-duty-message-id={id}>
               {mountCard ? (
                 <DutyMessageCardItem
                   id={id}
@@ -453,7 +452,7 @@ const DutyMessageList = memo(
                   style={{ height: placeholderHeightPx(id) }}
                 />
               )}
-            </div>
+            </MessageFeedItem>
           );
         }}
       />
@@ -496,7 +495,6 @@ const DutyMessageList = memo(
     prev.onMessageEdit === next.onMessageEdit &&
     prev.onOpenPointsOnMap === next.onOpenPointsOnMap &&
     prev.onAddPointHighlightBlacklist === next.onAddPointHighlightBlacklist &&
-    prev.setItemRef === next.setItemRef &&
     prev.mountedItemIds === next.mountedItemIds &&
     prev.placeholderHeightPx === next.placeholderHeightPx,
 );
@@ -713,8 +711,9 @@ export const FeedColumnContent = memo(
       },
       [feed.id, onScrollAnchorSnapshotChange],
     );
-    const scroll = useWindowedFeedScroll({
-      itemIds,
+    const feedRef = useRef<MessageFeedHandle>(null);
+    const scrollerRef = useRef<HTMLDivElement>(null);
+    const scrollOptions = {
       policy: DUTY_FEED_POLICY,
       diagnostics: {
         enabled: debugEnabled,
@@ -728,8 +727,6 @@ export const FeedColumnContent = memo(
       autoScrollAllowed,
       initialPositioningReady,
       enabled: scrollTrackingEnabled,
-      loadingOlder: feed.loadingOlder,
-      loadingNewer,
       hasReachedStart: feed.hasReachedStart,
       onLoadOlder,
       onLoadNewer,
@@ -747,11 +744,11 @@ export const FeedColumnContent = memo(
       resetKey: feed.referenceTimeMs ?? feed.id,
       unreadPrefetchNeeded,
       pendingNewerFlushNeeded,
-    });
+    };
     const idleOffload = useFeedIdleViewportOffload({
       // Multi-feed only: single-column Duty already fits; idle offload is for sibling columns.
       enabled: scrollTrackingEnabled && (feedCount ?? 1) >= 2,
-      scrollerRef: scroll.scrollerRef,
+      scrollerRef,
       itemIds,
     });
 
@@ -782,28 +779,20 @@ export const FeedColumnContent = memo(
               idleOffload.wakeFromOffload();
             });
           }
-          scroll.scrollToBottom(behavior, options?.intent, options?.navigation);
+          feedRef.current?.scrollToBottom(behavior, options?.intent, options?.navigation);
         },
         scrollToMessage: (id: number, behavior: ScrollBehavior = 'auto') => {
           flushSync(() => {
             idleOffload.wakeFromOffload();
           });
-          return scroll.scrollToItem(id, behavior);
+          return feedRef.current?.scrollToMessage(id, behavior) ?? null;
         },
       }),
-      [idleOffload.wakeFromOffload, scroll.scrollToBottom, scroll.scrollToItem],
+      [idleOffload.wakeFromOffload],
     );
 
-    if (feed.loading && feed.items.length === 0) {
-      return (
-        <Box className="flex-1 flex justify-center items-center min-h-0">
-          <CircularProgress />
-        </Box>
-      );
-    }
-
     const messageList =
-      feed.items.length === 0 ? (
+      feed.items.length === 0 && !feed.loading ? (
         <Typography color="text.secondary" className="p-4">
           Немає повідомлень
         </Typography>
@@ -848,7 +837,6 @@ export const FeedColumnContent = memo(
           onAddPointHighlightBlacklist={
             onAddPointHighlightBlacklist ? stableOnAddPointHighlightBlacklist : undefined
           }
-          setItemRef={scroll.setItemRef}
           mountedItemIds={idleOffload.mountedItemIds}
           placeholderHeightPx={idleOffload.placeholderHeightPx}
         />
@@ -879,9 +867,14 @@ export const FeedColumnContent = memo(
         }}
       >
         <MessageFeed
-          scroll={scroll}
+          ref={feedRef}
+          scrollerRef={scrollerRef}
+          scrollOptions={scrollOptions}
           items={feed.items}
           getMessageId={getMessageId}
+          isLoading={feed.loading}
+          loadingAbove={feed.loadingOlder}
+          loadingBelow={loadingNewer}
           itemSelector="[data-duty-message-id]"
           scrollerProps={{
             'data-duty-feed-scroller': 'true',
@@ -895,21 +888,7 @@ export const FeedColumnContent = memo(
             className: 'm-0 list-none rer-duty pt-2 px-echo-md',
           }}
           beforeList={
-            feed.loadingOlder ? (
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 1,
-                  py: 1.5,
-                  color: 'text.secondary',
-                }}
-              >
-                <CircularProgress size={18} />
-                <Typography variant="body2">{`Завантаження старіших${ELLIPSIS}`}</Typography>
-              </Box>
-            ) : feed.hasReachedStart ? (
+            !feed.loadingOlder && feed.hasReachedStart ? (
               <Typography
                 variant="body2"
                 color="text.secondary"

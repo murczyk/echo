@@ -1,4 +1,4 @@
-import { Box, Skeleton } from '@mui/material';
+import { Box } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import {
   memo,
@@ -9,7 +9,7 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { MessageFeed } from '../../shared/message-feed';
+import { MessageFeed, type MessageFeedHandle } from '../../shared/message-feed';
 import { useAnalysisMessageFeed } from './useAnalysisMessageFeed';
 import { AnalysisMessageCardItem, type BotTagAction } from './AnalysisMessageCardItem';
 import { isNullOrUndefined, isPresent } from '../../../utils/misc';
@@ -47,6 +47,7 @@ type Props = {
   botTagAction?: BotTagAction | null;
   groupInfos: Record<string, SignalGroupEntry>;
   paginationLoading: boolean;
+  isLoading?: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
@@ -97,42 +98,7 @@ type Props = {
   directMessageNavigation: AnalysisDirectMessageNavigation | null;
 };
 
-type MessageLoadPosition = 'above' | 'below';
 const getMessageId = ([id]: [number, InboxMessage]) => id;
-
-function MessageLoadingSkeletons({ position }: { position: MessageLoadPosition }) {
-  return (
-    <Box
-      component="li"
-      role="status"
-      aria-label="Завантаження ще повідомлень"
-      data-testid={`message-loading-skeletons-${position}`}
-      sx={{ display: 'grid', gap: 1.5, pb: 1.5 }}
-    >
-      {[96, 76].map((bodyHeight, index) => (
-        <Box
-          key={bodyHeight}
-          sx={{
-            p: 1.5,
-            border: '1px solid',
-            borderColor: 'divider',
-            borderRadius: 1,
-          }}
-        >
-          <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-            <Skeleton variant="rounded" width={index === 0 ? 220 : 180} height={20} />
-            <Skeleton variant="rounded" width={88} height={20} />
-          </Box>
-          <Skeleton variant="rounded" height={bodyHeight} />
-          <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-            <Skeleton variant="rounded" width="45%" height={16} />
-            <Skeleton variant="rounded" width="30%" height={16} />
-          </Box>
-        </Box>
-      ))}
-    </Box>
-  );
-}
 
 function AnalysisMessagesPaneComponent({
   authUserName,
@@ -141,6 +107,7 @@ function AnalysisMessagesPaneComponent({
   botTagAction,
   groupInfos,
   paginationLoading,
+  isLoading = false,
   messageComments,
   messages,
   networkDisplayMap,
@@ -193,9 +160,11 @@ function AnalysisMessagesPaneComponent({
   const debugSnapshotTimerRef = useRef<number | null>(null);
   const clearTargetHighlightRef = useRef<(() => void) | null>(null);
   const highlightedTargetIdRef = useRef<number | null>(null);
+  const feedRef = useRef<MessageFeedHandle>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
   const {
-    scroll,
+    scrollOptions,
     displayedMessages,
     loadingAbove: focusedLoadingAbove,
     loadingBelow: focusedLoadingBelow,
@@ -214,7 +183,7 @@ function AnalysisMessagesPaneComponent({
     onPageNavigationHandled,
   });
   const recordDebugScrollSnapshot = useCallback(() => {
-    const container = scroll.scrollerRef.current;
+    const container = scrollerRef.current;
     if (!analysisDebugEnabled || container == null) return;
     recordAnalysisDebugScrollSnapshot(container, {
       pageIndex,
@@ -225,17 +194,9 @@ function AnalysisMessagesPaneComponent({
       viewportAnchorActive:
         directMessageNavigation != null && directMessageNavigation.focusActive === false,
       targetAnchorPreserved: directMessageNavigation?.focusActive === true,
-      bottomAnchorSpacerPx: scroll.bottomSpacerPx,
+      bottomAnchorSpacerPx: feedRef.current?.getBottomSpacerPx() ?? 0,
     });
-  }, [
-    analysisDebugEnabled,
-    directMessageNavigation,
-    noMoreToLoad,
-    pageIndex,
-    paginationLoading,
-    scroll.bottomSpacerPx,
-    scroll.scrollerRef,
-  ]);
+  }, [analysisDebugEnabled, directMessageNavigation, noMoreToLoad, pageIndex, paginationLoading]);
   const scheduleDebugScrollSnapshot = useCallback(() => {
     if (!analysisDebugEnabled) return;
     if (debugSnapshotTimerRef.current !== null) {
@@ -279,7 +240,7 @@ function AnalysisMessagesPaneComponent({
       messages.length === 0
     )
       return;
-    const targetElement = scroll.getItemElement(directMessageNavigation.targetMessageId);
+    const targetElement = feedRef.current?.getItemElement(directMessageNavigation.targetMessageId);
     if (targetElement) {
       clearTargetHighlightRef.current?.();
       highlightedTargetIdRef.current = directMessageNavigation.targetMessageId;
@@ -288,7 +249,7 @@ function AnalysisMessagesPaneComponent({
         persistentHighlight: true,
       });
     }
-  }, [directMessageNavigation, scroll.getItemElement, messages]);
+  }, [directMessageNavigation, messages]);
 
   const showCopiedFeedback = useCallback(
     (value: string) => {
@@ -322,7 +283,7 @@ function AnalysisMessagesPaneComponent({
     [onOpenEditor],
   );
 
-  if (messages.length === 0) {
+  if (messages.length === 0 && !isLoading) {
     return (
       <Box sx={{ flex: 1, minHeight: 0, px: 0 }}>
         <PowerAlert severity="info" sx={{ width: '100%', boxSizing: 'border-box' }}>
@@ -347,9 +308,18 @@ function AnalysisMessagesPaneComponent({
       }}
     >
       <MessageFeed
-        scroll={scroll}
+        ref={feedRef}
+        scrollerRef={scrollerRef}
+        scrollOptions={scrollOptions}
         items={displayedMessages}
         getMessageId={getMessageId}
+        isLoading={isLoading}
+        loadingAbove={focusedLoadingAbove || Boolean(directMessageNavigation?.contextLoading)}
+        loadingBelow={
+          focusedLoadingBelow ||
+          Boolean(directMessageNavigation?.contextLoading) ||
+          (directMessageNavigation == null && paginationLoading)
+        }
         listTag="ul"
         scrollerProps={{
           'data-analysis-message-scroller': true,
@@ -363,18 +333,6 @@ function AnalysisMessagesPaneComponent({
             ),
           } as CSSProperties,
         }}
-        beforeMessages={
-          focusedLoadingAbove || directMessageNavigation?.contextLoading ? (
-            <MessageLoadingSkeletons position="above" />
-          ) : null
-        }
-        afterMessages={
-          focusedLoadingBelow ||
-          directMessageNavigation?.contextLoading ||
-          (directMessageNavigation == null && paginationLoading) ? (
-            <MessageLoadingSkeletons position="below" />
-          ) : null
-        }
         renderMessage={([id, message]) => (
           <AnalysisMessageCardItem
             key={id}

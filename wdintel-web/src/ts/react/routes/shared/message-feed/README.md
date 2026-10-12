@@ -1,13 +1,13 @@
 # Shared message feed
 
-Duty and Analysis compose `MessageFeed` with `useWindowedFeedScroll`. The
-component owns the native scroller/list and keyed rows; the hook owns element
-registration, visible anchors, resize compensation, edge detection, follow,
-focused positioning, page alignment, and cancellation. Neither imports a host.
+Duty and Analysis compose cards inside `MessageFeed`. The component owns the
+native scroller/list, the shared card skeleton, item registration, visible
+anchors, resize compensation, edge detection, follow, focused positioning,
+page alignment, and cancellation. Neither imports a host.
 
 ## Package boundary
 
-Host code imports components, hooks, navigation helpers, and public contracts
+Host code imports components, navigation helpers, and public contracts
 from `shared/message-feed`. The package entry point is `index.ts`; hosts must not
 import files from the implementation directories directly.
 
@@ -28,9 +28,13 @@ import files from the implementation directories directly.
   this mapping when newest-first is selected; Duty always shows newest last.
 - Retain card memoization and offload placeholders through `renderMessage` or
   `MessageFeedRows`. Slots and native attributes preserve host presentation.
-- Attach item wrappers through `setItemRef`, or use `data-message-id` with the
-  component registry. Duty retains `data-duty-message-id` for existing tools.
-- Use `scrollToItem` for a mounted target and `scrollToBottom` for tail landing.
+- Render native card wrappers through `MessageFeedItem`, or use `data-message-id`
+  with the component registry. Duty retains `data-duty-message-id` for existing tools.
+- Pass `scrollOptions` for feed policy, edge callbacks, focus, and reset keys.
+  Pass `isLoading`, `loadingAbove`, and `loadingBelow` for the shared skeleton.
+  Each mounted feed owns independent scroll and loading state.
+- Use the `MessageFeedHandle` ref's `scrollToMessage` for a mounted target and
+  `scrollToBottom` for tail landing.
   The host loads missing context first and wakes any offloaded viewport.
   Navigation owners provide generation/current checks and landing callbacks.
 - A controlled `focus` retains centered positioning through layout changes.

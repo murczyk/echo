@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import type { InboxMessage } from '../../../../../Bindings';
-import { useWindowedFeedScroll, type MessageFeedPolicy } from '../../shared/message-feed';
+import type { MessageFeedPolicy, MessageFeedScrollOptions } from '../../shared/message-feed';
 import type { AnalysisDirectMessageNavigation } from '../types';
 import { ANALYSIS_MESSAGES_PAGE_SIZE, getFirstLoadedMessagesPageIndex } from '../helpers';
 
@@ -122,7 +122,6 @@ export function useAnalysisMessageFeed({
         : messages,
     [messages, directMessageNavigation?.contextLoading, directMessageNavigation?.targetMessageId],
   );
-  const itemIds = useMemo(() => displayedMessages.map(([id]) => id), [displayedMessages]);
   const above = directMessageNavigation
     ? getFocusedLoadDirection('above', directMessageNavigation.newestFirst)
     : null;
@@ -149,8 +148,7 @@ export function useAnalysisMessageFeed({
         : undefined;
   const loadingAbove = Boolean(isLoading(above));
   const loadingBelow = Boolean(isLoading(below));
-  const scroll = useWindowedFeedScroll({
-    itemIds,
+  const scrollOptions: MessageFeedScrollOptions = {
     policy: ANALYSIS_MESSAGE_FEED_POLICY,
     focus,
     navigationTarget,
@@ -161,16 +159,14 @@ export function useAnalysisMessageFeed({
     preservePositionOnReset: appendRequestedRef.current,
     initialPositioningReady: !directMessageNavigation?.contextLoading,
     loadEdgesOnLayout: !directMessageNavigation?.contextLoading,
-    loadingOlder: loadingAbove,
-    loadingNewer: directMessageNavigation ? loadingBelow : paginationLoading,
     hasReachedStart: !canLoad(above),
     onLoadOlder: load(above) ?? (() => undefined),
     onLoadNewer: directMessageNavigation ? load(below) : loadMore,
     unreadPrefetchNeeded: directMessageNavigation ? Boolean(canLoad(below)) : !noMoreToLoad,
     onFirstVisibleMessage,
-  });
+  };
   useLayoutEffect(() => {
     appendRequestedRef.current = false;
   }, [pageIndex]);
-  return { scroll, displayedMessages, loadingAbove, loadingBelow };
+  return { scrollOptions, displayedMessages, loadingAbove, loadingBelow };
 }

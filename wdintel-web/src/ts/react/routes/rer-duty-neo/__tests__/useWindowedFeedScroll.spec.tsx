@@ -6,10 +6,10 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ScrollNavigationIntent,
-  useWindowedFeedScroll,
   type AnchorSnapshot,
   type ReachedBottomContext,
 } from '../../shared/message-feed';
+import { useWindowedFeedScroll } from '../../shared/message-feed/useWindowedFeedScroll';
 import { useRerDutyNavigation } from '../useRerDutyNavigation';
 
 const renderedItemRefs = new Map<number, (node: HTMLDivElement | null) => void>();

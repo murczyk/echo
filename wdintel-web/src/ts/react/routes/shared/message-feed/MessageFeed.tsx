@@ -1,102 +1,119 @@
-import { Fragment, useCallback, useLayoutEffect, type HTMLAttributes, type ReactNode } from 'react';
-import type { WindowedFeedScrollHandle } from './message-feed.types';
+import {
+  forwardRef,
+  useImperativeHandle,
+  useMemo,
+  type ForwardedRef,
+  type ReactElement,
+  type RefAttributes,
+} from 'react';
+import { MessageFeedViewport, type MessageFeedViewportProps } from './MessageFeedViewport';
+import { MessageFeedItemRegistration } from './MessageFeedItem';
+import { MessageFeedSkeletons } from './MessageFeedSkeletons';
+import { useWindowedFeedScroll } from './useWindowedFeedScroll';
+import type { MessageFeedHandle, MessageFeedScrollOptions } from './message-feed.types';
 import './message-feed.css';
 
-type FeedElementAttributes<T extends HTMLElement> = HTMLAttributes<T> & {
-  [key: `data-${string}`]: string | boolean | undefined;
+export { MessageFeedRows } from './MessageFeedViewport';
+
+export type MessageFeedProps<T> = Omit<MessageFeedViewportProps<T>, 'scroll'> & {
+  scrollOptions: MessageFeedScrollOptions;
+  isLoading?: boolean;
+  loadingAbove?: boolean;
+  loadingBelow?: boolean;
+  skeletonCount?: number;
 };
 
-type MessageFeedProps<T> = {
-  scroll: WindowedFeedScrollHandle;
-  items: readonly T[];
-  getMessageId: (item: T) => number;
-  renderMessage?: (item: T) => ReactNode;
-  children?: ReactNode;
-  scrollerProps?: FeedElementAttributes<HTMLDivElement>;
-  listProps?: FeedElementAttributes<HTMLElement>;
-  listTag?: 'div' | 'ul';
-  itemSelector?: string;
-  beforeList?: ReactNode;
-  beforeMessages?: ReactNode;
-  afterMessages?: ReactNode;
-};
-
-export function MessageFeedRows<T>({
-  items,
-  getMessageId,
-  renderMessage,
-}: {
-  items: readonly T[];
-  getMessageId: (item: T) => number;
-  renderMessage: (item: T) => ReactNode;
-}) {
-  return items.map((item) => <Fragment key={getMessageId(item)}>{renderMessage(item)}</Fragment>);
-}
-
-export function MessageFeed<T>({
-  scroll,
-  items,
-  getMessageId,
-  renderMessage,
-  children,
-  scrollerProps,
-  listProps,
-  listTag: List = 'div',
-  itemSelector = '[data-message-id]',
-  beforeList,
-  beforeMessages,
-  afterMessages,
-}: MessageFeedProps<T>) {
-  const setListRef = useCallback(
-    (element: HTMLElement | null) => {
-      scroll.listRef.current = element;
-    },
-    [scroll.listRef],
+function MessageFeedInner<T>(
+  {
+    scrollOptions,
+    loadingAbove = false,
+    loadingBelow = false,
+    isLoading = false,
+    skeletonCount = 3,
+    items,
+    getMessageId,
+    scrollerProps,
+    listTag = 'div',
+    beforeList,
+    beforeMessages,
+    afterMessages,
+    ...viewportProps
+  }: MessageFeedProps<T>,
+  ref: ForwardedRef<MessageFeedHandle>,
+) {
+  const itemIds = useMemo(() => items.map(getMessageId), [items, getMessageId]);
+  const scroll = useWindowedFeedScroll({
+    ...scrollOptions,
+    itemIds,
+    loadingOlder: loadingAbove,
+    loadingNewer: loadingBelow,
+  });
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToBottom: scroll.scrollToBottom,
+      scrollToMessage: scroll.scrollToItem,
+      getItemElement: scroll.getItemElement,
+      getScrollerElement: () => scroll.scrollerRef.current,
+      getBottomSpacerPx: () => scroll.bottomSpacerPx,
+    }),
+    [
+      scroll.bottomSpacerPx,
+      scroll.getItemElement,
+      scroll.scrollerRef,
+      scroll.scrollToBottom,
+      scroll.scrollToItem,
+    ],
   );
-  useLayoutEffect(() => {
-    const elements = scroll.listRef.current?.querySelectorAll<HTMLElement>(itemSelector);
-    elements?.forEach((element) => {
-      const id = Number(element.dataset.messageId ?? element.dataset.dutyMessageId);
-      if (Number.isFinite(id)) scroll.setItemRef(id)(element);
-    });
-  }, [items, itemSelector, scroll.setItemRef]);
-
+  const showInitialSkeleton = isLoading && items.length === 0;
+  const showRefreshSkeleton = isLoading && items.length > 0;
   return (
-    <div
-      {...scrollerProps}
-      ref={scroll.scrollerRef}
-      data-message-feed-scroller
-      className={`message-feed-scroller ${scrollerProps?.className ?? ''}`}
-      onScroll={(event) => {
-        scroll.handleScroll(event);
-        scrollerProps?.onScroll?.(event);
-      }}
-    >
-      {beforeList}
-      <List
-        {...listProps}
-        ref={setListRef}
-        className={`message-feed-list ${listProps?.className ?? ''}`}
-      >
-        {beforeMessages}
-        {renderMessage ? (
-          <MessageFeedRows
-            items={items}
-            getMessageId={getMessageId}
-            renderMessage={renderMessage}
-          />
-        ) : (
-          children
-        )}
-        {afterMessages}
-      </List>
-      {scroll.bottomSpacerPx > 0 ? (
-        <div
-          aria-hidden="true"
-          data-direct-message-anchor-spacer="true"
-          style={{ height: scroll.bottomSpacerPx }}
-        />
-      ) : null}
-    </div>
+    <MessageFeedItemRegistration setItemRef={scroll.setItemRef}>
+      <MessageFeedViewport
+        {...viewportProps}
+        scroll={scroll}
+        items={items}
+        getMessageId={getMessageId}
+        listTag={listTag}
+        scrollerProps={{
+          ...scrollerProps,
+          'aria-busy': isLoading || loadingAbove || loadingBelow,
+          'data-message-feed-refreshing': showRefreshSkeleton ? 'true' : undefined,
+        }}
+        beforeList={
+          <>
+            {beforeList}
+            {showRefreshSkeleton ? (
+              <div className="message-feed-refresh-overlay">
+                <MessageFeedSkeletons count={skeletonCount} position="refresh" />
+              </div>
+            ) : null}
+          </>
+        }
+        beforeMessages={
+          <>
+            {loadingAbove ? (
+              <MessageFeedSkeletons count={2} listTag={listTag} position="above" />
+            ) : null}
+            {showInitialSkeleton ? (
+              <MessageFeedSkeletons count={skeletonCount} listTag={listTag} />
+            ) : null}
+            {beforeMessages}
+          </>
+        }
+        afterMessages={
+          <>
+            {afterMessages}
+            {loadingBelow ? (
+              <MessageFeedSkeletons count={2} listTag={listTag} position="below" />
+            ) : null}
+          </>
+        }
+      />
+    </MessageFeedItemRegistration>
   );
 }
+
+export const MessageFeed = forwardRef(MessageFeedInner) as <T>(
+  props: MessageFeedProps<T> & RefAttributes<MessageFeedHandle>,
+) => ReactElement;

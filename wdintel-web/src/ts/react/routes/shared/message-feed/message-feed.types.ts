@@ -153,6 +153,11 @@ export type UseWindowedFeedScrollOptions = {
   }) => void | Promise<unknown>;
 };
 
+export type MessageFeedScrollOptions = Omit<
+  UseWindowedFeedScrollOptions,
+  'itemIds' | 'loadingOlder' | 'loadingNewer'
+>;
+
 export type WindowedFeedScrollHandle = {
   bottomSpacerPx: number;
   getItemElement: (id: number) => HTMLElement | null;
@@ -166,4 +171,12 @@ export type WindowedFeedScrollHandle = {
     navigation?: ExplicitScrollNavigation,
   ) => void;
   scrollToItem: (id: number, behavior?: ScrollBehavior) => HTMLElement | null;
+};
+
+export type MessageFeedHandle = {
+  scrollToBottom: WindowedFeedScrollHandle['scrollToBottom'];
+  scrollToMessage: WindowedFeedScrollHandle['scrollToItem'];
+  getItemElement: WindowedFeedScrollHandle['getItemElement'];
+  getScrollerElement: () => HTMLDivElement | null;
+  getBottomSpacerPx: () => number;
 };

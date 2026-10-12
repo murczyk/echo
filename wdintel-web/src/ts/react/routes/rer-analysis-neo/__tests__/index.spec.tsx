@@ -650,6 +650,51 @@ describe('RerAnalysisNeoPage', () => {
     vi.restoreAllMocks();
   });
 
+  it('shows only skeletons while initial messages load', async () => {
+    const page = buildPage();
+    page.hasLoadedInitialMessages = false;
+    page.messagesLoading = true;
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.textContent).toContain('skeleton');
+    expect(container.querySelector('[data-testid="circular-progress"]')).toBeNull();
+    expect(container.querySelector('[data-testid="messages-pane"]')).toBeNull();
+  });
+
+  it('shows message skeletons during a refresh without replacing the mounted feed', async () => {
+    const page = buildPage();
+    page.messages = [[42, { text: 'Existing message' }]] as never;
+    page.messagesLoading = true;
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const mountedPane = container.querySelector('[data-testid="messages-pane"]');
+    expect(messagesPanePropsHistory.at(-1)?.isLoading).toBe(true);
+    expect(mountedPane).not.toBeNull();
+
+    page.messagesLoading = false;
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+    expect(messagesPanePropsHistory.at(-1)?.isLoading).toBe(false);
+    expect(container.querySelector('[data-testid="messages-pane"]')).toBe(mountedPane);
+  });
+
   it('refreshes analysis after creating a message', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

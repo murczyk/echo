@@ -1,5 +1,7 @@
 export { MessageFeed, MessageFeedRows } from './MessageFeed';
-export { useWindowedFeedScroll } from './useWindowedFeedScroll';
+export type { MessageFeedProps } from './MessageFeed';
+export { MessageFeedItem } from './MessageFeedItem';
+export { MessageFeedSkeletons } from './MessageFeedSkeletons';
 export {
   FEED_FOLLOW_LAYOUT_STABLE_FRAMES,
   FEED_FOLLOW_LAYOUT_STABLE_MAX_MS,
@@ -11,6 +13,8 @@ export {
 export { ScrollNavigationIntent } from './message-feed.types';
 export type {
   AnchorSnapshot,
+  MessageFeedHandle,
+  MessageFeedScrollOptions,
   ExplicitScrollNavigation,
   ReachedBottomContext,
   UseWindowedFeedScrollOptions,

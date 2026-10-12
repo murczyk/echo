@@ -1,4 +1,5 @@
 .message-feed-scroller {
+  position: relative;
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
@@ -11,6 +12,55 @@
 .message-feed-list {
   min-width: 0;
   box-sizing: border-box;
+}
+
+.message-feed-skeletons {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  background: transparent;
+}
+
+.message-feed-skeletons[data-message-feed-skeleton='above'],
+.message-feed-skeletons[data-message-feed-skeleton='below'] {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.message-feed-skeletons[data-message-feed-skeleton='above'] {
+  top: 0;
+}
+
+.message-feed-skeletons[data-message-feed-skeleton='below'] {
+  bottom: 0;
+}
+
+.message-feed-skeleton-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--message-feed-skeleton-border, transparent);
+  border-radius: 8px;
+  background: transparent;
+}
+
+.message-feed-skeleton-card-header,
+.message-feed-skeleton-card-footer {
+  display: flex;
+  gap: 12px;
+}
+
+.message-feed-refresh-overlay {
+  position: sticky;
+  top: 0;
+  height: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.message-feed-scroller[data-message-feed-refreshing='true'] .message-feed-list {
+  visibility: hidden;
 }
 
 .analysis-message-feed {

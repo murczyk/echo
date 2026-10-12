@@ -15,7 +15,7 @@ import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
 import { DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET } from '../shared/manage-message/floating-control-geometry';
 import { useObservedWidth } from '../../hooks/use-observed-width';
 import { shouldUseActiveFeedLayout } from './duty-editor-layout';
-import type { AnchorSnapshot } from '../shared/message-feed';
+import { MessageFeedSkeletons, type AnchorSnapshot } from '../shared/message-feed';
 
 function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
   if (narrow) return '100%';
@@ -174,36 +174,7 @@ function DutyNeoInitialLoadingSkeletonFeedColumn({
         canAddFeed={canAddFeed}
         canCloseFeed={canCloseFeed}
       />
-      {Array.from({ length: messageCount }).map((_, messageIndex) => (
-        <Box
-          key={messageIndex}
-          sx={{
-            display: 'flex',
-            minWidth: 0,
-            flexDirection: 'column',
-            gap: 1.25,
-            pb: messageIndex + 1 === messageCount ? 0 : 2,
-            mb: messageIndex + 1 === messageCount ? 0 : 2,
-            borderBottom:
-              messageIndex + 1 === messageCount ? 'none' : '1px solid rgba(148, 163, 184, 0.14)',
-          }}
-        >
-          <Skeleton
-            variant="rounded"
-            height={28}
-            width={`${72 - Math.min(messageIndex * 6, 18)}%`}
-          />
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-            <Skeleton variant="rounded" height={24} width={72 - messageIndex * 2} />
-            <Skeleton variant="rounded" height={24} width={92 - messageIndex * 3} />
-            <Skeleton variant="rounded" height={24} width={64 - messageIndex * 2} />
-          </Box>
-          <Skeleton variant="rounded" height={92} />
-          <Skeleton variant="rounded" height={18} width="92%" />
-          <Skeleton variant="rounded" height={18} width="84%" />
-          <Skeleton variant="rounded" height={18} width="76%" />
-        </Box>
-      ))}
+      <MessageFeedSkeletons count={messageCount} />
     </Box>
   );
 }

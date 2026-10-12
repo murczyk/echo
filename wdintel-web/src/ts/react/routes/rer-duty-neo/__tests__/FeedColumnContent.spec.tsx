@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, useMemo, useRef } from 'react';
+import { act, useMemo } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,25 +10,6 @@ import { FeedColumnContent } from '../FeedColumnContent';
 import { minimalInboxMessage } from '../inbox-message-mocks';
 import type { FeedColumnModel } from '../types';
 import { emptyFilter, type MessageFeedState } from '../utils';
-
-vi.mock('../../shared/message-feed', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../shared/message-feed')>()),
-  useWindowedFeedScroll: () => {
-    const scrollerRef = useRef<HTMLDivElement>(null);
-    const listRef = useRef<HTMLDivElement>(null);
-    return useMemo(
-      () => ({
-        scrollerRef,
-        listRef,
-        setItemRef: () => () => {},
-        handleScroll: () => {},
-        scrollToBottom: () => {},
-        scrollToItem: () => null,
-      }),
-      [scrollerRef, listRef],
-    );
-  },
-}));
 
 vi.mock('../useFeedIdleViewportOffload', () => ({
   useFeedIdleViewportOffload: () =>
@@ -158,6 +139,28 @@ describe('FeedColumnContent', () => {
     act(() => root?.unmount());
     container?.remove();
     document.body.innerHTML = '';
+  });
+
+  it('uses feed-owned skeleton cards for initial and older loading', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const initialColumn = {
+      ...column,
+      feed: { ...column.feed, items: [], loading: true },
+    };
+    await act(async () => root.render(<FeedColumnContent column={initialColumn} />));
+    expect(container.querySelector('[data-message-feed-skeleton="initial"]')).not.toBeNull();
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
+
+    const olderColumn = {
+      ...column,
+      feed: { ...column.feed, loadingOlder: true },
+    };
+    await act(async () => root.render(<FeedColumnContent column={olderColumn} />));
+    expect(container.querySelector('[data-message-feed-skeleton="above"]')).not.toBeNull();
+    expect(container.querySelector('[data-duty-message-id="1"]')).not.toBeNull();
   });
 
   // Regression: https://github.com/echoua/echo/issues/3598
