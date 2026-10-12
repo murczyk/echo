@@ -11,6 +11,7 @@ module Config exposing
     , waterfallLoadEarlierThresholdMs
     , waterfallMessageLimit
     , waterfallNetworkRetryDelayMs
+    , waterfallPollingMinIntervalMs
     )
 
 {-| Show tornado on visible messages
@@ -61,6 +62,11 @@ waterfallMessageLimit =
 
 waterfallNetworkRetryDelayMs : Float
 waterfallNetworkRetryDelayMs =
+    5000
+
+
+waterfallPollingMinIntervalMs : Float
+waterfallPollingMinIntervalMs =
     5000
 
 

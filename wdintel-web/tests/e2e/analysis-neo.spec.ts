@@ -969,10 +969,11 @@ test.describe('@smoke @regression', () => {
     await expect.poll(() => scrollContainer.evaluate((element) => element.scrollTop)).toBe(0);
   });
 
-  // Regression: https://github.com/echoua/echo/issues/3694
+  // Regressions: https://github.com/echoua/echo/issues/3694, https://github.com/echoua/echo/issues/3780
   test('analysis neo handles a sustained mixed realtime stream without reloading', async ({
     page,
   }) => {
+    test.setTimeout(60_000);
     await page.clock.setFixedTime(new Date('2026-07-13T13:00:00Z'));
     const initialPage = createOverflowingInboxResponse();
     const [, template] = initialPage.inbox_items[0];

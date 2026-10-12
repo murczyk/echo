@@ -8,6 +8,16 @@ use std::time::Duration;
 
 pub const APP_BUILD_VERSION: &str = env!("ECHO_BUILD_VERSION");
 
+pub const SERVER_ACTIVITY_CONTEXT_HEADERS: &[&str] = &[
+    "referer",
+    "origin",
+    "user-agent",
+    "content-type",
+    "accept",
+    "host",
+    "x-request-id",
+];
+
 pub const USER_DISPLAY_NAME_MAX_LENGTH: usize = 100;
 pub const USER_AUTHOR_IDENTITIES_MAX_BATCH_SIZE: usize = 200;
 

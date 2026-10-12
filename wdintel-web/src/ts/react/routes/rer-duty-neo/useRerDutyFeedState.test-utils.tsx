@@ -102,6 +102,7 @@ export function rangeRsp(from: number, to: number): InboxMessagesRsp {
 export function DutyFeedStateHarness(props: {
   apiRef: DutyFeedStateApiRef;
   disableAutoScroll?: boolean;
+  pollIntervalSec?: number;
   freqs?: string[];
   freqsReady?: boolean;
   setProfiles?: Parameters<typeof useRerDutyFeedState>[0]['setProfiles'];
@@ -116,7 +117,7 @@ export function DutyFeedStateHarness(props: {
     testEnabled: false,
     testSinceMs: 0,
     testLimit: 1,
-    pollIntervalSec: 1,
+    pollIntervalSec: props.pollIntervalSec ?? 1,
     disableAutoScroll: props.disableAutoScroll ?? false,
     deviceAccess: props.deviceAccess ?? { status: 'allowed' },
   });

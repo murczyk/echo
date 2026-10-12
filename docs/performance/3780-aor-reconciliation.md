@@ -1,9 +1,9 @@
 # AOR and duplicate-link performance fixes (#3780)
 
 This is the first independently deployable batch from the
-[Pivnich/Skhid performance plan](../../archive/2026-10-12-perf/fix.md).
-See the [incident evidence](../../archive/2026-10-12-perf/perf.md) and
-[implementation measurements](../../archive/2026-10-12-perf/implementation.md).
+[Pivnich/Skhid performance plan](../../archive/2026-10-12-perf/iteration1/fix.md).
+See the [incident evidence](../../archive/2026-10-12-perf/iteration1/perf.md) and
+[implementation measurements](../../archive/2026-10-12-perf/iteration1/implementation.md).
 
 ## Behavior
 

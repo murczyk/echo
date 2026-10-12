@@ -7,7 +7,7 @@ It covers AOR candidate membership/count-only work and duplicate-link
 indexing/projection. It was prepared and benchmarked against stable in a
 separate worktree, then transferred here while preserving this branch's
 existing changes. [Implementation evidence](implementation.md) records the
-measurements and validation; [release instructions](../../docs/performance/3780-aor-reconciliation.md)
+measurements and validation; [release instructions](../../../docs/performance/3780-aor-reconciliation.md)
 cover migration, canary, and recovery. Other batches below remain proposed;
 production has not been changed.
 
@@ -53,10 +53,10 @@ Plain EXPLAIN first; then read-only EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMA
 
 Owning code:
 
-- [analysis/mod.rs](../../wdintel-rs/src/rer_importer/analysis/mod.rs): with_analytics_read_fallback_inner, analytics_fallback_needs_capacity, count fallback and retry state.
-- [inbox/query.rs](../../wdintel-rs/src/rer_importer/inbox/query.rs): candidate execution and revalidation.
-- [config.rs](../../wdintel-rs/src/config.rs): analytics pool/fallback/timeouts.
-- [ClickHouse deployment](../../deploy/clickhouse/README.md) and configuration scripts.
+- [analysis/mod.rs](../../../wdintel-rs/src/rer_importer/analysis/mod.rs): with_analytics_read_fallback_inner, analytics_fallback_needs_capacity, count fallback and retry state.
+- [inbox/query.rs](../../../wdintel-rs/src/rer_importer/inbox/query.rs): candidate execution and revalidation.
+- [config.rs](../../../wdintel-rs/src/config.rs): analytics pool/fallback/timeouts.
+- [ClickHouse deployment](../../../deploy/clickhouse/README.md) and configuration scripts.
 
 Existing controls must be extended rather than duplicated: analytics pool default 16, PostgreSQL failure-fallback semaphore 8 per process with 250 ms wait, operation retry/circuit behavior, and per-count queues. query_policy searches bypass failure-fallback admission.
 
@@ -86,7 +86,7 @@ Persist reviewed settings through the owning deployment scripts/configuration, w
 
 ## 3. Rewrite scoped PostgreSQL search
 
-Owning code: [attachments/search.rs](../../wdintel-rs/src/attachments/search.rs), [analysis/search.rs](../../wdintel-rs/src/rer_importer/analysis/search.rs), [analysis/stats.rs](../../wdintel-rs/src/rer_importer/analysis/stats.rs), and [inbox/query.rs](../../wdintel-rs/src/rer_importer/inbox/query.rs). Inspect their callers before changing the shared predicate API.
+Owning code: [attachments/search.rs](../../../wdintel-rs/src/attachments/search.rs), [analysis/search.rs](../../../wdintel-rs/src/rer_importer/analysis/search.rs), [analysis/stats.rs](../../../wdintel-rs/src/rer_importer/analysis/stats.rs), and [inbox/query.rs](../../../wdintel-rs/src/rer_importer/inbox/query.rs). Inspect their callers before changing the shared predicate API.
 
 The captured plan deduplicates approximately 777,612 global search matches before intersecting the time/group candidates. Existing GIN/trigram/time/group indexes are present. Optimize candidate scope and reuse first.
 
@@ -107,7 +107,7 @@ Regression cases must exercise real database results for positive/negative/OR co
 
 ## 4. Reduce AOR facet memory and fan-out
 
-Owning code: build_aors_analytics_query_with_scope, build_aor_messages_query, and count_aors_raw_with_db in [analysis/stats.rs](../../wdintel-rs/src/rer_importer/analysis/stats.rs); [derived schema reconciliation](../../deploy/clickhouse/bin/reconcile-derived-schema.sh).
+Owning code: build_aors_analytics_query_with_scope, build_aor_messages_query, and count_aors_raw_with_db in [analysis/stats.rs](../../../wdintel-rs/src/rer_importer/analysis/stats.rs); [derived schema reconciliation](../../../deploy/clickhouse/bin/reconcile-derived-schema.sh).
 
 1. Produce the smallest authorized message-ID relation first. Use membership semijoins instead of multiplying message rows by every matching group where results allow it.
 2. Join that relation separately to group-AOR and network-AOR branches. Push compatible message bounds and candidate membership into each branch before large join builds.
@@ -124,7 +124,7 @@ Test exact results against the PostgreSQL path with group-only/network-only/over
 
 ## 5. Index duplicate-link reconciliation
 
-Owning function: delete_previous_duplicate_group_links in [messenger/reconcile.rs](../../wdintel-rs/src/messenger/reconcile.rs).
+Owning function: delete_previous_duplicate_group_links in [messenger/reconcile.rs](../../../wdintel-rs/src/messenger/reconcile.rs).
 
 A justified candidate is a btree on (datasource_group_id, created_at, sender), optionally including signal_message_id and id if a narrow projection/actual plan benefits. Compare column order and size with representative selectivity. Do not start with signal_message_id <> value: it is not the selective lookup.
 
@@ -138,7 +138,7 @@ Measure write cost, disk headroom, build progress, locking, and source replicati
 
 ## 6. Optimize and bound network recalculation
 
-Owning file: [network/recalculation.rs](../../wdintel-rs/src/sigint/network/recalculation.rs); constants in [config.rs](../../wdintel-rs/src/config.rs).
+Owning file: [network/recalculation.rs](../../../wdintel-rs/src/sigint/network/recalculation.rs); constants in [config.rs](../../../wdintel-rs/src/config.rs).
 
 Existing batching, task coalescing, advisory locks, row locks, SKIP LOCKED, and run budget should remain. The 300-second statement allowance can greatly exceed the 50-second run budget.
 
@@ -158,7 +158,7 @@ Prove completion/retry/cancellation behavior and exact values for active ranges,
 
 ### OCR ranking
 
-Owning function: load_queue_positions in [ocr/mod.rs](../../wdintel-rs/src/ocr/mod.rs).
+Owning function: load_queue_positions in [ocr/mod.rs](../../../wdintel-rs/src/ocr/mod.rs).
 
 Compare a bounded process-level singleflight snapshot of global internal ranks with a requested-media ranking strategy. Filtering media before row_number would change ranks and is incorrect; count all preceding eligible items or rank the whole relation before selecting requested IDs.
 
@@ -174,7 +174,7 @@ Inbox/analysis bounds already have 5-second caches and singleflight. Instrument 
 
 Do not round timestamps as a cache trick unless the resulting ID scope is conservative and original timestamp predicates still enforce exact membership. Do not replace MIN/MAX(id) with the first/last timestamp row: IDs and event time can disagree. Keep the existing OFFSET 0 safeguard unless representative actual plans prove a safe replacement.
 
-For unit-count shapes, inspect [analysis/analytics_unit.rs](../../wdintel-rs/src/rer_importer/analysis/analytics_unit.rs) and stats query builders. Benchmark time/ID predicates pushed into membership branches and reuse existing resolved-unit filter caching. Compare rows read, not just elapsed time. Preserve exact/expanded unit semantics and permission checks.
+For unit-count shapes, inspect [analysis/analytics_unit.rs](../../../wdintel-rs/src/rer_importer/analysis/analytics_unit.rs) and stats query builders. Benchmark time/ID predicates pushed into membership branches and reuse existing resolved-unit filter caching. Compare rows read, not just elapsed time. Preserve exact/expanded unit semantics and permission checks.
 
 Request-local permission reuse is lower risk than new shared authorization caches. Any shared cache must be keyed/versioned for the correct user, group membership, and permission changes.
 
@@ -182,7 +182,7 @@ Request-local permission reuse is lower risk than new shared authorization cache
 
 ### Oversized response headers
 
-Inspect [nginx templates](../../deploy/nginx/echo-pivnich) and the logout/delta redirect producers. Reproduce a large saved filter/state without recording sensitive URLs.
+Inspect [nginx templates](../../../deploy/nginx/echo-pivnich) and the logout/delta redirect producers. Reproduce a large saved filter/state without recording sensitive URLs.
 
 Prefer a short opaque state identifier backed by an expiring server-side record, or a bounded safe return path. Preserve return navigation, authentication-state validation, one-time/expiry rules, and redirect-target validation. A bounded proxy response-header buffer can be an interim adjustment after measuring headers and validating nginx configuration. Large client-header settings do not solve this response path.
 
@@ -212,7 +212,7 @@ Proposed targets must be finalized against representative workload expectations 
 
 Targets are goals, not results of this investigation. Broad worst-case queries may need explicit product-approved limits rather than a promise that every input completes under 3 seconds.
 
-For Rust implementation, run cargo check, cargo clippy, and appropriate focused database-backed regressions. Keep formatting narrow and cargo fmt clean. For frontend changes, run staged Prettier for affected JS/TS/CSS/JSON and just build-front; retain the #3546 CI regressions described in the [Duty creation-time contract](../../docs/duty/README.md#creation-time-contract). Duty always uses creation time; Analysis's preference must not change Duty. Respect existing Ukrainian API-error toasts.
+For Rust implementation, run cargo check, cargo clippy, and appropriate focused database-backed regressions. Keep formatting narrow and cargo fmt clean. For frontend changes, run staged Prettier for affected JS/TS/CSS/JSON and just build-front; retain the #3546 CI regressions described in the [Duty creation-time contract](../../../docs/duty/README.md#creation-time-contract). Duty always uses creation time; Analysis's preference must not change Duty. Respect existing Ukrainian API-error toasts.
 
 Do not add tests that merely mirror generated SQL or formatter layout. Result/authorization/time/cancellation regressions and production-scale plan comparisons protect the actual failure modes.
 

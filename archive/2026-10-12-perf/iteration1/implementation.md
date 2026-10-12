@@ -24,7 +24,7 @@ schema, settings, or service changes were deployed.
   ambiguous-match, transactional deletion, and settlement-requeue behavior
   remain unchanged.
 
-[Release and recovery instructions](../../docs/performance/3780-aor-reconciliation.md).
+[Release and recovery instructions](../../../docs/performance/3780-aor-reconciliation.md).
 
 ## AOR diagnostics on Pivnich
 

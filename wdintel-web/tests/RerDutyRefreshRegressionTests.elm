@@ -224,7 +224,7 @@ suite =
                             , \_ -> Expect.equal Set.empty ticked.networkIdsRequested
                             ]
                             ()
-        , test "refresh enrichment stays isolated to the owning waterfall" <|
+        , test "#3780 refreshes buffered messages and keeps enrichment in the owning waterfall" <|
             \_ ->
                 case Url.fromString "http://localhost/rer-duty" of
                     Nothing ->
@@ -261,6 +261,9 @@ suite =
                             messageB =
                                 callsignMessage "FOX"
 
+                            bufferedMessage =
+                                callsignMessage "BUFFERED"
+
                             ghost =
                                 callsignMessage "GHOST"
 
@@ -270,6 +273,7 @@ suite =
                                         [ ( "wf-a"
                                           , { waterfallA
                                                 | messages = Messages.fromList [ ( 1, messageStub ) ]
+                                                , notRenderedMessagesYet = [ ( 3, messageStub ) ]
                                                 , messageCallsignsRequested = Set.singleton "existing-a"
                                             }
                                           )
@@ -286,7 +290,7 @@ suite =
                                 Pages.RerDuty.update
                                     shared
                                     route
-                                    (Pages.RerDuty.InboxMessagesUpdated (Ok { messages = [ ( 1, messageA ), ( 2, messageB ), ( 99, ghost ) ] }))
+                                    (Pages.RerDuty.InboxMessagesUpdated (Ok { messages = [ ( 1, messageA ), ( 2, messageB ), ( 3, bufferedMessage ), ( 99, ghost ) ] }))
                                     model
 
                             waterfallAUpdated =
@@ -307,6 +311,10 @@ suite =
                                     [ \_ -> Expect.equal [ "wf-a", "wf-b" ] (List.map Tuple.first updatedModel.waterfalls)
                                     , \_ -> Expect.equal (Just ( 1, messageA )) (Messages.toMessageList wfA.messages |> List.head)
                                     , \_ -> Expect.equal (Just ( 2, messageB )) (Messages.toMessageList wfB.messages |> List.head)
+                                    , \_ -> Expect.equal [ ( 3, bufferedMessage ) ] wfA.notRenderedMessagesYet
+                                    , \_ -> Expect.equal [] wfB.notRenderedMessagesYet
+                                    , \_ -> Expect.equal True (Set.member "buffered" wfA.messageCallsignsRequested)
+                                    , \_ -> Expect.equal False (Set.member "buffered" wfB.messageCallsignsRequested)
                                     , \_ -> Expect.equal True (Set.member "wolf" wfA.messageCallsignsRequested)
                                     , \_ -> Expect.equal True (Set.member "existing-a" wfA.messageCallsignsRequested)
                                     , \_ -> Expect.equal False (Set.member "fox" wfA.messageCallsignsRequested)
