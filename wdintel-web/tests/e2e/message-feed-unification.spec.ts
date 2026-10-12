@@ -94,6 +94,57 @@ test.describe('Message feed unification @regression', () => {
     });
   });
 
+  test('Analysis keeps the next-page loader off existing cards', async ({ page }) => {
+    await installPages(page);
+    let releasePage!: () => void;
+    const pendingPage = new Promise<void>((resolve) => {
+      releasePage = resolve;
+    });
+    let pageRequested = false;
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      if (route.request().postDataJSON().before_id_noninclusive !== 141) {
+        return route.fallback();
+      }
+      pageRequested = true;
+      await pendingPage;
+      return route.fulfill({ json: messagePage(140) });
+    });
+
+    await page.goto('/rer-analysis-neo');
+    const scroller = page.locator('[data-analysis-message-scroller]');
+    await expect(scroller.locator('[data-message-id]')).toHaveCount(20);
+    await scroller.evaluate((element) => {
+      element.scrollTop = element.scrollHeight - element.clientHeight - 300;
+      element.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    try {
+      await expect.poll(() => pageRequested).toBe(true);
+      const edgeLoader = scroller.locator('[data-message-feed-skeleton="below"]');
+      await expect(edgeLoader).toBeVisible();
+      expect(
+        await edgeLoader.evaluate((element) => element.getBoundingClientRect().height),
+      ).toBeLessThanOrEqual(8);
+      expect(
+        await scroller.evaluate((element) => {
+          const cards = Array.from(element.querySelectorAll<HTMLElement>('[data-message-id]'));
+          const skeletons = Array.from(
+            element.querySelectorAll<HTMLElement>('[data-message-feed-skeleton-card]'),
+          );
+          return skeletons.some((skeleton) => {
+            const loadingRect = skeleton.getBoundingClientRect();
+            return cards.some((card) => {
+              const cardRect = card.getBoundingClientRect();
+              return loadingRect.top < cardRect.bottom && loadingRect.bottom > cardRect.top;
+            });
+          });
+        }),
+      ).toBe(false);
+    } finally {
+      releasePage();
+    }
+    await expect(scroller.locator('[data-message-id]')).toHaveCount(40);
+  });
+
   test('Analysis scrolls between loaded pages without fetching them again', async ({ page }) => {
     const requests = await installPages(page);
     await page.goto('/rer-analysis-neo');

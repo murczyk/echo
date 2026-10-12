@@ -324,7 +324,7 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(scroller.scrollTop).toBe(48);
   });
 
-  it('keeps edge skeletons out of the item registry and valid in a list', async () => {
+  it('keeps compact edge loaders out of the item registry and valid in a list', async () => {
     const feedRef = createRef<MessageFeedHandle>();
     await act(async () =>
       root.render(
@@ -345,7 +345,8 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
       ),
     );
     expect(container.querySelectorAll('ul.message-feed-list > li')).toHaveLength(3);
-    expect(container.querySelectorAll('[data-message-feed-skeleton-card]')).toHaveLength(4);
+    expect(container.querySelectorAll('[data-message-feed-skeleton-card]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-message-feed-skeleton]')).toHaveLength(2);
     expect(feedRef.current?.getItemElement(1)).toBe(
       container.querySelector('[data-message-id="1"]'),
     );

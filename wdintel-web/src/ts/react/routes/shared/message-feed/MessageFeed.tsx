@@ -92,9 +92,7 @@ function MessageFeedInner<T>(
         }
         beforeMessages={
           <>
-            {loadingAbove ? (
-              <MessageFeedSkeletons count={2} listTag={listTag} position="above" />
-            ) : null}
+            {loadingAbove ? <MessageFeedSkeletons listTag={listTag} position="above" /> : null}
             {showInitialSkeleton ? (
               <MessageFeedSkeletons count={skeletonCount} listTag={listTag} />
             ) : null}
@@ -104,9 +102,7 @@ function MessageFeedInner<T>(
         afterMessages={
           <>
             {afterMessages}
-            {loadingBelow ? (
-              <MessageFeedSkeletons count={2} listTag={listTag} position="below" />
-            ) : null}
+            {loadingBelow ? <MessageFeedSkeletons listTag={listTag} position="below" /> : null}
           </>
         }
       />

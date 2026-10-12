@@ -479,6 +479,28 @@ test('keeps a compact-tag reading anchor stable while prepending an older chunk'
   await olderRequestStarted.promise;
   const anchorBefore = await readVisibleAnchor(scroller);
   expect(anchorBefore.id).toBe(21);
+  const edgeLoader = scroller.locator('[data-message-feed-skeleton="above"]');
+  await expect(edgeLoader).toBeVisible();
+  expect(
+    await edgeLoader.evaluate((element) => element.getBoundingClientRect().height),
+  ).toBeLessThanOrEqual(8);
+  await expect
+    .poll(() =>
+      scroller.evaluate((element) => {
+        const cards = Array.from(element.querySelectorAll<HTMLElement>('[data-duty-message-id]'));
+        const skeletons = Array.from(
+          element.querySelectorAll<HTMLElement>('[data-message-feed-skeleton-card]'),
+        );
+        return skeletons.some((skeleton) => {
+          const loadingRect = skeleton.getBoundingClientRect();
+          return cards.some((card) => {
+            const cardRect = card.getBoundingClientRect();
+            return loadingRect.top < cardRect.bottom && loadingRect.bottom > cardRect.top;
+          });
+        });
+      }),
+    )
+    .toBe(false);
 
   await page.evaluate((anchorId) => {
     const state = window as unknown as {

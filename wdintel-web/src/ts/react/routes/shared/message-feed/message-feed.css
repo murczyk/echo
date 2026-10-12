@@ -26,6 +26,8 @@
   position: absolute;
   z-index: 1;
   pointer-events: none;
+  height: 4px;
+  overflow: hidden;
 }
 
 .message-feed-skeletons[data-message-feed-skeleton='above'] {

@@ -31,7 +31,8 @@ import files from the implementation directories directly.
 - Render native card wrappers through `MessageFeedItem`, or use `data-message-id`
   with the component registry. Duty retains `data-duty-message-id` for existing tools.
 - Pass `scrollOptions` for feed policy, edge callbacks, focus, and reset keys.
-  Pass `isLoading`, `loadingAbove`, and `loadingBelow` for the shared skeleton.
+  Pass `isLoading` for card skeletons and `loadingAbove`/`loadingBelow` for
+  compact edge loading indicators that do not obscure existing cards.
   Each mounted feed owns independent scroll and loading state.
 - Use the `MessageFeedHandle` ref's `scrollToMessage` for a mounted target and
   `scrollToBottom` for tail landing.
