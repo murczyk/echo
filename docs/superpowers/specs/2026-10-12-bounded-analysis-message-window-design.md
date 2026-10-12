@@ -17,11 +17,12 @@ of Analysis sort direction. The existing `loadAllMessages` path must no longer
 install an unbounded response in the feed.
 
 The user can still revisit evicted messages by scrolling in either direction,
-use page controls and copied-message links, and keep the same reading position
-as a chunk enters or leaves the window. The feed continues to show its existing
-edge skeletons while these requests run. A scrollbar thumb may vary with card
-height, but its length must not continually shrink because of accumulated
-message cards.
+use the existing Analysis page controls and copied-message links, and keep the
+same reading position as a chunk enters or leaves the window. The feed
+continues to show its existing edge skeletons while these requests run. A
+scrollbar thumb may vary with card height, but its length must not continually
+shrink because of accumulated message cards. Analysis's page-based navigation
+is preserved; it is not replaced by Duty's navigation model.
 
 ## Existing behavior and architectural choice
 
@@ -91,16 +92,30 @@ stale messages after a filter, sort, date, or focus change. Page cursors and
 small page-coordinate metadata may remain outside the message window so
 evicted pages can be revisited; full evicted `InboxMessage` payloads may not.
 
-Page controls first align to a page already in the window. For an adjacent
-evicted page they use the appropriate directional fetch. First/last jumps can
-use their existing boundary requests to replace the current window. Restoring
-an arbitrary URL page may still require sequential cursor requests when the
+## Preserved Analysis pagination
+
+The existing first, previous, next, and last page controls, range/total label,
+and `messagesPage` URL state remain available and behave as Analysis controls,
+not as Duty controls. Scrolling is an additional way to cross page boundaries;
+it updates the visible page and URL as it does today. Trimming a distant page
+does not reset the visible page, total count, or URL, and a page button can
+still revisit that page.
+
+Controls first align to a page already in the window. For an adjacent evicted
+page they use the appropriate directional fetch. First/last jumps use their
+existing boundary requests to replace the current window. Restoring an
+arbitrary URL page may still require sequential cursor requests when the
 server has no direct cursor for it, but intermediate responses must not
-accumulate in the active message array. The user-visible page number and URL
-stay consistent with the first visible message. Direct-message navigation
-starts from a bounded context containing the target, preserves target
-highlighting/alignment, and continues to page in either physical direction
-after the target is released.
+accumulate in the active message array. The range label describes the visible
+logical page, including a partial final page, rather than using the bounded
+window length as that page's item count. Button enablement reflects logical
+page availability even when an adjacent page has been evicted; eviction alone
+must not disable Next or Previous.
+
+Direct-message navigation starts from a bounded context containing the
+target, preserves target highlighting/alignment, and continues to page in
+either physical direction after the target is released. Its page controls
+retain the same logical page numbering and boundary behavior.
 
 The existing `loadAllMessages` entry point must not issue a `nolimit` request
 or store an unlimited result. Any remaining caller is routed to bounded
@@ -134,9 +149,9 @@ generation together so the old and new query cannot be mixed.
 
 Add failing tests before implementation for repeated forward loads staying at
 or below 40, backward re-fetch after eviction, both Analysis sort directions,
-focused-link paging in both directions, page-control and URL restoration,
-stale/failed requests, and stable visible-message offset. Exercise the same
-window operation through Duty tests so the refactor preserves its unread and
+focused-link paging in both directions, page-control range/enablement and URL
+restoration, stale/failed requests, and stable visible-message offset. Exercise
+the same window operation through Duty tests so the refactor preserves its unread and
 evicted-tail behavior. Browser regression tests should scroll through several
 chunks on both pages and verify bounded rendered message count, edge
 skeletons, and reading-anchor stability. Run the affected Vitest and
