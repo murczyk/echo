@@ -741,9 +741,7 @@ fn non_empty_comment_exists() -> SimpleExpr {
     let subquery = intel_product::Entity::find()
         .select_only()
         .expr(Expr::value(1))
-        .filter(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_COMMENT,
-        ))
+        .filter(crate::sigint::comments::rer_report_comment_filter())
         .join_as(
             JoinType::InnerJoin,
             intel_product::Relation::SignalMessage1.def(),
@@ -791,7 +789,7 @@ async fn load_non_empty_comments(
     blacklist: &[String],
 ) -> Result<Vec<String>, AppError> {
     let comments =
-        crate::sigint::comments::find_linked_message_comments(dbx, &[item_id])
+        crate::sigint::comments::find_rer_report_comments(dbx, &[item_id])
             .await
             .c(h!())?
             .into_iter()
@@ -1582,6 +1580,81 @@ mod tests {
     use std::io::Read;
     use tempfile::NamedTempFile;
     use zip::ZipArchive;
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3758_rer_includes_neo_reports_until_sent_to_a_group() {
+        let env = cleanup().await.unwrap();
+        let source = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("source interception".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let report = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("unsent Neo annotation".to_string())),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        intel_product::ActiveModel {
+            intel_message_id: Set(report.id),
+            source_message_id: Set(source.id),
+            relation_kind: Set(intel_product::RELATION_KIND_REPORT),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        for sent in [false, true] {
+            if sent {
+                mk_signal_message_group(
+                    &env.dbx,
+                    signal_message_group::ActiveModel {
+                        signal_message_id: Set(report.id),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            let candidate_ids = apply_candidate_item_filters(
+                signal_message::Entity::find()
+                    .filter(signal_message::Column::Id.eq(source.id)),
+                None,
+                None,
+                ReportPeriodEnd::Inclusive,
+                Some(InboxMessagesSortBy::IMSCreatedAt),
+                false,
+                true,
+            )
+            .unwrap()
+            .select_only()
+            .column(signal_message::Column::Id)
+            .into_tuple::<i64>()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+            let comments = load_non_empty_comments(&env.dbx, source.id, &[])
+                .await
+                .unwrap();
+            if sent {
+                assert!(candidate_ids.is_empty());
+                assert!(comments.is_empty());
+            } else {
+                assert_eq!(candidate_ids, vec![source.id]);
+                assert_eq!(comments, vec!["unsent Neo annotation"]);
+            }
+        }
+    }
 
     #[tokio::test]
     #[serial]
