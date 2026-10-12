@@ -148,6 +148,11 @@ test.describe('Duty characterization workflows @regression', () => {
     await page.setViewportSize({ width: 375, height: 667 });
     const tabs = page.getByRole('tab');
     await expect(tabs).toHaveCount(2);
+    const indicator = page.locator('[role="tablist"][aria-label="Стрічки"] > [aria-hidden="true"]');
+    await expect(indicator).toHaveCount(1);
+    expect(
+      await indicator.evaluate((element) => getComputedStyle(element).transitionProperty),
+    ).toBe('transform');
     await expect(page.locator('[data-duty-feed-column]')).toHaveCount(1);
     await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
 
@@ -155,6 +160,15 @@ test.describe('Duty characterization workflows @regression', () => {
     await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('[data-duty-feed-column]')).toHaveCount(1);
     await expect(page.locator('[data-duty-feed-column-active="true"]')).toHaveCount(1);
+    await expect
+      .poll(async () => {
+        const indicatorBox = await indicator.boundingBox();
+        const tabBox = await tabs.nth(1).boundingBox();
+        return indicatorBox && tabBox
+          ? Math.abs(indicatorBox.x - tabBox.x) + Math.abs(indicatorBox.width - tabBox.width)
+          : Number.POSITIVE_INFINITY;
+      })
+      .toBeLessThan(1);
   });
 
   test('@smoke bulk frequencies update the inbox request, refresh their catalog, and reset cleanly', async ({

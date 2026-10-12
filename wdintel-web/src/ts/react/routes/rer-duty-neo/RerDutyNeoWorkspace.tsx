@@ -444,13 +444,14 @@ export function RerDutyNeoWorkspace({
                       aria-hidden
                       sx={{
                         position: 'absolute',
-                        left: `calc(${activeFeedIndex} * (100% / ${messageFeeds.length}))`,
+                        left: 0,
                         bottom: 0,
                         width: `calc(100% / ${messageFeeds.length})`,
                         height: 4,
                         borderRadius: 999,
                         backgroundColor: 'primary.main',
-                        transition: 'left 0.2s ease, width 0.2s ease',
+                        transform: `translateX(${activeFeedIndex * 100}%)`,
+                        transition: 'transform 0.2s ease',
                       }}
                     />
                   )}
