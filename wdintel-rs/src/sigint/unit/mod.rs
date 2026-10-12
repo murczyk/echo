@@ -5616,7 +5616,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn skips_unsupported_orbit_units_and_imports_later_units() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
             .await
