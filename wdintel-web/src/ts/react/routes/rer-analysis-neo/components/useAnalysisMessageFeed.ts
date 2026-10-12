@@ -168,5 +168,12 @@ export function useAnalysisMessageFeed({
   useLayoutEffect(() => {
     appendRequestedRef.current = false;
   }, [pageIndex]);
-  return { scrollOptions, displayedMessages, loadingAbove, loadingBelow };
+  return {
+    scrollOptions,
+    displayedMessages,
+    loadingAbove,
+    loadingBelow,
+    hasMoreAbove: Boolean(canLoad(above)),
+    hasMoreBelow: directMessageNavigation ? Boolean(canLoad(below)) : !noMoreToLoad,
+  };
 }

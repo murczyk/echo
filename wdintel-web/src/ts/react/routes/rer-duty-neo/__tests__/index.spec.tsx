@@ -450,6 +450,7 @@ function buildFeedsState() {
     watchModeByFeedId: {},
     setWatchModeByFeedId: vi.fn(),
     loadingNewerFeedIds: new Set<string>(),
+    isExplicitNavigationLoading: () => false,
     loadingNewerFeedId: null,
     arrowResultByFeedId: {},
     copiedFeedbackId: null,

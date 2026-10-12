@@ -31,11 +31,20 @@ import files from the implementation directories directly.
 - Render native card wrappers through `MessageFeedItem`, or use `data-message-id`
   with the component registry. Duty retains `data-duty-message-id` for existing tools.
 - Pass `scrollOptions` for feed policy, edge callbacks, focus, and reset keys.
-  Pass `isLoading` for card skeletons and `loadingAbove`/`loadingBelow` for
-  compact edge loading indicators that do not obscure existing cards.
+  Pass `isLoading` for initial and refresh card skeletons. Pass
+  `hasMoreAbove`/`hasMoreBelow` for in-flow edge skeletons: entering the visible
+  scroller starts the corresponding page request. `loadingAbove`/`loadingBelow`
+  mark an available skeleton as loading and gate duplicate requests; background
+  fetches without an available page do not add a skeleton.
   Each mounted feed owns independent scroll and loading state.
 - Use the `MessageFeedHandle` ref's `scrollToMessage` for a mounted target and
   `scrollToBottom` for tail landing.
+- Pass `newestNavigation` only on feeds that need a jump-to-newest control.
+  Its `edge` is `top` for newest-first lists and `bottom` for oldest-first
+  lists; `renderControl` receives whether the viewport is at that physical
+  edge. The host supplies its own button and confirms whether the newest
+  message is actually loaded before hiding it. A loaded chunk boundary alone
+  is not the newest-message boundary.
   The host loads missing context first and wakes any offloaded viewport.
   Navigation owners provide generation/current checks and landing callbacks.
 - A controlled `focus` retains centered positioning through layout changes.
@@ -55,12 +64,16 @@ import files from the implementation directories directly.
 | --- | --- | --- |
 | Initial position | End after settings arrive | Start |
 | Follow at bottom | Existing watch/auto-scroll gates | Disabled |
-| Above/below buffers | 160 / 640px | 480 / 480px |
+| Fallback edge buffers and near-bottom tracking | 160 / 640px | 480 / 480px |
 | Below-edge strategy | Scroll idle, expanded unread runway | Immediate, fixed buffer |
 | Underfilled input loading | Enabled | Disabled |
 | Resize during below-edge load | Defer transient append compensation | Preserve the reading anchor |
 
 The 25px UI-bottom threshold is not physical-bottom permission to follow.
+Visible edge skeletons take precedence over buffer-based page loading. Duty's
+background unread prefetch continues to use its existing near-bottom policy;
+an evicted newer tail retains the bottom skeleton while fetched cards remain
+buffered outside the visible window.
 `deferResizeWhileLoadingBelow` retains Duty's append behavior; Analysis disables
 it so media/editor height changes remain compensated during a page request.
 Released focus retains only spacer height needed to avoid clamping the reader;

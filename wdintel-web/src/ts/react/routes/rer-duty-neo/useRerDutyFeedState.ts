@@ -1262,6 +1262,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     isExplicitNavigationCurrent,
     registerExplicitLanding,
     registerExplicitLoading,
+    isExplicitNavigationLoading,
     cancelExplicitNavigation,
     registerExplicitScheduledWork,
     clearExplicitScheduledWork,

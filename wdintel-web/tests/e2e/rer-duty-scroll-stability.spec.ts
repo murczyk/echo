@@ -314,6 +314,27 @@ test('#3615 uses real upward wheel input to page an underfilled OFF feed @regres
   await expect.poll(() => scroller.evaluate((element) => element.scrollTop > 0)).toBe(true);
 });
 
+test('separates an older-page skeleton from the first message card @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    inboxResponse: buildInboxResponse(Array.from({ length: 40 }, (_, index) => index + 1)),
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(scroller.locator('[data-duty-message-id="1"]')).toBeAttached();
+  await expect(scroller.locator('[data-message-feed-skeleton="above"]')).toBeAttached();
+  const gap = await scroller.evaluate((element) => {
+    const skeleton = element.querySelector('[data-message-feed-skeleton="above"]');
+    const firstMessage = element.querySelector('[data-duty-message-id="1"]');
+    return firstMessage!.getBoundingClientRect().top - skeleton!.getBoundingClientRect().bottom;
+  });
+  expect(gap).toBeGreaterThanOrEqual(11);
+  expect(gap).toBeLessThanOrEqual(13);
+});
+
 // Regression: https://github.com/echoua/echo/issues/3615
 test('#3615 uses real downward wheel input to page an underfilled historical window @regression', async ({
   page,
@@ -471,6 +492,8 @@ test('keeps a compact-tag reading anchor stable while prepending an older chunk'
   const list = page.locator('[data-duty-feed-list="true"]');
   await expect(list.locator('[data-duty-message-id="40"]')).toBeAttached();
   await expect(page.getByRole('button', { name: 'Показати додаткові теги' })).toHaveCount(20);
+  const edgeLoader = scroller.locator('[data-message-feed-skeleton="above"]');
+  await expect(edgeLoader).toBeAttached();
 
   await scroller.evaluate((element) => {
     element.scrollTop = 0;
@@ -479,11 +502,8 @@ test('keeps a compact-tag reading anchor stable while prepending an older chunk'
   await olderRequestStarted.promise;
   const anchorBefore = await readVisibleAnchor(scroller);
   expect(anchorBefore.id).toBe(21);
-  const edgeLoader = scroller.locator('[data-message-feed-skeleton="above"]');
-  await expect(edgeLoader).toBeVisible();
-  expect(
-    await edgeLoader.evaluate((element) => element.getBoundingClientRect().height),
-  ).toBeLessThanOrEqual(8);
+  await expect(edgeLoader).toBeInViewport();
+  await expect(edgeLoader.locator('[data-message-feed-skeleton-card]')).toHaveCount(1);
   await expect
     .poll(() =>
       scroller.evaluate((element) => {
@@ -589,8 +609,12 @@ test('#3496 reloads the newest chunk after it was evicted by history paging @smo
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect.poll(() => countSinceIds).toContain(60);
 
+  const edgeLoader = scroller.locator('[data-message-feed-skeleton="below"]');
+  await expect(edgeLoader).toBeAttached();
   await setBottomDistance(scroller, 0);
   await expect.poll(() => newerSinceIds).toContain(40);
+  await expect(edgeLoader).toBeInViewport();
+  await expect(edgeLoader.locator('[data-message-feed-skeleton-card]')).toHaveCount(1);
   const anchorBefore = await readVisibleAnchor(scroller);
   newerResponse.resolve(buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 41)));
   await expect(list.locator('[data-duty-message-id="60"]')).toBeAttached();
@@ -654,6 +678,7 @@ test('#3496 lets the arrow land on a newest chunk evicted by history paging @reg
   newerRequests.length = 0;
   await page.getByRole('button', { name: 'Завантажити нові та перейти вниз' }).click();
   await arrowRequestStarted.promise;
+  await expect(page.getByLabel('Завантаження нових повідомлень')).toBeVisible();
   arrowResponse.resolve(buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 41)));
 
   await expect(list.locator('[data-duty-message-id="80"]')).toBeAttached();
@@ -783,7 +808,7 @@ test('#3360 blocks initial landing when settings fail to load @regression', asyn
 });
 
 // Regression: https://github.com/echoua/echo/pull/3268
-test('follows only while the bottom arrow is hidden and preserves the reading anchor @smoke @regression', async ({
+test('keeps the newest button during pending paging and preserves bottom follow and the reading anchor @smoke @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -854,7 +879,9 @@ test('follows only while the bottom arrow is hidden and preserves the reading an
 
   await setBottomDistance(scroller, 0);
   await secondNewerRequestStarted.promise;
-  await expect(bottomButton).toHaveCount(0);
+  await expect(bottomButton).toBeVisible();
+  await expect(bottomButton.locator('button')).toBeDisabled();
+  await expect(bottomButton.getByLabel('Завантаження нових повідомлень')).toHaveCount(0);
 
   secondNewerResponse.resolve(buildInboxResponse([42]));
   await expect(list.locator('[data-duty-message-id="42"]')).toBeAttached();
@@ -951,6 +978,7 @@ test('#3360 makes OFF arrivals at the physical bottom reachable by scrolling dow
   const anchor = list.locator(`[data-duty-message-id="${anchorBefore.id}"]`);
   const anchorOffset = await readAnchorOffset(anchor);
   await firstNewerRequestStarted.promise;
+  await expect(scroller.locator('[data-message-feed-skeleton="below"]')).toHaveCount(0);
 
   firstNewerResponse.resolve(buildInboxResponse([41]));
   await expect(list.locator('[data-duty-message-id="41"]')).toBeAttached();

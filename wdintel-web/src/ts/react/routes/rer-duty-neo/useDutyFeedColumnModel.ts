@@ -58,6 +58,7 @@ function buildFeedColumnView(
     initialPositioningReady,
     watchModeByFeedId,
     loadingNewerFeedIds,
+    isExplicitNavigationLoading,
     arrowResultByFeedId,
     confirmedTailPreviewByFeedId,
     nearBottomByFeedIdRef,
@@ -73,6 +74,7 @@ function buildFeedColumnView(
     autoScrollAllowed: !dutyDisableAutoScroll,
     initialPositioningReady,
     loadingNewer: loadingNewerFeedIds.has(feed.id),
+    explicitNavigationLoading: isExplicitNavigationLoading(feed.id),
     arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
     bottomUnreadCount: feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id], {
       // Near-bottom: keep matching tail preview (real beyond-tail pending); only drop residual stock.

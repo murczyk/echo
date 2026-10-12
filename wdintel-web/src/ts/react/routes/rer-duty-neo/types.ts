@@ -36,6 +36,7 @@ export type FeedColumnModel = {
     initialPositioningReady?: boolean;
     scrollTrackingEnabled?: boolean;
     loadingNewer?: boolean;
+    explicitNavigationLoading?: boolean;
     arrowResultMessage?: string | null;
     bottomUnreadCount?: number;
     physicallyAtBottom?: boolean;

@@ -168,6 +168,8 @@ function AnalysisMessagesPaneComponent({
     displayedMessages,
     loadingAbove: focusedLoadingAbove,
     loadingBelow: focusedLoadingBelow,
+    hasMoreAbove,
+    hasMoreBelow,
   } = useAnalysisMessageFeed({
     messages,
     directMessageNavigation,
@@ -320,6 +322,8 @@ function AnalysisMessagesPaneComponent({
           Boolean(directMessageNavigation?.contextLoading) ||
           (directMessageNavigation == null && paginationLoading)
         }
+        hasMoreAbove={hasMoreAbove}
+        hasMoreBelow={hasMoreBelow}
         listTag="ul"
         scrollerProps={{
           'data-analysis-message-scroller': true,

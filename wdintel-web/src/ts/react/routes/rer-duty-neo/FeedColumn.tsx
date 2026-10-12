@@ -24,6 +24,7 @@ import { useDocumentClickAway } from '../../hooks/use-document-click-away';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import type { FeedColumnModel } from './types';
 import { clearFeedColumnFab, publishFeedColumnFab } from './feedColumnFab';
+import { feedHasUnloadedEvictedNewerTail } from './utils';
 import type { ExplicitScrollNavigation, ScrollNavigationIntent } from '../shared/message-feed';
 import { recordDutyScrollDebugSnapshot, useDutyScrollDebugEnabled } from './duty-scroll-debug';
 
@@ -252,8 +253,20 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       bottomUnreadCount: view.bottomUnreadCount ?? 0,
       arrowResultMessage: view.arrowResultMessage ?? null,
       tailAvailability: view.tailAvailability ?? 'unknown',
+      hasUnrenderedNewerMessages:
+        (feed.pendingNewerItems?.length ?? 0) > 0 || feedHasUnloadedEvictedNewerTail(feed),
+      explicitNavigationLoading: view.explicitNavigationLoading ?? false,
     });
-  }, [feed.id, view.arrowResultMessage, view.bottomUnreadCount, view.tailAvailability]);
+  }, [
+    feed.id,
+    feed.items,
+    feed.pendingNewerItems,
+    feed.evictedNewerTailId,
+    view.arrowResultMessage,
+    view.bottomUnreadCount,
+    view.tailAvailability,
+    view.explicitNavigationLoading,
+  ]);
 
   useEffect(() => () => clearFeedColumnFab(feed.id), [feed.id]);
 

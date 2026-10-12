@@ -9,6 +9,16 @@ import {
 } from '../internal/scroll-math';
 import type { ScrollStateOpts, WindowedFeedScrollRefs } from '../internal/internal.types';
 
+function edgeSkeletonVisible(scroller: HTMLElement, position: 'above' | 'below'): boolean | null {
+  const skeleton = scroller.querySelector<HTMLElement>(
+    `[data-message-feed-skeleton="${position}"]`,
+  );
+  if (!skeleton) return null;
+  const viewport = scroller.getBoundingClientRect();
+  const edge = skeleton.getBoundingClientRect();
+  return edge.bottom > viewport.top && edge.top < viewport.bottom;
+}
+
 export function useWindowedFeedScrollTracking(args: {
   refs: WindowedFeedScrollRefs;
   debugFeedId?: string;
@@ -275,8 +285,9 @@ export function useWindowedFeedScrollTracking(args: {
       reportVisibleMessageIds(atBottom);
 
       if (opts.allowLoadOlder !== false) {
-        const shouldLoadOlder =
-          scroller.scrollTop <= topLoadBufferPx && !loadingOlder && !hasReachedStart;
+        const aboveSkeletonVisible = edgeSkeletonVisible(scroller, 'above');
+        const reachedAbove = aboveSkeletonVisible ?? scroller.scrollTop <= topLoadBufferPx;
+        const shouldLoadOlder = reachedAbove && !loadingOlder && !hasReachedStart;
         if (shouldLoadOlder && !refs.loadOlderTriggeredRef.current) {
           refs.loadOlderTriggeredRef.current = true;
           captureAnchorSnapshot();
@@ -286,14 +297,19 @@ export function useWindowedFeedScrollTracking(args: {
             `scrollTop=${scroller.scrollTop.toFixed(1)}; buffer=${topLoadBufferPx}`,
           );
           onLoadOlder();
-        } else if (scroller.scrollTop > topLoadBufferPx) {
+        } else if (!reachedAbove) {
           refs.loadOlderTriggeredRef.current = false;
         }
       }
 
       if (opts.allowLoadNewer !== false) {
+        const belowSkeletonVisible = edgeSkeletonVisible(scroller, 'below');
+        const reachedBelow = belowSkeletonVisible ?? nearBottom;
         const shouldLoadNewer =
-          nearBottom && unreadPrefetchNeeded && !loadingNewer && typeof onLoadNewer === 'function';
+          reachedBelow &&
+          unreadPrefetchNeeded &&
+          !loadingNewer &&
+          typeof onLoadNewer === 'function';
         if (shouldLoadNewer && !refs.loadNewerTriggeredRef.current) {
           refs.loadNewerTriggeredRef.current = true;
           captureAnchorSnapshot();
@@ -302,9 +318,9 @@ export function useWindowedFeedScrollTracking(args: {
             'load-newer:trigger',
             `distance=${bottomDistance.toFixed(1)}; buffer=${bottomBufferPx}; physical=${physicallyAtBottom}; prefetch=${unreadPrefetchNeeded}; idle=${!physicallyAtBottom}`,
           );
-          // At the physical end, load immediately. Otherwise wait for scroll idle so a
-          // mid-fling newer commit does not freeze the main thread / teleport the viewport.
-          if (physicallyAtBottom || immediateBelowLoad) {
+          // A visible edge skeleton or the physical end loads immediately. Otherwise
+          // wait for scroll idle so a mid-fling commit does not teleport the viewport.
+          if (belowSkeletonVisible || physicallyAtBottom || immediateBelowLoad) {
             cancelLoadNewerIdle();
             onLoadNewer();
           } else {
@@ -313,7 +329,7 @@ export function useWindowedFeedScrollTracking(args: {
         } else if (shouldLoadNewer && refs.loadNewerIdleTimeoutRef.current != null) {
           // Still scrolling in the zone — keep deferring until idle.
           scheduleLoadNewerIdle(onLoadNewer);
-        } else if (!nearBottom || !unreadPrefetchNeeded) {
+        } else if (!reachedBelow || !unreadPrefetchNeeded) {
           cancelLoadNewerIdle();
           refs.loadNewerTriggeredRef.current = false;
         }

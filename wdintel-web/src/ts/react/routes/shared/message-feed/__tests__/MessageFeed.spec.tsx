@@ -152,6 +152,41 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     );
   });
 
+  it('reports the newest edge through optional navigation for both list directions', async () => {
+    const scrollOptions = {
+      policy: historyPolicy,
+      hasReachedStart: true,
+      onLoadOlder: () => undefined,
+      autoScrollAllowed: false,
+    };
+    const renderControl = (atNewestEdge: boolean) => (
+      <button data-newest-navigation data-at-newest-edge={String(atNewestEdge)} />
+    );
+    const renderFeed = (edge: 'top' | 'bottom') => (
+      <MessageFeed
+        items={[1, 2, 3, 4, 5]}
+        getMessageId={getId}
+        scrollOptions={scrollOptions}
+        newestNavigation={{ edge, renderControl }}
+        renderMessage={renderMessage}
+      />
+    );
+
+    await act(async () => root.render(renderFeed('top')));
+    const control = container.querySelector<HTMLElement>('[data-newest-navigation]');
+    expect(control?.dataset.atNewestEdge).toBe('true');
+
+    const scroller = container.querySelector<HTMLElement>('[data-message-feed-scroller]')!;
+    await act(async () => {
+      scroller.scrollTop = 150;
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    expect(control?.dataset.atNewestEdge).toBe('false');
+
+    await act(async () => root.render(renderFeed('bottom')));
+    expect(control?.dataset.atNewestEdge).toBe('true');
+  });
+
   it('navigates to a composed child without a host-owned scroll hook', async () => {
     const feedRef = createRef<MessageFeedHandle>();
     await act(async () =>
@@ -244,6 +279,9 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     );
     expect(container.querySelectorAll('[data-message-feed-skeleton-card]')).toHaveLength(3);
     expect(
+      container.querySelectorAll('[data-message-feed-skeleton-card]:first-child .MuiSkeleton-root'),
+    ).toHaveLength(7);
+    expect(
       container.querySelector('[data-message-feed-skeleton="initial"]')?.getAttribute('role'),
     ).toBe('status');
     expect(container.querySelector('[data-message-feed-scroller]')?.getAttribute('aria-busy')).toBe(
@@ -324,7 +362,7 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(scroller.scrollTop).toBe(48);
   });
 
-  it('keeps compact edge loaders out of the item registry and valid in a list', async () => {
+  it('keeps available edge skeletons in list order and out of the item registry', async () => {
     const feedRef = createRef<MessageFeedHandle>();
     await act(async () =>
       root.render(
@@ -333,24 +371,60 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
           items={[1]}
           getMessageId={getId}
           scrollOptions={{
-            hasReachedStart: true,
+            hasReachedStart: false,
             onLoadOlder: () => undefined,
+            onLoadNewer: () => undefined,
+            unreadPrefetchNeeded: true,
             autoScrollAllowed: false,
+            enabled: false,
           }}
-          loadingAbove
-          loadingBelow
+          hasMoreAbove
+          hasMoreBelow
           listTag="ul"
           renderMessage={(id) => <li data-message-id={id}>message {id}</li>}
         />,
       ),
     );
     expect(container.querySelectorAll('ul.message-feed-list > li')).toHaveLength(3);
-    expect(container.querySelectorAll('[data-message-feed-skeleton-card]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-message-feed-skeleton-card]')).toHaveLength(2);
     expect(container.querySelectorAll('[data-message-feed-skeleton]')).toHaveLength(2);
+    expect(
+      container
+        .querySelector('ul.message-feed-list > li:first-child')
+        ?.getAttribute('data-message-feed-skeleton'),
+    ).toBe('above');
+    expect(
+      container
+        .querySelector('ul.message-feed-list > li:last-child')
+        ?.getAttribute('data-message-feed-skeleton'),
+    ).toBe('below');
     expect(feedRef.current?.getItemElement(1)).toBe(
       container.querySelector('[data-message-id="1"]'),
     );
     expect(feedRef.current?.getItemElement(2)).toBeNull();
+  });
+
+  it('does not add an edge skeleton for background loading without an available page', async () => {
+    await act(async () =>
+      root.render(
+        <MessageFeed
+          items={[1]}
+          getMessageId={getId}
+          scrollOptions={{
+            hasReachedStart: true,
+            onLoadOlder: () => undefined,
+            onLoadNewer: () => undefined,
+            enabled: false,
+          }}
+          loadingBelow
+          renderMessage={renderMessage}
+        />,
+      ),
+    );
+    expect(container.querySelector('[data-message-feed-skeleton="below"]')).toBeNull();
+    expect(container.querySelector('[data-message-feed-scroller]')?.getAttribute('aria-busy')).toBe(
+      'true',
+    );
   });
 
   it('preserves the reading card through prepend and viewport resize', async () => {

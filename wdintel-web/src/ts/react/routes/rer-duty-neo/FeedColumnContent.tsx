@@ -9,7 +9,6 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
 } from 'react';
 import type { ProfilerOnRenderCallback } from 'react';
 import { flushSync } from 'react-dom';
@@ -48,6 +47,7 @@ import {
   MessageFeedItem,
   MessageFeedRows,
   ScrollNavigationIntent,
+  shouldShowNewestNavigation,
   type AnchorSnapshot,
   type ExplicitScrollNavigation,
   type MessageFeedHandle,
@@ -63,9 +63,9 @@ import {
 import { useFeedColumnFab } from './feedColumnFab';
 import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../hooks/duty-settings-defaults';
 
-/** Start loading older messages when the user scrolls close to the top of the DOM list. */
+/** Fallback top-edge threshold when no older-page skeleton is present. */
 const LOAD_OLDER_BUFFER_PX = 160;
-/** Fetch the next tail window early enough to render it before the reader reaches the bottom. */
+/** Near-bottom threshold for unread prefetch and pending tail handling. */
 const LOAD_NEWER_BUFFER_PX = 640;
 /** Consider "at bottom" when within this many pixels of the scroll end (watch mode / read-state). */
 const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
@@ -503,7 +503,7 @@ type FeedColumnScrollFabProps = {
   feedId: string;
   loadingNewer: boolean;
   isWatchMode: boolean;
-  isPhysicallyAtBottom: boolean;
+  atNewestEdge: boolean;
   hasItems: boolean;
   bottom: number | string;
   right: number | string;
@@ -514,17 +514,25 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
   feedId,
   loadingNewer,
   isWatchMode,
-  isPhysicallyAtBottom,
+  atNewestEdge,
   hasItems,
   bottom,
   right,
   onArrowClick,
 }: FeedColumnScrollFabProps) {
-  const { bottomUnreadCount, arrowResultMessage, tailAvailability } = useFeedColumnFab(feedId);
+  const {
+    bottomUnreadCount,
+    arrowResultMessage,
+    tailAvailability,
+    hasUnrenderedNewerMessages,
+    explicitNavigationLoading,
+  } = useFeedColumnFab(feedId);
+  const newestLoaded =
+    tailAvailability === 'exhausted' && !hasUnrenderedNewerMessages && !loadingNewer;
   if (
     !hasItems ||
     !isPresent(onArrowClick) ||
-    !(!isPhysicallyAtBottom || tailAvailability === 'available')
+    !shouldShowNewestNavigation(atNewestEdge, newestLoaded)
   ) {
     return null;
   }
@@ -576,7 +584,7 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
           onClick={onArrowClick}
           disabled={loadingNewer}
         >
-          {loadingNewer ? (
+          {loadingNewer && explicitNavigationLoading ? (
             <CircularProgress
               size={20}
               sx={{ color: 'primary.main' }}
@@ -640,7 +648,6 @@ export const FeedColumnContent = memo(
       feedCount,
       scrollTrackingEnabled = true,
       loadingNewer = false,
-      physicallyAtBottom = true,
       isWatchMode = false,
       autoScrollAllowed = false,
       initialPositioningReady = true,
@@ -696,10 +703,6 @@ export const FeedColumnContent = memo(
       onArrowClick,
       onVisibleMessageIds,
     } = actions;
-    const [isPhysicallyAtBottom, setIsPhysicallyAtBottom] = useState(physicallyAtBottom);
-    useLayoutEffect(() => {
-      setIsPhysicallyAtBottom(physicallyAtBottom);
-    }, [physicallyAtBottom]);
     const networks = useMemo(
       () => (networkMap ? Object.values(networkMap) : undefined),
       [networkMap],
@@ -736,10 +739,7 @@ export const FeedColumnContent = memo(
       onLeftBottom,
       onNearBottomChange,
       onAtBottomChange,
-      onPhysicalBottomChange: (atBottom) => {
-        setIsPhysicallyAtBottom(atBottom);
-        onPhysicalBottomChange?.(atBottom);
-      },
+      onPhysicalBottomChange,
       onVisibleMessageIds,
       resetKey: feed.referenceTimeMs ?? feed.id,
       unreadPrefetchNeeded,
@@ -870,11 +870,31 @@ export const FeedColumnContent = memo(
           ref={feedRef}
           scrollerRef={scrollerRef}
           scrollOptions={scrollOptions}
+          newestNavigation={{
+            edge: 'bottom',
+            renderControl: (atNewestEdge) => (
+              <FeedColumnScrollFab
+                feedId={feed.id}
+                loadingNewer={loadingNewer}
+                isWatchMode={isWatchMode}
+                atNewestEdge={atNewestEdge}
+                hasItems={feed.items.length > 0}
+                bottom={scrollFabPosition.bottom}
+                right={scrollFabPosition.right}
+                onArrowClick={onArrowClick}
+              />
+            ),
+          }}
           items={feed.items}
           getMessageId={getMessageId}
           isLoading={feed.loading}
           loadingAbove={feed.loadingOlder}
           loadingBelow={loadingNewer}
+          hasMoreAbove={!feed.hasReachedStart}
+          hasMoreBelow={
+            feed.evictedNewerTailId != null &&
+            feed.items.every(([id]) => id !== feed.evictedNewerTailId)
+          }
           itemSelector="[data-duty-message-id]"
           scrollerProps={{
             'data-duty-feed-scroller': 'true',
@@ -901,16 +921,6 @@ export const FeedColumnContent = memo(
         >
           {profiledMessageList}
         </MessageFeed>
-        <FeedColumnScrollFab
-          feedId={feed.id}
-          loadingNewer={loadingNewer}
-          isWatchMode={isWatchMode}
-          isPhysicallyAtBottom={isPhysicallyAtBottom}
-          hasItems={feed.items.length > 0}
-          bottom={scrollFabPosition.bottom}
-          right={scrollFabPosition.right}
-          onArrowClick={onArrowClick}
-        />
       </Paper>
     );
   }),

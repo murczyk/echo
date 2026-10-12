@@ -71,14 +71,27 @@ async function visibleAnchor(scroller: Locator) {
 test.describe('Message feed unification @regression', () => {
   test('Analysis accumulates pages without moving the reading anchor', async ({ page }) => {
     const requests = await installPages(page);
+    let releasePage!: () => void;
+    const pendingPage = new Promise<void>((resolve) => {
+      releasePage = resolve;
+    });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      const request = route.request().postDataJSON();
+      if (request.before_id_noninclusive !== 141) {
+        return route.fallback();
+      }
+      requests.push(request);
+      await pendingPage;
+      return route.fulfill({ json: messagePage(140) });
+    });
     await page.goto('/rer-analysis-neo');
     const scroller = page.locator('[data-analysis-message-scroller]');
     await expect(scroller.locator('[data-message-id]')).toHaveCount(20);
-    await scroller.evaluate((element) => {
-      element.scrollTop = element.scrollHeight - element.clientHeight - 300;
-      element.dispatchEvent(new Event('scroll', { bubbles: true }));
-    });
+    const edgeLoader = scroller.locator('[data-message-feed-skeleton="below"]');
+    await edgeLoader.scrollIntoViewIfNeeded();
+    await expect(edgeLoader).toBeInViewport();
     const anchor = await visibleAnchor(scroller);
+    releasePage();
     await expect(scroller.locator('[data-message-id]')).toHaveCount(40);
     await expect(scroller.locator('[data-message-id="160"]')).toBeAttached();
     await expect(scroller.locator('[data-message-id="121"]')).toBeAttached();
@@ -94,7 +107,9 @@ test.describe('Message feed unification @regression', () => {
     });
   });
 
-  test('Analysis keeps the next-page loader off existing cards', async ({ page }) => {
+  test('Analysis loads the next page when its in-flow skeleton becomes visible', async ({
+    page,
+  }) => {
     await installPages(page);
     let releasePage!: () => void;
     const pendingPage = new Promise<void>((resolve) => {
@@ -113,32 +128,33 @@ test.describe('Message feed unification @regression', () => {
     await page.goto('/rer-analysis-neo');
     const scroller = page.locator('[data-analysis-message-scroller]');
     await expect(scroller.locator('[data-message-id]')).toHaveCount(20);
+    const edgeLoader = scroller.locator('[data-message-feed-skeleton="below"]');
+    await expect(edgeLoader).toBeAttached();
     await scroller.evaluate((element) => {
       element.scrollTop = element.scrollHeight - element.clientHeight - 300;
       element.dispatchEvent(new Event('scroll', { bubbles: true }));
     });
     try {
+      expect(pageRequested).toBe(false);
+      await edgeLoader.scrollIntoViewIfNeeded();
+      await expect(edgeLoader).toBeInViewport();
       await expect.poll(() => pageRequested).toBe(true);
-      const edgeLoader = scroller.locator('[data-message-feed-skeleton="below"]');
-      await expect(edgeLoader).toBeVisible();
-      expect(
-        await edgeLoader.evaluate((element) => element.getBoundingClientRect().height),
-      ).toBeLessThanOrEqual(8);
+      await expect(edgeLoader.locator('[data-message-feed-skeleton-card]')).toHaveCount(1);
       expect(
         await scroller.evaluate((element) => {
-          const cards = Array.from(element.querySelectorAll<HTMLElement>('[data-message-id]'));
-          const skeletons = Array.from(
-            element.querySelectorAll<HTMLElement>('[data-message-feed-skeleton-card]'),
+          const lastCard = Array.from(
+            element.querySelectorAll<HTMLElement>('[data-message-id]'),
+          ).at(-1);
+          const skeleton = element.querySelector<HTMLElement>(
+            '[data-message-feed-skeleton="below"]',
           );
-          return skeletons.some((skeleton) => {
-            const loadingRect = skeleton.getBoundingClientRect();
-            return cards.some((card) => {
-              const cardRect = card.getBoundingClientRect();
-              return loadingRect.top < cardRect.bottom && loadingRect.bottom > cardRect.top;
-            });
-          });
+          return Boolean(
+            lastCard &&
+            skeleton &&
+            skeleton.getBoundingClientRect().top >= lastCard.getBoundingClientRect().bottom,
+          );
         }),
-      ).toBe(false);
+      ).toBe(true);
     } finally {
       releasePage();
     }
@@ -288,20 +304,27 @@ test.describe('Message feed unification @regression', () => {
       await expect(scroller.locator('[data-message-id]')).toHaveCount(20);
       await scroller.hover();
       await page.mouse.wheel(0, -80);
+      await expect(scroller.locator('[data-message-feed-skeleton="above"]')).toBeAttached();
+      await expect(scroller.locator('[data-message-feed-skeleton="below"]')).toBeAttached();
       for (const edge of ['above', 'below'] as const) {
-        await scroller.evaluate((element, edge) => {
-          element.scrollTop =
-            edge === 'above' ? 1 : element.scrollHeight - element.clientHeight - 1;
-          element.dispatchEvent(new Event('scroll', { bubbles: true }));
-        }, edge);
+        const edgeLoader = scroller.locator(`[data-message-feed-skeleton="${edge}"]`);
+        await edgeLoader.scrollIntoViewIfNeeded();
+        await expect(edgeLoader).toBeInViewport();
         const anchor = await visibleAnchor(scroller);
         const direction = (edge === 'above') === newestFirst ? 'later' : 'earlier';
         await expect.poll(() => pending.has(direction)).toBe(true);
         pending.get(direction)!();
         await expect(scroller.locator('[data-message-id]')).toHaveCount(edge === 'above' ? 40 : 60);
-        await expect.poll(async () => (await visibleAnchor(scroller)).id).toBe(anchor.id);
         await expect
-          .poll(async () => Math.abs((await visibleAnchor(scroller)).offset - anchor.offset))
+          .poll(async () => {
+            const offset = await scroller
+              .locator(`[data-message-id="${anchor.id}"]`)
+              .evaluate((element) => {
+                const viewport = element.closest('[data-analysis-message-scroller]')!;
+                return element.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+              });
+            return Math.abs(offset - anchor.offset);
+          })
           .toBeLessThanOrEqual(1);
       }
       const ids = await scroller

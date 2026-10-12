@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CallsignInfoRes, InboxMessage, Network } from '../../../../../Bindings';
 import { FeedColumnContent } from '../FeedColumnContent';
 import { minimalInboxMessage } from '../inbox-message-mocks';
-import type { FeedColumnModel } from '../types';
+import type { FeedColumnModel, TailAvailability } from '../types';
 import { emptyFilter, type MessageFeedState } from '../utils';
 
 vi.mock('../useFeedIdleViewportOffload', () => ({
@@ -30,13 +30,15 @@ vi.mock('../duty-scroll-debug', () => ({
   useDutyScrollDebugEnabled: () => false,
 }));
 
-vi.mock('../feedColumnFab', () => ({
-  useFeedColumnFab: () => ({
-    bottomUnreadCount: 0,
-    arrowResultMessage: null,
-    tailAvailability: 'unknown',
-  }),
+const fabState = vi.hoisted(() => ({
+  bottomUnreadCount: 0,
+  arrowResultMessage: null as string | null,
+  tailAvailability: 'unknown' as TailAvailability,
+  hasUnrenderedNewerMessages: false,
+  explicitNavigationLoading: false,
 }));
+
+vi.mock('../feedColumnFab', () => ({ useFeedColumnFab: () => fabState }));
 
 const network = {
   id: 7,
@@ -139,9 +141,12 @@ describe('FeedColumnContent', () => {
     act(() => root?.unmount());
     container?.remove();
     document.body.innerHTML = '';
+    fabState.tailAvailability = 'unknown';
+    fabState.hasUnrenderedNewerMessages = false;
+    fabState.explicitNavigationLoading = false;
   });
 
-  it('uses feed-owned skeleton cards for initial and older loading', async () => {
+  it('uses feed-owned skeleton cards for initial and available older loading', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -156,11 +161,111 @@ describe('FeedColumnContent', () => {
 
     const olderColumn = {
       ...column,
-      feed: { ...column.feed, loadingOlder: true },
+      feed: { ...column.feed, loadingOlder: true, hasReachedStart: false },
     };
     await act(async () => root.render(<FeedColumnContent column={olderColumn} />));
     expect(container.querySelector('[data-message-feed-skeleton="above"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-message-feed-skeleton-card]')).toHaveLength(1);
     expect(container.querySelector('[data-duty-message-id="1"]')).not.toBeNull();
+  });
+
+  it('keeps newest navigation visible at a chunk boundary until the tail is confirmed', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const onArrowClick = vi.fn();
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          column={{
+            ...column,
+            actions: { ...column.actions, onArrowClick },
+          }}
+        />,
+      ),
+    );
+
+    const arrow = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Завантажити нові та перейти вниз"]',
+    );
+    expect(arrow).not.toBeNull();
+    await act(async () => arrow?.click());
+    expect(onArrowClick).toHaveBeenCalledOnce();
+  });
+
+  it('keeps newest navigation visible during a pending newer load even with a stale exhausted status', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    fabState.tailAvailability = 'exhausted';
+    const column = buildColumn(false);
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          column={{
+            ...column,
+            view: { ...column.view, loadingNewer: true },
+            actions: { ...column.actions, onArrowClick: () => {} },
+          }}
+        />,
+      ),
+    );
+
+    const arrow = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Завантажити нові та перейти вниз"]',
+    );
+    expect(arrow).not.toBeNull();
+    expect(arrow?.disabled).toBe(true);
+    expect(arrow?.querySelector('[role="progressbar"]')).toBeNull();
+    expect(arrow?.querySelector('svg[data-testid="ArrowDownwardIcon"]')).not.toBeNull();
+  });
+
+  it('shows progress on the newest button for an explicit jump', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    fabState.explicitNavigationLoading = true;
+    const column = buildColumn(false);
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          column={{
+            ...column,
+            view: { ...column.view, loadingNewer: true },
+            actions: { ...column.actions, onArrowClick: () => {} },
+          }}
+        />,
+      ),
+    );
+
+    const arrow = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Завантажити нові та перейти вниз"]',
+    );
+    expect(arrow?.querySelector('[role="progressbar"]')).not.toBeNull();
+  });
+
+  it('hides newest navigation only when the loaded tail is confirmed and rendered', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    fabState.tailAvailability = 'exhausted';
+    const column = buildColumn(false);
+    const withArrow = {
+      ...column,
+      actions: { ...column.actions, onArrowClick: () => {} },
+    };
+    const arrow = () =>
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Завантажити нові та перейти вниз"]',
+      );
+
+    await act(async () => root.render(<FeedColumnContent key="confirmed" column={withArrow} />));
+    expect(arrow()).toBeNull();
+
+    fabState.hasUnrenderedNewerMessages = true;
+    await act(async () => root.render(<FeedColumnContent key="buffered" column={withArrow} />));
+    expect(arrow()).not.toBeNull();
   });
 
   // Regression: https://github.com/echoua/echo/issues/3598

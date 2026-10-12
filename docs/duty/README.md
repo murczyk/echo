@@ -51,7 +51,7 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 
 - Each column keeps a **40-message window**. Older prepends / newer appends trim the other end.
 - **Near bottom** ≈ within **640px** of the end. If unread prefetch is still needed, the load zone expands up to about **two viewports** (capped at `2×640`), not “last 10 tall messages” (that fired loads thousands of px early and froze scroll on window trim).
-- **Scroll-idle newer loads:** when not physically at the bottom, `onLoadNewer` waits ~140ms after the last scroll event so a mid-fling fetch does not commit a 40-card window trim under the user’s finger.
+- **Scroll-idle newer loads:** background unread prefetch waits ~140ms after the last scroll event when not physically at the bottom, so a mid-fling fetch does not commit a 40-card window trim under the user’s finger. An available newer-page skeleton loads immediately when it enters the viewport.
 - **Badge** = loaded unread + trimmed unread + (beyond-tail preview when known). Near bottom **ignores** residual poll stock from a lagging read cursor; it **keeps** a real matching tail preview.
 - Mid-list read cursor advances from **DOM viewport-visible** rows. At bottom still marks through the **window tail** id.
 - Near bottom without watch: keep loading newer until there are **≥10 loaded-unread after last-seen** (or the server is exhausted). Watch + physical bottom still mark-all-read and drains the live tail.
@@ -59,7 +59,7 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 - **Active-only card trees (narrow):** narrow multi-feed mounts MessageCards only for the active tab.
 - **Idle viewport offload (multi-feed):** after ~10s without pointer/wheel/touch on a feed, off-viewport rows in that column become height placeholders; interaction remounts the full 40-window. All columns stay visible.
 - **Collapsed media (Duty, [#3161](https://github.com/echoua/echo/issues/3161)):** optional setting (default of) hides audio / photo·video / coordinates behind a reveal banner until clicked. Toggle in Settings → Оперативний.
-- Arrow down: explicit load (if needed) → one landing → hard unread catch-up. It does not authorize later background following. FAB shows a spinner while newer `get-inbox` is in flight.
+- Arrow down: explicit load (if needed) → one landing → hard unread catch-up. It does not authorize later background following. The button stays visible at a chunk boundary until the newest message is confirmed and rendered. Only an explicit jump shows a spinner in the button; ordinary chunk paging uses the feed skeleton.
 - **Underfilled window fallback ([#3615](https://github.com/echoua/echo/issues/3615)):** when the mounted window does not overflow, a deliberate upward wheel or focused Up/PageUp requests older history; a downward wheel or focused Down/PageDown flushes buffered newer items or requests a newer page. It never runs on mount, never drains history automatically, ignores nested controls and modified/zoom input, and coalesces input until the directional attempt settles. Native scrolling remains the owner once the window overflows. Regression: `wdintel-web/tests/e2e/rer-duty-scroll-stability.spec.ts` and `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useWindowedFeedScroll.spec.tsx`.
 
 ## Do not

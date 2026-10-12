@@ -1,5 +1,5 @@
-export { MessageFeed, MessageFeedRows } from './MessageFeed';
-export type { MessageFeedProps } from './MessageFeed';
+export { MessageFeed, MessageFeedRows, shouldShowNewestNavigation } from './MessageFeed';
+export type { MessageFeedNewestNavigation, MessageFeedProps } from './MessageFeed';
 export { MessageFeedItem } from './MessageFeedItem';
 export { MessageFeedSkeletons } from './MessageFeedSkeletons';
 export {
