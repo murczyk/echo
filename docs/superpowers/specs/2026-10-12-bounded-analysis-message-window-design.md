@@ -96,10 +96,13 @@ evicted pages can be revisited; full evicted `InboxMessage` payloads may not.
 
 The existing first, previous, next, and last page controls, range/total label,
 and `messagesPage` URL state remain available and behave as Analysis controls,
-not as Duty controls. Scrolling is an additional way to cross page boundaries;
-it updates the visible page and URL as it does today. Trimming a distant page
-does not reset the visible page, total count, or URL, and a page button can
-still revisit that page.
+not as Duty controls. Scrolling across a logical page boundary selects that
+page through the same visible-page update path as a pagination-button click:
+the active page, range/total label, button state, and `messagesPage` URL value
+change together. A button click additionally aligns the feed to the selected
+page; ordinary scrolling must not trigger a second jump. Trimming a distant
+page does not reset the selected page, total count, or URL, and a page button
+can still revisit that page.
 
 Controls first align to a page already in the window. For an adjacent evicted
 page they use the appropriate directional fetch. First/last jumps use their
@@ -150,12 +153,13 @@ generation together so the old and new query cannot be mixed.
 Add failing tests before implementation for repeated forward loads staying at
 or below 40, backward re-fetch after eviction, both Analysis sort directions,
 focused-link paging in both directions, page-control range/enablement and URL
-restoration, stale/failed requests, and stable visible-message offset. Exercise
-the same window operation through Duty tests so the refactor preserves its unread and
-evicted-tail behavior. Browser regression tests should scroll through several
-chunks on both pages and verify bounded rendered message count, edge
-skeletons, and reading-anchor stability. Run the affected Vitest and
-Playwright suites, `just test-fe`, and `just build-front`.
+restoration, scroll-driven page selection with the same visible-page state as
+button navigation, stale/failed requests, and stable visible-message offset.
+Exercise the same window operation through Duty tests so the refactor
+preserves its unread and evicted-tail behavior. Browser regression tests
+should scroll through several chunks on both pages and verify bounded
+rendered message count, edge skeletons, and reading-anchor stability. Run the
+affected Vitest and Playwright suites, `just test-fe`, and `just build-front`.
 
 The work does not change card actions, search, Important lists, replies,
 mentions, the backend pagination API, or the visual appearance of the feed.
