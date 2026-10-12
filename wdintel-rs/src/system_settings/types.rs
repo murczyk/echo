@@ -44,6 +44,10 @@ pub struct SystemSettingsCurrentRsp {
     pub ai_position_highlights_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
+    #[serde(default = "default_api_rate_limit_replenish_interval_ms")]
+    pub api_rate_limit_replenish_interval_ms: i64,
+    #[serde(default = "default_api_rate_limit_burst_size")]
+    pub api_rate_limit_burst_size: i64,
     #[serde(default = "default_true")]
     pub exclude_orbit_other_units: bool,
 }
@@ -94,6 +98,10 @@ pub struct SystemSettingsItem {
     pub ai_position_highlights_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
+    #[serde(default = "default_api_rate_limit_replenish_interval_ms")]
+    pub api_rate_limit_replenish_interval_ms: i64,
+    #[serde(default = "default_api_rate_limit_burst_size")]
+    pub api_rate_limit_burst_size: i64,
     #[serde(default = "default_true")]
     pub exclude_orbit_other_units: bool,
     #[serde(default)]
@@ -174,6 +182,10 @@ pub struct CreateSystemSettingsReq {
     pub ai_position_highlights_enabled: Option<bool>,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
+    #[serde(default = "default_api_rate_limit_replenish_interval_ms")]
+    pub api_rate_limit_replenish_interval_ms: i64,
+    #[serde(default = "default_api_rate_limit_burst_size")]
+    pub api_rate_limit_burst_size: i64,
     #[serde(default = "default_true")]
     pub exclude_orbit_other_units: bool,
     #[serde(default)]
@@ -184,6 +196,14 @@ pub struct CreateSystemSettingsReq {
     pub messenger_media_cache_max_size_gib: i64,
     #[serde(default = "default_media_cache_min_free_gib")]
     pub messenger_media_cache_min_free_gib: i64,
+}
+
+fn default_api_rate_limit_replenish_interval_ms() -> i64 {
+    crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT
+}
+
+fn default_api_rate_limit_burst_size() -> i64 {
+    crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT
 }
 
 fn default_analysis_aor_filter_enabled() -> bool {

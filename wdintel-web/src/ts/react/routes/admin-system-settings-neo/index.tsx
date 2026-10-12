@@ -60,6 +60,8 @@ type SystemSettingsForm = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  apiRateLimitReplenishIntervalMs: number;
+  apiRateLimitBurstSize: number;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheMinFreeGib: SystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -103,6 +105,8 @@ type SystemSettingsPayload = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  apiRateLimitReplenishIntervalMs: number;
+  apiRateLimitBurstSize: number;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheMinFreeGib: SystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -146,6 +150,8 @@ const EMPTY_FORM: SystemSettingsForm = {
   dutyExcludeMenuEnabled: true,
   analysisAorFilterEnabled: true,
   aiPositionHighlightsEnabled: false,
+  apiRateLimitReplenishIntervalMs: 500,
+  apiRateLimitBurstSize: 10,
   twoFactorAuthEnabled: true,
   excludeOrbitOtherUnits: true,
   messengerMediaCacheEnabled: false,
@@ -239,6 +245,8 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
     aiPositionHighlightsEnabled: item?.aiPositionHighlightsEnabled ?? false,
+    apiRateLimitReplenishIntervalMs: item?.apiRateLimitReplenishIntervalMs ?? 500,
+    apiRateLimitBurstSize: item?.apiRateLimitBurstSize ?? 10,
     twoFactorAuthEnabled: item?.twoFactorAuthEnabled ?? true,
     excludeOrbitOtherUnits: item?.excludeOrbitOtherUnits ?? true,
     messengerMediaCacheMinFreeGib: item?.messengerMediaCacheMinFreeGib ?? 10,
@@ -285,6 +293,8 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
     a.aiPositionHighlightsEnabled === b.aiPositionHighlightsEnabled &&
+    a.apiRateLimitReplenishIntervalMs === b.apiRateLimitReplenishIntervalMs &&
+    a.apiRateLimitBurstSize === b.apiRateLimitBurstSize &&
     a.twoFactorAuthEnabled === b.twoFactorAuthEnabled &&
     a.excludeOrbitOtherUnits === b.excludeOrbitOtherUnits &&
     a.messengerMediaCacheMinFreeGib === b.messengerMediaCacheMinFreeGib &&
@@ -387,6 +397,8 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
     aiPositionHighlightsEnabled: form.aiPositionHighlightsEnabled,
+    apiRateLimitReplenishIntervalMs: form.apiRateLimitReplenishIntervalMs,
+    apiRateLimitBurstSize: form.apiRateLimitBurstSize,
     twoFactorAuthEnabled: form.twoFactorAuthEnabled,
     excludeOrbitOtherUnits: form.excludeOrbitOtherUnits,
     messengerMediaCacheMinFreeGib: form.messengerMediaCacheMinFreeGib,
@@ -521,6 +533,49 @@ function MainSettingsSwitchRow({
       }
     />
   );
+}
+
+function ApiSettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
+  return (
+    <Stack spacing={2}>
+      <Typography>Обмеження запитів для кожного користувача з роллю Api.</Typography>
+      <TextField
+        type="number"
+        label="Інтервал поповнення одного запиту, мс"
+        value={form.apiRateLimitReplenishIntervalMs}
+        onChange={(event) =>
+          patchForm({ apiRateLimitReplenishIntervalMs: Number(event.target.value) })
+        }
+        helperText="500 мс відповідає 2 запитам на секунду."
+        slotProps={{ htmlInput: { min: 1, max: 2147483647, step: 1 } }}
+      />
+      <TextField
+        type="number"
+        label="Максимальний запас запитів"
+        value={form.apiRateLimitBurstSize}
+        onChange={(event) => patchForm({ apiRateLimitBurstSize: Number(event.target.value) })}
+        helperText="Кількість запитів, які можна виконати поспіль без очікування."
+        slotProps={{ htmlInput: { min: 1, max: 2147483647, step: 1 } }}
+      />
+    </Stack>
+  );
+}
+
+function validateApiRateLimitSettings(form: SystemSettingsForm): string | null {
+  if (
+    ![form.apiRateLimitReplenishIntervalMs, form.apiRateLimitBurstSize].every(
+      (value) => Number.isInteger(value) && value >= 1 && value <= 2147483647,
+    )
+  ) {
+    return 'API: інтервал поповнення та запас запитів мають бути додатними цілими числами в межах 2147483647.';
+  }
+  return null;
 }
 
 function MainSettingsSection({
@@ -1250,6 +1305,8 @@ export function AdminSystemSettingsNeoPage() {
       dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
       analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
       aiPositionHighlightsEnabled: payload.aiPositionHighlightsEnabled,
+      apiRateLimitReplenishIntervalMs: payload.apiRateLimitReplenishIntervalMs,
+      apiRateLimitBurstSize: payload.apiRateLimitBurstSize,
       twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
       excludeOrbitOtherUnits: payload.excludeOrbitOtherUnits,
       messengerMediaCacheMinFreeGib: payload.messengerMediaCacheMinFreeGib,
@@ -1305,7 +1362,10 @@ export function AdminSystemSettingsNeoPage() {
     if (!isDirty) return;
 
     const nextForm = normalizeForm(form);
-    const validationError = validateMediaCacheSettings(nextForm) ?? validatePelengBounds(nextForm);
+    const validationError =
+      validateApiRateLimitSettings(nextForm) ??
+      validateMediaCacheSettings(nextForm) ??
+      validatePelengBounds(nextForm);
     if (validationError) {
       setForm(nextForm);
       setSaveError(validationError);
@@ -1325,7 +1385,9 @@ export function AdminSystemSettingsNeoPage() {
       });
       window.dispatchEvent(new Event('system-settings-saved'));
     } catch (error) {
-      setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
+      const message = `Помилка збереження: ${formatErrorMessage(error)}`;
+      setSaveError(message);
+      notify({ severity: 'error', message });
     } finally {
       setSaveInProgress(false);
     }
@@ -1387,6 +1449,12 @@ export function AdminSystemSettingsNeoPage() {
                 label="Пеленги"
                 id="system-settings-neo-tab-pelengs"
                 aria-controls="system-settings-neo-panel-pelengs"
+              />
+              <Tab
+                value="api"
+                label="API"
+                id="system-settings-neo-tab-api"
+                aria-controls="system-settings-neo-panel-api"
               />
               <Tab
                 value="notifications"
@@ -1501,6 +1569,17 @@ export function AdminSystemSettingsNeoPage() {
                       <Stack spacing={3}>
                         <PelengSettingsSection form={form} patchForm={patchForm} />
                       </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-api"
+                    role="tabpanel"
+                    hidden={activeTab !== 'api'}
+                    aria-labelledby="system-settings-neo-tab-api"
+                  >
+                    {activeTab === 'api' ? (
+                      <ApiSettingsSection form={form} patchForm={patchForm} />
                     ) : null}
                   </Box>
 

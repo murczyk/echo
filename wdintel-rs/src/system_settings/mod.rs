@@ -120,6 +120,16 @@ fn map_system_settings_item(
             .show_peleng_distance_to_battleline,
         disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
         hide_networks: settings.hide_networks.unwrap_or(false),
+        api_rate_limit_replenish_interval_ms: settings
+            .api_rate_limit_replenish_interval_ms
+            .map(i64::from)
+            .unwrap_or(
+                crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
+            ),
+        api_rate_limit_burst_size: settings
+            .api_rate_limit_burst_size
+            .map(i64::from)
+            .unwrap_or(crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT),
         two_factor_auth_enabled: settings
             .two_factor_auth_enabled
             .unwrap_or(true),
@@ -709,6 +719,12 @@ fn system_settings_active_model(
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
         ai_position_highlights_enabled: Set(req.ai_position_highlights_enabled),
+        api_rate_limit_replenish_interval_ms: Set(Some(
+            req.api_rate_limit_replenish_interval_ms as i32,
+        )),
+        api_rate_limit_burst_size: Set(Some(
+            req.api_rate_limit_burst_size as i32,
+        )),
         two_factor_auth_enabled: Set(Some(req.two_factor_auth_enabled)),
         exclude_orbit_other_units: Set(Some(req.exclude_orbit_other_units)),
         messenger_media_cache_enabled: Set(Some(
@@ -759,6 +775,7 @@ async fn create_system_settings_for_login(
     login: &uuid::Uuid,
     req: &CreateSystemSettingsReq,
 ) -> Result<system_settings::Model, AppError> {
+    validate_api_rate_limit_settings(req).context(h!())?;
     validate_media_cache_settings(req).context(h!())?;
     validate_peleng_bounds(req)?;
     validate_report_generation_settings(req)?;
@@ -922,6 +939,16 @@ pub async fn current_system_settings(
             hide_orbit_data: settings.hide_orbit_data,
             disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
             hide_networks: settings.hide_networks.unwrap_or(false),
+            api_rate_limit_replenish_interval_ms: settings
+                .api_rate_limit_replenish_interval_ms
+                .map(i64::from)
+                .unwrap_or(
+                    crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
+                ),
+            api_rate_limit_burst_size: settings
+                .api_rate_limit_burst_size
+                .map(i64::from)
+                .unwrap_or(crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT),
             two_factor_auth_enabled: settings
                 .two_factor_auth_enabled
                 .unwrap_or(true),
@@ -975,6 +1002,10 @@ pub async fn current_system_settings(
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: false,
+            api_rate_limit_replenish_interval_ms:
+                crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
+            api_rate_limit_burst_size:
+                crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT,
             two_factor_auth_enabled: true,
             exclude_orbit_other_units: true,
         },
@@ -1055,6 +1086,29 @@ pub async fn activate_system_settings(
         activate_system_settings_for_login(&env.dbx, &login, req.id).await?;
 
     Ok(Json(map_system_settings_item(settings)?))
+}
+
+fn validate_api_rate_limit_settings(
+    req: &CreateSystemSettingsReq,
+) -> Result<(), AppError> {
+    if !(1..=crate::config::API_RATE_LIMIT_VALUE_MAX)
+        .contains(&req.api_rate_limit_replenish_interval_ms)
+        || !(1..=crate::config::API_RATE_LIMIT_VALUE_MAX)
+            .contains(&req.api_rate_limit_burst_size)
+    {
+        return Err(AppError::BL { msg: "API: інтервал поповнення та запас запитів мають бути додатними цілими числами в межах 2147483647".to_string() });
+    }
+    if req.api_rate_limit_replenish_interval_ms as u64
+        * req.api_rate_limit_burst_size as u64
+        > crate::config::API_RATE_LIMIT_CAPACITY_MS_MAX
+    {
+        return Err(AppError::BL {
+            msg:
+                "API: поєднання інтервалу поповнення та запасу запитів завелике"
+                    .to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn validate_media_cache_settings(
@@ -1701,6 +1755,10 @@ mod tests {
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: Some(false),
+            api_rate_limit_replenish_interval_ms:
+                crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
+            api_rate_limit_burst_size:
+                crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT,
             two_factor_auth_enabled: true,
             exclude_orbit_other_units: true,
             messenger_media_cache_enabled: false,
@@ -1780,6 +1838,8 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            api_rate_limit_replenish_interval_ms: Set(None),
+            api_rate_limit_burst_size: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),
             messenger_media_cache_enabled: Set(None),
