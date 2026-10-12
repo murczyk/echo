@@ -1,4 +1,3 @@
-use crate::entities::sea_orm_active_enums::IntelProductRelationKind;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
@@ -8,13 +7,13 @@ use crate::types::{error, info, warn};
 use crate::types::{Mode, ShortContext};
 use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Utc};
 use indicatif::ProgressBar;
-use sea_orm::sea_query::{Expr, Value};
+use sea_orm::sea_query::{Expr, SimpleExpr, Value};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
     DatabaseConnection, DatabaseTransaction, EntityTrait, ExprTrait,
     FromQueryResult, IntoActiveModel, JoinType, NotSet, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set, Statement,
-    TransactionTrait,
+    QueryFilter, QueryOrder, QuerySelect, QueryTrait, RelationTrait, Set,
+    Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -60,18 +59,55 @@ pub async fn find_linked_message_comments<C>(
 where
     C: ConnectionTrait,
 {
-    find_linked_message_comments_by_relation_kinds(
+    find_linked_message_comments_with_filter(
         dbx,
         parent_signal_message_ids,
-        &[intel_product::RELATION_KIND_COMMENT],
+        intel_product::relation_kind_eq(intel_product::RELATION_KIND_COMMENT),
     )
     .await
 }
 
-async fn find_linked_message_comments_by_relation_kinds<C>(
+pub fn rer_report_comment_filter() -> SimpleExpr {
+    let group_links = signal_message_group::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((
+                intel_product::Entity,
+                intel_product::Column::IntelMessageId,
+            )),
+        )
+        .into_query();
+    intel_product::relation_kind_eq(intel_product::RELATION_KIND_COMMENT).or(
+        intel_product::relation_kind_eq(intel_product::RELATION_KIND_REPORT)
+            .and(Expr::exists(group_links).not()),
+    )
+}
+
+pub async fn find_rer_report_comments<C>(
     dbx: &C,
     parent_signal_message_ids: &[i64],
-    relation_kinds: &[IntelProductRelationKind],
+) -> anyhow::Result<Vec<LinkedMessageComment>>
+where
+    C: ConnectionTrait,
+{
+    find_linked_message_comments_with_filter(
+        dbx,
+        parent_signal_message_ids,
+        rer_report_comment_filter(),
+    )
+    .await
+    .c(h!())
+}
+
+async fn find_linked_message_comments_with_filter<C>(
+    dbx: &C,
+    parent_signal_message_ids: &[i64],
+    relation_filter: SimpleExpr,
 ) -> Result<Vec<LinkedMessageComment>, AppError>
 where
     C: ConnectionTrait,
@@ -85,9 +121,7 @@ where
             intel_product::Column::SourceMessageId
                 .is_in(parent_signal_message_ids.to_vec()),
         )
-        .filter(intel_product::relation_kind_is_in(
-            relation_kinds.iter().copied(),
-        ))
+        .filter(relation_filter)
         .order_by_asc(intel_product::Column::CreatedAt)
         .order_by_asc(intel_product::Column::IntelMessageId)
         .all(dbx)
@@ -182,13 +216,13 @@ pub async fn find_report_comments<C>(
 where
     C: ConnectionTrait,
 {
-    let comments = find_linked_message_comments_by_relation_kinds(
+    let comments = find_linked_message_comments_with_filter(
         dbx,
         parent_signal_message_ids,
-        &[
+        intel_product::relation_kind_is_in([
             intel_product::RELATION_KIND_COMMENT,
             intel_product::RELATION_KIND_REPORT,
-        ],
+        ]),
     )
     .await
     .c(h!())?;

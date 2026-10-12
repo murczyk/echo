@@ -466,6 +466,7 @@ mod m20261008_080110_rer_report_admin;
 mod m20261009_201221_ai_agent_reasoning_policy;
 
 mod m20261011_112422_ai_agent_completion_event;
+mod m20261011_112649_ai_agent_work_memory;
 
 pub struct Migrator;
 
@@ -1122,6 +1123,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261010_094039_settlement_alias_lookup_indexes::Migration),
             Box::new(m20261010_110158_ai_settlement_worker_groups::Migration),
             Box::new(m20261011_112422_ai_agent_completion_event::Migration),
+            Box::new(m20261011_112649_ai_agent_work_memory::Migration),
         ]
     }
 }

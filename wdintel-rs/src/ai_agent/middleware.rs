@@ -179,6 +179,9 @@ async fn authorize_agent_request(
         .one(&env.dbx)
         .await
         .map_err(actix_web::error::ErrorInternalServerError)?;
+    let work_append = req.method() == actix_web::http::Method::POST
+        && path == crate::config::AI_AGENT_WORK_APPEND_PATH
+        && env.config.ai_agent_work_memory_enabled == Some(true);
     let request_is_active = match active_request {
         Some(request) => match super::reasoning::request_policy(&request)
             .map_err(actix_web::error::ErrorInternalServerError)?
@@ -188,7 +191,11 @@ async fn authorize_agent_request(
                     .is_some_and(|deadline| {
                         chrono::Utc::now().timestamp_millis()
                             < deadline
-                                - policy.finalization_seconds as i64 * 1000
+                                - if work_append {
+                                    0
+                                } else {
+                                    policy.finalization_seconds as i64 * 1000
+                                }
                     })
             }
             None => true,
@@ -199,6 +206,9 @@ async fn authorize_agent_request(
         return Err(actix_web::error::ErrorForbidden(
             "Agent request credential is no longer active",
         ));
+    }
+    if work_append {
+        return Ok(());
     }
     let call_count: i64 = redis::Script::new(
         r#"

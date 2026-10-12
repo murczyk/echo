@@ -57,6 +57,11 @@ struct WorkerLease {
 }
 
 pub async fn run_nofail(env: Arc<Env>, cancellation: CancellationToken) {
+    if env.config.ai_agent_work_memory_enabled.is_none() {
+        crate::types::warn!(
+            "AI work memory is disabled: ai_agent_work_memory_enabled is unset"
+        );
+    }
     while !cancellation.is_cancelled() {
         let lease = match wait_for_worker_lease(
             &env.dbx,
@@ -735,6 +740,26 @@ async fn run_request_inner(
     }
     if let Some(map_edit) = map_edit {
         runner_payload["mapEdit"] = serde_json::to_value(map_edit).c(h!())?;
+    }
+    if env.config.ai_agent_work_memory_enabled == Some(true) {
+        runner_payload["workMemory"] =
+            match super::work_memory::initial_context(env, request).await {
+                Ok(context) => context,
+                Err(error) => {
+                    crate::types::warn!(
+                        "AI work recap unavailable for {}: {error:#?}",
+                        request.id
+                    );
+                    json!({"version":1})
+                }
+            };
+    } else if let Some(skills) = runner_payload["skills"].as_array_mut() {
+        skills.retain(|skill| {
+            !skill["skill"]
+                .as_str()
+                .unwrap_or_default()
+                .starts_with("work_")
+        });
     }
     let payload = bounded_runner_payload(runner_payload, history)?;
     let dispatcher = DispatcherClient::from_env(env).await?;

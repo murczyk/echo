@@ -1,3 +1,4 @@
+import { isVideoPreviewStream, useVideoPreviewStream } from '../use-video-preview-stream';
 import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { Box, Button, CircularProgress, Typography } from '@mui/material';
@@ -22,6 +23,7 @@ export function VideoFilePreview({
   onRequestPlay,
   needsPlayGesture,
   onLoadTimeout,
+  onStreamError,
   loadTimeoutMs = 30_000,
   nativeControls = false,
 }: {
@@ -30,6 +32,7 @@ export function VideoFilePreview({
   onRequestPlay: () => void;
   needsPlayGesture: boolean;
   onLoadTimeout: () => void;
+  onStreamError?: (cause: unknown) => void;
   error?: { message: string };
   loadTimeoutMs?: number;
   nativeControls?: boolean;
@@ -45,6 +48,12 @@ export function VideoFilePreview({
   onError?: (event: SyntheticEvent<HTMLVideoElement>) => void;
   videoRef: React.RefObject<HTMLVideoElement>;
 }) {
+  useVideoPreviewStream(
+    error ? null : src,
+    videoRef,
+    onRequestPlay,
+    onStreamError ?? onLoadTimeout,
+  );
   const [clickAction, setClickAction] = useState<'play' | 'pause'>('play');
   const [showIcon, setShowIcon] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
@@ -81,7 +90,7 @@ export function VideoFilePreview({
       {src ? (
         <video
           ref={videoRef}
-          src={src}
+          src={isVideoPreviewStream(src) ? undefined : src}
           controls={nativeControls}
           preload="metadata"
           playsInline

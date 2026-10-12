@@ -1,5 +1,6 @@
 use super::{entry, files, settings, worker};
 use crate::config::{
+    MESSENGER_MEDIA_CACHE_FAILURE_TTL_SECS,
     MESSENGER_MEDIA_LOCAL_CACHE_FFMPEG_BIN,
     MESSENGER_MEDIA_LOCAL_CACHE_FFPROBE_BIN,
     MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_EXTRA_BYTES,
@@ -12,10 +13,11 @@ use crate::types::{warn, Env, ShortContext};
 use anyhow::{bail, Result};
 use chrono::Utc;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{Duration, Instant};
 use tokio::fs;
 use tokio::process::Command;
 
@@ -40,6 +42,23 @@ struct ProbeStream {
     pix_fmt: Option<String>,
 }
 
+/// Entries that recently failed to get cache room, so polling clients are sent
+/// to the original stream instead of waiting for a copy that cannot be made.
+static CACHE_FULL: LazyLock<Mutex<HashMap<String, Instant>>> =
+    LazyLock::new(Mutex::default);
+
+fn recently_cache_full(id: &str) -> bool {
+    let ttl = Duration::from_secs(MESSENGER_MEDIA_CACHE_FAILURE_TTL_SECS);
+    let mut full = CACHE_FULL.lock().unwrap_or_else(|e| e.into_inner());
+    full.retain(|_, at| at.elapsed() < ttl);
+    full.contains_key(id)
+}
+
+fn mark_cache_full(id: String) {
+    let mut full = CACHE_FULL.lock().unwrap_or_else(|e| e.into_inner());
+    full.insert(id, Instant::now());
+}
+
 pub(crate) async fn playback_status(
     env: Arc<Env>,
     media: &signal_message_media::Model,
@@ -55,6 +74,9 @@ pub(crate) async fn playback_status(
     if let Some(path) = entry.ready(true).await.c(h!())? {
         return Ok(PlaybackStatus::Ready(path));
     }
+    if !media.is_encrypted {
+        return Ok(PlaybackStatus::Original);
+    }
     if let Some(metadata) = entry.metadata().await.c(h!())? {
         if let Some(error) = metadata.playback_error {
             return Ok(if error == "unsupported" {
@@ -64,7 +86,11 @@ pub(crate) async fn playback_status(
             });
         }
     }
+    if recently_cache_full(&entry.id) {
+        return Ok(PlaybackStatus::Original);
+    }
     let media = media.clone();
+    let entry_id = entry.id.clone();
     tokio::spawn(async move {
         let result = async {
             worker::recover_original(&env, &media, Utc::now().timestamp())
@@ -74,6 +100,9 @@ pub(crate) async fn playback_status(
         }
         .await;
         if let Err(error) = result {
+            if error.downcast_ref::<files::CacheFull>().is_some() {
+                mark_cache_full(entry_id);
+            }
             warn!("requested video playback preparation failed media_id={}: {error:#}", media.id)
         }
     });

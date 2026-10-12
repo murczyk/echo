@@ -233,6 +233,8 @@ pub const AI_POSITION_KNOWLEDGE_HALF_LIFE_DAYS: f64 = 7.0;
 pub const AI_POSITION_KNOWLEDGE_CONFLICT_RATIO: f64 = 0.5;
 /// Sent once when the model's reply is not valid JSON.
 pub const AI_POSITION_REPAIR_PROMPT: &str = "Попередня відповідь не є валідним JSON за схемою. Поверни ту саму відповідь як валідний JSON: координати без значення не додавай (порожній список []).";
+/// Opens every sheet row in text flattened from a spreadsheet.
+pub const AI_POSITION_SPREADSHEET_MARKER: &str = "[sheet ";
 pub const AI_POSITION_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-10-02-position-prompt/prompt.txt");
 pub const AI_INTEL_REPORT_SETTINGS_ID: i16 = 1;
@@ -332,6 +334,17 @@ pub const AI_AGENT_HISTORY_EVENT_BATCH: u64 = 256;
 pub const AI_AGENT_CITATION_ACCESS_BATCH: usize = 1_000;
 pub const AI_AGENT_HISTORY_DRAFT_MAX_BYTES: usize = 128 * 1024;
 pub const AI_AGENT_HISTORY_MIN_TEXT_BYTES: usize = 128;
+pub const AI_AGENT_WORK_RECORD_MAX_BYTES: usize = 512 * 1024;
+pub const AI_AGENT_WORK_REQUEST_MAX_BYTES: i64 = 64 * 1024 * 1024;
+pub const AI_AGENT_WORK_MAX_RECORDS: i64 = 512;
+pub const AI_AGENT_WORK_PAGE_RECORDS: i64 = 1;
+pub const AI_AGENT_WORK_LIST_REQUESTS: i64 = 20;
+pub const AI_AGENT_WORK_RECAP_MAX_CHARS: usize = 8_000;
+pub const AI_AGENT_WORK_READ_CHARS: usize = 24_000;
+pub const AI_AGENT_WORK_PROMPT_CHARS: usize = 2_000;
+pub const AI_AGENT_WORK_CHECKPOINT_CHARS: usize = 4_000;
+pub const AI_AGENT_WORK_EXCERPT_CHARS: usize = 600;
+pub const AI_AGENT_WORK_APPEND_PATH: &str = "/api/ai-agent/work/append";
 pub const AI_AGENT_WORKER_SHUTDOWN_GRACE_SEC: u64 = 30;
 pub const AI_AGENT_WORKER_IDLE_SLEEP_MS: u64 = 500;
 pub const AI_AGENT_WORKER_ERROR_SLEEP_SEC: u64 = 5;
@@ -407,7 +420,7 @@ pub const AI_AGENT_REASONING_PURPOSE_HEADER: &str = "x-echo-ai-purpose";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
 pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.10.5";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.11.2";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -975,6 +988,29 @@ pub const MESSENGER_MEDIA_LOCAL_CACHE_MP4_METADATA_MAX_BYTES: u64 =
 pub const MESSENGER_MEDIA_LOCAL_CACHE_PLAYBACK_EXTRA_BYTES: u64 = 1024 * 1024;
 pub const MESSENGER_MEDIA_LOCAL_CACHE_FFMPEG_BIN: &str = "ffmpeg";
 pub const MESSENGER_MEDIA_LOCAL_CACHE_FFPROBE_BIN: &str = "ffprobe";
+pub const MESSENGER_MEDIA_PREVIEW_DIR_NAME: &str = "preview-v1";
+pub const MESSENGER_MEDIA_PREVIEW_MIN_SOURCE_BYTES: i64 = 8 * 1024 * 1024;
+pub const MESSENGER_MEDIA_PREVIEW_NATIVE_MAX_BITRATE: u64 = 8_000_000;
+pub const MESSENGER_MEDIA_PREVIEW_SOURCE_TTL_SECS: u64 = 10 * 60;
+pub const MESSENGER_MEDIA_PREVIEW_PROBE_TIMEOUT_SECS: u64 = 5;
+pub const MESSENGER_MEDIA_PREVIEW_MAX_DURATION_SECS: u64 = 24 * 60 * 60;
+pub const MESSENGER_MEDIA_PREVIEW_SEGMENT_SECS: f64 = 1.0;
+pub const MESSENGER_MEDIA_PREVIEW_WINDOW_SEGMENTS: u32 = 8;
+pub const MESSENGER_MEDIA_PREVIEW_LOOKAHEAD_SEGMENTS: u32 = 4;
+pub const MESSENGER_MEDIA_PREVIEW_POLL_MILLIS: u64 = 50;
+pub const MESSENGER_MEDIA_PREVIEW_SEGMENT_TIMEOUT_SECS: u64 = 30;
+pub const MESSENGER_MEDIA_PREVIEW_SEGMENT_MAX_BYTES: u64 = 8 * 1024 * 1024;
+pub const MESSENGER_MEDIA_PREVIEW_CONCURRENCY: usize = 2;
+pub const MESSENGER_MEDIA_PREVIEW_LOCK_SHARDS: u32 = 64;
+pub const MESSENGER_MEDIA_PREVIEW_CACHE_MAX_BYTES: u64 = 512 * 1024 * 1024;
+pub const MESSENGER_MEDIA_PREVIEW_CACHE_TTL_SECS: u64 = 24 * 60 * 60;
+pub const MESSENGER_MEDIA_PREVIEW_MIN_FREE_BYTES: u64 = 1024 * 1024 * 1024;
+pub const MESSENGER_MEDIA_PREVIEW_VIDEO_FILTER: &str =
+    "fps=30,scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2";
+pub const MESSENGER_MEDIA_PREVIEW_VIDEO_MAXRATE: &str = "3M";
+pub const MESSENGER_MEDIA_PREVIEW_VIDEO_THREADS: &str = "2";
+pub const MESSENGER_MEDIA_PREVIEW_SOURCE_TIMEOUT_MICROS: &str = "10000000";
+
 pub const MESSENGER_MEDIA_THUMBNAIL_DIR_NAME: &str = "thumbnails";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_DIR_NAME: &str = "thumbnail_sources";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_BUDGET_LOCK_FILE_NAME: &str =
@@ -1658,6 +1694,7 @@ pub struct Config {
     pub ai_agent_dispatcher: Option<AiAgentDispatcherConfig>,
     pub ai_agent_glm_checkpoint_provider: Option<AiAgentGlmCheckpointProvider>,
     pub ai_agent_reasoning_presets_enabled: Option<bool>,
+    pub ai_agent_work_memory_enabled: Option<bool>,
     pub ai_agent_reasoning_verified_engine_ids: Option<Vec<uuid::Uuid>>,
     pub ocr: Option<OcrConfig>,
 }

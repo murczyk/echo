@@ -11,6 +11,7 @@ import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/Messag
 import { AttachmentPreviewPlaybackControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
+import { isVideoPreviewStream } from '../use-video-preview-stream';
 import { loadManagedVideo } from '../message-card-video-loading';
 import { handleUnauthorizedMediaResponse } from '../message-card-media-fetch';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
@@ -212,7 +213,7 @@ export function VideoAttachmentPreviewRenderer({
   }, []);
 
   useEffect(() => {
-    if (src) requestPlay();
+    if (src && !isVideoPreviewStream(src)) requestPlay();
   }, [src, requestPlay]);
 
   const handlePlayPause = useCallback(() => {
@@ -482,6 +483,12 @@ export function VideoAttachmentPreviewRenderer({
           onRequestPlay={requestPlay}
           needsPlayGesture={needsPlayGesture}
           onLoadTimeout={handleLoadTimeout}
+          onStreamError={(cause) =>
+            setPlayerState((state) => ({
+              ...state,
+              error: { code: 'VIDEO_LOAD_ERROR', message: 'Не вдалося відтворити відео.', cause },
+            }))
+          }
           error={playerState.error}
           zoom={zoom}
           pan={pan}

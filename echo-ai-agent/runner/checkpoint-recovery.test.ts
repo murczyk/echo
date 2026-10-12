@@ -11,7 +11,10 @@ function stream(
   stop: string,
   call?: number,
   outputTokens = 8192,
+  recall = false,
 ): Response {
+  const toolName = recall ? "echo_work_read" : "echo_inbox_messages";
+  const args = JSON.stringify(recall ? { requestId: correlationId, after: 0, offset: 0 } : { period: { kind: "relative_days", days: 1 } });
   if (api === "openai-completions") {
     const delta =
       call === undefined
@@ -24,10 +27,8 @@ function stream(
                 id: `call_${call}`,
                 type: "function",
                 function: {
-                  name: "echo_inbox_messages",
-                  arguments: JSON.stringify({
-                    period: { kind: "relative_days", days: 1 },
-                  }),
+                  name: toolName,
+                  arguments: args,
                 },
               },
             ],
@@ -62,11 +63,9 @@ function stream(
           id: `fc_${call}`,
           type: "function_call",
           call_id: `call_${call}`,
-          name: "echo_inbox_messages",
+          name: toolName,
           status: "completed",
-          arguments: JSON.stringify({
-            period: { kind: "relative_days", days: 1 },
-          }),
+          arguments: args,
         };
   const events = [
     {
@@ -120,6 +119,7 @@ for (const api of ["openai-responses", "openai-completions"]) {
     "denied-synthesis",
     "filtered-synthesis",
     "cancel",
+    "persistence-failure",
   ]) {
     test(`#3724 runner recovers checkpoint exhaustion via ${api}: ${outcome}`, async (t) => {
       const events: any[] = [];
@@ -127,6 +127,7 @@ for (const api of ["openai-responses", "openai-completions"]) {
       let pages = 0;
       let checkpoints = 0;
       let synthesis = 0;
+      const savedWork: any[] = [];
       const oldSignals = {
         SIGINT: process.listeners("SIGINT"),
         SIGTERM: process.listeners("SIGTERM"),
@@ -150,6 +151,22 @@ for (const api of ["openai-responses", "openai-completions"]) {
             { correlationId },
             { headers: { "set-cookie": "session=fixture; HttpOnly" } },
           );
+        if (path === "/api/ai-agent/work/append") {
+          if (outcome === "persistence-failure") return Response.json({ error: "storage unavailable" }, { status: 503 });
+          const record = JSON.parse(init.body);
+          assert.equal(record.sequence, savedWork.length + 1);
+          savedWork.push(record);
+          return Response.json({ sequence: record.sequence });
+        }
+        if (path === "/api/ai-agent/work/read") {
+          pages += 1;
+          assert.ok(pages <= 6);
+          return Response.json({ requestId: correlationId, records: [{
+            sequence: 1, kind: "tool", tool: "echo_inbox_messages", query: {},
+            content: `Record 1: synthetic document received [джерело](${citation}). ` + "Synthetic archive text. ".repeat(3000),
+            citations: [{ messageId: 1, messageIdentifier: "fixture-1" }], fileCitations: [],
+          }], nextAfter: null, nextOffset: 0 });
+        }
         if (path === "/api/signal/inbox/messages") {
           pages += 1;
           assert.ok(pages <= 6, "compaction must run before further tools");
@@ -259,7 +276,9 @@ for (const api of ["openai-responses", "openai-completions"]) {
           );
         }
         assert.equal(purpose, "research");
-        return stream(api, "", "stop", pages);
+        assert.equal(savedWork.filter((record) => record.kind === "tool").length, pages, "#3770 all delivered tools must be durably acknowledged before research continues");
+        if (pages === 0) assert.ok(JSON.stringify(body).includes("Original subjects from interrupted work"));
+        return stream(api, "", "stop", pages, 8192, outcome === "after-checkpoint");
       };
       t.mock.method(globalThis, "fetch", async (url: unknown, init: any) => {
         try {
@@ -274,6 +293,7 @@ for (const api of ["openai-responses", "openai-completions"]) {
           validatePayload(
             {
               prompt: "Summarize the synthetic documents for today.",
+              workMemory: { version: 1, recap: "Original subjects from interrupted work", citations: [], fileCitations: [] },
               modelName: api === "openai-responses" ? "gpt-6-sol" : "glm-5.3",
               checkpointModelName:
                 api === "openai-responses" ? "gpt-6-sol" : "glm-5.3",
@@ -302,6 +322,7 @@ for (const api of ["openai-responses", "openai-completions"]) {
                 requestStartedAtUtc: "2026-10-10T09:00:00Z",
               },
               skills: [
+                { method: "POST", path: "/api/ai-agent/work/read", skill: "work_read", label: "Saved evidence", requestKind: "workRead" },
                 {
                   method: "POST",
                   path: "/api/signal/inbox/messages",
@@ -314,6 +335,16 @@ for (const api of ["openai-responses", "openai-completions"]) {
             false,
           ),
         );
+        if (outcome === "persistence-failure") {
+          await assert.rejects(running, /Could not preserve research/);
+          assert.deepEqual(errors, []);
+          assert.equal(pages, 1, "#3770 no further tools after a failed durable write");
+          assert.equal(checkpoints, 0);
+          assert.equal(synthesis, 0);
+          assert.equal(savedWork.length, 0);
+          assert.ok(!events.some((event) => event.type === "completion_metadata"));
+          return;
+        }
         if (
           [
             "denied",
@@ -327,6 +358,10 @@ for (const api of ["openai-responses", "openai-completions"]) {
         assert.deepEqual(errors, []);
         assert.ok(pages > 0);
         assert.ok(checkpoints > 0);
+        assert.equal(savedWork.filter((record) => record.kind === "tool").length, pages);
+        assert.ok(!JSON.stringify(savedWork).includes("Unfinished checkpoint"));
+        if (outcome === "after-checkpoint") assert.ok(savedWork.some((record) => record.tool === "echo_work_read" && record.content.includes("Record 1:")), "#3770 recalled fragments must survive a second interruption");
+        if (outcome === "after-checkpoint") assert.ok(savedWork.some((record) => record.kind === "checkpoint" && record.content.includes("Earlier checkpoint:")));
         const metadata = events.find(
           (event) => event.type === "completion_metadata",
         );

@@ -14,6 +14,7 @@ pub mod ai_agent_request_event;
 pub mod ai_agent_security_review;
 pub mod ai_agent_settings;
 pub mod ai_agent_user_link;
+pub mod ai_agent_work_record;
 pub mod ai_callsign_action;
 pub mod ai_callsign_feedback;
 pub mod ai_callsign_feedback_summary;

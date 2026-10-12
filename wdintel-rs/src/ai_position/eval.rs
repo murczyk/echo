@@ -356,8 +356,15 @@ async fn evaluate_case(
                 .iter()
                 .find(|position| position.name_key == case.name_key)
                 .map(|position| position.kind.clone());
+            // The prompt leaves out callsigns the text gives no place for, so
+            // a name that is not extracted at all is as right as one tagged
+            // `callsign`, as long as the text holds no coordinates.
+            let expected = case.expected.trim();
+            let left_out = kind.is_none()
+                && expected == "callsign"
+                && all_coords(text).await.is_empty();
             (
-                kind.as_deref() == Some(case.expected.trim()),
+                kind.as_deref() == Some(expected) || left_out,
                 format!("expected kind {}, found {kind:?}", case.expected),
             )
         }

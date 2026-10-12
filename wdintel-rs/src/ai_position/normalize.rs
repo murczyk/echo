@@ -206,9 +206,48 @@ pub fn ground(text: &str, name: &str) -> Vec<(usize, usize)> {
     spans
 }
 
+/// Whether the span is a spreadsheet cell label (`E5:` in text flattened from
+/// a table), which names the cell, not the position held in its value.
+pub fn is_cell_label(chars: &[char], begin: usize, end: usize) -> bool {
+    let Some(label) = chars.get(begin..end) else {
+        return false;
+    };
+    let letters = label.iter().take_while(|c| c.is_ascii_alphabetic()).count();
+    let digits = label.len() - letters;
+    let is_cell = (1..=3).contains(&letters)
+        && (1..=7).contains(&digits)
+        && label[letters..].iter().all(char::is_ascii_digit);
+    let at_cell_start = begin == 0
+        || matches!(chars[begin - 1], '\n' | '\r')
+        || (begin >= 2 && chars[begin - 2..begin] == ['|', ' ']);
+    is_cell && at_cell_start && chars.get(end) == Some(&':')
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ground, position_key};
+    use super::{ground, is_cell_label, position_key};
+
+    fn span_is_label(text: &str, needle: &str, nth: usize) -> bool {
+        let chars: Vec<char> = text.chars().collect();
+        let (begin, _) = text
+            .match_indices(needle)
+            .nth(nth)
+            .map(|(byte, found)| (text[..byte].chars().count(), found))
+            .unwrap();
+        is_cell_label(&chars, begin, begin + needle.chars().count())
+    }
+
+    #[test]
+    fn spots_spreadsheet_cell_labels() {
+        let text = "[sheet Лист1; row 5]\nC5: ОП73 | D5: 07.00 | E5: Береза";
+        assert!(span_is_label(text, "C5", 0));
+        assert!(span_is_label(text, "E5", 0));
+        // The cell value is not a label.
+        assert!(!span_is_label(text, "ОП73", 0));
+        // A label-like word in prose is not a label.
+        assert!(!span_is_label("Рух на E5: далі", "E5", 0));
+        assert!(!span_is_label("C5 зайнято", "C5", 0));
+    }
 
     #[test]
     fn recognises_generic_objects() {

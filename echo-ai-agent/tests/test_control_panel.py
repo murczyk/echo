@@ -90,13 +90,16 @@ class RolloutIsolationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             (directory / 'echo-other.lock').touch()
-            with mock.patch.object(DISPATCHER, 'ROLLOUT_LOCK_ROOT', directory), \
+            (directory / 'deploy.lock').touch()
+            with mock.patch.object(DISPATCHER, 'DEPLOY_LOCK_PATH', directory / 'deploy.lock'), \
+                 mock.patch.object(DISPATCHER, 'ROLLOUT_LOCK_ROOT', directory), \
                  mock.patch.object(DISPATCHER, 'NAMESPACE_RELEASES', directory), \
+                 mock.patch.object(DISPATCHER.Path, 'home', return_value=directory), \
                  mock.patch.object(DISPATCHER, 'dispatch', return_value={'ok':True}) as dispatch, \
                  (directory / 'echo-cbr.lock').open('w') as exclusive, \
                  (directory / 'global.lock').open('w') as shared:
                 fcntl.flock(exclusive, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                request = DISPATCHER.Request('test', 'run_request', {})
+                request = DISPATCHER.Request('test', 'run_request', {'agent_id':'019fc7f7-9770-7f83-9c1a-211af29b02e6'})
                 with self.assertRaisesRegex(DISPATCHER.DispatchError, 'in progress'):
                     DISPATCHER.dispatch_with_rollout_lock(request, 'echo-cbr', shared)
                 self.assertEqual(DISPATCHER.dispatch_with_rollout_lock(request, 'echo-other', shared), {'ok':True})
