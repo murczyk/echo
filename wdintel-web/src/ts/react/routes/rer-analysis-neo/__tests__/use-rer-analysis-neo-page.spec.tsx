@@ -149,6 +149,7 @@ const baseAnalysisData = {
   noMoreToLoad: false,
   nolimitShown: false,
   pageIndex: 0,
+  firstLoadedMessageIndex: 0,
   onUpdateLocalMessage: vi.fn(),
   onDeleteMessage: vi.fn(),
   onCancelBotTagAction: vi.fn(),
@@ -1336,6 +1337,51 @@ describe('useRerAnalysisNeoPage', () => {
       focusedMessageActive: true,
     });
   });
+  it('writes a bounded scroll-selected page to the URL without creating a button target', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?messagesPage=2`);
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: Array.from(
+        { length: 40 },
+        (_, index) => [60 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+      ),
+      firstLoadedMessageIndex: 20,
+      pageIndex: 2,
+      messagesTotalCount: 60,
+    };
+
+    renderHook();
+    await flushEffects();
+    act(() => latest?.clearMessagePageNavigationTarget());
+    act(() => latest?.setVisibleMessagesPageIndex(2));
+
+    expect(latest?.visibleMessagesPageIndex).toBe(2);
+    expect(latest?.messagePageNavigationTarget).toBeNull();
+    expect(new URL(window.location.href).searchParams.get('messagesPage')).toBe('3');
+  });
+
+  it('requests an evicted previous bounded page when its button is clicked', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?messagesPage=2`);
+    const loadPrevPage = vi.fn().mockResolvedValue(undefined);
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: Array.from(
+        { length: 40 },
+        (_, index) => [60 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+      ),
+      firstLoadedMessageIndex: 20,
+      pageIndex: 2,
+      messagesTotalCount: 60,
+      loadPrevPage,
+    };
+
+    renderHook();
+    await flushEffects();
+    await act(async () => latest?.loadPrevPage());
+
+    expect(loadPrevPage).toHaveBeenCalledWith(0);
+  });
+
   it('updates the visible chunk across previous and next direct-link navigation', async () => {
     const targetMessage = {
       text: 'target',

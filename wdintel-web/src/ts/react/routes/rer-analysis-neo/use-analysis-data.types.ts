@@ -93,6 +93,7 @@ export type UseAnalysisDataResult = {
   loadLastPage: () => Promise<void>;
   loadNextPage: () => Promise<void>;
   loadMoreMessages: () => Promise<boolean>;
+  loadPreviousMessages: () => Promise<boolean>;
   loadPrevPage: (targetPageIndex?: number) => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   loadSettlementMessagesForMap: (
@@ -112,6 +113,11 @@ export type UseAnalysisDataResult = {
   focusedLoadingLater: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
+  firstLoadedMessageIndex: number;
+  hasMoreBeforeWindow: boolean;
+  hasMoreAfterWindow: boolean;
+  loadingBeforeWindow: boolean;
+  loadingAfterWindow: boolean;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
   newCallsigns: import('../../../../Bindings').NewCallsignsRes;

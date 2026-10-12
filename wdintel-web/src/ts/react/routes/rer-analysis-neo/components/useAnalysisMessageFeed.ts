@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import type { InboxMessage } from '../../../../../Bindings';
 import type { MessageFeedPolicy, MessageFeedScrollOptions } from '../../shared/message-feed';
 import type { AnalysisDirectMessageNavigation } from '../types';
-import { ANALYSIS_MESSAGES_PAGE_SIZE, getFirstLoadedMessagesPageIndex } from '../helpers';
+import { ANALYSIS_MESSAGES_PAGE_SIZE } from '../helpers';
 
 export const ANALYSIS_MESSAGE_FEED_POLICY: MessageFeedPolicy = {
   initialPosition: 'start',
@@ -26,13 +26,17 @@ export function getFocusedLoadDirection(
 type Options = {
   messages: Array<[number, InboxMessage]>;
   directMessageNavigation: AnalysisDirectMessageNavigation | null;
+  firstLoadedMessageIndex: number;
+  hasMoreBeforeWindow: boolean;
+  hasMoreAfterWindow: boolean;
+  loadingBeforeWindow: boolean;
+  loadingAfterWindow: boolean;
   pageIndex: number;
   pageNavigationTarget: number | null;
   viewportPreservationKey: number;
   onViewportCaptureChange: (capture: (() => void) | null) => void;
   scrollResetKey: string;
-  paginationLoading: boolean;
-  noMoreToLoad: boolean;
+  onLoadPreviousMessages: () => Promise<boolean>;
   onLoadMoreMessages: () => Promise<boolean>;
   onVisiblePageChange: (pageIndex: number) => void;
   onPageNavigationHandled: () => void;
@@ -41,51 +45,60 @@ type Options = {
 export function useAnalysisMessageFeed({
   messages,
   directMessageNavigation,
+  firstLoadedMessageIndex,
+  hasMoreBeforeWindow,
+  hasMoreAfterWindow,
+  loadingBeforeWindow,
+  loadingAfterWindow,
   pageIndex,
   pageNavigationTarget,
   viewportPreservationKey,
   onViewportCaptureChange,
   scrollResetKey,
-  paginationLoading,
-  noMoreToLoad,
+  onLoadPreviousMessages,
   onLoadMoreMessages,
   onVisiblePageChange,
   onPageNavigationHandled,
 }: Options) {
-  const appendRequestedRef = useRef(false);
-  const loadMore = useCallback(async () => {
-    appendRequestedRef.current = true;
+  const scrollLoadRequestedRef = useRef(false);
+  const runScrollLoad = useCallback(async (load: () => Promise<boolean>) => {
+    scrollLoadRequestedRef.current = true;
     try {
-      const loaded = await onLoadMoreMessages();
-      if (!loaded) appendRequestedRef.current = false;
+      const loaded = await load();
+      if (!loaded) scrollLoadRequestedRef.current = false;
       return loaded;
     } catch (error) {
-      appendRequestedRef.current = false;
+      scrollLoadRequestedRef.current = false;
       throw error;
     }
-  }, [onLoadMoreMessages]);
-  const targetLocalIndex = directMessageNavigation
-    ? messages.findIndex(([id]) => id === directMessageNavigation.targetMessageId)
-    : -1;
-  const firstLoadedIndex =
-    directMessageNavigation && targetLocalIndex >= 0
-      ? directMessageNavigation.targetMessageIndex - targetLocalIndex
-      : getFirstLoadedMessagesPageIndex(pageIndex, messages.length) * ANALYSIS_MESSAGES_PAGE_SIZE;
+  }, []);
+  const loadMore = useCallback(
+    () => runScrollLoad(onLoadMoreMessages),
+    [onLoadMoreMessages, runScrollLoad],
+  );
+  const loadPrevious = useCallback(
+    () => runScrollLoad(onLoadPreviousMessages),
+    [onLoadPreviousMessages, runScrollLoad],
+  );
   const onFirstVisibleMessage = useCallback(
     (_id: number, index: number) => {
       onVisiblePageChange(
         directMessageNavigation?.focusActive
           ? Math.floor(directMessageNavigation.targetMessageIndex / ANALYSIS_MESSAGES_PAGE_SIZE)
-          : Math.max(0, Math.floor((firstLoadedIndex + index) / ANALYSIS_MESSAGES_PAGE_SIZE)),
+          : Math.max(
+              0,
+              Math.floor((firstLoadedMessageIndex + index) / ANALYSIS_MESSAGES_PAGE_SIZE),
+            ),
       );
     },
-    [directMessageNavigation, firstLoadedIndex, onVisiblePageChange],
+    [directMessageNavigation, firstLoadedMessageIndex, onVisiblePageChange],
   );
   const pageMessageId =
     pageNavigationTarget === null
       ? null
-      : (messages[pageNavigationTarget * ANALYSIS_MESSAGES_PAGE_SIZE - firstLoadedIndex]?.[0] ??
-        null);
+      : (messages[
+          pageNavigationTarget * ANALYSIS_MESSAGES_PAGE_SIZE - firstLoadedMessageIndex
+        ]?.[0] ?? null);
   const navigationTarget = useMemo(
     () =>
       pageMessageId !== null && pageNavigationTarget !== null
@@ -146,8 +159,10 @@ export function useAnalysisMessageFeed({
       : direction === 'later'
         ? directMessageNavigation?.onLoadLater
         : undefined;
-  const loadingAbove = Boolean(isLoading(above));
-  const loadingBelow = Boolean(isLoading(below));
+  const loadingAbove = directMessageNavigation ? Boolean(isLoading(above)) : loadingBeforeWindow;
+  const loadingBelow = directMessageNavigation ? Boolean(isLoading(below)) : loadingAfterWindow;
+  const hasMoreAbove = directMessageNavigation ? Boolean(canLoad(above)) : hasMoreBeforeWindow;
+  const hasMoreBelow = directMessageNavigation ? Boolean(canLoad(below)) : hasMoreAfterWindow;
   const scrollOptions: MessageFeedScrollOptions = {
     policy: ANALYSIS_MESSAGE_FEED_POLICY,
     focus,
@@ -156,24 +171,24 @@ export function useAnalysisMessageFeed({
     onViewportCaptureChange,
     resetKey: scrollResetKey,
     positionResetKey: pageIndex,
-    preservePositionOnReset: appendRequestedRef.current,
+    preservePositionOnReset: scrollLoadRequestedRef.current,
     initialPositioningReady: !directMessageNavigation?.contextLoading,
-    loadEdgesOnLayout: !directMessageNavigation?.contextLoading,
-    hasReachedStart: !canLoad(above),
-    onLoadOlder: load(above) ?? (() => undefined),
+    loadEdgesOnLayout: directMessageNavigation != null && !directMessageNavigation.contextLoading,
+    hasReachedStart: !hasMoreAbove,
+    onLoadOlder: directMessageNavigation ? (load(above) ?? (() => undefined)) : loadPrevious,
     onLoadNewer: directMessageNavigation ? load(below) : loadMore,
-    unreadPrefetchNeeded: directMessageNavigation ? Boolean(canLoad(below)) : !noMoreToLoad,
+    unreadPrefetchNeeded: hasMoreBelow,
     onFirstVisibleMessage,
   };
   useLayoutEffect(() => {
-    appendRequestedRef.current = false;
+    scrollLoadRequestedRef.current = false;
   }, [pageIndex]);
   return {
     scrollOptions,
     displayedMessages,
     loadingAbove,
     loadingBelow,
-    hasMoreAbove: Boolean(canLoad(above)),
-    hasMoreBelow: directMessageNavigation ? Boolean(canLoad(below)) : !noMoreToLoad,
+    hasMoreAbove,
+    hasMoreBelow,
   };
 }

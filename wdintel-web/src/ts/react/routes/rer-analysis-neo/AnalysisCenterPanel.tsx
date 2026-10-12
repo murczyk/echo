@@ -154,6 +154,7 @@ export function AnalysisCenterPanel({
             totalLoading={page.messagesTotalLoading}
             loading={page.messagesLoading}
             noMoreToLoad={page.noMoreToLoad}
+            hasMoreAfterWindow={page.hasMoreAfterWindow}
             busy={page.messagesPaging || page.messagesLoading}
             jumpDisabled={page.directMessageNavigation != null}
             onFirstPage={page.loadFirstPage}
@@ -237,6 +238,11 @@ export function AnalysisCenterPanel({
             botTagAction={page.botTagAction}
             messageComments={page.messageComments}
             messages={page.messages}
+            firstLoadedMessageIndex={page.firstLoadedMessageIndex}
+            hasMoreBeforeWindow={page.hasMoreBeforeWindow}
+            hasMoreAfterWindow={page.hasMoreAfterWindow}
+            loadingBeforeWindow={page.loadingBeforeWindow}
+            loadingAfterWindow={page.loadingAfterWindow}
             networkDisplayMap={page.networkDisplayMap}
             pageIndex={page.pageIndex}
             pageNavigationTarget={page.messagePageNavigationTarget}
@@ -253,6 +259,7 @@ export function AnalysisCenterPanel({
             onCreateReport={page.openReportCreator}
             onEditReport={page.openReportEditor}
             onLoadMoreMessages={page.loadMoreMessages}
+            onLoadPreviousMessages={page.loadPreviousMessages}
             onOpenPointsOnMap={page.openPointsOnMap}
             onAddPointHighlightBlacklist={page.onAddPointHighlightBlacklist}
             onSaveMessageUpdate={page.saveMessageUpdate}

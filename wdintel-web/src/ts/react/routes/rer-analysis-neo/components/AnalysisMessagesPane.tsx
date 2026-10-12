@@ -50,6 +50,11 @@ type Props = {
   isLoading?: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
+  firstLoadedMessageIndex: number;
+  hasMoreBeforeWindow: boolean;
+  hasMoreAfterWindow: boolean;
+  loadingBeforeWindow: boolean;
+  loadingAfterWindow: boolean;
   networkDisplayMap: Record<number, string>;
   pageIndex: number;
   pageNavigationTarget: number | null;
@@ -68,6 +73,7 @@ type Props = {
   ) => void;
   onEditReport: (messageId: number) => void | Promise<void>;
   onLoadMoreMessages: () => Promise<boolean>;
+  onLoadPreviousMessages: () => Promise<boolean>;
   onVisiblePageChange: (pageIndex: number) => void;
   onPageNavigationHandled: () => void;
   onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
@@ -110,6 +116,11 @@ function AnalysisMessagesPaneComponent({
   isLoading = false,
   messageComments,
   messages,
+  firstLoadedMessageIndex,
+  hasMoreBeforeWindow,
+  hasMoreAfterWindow,
+  loadingBeforeWindow,
+  loadingAfterWindow,
   networkDisplayMap,
   pageIndex,
   pageNavigationTarget,
@@ -124,6 +135,7 @@ function AnalysisMessagesPaneComponent({
   onCreateReport,
   onEditReport,
   onLoadMoreMessages,
+  onLoadPreviousMessages,
   onVisiblePageChange,
   onPageNavigationHandled,
   onOpenPointsOnMap,
@@ -166,20 +178,24 @@ function AnalysisMessagesPaneComponent({
   const {
     scrollOptions,
     displayedMessages,
-    loadingAbove: focusedLoadingAbove,
-    loadingBelow: focusedLoadingBelow,
+    loadingAbove: feedLoadingAbove,
+    loadingBelow: feedLoadingBelow,
     hasMoreAbove,
     hasMoreBelow,
   } = useAnalysisMessageFeed({
     messages,
     directMessageNavigation,
+    firstLoadedMessageIndex,
+    hasMoreBeforeWindow,
+    hasMoreAfterWindow,
+    loadingBeforeWindow,
+    loadingAfterWindow,
     pageIndex,
     pageNavigationTarget,
     viewportPreservationKey,
     onViewportCaptureChange,
     scrollResetKey,
-    paginationLoading,
-    noMoreToLoad,
+    onLoadPreviousMessages,
     onLoadMoreMessages,
     onVisiblePageChange,
     onPageNavigationHandled,
@@ -316,9 +332,9 @@ function AnalysisMessagesPaneComponent({
         items={displayedMessages}
         getMessageId={getMessageId}
         isLoading={isLoading}
-        loadingAbove={focusedLoadingAbove || Boolean(directMessageNavigation?.contextLoading)}
+        loadingAbove={feedLoadingAbove || Boolean(directMessageNavigation?.contextLoading)}
         loadingBelow={
-          focusedLoadingBelow ||
+          feedLoadingBelow ||
           Boolean(directMessageNavigation?.contextLoading) ||
           (directMessageNavigation == null && paginationLoading)
         }

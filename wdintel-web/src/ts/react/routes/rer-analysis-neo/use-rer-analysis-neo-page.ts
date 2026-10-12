@@ -31,7 +31,6 @@ import {
   parseMessageUidFromWindow,
   removeMessageUidFromWindowUrl,
   writeMessagesPageIndexToWindowUrl,
-  getFirstLoadedMessagesPageIndex,
 } from './helpers';
 import { fetchInboxItemContext, fetchInboxWindow } from '../../services/api/inbox-messages';
 import type {
@@ -536,9 +535,15 @@ export function useRerAnalysisNeoPage(
     },
     [data.reload],
   );
-  const firstLoadedMessagesPageIndex = getFirstLoadedMessagesPageIndex(
-    data.pageIndex,
-    data.messages.length,
+  const isPageStartLoaded = useCallback(
+    (targetPageIndex: number) => {
+      const targetMessageIndex = targetPageIndex * ANALYSIS_MESSAGES_PAGE_SIZE;
+      return (
+        targetMessageIndex >= data.firstLoadedMessageIndex &&
+        targetMessageIndex < data.firstLoadedMessageIndex + data.messages.length
+      );
+    },
+    [data.firstLoadedMessageIndex, data.messages.length],
   );
   const requestLoadedMessagesPage = useCallback(
     (pageIndex: number) => {
@@ -599,12 +604,8 @@ export function useRerAnalysisNeoPage(
   const loadDirectAdjacentPage = useCallback(
     async (targetPageIndex: number) => {
       if (!targetMessageContextActive || directTargetMessageIndex == null) return false;
-      const targetLocalIndex = data.messages.findIndex(
-        ([messageId]) => messageId === targetMessageWindow?.targetMessageId,
-      );
-      if (targetLocalIndex < 0) return false;
       clearTargetMessageFocus();
-      const firstLoadedMessageIndex = directTargetMessageIndex - targetLocalIndex;
+      const firstLoadedMessageIndex = data.firstLoadedMessageIndex;
       const lastLoadedMessageIndex = firstLoadedMessageIndex + data.messages.length - 1;
       const targetMessageIndex = targetPageIndex * ANALYSIS_MESSAGES_PAGE_SIZE;
       if (
@@ -630,28 +631,24 @@ export function useRerAnalysisNeoPage(
     [
       data.loadFocusedEarlier,
       data.loadFocusedLater,
-      data.messages,
+      data.firstLoadedMessageIndex,
+      data.messages.length,
       clearTargetMessageFocus,
       directTargetMessageIndex,
       newestFirst,
       requestLoadedMessagesPage,
       targetMessageContextActive,
-      targetMessageWindow?.targetMessageId,
     ],
   );
   const loadFirstPage = useCallback(async () => {
     if (visibleMessagesPageIndex === 0) return;
-    if (firstLoadedMessagesPageIndex === 0) {
+    if (isPageStartLoaded(0)) {
       requestLoadedMessagesPage(0);
       return;
     }
     await data.loadFirstPage();
-  }, [
-    data.loadFirstPage,
-    firstLoadedMessagesPageIndex,
-    requestLoadedMessagesPage,
-    visibleMessagesPageIndex,
-  ]);
+    requestLoadedMessagesPage(0);
+  }, [data.loadFirstPage, isPageStartLoaded, requestLoadedMessagesPage, visibleMessagesPageIndex]);
   const loadLastPage = useCallback(async () => {
     if (data.messagesTotalCount == null || data.messagesTotalCount === 0) return;
     const lastPageIndex = Math.max(
@@ -659,16 +656,16 @@ export function useRerAnalysisNeoPage(
       Math.ceil(data.messagesTotalCount / ANALYSIS_MESSAGES_PAGE_SIZE) - 1,
     );
     if (visibleMessagesPageIndex === lastPageIndex) return;
-    if (lastPageIndex >= firstLoadedMessagesPageIndex && lastPageIndex <= data.pageIndex) {
+    if (isPageStartLoaded(lastPageIndex)) {
       requestLoadedMessagesPage(lastPageIndex);
       return;
     }
     await data.loadLastPage();
+    requestLoadedMessagesPage(lastPageIndex);
   }, [
     data.loadLastPage,
     data.messagesTotalCount,
-    data.pageIndex,
-    firstLoadedMessagesPageIndex,
+    isPageStartLoaded,
     requestLoadedMessagesPage,
     visibleMessagesPageIndex,
   ]);
@@ -678,14 +675,15 @@ export function useRerAnalysisNeoPage(
       await loadDirectAdjacentPage(targetPageIndex);
       return;
     }
-    if (targetPageIndex <= data.pageIndex) {
+    if (isPageStartLoaded(targetPageIndex)) {
       requestLoadedMessagesPage(targetPageIndex);
       return;
     }
     await data.loadNextPage();
+    requestLoadedMessagesPage(targetPageIndex);
   }, [
     data.loadNextPage,
-    data.pageIndex,
+    isPageStartLoaded,
     loadDirectAdjacentPage,
     requestLoadedMessagesPage,
     targetMessageContextActive,
@@ -698,14 +696,15 @@ export function useRerAnalysisNeoPage(
       await loadDirectAdjacentPage(targetPageIndex);
       return;
     }
-    if (targetPageIndex >= firstLoadedMessagesPageIndex) {
+    if (isPageStartLoaded(targetPageIndex)) {
       requestLoadedMessagesPage(targetPageIndex);
       return;
     }
     await data.loadPrevPage(targetPageIndex);
+    requestLoadedMessagesPage(targetPageIndex);
   }, [
     data.loadPrevPage,
-    firstLoadedMessagesPageIndex,
+    isPageStartLoaded,
     loadDirectAdjacentPage,
     requestLoadedMessagesPage,
     targetMessageContextActive,
@@ -1274,6 +1273,11 @@ export function useRerAnalysisNeoPage(
       directMessageNavigation == null ? data.messagesTotalLoading : targetMessageContextLoading,
     messageComments: data.messageComments,
     messages: data.messages,
+    firstLoadedMessageIndex: data.firstLoadedMessageIndex,
+    hasMoreBeforeWindow: data.hasMoreBeforeWindow,
+    hasMoreAfterWindow: data.hasMoreAfterWindow,
+    loadingBeforeWindow: data.loadingBeforeWindow,
+    loadingAfterWindow: data.loadingAfterWindow,
     directMessageLoading,
     directMessageNavigation,
     networkDisplayMap: data.networkDisplayMap,
@@ -1348,6 +1352,7 @@ export function useRerAnalysisNeoPage(
     loadLastPage,
     loadNextPage,
     loadMoreMessages: data.loadMoreMessages,
+    loadPreviousMessages: data.loadPreviousMessages,
     loadPrevPage,
     loadMessagesForMap: data.loadMessagesForMap,
     loadSettlementMessagesForMap: data.loadSettlementMessagesForMap,
