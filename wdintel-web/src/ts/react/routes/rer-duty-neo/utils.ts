@@ -18,6 +18,7 @@ import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization
 import { getCanonicalUnitIdValue, isCanonicalUnitIdValue } from '../../utils/unit-search';
 import { normalizeRerDutyQueryStateWf } from '../../../rer-duty-filter-normalizer';
 import { readPersistedDutyFilterState } from './duty-filter-persistence';
+import { mergeMessageWindow } from '../shared/message-feed/windowing';
 
 export type DutyFeedFilterOptions = {
   adjacentFreqsRange: number;
@@ -795,41 +796,19 @@ export type WindowedMessageItemsResult = {
   removedItems: MessageItem[];
 };
 
-function normalizeWindowLimit(limit: number): number {
-  if (!Number.isFinite(limit)) return DUTY_FEED_MESSAGE_WINDOW_LIMIT;
-  return Math.max(1, Math.floor(limit));
-}
-
 function itemIds(items: MessageItem[]): Set<number> {
   return new Set(items.map(([id]) => id));
-}
-
-function trimMessageWindow(
-  items: MessageItem[],
-  limit: number,
-  trimFrom: 'start' | 'end',
-): { items: MessageItem[]; removedItems: MessageItem[] } {
-  const normalizedLimit = normalizeWindowLimit(limit);
-  if (items.length <= normalizedLimit) return { items, removedItems: [] };
-  const removeCount = items.length - normalizedLimit;
-  if (trimFrom === 'start') {
-    return {
-      items: items.slice(removeCount),
-      removedItems: items.slice(0, removeCount),
-    };
-  }
-  return {
-    items: items.slice(0, normalizedLimit),
-    removedItems: items.slice(normalizedLimit),
-  };
 }
 
 export function windowInitialMessageItems(
   items: MessageItem[],
   limit: number = DUTY_FEED_MESSAGE_WINDOW_LIMIT,
 ): MessageItem[] {
-  const sorted = sortMessageItemsByTime(dedupeMessageItems(items));
-  return trimMessageWindow(sorted, limit, 'start').items;
+  return mergeMessageWindow([], items, 'below', {
+    limit: Number.isFinite(limit) ? limit : DUTY_FEED_MESSAGE_WINDOW_LIMIT,
+    getId: ([id]) => id,
+    order: sortMessageItemsByTime,
+  }).items;
 }
 
 export function prependWindowedMessageItems(
@@ -837,11 +816,11 @@ export function prependWindowedMessageItems(
   incomingOlder: MessageItem[],
   limit: number = DUTY_FEED_MESSAGE_WINDOW_LIMIT,
 ): WindowedMessageItemsResult {
-  const existingIds = itemIds(existing);
-  const addedItems = dedupeMessageItems(incomingOlder).filter(([id]) => !existingIds.has(id));
-  const combined = sortMessageItemsByTime(dedupeMessageItems([...addedItems, ...existing]));
-  const trimmed = trimMessageWindow(combined, limit, 'end');
-  return { items: trimmed.items, addedItems, removedItems: trimmed.removedItems };
+  return mergeMessageWindow(existing, incomingOlder, 'above', {
+    limit: Number.isFinite(limit) ? limit : DUTY_FEED_MESSAGE_WINDOW_LIMIT,
+    getId: ([id]) => id,
+    order: sortMessageItemsByTime,
+  });
 }
 
 export function appendWindowedMessageItems(
@@ -849,11 +828,11 @@ export function appendWindowedMessageItems(
   incomingNewer: MessageItem[],
   limit: number = DUTY_FEED_MESSAGE_WINDOW_LIMIT,
 ): WindowedMessageItemsResult {
-  const existingIds = itemIds(existing);
-  const addedItems = dedupeMessageItems(incomingNewer).filter(([id]) => !existingIds.has(id));
-  const combined = sortMessageItemsByTime(dedupeMessageItems([...existing, ...addedItems]));
-  const trimmed = trimMessageWindow(combined, limit, 'start');
-  return { items: trimmed.items, addedItems, removedItems: trimmed.removedItems };
+  return mergeMessageWindow(existing, incomingNewer, 'below', {
+    limit: Number.isFinite(limit) ? limit : DUTY_FEED_MESSAGE_WINDOW_LIMIT,
+    getId: ([id]) => id,
+    order: sortMessageItemsByTime,
+  });
 }
 
 /**
