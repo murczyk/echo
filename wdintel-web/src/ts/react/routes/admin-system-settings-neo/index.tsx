@@ -151,7 +151,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   analysisAorFilterEnabled: true,
   aiPositionHighlightsEnabled: false,
   apiRateLimitReplenishIntervalMs: 500,
-  apiRateLimitBurstSize: 10,
+  apiRateLimitBurstSize: 5,
   twoFactorAuthEnabled: true,
   excludeOrbitOtherUnits: true,
   messengerMediaCacheEnabled: false,
@@ -246,7 +246,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
     aiPositionHighlightsEnabled: item?.aiPositionHighlightsEnabled ?? false,
     apiRateLimitReplenishIntervalMs: item?.apiRateLimitReplenishIntervalMs ?? 500,
-    apiRateLimitBurstSize: item?.apiRateLimitBurstSize ?? 10,
+    apiRateLimitBurstSize: item?.apiRateLimitBurstSize ?? 5,
     twoFactorAuthEnabled: item?.twoFactorAuthEnabled ?? true,
     excludeOrbitOtherUnits: item?.excludeOrbitOtherUnits ?? true,
     messengerMediaCacheMinFreeGib: item?.messengerMediaCacheMinFreeGib ?? 10,
@@ -574,6 +574,9 @@ function validateApiRateLimitSettings(form: SystemSettingsForm): string | null {
     )
   ) {
     return 'API: інтервал поповнення та запас запитів мають бути додатними цілими числами в межах 2147483647.';
+  }
+  if (form.apiRateLimitReplenishIntervalMs * form.apiRateLimitBurstSize > 9223372036854) {
+    return 'API: поєднання інтервалу поповнення та запасу запитів завелике.';
   }
   return null;
 }

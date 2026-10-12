@@ -17,45 +17,36 @@ use actix_web::{
 use anyhow::Context;
 use governor::{
     clock::{Clock, DefaultClock},
-    middleware::NoOpMiddleware,
+    DefaultKeyedRateLimiter, Quota, RateLimiter,
 };
-use sea_orm::{EntityTrait, QuerySelect};
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, FromQueryResult, QueryFilter,
+    QueryOrder, QuerySelect,
+};
 use std::{
+    num::NonZeroU32,
     sync::Mutex,
     time::{Duration, Instant},
 };
-use tower_governor::{
-    governor::{GovernorConfig, GovernorConfigBuilder},
-    key_extractor::KeyExtractor,
-    GovernorError,
-};
 use uuid::Uuid;
-
-#[derive(Clone)]
-struct ApiUserKeyExtractor;
-
-impl KeyExtractor for ApiUserKeyExtractor {
-    type Key = Uuid;
-
-    fn extract<T>(
-        &self,
-        req: &http::Request<T>,
-    ) -> Result<Uuid, GovernorError> {
-        req.extensions()
-            .get::<Uuid>()
-            .copied()
-            .ok_or(GovernorError::UnableToExtractKey)
-    }
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct ApiRateLimitSettings {
     replenish_interval_ms: u64,
     burst_size: u32,
+    revision: Option<(chrono::NaiveDateTime, i64)>,
+}
+
+#[derive(FromQueryResult)]
+struct ApiRateLimitSettingsRow {
+    id: i64,
+    updated_at: chrono::NaiveDateTime,
+    api_rate_limit_replenish_interval_ms: Option<i32>,
+    api_rate_limit_burst_size: Option<i32>,
 }
 
 impl ApiRateLimitSettings {
-    fn from_settings(settings: Option<&system_settings::Model>) -> Self {
+    fn from_settings(settings: Option<&ApiRateLimitSettingsRow>) -> Self {
         Self {
             replenish_interval_ms: settings
                 .and_then(|settings| {
@@ -69,14 +60,60 @@ impl ApiRateLimitSettings {
                 .map(i64::from)
                 .unwrap_or(API_RATE_LIMIT_BURST_SIZE_DEFAULT)
                 as u32,
+            revision: settings
+                .map(|settings| (settings.updated_at, settings.id)),
         }
     }
 }
 
+async fn load_api_rate_limit_settings(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<ApiRateLimitSettings> {
+    let settings = system_settings::Entity::find()
+        .select_only()
+        .columns([
+            system_settings::Column::Id,
+            system_settings::Column::UpdatedAt,
+            system_settings::Column::ApiRateLimitReplenishIntervalMs,
+            system_settings::Column::ApiRateLimitBurstSize,
+        ])
+        .filter(system_settings::Column::Deleted.eq(false))
+        .order_by_desc(system_settings::Column::UpdatedAt)
+        .into_model::<ApiRateLimitSettingsRow>()
+        .one(dbx)
+        .await
+        .c(h!())?;
+    Ok(ApiRateLimitSettings::from_settings(settings.as_ref()))
+}
+
 struct ApiRateLimitState {
     settings: ApiRateLimitSettings,
-    config: GovernorConfig<ApiUserKeyExtractor, NoOpMiddleware>,
+    limiter: DefaultKeyedRateLimiter<Uuid>,
     last_cleanup: Instant,
+}
+
+impl ApiRateLimitState {
+    fn new(settings: ApiRateLimitSettings) -> anyhow::Result<Self> {
+        let capacity_ms = settings
+            .replenish_interval_ms
+            .checked_mul(u64::from(settings.burst_size))
+            .context(h!())?;
+        anyhow::ensure!(
+            capacity_ms <= crate::config::API_RATE_LIMIT_CAPACITY_MS_MAX,
+            "{}: API rate limit capacity is too large",
+            h!()
+        );
+        let quota = Quota::with_period(Duration::from_millis(
+            settings.replenish_interval_ms,
+        ))
+        .context(h!())?
+        .allow_burst(NonZeroU32::new(settings.burst_size).context(h!())?);
+        Ok(Self {
+            settings,
+            limiter: RateLimiter::keyed(quota),
+            last_cleanup: Instant::now(),
+        })
+    }
 }
 
 #[derive(Default)]
@@ -93,30 +130,22 @@ impl ApiRateLimiter {
             .lock()
             .map_err(|error| anyhow::anyhow!(error.to_string()))
             .c(h!())?;
-        if state
-            .as_ref()
-            .is_none_or(|state| state.settings != settings)
-        {
-            anyhow::ensure!(
-                settings.replenish_interval_ms * u64::from(settings.burst_size)
-                    <= crate::config::API_RATE_LIMIT_CAPACITY_MS_MAX,
-                "{}: API rate limit capacity is too large",
-                h!()
-            );
-            let config = GovernorConfigBuilder::default()
-                .per_millisecond(settings.replenish_interval_ms)
-                .burst_size(settings.burst_size)
-                .key_extractor(ApiUserKeyExtractor)
-                .finish()
-                .context(h!())?;
-            *state = Some(ApiRateLimitState {
-                settings,
-                config,
-                last_cleanup: Instant::now(),
-            });
+        let settings = match state.as_ref() {
+            Some(state) if state.settings.revision > settings.revision => {
+                state.settings
+            }
+            _ => settings,
+        };
+        if state.as_ref().is_none_or(|state| {
+            state.settings.replenish_interval_ms
+                != settings.replenish_interval_ms
+                || state.settings.burst_size != settings.burst_size
+        }) {
+            *state = Some(ApiRateLimitState::new(settings).context(h!())?);
         }
         let state = state.as_mut().context(h!())?;
-        let limiter = state.config.limiter();
+        state.settings = settings;
+        let limiter = &state.limiter;
         if state.last_cleanup.elapsed()
             >= Duration::from_secs(API_RATE_LIMIT_CLEANUP_INTERVAL_SECS)
         {
@@ -161,16 +190,12 @@ async fn api_user_retry_after(
     {
         return Ok(None);
     }
-    let settings = crate::system_settings::get_active_system_settings(&env.dbx)
-        .await
-        .c(h!())?;
+    let settings =
+        load_api_rate_limit_settings(&env.dbx).await.context(h!())?;
     req.app_data::<Data<ApiRateLimiter>>()
         .context(h!())?
-        .check(
-            login_id,
-            ApiRateLimitSettings::from_settings(settings.as_ref()),
-        )
-        .c(h!())
+        .check(login_id, settings)
+        .context(h!())
 }
 
 pub async fn throttle_api_users<B: MessageBody>(
@@ -179,6 +204,7 @@ pub async fn throttle_api_users<B: MessageBody>(
 ) -> Result<ServiceResponse<EitherBody<B>>, Error> {
     if let Some(wait) = api_user_retry_after(&req)
         .await
+        .context(h!())
         .map_err(actix_web::error::ErrorInternalServerError)?
     {
         let retry_after = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
@@ -200,10 +226,12 @@ mod tests {
     use actix_identity::{Identity, IdentityMiddleware};
     use actix_session::{storage::RedisSessionStore, SessionMiddleware};
     use actix_web::{
-        cookie::Key, http::StatusCode, test as actix_test, web, App,
-        HttpMessage, HttpRequest,
+        cookie::{Cookie, Key},
+        dev::Service,
+        http::StatusCode,
+        test as actix_test, web, App, HttpMessage, HttpRequest,
     };
-    use sea_orm::ActiveValue::Set;
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
     use serial_test::serial;
 
     async fn start_session(
@@ -242,6 +270,10 @@ mod tests {
                 "/api/other",
                 web::get().to(|| async { HttpResponse::Ok().finish() }),
             )
+            .route(
+                "/outside-api",
+                web::get().to(|| async { HttpResponse::Ok().finish() }),
+            )
             .service(crate::system_settings::create_system_settings);
     }
 
@@ -257,6 +289,52 @@ mod tests {
             "api_rate_limit_replenish_interval_ms": 60000,
             "api_rate_limit_burst_size": 2
         })
+    }
+
+    fn probe(cookie: &Cookie<'static>, path: &str) -> actix_test::TestRequest {
+        actix_test::TestRequest::get()
+            .uri(path)
+            .cookie(cookie.clone())
+    }
+
+    fn save_request(
+        cookie: &Cookie<'static>,
+        settings: &serde_json::Value,
+    ) -> actix_test::TestRequest {
+        actix_test::TestRequest::post()
+            .uri("/api/admin/system-settings/create")
+            .cookie(cookie.clone())
+            .set_json(settings)
+    }
+
+    async fn assert_status<S, R, B>(
+        worker: &S,
+        request: R,
+        expected: StatusCode,
+    ) -> ServiceResponse<B>
+    where
+        S: Service<R, Response = ServiceResponse<B>, Error = Error>,
+    {
+        let response = actix_test::call_service(worker, request).await;
+        assert_eq!(response.status(), expected);
+        response
+    }
+
+    async fn session_cookies<S, R, B>(
+        worker: &S,
+        requests: impl IntoIterator<Item = R>,
+    ) -> Vec<Cookie<'static>>
+    where
+        S: Service<R, Response = ServiceResponse<B>, Error = Error>,
+    {
+        let mut cookies = Vec::new();
+        for request in requests {
+            let response = assert_status(worker, request, StatusCode::OK).await;
+            cookies.push(
+                response.response().cookies().next().unwrap().into_owned(),
+            );
+        }
+        cookies
     }
 
     #[actix_web::test]
@@ -284,103 +362,112 @@ mod tests {
         };
         let first_worker = actix_test::init_service(build_app()).await;
         let second_worker = actix_test::init_service(build_app()).await;
-        let mut cookies = Vec::new();
-        for login_id in [api_user, other_api_user, admin] {
-            let response = actix_test::call_service(
-                &first_worker,
+        let requests =
+            [api_user, other_api_user, admin, api_user].map(|login_id| {
                 actix_test::TestRequest::post()
                     .uri(&format!("/test-login/{login_id}"))
-                    .to_request(),
-            )
-            .await;
-            cookies.push(
-                response.response().cookies().next().unwrap().into_owned(),
-            );
-        }
+                    .to_request()
+            });
+        let cookies = session_cookies(&first_worker, requests).await;
         let mut settings = settings_request();
-        let response = actix_test::call_service(
+        let response = assert_status(
             &first_worker,
-            actix_test::TestRequest::post()
-                .uri("/api/admin/system-settings/create")
-                .cookie(cookies[2].clone())
-                .set_json(&settings)
-                .to_request(),
+            save_request(&cookies[2], &settings).to_request(),
+            StatusCode::OK,
         )
         .await;
-        assert_eq!(response.status(), StatusCode::OK);
         let saved: serde_json::Value =
             actix_test::read_body_json(response).await;
         assert_eq!(saved["api_rate_limit_replenish_interval_ms"], 60000);
         assert_eq!(saved["api_rate_limit_burst_size"], 2);
-        for worker in [&first_worker, &second_worker] {
-            let response = actix_test::call_service(
+        for (worker, cookie) in
+            [(&first_worker, &cookies[0]), (&second_worker, &cookies[3])]
+        {
+            assert_status(
                 worker,
-                actix_test::TestRequest::get()
-                    .uri("/api/probe")
-                    .cookie(cookies[0].clone())
-                    .to_request(),
+                probe(cookie, "/api/probe").to_request(),
+                StatusCode::OK,
             )
             .await;
-            assert_eq!(response.status(), StatusCode::OK);
         }
-        let response = actix_test::call_service(
+        let response = assert_status(
             &second_worker,
-            actix_test::TestRequest::get()
-                .uri("/api/other")
-                .cookie(cookies[0].clone())
-                .to_request(),
+            probe(&cookies[0], "/api/other").to_request(),
+            StatusCode::TOO_MANY_REQUESTS,
         )
         .await;
-        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(response.headers().get("Retry-After").unwrap(), "60");
-        let response = actix_test::call_service(
+        let body: serde_json::Value =
+            actix_test::read_body_json(response).await;
+        assert_eq!(body["error"], "API request rate limit exceeded");
+        for request in [
+            actix_test::TestRequest::get().uri("/api/probe"),
+            probe(&cookies[0], "/outside-api"),
+        ] {
+            assert_status(&first_worker, request.to_request(), StatusCode::OK)
+                .await;
+        }
+        assert_status(
             &first_worker,
-            actix_test::TestRequest::get()
-                .uri("/api/probe")
-                .cookie(cookies[1].clone())
-                .to_request(),
+            probe(&cookies[1], "/api/probe").to_request(),
+            StatusCode::OK,
         )
         .await;
-        assert_eq!(response.status(), StatusCode::OK);
         for _ in 0..20 {
-            let response = actix_test::call_service(
+            assert_status(
                 &first_worker,
-                actix_test::TestRequest::get()
-                    .uri("/api/probe")
-                    .cookie(cookies[2].clone())
-                    .to_request(),
+                probe(&cookies[2], "/api/probe").to_request(),
+                StatusCode::OK,
             )
             .await;
-            assert_eq!(response.status(), StatusCode::OK);
         }
         settings["api_rate_limit_burst_size"] = serde_json::json!(3);
-        let response = actix_test::call_service(
+        assert_status(
             &first_worker,
-            actix_test::TestRequest::post()
-                .uri("/api/admin/system-settings/create")
-                .cookie(cookies[2].clone())
-                .set_json(&settings)
-                .to_request(),
+            save_request(&cookies[2], &settings).to_request(),
+            StatusCode::OK,
         )
         .await;
-        assert_eq!(response.status(), StatusCode::OK);
-        let response = actix_test::call_service(
+        assert_status(
             &second_worker,
-            actix_test::TestRequest::get()
-                .uri("/api/probe")
-                .cookie(cookies[0].clone())
-                .to_request(),
+            probe(&cookies[0], "/api/probe").to_request(),
+            StatusCode::OK,
         )
         .await;
-        assert_eq!(response.status(), StatusCode::OK);
+        for roles in [serde_json::json!([]), serde_json::json!([ROLE_API])] {
+            let exempt = roles.as_array().unwrap().is_empty();
+            login::ActiveModel {
+                id: Set(api_user),
+                roles: Set(roles),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+            for index in 0..5 {
+                let expected = if exempt || index < 2 {
+                    StatusCode::OK
+                } else {
+                    StatusCode::TOO_MANY_REQUESTS
+                };
+                assert_status(
+                    &first_worker,
+                    probe(&cookies[0], "/api/probe").to_request(),
+                    expected,
+                )
+                .await;
+            }
+        }
     }
 
     #[test]
-    fn issue_3788_concurrent_requests_share_the_burst_and_replenish_one_token()
-    {
+    fn issue_3788_concurrent_requests_share_the_burst() {
         let limiter = std::sync::Arc::new(ApiRateLimiter::default());
         let login_id = Uuid::new_v4();
-        let settings = ApiRateLimitSettings::from_settings(None);
+        let settings = ApiRateLimitSettings {
+            replenish_interval_ms: 60000,
+            ..ApiRateLimitSettings::from_settings(None)
+        };
         let admitted = std::thread::scope(|scope| {
             let requests: Vec<_> = (0..30)
                 .map(|_| {
@@ -396,9 +483,44 @@ mod tests {
                 .filter(|admitted| *admitted)
                 .count()
         });
-        assert_eq!(admitted, 10);
-        std::thread::sleep(Duration::from_millis(550));
-        assert!(limiter.check(login_id, settings).unwrap().is_none());
+        assert_eq!(admitted, 5);
         assert!(limiter.check(login_id, settings).unwrap().is_some());
+    }
+
+    #[test]
+    fn issue_3788_stale_settings_do_not_reset_bursts_after_reconciliation() {
+        let limiter = ApiRateLimiter::default();
+        let login_id = Uuid::new_v4();
+        let timestamp = chrono::Utc::now().naive_utc();
+        let older = ApiRateLimitSettings {
+            replenish_interval_ms: 60000,
+            burst_size: 1,
+            revision: Some((timestamp, 1)),
+        };
+        let newer = ApiRateLimitSettings {
+            burst_size: 2,
+            revision: Some((timestamp, 2)),
+            ..older
+        };
+        let latest = ApiRateLimitSettings {
+            revision: Some((timestamp, 3)),
+            ..newer
+        };
+        assert!(limiter.check(login_id, older).unwrap().is_none());
+        assert!(limiter.check(login_id, newer).unwrap().is_none());
+        assert!(limiter.check(login_id, newer).unwrap().is_none());
+        assert!(limiter.check(login_id, latest).unwrap().is_some());
+        assert!(limiter.check(login_id, older).unwrap().is_some());
+        assert!(limiter
+            .check(
+                login_id,
+                ApiRateLimitSettings {
+                    burst_size: 3,
+                    ..newer
+                }
+            )
+            .unwrap()
+            .is_some());
+        assert!(limiter.check(login_id, latest).unwrap().is_some());
     }
 }

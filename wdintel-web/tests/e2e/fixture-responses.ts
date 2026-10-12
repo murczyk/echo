@@ -58,7 +58,7 @@ export function systemSettingsCurrentResponse({
     aiPositionHighlightsEnabled: false,
     twoFactorAuthEnabled: true,
     apiRateLimitReplenishIntervalMs: 500,
-    apiRateLimitBurstSize: 10,
+    apiRateLimitBurstSize: 5,
   };
   return transformCamelToSnake<Record<string, unknown>>(settings);
 }

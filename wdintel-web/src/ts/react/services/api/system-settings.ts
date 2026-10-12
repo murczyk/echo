@@ -118,8 +118,8 @@ type CreateSystemSettingsReqRaw = {
   duty_exclude_menu_enabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysis_aor_filter_enabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   ai_position_highlights_enabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
-  api_rate_limit_replenish_interval_ms: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
-  api_rate_limit_burst_size: BackendSystemSettingsItem['apiRateLimitBurstSize'];
+  api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
+  api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   two_factor_auth_enabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   exclude_orbit_other_units: boolean;
   messenger_media_cache_min_free_gib: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -307,7 +307,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
     apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
-    apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 10,
+    apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
     twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
     excludeOrbitOtherUnits: raw.exclude_orbit_other_units ?? true,
     messengerMediaCacheMinFreeGib: raw.messenger_media_cache_min_free_gib ?? 10,
@@ -355,7 +355,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
     apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
-    apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 10,
+    apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
     twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
     excludeOrbitOtherUnits: raw.exclude_orbit_other_units ?? true,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
@@ -402,8 +402,8 @@ export async function createSystemSettings(
     duty_exclude_menu_enabled: input.dutyExcludeMenuEnabled ?? true,
     analysis_aor_filter_enabled: input.analysisAorFilterEnabled ?? true,
     ai_position_highlights_enabled: input.aiPositionHighlightsEnabled ?? false,
-    api_rate_limit_replenish_interval_ms: input.apiRateLimitReplenishIntervalMs ?? 500,
-    api_rate_limit_burst_size: input.apiRateLimitBurstSize ?? 10,
+    api_rate_limit_replenish_interval_ms: input.apiRateLimitReplenishIntervalMs,
+    api_rate_limit_burst_size: input.apiRateLimitBurstSize,
     two_factor_auth_enabled: input.twoFactorAuthEnabled ?? true,
     exclude_orbit_other_units: input.excludeOrbitOtherUnits ?? true,
     messenger_media_cache_min_free_gib: input.messengerMediaCacheMinFreeGib ?? 10,

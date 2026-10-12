@@ -182,10 +182,10 @@ pub struct CreateSystemSettingsReq {
     pub ai_position_highlights_enabled: Option<bool>,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
-    #[serde(default = "default_api_rate_limit_replenish_interval_ms")]
-    pub api_rate_limit_replenish_interval_ms: i64,
-    #[serde(default = "default_api_rate_limit_burst_size")]
-    pub api_rate_limit_burst_size: i64,
+    #[serde(default)]
+    pub api_rate_limit_replenish_interval_ms: Option<i64>,
+    #[serde(default)]
+    pub api_rate_limit_burst_size: Option<i64>,
     #[serde(default = "default_true")]
     pub exclude_orbit_other_units: bool,
     #[serde(default)]

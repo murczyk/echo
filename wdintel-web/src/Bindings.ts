@@ -5101,8 +5101,8 @@ export type CreateSystemSettingsReq = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
-  apiRateLimitReplenishIntervalMs: number;
-  apiRateLimitBurstSize: number;
+  apiRateLimitReplenishIntervalMs: number | null;
+  apiRateLimitBurstSize: number | null;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheEnabled: boolean;
   messengerMediaCacheRetentionHours: number;

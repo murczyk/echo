@@ -20,11 +20,14 @@ alter table system_settings
     add column api_rate_limit_replenish_interval_ms integer
         check (api_rate_limit_replenish_interval_ms > 0),
     add column api_rate_limit_burst_size integer
-        check (api_rate_limit_burst_size > 0);
+        check (api_rate_limit_burst_size > 0),
+    add constraint system_settings_api_rate_limit_capacity_check
+        check (api_rate_limit_replenish_interval_ms::bigint
+            * api_rate_limit_burst_size <= 9223372036854);
 
 update system_settings
 set api_rate_limit_replenish_interval_ms = 500,
-    api_rate_limit_burst_size = 10
+    api_rate_limit_burst_size = 5
 where deleted = false;
                 "#,
             )
@@ -39,6 +42,7 @@ where deleted = false;
             .execute_unprepared(
                 r#"
 alter table system_settings
+    drop constraint if exists system_settings_api_rate_limit_capacity_check,
     drop column if exists api_rate_limit_replenish_interval_ms,
     drop column if exists api_rate_limit_burst_size;
                 "#,
