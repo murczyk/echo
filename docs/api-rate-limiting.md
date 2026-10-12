@@ -3,8 +3,13 @@
 Authenticated users with the exact `Api` role share one request quota per login
 across `/api/` endpoints, sessions, and HTTP workers in one server process.
 Users without that role, unauthenticated requests, and paths outside `/api/`
-continue through their existing handlers. Role changes apply on the next
-request. Limits do not replace endpoint authorization.
+continue through their existing handlers. Role classifications and active quota
+settings are cached for one second across HTTP workers, with concurrent cache
+misses sharing one lookup. Requests using cached values, including rejected
+attempts, do not query PostgreSQL for throttling. The role cache retains at most
+4096 logins. Role and settings changes apply after cache expiry on the next
+request. Throttling runs before the PostgreSQL-backed agent-route checks.
+Limits do not replace endpoint authorization.
 
 The default quota replenishes one request every 500 ms (2 requests per second)
 and allows a burst of 5 requests. An administrator can change both positive

@@ -1,7 +1,8 @@
 use crate::config::{
-    API_RATE_LIMIT_BURST_SIZE_DEFAULT, API_RATE_LIMIT_CLEANUP_INTERVAL_SECS,
-    API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT, IDENTITY_SESSION_USER_ID_KEY,
-    ROLE_API,
+    API_RATE_LIMIT_BURST_SIZE_DEFAULT, API_RATE_LIMIT_CACHE_TTL,
+    API_RATE_LIMIT_CLEANUP_INTERVAL_SECS,
+    API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
+    API_RATE_LIMIT_ROLE_CACHE_SIZE, IDENTITY_SESSION_USER_ID_KEY, ROLE_API,
 };
 use crate::entities::{login, system_settings};
 use crate::h;
@@ -15,6 +16,7 @@ use actix_web::{
     Error, HttpResponse,
 };
 use anyhow::Context;
+use cached::{Cached, TimedCache, TimedSizedCache};
 use governor::{
     clock::{Clock, DefaultClock},
     DefaultKeyedRateLimiter, Quota, RateLimiter,
@@ -116,17 +118,88 @@ impl ApiRateLimitState {
     }
 }
 
-#[derive(Default)]
-pub struct ApiRateLimiter(Mutex<Option<ApiRateLimitState>>);
+pub struct ApiRateLimiter {
+    state: Mutex<Option<ApiRateLimitState>>,
+    roles: tokio::sync::Mutex<TimedSizedCache<Uuid, bool>>,
+    settings: tokio::sync::Mutex<TimedCache<(), ApiRateLimitSettings>>,
+}
+
+impl Default for ApiRateLimiter {
+    fn default() -> Self {
+        Self {
+            state: Mutex::new(None),
+            roles: tokio::sync::Mutex::new(
+                TimedSizedCache::with_size_and_lifespan(
+                    API_RATE_LIMIT_ROLE_CACHE_SIZE,
+                    API_RATE_LIMIT_CACHE_TTL,
+                ),
+            ),
+            settings: tokio::sync::Mutex::new(TimedCache::with_lifespan(
+                API_RATE_LIMIT_CACHE_TTL,
+            )),
+        }
+    }
+}
 
 impl ApiRateLimiter {
+    async fn is_api_user(
+        &self,
+        dbx: &DatabaseConnection,
+        login_id: Uuid,
+    ) -> anyhow::Result<bool> {
+        let mut roles_cache = self.roles.lock().await;
+        if let Some(is_api_user) = roles_cache.cache_get(&login_id) {
+            return Ok(*is_api_user);
+        }
+        let roles = login::Entity::find_by_id(login_id)
+            .select_only()
+            .column(login::Column::Roles)
+            .into_tuple::<serde_json::Value>()
+            .one(dbx)
+            .await
+            .c(h!())?;
+        let is_api_user = roles
+            .as_ref()
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|roles| {
+                roles.iter().any(|role| role.as_str() == Some(ROLE_API))
+            });
+        roles_cache.cache_set(login_id, is_api_user);
+        Ok(is_api_user)
+    }
+
+    async fn settings(
+        &self,
+        dbx: &DatabaseConnection,
+    ) -> anyhow::Result<ApiRateLimitSettings> {
+        let mut settings_cache = self.settings.lock().await;
+        if let Some(settings) = settings_cache.cache_get(&()) {
+            return Ok(*settings);
+        }
+        let settings = load_api_rate_limit_settings(dbx).await.context(h!())?;
+        settings_cache.cache_set((), settings);
+        Ok(settings)
+    }
+
+    async fn retry_after(
+        &self,
+        dbx: &DatabaseConnection,
+        login_id: Uuid,
+    ) -> anyhow::Result<Option<Duration>> {
+        if !self.is_api_user(dbx, login_id).await.context(h!())? {
+            return Ok(None);
+        }
+        let settings = self.settings(dbx).await.context(h!())?;
+        self.check(login_id, settings).context(h!())
+    }
+
     fn check(
         &self,
         login_id: Uuid,
         settings: ApiRateLimitSettings,
     ) -> anyhow::Result<Option<Duration>> {
         let mut state = self
-            .0
+            .state
             .lock()
             .map_err(|error| anyhow::anyhow!(error.to_string()))
             .c(h!())?;
@@ -174,27 +247,10 @@ async fn api_user_retry_after(
     };
     let login_id = Uuid::parse_str(&identity).c(h!())?;
     let env = req.app_data::<Data<Env>>().context(h!())?;
-    let roles = login::Entity::find_by_id(login_id)
-        .select_only()
-        .column(login::Column::Roles)
-        .into_tuple::<serde_json::Value>()
-        .one(&env.dbx)
-        .await
-        .c(h!())?;
-    if !roles
-        .as_ref()
-        .and_then(serde_json::Value::as_array)
-        .is_some_and(|roles| {
-            roles.iter().any(|role| role.as_str() == Some(ROLE_API))
-        })
-    {
-        return Ok(None);
-    }
-    let settings =
-        load_api_rate_limit_settings(&env.dbx).await.context(h!())?;
     req.app_data::<Data<ApiRateLimiter>>()
         .context(h!())?
-        .check(login_id, settings)
+        .retry_after(&env.dbx, login_id)
+        .await
         .context(h!())
 }
 
@@ -233,6 +289,10 @@ mod tests {
     };
     use sea_orm::{ActiveModelTrait, ActiveValue::Set};
     use serial_test::serial;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
 
     async fn start_session(
         req: HttpRequest,
@@ -341,8 +401,16 @@ mod tests {
     #[serial]
     async fn issue_3788_api_quotas_are_shared_across_workers_and_exempt_web_users(
     ) {
-        let (env, _guard) =
+        let (mut env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
+        let queries = Arc::new(AtomicUsize::new(0));
+        let query_count = queries.clone();
+        Arc::get_mut(&mut env)
+            .unwrap()
+            .dbx
+            .set_metric_callback(move |_| {
+                query_count.fetch_add(1, Ordering::SeqCst);
+            });
         let [api_user, other_api_user, admin] = fixture_login_ids(&env).await;
         let store = RedisSessionStore::new(
             crate::redis_conn_string(&env.config).unwrap(),
@@ -355,6 +423,9 @@ mod tests {
             App::new()
                 .app_data(Data::from(env.clone()))
                 .app_data(limiter.clone())
+                .wrap(actix_web::middleware::from_fn(
+                    crate::ai_agent::middleware::enforce_agent_routes,
+                ))
                 .wrap(actix_web::middleware::from_fn(throttle_api_users))
                 .wrap(IdentityMiddleware::default())
                 .wrap(SessionMiddleware::new(store.clone(), key.clone()))
@@ -380,6 +451,10 @@ mod tests {
             actix_test::read_body_json(response).await;
         assert_eq!(saved["api_rate_limit_replenish_interval_ms"], 60000);
         assert_eq!(saved["api_rate_limit_burst_size"], 2);
+        assert_concurrent_attempts_share_cached_database_lookups(
+            &env, api_user, admin,
+        )
+        .await;
         for (worker, cookie) in
             [(&first_worker, &cookies[0]), (&second_worker, &cookies[3])]
         {
@@ -390,12 +465,14 @@ mod tests {
             )
             .await;
         }
+        let queries_before_rejection = queries.load(Ordering::SeqCst);
         let response = assert_status(
             &second_worker,
             probe(&cookies[0], "/api/other").to_request(),
             StatusCode::TOO_MANY_REQUESTS,
         )
         .await;
+        assert_eq!(queries.load(Ordering::SeqCst), queries_before_rejection);
         assert_eq!(response.headers().get("Retry-After").unwrap(), "60");
         let body: serde_json::Value =
             actix_test::read_body_json(response).await;
@@ -428,6 +505,8 @@ mod tests {
             StatusCode::OK,
         )
         .await;
+        tokio::time::sleep(API_RATE_LIMIT_CACHE_TTL + Duration::from_millis(1))
+            .await;
         assert_status(
             &second_worker,
             probe(&cookies[0], "/api/probe").to_request(),
@@ -444,6 +523,10 @@ mod tests {
             .update(&env.dbx)
             .await
             .unwrap();
+            tokio::time::sleep(
+                API_RATE_LIMIT_CACHE_TTL + Duration::from_millis(1),
+            )
+            .await;
             for index in 0..5 {
                 let expected = if exempt || index < 2 {
                     StatusCode::OK
@@ -458,6 +541,52 @@ mod tests {
                 .await;
             }
         }
+    }
+
+    async fn assert_concurrent_attempts_share_cached_database_lookups(
+        env: &Env,
+        api_user: Uuid,
+        admin: Uuid,
+    ) {
+        let mut dbx = env.dbx.clone();
+        let queries = Arc::new(AtomicUsize::new(0));
+        let query_count = queries.clone();
+        dbx.set_metric_callback(move |_| {
+            query_count.fetch_add(1, Ordering::SeqCst);
+        });
+        let limiter = ApiRateLimiter::default();
+        for expected_queries in [2, 4] {
+            let attempts = futures::future::join_all(
+                (0..100).map(|_| limiter.retry_after(&dbx, api_user)),
+            )
+            .await;
+            let admitted = attempts
+                .into_iter()
+                .filter(|retry_after| retry_after.as_ref().unwrap().is_none())
+                .count();
+            assert_eq!(admitted, if expected_queries == 2 { 2 } else { 0 });
+            assert_eq!(queries.load(Ordering::SeqCst), expected_queries);
+            let disconnected = DatabaseConnection::default();
+            let rejected = futures::future::join_all(
+                (0..100).map(|_| limiter.retry_after(&disconnected, api_user)),
+            )
+            .await;
+            assert!(rejected
+                .into_iter()
+                .all(|retry_after| retry_after.unwrap().is_some()));
+            if expected_queries == 2 {
+                tokio::time::sleep(
+                    API_RATE_LIMIT_CACHE_TTL + Duration::from_millis(1),
+                )
+                .await;
+            }
+        }
+        assert!(limiter.retry_after(&dbx, admin).await.unwrap().is_none());
+        assert!(limiter
+            .retry_after(&DatabaseConnection::default(), admin)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[test]

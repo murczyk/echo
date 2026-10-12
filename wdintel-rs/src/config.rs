@@ -25,6 +25,8 @@ pub const API_RATE_LIMIT_BURST_SIZE_DEFAULT: i64 = 5;
 pub const API_RATE_LIMIT_VALUE_MAX: i64 = i32::MAX as i64;
 pub const API_RATE_LIMIT_CAPACITY_MS_MAX: u64 = u64::MAX / 2 / 1_000_000;
 pub const API_RATE_LIMIT_CLEANUP_INTERVAL_SECS: u64 = 60;
+pub const API_RATE_LIMIT_CACHE_TTL: Duration = Duration::from_secs(1);
+pub const API_RATE_LIMIT_ROLE_CACHE_SIZE: usize = 4096;
 pub const SYSTEM_SETTINGS_UPDATE_ADVISORY_LOCK_KEY: i64 = 0x4543_484f_5345_5454;
 
 pub const DEFAULT_PG_HOST: &str = "localhost";

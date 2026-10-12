@@ -1798,6 +1798,9 @@ pub async fn main_server(
             //     actix_web::middleware::Logger::default()
             // )
             .wrap(actix_web::middleware::from_fn(
+                crate::ai_agent::middleware::enforce_agent_routes,
+            ))
+            .wrap(actix_web::middleware::from_fn(
                 api_rate_limit::throttle_api_users,
             ))
             .wrap(
@@ -1809,9 +1812,6 @@ pub async fn main_server(
             )
             .wrap(actix_web::middleware::from_fn(
                 middleware::purge_legacy_identity_middleware,
-            ))
-            .wrap(actix_web::middleware::from_fn(
-                crate::ai_agent::middleware::enforce_agent_routes,
             ))
             .wrap(SessionMiddleware::new(
                 redis_session_store.clone(),
