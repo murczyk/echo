@@ -107,6 +107,7 @@ function baseProps(): React.ComponentProps<typeof AnalysisPaginationControl> {
     totalLoading: false,
     loading: false,
     noMoreToLoad: false,
+    rangeUsesPageSize: true,
     busy: false,
     onFirstPage: vi.fn(),
     onLastPage: vi.fn(),
@@ -176,6 +177,19 @@ describe('AnalysisPaginationControl', () => {
       (view.container.querySelector('[aria-label="Наступна сторінка"]') as HTMLButtonElement)
         .disabled,
     ).toBe(false);
+  });
+
+  it('keeps Next disabled for an exhausted non-windowed consumer', async () => {
+    const view = await renderComponent({
+      ...baseProps(),
+      rangeUsesPageSize: false,
+      noMoreToLoad: true,
+    });
+    rendered.push(view);
+    expect(
+      (view.container.querySelector('[aria-label="Наступна сторінка"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 
   it('falls back to em dash while totals are loading', async () => {

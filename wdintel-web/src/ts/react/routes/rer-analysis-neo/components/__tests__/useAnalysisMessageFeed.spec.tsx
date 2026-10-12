@@ -37,7 +37,6 @@ it('maps bounded Analysis coordinates and both loading edges to the shared feed'
       hasMoreAfterWindow: true,
       loadingBeforeWindow: true,
       loadingAfterWindow: false,
-      pageIndex: 2,
       pageNavigationTarget: null,
       viewportPreservationKey: 0,
       onViewportCaptureChange: vi.fn(),

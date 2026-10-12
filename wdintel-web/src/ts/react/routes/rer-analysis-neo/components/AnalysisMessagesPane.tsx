@@ -190,7 +190,6 @@ function AnalysisMessagesPaneComponent({
     hasMoreAfterWindow,
     loadingBeforeWindow,
     loadingAfterWindow,
-    pageIndex,
     pageNavigationTarget,
     viewportPreservationKey,
     onViewportCaptureChange,

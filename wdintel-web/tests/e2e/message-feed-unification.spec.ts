@@ -46,29 +46,37 @@ async function installPages(page: Page) {
   return requests;
 }
 
+type FourPageRequest = {
+  before_id_noninclusive?: number | null;
+  since_id_noninclusive?: number | null;
+  newest_first?: boolean;
+};
+
+function fourPageResponse(request: FourPageRequest) {
+  const firstId =
+    request.before_id_noninclusive != null
+      ? Math.floor((request.before_id_noninclusive - 1) / 20) * 20
+      : request.since_id_noninclusive != null
+        ? Math.ceil((request.since_id_noninclusive + 1) / 20) * 20
+        : request.newest_first === false
+          ? 120
+          : 180;
+  const response = messagePage(firstId);
+  if (request.newest_first === false) response.inbox_items.reverse();
+  return response;
+}
+
 async function installFourPages(page: Page) {
   await installAnalysisNeoApiMocks(page);
   await installMessageContext(page);
-  const requests: Array<{
-    before_id_noninclusive?: number | null;
-    since_id_noninclusive?: number | null;
-    newest_first?: boolean;
-  }> = [];
+  const requests: FourPageRequest[] = [];
   await page.route('**/api/rer-importer/get-inbox-count', (route) =>
     route.fulfill({ json: { quantity: 80, first_element_ts: null } }),
   );
   await page.route('**/api/rer-importer/get-inbox', (route) => {
     const request = route.request().postDataJSON();
     requests.push(request);
-    const firstId =
-      request.before_id_noninclusive === 161
-        ? 160
-        : request.before_id_noninclusive === 141
-          ? 140
-          : request.before_id_noninclusive === 121
-            ? 120
-            : 180;
-    return route.fulfill({ json: messagePage(firstId) });
+    return route.fulfill({ json: fourPageResponse(request) });
   });
   return requests;
 }
@@ -96,6 +104,88 @@ async function visibleAnchor(scroller: Locator) {
 
 // Regression: https://github.com/echoua/echo/issues/3689
 test.describe('Message feed unification @regression', () => {
+  for (const newestFirst of [true, false]) {
+    test(`Analysis keeps a bounded window in both scroll directions (${newestFirst ? 'newest' : 'oldest'} first)`, async ({
+      page,
+    }) => {
+      const requests = await installFourPages(page);
+      const reverseRequest = (request: FourPageRequest) =>
+        newestFirst
+          ? request.since_id_noninclusive === 160
+          : request.before_id_noninclusive === 121;
+      let releaseReverse!: () => void;
+      const pendingReverse = new Promise<void>((resolve) => {
+        releaseReverse = resolve;
+      });
+      await page.route('**/api/rer-importer/get-inbox', async (route) => {
+        const request = route.request().postDataJSON() as FourPageRequest;
+        if (!reverseRequest(request)) return route.fallback();
+        requests.push(request);
+        await pendingReverse;
+        return route.fulfill({ json: fourPageResponse(request) });
+      });
+      await page.goto(`/rer-analysis-neo?newestFirst=${newestFirst}`);
+      const scroller = page.locator('[data-analysis-message-scroller]');
+      await expect(scroller.locator('[data-message-id]')).toHaveCount(20);
+      for (const nextPage of [2, 3]) {
+        await scroller.locator('[data-message-feed-skeleton="below"]').scrollIntoViewIfNeeded();
+        await expect.poll(() => requests.length).toBeGreaterThanOrEqual(nextPage);
+        await expect(scroller.locator('[data-message-id]')).toHaveCount(40);
+      }
+      const firstId = newestFirst ? 180 : 101;
+      const thirdId = newestFirst ? 140 : 141;
+      await expect(scroller.locator(`[data-message-id="${firstId}"]`)).not.toBeAttached();
+      await expect(scroller.locator(`[data-message-id="${thirdId}"]`)).toBeAttached();
+
+      await scroller.locator('[data-message-feed-skeleton="above"]').scrollIntoViewIfNeeded();
+      await expect.poll(() => requests.some(reverseRequest)).toBe(true);
+      const anchor = await visibleAnchor(scroller);
+      releaseReverse();
+      await expect(scroller.locator(`[data-message-id="${firstId}"]`)).toBeAttached();
+      await expect(scroller.locator('[data-message-id]')).toHaveCount(40);
+      await expect(scroller.locator(`[data-message-id="${thirdId}"]`)).not.toBeAttached();
+      await expect
+        .poll(async () =>
+          scroller.locator(`[data-message-id="${anchor.id}"]`).evaluate((card, offset) => {
+            const viewport = card.closest('[data-analysis-message-scroller]')!;
+            return Math.abs(
+              card.getBoundingClientRect().top - viewport.getBoundingClientRect().top - offset,
+            );
+          }, anchor.offset),
+        )
+        .toBeLessThanOrEqual(1);
+
+      await scroller.evaluate((element) => {
+        element.scrollTop = 0;
+        element.dispatchEvent(new Event('scroll', { bubbles: true }));
+      });
+      await expect.poll(() => new URL(page.url()).searchParams.get('messagesPage')).toBeNull();
+      const pageCounter = page.getByRole('button', {
+        name: 'Перейти до першої або останньої сторінки',
+      });
+      await expect(pageCounter).toContainText('1-20 з 80');
+
+      const nextPage = page.getByRole('button', { name: 'Наступна сторінка', exact: true });
+      await nextPage.click();
+      await expect(pageCounter).toContainText('21-40 з 80');
+      const requestCount = requests.length;
+      await nextPage.click();
+      await expect(pageCounter).toContainText('41-60 з 80');
+      await expect.poll(() => new URL(page.url()).searchParams.get('messagesPage')).toBe('3');
+      expect(requests.length).toBeGreaterThan(requestCount);
+      await expect(scroller.locator('[data-message-id]')).toHaveCount(40);
+
+      await pageCounter.click();
+      await page.getByRole('menuitem', { name: 'Остання сторінка' }).click();
+      await expect(pageCounter).toContainText('61-80 з 80');
+      await pageCounter.click();
+      await page.getByRole('menuitem', { name: 'Перша сторінка' }).click();
+      await expect(pageCounter).toContainText('1-20 з 80');
+      await expect(scroller.locator(`[data-message-id="${firstId}"]`)).toBeAttached();
+      await expect(scroller.locator('[data-message-id]')).toHaveCount(40);
+    });
+  }
+
   test('Analysis keeps a bounded window while scrolling', async ({ page }) => {
     const requests = await installFourPages(page);
     await page.goto('/rer-analysis-neo');
@@ -110,7 +200,7 @@ test.describe('Message feed unification @regression', () => {
     expect(requests.some((request) => request.before_id_noninclusive === 141)).toBe(true);
   });
 
-  test('Analysis accumulates pages without moving the reading anchor', async ({ page }) => {
+  test('Analysis loads the next page without moving the reading anchor', async ({ page }) => {
     const requests = await installPages(page);
     let releasePage!: () => void;
     const pendingPage = new Promise<void>((resolve) => {

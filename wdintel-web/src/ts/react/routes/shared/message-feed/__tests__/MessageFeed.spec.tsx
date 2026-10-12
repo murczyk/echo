@@ -37,16 +37,18 @@ function TestFeed({
   resetKey = 'one',
   options,
   suspend,
+  aboveSkeleton = false,
 }: {
   ids: number[];
   resetKey?: string;
   options?: Partial<UseWindowedFeedScrollOptions>;
   suspend?: Promise<never>;
+  aboveSkeleton?: boolean;
 }) {
   scroll = useWindowedFeedScroll({
     itemIds: ids,
     loadingOlder: false,
-    hasReachedStart: true,
+    hasReachedStart: !aboveSkeleton,
     onLoadOlder: () => undefined,
     autoScrollAllowed: false,
     resetKey,
@@ -60,6 +62,7 @@ function TestFeed({
       items={ids}
       getMessageId={getId}
       renderMessage={renderMessage}
+      beforeMessages={aboveSkeleton ? <div data-test-skeleton /> : null}
     />
   );
 }
@@ -109,6 +112,7 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
       const spacer = this.querySelector<HTMLElement>('[data-direct-message-anchor-spacer]');
       return (
         this.querySelectorAll('[data-message-id]').length * itemHeight +
+        (this.querySelector('[data-test-skeleton]') ? 10 : 0) +
         Number.parseFloat(spacer?.style.height ?? '0')
       );
     });
@@ -117,7 +121,14 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
       if (!scroller || this === scroller) return bounds(0, 100);
       const items = Array.from(scroller.querySelectorAll('[data-message-id]'));
       const index = items.indexOf(this);
-      return bounds(index < 0 ? 0 : index * itemHeight - scroller.scrollTop, itemHeight);
+      return bounds(
+        index < 0
+          ? 0
+          : index * itemHeight +
+              (scroller.querySelector('[data-test-skeleton]') ? 10 : 0) -
+              scroller.scrollTop,
+        itemHeight,
+      );
     });
   });
 
@@ -444,6 +455,29 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
       resize();
     });
     expect(anchor.getBoundingClientRect().top).toBe(-1);
+  });
+
+  it('preserves the reading card through a bounded prepend and later resize', async () => {
+    await act(async () =>
+      root.render(
+        <TestFeed ids={[1, 2, 3, 4]} aboveSkeleton options={{ policy: historyPolicy }} />,
+      ),
+    );
+    const scroller = scroll.scrollerRef.current!;
+    expect(container.querySelector('[data-message-id="1"]')!.getBoundingClientRect().top).toBe(10);
+
+    await act(async () =>
+      root.render(<TestFeed ids={[-1, 0, 1, 2]} options={{ policy: historyPolicy }} />),
+    );
+    const anchor = container.querySelector<HTMLElement>('[data-message-id="1"]')!;
+    expect(anchor.getBoundingClientRect().top).toBe(10);
+
+    await act(async () => {
+      itemHeight = 100;
+      resize();
+    });
+    expect(anchor.getBoundingClientRect().top).toBe(10);
+    expect(scroller.scrollTop).toBe(190);
   });
 
   it('cancels a deferred navigation when the feed is replaced', async () => {

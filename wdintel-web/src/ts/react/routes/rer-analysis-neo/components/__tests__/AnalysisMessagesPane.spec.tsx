@@ -225,6 +225,11 @@ function buildProps(
     paginationLoading: false,
     messageComments: {},
     messages: [],
+    firstLoadedMessageIndex: 0,
+    hasMoreBeforeWindow: false,
+    hasMoreAfterWindow: false,
+    loadingBeforeWindow: false,
+    loadingAfterWindow: false,
     networkDisplayMap: {},
     pageIndex: 0,
     noMoreToLoad: false,
@@ -233,6 +238,7 @@ function buildProps(
     onCreateReport: vi.fn(),
     onEditReport: vi.fn(),
     onLoadMoreMessages: vi.fn().mockResolvedValue(true),
+    onLoadPreviousMessages: vi.fn().mockResolvedValue(true),
     onSaveMessageUpdate: vi.fn().mockResolvedValue(true),
     onToggleMessageBookmark: vi.fn(),
     onToggleMessageImportant: vi.fn(),
@@ -625,7 +631,7 @@ describe('AnalysisMessagesPane', () => {
     expect(onSaveMessageUpdate).toHaveBeenCalled();
   });
 
-  it('scrolls the message list to top when pageIndex changes', async () => {
+  it('keeps the scroll position when the visible page changes without navigation', async () => {
     const view = await renderComponent(
       buildProps({ messages: [[7, buildMessage()]], pageIndex: 0 }),
     );
@@ -643,7 +649,7 @@ describe('AnalysisMessagesPane', () => {
       );
     });
 
-    expect(scrollBox?.scrollTop).toBe(0);
+    expect(scrollBox?.scrollTop).toBe(500);
   });
 
   it('keeps a prepended newest message visible during leading-edge viewport preservation', async () => {

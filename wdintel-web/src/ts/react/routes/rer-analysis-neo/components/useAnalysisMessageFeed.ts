@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { InboxMessage } from '../../../../../Bindings';
 import type { MessageFeedPolicy, MessageFeedScrollOptions } from '../../shared/message-feed';
 import type { AnalysisDirectMessageNavigation } from '../types';
@@ -31,7 +31,6 @@ type Options = {
   hasMoreAfterWindow: boolean;
   loadingBeforeWindow: boolean;
   loadingAfterWindow: boolean;
-  pageIndex: number;
   pageNavigationTarget: number | null;
   viewportPreservationKey: number;
   onViewportCaptureChange: (capture: (() => void) | null) => void;
@@ -50,7 +49,6 @@ export function useAnalysisMessageFeed({
   hasMoreAfterWindow,
   loadingBeforeWindow,
   loadingAfterWindow,
-  pageIndex,
   pageNavigationTarget,
   viewportPreservationKey,
   onViewportCaptureChange,
@@ -60,26 +58,6 @@ export function useAnalysisMessageFeed({
   onVisiblePageChange,
   onPageNavigationHandled,
 }: Options) {
-  const scrollLoadRequestedRef = useRef(false);
-  const runScrollLoad = useCallback(async (load: () => Promise<boolean>) => {
-    scrollLoadRequestedRef.current = true;
-    try {
-      const loaded = await load();
-      if (!loaded) scrollLoadRequestedRef.current = false;
-      return loaded;
-    } catch (error) {
-      scrollLoadRequestedRef.current = false;
-      throw error;
-    }
-  }, []);
-  const loadMore = useCallback(
-    () => runScrollLoad(onLoadMoreMessages),
-    [onLoadMoreMessages, runScrollLoad],
-  );
-  const loadPrevious = useCallback(
-    () => runScrollLoad(onLoadPreviousMessages),
-    [onLoadPreviousMessages, runScrollLoad],
-  );
   const onFirstVisibleMessage = useCallback(
     (_id: number, index: number) => {
       onVisiblePageChange(
@@ -170,19 +148,16 @@ export function useAnalysisMessageFeed({
     viewportPreservationKey,
     onViewportCaptureChange,
     resetKey: scrollResetKey,
-    positionResetKey: pageIndex,
-    preservePositionOnReset: scrollLoadRequestedRef.current,
     initialPositioningReady: !directMessageNavigation?.contextLoading,
     loadEdgesOnLayout: directMessageNavigation != null && !directMessageNavigation.contextLoading,
     hasReachedStart: !hasMoreAbove,
-    onLoadOlder: directMessageNavigation ? (load(above) ?? (() => undefined)) : loadPrevious,
-    onLoadNewer: directMessageNavigation ? load(below) : loadMore,
+    onLoadOlder: directMessageNavigation
+      ? (load(above) ?? (() => undefined))
+      : onLoadPreviousMessages,
+    onLoadNewer: directMessageNavigation ? load(below) : onLoadMoreMessages,
     unreadPrefetchNeeded: hasMoreBelow,
     onFirstVisibleMessage,
   };
-  useLayoutEffect(() => {
-    scrollLoadRequestedRef.current = false;
-  }, [pageIndex]);
   return {
     scrollOptions,
     displayedMessages,

@@ -222,6 +222,10 @@ export function useMessageFeedLayout(options: FeedLayoutOptions) {
         previousIds.every(
           (id, index) => currentItemIds[currentItemIds.length - previousIds.length + index] === id,
         );
+      const retainedStartIndex = currentItemIds.indexOf(previousIds[0]);
+      const isPrependWithTrim =
+        retainedStartIndex > 0 &&
+        currentItemIds.slice(retainedStartIndex).every((id, index) => previousIds[index] === id);
       // A pure append does not move any existing row; restoring a stale measured
       // anchor here can itself create the prohibited watch-off navigation.
       const restoreOutcome =
@@ -236,7 +240,7 @@ export function useMessageFeedLayout(options: FeedLayoutOptions) {
         return;
       }
       // New rows can grow after commit; retain the original reading anchor until resize settles.
-      if (!isPurePrepend) anchors.captureAnchorSnapshot();
+      if (!isPurePrepend && !isPrependWithTrim) anchors.captureAnchorSnapshot();
       // Re-check near-bottom so catch-up can arm another newer load.
       tracking.updateScrollState({ allowLoadOlder: false, allowTopReached: false });
       return;

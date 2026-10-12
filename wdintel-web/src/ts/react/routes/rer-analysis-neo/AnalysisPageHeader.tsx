@@ -233,6 +233,7 @@ export function AnalysisPageHeader({
                   loading={page.messagesLoading}
                   noMoreToLoad={page.noMoreToLoad}
                   hasMoreAfterWindow={page.hasMoreAfterWindow}
+                  rangeUsesPageSize
                   busy={page.messagesPaging || page.messagesLoading}
                   jumpDisabled={page.directMessageNavigation != null}
                   onFirstPage={page.loadFirstPage}

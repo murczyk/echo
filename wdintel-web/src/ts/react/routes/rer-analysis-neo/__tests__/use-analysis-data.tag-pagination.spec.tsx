@@ -635,7 +635,7 @@ describe('useAnalysisData tag pagination', () => {
     });
 
     expect(current!.pageIndex).toBe(1);
-    expect(current!.messages).toHaveLength(41);
+    expect(current!.messages).toHaveLength(40);
     expect(current!.messages[0]?.[0]).toBe(999);
     expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(api.fetchInboxMessages).not.toHaveBeenCalled();
