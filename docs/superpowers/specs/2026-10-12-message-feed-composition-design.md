@@ -1,6 +1,6 @@
 # Message Feed Composition and Loading Design
 
-**Status:** Proposed for written review  
+**Status:** Approved for implementation planning  
 **Issue:** [#3689](https://github.com/echoua/echo/issues/3689)  
 **Base branch:** `main`
 
