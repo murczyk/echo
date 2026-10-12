@@ -9,6 +9,12 @@ import {
   type WindowedFeedScrollRefs,
 } from './windowed-feed-scroll-shared';
 
+function hasPendingAnchorLayoutChange(refs: WindowedFeedScrollRefs): boolean {
+  const scroller = refs.scrollerRef.current;
+  const snapshot = refs.anchorSnapshotRef.current;
+  return scroller != null && snapshot != null && scroller.scrollHeight !== snapshot.scrollHeight;
+}
+
 export function useWindowedFeedScrollTracking(args: {
   refs: WindowedFeedScrollRefs;
   debugFeedId?: string;
@@ -84,7 +90,7 @@ export function useWindowedFeedScrollTracking(args: {
   const scheduleLoadNewerIdle = useCallback(
     (onLoadNewer: () => void | Promise<unknown>) => {
       cancelLoadNewerIdle();
-      refs.loadNewerIdleTimeoutRef.current = setTimeout(() => {
+      const loadNewerAfterScrollIdle = () => {
         refs.loadNewerIdleTimeoutRef.current = null;
         if (!refs.enabledRef.current) return;
         if (refs.loadingNewerRef.current) return;
@@ -96,6 +102,13 @@ export function useWindowedFeedScrollTracking(args: {
           refs.loadNewerTriggeredRef.current = false;
           return;
         }
+        if (hasPendingAnchorLayoutChange(refs)) {
+          refs.loadNewerIdleTimeoutRef.current = setTimeout(
+            loadNewerAfterScrollIdle,
+            LOAD_NEWER_SCROLL_IDLE_MS,
+          );
+          return;
+        }
         captureAnchorSnapshot();
         recordDutyScrollDebugEvent(
           debugFeedId,
@@ -103,18 +116,29 @@ export function useWindowedFeedScrollTracking(args: {
           `idleMs=${LOAD_NEWER_SCROLL_IDLE_MS}`,
         );
         onLoadNewer();
-      }, LOAD_NEWER_SCROLL_IDLE_MS);
+      };
+      refs.loadNewerIdleTimeoutRef.current = setTimeout(
+        loadNewerAfterScrollIdle,
+        LOAD_NEWER_SCROLL_IDLE_MS,
+      );
     },
     [cancelLoadNewerIdle, captureAnchorSnapshot, debugFeedId, refs],
   );
 
   const scheduleFlushPendingIdle = useCallback(() => {
     cancelFlushPendingIdle();
-    refs.flushPendingIdleTimeoutRef.current = setTimeout(() => {
+    const flushPendingAfterScrollIdle = () => {
       refs.flushPendingIdleTimeoutRef.current = null;
       if (!refs.enabledRef.current) return;
       if (!refs.pendingNewerFlushNeededRef.current) return;
       if (refs.nearBottomRef.current !== true) return;
+      if (hasPendingAnchorLayoutChange(refs)) {
+        refs.flushPendingIdleTimeoutRef.current = setTimeout(
+          flushPendingAfterScrollIdle,
+          FLUSH_PENDING_SCROLL_IDLE_MS,
+        );
+        return;
+      }
       const onFlushPendingNewer = refs.callbacksRef.current.onFlushPendingNewer;
       if (typeof onFlushPendingNewer !== 'function') return;
       captureAnchorSnapshot();
@@ -127,7 +151,11 @@ export function useWindowedFeedScrollTracking(args: {
         physicallyAtBottom: refs.physicallyAtBottomRef.current === true,
         visibleAnchorIds: refs.anchorSnapshotRef.current?.anchors.map((anchor) => anchor.id) ?? [],
       });
-    }, FLUSH_PENDING_SCROLL_IDLE_MS);
+    };
+    refs.flushPendingIdleTimeoutRef.current = setTimeout(
+      flushPendingAfterScrollIdle,
+      FLUSH_PENDING_SCROLL_IDLE_MS,
+    );
   }, [cancelFlushPendingIdle, captureAnchorSnapshot, debugFeedId, refs]);
 
   const clearReportedScrollTrackingState = useCallback(

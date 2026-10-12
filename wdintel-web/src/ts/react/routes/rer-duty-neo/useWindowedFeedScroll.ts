@@ -814,6 +814,17 @@ export function useWindowedFeedScroll({
       scheduleTrackedItemCenter('scroll');
     }
     const scroller = refs.scrollerRef.current;
+    const snapshot = refs.anchorSnapshotRef.current;
+    // A delayed restoration scroll event must not capture a subsequent, unrestored reflow.
+    if (
+      scroller &&
+      snapshot &&
+      scroller.scrollTop ===
+        Math.min(snapshot.scrollTop, Math.max(0, scroller.scrollHeight - scroller.clientHeight)) &&
+      scroller.scrollHeight !== snapshot.scrollHeight
+    ) {
+      return;
+    }
     if (refs.followAnimatingRef.current) {
       if (!scroller) return;
       // Programmatic ease only increases scrollTop; an upward delta is user input.

@@ -28,9 +28,14 @@ async function requestMessageCounts(
   overallReq: InboxMessagesReq,
   shared: boolean,
   signal: AbortSignal,
+  onFailure: (error: unknown) => void,
 ) {
-  const selected = fetchInboxCount(selectedReq, { signal });
-  const overall = shared ? selected : fetchInboxCount(overallReq, { signal });
+  const reportFailure = (error: unknown): never => {
+    onFailure(error);
+    throw error;
+  };
+  const selected = fetchInboxCount(selectedReq, { signal }).catch(reportFailure);
+  const overall = shared ? selected : fetchInboxCount(overallReq, { signal }).catch(reportFailure);
   const results = await Promise.allSettled([selected, overall]);
   const [selectedResult, overallResult] = results;
   if (selectedResult.status === 'rejected') throw selectedResult.reason;
@@ -90,6 +95,15 @@ export function useAnalysisMessageCounts({
     lastCountStartedAtRef.current = performance.now();
     const generation = ++countRequestGenerationRef.current;
     let timedOut = false;
+    let failureReported = false;
+    const reportFailure = (error: unknown) => {
+      if (countRequestGenerationRef.current !== generation) return;
+      if (!timedOut && (controller.signal.aborted || isAbortError(error))) return;
+      if (timedOut) error = controller.signal.reason;
+      const unauthorized = onUnauthorizedRef.current(error);
+      if (!unauthorized && !failureReported) onErrorRef.current(toErrorMessage(error));
+      failureReported = true;
+    };
     let deadlineId: number;
     const deadline = new Promise<never>((_, reject) => {
       deadlineId = window.setTimeout(() => {
@@ -112,6 +126,7 @@ export function useAnalysisMessageCounts({
       { ...overallInboxReq, nolimit: true, newestFirst },
       messagesTotalRequestJson === messagesOverallRequestJson,
       controller.signal,
+      reportFailure,
     );
     void Promise.race([counts, deadline])
       .then(([selectedCount, overallCount]) => {
@@ -120,9 +135,7 @@ export function useAnalysisMessageCounts({
         setMessagesOverallCount(overallCount.quantity);
       })
       .catch((error: unknown) => {
-        if (countRequestGenerationRef.current !== generation) return;
-        if (!timedOut && (controller.signal.aborted || isAbortError(error))) return;
-        if (!onUnauthorizedRef.current(error)) onErrorRef.current(toErrorMessage(error));
+        if (!failureReported) reportFailure(error);
       })
       .finally(() => {
         window.clearTimeout(deadlineId);

@@ -245,7 +245,9 @@ export function useRerDutyFeeds(
   useInboxChangedMessageIds({
     onMessageIds: async (messageIds) => {
       const refreshes = feedState.messageFeeds.flatMap((feed) => {
-        const visibleMessageIds = new Set(feed.items.map(([messageId]) => messageId));
+        const visibleMessageIds = new Set(
+          [...feed.items, ...(feed.pendingNewerItems ?? [])].map(([messageId]) => messageId),
+        );
         const visibleChangedMessageIds = Array.from(
           new Set(messageIds.filter((messageId) => visibleMessageIds.has(messageId))),
         );

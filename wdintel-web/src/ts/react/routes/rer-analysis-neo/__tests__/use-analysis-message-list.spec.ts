@@ -724,6 +724,8 @@ describe('useAnalysisMessageList pagination', () => {
     act(() => h.latest.scheduleOverallMessageCountRefresh());
     await act(async () => vi.advanceTimersByTimeAsync(8_000));
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
+    expect(h.onError).toHaveBeenCalledOnce();
+    expect(h.onError).toHaveBeenCalledWith('count failed');
     await act(async () => {
       peer.resolve({ quantity: 41, firstElementTs: null });
       await Promise.resolve();
@@ -731,6 +733,26 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.onError).toHaveBeenCalledWith('count failed');
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(4);
     expect(h.latest.messagesTotalCount).toBe(42);
+  });
+
+  it('#3780 handles an unauthorized peer immediately without waiting for a stuck count', async () => {
+    vi.useFakeTimers();
+    const peer = deferred<{ quantity: number; firstElementTs: null }>();
+    const unauthorized = new Error('unauthorized');
+    fetchInboxCountMock.mockReturnValueOnce(peer.promise).mockRejectedValueOnce(unauthorized);
+    const h = renderHook({ ...buildQueryState(), search: 'filtered' });
+    harnesses.push(h);
+    h.onUnauthorized.mockReturnValue(true);
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(h.onUnauthorized).toHaveBeenCalledWith(unauthorized);
+    expect(h.onError).not.toHaveBeenCalled();
+    expect(h.latest.messagesTotalLoading).toBe(true);
+    await act(async () => {
+      peer.resolve({ quantity: 41, firstElementTs: null });
+      await Promise.resolve();
+    });
+    expect(h.latest.messagesTotalLoading).toBe(false);
+    expect(h.onUnauthorized).toHaveBeenCalledOnce();
   });
 
   // Regression: https://github.com/echoua/echo/issues/3780

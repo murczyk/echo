@@ -75,7 +75,7 @@ No currently blocked database sessions appeared in the activity snapshot. Brief 
 
 ### Application mapping to HTTP 503
 
-Relevant code: [analysis routing and timeout handling](../../wdintel-rs/src/rer_importer/analysis/mod.rs), [HTTP error responses](../../wdintel-rs/src/error.rs).
+Relevant code: [analysis routing and timeout handling](../../../wdintel-rs/src/rer_importer/analysis/mod.rs), [HTTP error responses](../../../wdintel-rs/src/error.rs).
 
 - analytics_count_request_supported rejects nonempty search and creation-time analysis requests from analytics eligibility.
 - with_analytics_read_fallback_inner sends unsupported requests to PostgreSQL with reason=query_policy.
@@ -114,7 +114,7 @@ Fresh replication and healthy source slots do not imply sufficient analytics que
 
 ## PostgreSQL search analysis
 
-The shared generator is [attachments/search.rs](../../wdintel-rs/src/attachments/search.rs): text_predicate, exists_term, and message_filter. For each positive term it constructs message membership in a UNION of body sigint_search matches, media filename matches, and attachment_chunk matches joined to the current attachment_document revision and owning media/message.
+The shared generator is [attachments/search.rs](../../../wdintel-rs/src/attachments/search.rs): text_predicate, exists_term, and message_filter. For each positive term it constructs message membership in a UNION of body sigint_search matches, media filename matches, and attachment_chunk matches joined to the current attachment_document revision and owning media/message.
 
 Authorized groups and time filters are supplied elsewhere. The captured production plan aggregates the search union globally before joining it to the narrowed inbox/group set.
 
@@ -136,7 +136,7 @@ Rewrites must preserve AND/OR/negative terms, Russian stemming/prefixes, literal
 
 ## Analytics analysis
 
-The endpoint is [aor_stats](../../wdintel-rs/src/rer_importer/analysis/mod.rs). Query builders are in [analysis/stats.rs](../../wdintel-rs/src/rer_importer/analysis/stats.rs): build_aors_analytics_query_with_scope and build_aor_messages_query. The ClickHouse link view comes from [reconcile-derived-schema.sh](../../deploy/clickhouse/bin/reconcile-derived-schema.sh).
+The endpoint is [aor_stats](../../../wdintel-rs/src/rer_importer/analysis/mod.rs). Query builders are in [analysis/stats.rs](../../../wdintel-rs/src/rer_importer/analysis/stats.rs): build_aors_analytics_query_with_scope and build_aor_messages_query. The ClickHouse link view comes from [reconcile-derived-schema.sh](../../../deploy/clickhouse/bin/reconcile-derived-schema.sh).
 
 The facet joins inbox, messages, posts, message-group rows, derived AOR links, and AOR metadata, then counts distinct message IDs per top-level nondeleted AOR. The link view uses UNION ALL across group-AOR and network-AOR branches. Both membership sources can multiply rows per message/AOR; COUNT(DISTINCT message_id) preserves counts despite that fan-out.
 
@@ -183,7 +183,7 @@ Analytics datetime min/max hash 13303863780514434858 ran 314 times: mean 1,148 m
 
 ### Network last-seen recalculation
 
-[recalculate_last_seen](../../wdintel-rs/src/sigint/network/recalculation.rs) builds a materialized frequency target, joins network links to inbox/messages, filters frequency/effective time, takes MAX(COALESCE(ii.datetime, sm.timestamp, sm.created_at)), then updates last_seen_dt.
+[recalculate_last_seen](../../../wdintel-rs/src/sigint/network/recalculation.rs) builds a materialized frequency target, joins network links to inbox/messages, filters frequency/effective time, takes MAX(COALESCE(ii.datetime, sm.timestamp, sm.created_at)), then updates last_seen_dt.
 
 Completed calls averaged 23.22 s on Pivnich and 5.21 s on Skhid. At approximately 07:24, Pivnich had 529 queued last-seen tasks, oldest 05:48:16, and 141 AOR-cache tasks, oldest approximately 06:07. Skhid had 11 recent last-seen tasks.
 
@@ -191,7 +191,7 @@ The worker already batches by network, uses SKIP LOCKED and advisory/row locks, 
 
 ### OCR queue positions
 
-[load_queue_positions](../../wdintel-rs/src/ocr/mod.rs) computes and loads the entire queue into a HashMap. It unions submitted jobs, queued/retry-wait jobs, and eligible recent media without jobs, excludes deleted messages, then ranks the global queue.
+[load_queue_positions](../../../wdintel-rs/src/ocr/mod.rs) computes and loads the entire queue into a HashMap. It unions submitted jobs, queued/retry-wait jobs, and eligible recent media without jobs, excludes deleted messages, then ranks the global queue.
 
 Summary/status/reprocessing paths call it repeatedly. The window contained 181 Pivnich calls averaging 615.7 ms and 203 Skhid calls averaging 961.4 ms. Skhid accumulated 195.2 execution seconds with zero shared-block-read delta; cached-page/CPU work remains costly.
 
@@ -201,13 +201,13 @@ The queue_positions_count_only_items_ahead regression protects meaningful behavi
 
 Skhid completed 15 calls of query ID 8828733985668082866: mean 3.73 s, 87,111.4 MiB shared reads. Pivnich completed 5: mean 4.18 s, 18,027.0 MiB reads.
 
-delete_previous_duplicate_group_links in [messenger/reconcile.rs](../../wdintel-rs/src/messenger/reconcile.rs) finds group-link rows by exact datasource_group_id, created_at, sender, plus signal_message_id inequality. Current indexes target group_master_key/signal_message_id; the datasource index is restricted to group_master_key IS NULL. No general index matches this lookup.
+delete_previous_duplicate_group_links in [messenger/reconcile.rs](../../../wdintel-rs/src/messenger/reconcile.rs) finds group-link rows by exact datasource_group_id, created_at, sender, plus signal_message_id inequality. Current indexes target group_master_key/signal_message_id; the datasource index is restricted to group_master_key IS NULL. No general index matches this lookup.
 
 Follow-up plain EXPLAIN with synthetic nonmatching values selected parallel sequential scans on both databases. This confirms an unindexed predicate shape, not actual execution with incident parameters. Ambiguous matches are deliberately skipped and that safeguard must survive optimization.
 
 ### Bounds, permissions, and settlement lookup
 
-The creation-time ID min/max query completed 1,529 Pivnich and 1,114 Skhid calls in 208 seconds. Source: [inbox/query.rs](../../wdintel-rs/src/rer_importer/inbox/query.rs), load_inbox_message_id_bounds_uncached. OFFSET 0 deliberately avoids pathological primary-key min/max scans ignoring the selective time index.
+The creation-time ID min/max query completed 1,529 Pivnich and 1,114 Skhid calls in 208 seconds. Source: [inbox/query.rs](../../../wdintel-rs/src/rer_importer/inbox/query.rs), load_inbox_message_id_bounds_uncached. OFFSET 0 deliberately avoids pathological primary-key min/max scans ignoring the selective time index.
 
 Inbox and analysis bounds already use pool-aware caches/singleflight with 5-second TTL and 2,048-entry limits. Adding a generic cache would duplicate existing behavior; inspect keys, callers, time-range churn, and hit rates.
 
@@ -303,7 +303,7 @@ Central SigNoz freshness was not independently checked. Daily PostgreSQL logs su
 
 Repeat reads through the existing SSH agent and aliases. Use sudo -u postgres on each deployment instead of embedding a password. Determine the pg_stat_statements extension schema first, bound each diagnostic, record timestamps/reset metadata, and do not reset counters.
 
-Start with a read-only transaction and plain EXPLAIN. Obtain actual-plan evidence on a restored production-scale database following [QUERY_PERF.md](../../QUERY_PERF.md):
+Start with a read-only transaction and plain EXPLAIN. Obtain actual-plan evidence on a restored production-scale database following [QUERY_PERF.md](../../../QUERY_PERF.md):
 
 ~~~sql
 BEGIN READ ONLY;

@@ -1400,10 +1400,9 @@ update shared user msg previousModel =
     let
         pollIntervalMs =
             shared.systemSettings
-                |> Maybe.map .rerDutyPollIntervalSec
-                |> Maybe.withDefault 5
-                |> Basics.max 5
-                |> (\seconds -> toFloat seconds * 1000)
+                |> Maybe.map (\settings -> toFloat settings.rerDutyPollIntervalSec * 1000)
+                |> Maybe.withDefault Config.waterfallPollingMinIntervalMs
+                |> Basics.max Config.waterfallPollingMinIntervalMs
 
         model =
             { previousModel | pollIntervalMs = pollIntervalMs }

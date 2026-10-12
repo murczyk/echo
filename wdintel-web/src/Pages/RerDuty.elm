@@ -307,8 +307,7 @@ updateForUser shared user msg model =
                     model.waterfalls
                         |> List.concatMap
                             (\( _, waterfall ) ->
-                                waterfall.messages
-                                    |> Messages.toMessageList
+                                (Messages.toMessageList waterfall.messages ++ waterfall.notRenderedMessagesYet)
                                     |> List.map Tuple.first
                             )
                         |> Set.fromList
@@ -347,10 +346,19 @@ updateForUser shared user msg model =
                         (\( wfId, wf ) ->
                             let
                                 wfMessageIds =
-                                    wf.messages
-                                        |> Messages.toMessageList
+                                    (Messages.toMessageList wf.messages ++ wf.notRenderedMessagesYet)
                                         |> List.map Tuple.first
                                         |> Set.fromList
+
+                                refreshedById =
+                                    Dict.fromList rsp.messages
+
+                                updatedPendingMessages =
+                                    wf.notRenderedMessagesYet
+                                        |> List.map
+                                            (\( msgId, message ) ->
+                                                ( msgId, Dict.get msgId refreshedById |> Maybe.withDefault message )
+                                            )
 
                                 updatedMessages =
                                     List.foldl
@@ -370,13 +378,13 @@ updateForUser shared user msg model =
 
                                 ( updatedWaterfall, waterfallEffect ) =
                                     if List.isEmpty refreshedMessages then
-                                        ( { wf | messages = updatedMessages }, E.none )
+                                        ( { wf | messages = updatedMessages, notRenderedMessagesYet = updatedPendingMessages }, E.none )
 
                                     else
                                         Pages_.RerDuty.Waterfall.applyRefreshedMessages
                                             shared
                                             refreshedMessages
-                                            { wf | messages = updatedMessages }
+                                            { wf | messages = updatedMessages, notRenderedMessagesYet = updatedPendingMessages }
                             in
                             ( ( wfId, updatedWaterfall ), E.map (WaterfallMsg wfId) waterfallEffect )
                         )
