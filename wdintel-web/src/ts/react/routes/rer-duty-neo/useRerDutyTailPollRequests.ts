@@ -33,6 +33,11 @@ export function useRerDutyTailPollRequests(params: Params) {
   >({});
   const tailPreviewGenerationByFeedIdRef = useRef<Record<string, number>>({});
 
+  const hasActiveTailCount = useCallback(
+    (feedId: string) => Boolean(tailCountRequestPromiseByFeedIdRef.current[feedId]),
+    [],
+  );
+
   const resetTailRequests = useCallback((feedId: string) => {
     tailPreviewGenerationByFeedIdRef.current[feedId] =
       (tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0) + 1;
@@ -142,6 +147,7 @@ export function useRerDutyTailPollRequests(params: Params) {
   );
 
   return {
+    hasActiveTailCount,
     tailPreviewGenerationByFeedIdRef,
     resetTailRequests,
     requestValidatedTailCount,

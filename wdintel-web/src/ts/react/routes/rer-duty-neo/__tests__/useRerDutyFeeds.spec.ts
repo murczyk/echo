@@ -536,7 +536,8 @@ describe('useRerDutyFeeds inbox refreshes', () => {
     hoisted.fetchMessagesByIds.mockClear();
   });
 
-  it('skips fetching when no visible ids overlap', async () => {
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it('skips hydration and count polling when no visible ids overlap', async () => {
     const localContainer = document.createElement('div');
     const localRoot = createRoot(localContainer);
     hoisted.messageFeeds = [
@@ -560,7 +561,7 @@ describe('useRerDutyFeeds inbox refreshes', () => {
       });
 
       expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
-      expect(hoisted.pollNow).toHaveBeenCalledOnce();
+      expect(hoisted.pollNow).not.toHaveBeenCalled();
     } finally {
       await act(async () => {
         localRoot.unmount();

@@ -37,6 +37,86 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
 
   afterEach(fixture.cleanup);
 
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it('coalesces focus and online recovery with the configured five-second count pace', async () => {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} pollIntervalSec={5} />);
+      await flushMicrotasks();
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    const requests = hoisted.fetchInboxCount.mock.calls.length;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      window.dispatchEvent(new Event('online'));
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(4_999);
+    });
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(requests);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(requests + 1);
+    expect(apiRef.current!.error).toBeNull();
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it('drains an early automatic tick at the due time after an immediate user count', async () => {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} pollIntervalSec={5} />);
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await apiRef.current!.requestValidatedInboxCount('mf-0');
+    });
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(2);
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 3, firstElementTs: null });
+    await act(async () => vi.advanceTimersByTimeAsync(4_999));
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(3);
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(3);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it('keeps different unread and loaded-tail answers independent within a cycle', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          items: rangeRsp(1, 7).inboxItems,
+          readIds: new Set([1]),
+          unreadCount: 6,
+        })),
+      );
+    });
+    hoisted.fetchInboxCount.mockClear();
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 9, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 3, firstElementTs: null });
+    await startPoll();
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(2);
+    expect(
+      hoisted.fetchInboxCount.mock.calls.map(([request]) => request.sinceIdNoninclusive),
+    ).toEqual([1, 7]);
+    expect(apiRef.current!.confirmedTailPreviewByFeedId['mf-0']).toMatchObject({
+      tailId: 7,
+      count: 3,
+    });
+    expect(
+      feedIndicatorUnreadCount(
+        apiRef.current!.messageFeeds[0],
+        apiRef.current!.confirmedTailPreviewByFeedId['mf-0'],
+      ),
+    ).toBe(9);
+  });
+
   // Regression: https://github.com/echoua/echo/pull/3331
   it('keeps a captured preview current after auto-follow advances the unread cursor', async () => {
     const { apiRef } = await mountLoadedFeed();
@@ -146,7 +226,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     );
   });
 
-  it('keeps an empty tail preview from creating a false unread badge loop', async () => {
+  it('#3780 shares zero unread/tail counts without creating a false unread badge loop', async () => {
     const { apiRef, scrollToEnd } = await mountLoadedFeed();
     await act(async () => {
       apiRef.current!.setMessageFeeds((feeds) =>
@@ -156,20 +236,13 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
     apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
     apiRef.current!.cancelFollowTail('mf-0');
-    hoisted.fetchInboxCount
-      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
-      .mockResolvedValueOnce({ quantity: 0, firstElementTs: null })
-      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
-      .mockResolvedValueOnce({ quantity: 0, firstElementTs: null });
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
     hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
     await startPoll();
     let feed = apiRef.current!.messageFeeds[0];
-    expect(feed.unreadCount).toBe(1);
+    expect(feed.unreadCount).toBe(0);
     expect(feedLoadedUnreadCount(feed)).toBe(0);
-    expect(apiRef.current!.confirmedTailPreviewByFeedId['mf-0']).toMatchObject({
-      tailId: 1,
-      count: 0,
-    });
+    expect(apiRef.current!.confirmedTailPreviewByFeedId['mf-0']).toBeUndefined();
     expect(scrollToEnd).not.toHaveBeenCalled();
 
     const generation = apiRef.current!.beginFollowTail('mf-0');
@@ -195,18 +268,16 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
     apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
     scrollToEnd.mockClear();
-    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 0, firstElementTs: null });
     hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
     await startPoll();
     feed = apiRef.current!.messageFeeds[0];
-    expect(feed.unreadCount).toBe(1);
+    expect(feed.unreadCount).toBe(0);
     expect(feedLoadedUnreadCount(feed)).toBe(0);
-    expect(apiRef.current!.confirmedTailPreviewByFeedId['mf-0']).toMatchObject({
-      tailId: 1,
-      count: 0,
-    });
+    expect(apiRef.current!.confirmedTailPreviewByFeedId['mf-0']).toBeUndefined();
     expect(scrollToEnd).not.toHaveBeenCalled();
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(2);
     expect(
       feedIndicatorUnreadCount(feed, apiRef.current!.confirmedTailPreviewByFeedId['mf-0']),
     ).toBe(0);
@@ -374,7 +445,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     expect(feedIndicatorUnreadCount(feed)).toBe(0);
   });
 
-  it('confirms newer messages without appending or scrolling while away from bottom', async () => {
+  it('#3780 reuses an identical unread/tail answer without appending or scrolling', async () => {
     const { apiRef, scrollToEnd } = await mountLoadedFeed();
     await act(async () => {
       apiRef.current!.setMessageFeeds((feeds) =>
@@ -386,18 +457,16 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     await act(async () => {
       await flushMicrotasks();
     });
-    hoisted.fetchInboxCount
-      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
-      .mockResolvedValueOnce({ quantity: 21, firstElementTs: null });
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 21, firstElementTs: null });
     await startPoll();
     await act(async () => flushMicrotasks());
 
-    expect(hoisted.fetchInboxCount).toHaveBeenCalled();
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(1);
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
     const feed = apiRef.current!.messageFeeds[0];
     expect(feed.items.map(([id]) => id)).toEqual([1]);
     expect(feed.readIds).toEqual(new Set([1]));
-    expect(feed.unreadCount).toBe(1);
+    expect(feed.unreadCount).toBe(21);
     expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('available');
     expect(apiRef.current!.confirmedTailPreviewByFeedId['mf-0']).toMatchObject({
       tailId: 1,
@@ -414,8 +483,16 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     ).toBe(21);
   });
 
-  it('abandons a stalled tail preview after its hard deadline and accepts a fresh preview', async () => {
+  it('#3780 waits for a distinct tail count deadline before polling again', async () => {
     const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          items: [...feed.items, [2, minimalInboxMessage({ createdAtOrder: 200 })]],
+        })),
+      );
+    });
     apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
     apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
     const stalledTail = deferred<{ quantity: number; firstElementTs: number | null }>(
@@ -446,11 +523,8 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
 
     hoisted.notifyDutyNewMessages.mockClear();
     await startPoll();
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith(
-      'mf-0',
-      1,
-      hoisted.beginDutyNotificationPollCycle.mock.results.at(-1)?.value,
-    );
+    expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
+    expect(countRequests).toBe(2);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS - 1_001);
@@ -467,7 +541,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     await startPoll();
     await act(async () => flushMicrotasks());
     expect(apiRef.current!.confirmedTailPreviewByFeedId['mf-0']).toMatchObject({
-      tailId: 1,
+      tailId: 2,
       count: 5,
     });
   });
@@ -549,7 +623,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       await flushMicrotasks();
     });
 
-    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(2);
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(1);
     expect(hoisted.fetchInboxCount.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         sinceIdNoninclusive: 10,
@@ -885,7 +959,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       await flushMicrotasks();
     });
 
-    expect(feedACountRequests).toBeGreaterThan(feedACountRequestsAfterSoftDeadline);
+    expect(feedACountRequests).toBe(feedACountRequestsAfterSoftDeadline);
     expect(feedBCountRequests).toBe(1);
     expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith(
       'mf-0',

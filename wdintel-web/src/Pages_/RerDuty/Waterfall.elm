@@ -152,6 +152,7 @@ type LoadingEarlierStatus
 type alias Model =
     { radioFeaturesAllowed : Bool
     , id : String
+    , pollIntervalMs : Float
     , height : Int
     , lastScroll : Maybe Posix
     , lastBottomCheck : Maybe Posix
@@ -235,6 +236,7 @@ init :
 init radioFeaturesAllowed id_ ms =
     ( { radioFeaturesAllowed = radioFeaturesAllowed
       , id = id_
+      , pollIntervalMs = Config.waterfallPollingMinIntervalMs
       , height = 200
       , lastScroll = Nothing
       , lastBottomCheck = Nothing
@@ -359,9 +361,9 @@ earlyMessageCount =
 {- how often do we try to load new messages -}
 
 
-loadingNewMessagesInterval : number
-loadingNewMessagesInterval =
-    1000
+loadingNewMessagesInterval : { a | pollIntervalMs : Float } -> Float
+loadingNewMessagesInterval model =
+    model.pollIntervalMs
 
 
 initCmd : Bool -> String -> Effect Msg
@@ -380,7 +382,7 @@ initCmd radioFeaturesAllowed id_ =
 initCmdOnce : Effect Msg
 initCmdOnce =
     E.batch
-        [ E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep loadingNewMessagesInterval)
+        [ E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep Config.waterfallPollingMinIntervalMs)
         , E.sendCmd <| Api.rer_analysis_latest_senders InitGotLatestSenders
         , E.getCurrentTime TickTimeTick
         , E.getCurrentTime GotTime
@@ -536,7 +538,7 @@ loadInitialStats model reload =
                   }
                 , E.batch
                     [ E.getInboxMessages Nothing (GotInitialInbox True) (getInboxParamsForMessages model |> setLoadLatest (Just True))
-                    , E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep loadingNewMessagesInterval)
+                    , E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
                     , E.sendCmd <| Http.cancel <| loadEarlierTracker model.id
                     , E.sendCmd <| Http.cancel <| loadNewerTracker model.id
                     , E.sendCmd <| Http.cancel <| loadDigestTracker model.id
@@ -890,8 +892,8 @@ commonGotVisibleMsgFunc msgIds model =
 
 commonGotInboxLoopFunc :
     List ( Int, B.InboxMessage )
-    -> { a | unreadMessagesLeft : Bool, groupInfos : Dict String B.SignalGroupEntry, profiles : Dict String (Maybe B.SignalProfileEntry), pollingFailed : Bool }
-    -> ( { a | unreadMessagesLeft : Bool, groupInfos : Dict String B.SignalGroupEntry, profiles : Dict String (Maybe B.SignalProfileEntry), pollingFailed : Bool }, Effect Msg )
+    -> { a | unreadMessagesLeft : Bool, groupInfos : Dict String B.SignalGroupEntry, profiles : Dict String (Maybe B.SignalProfileEntry), pollingFailed : Bool, pollIntervalMs : Float }
+    -> ( { a | unreadMessagesLeft : Bool, groupInfos : Dict String B.SignalGroupEntry, profiles : Dict String (Maybe B.SignalProfileEntry), pollingFailed : Bool, pollIntervalMs : Float }, Effect Msg )
 commonGotInboxLoopFunc messages model =
     ( { model
         | unreadMessagesLeft =
@@ -899,7 +901,7 @@ commonGotInboxLoopFunc messages model =
         , pollingFailed = False
       }
     , E.batch
-        [ E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep loadingNewMessagesInterval)
+        [ E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
         , loadNewGroups messages model
         , loadNewProfiles messages model
         ]
@@ -1394,7 +1396,18 @@ updateFilters msg model =
 
 
 update : Shared.Model -> B.User -> Msg -> Model -> ( Model, Effect Msg )
-update shared user msg model =
+update shared user msg previousModel =
+    let
+        pollIntervalMs =
+            shared.systemSettings
+                |> Maybe.map .rerDutyPollIntervalSec
+                |> Maybe.withDefault 5
+                |> Basics.max 5
+                |> (\seconds -> toFloat seconds * 1000)
+
+        model =
+            { previousModel | pollIntervalMs = pollIntervalMs }
+    in
     case msg of
         NoOp ->
             ( model, E.none )
@@ -1760,13 +1773,13 @@ update shared user msg model =
             case ListX.last (Messages.toMessageList model.messages) of
                 Nothing ->
                     ( model
-                    , E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep loadingNewMessagesInterval)
+                    , E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
                     )
 
                 Just ( messageId, _ ) ->
                     case model.loadingStrategy of
                         AutoScrollToLatest InProgress ->
-                            ( model, E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep loadingNewMessagesInterval) )
+                            ( model, E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model)) )
 
                         AutoScrollToLatest Done ->
                             if not model.loadingInboxMessages then
@@ -1786,7 +1799,7 @@ update shared user msg model =
                                 )
 
                             else
-                                ( model, E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep loadingNewMessagesInterval) )
+                                ( model, E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model)) )
 
                         InitialLoad ->
                             ( { model | loadingInboxMessages = True, loadingInboxDigest = True }
@@ -1830,27 +1843,27 @@ update shared user msg model =
 
                                             else if m2.loadingInboxDigest then
                                                 ( m2
-                                                , [ E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep loadingNewMessagesInterval)
+                                                , [ E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
                                                   ]
                                                 )
 
                                             else
                                                 ( { m2 | loadingInboxDigest = True }
                                                 , [ E.sendCmd <| loadInboxDigest model model.digestLoadingTimestamp
-                                                  , E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep loadingNewMessagesInterval)
+                                                  , E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
                                                   ]
                                                 )
 
                                         else if m2.loadingInboxDigest then
                                             ( m2
-                                            , [ E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep loadingNewMessagesInterval)
+                                            , [ E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
                                               ]
                                             )
 
                                         else
                                             ( { m2 | loadingInboxDigest = True }
                                             , [ E.sendCmd <| loadInboxDigest model model.digestLoadingTimestamp
-                                              , E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep loadingNewMessagesInterval)
+                                              , E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
                                               ]
                                             )
                                 in
@@ -1859,7 +1872,7 @@ update shared user msg model =
                                 )
 
                             else
-                                ( model, E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep loadingNewMessagesInterval) )
+                                ( model, E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model)) )
 
         GotInboxMessagesDigest (Ok rsp) ->
             ( { model
@@ -1895,7 +1908,7 @@ update shared user msg model =
         InboxLoopGotMessages _ (Err error) ->
             ( { model | loadingInboxMessages = False, pollingFailed = True }
             , E.batch
-                [ E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep loadingNewMessagesInterval)
+                [ E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
                 , if model.pollingFailed then
                     E.none
 

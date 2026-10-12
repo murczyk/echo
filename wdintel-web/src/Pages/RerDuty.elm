@@ -302,6 +302,17 @@ updateForUser shared user msg model =
             )
 
         InboxEvents events ->
+            let
+                loadedMessageIds =
+                    model.waterfalls
+                        |> List.concatMap
+                            (\( _, waterfall ) ->
+                                waterfall.messages
+                                    |> Messages.toMessageList
+                                    |> List.map Tuple.first
+                            )
+                        |> Set.fromList
+            in
             events
                 |> List.filterMap
                     (\event ->
@@ -313,6 +324,7 @@ updateForUser shared user msg model =
                                 Nothing
                     )
                 |> ListX.unique
+                |> List.filter (\id -> Set.member id loadedMessageIds)
                 |> (\ids ->
                         if List.isEmpty ids then
                             ( model, E.none )

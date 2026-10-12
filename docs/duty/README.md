@@ -67,6 +67,26 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 - Derive unread from `loadedTailId - cursorId` (IDs are not dense under the filter).
 - Write inbox `quantity` straight into the badge while near bottom.
 
+## Polling and live updates
+
+Automatic counts use `rer_duty_poll_interval_sec` (minimum/default five seconds),
+including focus/online/visibility recovery. Per feed, a new automatic count
+waits for the configured interval since its previous count start and for active
+unread/tail count requests to settle. Slow feeds do not block healthy feeds.
+Explicit initial loads, filter changes, and navigation remain immediate.
+
+Inbox events hydrate changed displayed messages without starting extra count
+polls. Reuse an unread count for the loaded-tail boundary only when filters,
+cursor, and request generation match; different boundaries retain separate
+answers. For six loaded unread messages and three unloaded newer messages,
+the unread count is nine and the tail count is three.
+
+The default-suite regressions are
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.polling.spec.tsx`
+and `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeeds.spec.ts`.
+Classic Duty also uses the existing interval setting and filters event IDs
+against loaded messages before fetching updates.
+
 ## Code map
 
 | Concern                                          | File                                                                                                                            |

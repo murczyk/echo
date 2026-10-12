@@ -161,7 +161,6 @@ export function useRerDutyFeeds(
   const filterOpts = useRerDutyFilterOptions(radioFeaturesAllowed);
   const [pollIntervalSec, setPollIntervalSec] = useState(INBOX_COUNT_POLL_INTERVAL_MS / 1000);
   const dutySettings = useDutySettings();
-  const lastInboxEventPollAtRef = useRef(Number.NEGATIVE_INFINITY);
   // Until the persisted preference is known (or after it fails), Duty must not make an
   // automatic positioning decision from the optimistic default.
   const dutyDisableAutoScroll =
@@ -245,14 +244,6 @@ export function useRerDutyFeeds(
 
   useInboxChangedMessageIds({
     onMessageIds: async (messageIds) => {
-      const now = Date.now();
-      const poll =
-        now - lastInboxEventPollAtRef.current >= INBOX_COUNT_POLL_INTERVAL_MS
-          ? (() => {
-              lastInboxEventPollAtRef.current = now;
-              return feedState.pollNow();
-            })()
-          : Promise.resolve();
       const refreshes = feedState.messageFeeds.flatMap((feed) => {
         const visibleMessageIds = new Set(feed.items.map(([messageId]) => messageId));
         const visibleChangedMessageIds = Array.from(
@@ -271,13 +262,9 @@ export function useRerDutyFeeds(
         ];
       });
 
-      if (refreshes.length === 0) {
-        await poll;
-        return;
-      }
+      if (refreshes.length === 0) return;
 
       await Promise.all([
-        poll,
         ...refreshes.map(
           async ({
             feedId,
