@@ -50,6 +50,14 @@
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/index.spec.tsx`
 - **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568)
 
+## API quota settings
+
+- **Behavior ID:** `react-api-quota-settings`
+- **Expected observable result:** the API tab loads and saves independent quota values; defaults are 500 ms and burst 5, invalid individual or combined values show an error without saving, and failed saves retain edits.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/index.spec.tsx`
+- **Original Echo issue/PR, if known:** [#3788](https://github.com/echoua/echo/issues/3788)
+- **Settings and reconciliation contract:** [API request limits](../../api-rate-limiting.md).
+
 ## Settings route and feature presentation
 
 - **Behavior ID:** `react-settings-route-presentation`
