@@ -11,6 +11,7 @@ import {
   createDutyFeedStateFixture,
   getDutyApiMocks,
   DutyFeedStateHarness as TestHarness,
+  type DutyFeedStateApiRef,
   inboxRsp,
   rangeRsp,
   settleReactCommits as flushMicrotasks,
@@ -82,6 +83,60 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(3);
     expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(3);
   });
+
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it.each([
+    ['resolve', 6_000],
+    ['reject', 6_000],
+    ['resolve', 10_000],
+    ['reject', 10_000],
+  ] as const)(
+    'retries a blocked automatic poll when its tail count settles (%s, poll at %i ms)',
+    async (settlement, pollAtMs) => {
+      const apiRef: DutyFeedStateApiRef = { current: null };
+      await act(async () => {
+        root.render(<TestHarness apiRef={apiRef} pollIntervalSec={5} />);
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        apiRef.current!.setMessageFeeds((feeds) =>
+          feeds.map((feed) => ({ ...feed, items: rangeRsp(1, 2).inboxItems })),
+        );
+      });
+      apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
+      apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
+      const tailCount = deferred<{ quantity: number; firstElementTs: number | null }>();
+      hoisted.fetchInboxCount
+        .mockResolvedValue({ quantity: 4, firstElementTs: null })
+        .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+        .mockImplementationOnce(() => tailCount.promise);
+      await act(async () => vi.advanceTimersByTimeAsync(pollAtMs));
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+        window.dispatchEvent(new Event('online'));
+        await flushMicrotasks();
+        await vi.advanceTimersByTimeAsync(250);
+      });
+      expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(2);
+      hoisted.notifyDutyNewMessages.mockClear();
+
+      await act(async () => {
+        if (settlement === 'resolve') tailCount.resolve({ quantity: 0, firstElementTs: null });
+        else tailCount.reject(new Error('tail count failed'));
+        await flushMicrotasks();
+      });
+
+      if (pollAtMs < 10_000) {
+        expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(2);
+        await act(async () => vi.advanceTimersByTimeAsync(10_000 - pollAtMs - 251));
+        expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(2);
+        await act(async () => vi.advanceTimersByTimeAsync(1));
+      }
+      expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(4);
+      expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
+      expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 3, expect.anything());
+    },
+  );
 
   // Regression: https://github.com/echoua/echo/issues/3780
   it('keeps different unread and loaded-tail answers independent within a cycle', async () => {

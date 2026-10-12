@@ -720,7 +720,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const getDueCountFeeds = useRerDutyCountSchedule({
     intervalMs: pollIntervalMs,
     lastCountStartedAtRef: lastCountStartedAtByFeedIdRef,
-    hasActiveTailCount: tailPolling.hasActiveTailCount,
+    getActiveTailCount: tailPolling.getActiveTailCount,
     poll: () => automaticPollRef.current(),
   });
   const { startFeedWork, forgetFeedWork } = useRerDutyPollingFeedWork();

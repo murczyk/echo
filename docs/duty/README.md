@@ -72,7 +72,9 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 Automatic counts use `rer_duty_poll_interval_sec` (minimum/default five seconds),
 including focus/online/visibility recovery. Per feed, a new automatic count
 waits for the configured interval since its previous count start and for active
-unread/tail count requests to settle. Slow feeds do not block healthy feeds.
+unread/tail count requests to settle. Polls blocked by an active tail count retry
+when it settles, while preserving the configured interval. Slow feeds do not
+block healthy feeds.
 Explicit initial loads, filter changes, and navigation remain immediate.
 
 Inbox events hydrate changed displayed and buffered messages without starting

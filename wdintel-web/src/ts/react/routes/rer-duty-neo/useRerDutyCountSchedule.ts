@@ -6,7 +6,7 @@ import type { MessageFeedState } from './utils';
 type Params = {
   intervalMs: number;
   lastCountStartedAtRef: MutableRefObject<Record<string, number>>;
-  hasActiveTailCount: (feedId: string) => boolean;
+  getActiveTailCount: (feedId: string) => Promise<unknown> | undefined;
   poll: () => Promise<void>;
 };
 
@@ -16,6 +16,7 @@ export function useRerDutyCountSchedule(params: Params) {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduledAtRef = useRef(Infinity);
   const mountedRef = useRef(true);
+  const pendingTailCountsRef = useRef(new WeakSet<Promise<unknown>>());
 
   useEffect(() => {
     mountedRef.current = true;
@@ -39,11 +40,25 @@ export function useRerDutyCountSchedule(params: Params) {
     }, delayMs);
   }, []);
 
+  const retryAfterTailCount = useCallback((request: Promise<unknown>) => {
+    if (pendingTailCountsRef.current.has(request)) return;
+    pendingTailCountsRef.current.add(request);
+    const retry = () => {
+      if (mountedRef.current) void paramsRef.current.poll();
+    };
+    void request.then(retry, retry);
+  }, []);
+
   return useCallback(
     (feeds: MessageFeedState[], automatic: boolean) => {
       if (!automatic) return feeds;
       const now = performance.now();
-      const available = feeds.filter((feed) => !paramsRef.current.hasActiveTailCount(feed.id));
+      const available = feeds.filter((feed) => {
+        const activeTailCount = paramsRef.current.getActiveTailCount(feed.id);
+        if (!activeTailCount) return true;
+        retryAfterTailCount(activeTailCount);
+        return false;
+      });
       const remainingMs = (feedId: string) =>
         (paramsRef.current.lastCountStartedAtRef.current[feedId] ?? -Infinity) +
         paramsRef.current.intervalMs -
@@ -52,6 +67,6 @@ export function useRerDutyCountSchedule(params: Params) {
       if (delays.length > 0) scheduleDuePoll(Math.min(...delays));
       return available.filter((feed) => remainingMs(feed.id) <= 0);
     },
-    [scheduleDuePoll],
+    [retryAfterTailCount, scheduleDuePoll],
   );
 }
