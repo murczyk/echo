@@ -56,7 +56,7 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 - Mid-list read cursor advances from **DOM viewport-visible** rows. At bottom still marks through the **window tail** id.
 - Near bottom without watch: keep loading newer until there are **≥10 loaded-unread after last-seen** (or the server is exhausted). Watch + physical bottom still mark-all-read and drains the live tail.
 - **Pending newer buffer** (Elm `notRenderedMessagesYet`): background results that could evict visible rows remain pending. Native scrolling commits the longest safe ordered prefix while preserving the visible anchor; the down-arrow may then navigate and land on the current tail. Pending tails detached by an older-window trim are discarded and re-fetched from the retained boundary.
-- **Active-only card trees (narrow):** narrow multi-feed mounts MessageCards only for the active tab.
+- **Active-only card trees (narrow):** narrow multi-feed mounts MessageCards only for the active tab. Editor resizing and tab remounts preserve each feed’s reading anchor; delayed scroll and idle callbacks wait for pending layout restoration. Regression coverage: `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useWindowedFeedScroll.spec.tsx` and `wdintel-web/tests/e2e/rer-duty-scroll-stability.spec.ts`.
 - **Idle viewport offload (multi-feed):** after ~10s without pointer/wheel/touch on a feed, off-viewport rows in that column become height placeholders; interaction remounts the full 40-window. All columns stay visible.
 - **Collapsed media (Duty, [#3161](https://github.com/echoua/echo/issues/3161)):** optional setting (default of) hides audio / photo·video / coordinates behind a reveal banner until clicked. Toggle in Settings → Оперативний.
 - Arrow down: explicit load (if needed) → one landing → hard unread catch-up. It does not authorize later background following. FAB shows a spinner while newer `get-inbox` is in flight.
@@ -66,6 +66,31 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 
 - Derive unread from `loadedTailId - cursorId` (IDs are not dense under the filter).
 - Write inbox `quantity` straight into the badge while near bottom.
+
+## Polling and live updates
+
+Automatic counts use `rer_duty_poll_interval_sec` (minimum/default five seconds),
+including focus/online/visibility recovery. Per feed, a new automatic count
+waits for the configured interval since its previous count start and for active
+unread/tail count requests to settle. Polls blocked by an active tail count retry
+when it settles, while preserving the configured interval. Slow feeds do not
+block healthy feeds.
+Explicit initial loads, filter changes, and navigation remain immediate.
+
+Inbox events hydrate changed displayed and buffered messages without starting
+extra count polls. Buffer updates preserve the displayed window; identical
+payloads preserve message references to avoid unnecessary card reconciliation.
+Reuse an unread count for the loaded-tail boundary only when filters,
+cursor, and request generation match; different boundaries retain separate
+answers. For six loaded unread messages and three unloaded newer messages,
+the unread count is nine and the tail count is three.
+
+The default-suite regressions are
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.polling.spec.tsx`
+and `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeeds.spec.ts`.
+Classic Duty also uses the existing interval setting and filters event IDs
+against displayed and buffered messages before fetching updates. Its buffer
+refresh regression is `wdintel-web/tests/RerDutyRefreshRegressionTests.elm`.
 
 ## Code map
 

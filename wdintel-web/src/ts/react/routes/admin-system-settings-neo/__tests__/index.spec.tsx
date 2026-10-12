@@ -113,6 +113,50 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
   afterEach(() => {
     document.body.innerHTML = '';
   });
+  it('loads and saves #3788 API throttling independently of other settings', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#api');
+    mocks.list.mockResolvedValue([
+      { id: 1, deleted: false, apiRateLimitReplenishIntervalMs: 750, apiRateLimitBurstSize: 4 },
+    ]);
+    const { container, root } = await renderPage();
+    const inputs = container.querySelectorAll<HTMLInputElement>('input[type="number"]');
+    expect(inputs[0]?.value).toBe('750');
+    expect(inputs[1]?.value).toBe('4');
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    await act(async () => {
+      setValue.call(inputs[0], '500');
+      inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+      setValue.call(inputs[1], '5');
+      inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => button(container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({ apiRateLimitReplenishIntervalMs: 500, apiRateLimitBurstSize: 5 }),
+    );
+    await act(async () => root.unmount());
+  });
+  it.each([
+    ['0', '5', 'додатними цілими числами'],
+    ['2147483647', '2147483647', 'поєднання інтервалу'],
+  ])('rejects #3788 invalid quotas %s/%s before saving', async (interval, burst, message) => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#api');
+    const { container, root } = await renderPage();
+    const inputs = container.querySelectorAll<HTMLInputElement>('input[type="number"]');
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    await act(async () => {
+      for (const [input, value] of [
+        [inputs[0], interval],
+        [inputs[1], burst],
+      ] as const) {
+        setValue.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    await act(async () => button(container, 'зберегти')?.click());
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(message);
+    await act(async () => root.unmount());
+  });
   it('saves a changed boolean and notifies after the API resolves', async () => {
     let resolveSave!: () => void;
     mocks.save.mockReturnValue(new Promise<void>((resolve) => (resolveSave = resolve)));
@@ -250,6 +294,11 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     mocks.save.mockRejectedValueOnce(new Error('save failed'));
     await act(async () => button(container, 'зберегти')?.click());
     await act(async () => Promise.resolve());
+    expect(checkbox?.checked).toBe(true);
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'Помилка збереження: save failed',
+    });
     await act(async () => root.unmount());
   });
 

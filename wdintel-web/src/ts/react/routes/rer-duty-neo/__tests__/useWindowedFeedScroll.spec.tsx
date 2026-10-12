@@ -2109,8 +2109,10 @@ describe('useWindowedFeedScroll', () => {
     ).toBe(-1);
   });
 
-  it('preserves the visible anchor when a rendered card changes height later', async () => {
+  it('#3780 preserves the reading anchor when scroll-idle work runs before a resize settles', async () => {
+    vi.useFakeTimers();
     const triggerResize = installResizeObserverMock();
+    const onLoadNewer = vi.fn();
     const ids = [1, 2, 3, 4];
     await act(async () => {
       root.render(<TestScroller ids={[]} />);
@@ -2123,12 +2125,12 @@ describe('useWindowedFeedScroll', () => {
     mockVerticalLayout(scroller, layout);
 
     await act(async () => {
-      root.render(<TestScroller ids={ids} />);
+      root.render(<TestScroller ids={ids} onLoadNewer={onLoadNewer} />);
     });
     scroller.scrollTop = 51;
     await act(async () => {
       scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
-      await waitForAnimationFrame();
+      await vi.advanceTimersByTimeAsync(16);
     });
 
     metrics.scrollHeight = 230;
@@ -2138,6 +2140,11 @@ describe('useWindowedFeedScroll', () => {
       [3, { top: 130, height: 50 }],
       [4, { top: 180, height: 50 }],
     ]);
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(140);
+    });
+    expect(onLoadNewer).not.toHaveBeenCalled();
     act(() => triggerResize(container.querySelector('[data-testid="list"]')!));
 
     expect(scroller.scrollTop).toBe(81);
@@ -2145,6 +2152,29 @@ describe('useWindowedFeedScroll', () => {
       (container.querySelector('[data-testid="item-2"]') as HTMLElement).getBoundingClientRect()
         .top,
     ).toBe(-1);
+
+    metrics.scrollHeight = 170;
+    layout.items = new Map([
+      [1, { top: 0, height: 20 }],
+      [2, { top: 20, height: 50 }],
+      [3, { top: 70, height: 50 }],
+      [4, { top: 120, height: 50 }],
+    ]);
+    scroller.scrollTop = 81;
+    expect(scroller.scrollTop).toBe(70);
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(140);
+    });
+    act(() => triggerResize(container.querySelector('[data-testid="list"]')!));
+
+    expect(scroller.scrollTop).toBe(21);
+    expect(
+      (container.querySelector('[data-testid="item-2"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(-1);
+    await act(async () => vi.advanceTimersByTimeAsync(140));
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the current position until a compact-card anchor can be restored', async () => {

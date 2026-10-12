@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20261012_155351_api_rate_limit": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20261012_082021_signal_message_group_duplicate_lookup_index": { "changes": [] },
     "echo:m20261011_112422_ai_agent_completion_event": { "changes": [] },
     "echo:m20261011_112649_ai_agent_work_memory": { "changes": [{ "table": "public.ai_agent_work_record", "strategy": "excluded" }] },

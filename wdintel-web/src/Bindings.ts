@@ -5008,6 +5008,8 @@ export type SystemSettingsCurrentRsp = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   twoFactorAuthEnabled: boolean;
+  apiRateLimitReplenishIntervalMs: number;
+  apiRateLimitBurstSize: number;
   excludeOrbitOtherUnits: boolean;
 };
 
@@ -5051,6 +5053,8 @@ export type SystemSettingsItem = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   twoFactorAuthEnabled: boolean;
+  apiRateLimitReplenishIntervalMs: number;
+  apiRateLimitBurstSize: number;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheEnabled: boolean;
   messengerMediaCacheRetentionHours: number;
@@ -5097,6 +5101,8 @@ export type CreateSystemSettingsReq = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
+  apiRateLimitReplenishIntervalMs: number | null;
+  apiRateLimitBurstSize: number | null;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheEnabled: boolean;
   messengerMediaCacheRetentionHours: number;
