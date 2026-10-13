@@ -6,24 +6,22 @@ import Core.Auth
 import Bindings as B exposing (..)
 import Browser.Events
 import Config
-import Core.EventHelpers
 import Core.Types exposing (..)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
 import List.Extra as ListX
 import Maybe.Extra exposing (isJust)
 import Page exposing (Page)
+import PagePorts.RerDutyPorts as Ports
 import Pages_.RerDuty.Waterfall exposing (Msg(..), waterfallDivId)
 import Pages_.RerDuty.Waterfall.Messages as Messages
 import Pages_.RerDuty.Waterfall.Utils as Utils
-import Process
 import Random
 import Route exposing (Route)
 import Route.Path
@@ -34,7 +32,6 @@ import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import Utils.Api.ErrorHandling
-import Utils.Api.Temp exposing (leExpectJson)
 import Utils.RemoteData exposing (RemoteData(..))
 import Utils.Utils exposing (..)
 import Uuid.Barebones
@@ -47,7 +44,6 @@ type alias Model =
     , duplicates : Set Int
     , lastPushQuery : Dict String String
     , datasources : List ( Int, Datasource )
-    , eventLastId : Maybe String
     , currentUser : RemoteData ApiError B.User
     }
 
@@ -60,7 +56,6 @@ init user route _ =
           , duplicates = Set.empty
           , lastPushQuery = route.query
           , datasources = []
-          , eventLastId = Nothing
           , currentUser = Loading
           }
         , E.sendCmd <| Api.api_user GotCurrentUser
@@ -106,8 +101,7 @@ initForUser user route =
                     )
 
         cmds =
-            Core.EventHelpers.subscribeToInboxChanges route.path
-                :: (E.sendCmd <| Api.datasource_list GotDatasourceList)
+            (E.sendCmd <| Api.datasource_list GotDatasourceList)
                 :: (waterfallStates
                         |> List.map
                             (\( wfId, wfState ) ->
@@ -127,7 +121,6 @@ initForUser user route =
             , duplicates = Set.empty
             , lastPushQuery = route.query
             , datasources = []
-            , eventLastId = Nothing
             , currentUser = Success user
             }
 
@@ -135,16 +128,14 @@ initForUser user route =
             getPushUrlCmd model
     in
     ( model
-    , E.batch (pushUrlCmd :: pollEvents Nothing :: cmds)
+    , E.batch (pushUrlCmd :: cmds)
     )
 
 
 type Msg
     = WaterfallMsg String Pages_.RerDuty.Waterfall.Msg
     | ResizeHappened
-    | EventPollTrigger (Maybe String)
-    | EventPollReceived (Result ApiError B.LongPollRsp)
-    | InboxEvents (List B.EventMsg)
+    | InboxEvents (List Int)
     | InboxMessagesUpdated (Result ApiError B.MessageIdsRsp)
     | GenerateNewWaterfallId
     | AddWaterfall String
@@ -274,33 +265,6 @@ updateForUser shared user msg model =
             , E.sendCmd <| Task.perform (\_ -> ResizeHappened) Time.now
             )
 
-        EventPollTrigger lastId ->
-            ( model, pollEvents lastId )
-
-        EventPollReceived (Err _) ->
-            ( model, pollEventsDelayed 1000 model.eventLastId )
-
-        EventPollReceived (Ok rsp) ->
-            let
-                inboxEvents =
-                    rsp.events
-                        |> List.filter
-                            (\event ->
-                                case event.eventType of
-                                    B.EtInboxChanged _ ->
-                                        True
-
-                                    _ ->
-                                        False
-                            )
-            in
-            ( { model | eventLastId = rsp.lastEventId }
-            , E.batch
-                [ pollEvents rsp.lastEventId
-                , E.sendMsg <| InboxEvents inboxEvents
-                ]
-            )
-
         InboxEvents events ->
             let
                 loadedMessageIds =
@@ -313,15 +277,6 @@ updateForUser shared user msg model =
                         |> Set.fromList
             in
             events
-                |> List.filterMap
-                    (\event ->
-                        case event.eventType of
-                            B.EtInboxChanged messageId ->
-                                Just messageId
-
-                            _ ->
-                                Nothing
-                    )
                 |> ListX.unique
                 |> List.filter (\id -> Set.member id loadedMessageIds)
                 |> (\ids ->
@@ -511,6 +466,7 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch <|
         Browser.Events.onResize (\_ _ -> ResizeHappened)
+            :: Ports.rer_duty_inboxChanged InboxEvents
             :: List.map
                 (\( id_, wf ) ->
                     Sub.map (WaterfallMsg id_)
@@ -581,30 +537,6 @@ buildQuery model =
     Dict.fromList
         [ ( "state", stateS )
         ]
-
-
-pollEventsDelayed : Float -> Maybe String -> Effect Msg
-pollEventsDelayed delayMs lastEventId =
-    E.sendCmd <| Task.perform (\_ -> EventPollTrigger lastEventId) (Process.sleep delayMs)
-
-
-pollEvents : Maybe String -> Effect Msg
-pollEvents lastEventId =
-    let
-        request : B.LongPollReq
-        request =
-            { sessionId = "current"
-            , lastEventId = lastEventId
-            , deploymentMaintenanceProtocol = Nothing
-            , knownDeploymentMaintenanceId = Nothing
-            }
-    in
-    E.sendCmd <|
-        Http.post
-            { url = "/api/event-stream/long-poll"
-            , body = Http.jsonBody (B.longPollReqEncoder request)
-            , expect = leExpectJson EventPollReceived B.longPollRspDecoder
-            }
 
 
 getPushUrlCmd : Model -> Effect Msg

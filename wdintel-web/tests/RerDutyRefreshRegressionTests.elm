@@ -2,6 +2,7 @@ module RerDutyRefreshRegressionTests exposing (suite)
 
 import Bindings as B
 import Dict
+import Effect as E
 import Expect
 import Http
 import Json.Decode
@@ -224,6 +225,67 @@ suite =
                             , \_ -> Expect.equal Set.empty ticked.networkIdsRequested
                             ]
                             ()
+        , test "#3780 fast count responses do not allow early automatic polls" <|
+            \_ ->
+                withPollingWaterfall <|
+                    \shared waterfall ->
+                        let
+                            ( started, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 5000)) waterfall
+
+                            ( settled, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.GotInboxMessagesDigest (Ok { quantity = 0, firstElementTs = Nothing })) started
+
+                            ( early, earlyEffect ) =
+                                Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 9999)) settled
+
+                            ( due, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 10000)) early
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal True started.loadingInboxDigest
+                            , \_ -> Expect.equal False early.loadingInboxDigest
+                            , \_ -> Expect.equal E.none earlyEffect
+                            , \_ -> Expect.equal (Just (Time.millisToPosix 5000)) early.lastInboxPollStartedAt
+                            , \_ -> Expect.equal True due.loadingInboxDigest
+                            , \_ -> Expect.equal (Just (Time.millisToPosix 10000)) due.lastInboxPollStartedAt
+                            ]
+                            ()
+        , test "#3780 active count and message requests prevent overlapping automatic polls" <|
+            \_ ->
+                withPollingWaterfall <|
+                    \shared waterfall ->
+                        let
+                            check active =
+                                let
+                                    ( blocked, effect ) =
+                                        Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 5000)) active
+                                in
+                                Expect.all
+                                    [ \_ -> Expect.equal Nothing blocked.lastInboxPollStartedAt
+                                    , \_ -> Expect.equal E.none effect
+                                    ]
+                                    ()
+                        in
+                        Expect.all
+                            [ \_ -> check { waterfall | loadingInboxDigest = True }
+                            , \_ -> check { waterfall | loadingInboxMessages = True }
+                            ]
+                            ()
+        , test "#3780 scroll-to-latest keeps the previous automatic poll boundary" <|
+            \_ ->
+                withPollingWaterfall <|
+                    \shared waterfall ->
+                        let
+                            ( reloading, _ ) =
+                                Waterfall.update shared anonymousUser Waterfall.ScrollToLatestElement
+                                    { waterfall | lastInboxPollStartedAt = Just (Time.millisToPosix 5000) }
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal True reloading.loadingInboxMessages
+                            , \_ -> Expect.equal (Just (Time.millisToPosix 5000)) reloading.lastInboxPollStartedAt
+                            ]
+                            ()
         , test "#3780 refreshes buffered messages and keeps enrichment in the owning waterfall" <|
             \_ ->
                 case Url.fromString "http://localhost/rer-duty" of
@@ -245,7 +307,6 @@ suite =
                                 , duplicates = Set.empty
                                 , lastPushQuery = Dict.empty
                                 , datasources = []
-                                , eventLastId = Nothing
                                 , currentUser = Success anonymousUser
                                 }
 
@@ -461,6 +522,35 @@ dutyFilter compatibilityFields =
         , ( "highlight_keyword_set_id", Json.Encode.null )
         ]
             ++ compatibilityFields
+
+
+withPollingWaterfall : (Shared.Model -> Waterfall.Model -> Expect.Expectation) -> Expect.Expectation
+withPollingWaterfall check =
+    case Url.fromString "http://localhost/rer-duty" of
+        Nothing ->
+            Expect.fail "invalid test url"
+
+        Just url ->
+            let
+                ( shared, _ ) =
+                    Shared.init (Ok { isDark = False, now = 0 }) (Route.fromUrl () url)
+
+                ( waterfall, _ ) =
+                    Waterfall.init True "wf-polling" Nothing
+
+                ( initialized, _ ) =
+                    Waterfall.update shared anonymousUser (Waterfall.InitGotTime (Time.millisToPosix 0)) waterfall
+
+                ( loaded, _ ) =
+                    Waterfall.update shared anonymousUser
+                        (Waterfall.InboxLoopGotMessages True
+                            (Ok { inboxItems = [], pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
+                        )
+                        { initialized
+                            | messages = Messages.fromList [ ( 1, messageStub ) ]
+                        }
+            in
+            check shared loaded
 
 
 callsignMessage : String -> B.InboxMessage

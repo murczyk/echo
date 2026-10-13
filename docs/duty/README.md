@@ -91,6 +91,12 @@ and `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeeds.spec
 Classic Duty also uses the existing interval setting and filters event IDs
 against displayed and buffered messages before fetching updates. Its buffer
 refresh regression is `wdintel-web/tests/RerDutyRefreshRegressionTests.elm`.
+Each Classic waterfall has one polling subscription, removed with the waterfall
+or page. Automatic requests respect the interval between starts and wait for
+active count/message requests; scroll-to-latest reloads do not start another
+polling loop. Classic Duty receives inbox changes through Shared's event
+transport, including updates to buffered messages. Browser regressions are in
+`wdintel-web/tests/e2e/rer-duty-polling.spec.ts`.
 
 ## Code map
 

@@ -70,7 +70,6 @@ type Msg
     | TickTimeSlept
     | InitGotTime Posix
     | GotTime Posix
-    | InboxLoopSleptBeforeLoadNewer
       -- API CALLS
     | GotSignals (Result ApiError B.ListSignalsRsp)
     | GotLatestFrequencies (Result ApiError (List String))
@@ -93,7 +92,7 @@ type Msg
     | GotWaterfallContainerDiv (Result Browser.Dom.Error Element)
     | GetVisibleMsgIdsRes { waterfallId : String, msgIds : List Int, firstVisibleHeight : Float }
       -- LOADING MESSAGES
-    | InboxLoopLoadNewer
+    | InboxLoopLoadNewer Posix
     | GotInitialInbox Bool (Result ApiError B.InboxMessagesRsp)
     | GotInboxEarlier (Result ApiError B.InboxMessagesRsp)
     | InboxLoopGotMessages Bool (Result ApiError B.InboxMessagesRsp)
@@ -153,6 +152,7 @@ type alias Model =
     { radioFeaturesAllowed : Bool
     , id : String
     , pollIntervalMs : Float
+    , lastInboxPollStartedAt : Maybe Posix
     , height : Int
     , lastScroll : Maybe Posix
     , lastBottomCheck : Maybe Posix
@@ -237,6 +237,7 @@ init radioFeaturesAllowed id_ ms =
     ( { radioFeaturesAllowed = radioFeaturesAllowed
       , id = id_
       , pollIntervalMs = Config.waterfallPollingMinIntervalMs
+      , lastInboxPollStartedAt = Nothing
       , height = 200
       , lastScroll = Nothing
       , lastBottomCheck = Nothing
@@ -357,15 +358,6 @@ earlyMessageCount =
     10
 
 
-
-{- how often do we try to load new messages -}
-
-
-loadingNewMessagesInterval : { a | pollIntervalMs : Float } -> Float
-loadingNewMessagesInterval model =
-    model.pollIntervalMs
-
-
 initCmd : Bool -> String -> Effect Msg
 initCmd radioFeaturesAllowed id_ =
     E.batch
@@ -382,8 +374,7 @@ initCmd radioFeaturesAllowed id_ =
 initCmdOnce : Effect Msg
 initCmdOnce =
     E.batch
-        [ E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep Config.waterfallPollingMinIntervalMs)
-        , E.sendCmd <| Api.rer_analysis_latest_senders InitGotLatestSenders
+        [ E.sendCmd <| Api.rer_analysis_latest_senders InitGotLatestSenders
         , E.getCurrentTime TickTimeTick
         , E.getCurrentTime GotTime
         , E.getTags GotTags
@@ -399,8 +390,11 @@ initCmdOnce =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-    Ports.waterfall_getVisibleMsgIdsRes GetVisibleMsgIdsRes
+subscriptions model =
+    Sub.batch
+        [ Ports.waterfall_getVisibleMsgIdsRes GetVisibleMsgIdsRes
+        , Time.every model.pollIntervalMs InboxLoopLoadNewer
+        ]
 
 
 scrollThrottleConfig : Debounce.Config Msg
@@ -538,7 +532,6 @@ loadInitialStats model reload =
                   }
                 , E.batch
                     [ E.getInboxMessages Nothing (GotInitialInbox True) (getInboxParamsForMessages model |> setLoadLatest (Just True))
-                    , E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
                     , E.sendCmd <| Http.cancel <| loadEarlierTracker model.id
                     , E.sendCmd <| Http.cancel <| loadNewerTracker model.id
                     , E.sendCmd <| Http.cancel <| loadDigestTracker model.id
@@ -621,6 +614,89 @@ loadInboxDigest model strategy =
 
         _ ->
             Cmd.none
+
+
+pollInbox : Posix -> Model -> ( Model, Effect Msg )
+pollInbox now waterfall =
+    let
+        elapsedMs =
+            waterfall.lastInboxPollStartedAt
+                |> Maybe.map (\started -> toFloat (Time.posixToMillis now - Time.posixToMillis started))
+
+        tooEarly =
+            elapsedMs
+                |> Maybe.map (\elapsed -> elapsed >= 0 && elapsed < waterfall.pollIntervalMs)
+                |> Maybe.withDefault False
+    in
+    if tooEarly || waterfall.loadingInboxMessages || waterfall.loadingInboxDigest then
+        ( waterfall, E.none )
+
+    else
+        let
+            ( updated, effect ) =
+                pollNewerInbox waterfall
+        in
+        ( { updated
+            | lastInboxPollStartedAt =
+                if updated.loadingInboxMessages || updated.loadingInboxDigest then
+                    Just now
+
+                else
+                    waterfall.lastInboxPollStartedAt
+          }
+        , effect
+        )
+
+
+pollNewerInbox : Model -> ( Model, Effect Msg )
+pollNewerInbox waterfall =
+    case ListX.last (Messages.toMessageList waterfall.messages) of
+        Nothing ->
+            ( waterfall, E.none )
+
+        Just ( messageId, _ ) ->
+            case waterfall.loadingStrategy of
+                AutoScrollToLatest InProgress ->
+                    ( waterfall, E.none )
+
+                AutoScrollToLatest Done ->
+                    ( { waterfall
+                        | digestLoadingTimestamp =
+                            waterfall.time |> Maybe.map SinceTime |> Maybe.withDefault waterfall.digestLoadingTimestamp
+                        , loadingInboxMessages = True
+                      }
+                    , E.getInboxMessages Nothing
+                        (InboxLoopGotMessages False)
+                        (getInboxParamsForMessages waterfall |> setSinceIdNoninclusive (Just messageId))
+                    )
+
+                InitialLoad ->
+                    ( { waterfall | loadingInboxMessages = True, loadingInboxDigest = True }
+                    , E.batch
+                        [ E.getInboxMessages Nothing
+                            (InboxLoopGotMessages True)
+                            (getInboxParamsForMessages waterfall |> setSinceIdNoninclusive (Just messageId))
+                        , E.sendCmd <| loadInboxDigest waterfall waterfall.digestLoadingTimestamp
+                        ]
+                    )
+
+                ManualScroll _ ->
+                    pollManualInbox messageId waterfall
+
+
+pollManualInbox : Int -> Model -> ( Model, Effect Msg )
+pollManualInbox messageId waterfall =
+    if hasLoadingTrasholdPassed waterfall && (waterfall.unreadMessagesLeft || waterfall.notLoadedYetMessagesCounter > 0) then
+        ( { waterfall | loadingInboxMessages = True }
+        , E.getInboxMessages (Just (loadNewerTracker waterfall.id))
+            (InboxLoopGotMessages False)
+            (getInboxParamsForMessages waterfall |> setSinceIdNoninclusive (Just messageId))
+        )
+
+    else
+        ( { waterfall | loadingInboxDigest = True }
+        , E.sendCmd <| loadInboxDigest waterfall waterfall.digestLoadingTimestamp
+        )
 
 
 findNewFreqs : List ( Int, B.InboxMessage ) -> List String -> List String
@@ -901,8 +977,7 @@ commonGotInboxLoopFunc messages model =
         , pollingFailed = False
       }
     , E.batch
-        [ E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
-        , loadNewGroups messages model
+        [ loadNewGroups messages model
         , loadNewProfiles messages model
         ]
     )
@@ -1768,110 +1843,8 @@ update shared user msg previousModel =
             else
                 ( model, E.none )
 
-        InboxLoopLoadNewer ->
-            case ListX.last (Messages.toMessageList model.messages) of
-                Nothing ->
-                    ( model
-                    , E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
-                    )
-
-                Just ( messageId, _ ) ->
-                    case model.loadingStrategy of
-                        AutoScrollToLatest InProgress ->
-                            ( model, E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model)) )
-
-                        AutoScrollToLatest Done ->
-                            if not model.loadingInboxMessages then
-                                ( { model
-                                    | digestLoadingTimestamp =
-                                        case model.time of
-                                            Just time_ ->
-                                                SinceTime time_
-
-                                            Nothing ->
-                                                model.digestLoadingTimestamp
-                                    , loadingInboxMessages = True
-                                  }
-                                , E.getInboxMessages Nothing
-                                    (InboxLoopGotMessages False)
-                                    (getInboxParamsForMessages model |> setSinceIdNoninclusive (Just messageId))
-                                )
-
-                            else
-                                ( model, E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model)) )
-
-                        InitialLoad ->
-                            ( { model | loadingInboxMessages = True, loadingInboxDigest = True }
-                            , E.batch
-                                [ E.getInboxMessages Nothing
-                                    (InboxLoopGotMessages True)
-                                    (getInboxParamsForMessages model |> setSinceIdNoninclusive (Just messageId))
-                                , E.sendCmd <| loadInboxDigest model model.digestLoadingTimestamp
-                                ]
-                            )
-
-                        ManualScroll _ ->
-                            if not model.loadingInboxMessages then
-                                let
-                                    loadingTrasholdPassed =
-                                        hasLoadingTrasholdPassed model
-
-                                    m2 =
-                                        { model
-                                            | loadingInboxMessages =
-                                                loadingTrasholdPassed && (model.unreadMessagesLeft || model.notLoadedYetMessagesCounter > 0)
-                                        }
-
-                                    ( m3, eff3 ) =
-                                        if loadingTrasholdPassed then
-                                            if model.unreadMessagesLeft then
-                                                ( m2
-                                                , [ E.getInboxMessages (Just (loadNewerTracker model.id))
-                                                        (InboxLoopGotMessages False)
-                                                        (getInboxParamsForMessages model |> setSinceIdNoninclusive (Just messageId))
-                                                  ]
-                                                )
-
-                                            else if model.notLoadedYetMessagesCounter > 0 then
-                                                ( m2
-                                                , [ E.getInboxMessages (Just (loadNewerTracker model.id))
-                                                        (InboxLoopGotMessages False)
-                                                        (getInboxParamsForMessages model |> setSinceIdNoninclusive (Just messageId))
-                                                  ]
-                                                )
-
-                                            else if m2.loadingInboxDigest then
-                                                ( m2
-                                                , [ E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
-                                                  ]
-                                                )
-
-                                            else
-                                                ( { m2 | loadingInboxDigest = True }
-                                                , [ E.sendCmd <| loadInboxDigest model model.digestLoadingTimestamp
-                                                  , E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
-                                                  ]
-                                                )
-
-                                        else if m2.loadingInboxDigest then
-                                            ( m2
-                                            , [ E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
-                                              ]
-                                            )
-
-                                        else
-                                            ( { m2 | loadingInboxDigest = True }
-                                            , [ E.sendCmd <| loadInboxDigest model model.digestLoadingTimestamp
-                                              , E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
-                                              ]
-                                            )
-                                in
-                                ( m3
-                                , E.batch eff3
-                                )
-
-                            else
-                                ( model, E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) (Process.sleep (loadingNewMessagesInterval model)) )
+        InboxLoopLoadNewer now ->
+            pollInbox now model
 
         GotInboxMessagesDigest (Ok rsp) ->
             ( { model
@@ -1899,21 +1872,13 @@ update shared user msg previousModel =
                 Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка перевірки нових повідомлень" error
             )
 
-        InboxLoopSleptBeforeLoadNewer ->
-            ( model
-            , E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) Time.now
-            )
-
         InboxLoopGotMessages _ (Err error) ->
             ( { model | loadingInboxMessages = False, pollingFailed = True }
-            , E.batch
-                [ E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep (loadingNewMessagesInterval model))
-                , if model.pollingFailed then
-                    E.none
+            , if model.pollingFailed then
+                E.none
 
-                  else
-                    Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження нових повідомлень" error
-                ]
+              else
+                Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження нових повідомлень" error
             )
 
         InboxLoopGotMessages once (Ok inboxRsp) ->
