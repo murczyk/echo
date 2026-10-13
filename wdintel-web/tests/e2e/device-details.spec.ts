@@ -1003,7 +1003,7 @@ for (const width of [1440, 390]) {
     await page.goto(`/devices/${DEVICE_ID}`);
     await page.getByRole('tab', { name: 'Файли', exact: true }).click();
     const sidebar = page.getByTestId('device-files-sidebar');
-    const filter = sidebar.getByRole('combobox', { name: 'Контент файлів' });
+    const filter = sidebar.getByRole('button', { name: /^Фільтри файлів/ });
     const tree = sidebar.getByTestId('device-files-tree');
     await expect(tree.getByText('available.txt', { exact: true })).toBeVisible();
     await expect(tree.getByText('missing.txt', { exact: true })).toBeVisible();
@@ -1013,7 +1013,10 @@ for (const width of [1440, 390]) {
       ['Усі файли', null],
     ] as const) {
       await filter.click();
-      await page.getByRole('option', { name: label, exact: true }).click();
+      await page
+        .getByRole('menu', { name: 'Фільтри файлів' })
+        .getByRole('menuitemradio', { name: label, exact: true })
+        .click();
       await expect.poll(() => requests.at(-1)?.has_content).toBe(value);
       expect(requests.at(-1)?.cursor).toBeNull();
       await expect(tree.getByText('Немає файлів за вибраним фільтром')).toHaveCount(

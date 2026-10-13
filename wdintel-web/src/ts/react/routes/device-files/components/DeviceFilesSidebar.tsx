@@ -1,7 +1,7 @@
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
-import { CircularProgress, MenuItem, TextField, Tooltip } from '@mui/material';
+import { CircularProgress, Tooltip } from '@mui/material';
 import { useState } from 'react';
 
 import type { DeviceFileTreeEntry } from '../../../../../Bindings';
@@ -11,6 +11,7 @@ import { PowerIconButton } from '../../../components/PowerIconButton';
 import type { DeviceAnalyticsTagFilter } from '../types';
 import type { DeviceAnalyticsTagsState } from '../use-device-analytics-tags';
 import type { DeviceFilesState } from '../use-device-files';
+import { DeviceFileFiltersMenu } from './DeviceFileFiltersMenu';
 import { DeviceFileSearchControls } from './DeviceFileSearchControls';
 import { DeviceFileSearchResults } from './DeviceFileSearchResults';
 import { DeviceFileTree } from './DeviceFileTree';
@@ -135,6 +136,12 @@ export function DeviceFilesSidebar({
               </PowerIconButton>
             </Tooltip>
           </div>
+          {mode === DeviceFilesSidebarMode.Explorer ? (
+            <DeviceFileFiltersMenu
+              contentFilter={files.contentFilter}
+              setContentFilter={files.setContentFilter}
+            />
+          ) : null}
           <Tooltip title="Оновити файлові дані">
             <span>
               <PowerIconButton
@@ -197,24 +204,6 @@ export function DeviceFilesSidebar({
               hidden={mode !== DeviceFilesSidebarMode.Explorer}
               className="min-w-0"
             >
-              <div className="pb-echo-sm">
-                <TextField
-                  select
-                  fullWidth
-                  size="small"
-                  label="Контент файлів"
-                  value={files.contentFilter === null ? 'all' : String(files.contentFilter)}
-                  onChange={(event) =>
-                    files.setContentFilter(
-                      event.target.value === 'all' ? null : event.target.value === 'true',
-                    )
-                  }
-                >
-                  <MenuItem value="all">Усі файли</MenuItem>
-                  <MenuItem value="true">З контентом</MenuItem>
-                  <MenuItem value="false">Без контенту</MenuItem>
-                </TextField>
-              </div>
               <DeviceFileTree files={files} />
             </div>
             <div
