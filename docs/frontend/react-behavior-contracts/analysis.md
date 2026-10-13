@@ -224,6 +224,9 @@ page can be fetched again. The page owns the limit, cursors, and logical message
 coordinates. The shared `MessageFeed` owns viewport anchoring and edge skeletons,
 not the data window. This also applies to direct-message context, refresh, and
 realtime insertion. Filter and sort changes invalidate older requests.
+If a page arrives during wheel input, the shared feed keeps the current cards
+and edge skeleton until wheel and inertial scroll events are idle for ~140ms. Wheel input is never
+blocked; only the visual window commit waits.
 
 The first/previous/next/last controls and scroll-driven page selection share the
 same logical page and `messagesPage` URL state. A button click additionally aligns

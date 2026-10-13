@@ -238,6 +238,51 @@ test.describe('Message feed unification @regression', () => {
     });
   });
 
+  test('Analysis defers an edge page commit until wheel input settles', async ({ page }) => {
+    await installPages(page);
+    let releasePage!: () => void;
+    const pendingPage = new Promise<void>((resolve) => {
+      releasePage = resolve;
+    });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      if (route.request().postDataJSON().before_id_noninclusive !== 141) {
+        return route.fallback();
+      }
+      await pendingPage;
+      return route.fulfill({ json: messagePage(140) });
+    });
+
+    await page.goto('/rer-analysis-neo');
+    const scroller = page.locator('[data-analysis-message-scroller]');
+    await expect(scroller.locator('[data-message-id]')).toHaveCount(20);
+    const edgeLoader = scroller.locator('[data-message-feed-skeleton="below"]');
+    await edgeLoader.scrollIntoViewIfNeeded();
+    await expect(edgeLoader).toHaveAttribute('role', 'status');
+    await edgeLoader.scrollIntoViewIfNeeded();
+    await expect(edgeLoader).toBeInViewport();
+    const anchor = await visibleAnchor(scroller);
+    const wheelTimer = await scroller.evaluate((element) => {
+      const wheel = () =>
+        element.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 80 }));
+      wheel();
+      return window.setInterval(wheel, 30);
+    });
+    try {
+      releasePage();
+      await page.waitForTimeout(80);
+      await expect(scroller.locator('[data-message-id]')).toHaveCount(20);
+      await expect(edgeLoader).toBeAttached();
+    } finally {
+      releasePage();
+      await scroller.evaluate((_, timer) => window.clearInterval(timer), wheelTimer);
+    }
+    await expect(scroller.locator('[data-message-id]')).toHaveCount(40);
+    await expect.poll(async () => (await visibleAnchor(scroller)).id).toBe(anchor.id);
+    await expect
+      .poll(async () => Math.abs((await visibleAnchor(scroller)).offset - anchor.offset))
+      .toBeLessThanOrEqual(1);
+  });
+
   test('Analysis loads the next page when its in-flow skeleton becomes visible', async ({
     page,
   }) => {

@@ -52,6 +52,7 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 - Each column keeps a **40-message window**. Older prepends / newer appends trim the other end.
 - **Near bottom** ≈ within **640px** of the end. If unread prefetch is still needed, the load zone expands up to about **two viewports** (capped at `2×640`), not “last 10 tall messages” (that fired loads thousands of px early and froze scroll on window trim).
 - **Scroll-idle newer loads:** background unread prefetch waits ~140ms after the last scroll event when not physically at the bottom, so a mid-fling fetch does not commit a 40-card window trim under the user’s finger. An available newer-page skeleton loads immediately when it enters the viewport.
+- **Edge-load visual commit:** when a new window arrives during wheel input, the feed keeps the current cards and edge skeleton until wheel and inertial scroll events are idle for ~140ms. Wheel input remains available throughout. This is shared with Analysis.
 - **Badge** = loaded unread + trimmed unread + (beyond-tail preview when known). Near bottom **ignores** residual poll stock from a lagging read cursor; it **keeps** a real matching tail preview.
 - Mid-list read cursor advances from **DOM viewport-visible** rows. At bottom still marks through the **window tail** id.
 - Near bottom without watch: keep loading newer until there are **≥10 loaded-unread after last-seen** (or the server is exhausted). Watch + physical bottom still mark-all-read and drains the live tail.

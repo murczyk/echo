@@ -335,6 +335,57 @@ test('separates an older-page skeleton from the first message card @regression',
   expect(gap).toBeLessThanOrEqual(13);
 });
 
+test('defers an older-page commit until upward wheel input settles @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const olderRequestStarted = createDeferred<void>();
+  const olderResponse = createDeferred<InboxMessagesRspRaw>();
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: { disableAutoScroll: true },
+    inboxResponseForRequest: (request) => {
+      if (readBeforeId(request) === 21) {
+        olderRequestStarted.resolve();
+        return olderResponse.promise;
+      }
+      if (readBeforeId(request) != null || readSinceId(request) != null) {
+        return buildInboxResponse([]);
+      }
+      return buildInboxResponse(Array.from({ length: 20 }, (_, index) => index + 21));
+    },
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(scroller.locator('[data-duty-message-id]')).toHaveCount(20);
+  await setBottomDistance(scroller, 1_000_000);
+  await olderRequestStarted.promise;
+  const edgeLoader = scroller.locator('[data-message-feed-skeleton="above"]');
+  await expect(edgeLoader).toHaveAttribute('role', 'status');
+  await edgeLoader.scrollIntoViewIfNeeded();
+  await expect(edgeLoader).toBeInViewport();
+  const anchor = await readVisibleAnchor(scroller);
+  const wheelTimer = await scroller.evaluate((element) => {
+    const wheel = () =>
+      element.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }));
+    wheel();
+    return window.setInterval(wheel, 30);
+  });
+  try {
+    olderResponse.resolve(buildInboxResponse(Array.from({ length: 20 }, (_, index) => index + 1)));
+    await page.waitForTimeout(80);
+    await expect(scroller.locator('[data-duty-message-id]')).toHaveCount(20);
+    await expect(edgeLoader).toBeAttached();
+  } finally {
+    olderResponse.resolve(buildInboxResponse(Array.from({ length: 20 }, (_, index) => index + 1)));
+    await scroller.evaluate((_, timer) => window.clearInterval(timer), wheelTimer);
+  }
+  await expect(scroller.locator('[data-duty-message-id]')).toHaveCount(40);
+  const anchoredCard = scroller.locator(`[data-duty-message-id="${anchor.id}"]`);
+  await expect(anchoredCard).toBeAttached();
+  await expect.poll(() => readAnchorOffset(anchoredCard)).toBeCloseTo(anchor.offsetTop, 0);
+});
+
 // Regression: https://github.com/echoua/echo/issues/3615
 test('#3615 uses real downward wheel input to page an underfilled historical window @regression', async ({
   page,

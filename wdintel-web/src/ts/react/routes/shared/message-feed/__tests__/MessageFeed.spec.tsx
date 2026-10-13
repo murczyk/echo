@@ -480,6 +480,150 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(scroller.scrollTop).toBe(190);
   });
 
+  it.each(['above', 'below'] as const)(
+    'keeps the %s edge skeleton and old window until wheel input settles after a fast load',
+    async (edge) => {
+      const renderFeed = (loading: boolean, ids: number[]) => (
+        <MessageFeed
+          items={ids}
+          getMessageId={getId}
+          renderMessage={renderMessage}
+          scrollOptions={{
+            policy: historyPolicy,
+            hasReachedStart: edge !== 'above',
+            onLoadOlder: () => undefined,
+            onLoadNewer: edge === 'below' ? () => undefined : undefined,
+            autoScrollAllowed: false,
+          }}
+          loadingAbove={edge === 'above' && loading}
+          loadingBelow={edge === 'below' && loading}
+          hasMoreAbove={edge === 'above' && loading}
+          hasMoreBelow={edge === 'below' && loading}
+        />
+      );
+      await act(async () => root.render(renderFeed(true, [1, 2, 3, 4])));
+      const scroller = container.querySelector<HTMLElement>('[data-message-feed-scroller]')!;
+      const direction = edge === 'above' ? -1 : 1;
+      const wheel = (deltaY: number) => {
+        const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY });
+        scroller.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+
+      expect(wheel(direction * 40)).toBe(false);
+      await act(async () => root.render(renderFeed(false, [2, 3, 4, 5])));
+      expect(container.querySelector('[data-message-id="1"]')).not.toBeNull();
+      expect(container.querySelector('[data-message-id="5"]')).toBeNull();
+      expect(container.querySelector(`[data-message-feed-skeleton="${edge}"]`)).not.toBeNull();
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        expect(wheel(direction * 30)).toBe(false);
+      });
+      expect(container.querySelector('[data-message-id="5"]')).toBeNull();
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 180));
+      });
+      expect(container.querySelector('[data-message-id="1"]')).toBeNull();
+      expect(container.querySelector('[data-message-id="5"]')).not.toBeNull();
+    },
+  );
+
+  it('keeps pre-rendered Duty cards paired with the visible item window while input continues', async () => {
+    const renderFeed = (ids: number[], loading: boolean) => (
+      <MessageFeed
+        items={ids}
+        getMessageId={getId}
+        scrollOptions={{
+          policy: historyPolicy,
+          hasReachedStart: false,
+          onLoadOlder: () => undefined,
+          autoScrollAllowed: false,
+        }}
+        loadingAbove={loading}
+        hasMoreAbove={loading}
+      >
+        {ids.map((id) => (
+          <div data-message-id={id} key={id}>
+            Duty card {id}
+          </div>
+        ))}
+      </MessageFeed>
+    );
+    await act(async () => root.render(renderFeed([1, 2, 3, 4], true)));
+    const scroller = container.querySelector<HTMLElement>('[data-message-feed-scroller]')!;
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -40 }));
+      root.render(renderFeed([0, 1, 2, 3], false));
+    });
+    expect(container.querySelector('[data-message-id="4"]')).not.toBeNull();
+    expect(container.querySelector('[data-message-id="0"]')).toBeNull();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    });
+    expect(container.querySelector('[data-message-id="4"]')).toBeNull();
+    expect(container.querySelector('[data-message-id="0"]')).not.toBeNull();
+  });
+
+  it('waits for inertial scroll events after the final wheel event before committing a page', async () => {
+    const renderFeed = (ids: number[], loading: boolean) => (
+      <MessageFeed
+        items={ids}
+        getMessageId={getId}
+        renderMessage={renderMessage}
+        scrollOptions={{
+          policy: historyPolicy,
+          hasReachedStart: true,
+          onLoadOlder: () => undefined,
+          onLoadNewer: () => undefined,
+          autoScrollAllowed: false,
+        }}
+        loadingBelow={loading}
+        hasMoreBelow={loading}
+      />
+    );
+    await act(async () => root.render(renderFeed([1, 2, 3, 4], true)));
+    const scroller = container.querySelector<HTMLElement>('[data-message-feed-scroller]')!;
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 40 }));
+      root.render(renderFeed([2, 3, 4, 5], false));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 90));
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 90));
+    });
+    expect(container.querySelector('[data-message-id="1"]')).not.toBeNull();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    });
+    expect(container.querySelector('[data-message-id="5"]')).not.toBeNull();
+  });
+
+  it('does not treat a later unrelated scroll as the same wheel gesture', async () => {
+    const renderFeed = (ids: number[]) => (
+      <MessageFeed
+        items={ids}
+        getMessageId={getId}
+        renderMessage={renderMessage}
+        scrollOptions={{
+          policy: historyPolicy,
+          hasReachedStart: true,
+          onLoadOlder: () => undefined,
+          autoScrollAllowed: false,
+        }}
+      />
+    );
+    await act(async () => root.render(renderFeed([1, 2, 3, 4])));
+    const scroller = container.querySelector<HTMLElement>('[data-message-feed-scroller]')!;
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 40 }));
+      await new Promise((resolve) => setTimeout(resolve, 180));
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      root.render(renderFeed([2, 3, 4, 5]));
+    });
+    expect(container.querySelector('[data-message-id="5"]')).not.toBeNull();
+  });
+
   it('cancels a deferred navigation when the feed is replaced', async () => {
     await act(async () => root.render(<TestFeed ids={[1, 2, 3, 4]} />));
     const onLanded = vi.fn();
