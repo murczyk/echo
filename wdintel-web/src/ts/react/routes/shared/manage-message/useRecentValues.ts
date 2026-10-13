@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 
 const STORAGE_KEY = 'cyberEcho_recentMessageFields';
 const MAX_ITEMS = 15;
@@ -40,18 +40,31 @@ const DEFAULT_VALUES: RecentValues = {
 };
 
 export function useRecentValues() {
-  const [recentValues, setRecentValues] = useState<RecentValues>(DEFAULT_VALUES);
-
-  useEffect(() => {
+  const [recentValues, setRecentValues] = useState<RecentValues>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        setRecentValues({ ...DEFAULT_VALUES, ...JSON.parse(stored) });
+        const fields: unknown = JSON.parse(stored);
+        const values = { ...DEFAULT_VALUES };
+        if (fields && typeof fields === 'object') {
+          for (const key of Object.keys(values) as Array<keyof RecentValues>) {
+            const entries = fields[key];
+            if (Array.isArray(entries)) {
+              values[key] = entries
+                .filter(
+                  (entry): entry is string => typeof entry === 'string' && entry.trim() !== '',
+                )
+                .slice(0, MAX_ITEMS);
+            }
+          }
+        }
+        return values;
       }
     } catch (e) {
       console.error('Failed to load recent values', e);
     }
-  }, []);
+    return DEFAULT_VALUES;
+  });
 
   const addValues = useCallback((newValues: Partial<RecentValues>) => {
     setRecentValues((prev) => {
@@ -86,5 +99,18 @@ export function useRecentValues() {
     });
   }, []);
 
-  return { recentValues, addValues };
+  const replaceUnitValues = useCallback((unit: string[]) => {
+    setRecentValues((prev) => {
+      if (JSON.stringify(prev.unit) === JSON.stringify(unit)) return prev;
+      const updated = { ...prev, unit };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch (error) {
+        console.error('Failed to save recent values', error);
+      }
+      return updated;
+    });
+  }, []);
+
+  return { recentValues, addValues, replaceUnitValues };
 }

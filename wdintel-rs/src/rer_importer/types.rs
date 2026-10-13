@@ -707,7 +707,9 @@ pub struct GeoCoordinates {
     pub lon: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 #[serde(deny_unknown_fields)]
 pub struct SubmitNetwork {
     #[serde(default)]
@@ -718,7 +720,9 @@ pub struct SubmitNetwork {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 #[serde(deny_unknown_fields)]
 pub struct SubmitDmrMetadata {
     #[serde(deserialize_with = "deserialize_rfc3339_string")]

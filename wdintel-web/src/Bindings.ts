@@ -3541,6 +3541,8 @@ export type DeleteUnitDuplicateReq = {
 
 export type UnitSearchReq = {
   search: string;
+  includeInactive: boolean | null;
+  names: Array<string> | null;
 };
 
 export type UnitDetailsReq = {
@@ -3870,6 +3872,67 @@ export type DeviceNameSearchResult = {
 
 export type DeviceNameSearchRsp = {
   devices: Array<DeviceNameSearchResult>;
+};
+
+export type SubmitNetwork = {
+  signalName: string | null;
+  cc: number | null;
+  name: string | null;
+};
+
+export type SubmitDmrMetadata = {
+  timestamp: string;
+  cc: number | null;
+  freq: string;
+  signalName: string;
+  senderId: number | null;
+  senderName: string | null;
+  callGroupId: number | null;
+  callGroupName: string | null;
+  hashId: string | null;
+};
+
+export type DirectSubmitPayload = {
+  fullBody: string | null;
+  text: string | null;
+  comment: string | null;
+  freq: string | null;
+  coords: Array<GeoCoordinates>;
+  fromCallsign: string | null;
+  to: Array<string>;
+  tags: Array<string> | null;
+  timestamp: string | null;
+  isTimeNull: boolean | null;
+  post: string | null;
+  unit: string | null;
+  unitId: number | null;
+  createUnit: boolean;
+  locations: Array<string>;
+  network: SubmitNetwork | null;
+  dmr: Array<SubmitDmrMetadata>;
+  signalGroupMasterKey: string | null;
+  deviceNameId: number | null | null;
+  uploadUrls: Array<string> | null;
+  attachmentUpdates: DirectSubmitAttachmentUpdates | null;
+  deletedMediaIds: Array<string> | null;
+  retainedMediaIds: Array<string> | null;
+  parentSignalMessageIds: Array<number>;
+  copySourceSignalMessageIds: Array<number>;
+};
+
+export type DirectSubmitAttachmentUpdates = {
+  replacements: Array<DirectSubmitAttachmentReplacement>;
+  renames: Array<DirectSubmitAttachmentRename>;
+};
+
+export type DirectSubmitAttachmentReplacement = {
+  mediaId: string;
+  uploadUrl: string;
+};
+
+export type DirectSubmitAttachmentRename = {
+  mediaId: string;
+  fileName: string;
 };
 
 export type DirectSubmitParsePayload = {

@@ -469,6 +469,7 @@ mod m20261011_112422_ai_agent_completion_event;
 mod m20261011_112649_ai_agent_work_memory;
 mod m20261012_082021_signal_message_group_duplicate_lookup_index;
 mod m20261012_155351_api_rate_limit;
+mod m20261013_094137_inbox_unit_selection;
 
 pub struct Migrator;
 
@@ -1128,6 +1129,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261011_112649_ai_agent_work_memory::Migration),
             Box::new(m20261012_082021_signal_message_group_duplicate_lookup_index::Migration),
             Box::new(m20261012_155351_api_rate_limit::Migration),
+            Box::new(m20261013_094137_inbox_unit_selection::Migration),
         ]
     }
 }

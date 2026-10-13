@@ -81,6 +81,9 @@ vi.mock('../../../../services/api/direct-submit', () => ({
   searchDeviceNames: vi.fn().mockResolvedValue([]),
   searchPostNames: directSubmitMocks.searchPostNames,
   searchUnitNames: vi.fn().mockResolvedValue([]),
+  resolveUnitNames: vi.fn(async (names: string[]) =>
+    names.map((name, index) => ({ id: index + 1, name })),
+  ),
   searchNetworkNames: directSubmitMocks.searchNetworkNames,
   searchSignalNames: vi.fn().mockResolvedValue([]),
   searchCallsignNames: vi.fn().mockResolvedValue([]),

@@ -14,7 +14,6 @@ import {
 import {
   searchDeviceNames,
   searchPostNames,
-  searchUnitNames,
   searchNetworkNames,
   searchSignalNames,
   searchCallsignNames,
@@ -34,6 +33,7 @@ import type {
 } from '../../../../../Bindings';
 import { mapDirectSubmitCopyToForm, mapInboxMessageToForm } from './manage-message-drawer.mappers';
 import { useRecentValues } from './useRecentValues';
+import { useMessageUnitOptions } from './useMessageUnitOptions';
 import { isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
 import {
@@ -149,7 +149,9 @@ export function useManageMessageDrawer({
   const reportCopyLoaded =
     isReportCreateMode && reportCopyLoadedSourceId === (reportSource?.id ?? null);
 
-  const { recentValues, addValues } = useRecentValues();
+  const { recentValues, addValues, replaceUnitValues } = useRecentValues();
+  const recentValuesRef = useRef(recentValues);
+  recentValuesRef.current = recentValues;
 
   const saving = submitting || (isEditMode && Boolean(editSaveInFlight));
   const formLoading = copyLoading;
@@ -166,10 +168,6 @@ export function useManageMessageDrawer({
   const [postOptions, setPostOptions] = useState<string[]>([]);
   const [postLoading, setPostLoading] = useState(false);
   const [postInput, setPostInput] = useState('');
-
-  const [unitOptions, setUnitOptions] = useState<string[]>([]);
-  const [unitLoading, setUnitLoading] = useState(false);
-  const [unitInput, setUnitInput] = useState('');
 
   const [networkNameOptions, setNetworkNameOptions] = useState<NetworkSearchResult[]>([]);
   const [networkNameLoading, setNetworkNameLoading] = useState(false);
@@ -262,27 +260,6 @@ export function useManageMessageDrawer({
     radioFeaturesAllowed,
     referenceDataRetryAttempt,
   ]);
-
-  useEffect(() => {
-    if (!formReady) return;
-    let active = true;
-
-    setUnitLoading(true);
-    searchUnitNames(unitInput)
-      .then((results) => {
-        if (active) {
-          setUnitOptions(results.map((u) => u.name));
-        }
-      })
-      .catch((error) => handleReferenceDataError('Failed to load unit names', error))
-      .finally(() => {
-        if (active) setUnitLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [formReady, handleReferenceDataError, referenceDataRetryAttempt, unitInput]);
 
   useEffect(() => {
     if (!formReady) return;
@@ -396,16 +373,61 @@ export function useManageMessageDrawer({
 
   const { control, formState, getValues, setValue, reset } = methods;
   const formValues = useWatch({ control });
+  const { unitOptions, unitLoading, unitAllowCreate, defaultRecentUnit } = useMessageUnitOptions({
+    active: formReady,
+    search: formValues.unit ?? '',
+    recentNames: recentValues.unit,
+    replaceRecentNames: replaceUnitValues,
+    onError: handleReferenceDataError,
+    retryAttempt: referenceDataRetryAttempt,
+  });
+  const defaultRecentUnitRef = useRef(defaultRecentUnit);
+  const unitInteractedRef = useRef(false);
+  const onUnitFocus = useCallback(() => {
+    unitInteractedRef.current = true;
+  }, []);
+  defaultRecentUnitRef.current = defaultRecentUnit;
+  const dirtyFields = formState.dirtyFields;
+  const defaultValues = formState.defaultValues;
+  useEffect(() => {
+    if (!formReady || isEditMode || isReportMode || getValues('unit')) return;
+    if (unitInteractedRef.current || methods.getFieldState('unit').isDirty) return;
+    const unit = defaultRecentUnit;
+    if (unit) {
+      const originalDirtyDefaults = Object.fromEntries(
+        Object.keys(dirtyFields).map((name) => [name, defaultValues?.[name]]),
+      );
+      const unitValues = { unit: unit.name, unitSelection: { id: unit.id, name: unit.name } };
+      const currentValues = { ...getValues(), ...unitValues };
+      // Update defaults before restoring values without emitting manual field changes.
+      reset(
+        { ...currentValues, ...originalDirtyDefaults, ...unitValues },
+        { keepTouched: true, keepErrors: true },
+      );
+      reset(currentValues, { keepDefaultValues: true, keepTouched: true, keepErrors: true });
+    }
+  }, [
+    formReady,
+    getValues,
+    isEditMode,
+    isReportMode,
+    methods,
+    defaultRecentUnit,
+    dirtyFields,
+    defaultValues,
+    reset,
+  ]);
   const getInitialCreateFormValues = useCallback(
     (): MessageFormData => ({
       ...EMPTY_FORM_VALUES,
       date: dayjs(),
       time: null,
-      signalGroupMasterKey: recentValues.group[0] ?? '',
-      deviceName: cyberEchoEnabled ? (recentValues.deviceName[0] ?? '') : '',
-      unit: recentValues.unit[0] ?? '',
+      signalGroupMasterKey: recentValuesRef.current.group[0] ?? '',
+      deviceName: cyberEchoEnabled ? (recentValuesRef.current.deviceName[0] ?? '') : '',
+      unit: defaultRecentUnitRef.current?.name ?? '',
+      unitSelection: defaultRecentUnitRef.current,
     }),
-    [cyberEchoEnabled, recentValues],
+    [cyberEchoEnabled],
   );
 
   const existingMedia: MessageMediaInfo[] = useMemo(() => {
@@ -573,7 +595,6 @@ export function useManageMessageDrawer({
     });
     setDeviceNameInput('');
     setPostInput('');
-    setUnitInput('');
     setNetworkNameInput('');
     setCallsignInput('');
     setFreqInput('');
@@ -715,9 +736,9 @@ export function useManageMessageDrawer({
 
   useEffect(() => {
     if (!formReady) return;
+    unitInteractedRef.current = false;
     setDeviceNameInput('');
     setPostInput('');
-    setUnitInput('');
     setNetworkNameInput('');
     setCallsignInput('');
     setFreqInput('');
@@ -772,7 +793,6 @@ export function useManageMessageDrawer({
     editAsReport,
     editTarget?.id,
     reportSource?.id,
-    recentValues,
     cyberEchoEnabled,
     getInitialCreateFormValues,
   ]);
@@ -1009,10 +1029,10 @@ export function useManageMessageDrawer({
         signalGroupMasterKey: submittedValues.signalGroupMasterKey ?? '',
         deviceName: cyberEchoEnabled ? (submittedValues.deviceName ?? '') : '',
         unit: submittedValues.unit ?? '',
+        unitSelection: submittedValues.unitSelection,
       });
       setDeviceNameInput('');
       setPostInput('');
-      setUnitInput('');
       setNetworkNameInput('');
       setCallsignInput('');
       setFreqInput('');
@@ -1138,7 +1158,8 @@ export function useManageMessageDrawer({
     setPostInput,
     unitOptions,
     unitLoading,
-    setUnitInput,
+    unitAllowCreate,
+    onUnitFocus,
     networkNameOptions,
     networkNameLoading,
     setNetworkNameInput,
