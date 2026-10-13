@@ -1025,6 +1025,33 @@ describe('useRerAnalysisNeoPage', () => {
     );
     expect(new URL(window.location.href).searchParams.get('m')).toBe('missing-uid');
   });
+  it('does not disclose API error details while opening a linked message', async () => {
+    inboxMessagesMock.fetchInboxItemContext.mockRejectedValueOnce(
+      new Error('private group internal id 123'),
+    );
+    window.history.replaceState({}, '', `${window.location.pathname}?m=hidden-uid`);
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.directMessageError).toBe(
+      'Не вдалося відкрити повідомлення за посиланням. Спробуйте ще раз.',
+    );
+    expect(latest?.directMessageError).not.toContain('private group');
+  });
+  it('reports a missing feed target after the context lookup succeeds', async () => {
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce({
+      ...buildDirectLinkWindow(),
+      inbox: { ...buildDirectLinkWindow().inbox, inboxItems: [] },
+    });
+    window.history.replaceState({}, '', `${window.location.pathname}?m=disappeared-uid`);
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.directMessageError).toBe('Повідомлення за посиланням відсутнє у стрічці.');
+    expect(latest?.directMessageNavigation).toBeNull();
+  });
   // Regression: https://github.com/echoua/echo/issues/2726
   it.each([
     { roles: ['Rer'], from: '2026-08-20T00:00', to: '2026-08-21T00:00' },
@@ -1114,9 +1141,10 @@ describe('useRerAnalysisNeoPage', () => {
       );
       renderHook();
       await flushEffects();
-      expect(inboxMessagesMock.fetchInboxItemContext).toHaveBeenCalledWith({
-        messageUid: 'target-uid',
-      });
+      expect(inboxMessagesMock.fetchInboxItemContext).toHaveBeenCalledWith(
+        { messageUid: 'target-uid' },
+        { signal: expect.any(AbortSignal) },
+      );
       expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
       await act(async () => {
         latest?.updateQueryState(patch);
@@ -1215,6 +1243,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
     expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledWith(
       expect.objectContaining({ messageRef: 'target-uid' }),
+      { signal: expect.any(AbortSignal) },
     );
     expect(latest?.queryState).toMatchObject({
       fromDateTimeStr: '2026-08-20T00:00',

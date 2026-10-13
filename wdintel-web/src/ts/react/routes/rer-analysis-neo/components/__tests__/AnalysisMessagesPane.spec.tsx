@@ -372,12 +372,14 @@ describe('AnalysisMessagesPane', () => {
 
   it('highlights a direct-link target without scrolling the message viewport', async () => {
     const scrollIntoView = vi.fn();
+    const onLinkedMessageMounted = vi.fn();
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
       value: scrollIntoView,
     });
     const renderedPane = await renderComponent(
       buildProps({
+        onLinkedMessageMounted,
         messages: [[7, buildMessage()]],
         directMessageNavigation: {
           targetMessageId: 7,
@@ -398,6 +400,7 @@ describe('AnalysisMessagesPane', () => {
     rendered.push(renderedPane);
 
     expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(onLinkedMessageMounted).toHaveBeenCalledExactlyOnceWith(7);
     expect(
       renderedPane.container
         .querySelector('[data-testid="message-card-7"] span')

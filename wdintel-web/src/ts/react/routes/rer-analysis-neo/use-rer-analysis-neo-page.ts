@@ -32,7 +32,12 @@ import {
   removeMessageUidFromWindowUrl,
   writeMessagesPageIndexToWindowUrl,
 } from './helpers';
-import { fetchInboxItemContext, fetchInboxWindow } from '../../services/api/inbox-messages';
+import { fetchInboxWindow } from '../../services/api/inbox-messages';
+import {
+  createMessageNavigationController,
+  messageNavigationErrorText,
+  type MessageNavigationController,
+} from '../shared/message-navigation';
 import type {
   AnalysisCallsignFrequencyMatchesRsp,
   InboxMessage,
@@ -202,7 +207,11 @@ export function useRerAnalysisNeoPage(
     targetMessageUid !== null,
   );
   const targetMessageLoadedRef = useRef(false);
-  const targetMessageRequestRef = useRef(0);
+  const targetMessageControllerRef = useRef<MessageNavigationController | null>(null);
+  const pendingLinkedMessageLandingRef = useRef<{
+    messageId: number;
+    resolve: (landed: boolean) => void;
+  } | null>(null);
   const targetMessageIdRef = useRef<number | null>(null);
   const targetMessageContextSawReloadRef = useRef(false);
   const [centerTabPending, startCenterTabTransition] = useTransition();
@@ -354,9 +363,6 @@ export function useRerAnalysisNeoPage(
     ) {
       return;
     }
-    let cancelled = false;
-    const requestId = ++targetMessageRequestRef.current;
-    const isCurrentRequest = () => !cancelled && requestId === targetMessageRequestRef.current;
     const isContextRefresh = targetMessageLoadedRef.current;
     if (isContextRefresh) {
       targetMessageContextSawReloadRef.current = false;
@@ -386,58 +392,97 @@ export function useRerAnalysisNeoPage(
     const restorePeriod = () => {
       if (periodAdjusted) publishPeriod(requestQueryState);
     };
-    void fetchInboxItemContext({ messageUid: targetMessageUid })
-      .then((context) => {
-        if (!isCurrentRequest() || context.message == null) return null;
-        const next = adjustQueryDateRangeForDirectMessage(requestQueryState, context.message[1]);
-        periodAdjusted = next !== requestQueryState;
-        if (periodAdjusted) publishPeriod(next);
-        return fetchInboxWindow({
-          messageRef: targetMessageUid,
-          inboxReq: buildInboxReq(next, [], true),
-        });
-      })
-      .then((res) => {
-        if (!isCurrentRequest()) return;
-        if (res == null) {
+    const navigation = createMessageNavigationController<{
+      targetMessageId: number;
+      window: InboxWindowRsp;
+    }>(
+      () => ({
+        materialize: async (context, signal) => {
+          const next = adjustQueryDateRangeForDirectMessage(requestQueryState, context.message![1]);
+          periodAdjusted = next !== requestQueryState;
+          if (periodAdjusted) publishPeriod(next);
+          try {
+            const window = await fetchInboxWindow(
+              { messageRef: targetMessageUid, inboxReq: buildInboxReq(next, [], true) },
+              { signal },
+            );
+            if (signal.aborted) return null;
+            if (
+              window == null ||
+              !window.inbox.inboxItems.some(([messageId]) => messageId === window.targetMessageId)
+            ) {
+              restorePeriod();
+              return null;
+            }
+            setDirectMessageError(null);
+            targetMessageLoadedRef.current = true;
+            targetMessageIdRef.current = window.targetMessageId;
+            setTargetMessageWindow(window);
+            setTargetMessageContextResponsePending(false);
+            return { targetMessageId: window.targetMessageId, window };
+          } catch (error) {
+            if (!signal.aborted) restorePeriod();
+            throw error;
+          } finally {
+            if (!signal.aborted) setTargetMessageLoading(false);
+          }
+        },
+        land: ({ targetMessageId }, signal) =>
+          new Promise<boolean>((resolve) => {
+            if (signal.aborted) {
+              resolve(false);
+              return;
+            }
+            const onAbort = () => {
+              if (pendingLinkedMessageLandingRef.current?.messageId === targetMessageId) {
+                pendingLinkedMessageLandingRef.current = null;
+              }
+              resolve(false);
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+            pendingLinkedMessageLandingRef.current = {
+              messageId: targetMessageId,
+              resolve: (landed) => {
+                signal.removeEventListener('abort', onAbort);
+                pendingLinkedMessageLandingRef.current = null;
+                resolve(landed);
+              },
+            };
+          }),
+        invalidateNavigation: () => {
+          pendingLinkedMessageLandingRef.current?.resolve(false);
+          pendingLinkedMessageLandingRef.current = null;
+        },
+      }),
+      (outcome) => {
+        if (outcome.status === 'unavailable' || outcome.status === 'landing-error') {
           restorePeriod();
           if (isContextRefresh) {
             setTargetMessageWindow(null);
-            setTargetMessageContextActive(false);
             setTargetMessageFocusActive(false);
             removeMessageUidFromWindowUrl();
-          } else {
-            setTargetMessageContextActive(false);
-            setDirectMessageError('Повідомлення за посиланням не знайдено або воно недоступне.');
           }
-          if (!isContextRefresh) setTargetMessageContextLoading(false);
-          setTargetMessageContextResponsePending(false);
-          return;
-        }
-        setDirectMessageError(null);
-        targetMessageLoadedRef.current = true;
-        targetMessageIdRef.current = res.targetMessageId;
-        setTargetMessageWindow(res);
-        if (isContextRefresh) setTargetMessageContextResponsePending(false);
-      })
-      .catch((err) => {
-        if (!isCurrentRequest()) return;
-        restorePeriod();
-        if (!targetMessageLoadedRef.current) {
+          setTargetMessageContextActive(false);
+        } else if (outcome.status === 'load-error' && !isContextRefresh) {
           setTargetMessageContextActive(false);
         }
-        targetMessageContextSawReloadRef.current = false;
-        setTargetMessageContextLoading(false);
-        setTargetMessageContextResponsePending(false);
-        setDirectMessageError(
-          `Не вдалося відкрити повідомлення за посиланням: ${toErrorMessage(err)}`,
-        );
-      })
-      .finally(() => {
-        if (isCurrentRequest()) setTargetMessageLoading(false);
-      });
+        if (outcome.status !== 'focused') {
+          targetMessageContextSawReloadRef.current = false;
+          if (!isContextRefresh || outcome.status === 'load-error') {
+            setTargetMessageContextLoading(false);
+          }
+          setTargetMessageContextResponsePending(false);
+        }
+        setTargetMessageLoading(false);
+        if (!isContextRefresh) setDirectMessageError(messageNavigationErrorText(outcome));
+      },
+    );
+    targetMessageControllerRef.current = navigation;
+    void navigation.navigate(targetMessageUid);
     return () => {
-      cancelled = true;
+      navigation.cancel();
+      if (targetMessageControllerRef.current === navigation)
+        targetMessageControllerRef.current = null;
     };
   }, [
     directMessageDefaultsPending,
@@ -449,18 +494,25 @@ export function useRerAnalysisNeoPage(
   ]);
 
   const clearTargetMessageFocus = useCallback(() => {
+    targetMessageControllerRef.current?.cancel();
     setTargetMessageFocusActive(false);
     removeMessageUidFromWindowUrl();
   }, []);
 
   const clearTargetMessageContext = useCallback(() => {
-    targetMessageRequestRef.current += 1;
+    targetMessageControllerRef.current?.cancel();
     setTargetMessageContextActive(false);
     setTargetMessageLoading(false);
     setTargetMessageContextLoading(false);
     setTargetMessageContextResponsePending(false);
     clearTargetMessageFocus();
   }, [clearTargetMessageFocus]);
+
+  const onLinkedMessageMounted = useCallback((messageId: number) => {
+    if (pendingLinkedMessageLandingRef.current?.messageId === messageId) {
+      pendingLinkedMessageLandingRef.current.resolve(true);
+    }
+  }, []);
 
   useEffect(() => {
     const nextBoundary = {
@@ -1280,6 +1332,7 @@ export function useRerAnalysisNeoPage(
     loadingAfterWindow: data.loadingAfterWindow,
     directMessageLoading,
     directMessageNavigation,
+    onLinkedMessageMounted,
     networkDisplayMap: data.networkDisplayMap,
     networks: data.networks,
     newCallsigns: data.newCallsigns,

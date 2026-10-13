@@ -253,6 +253,7 @@ export type AnalysisPageState = {
   loadingAfterWindow: boolean;
   directMessageLoading: boolean;
   directMessageNavigation: AnalysisDirectMessageNavigation | null;
+  onLinkedMessageMounted: (messageId: number) => void;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
   newCallsigns: NewCallsignsRes;

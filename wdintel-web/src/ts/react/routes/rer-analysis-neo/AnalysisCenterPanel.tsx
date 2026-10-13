@@ -283,6 +283,7 @@ export function AnalysisCenterPanel({
             networks={page.networks}
             unitsMap={page.unitsMap}
             directMessageNavigation={page.directMessageNavigation}
+            onLinkedMessageMounted={page.onLinkedMessageMounted}
           />
         </Box>
 

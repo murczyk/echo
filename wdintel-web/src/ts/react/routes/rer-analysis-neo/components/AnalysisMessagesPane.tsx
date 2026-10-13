@@ -102,6 +102,7 @@ type Props = {
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
   directMessageNavigation: AnalysisDirectMessageNavigation | null;
+  onLinkedMessageMounted?: (messageId: number) => void;
 };
 
 const getMessageId = ([id]: [number, InboxMessage]) => id;
@@ -161,6 +162,7 @@ function AnalysisMessagesPaneComponent({
   networks,
   unitsMap,
   directMessageNavigation,
+  onLinkedMessageMounted,
 }: Props) {
   const theme = useTheme();
   const { notify } = useOptionalPowerSnackbar();
@@ -252,21 +254,20 @@ function AnalysisMessagesPaneComponent({
       highlightedTargetIdRef.current = null;
       return;
     }
-    if (
-      highlightedTargetIdRef.current === directMessageNavigation.targetMessageId ||
-      messages.length === 0
-    )
-      return;
+    if (messages.length === 0) return;
     const targetElement = feedRef.current?.getItemElement(directMessageNavigation.targetMessageId);
     if (targetElement) {
-      clearTargetHighlightRef.current?.();
-      highlightedTargetIdRef.current = directMessageNavigation.targetMessageId;
-      clearTargetHighlightRef.current = scrollToAndHighlightMessage(targetElement, {
-        scroll: false,
-        persistentHighlight: true,
-      });
+      if (highlightedTargetIdRef.current !== directMessageNavigation.targetMessageId) {
+        clearTargetHighlightRef.current?.();
+        highlightedTargetIdRef.current = directMessageNavigation.targetMessageId;
+        clearTargetHighlightRef.current = scrollToAndHighlightMessage(targetElement, {
+          scroll: false,
+          persistentHighlight: true,
+        });
+      }
+      onLinkedMessageMounted?.(directMessageNavigation.targetMessageId);
     }
-  }, [directMessageNavigation, messages]);
+  }, [directMessageNavigation, messages, onLinkedMessageMounted]);
 
   const showCopiedFeedback = useCallback(
     (value: string) => {
