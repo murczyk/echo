@@ -21,7 +21,8 @@ migration; it neither removes data nor rewrites migration history.
 
 Inbox reads are per recipient. “Mark all as read” uses the panel snapshot
 boundary, leaving subsequently created mentions unread. Refreshes reuse the
-open panel’s boundary rather than copying the unread set again. Each open
+open panel’s boundary when it remains available; if it has expired or been
+trimmed, the same refresh creates a replacement snapshot. Each open
 panel has its own boundary, so concurrent panels do not replace one another;
 boundaries expire after 15 minutes and are removed after use. At most eight
 live panel boundaries are retained for a recipient.

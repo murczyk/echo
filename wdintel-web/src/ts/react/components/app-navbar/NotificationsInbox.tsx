@@ -347,6 +347,7 @@ export function NotificationsInbox({ identity }: { identity: string }) {
     if (!boundary) return;
     const identityRequestVersion = identityVersion.current;
     const version = ++mutationVersion.current;
+    let refreshBoundary = false;
     listResponseVersion.current += 1;
     pendingCountMutations.current += 1;
     countVersion.current += 1;
@@ -374,6 +375,7 @@ export function NotificationsInbox({ identity }: { identity: string }) {
       setBoundary(null);
       boundaryRef.current = null;
       listResponseVersion.current += 1;
+      refreshBoundary = response.unreadCount > 0;
     } catch (requestError) {
       if (identityRequestVersion !== identityVersion.current || version !== mutationVersion.current)
         return;
@@ -390,6 +392,13 @@ export function NotificationsInbox({ identity }: { identity: string }) {
         setMarkingAll(false);
       }
       pendingCountMutations.current -= 1;
+      if (
+        refreshBoundary &&
+        identityRequestVersion === identityVersion.current &&
+        version === mutationVersion.current
+      ) {
+        void refreshList();
+      }
     }
   };
   const loadMore = async () => {

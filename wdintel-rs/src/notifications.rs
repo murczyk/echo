@@ -290,6 +290,36 @@ where
     )).one(dbx).await.c(h!())?.map(|boundary| boundary.id))
 }
 
+async fn list_read_boundary<C>(
+    dbx: &C,
+    recipient: Uuid,
+    req: &NotificationListReq,
+    groups: &[String],
+) -> Result<Option<Uuid>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if req.cursor.is_some() {
+        return Ok(None);
+    }
+    if let Some(boundary) = req.boundary_id {
+        return match reusable_boundary(dbx, recipient, boundary)
+            .await
+            .context(h!())?
+        {
+            Some(boundary) => Ok(Some(boundary)),
+            None => {
+                Ok(create_read_boundary(dbx, recipient, req.panel_id, groups)
+                    .await
+                    .context(h!())?)
+            }
+        };
+    }
+    Ok(create_read_boundary(dbx, recipient, req.panel_id, groups)
+        .await
+        .context(h!())?)
+}
+
 async fn locked_boundary<C>(
     dbx: &C,
     recipient: Uuid,
@@ -439,19 +469,9 @@ pub async fn notification_list(
     } else {
         vec![]
     };
-    let mark_all_boundary = if req.cursor.is_none() {
-        if let Some(boundary) = req.boundary_id {
-            reusable_boundary(&txn, login, boundary)
-                .await
-                .context(h!())?
-        } else {
-            create_read_boundary(&txn, login, req.panel_id, &groups)
-                .await
-                .context(h!())?
-        }
-    } else {
-        None
-    };
+    let mark_all_boundary = list_read_boundary(&txn, login, &req, &groups)
+        .await
+        .context(h!())?;
     let mut rows = visible_rows(&txn, login, &groups, req.cursor)
         .await
         .context(h!())?;
@@ -551,10 +571,23 @@ mod tests {
         cleanup_locked, find_test_login, find_test_signal_group, mk_login,
         mk_sigint_important, mk_signal_message, mk_signal_message_group,
     };
+    use actix_identity::IdentityMiddleware;
+    use actix_session::{storage::RedisSessionStore, SessionMiddleware};
+    use actix_web::{
+        cookie::Key, http::StatusCode, test, web, App, HttpMessage,
+    };
     use sea_orm::ActiveValue::Set;
     use serial_test::serial;
     use std::time::Duration;
     use tokio::sync::oneshot;
+
+    async fn login_for_boundary_test(
+        request: actix_web::HttpRequest,
+        login: web::Path<String>,
+    ) -> actix_web::HttpResponse {
+        Identity::login(&request.extensions(), login.into_inner()).unwrap();
+        actix_web::HttpResponse::NoContent().finish()
+    }
 
     async fn create_unread_receipt<C>(
         dbx: &C,
@@ -688,6 +721,209 @@ mod tests {
         .unwrap()
         .count;
         assert_eq!(count, NOTIFICATION_READ_BOUNDARY_MAX_PER_RECIPIENT);
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn echo_3610_list_reuses_or_replaces_first_page_boundaries() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        let groups = vec![group.master_key.clone()];
+        let receipt = create_unread_receipt(
+            &env.dbx,
+            login.id,
+            login.id,
+            &group.master_key,
+        )
+        .await;
+        let boundary =
+            create_read_boundary(&env.dbx, login.id, Uuid::now_v7(), &groups)
+                .await
+                .unwrap()
+                .unwrap();
+        let request = NotificationListReq {
+            cursor: None,
+            boundary_id: Some(boundary),
+            panel_id: Uuid::now_v7(),
+            known_receipt_ids: vec![],
+        };
+        assert_eq!(
+            list_read_boundary(&env.dbx, login.id, &request, &groups)
+                .await
+                .unwrap(),
+            Some(boundary)
+        );
+        let other = mk_login(&env.dbx, Default::default()).await.unwrap();
+        let other_boundary =
+            list_read_boundary(&env.dbx, other.id, &request, &groups)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_ne!(other_boundary, boundary);
+        assert_eq!(
+            reusable_boundary(&env.dbx, login.id, boundary)
+                .await
+                .unwrap(),
+            Some(boundary)
+        );
+
+        env.dbx
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "delete from notification_read_boundary where id = $1",
+                vec![boundary.into()],
+            ))
+            .await
+            .unwrap();
+        let replacement =
+            list_read_boundary(&env.dbx, login.id, &request, &groups)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_ne!(replacement, boundary);
+        let applied =
+            mark_boundary_as_read(&env.dbx, login.id, replacement, &groups)
+                .await
+                .unwrap();
+        assert_eq!(applied.receipt_ids, vec![receipt]);
+
+        let paged = NotificationListReq {
+            cursor: Some(Uuid::now_v7()),
+            ..request
+        };
+        assert_eq!(
+            list_read_boundary(&env.dbx, login.id, &paged, &groups)
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn echo_3610_list_endpoint_replaces_expired_and_trimmed_boundaries() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        let session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::from(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(session_store, Key::generate()))
+                .route(
+                    "/test/login/{login}",
+                    web::post().to(login_for_boundary_test),
+                )
+                .service(notification_list)
+                .service(notification_read_all),
+        )
+        .await;
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/test/login/{}", login.id))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let cookie = response.response().cookies().next().unwrap().into_owned();
+        let list = |boundary_id, panel_id| {
+            let app = &app;
+            let cookie = cookie.clone();
+            async move {
+                let response = test::call_service(
+                    app,
+                    test::TestRequest::post()
+                        .uri("/api/notifications/list")
+                        .cookie(cookie)
+                        .set_json(NotificationListReq {
+                            cursor: None,
+                            boundary_id,
+                            panel_id,
+                            known_receipt_ids: vec![],
+                        })
+                        .to_request(),
+                )
+                .await;
+                assert_eq!(response.status(), StatusCode::OK);
+                test::read_body_json::<NotificationListRsp, _>(response).await
+            }
+        };
+
+        for expired in [true, false] {
+            let receipt = create_unread_receipt(
+                &env.dbx,
+                login.id,
+                login.id,
+                &group.master_key,
+            )
+            .await;
+            let panel = Uuid::now_v7();
+            let boundary = list(None, panel).await.mark_all_boundary.unwrap();
+            assert_eq!(
+                list(Some(boundary), panel).await.mark_all_boundary,
+                Some(boundary)
+            );
+            env.dbx
+                .execute_raw(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "update notification_read_boundary set created_at = now() - $2 * interval '1 minute' where id = $1",
+                    vec![boundary.into(), (if expired { NOTIFICATION_READ_BOUNDARY_TTL_MINUTES + 1 } else { 1 }).into()],
+                ))
+                .await
+                .unwrap();
+            if !expired {
+                for _ in 0..NOTIFICATION_READ_BOUNDARY_MAX_PER_RECIPIENT {
+                    list(None, Uuid::now_v7()).await;
+                }
+                assert_eq!(
+                    reusable_boundary(&env.dbx, login.id, boundary)
+                        .await
+                        .unwrap(),
+                    None
+                );
+            }
+            let refreshed = list(Some(boundary), panel).await;
+            assert_eq!(refreshed.unread_count, 1);
+            assert!(refreshed
+                .items
+                .iter()
+                .any(|item| item.receipt_id == receipt));
+            let replacement = refreshed.mark_all_boundary.unwrap();
+            assert_ne!(replacement, boundary);
+            assert_eq!(
+                reusable_boundary(&env.dbx, login.id, boundary)
+                    .await
+                    .unwrap(),
+                None
+            );
+            let response = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri("/api/notifications/read-all")
+                    .cookie(cookie.clone())
+                    .set_json(NotificationReadAllReq {
+                        boundary_receipt_id: replacement,
+                    })
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let applied: NotificationReadAllRsp =
+                test::read_body_json(response).await;
+            assert_eq!(
+                applied.outcome,
+                NotificationReadAllOutcome::NotificationReadAllApplied
+            );
+            assert_eq!(applied.receipt_ids, vec![receipt]);
+            assert_eq!(applied.unread_count, 0);
+        }
     }
 
     #[actix_web::test]

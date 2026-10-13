@@ -209,17 +209,30 @@ describe('NotificationsInbox', () => {
   });
 
   it('#3610 marks only receipts returned by the persisted boundary as read', async () => {
-    listNotifications.mockResolvedValueOnce({
-      items: [item('covered'), item('newer', 2)],
-      unreadCount: 2,
-      nextCursor: null,
-      markAllBoundary: 'boundary',
-    });
-    readAllNotifications.mockResolvedValueOnce({
-      outcome: 'NotificationReadAllApplied',
-      unreadCount: 1,
-      receiptIds: ['covered'],
-    });
+    listNotifications
+      .mockResolvedValueOnce({
+        items: [item('covered'), item('newer', 2)],
+        unreadCount: 2,
+        nextCursor: null,
+        markAllBoundary: 'boundary-a',
+      })
+      .mockResolvedValueOnce({
+        items: [{ ...item('covered'), readAt: 1 }, item('newer', 2)],
+        unreadCount: 1,
+        nextCursor: null,
+        markAllBoundary: 'boundary-b',
+      });
+    readAllNotifications
+      .mockResolvedValueOnce({
+        outcome: 'NotificationReadAllApplied',
+        unreadCount: 1,
+        receiptIds: ['covered'],
+      })
+      .mockResolvedValueOnce({
+        outcome: 'NotificationReadAllApplied',
+        unreadCount: 0,
+        receiptIds: ['newer'],
+      });
     notificationUnreadCount.mockResolvedValueOnce(1);
     renderInbox();
 
@@ -230,10 +243,44 @@ describe('NotificationsInbox', () => {
         ?.click();
     });
 
-    expect(readAllNotifications).toHaveBeenCalledWith({ boundaryReceiptId: 'boundary' });
+    expect(readAllNotifications).toHaveBeenCalledWith({ boundaryReceiptId: 'boundary-a' });
+    expect(listNotifications).toHaveBeenLastCalledWith(
+      expect.objectContaining({ boundaryId: null }),
+    );
     expect(document.querySelector('h2')?.textContent).toBe('Вхідні');
     expect(document.querySelector('button[aria-label="Вхідні"]')?.textContent).toContain('1');
     expect(document.querySelectorAll('[data-testid="notification-unread-dot"]')).toHaveLength(1);
+
+    await act(async () => {
+      Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent === 'Позначити всі як прочитані')
+        ?.click();
+    });
+    expect(readAllNotifications).toHaveBeenLastCalledWith({ boundaryReceiptId: 'boundary-b' });
+  });
+
+  it('#3610 does not refresh the boundary after mark-all reaches zero unread items', async () => {
+    listNotifications.mockResolvedValueOnce({
+      items: [item('covered')],
+      unreadCount: 1,
+      nextCursor: null,
+      markAllBoundary: 'boundary',
+    });
+    readAllNotifications.mockResolvedValueOnce({
+      outcome: 'NotificationReadAllApplied',
+      unreadCount: 0,
+      receiptIds: ['covered'],
+    });
+    renderInbox();
+    await openInbox();
+
+    await act(async () => {
+      Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent === 'Позначити всі як прочитані')
+        ?.click();
+    });
+
+    expect(listNotifications).toHaveBeenCalledTimes(1);
   });
 
   it('#3610 tracks a link activation without delaying navigation', async () => {

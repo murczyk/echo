@@ -171,6 +171,7 @@ export function useAnalysisDataMessageActions(params: Params) {
       params.patchMessages((id, message) =>
         id === detail.messageId ? { ...message, important: detail.important } : message,
       );
+      if (params.queryState.orImportant) params.refreshMessageCounts();
     };
     window.addEventListener(IMPORTANT_MESSAGE_UPDATED_EVENT, update);
     return () => window.removeEventListener(IMPORTANT_MESSAGE_UPDATED_EVENT, update);
