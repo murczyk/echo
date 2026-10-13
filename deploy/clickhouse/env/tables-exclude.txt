@@ -131,3 +131,6 @@ public.attachment_chunk
 public.attachment_job
 
 public.device_document_settings
+
+# messengers ingest
+public.messenger_account

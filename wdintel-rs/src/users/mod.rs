@@ -314,6 +314,7 @@ pub(crate) fn role_matches(
         }
         "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
         "No2FA" => roles.contains(&ROLE_NO2FA.to_string()),
+        "MessengerIngest" => roles.contains(&ROLE_MESSENGER_INGEST.to_string()),
         role => {
             return Err(AppError::BL {
                 msg: format!("impossible! unknown role {role}"),
@@ -3010,5 +3011,20 @@ mod tests {
         assert!(role_matches(&roles(&[ROLE_NO2FA]), ROLE_NO2FA).unwrap());
         assert!(!role_matches(&roles(&[ROLE_ADMIN]), ROLE_NO2FA).unwrap());
         assert!(!role_matches(&roles(&[ROLE_API]), ROLE_NO2FA).unwrap());
+    }
+
+    #[test]
+    fn messenger_ingest_role_is_exact_match_only() {
+        assert!(role_matches(
+            &roles(&[ROLE_MESSENGER_INGEST]),
+            ROLE_MESSENGER_INGEST
+        )
+        .unwrap());
+        assert!(!role_matches(&roles(&[ROLE_ADMIN]), ROLE_MESSENGER_INGEST)
+            .unwrap());
+        assert!(
+            !role_matches(&roles(&[ROLE_API]), ROLE_MESSENGER_INGEST).unwrap()
+        );
+        assert!(!role_matches(&roles(&[]), ROLE_MESSENGER_INGEST).unwrap());
     }
 }

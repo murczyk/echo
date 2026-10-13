@@ -510,6 +510,7 @@ where
         id: NotSet,
         last_sync_at: NotSet,
         deleted: NotSet,
+        messenger_type: NotSet,
     }
     .insert(db)
     .await

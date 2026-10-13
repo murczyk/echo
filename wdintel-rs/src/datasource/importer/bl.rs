@@ -119,6 +119,7 @@ pub async fn upsert_signal_groups(
                             created_at: NotSet,
                             name: Set(inserted.name.clone().unwrap_or_default()),
                             deleted: NotSet,
+                            messenger_type: NotSet,
                         }
                         .insert(db)
                         .await
@@ -172,6 +173,7 @@ pub async fn upsert_signal_groups(
                         created_at: NotSet,
                         name: Set(name),
                         deleted: NotSet,
+                        messenger_type: NotSet,
                     }
                     .insert(db)
                     .await

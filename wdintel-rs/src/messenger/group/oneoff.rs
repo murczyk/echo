@@ -219,6 +219,7 @@ async fn insert_missing_datasource_groups(
             id: NotSet,
             last_sync_at: NotSet,
             deleted: NotSet,
+            messenger_type: NotSet,
         }
         .insert(dbx)
         .await

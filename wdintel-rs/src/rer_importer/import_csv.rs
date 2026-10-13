@@ -1463,6 +1463,7 @@ pub async fn ensure_import_group_exists(
                 created_at: NotSet,
                 name: Set(group_name.clone()),
                 deleted: NotSet,
+                messenger_type: NotSet,
             }
             .insert(dbx)
             .await
@@ -1541,6 +1542,7 @@ pub async fn ensure_import_group_exists(
                 created_at: NotSet,
                 name: Set(group_name),
                 deleted: NotSet,
+                messenger_type: NotSet,
             }
             .insert(dbx)
             .await

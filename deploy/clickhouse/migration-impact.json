@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20261008_134725_messenger_ingest_accounts": {
+      "changes": [
+        { "table": "public.datasource_group", "strategy": "cdc_additive" },
+        { "table": "public.messenger_account", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261006_164921_sigint_inbox_item_freq_datetime_index": {
       "changes": []
     },

@@ -779,6 +779,60 @@ where
             })
         }
     }
+    let ingest_datasources = datasource::Entity::find()
+        .filter(
+            datasource::Column::Kind
+                .eq(crate::config::MESSENGER_INGEST_DATASOURCE_KIND),
+        )
+        .filter(datasource::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .c(h!())?;
+    if !ingest_datasources.is_empty() {
+        let aor_ids = ingest_datasources
+            .iter()
+            .filter_map(|a| a.default_aor_id)
+            .collect::<Vec<_>>();
+        let aors = if aor_ids.is_empty() {
+            HashMap::new()
+        } else {
+            area_of_responsibility::Entity::find()
+                .filter(area_of_responsibility::Column::Id.eq_any(aor_ids))
+                .all(txn)
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|aor| (aor.id, render_aor(aor)))
+                .collect::<HashMap<_, _>>()
+        };
+        for ids in ingest_datasources {
+            let aor = ids.default_aor_id.and_then(|id| aors.get(&id).cloned());
+            datasources.push(EchoAccountF1 {
+                id: ids.id,
+                area_of_responsibility: aor,
+                status: ids.status.into_value().value.into_owned(),
+                created_at: ids.created_at.and_utc().timestamp_millis(),
+                client_id: None,
+                display_name: ids.display_name,
+                system_service_name: None,
+                messenger: ids.kind,
+                phone_number: "".to_string(),
+                api_login: ids
+                    .api_login_id
+                    .map(|login_id| login_id.to_string()),
+                api_endpoint: ids.api_endpoint,
+                is_linked: true,
+                description: ids.description,
+                is_imported: false,
+                signal_port: None,
+                process_name: None,
+                attachments_path: None,
+                echo_client_id: None,
+                echo_account_id: None,
+                echo_client_lock_id: None,
+            })
+        }
+    }
     Ok(datasources)
 }
 
