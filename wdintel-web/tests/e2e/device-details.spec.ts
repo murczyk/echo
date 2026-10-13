@@ -250,6 +250,8 @@ function systemSettings() {
     analysis_aor_filter_enabled: false,
     ai_position_highlights_enabled: false,
     two_factor_auth_enabled: true,
+    api_rate_limit_replenish_interval_ms: 500,
+    api_rate_limit_burst_size: 5,
     exclude_orbit_other_units: false,
   };
 }
@@ -965,6 +967,71 @@ test('@smoke device details uses tabs, an IDE-style Files sidebar, and a synchro
   await expect(archivedFilesSidebar.getByText('root.log', { exact: true })).toBeVisible();
   expect(browserFailures).toEqual([]);
 });
+for (const width of [1440, 390]) {
+  test(`device file tree filters content and resets pagination at width ${width}`, async ({
+    page,
+  }) => {
+    const tracker = await installMocks(page);
+    tracker.releaseSubtreeCounts();
+    await page.setViewportSize({ width, height: 1000 });
+    const requests: Array<{ has_content: boolean | null; cursor: string | null }> = [];
+    await page.route('**/api/device/files/browse', async (route) => {
+      const body = route.request().postDataJSON();
+      if (body.parent_entry_id !== POSIX_ROOT_ID)
+        return fulfillJson(route, { breadcrumbs: [], entries: [], next_cursor: null });
+      requests.push(body);
+      const names =
+        body.has_content === true
+          ? ['available.txt']
+          : body.has_content === false
+            ? ['missing.txt']
+            : ['available.txt', 'missing.txt'];
+      await fulfillJson(route, {
+        breadcrumbs: [],
+        entries: names.map((name, index) => ({
+          ...entry({
+            entryId: `018f0000-0000-7000-8000-00000000003${index}`,
+            parentEntryId: POSIX_ROOT_ID,
+            kind: 'file',
+            name,
+          }),
+          has_content: name === 'available.txt',
+        })),
+        next_cursor: null,
+      });
+    });
+    await page.goto(`/devices/${DEVICE_ID}`);
+    await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+    const sidebar = page.getByTestId('device-files-sidebar');
+    const filter = sidebar.getByRole('button', { name: /^Фільтри файлів/ });
+    const tree = sidebar.getByTestId('device-files-tree');
+    await expect(tree.getByText('available.txt', { exact: true })).toBeVisible();
+    await expect(tree.getByText('missing.txt', { exact: true })).toBeVisible();
+    for (const [label, value] of [
+      ['З контентом', true],
+      ['Без контенту', false],
+      ['Усі файли', null],
+    ] as const) {
+      await filter.click();
+      await page
+        .getByRole('menu', { name: 'Фільтри файлів' })
+        .getByRole('menuitemradio', { name: label, exact: true })
+        .click();
+      await expect.poll(() => requests.at(-1)?.has_content).toBe(value);
+      expect(requests.at(-1)?.cursor).toBeNull();
+      await expect(tree.getByText('Немає файлів за вибраним фільтром')).toHaveCount(
+        value === null ? 0 : 1,
+      );
+      await expect(tree.getByText('available.txt', { exact: true })).toHaveCount(
+        value === false ? 0 : 1,
+      );
+      await expect(tree.getByText('missing.txt', { exact: true })).toHaveCount(
+        value === true ? 0 : 1,
+      );
+    }
+  });
+}
+
 test('@smoke device creation requires and submits a name for Cyber', async ({ page }) => {
   const browserFailures: string[] = [];
   page.on('console', (message) => {

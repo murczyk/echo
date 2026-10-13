@@ -224,7 +224,6 @@ type alias Model =
     , hideNetworks : Bool
     , withoutModelTags : Bool
     , editSidebar : Maybe Int
-    , eventLastId : Maybe String
 
     -- палітри
     , palitras : RemoteData ApiError (List B.PalitraReadV2)

@@ -12,6 +12,7 @@ use sea_orm::*;
 pub mod callsigns;
 pub mod datetime;
 pub mod unit_resolution;
+pub(crate) mod unit_selection;
 pub mod unresolved_units;
 
 pub struct ConstructInboxItemResult {
@@ -400,7 +401,7 @@ where
     )
     .await
     .c(h!())?;
-    unit_resolution::resolve_and_sync_inbox_item(
+    unit_resolution::resolve_and_sync_reprocessed_inbox_item(
         txn,
         result.id,
         result.id_uuid,

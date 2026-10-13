@@ -781,7 +781,7 @@ update shared msg model =
             )
 
         UnitsSearchDebounceTimerExpired query ->
-            ( model, E.sendCmd <| Api.units_search UnitsSearchReturned "units-search" { search = query } )
+            ( model, E.sendCmd <| Api.units_search UnitsSearchReturned "units-search" { search = query, includeInactive = Nothing, names = Nothing } )
 
         UnitsSearchReturned (Err e) ->
             ( model

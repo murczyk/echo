@@ -396,6 +396,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [9],
       expect.objectContaining({ selectedTags: [3] }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([
@@ -424,6 +425,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [91],
       expect.objectContaining({ highlightPoints: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[91, report]]);
@@ -491,6 +493,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [91],
       expect.objectContaining({ highlightPoints: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expectFetchMessagesByIdsCalledWith([42]);
     expect(latest?.messages.map(([messageId]) => messageId)).toEqual([91, 42]);
@@ -512,6 +515,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [91],
       expect.objectContaining({ highlightPoints: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
@@ -956,6 +960,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [9],
       expect.objectContaining({ search: 'needle' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
@@ -974,6 +979,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [9],
       expect.objectContaining({ onlyWithMedia: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
@@ -994,6 +1000,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [2],
       expect.objectContaining({ onlyWithMedia: false }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([]);
@@ -1083,6 +1090,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [1],
       expect.objectContaining({ search: 'needle' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[1, updatedMessage]]);
@@ -1123,6 +1131,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [1],
       expect.objectContaining({ selectedTags: [7], orImportant: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[1, updatedMessage]]);
@@ -1147,6 +1156,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [1],
       expect.objectContaining({ selectedDeviceNames: ['device-1'] }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([]);
@@ -1167,6 +1177,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [2],
       expect.objectContaining({ search: 'needle' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.mapAttrs.messages).toEqual([]);
@@ -1191,6 +1202,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [9, 1, 10],
       expect.objectContaining({ search: 'needle' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[9, newMessage]]);
@@ -1213,6 +1225,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [1, 2, 3],
       expect.objectContaining({ highlightPoints: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();

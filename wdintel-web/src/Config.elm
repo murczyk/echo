@@ -2,6 +2,7 @@ module Config exposing
     ( adjacentFreqsRangeOptions
     , analysisHourAfterWhichWeTakeADayTomorrow
     , babakNewCallsignMinMentionsDefault
+    , eventServicePollTracker
     , featureAudioTranscriptionBesidePlayer
     , featureDisableRerDutyDedup
     , featureEnableTornado
@@ -21,6 +22,11 @@ module Config exposing
 featureEnableTornado : Bool
 featureEnableTornado =
     False
+
+
+eventServicePollTracker : String
+eventServicePollTracker =
+    "shared-event-stream"
 
 
 featureShowCallsignsMetadata : Bool

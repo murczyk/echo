@@ -80,10 +80,11 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let latest: ReturnType<typeof useDeviceFileTree> | null = null;
 
-function Harness() {
+function Harness({ hasContent = null }: { hasContent?: boolean | null }) {
   latest = useDeviceFileTree({
     deviceId: DEVICE_ID,
     enabled: true,
+    hasContent,
     roots,
     tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
     onDirectoryMissing,
@@ -140,6 +141,56 @@ describe('useDeviceFileTree', () => {
     expect(latest?.branches[ROOT_ONE_ID].entries[0].entryId).toBe(DIRECTORY_ID);
     expect(latest?.branches[ROOT_TWO_ID].entries).toEqual([]);
     expect(onDirectoriesLoaded).toHaveBeenCalledWith(ROOT_ONE_ID, [DIRECTORY_ID]);
+  });
+
+  it('discards an outstanding branch page when the content filter changes', async () => {
+    let resolvePrevious!: (response: BrowseDeviceFilesRsp) => void;
+    let previousSignal!: AbortSignal;
+    apiMock.browseDeviceFiles.mockImplementation(
+      ({ parentEntryId, hasContent, cursor }, options) => {
+        if (parentEntryId !== ROOT_ONE_ID)
+          return Promise.resolve(browseResponse(parentEntryId, []));
+        if (hasContent === true) {
+          previousSignal = options.signal;
+          return new Promise<BrowseDeviceFilesRsp>((resolve) => {
+            resolvePrevious = resolve;
+          });
+        }
+        return Promise.resolve(
+          browseResponse(
+            ROOT_ONE_ID,
+            [buildEntry(cursor === null ? 'missing-first' : 'missing-next', ROOT_ONE_ID)],
+            cursor === null ? 'missing-cursor' : null,
+          ),
+        );
+      },
+    );
+    await act(async () => {
+      root?.render(<Harness hasContent={true} />);
+    });
+    await act(async () => {
+      root?.render(<Harness hasContent={false} />);
+    });
+    expect(previousSignal.aborted).toBe(true);
+    await act(async () => {
+      resolvePrevious(
+        browseResponse(ROOT_ONE_ID, [buildEntry('stale', ROOT_ONE_ID)], 'stale-cursor'),
+      );
+    });
+    expect(latest?.branches[ROOT_ONE_ID].entries.map((entry) => entry.entryId)).toEqual([
+      'missing-first',
+    ]);
+    await act(async () => {
+      await latest?.loadMoreBranch(ROOT_ONE_ID);
+    });
+    expect(apiMock.browseDeviceFiles.mock.calls.at(-1)?.[0]).toMatchObject({
+      hasContent: false,
+      cursor: 'missing-cursor',
+    });
+    expect(latest?.branches[ROOT_ONE_ID].entries.map((entry) => entry.entryId)).toEqual([
+      'missing-first',
+      'missing-next',
+    ]);
   });
 
   it('loads a nested directory only when it is expanded', async () => {

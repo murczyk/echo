@@ -250,6 +250,7 @@ pub(in crate::devices) struct BrowseFilesCommand {
     pub(in crate::devices) tag_ids: Vec<String>,
     pub(in crate::devices) tag_match: Option<TagMatch>,
     pub(in crate::devices) untagged: bool,
+    pub(in crate::devices) has_content: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -760,6 +761,7 @@ pub struct BrowseDeviceFilesReq {
     pub tag_ids: Option<Vec<String>>,
     pub tag_match: Option<TagMatch>,
     pub untagged: Option<bool>,
+    pub has_content: Option<bool>,
 }
 
 #[derive(
