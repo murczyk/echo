@@ -367,6 +367,7 @@ export function useAnalysisMessageList({
       options: {
         mode?: 'above' | 'below';
         keepCurrentOnEmpty?: boolean;
+        markNoMoreOnEmpty?: boolean;
         targetPageIndex: number;
       },
     ) => {
@@ -392,7 +393,7 @@ export function useAnalysisMessageList({
         mergeMessageReferences(rsp);
         const pageMessages = transformPageMessages(rsp.inboxItems ?? [], cursor);
         if (options.keepCurrentOnEmpty && pageMessages.length === 0) {
-          if (options.mode !== 'above') setNoMoreToLoad(true);
+          if (options.markNoMoreOnEmpty) setNoMoreToLoad(true);
           return pageMessages;
         }
         setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
@@ -486,6 +487,7 @@ export function useAnalysisMessageList({
       const fetched = await fetchPage(nextCursor, {
         mode: append ? 'below' : undefined,
         keepCurrentOnEmpty: true,
+        markNoMoreOnEmpty: true,
         targetPageIndex: pageIndex + 1,
       });
       if (fetched === null || fetched.length === 0) return false;

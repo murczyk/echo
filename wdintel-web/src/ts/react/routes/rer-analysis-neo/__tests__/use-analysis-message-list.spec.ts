@@ -1247,14 +1247,15 @@ describe('useAnalysisMessageList pagination', () => {
   it.each(['loadFirstPage', 'loadLastPage', 'loadPrevPage'] as const)(
     'reports failure without changing the loaded page when %s fails',
     async (action) => {
+      if (action === 'loadLastPage') vi.useFakeTimers();
       const h = renderHook();
       harnesses.push(h);
       act(() => h.latest.setMessages(page(100)));
       if (action === 'loadLastPage') {
-        vi.useFakeTimers();
         await act(async () => {
           await vi.advanceTimersByTimeAsync(200);
         });
+        expect(h.latest.messagesTotalCount).toBe(42);
       } else {
         fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(page(99)));
         await act(async () => {
@@ -1273,6 +1274,42 @@ describe('useAnalysisMessageList pagination', () => {
       expect(loaded).toBe(false);
       expect(h.latest.messages).toBe(currentMessages);
       expect(h.latest.pageIndex).toBe(currentPageIndex);
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it.each(['loadFirstPage', 'loadLastPage', 'loadPrevPage'] as const)(
+    'keeps newer-page navigation available when %s returns an empty page',
+    async (action) => {
+      if (action === 'loadLastPage') vi.useFakeTimers();
+      const h = renderHook();
+      harnesses.push(h);
+      act(() => h.latest.setMessages(pageRange(100, 81)));
+      if (action === 'loadLastPage') {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(200);
+        });
+        expect(h.latest.messagesTotalCount).toBe(42);
+      } else {
+        fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(pageRange(80, 61)));
+        await act(async () => {
+          await h.latest.loadNextPage();
+        });
+      }
+      const currentMessages = h.latest.messages;
+      const currentPageIndex = h.latest.pageIndex;
+      expect(h.latest.noMoreToLoad).toBe(false);
+      fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse([]));
+
+      let loaded: unknown;
+      await act(async () => {
+        loaded = await h.latest[action]();
+      });
+
+      expect(loaded).toBe(false);
+      expect(h.latest.messages).toBe(currentMessages);
+      expect(h.latest.pageIndex).toBe(currentPageIndex);
+      expect(h.latest.noMoreToLoad).toBe(false);
     },
   );
 
