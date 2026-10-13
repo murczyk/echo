@@ -42,6 +42,10 @@ pub struct DirectSubmitPayload {
     #[serde(default)]
     pub unit: Option<String>,
     #[serde(default)]
+    pub unit_id: Option<i64>,
+    #[serde(default)]
+    pub create_unit: bool,
+    #[serde(default)]
     pub locations: Vec<String>,
     #[serde(default)]
     pub network: Option<SubmitNetwork>,

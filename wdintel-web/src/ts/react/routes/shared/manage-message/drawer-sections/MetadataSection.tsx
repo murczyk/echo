@@ -8,6 +8,8 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { PowerDatePicker } from '../../../../components/PowerDateTimePicker';
 import { FormSectionWrapper } from './FormSectionWrapper';
 import { ParserFieldFeedback } from '../MessageParserFeedback';
+import { MessageUnitAutocomplete } from '../MessageUnitAutocomplete';
+import type { UnitResponse } from '../../../../services/api/direct-submit';
 import {
   normalizeCallsign,
   normalizeMultiValue,
@@ -26,9 +28,8 @@ type Props = {
   postOptions: string[];
   postLoading: boolean;
   setPostInput: (val: string) => void;
-  unitOptions: string[];
+  unitOptions: UnitResponse[];
   unitLoading: boolean;
-  setUnitInput: (val: string) => void;
   unitLocked: boolean;
 };
 
@@ -46,12 +47,12 @@ export function MetadataSection({
   setPostInput,
   unitOptions,
   unitLoading,
-  setUnitInput,
   unitLocked,
 }: Props) {
   const radioFeaturesAllowed = useRadioFeatures();
   const {
     control,
+    setValue,
     formState: { errors },
   } = useFormContext<MessageFormData>();
 
@@ -160,30 +161,15 @@ export function MetadataSection({
               name="unit"
               control={control}
               render={({ field }) => (
-                <Autocomplete
-                  freeSolo
-                  forcePopupIcon
-                  noOptionsText="Немає варіантів"
-                  options={Array.from(new Set([...(recentValues?.unit || []), ...unitOptions]))}
+                <MessageUnitAutocomplete
+                  options={unitOptions}
                   value={field.value ?? ''}
                   loading={unitLoading}
                   disabled={busy || unitLocked}
-                  onInputChange={(_, newValue, reason) => {
-                    if (reason === 'input') {
-                      setUnitInput(newValue);
-                      field.onChange(newValue);
-                    }
+                  onChange={(name, selection) => {
+                    field.onChange(name);
+                    setValue('unitSelection', selection, { shouldDirty: true });
                   }}
-                  onChange={(_, newValue) => field.onChange(newValue || '')}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Підрозділ"
-                      size="small"
-                      fullWidth
-                      disabled={busy || unitLocked}
-                    />
-                  )}
                 />
               )}
             />

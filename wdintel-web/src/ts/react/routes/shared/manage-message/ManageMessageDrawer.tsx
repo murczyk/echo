@@ -948,7 +948,6 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                             setPostInput={drawerState.setPostInput}
                             unitOptions={drawerState.unitOptions}
                             unitLoading={drawerState.unitLoading}
-                            setUnitInput={drawerState.setUnitInput}
                             unitLocked={drawerState.unitLocked}
                             callsignOptions={drawerState.callsignOptions}
                             callsignLoading={drawerState.callsignLoading}

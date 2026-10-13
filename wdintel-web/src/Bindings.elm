@@ -9167,6 +9167,8 @@ deleteUnitDuplicateReqEncoder struct =
 
 type alias UnitSearchReq =
     { search : String
+    , includeInactive : Maybe (Bool)
+    , names : Maybe (List (String))
     }
 
 
@@ -9174,6 +9176,8 @@ unitSearchReqEncoder : UnitSearchReq -> Json.Encode.Value
 unitSearchReqEncoder struct =
     Json.Encode.object
         [ ( "search", (Json.Encode.string) struct.search )
+        , ( "include_inactive", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeInactive )
+        , ( "names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.names )
         ]
 
 
@@ -24092,6 +24096,8 @@ unitSearchReqDecoder : Json.Decode.Decoder UnitSearchReq
 unitSearchReqDecoder =
     Json.Decode.succeed UnitSearchReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_inactive" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "names" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
 
 
 unitDetailsReqDecoder : Json.Decode.Decoder UnitDetailsReq

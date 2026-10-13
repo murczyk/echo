@@ -104,7 +104,20 @@ export async function searchUnitNames(
 ): Promise<UnitResponse[]> {
   const result = await postJson<{ units: UnitResponse[] }>(
     '/api/sigint/unit/search',
-    { search },
+    { search, include_inactive: true },
+    options,
+  );
+  return result?.units || [];
+}
+
+export async function resolveUnitNames(
+  names: string[],
+  options?: RequestOptions,
+): Promise<UnitResponse[]> {
+  if (names.length === 0) return [];
+  const result = await postJson<{ units: UnitResponse[] }>(
+    '/api/sigint/unit/search',
+    { search: '', include_inactive: true, names },
     options,
   );
   return result?.units || [];
@@ -218,6 +231,8 @@ export type DirectSubmitRequest = {
   is_time_null?: InboxMessage['isTimeNull'];
   post?: string;
   unit?: string;
+  unit_id?: number;
+  create_unit?: boolean;
   locations?: string[];
   network?: SubmitNetwork;
   dmr?: SubmitDmrMetadata[];

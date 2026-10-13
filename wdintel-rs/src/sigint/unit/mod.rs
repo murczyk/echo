@@ -1431,7 +1431,7 @@ async fn render_created_unit_with_optional_network(
     Ok(CreateUnitWithAutoNetworkRsp { unit, network_id })
 }
 
-async fn insert_unit_with_changelog<'a, 'async_trait, C>(
+pub(crate) async fn insert_unit_with_changelog<'a, 'async_trait, C>(
     dbx: &'a C,
     login: &uuid::Uuid,
     req: &CreateUnitReq,
@@ -3456,28 +3456,7 @@ pub async fn units_search(
         .c(h!())?;
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
 
-    let search_phrase = req.search.trim();
-    let mut q = available_units_query(false);
-
-    if !search_phrase.is_empty() {
-        q = q.filter(Expr::cust_with_values(
-            "search_tsv::tsvector @@ websearch_to_tsquery('russian', $1) OR lower(\"sigint_unit\".\"name\") LIKE lower($2) ESCAPE '\\'",
-            vec![
-                search_phrase.to_string(),
-                format!("%{}%", search_phrase.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")),
-            ],
-        ));
-    }
-
-    q = q.order_by_asc(sigint_unit::Column::Name).limit(50);
-
-    // debug!(
-    //     ">find units query: {}",
-    //     q.build(DbBackend::Postgres).to_string()
-    // );
-
-    let units = q.all(&env.dbx).await.context(h!())?;
-
+    let units = find_search_units(&env.dbx, &req).await.c(h!())?;
     let mut res = vec![];
     for unit in units {
         let mut unit = render_unit(&unit)?;
@@ -3490,6 +3469,55 @@ pub async fn units_search(
         .await
         .c(h!())?;
     Ok(Json(ListUnitsByIdRsp { units: res }))
+}
+
+pub(crate) async fn find_search_units<C>(
+    db: &C,
+    req: &UnitSearchReq,
+) -> anyhow::Result<Vec<sigint_unit::Model>>
+where
+    C: ConnectionTrait,
+{
+    let search_phrase = req.search.trim();
+    let mut q = available_units_query(req.include_inactive.unwrap_or(false));
+
+    if let Some(names) = &req.names {
+        q = q.filter(
+            Expr::expr(Expr::cust(
+                "lower(regexp_replace(btrim(name), '[[:space:]]+', ' ', 'g'))",
+            ))
+            .is_in(names.iter().map(|name| {
+                name.split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .to_lowercase()
+            })),
+        );
+    } else if !search_phrase.is_empty() {
+        q = q.filter(Expr::cust_with_values(
+            "search_tsv::tsvector @@ websearch_to_tsquery('russian', $1) OR lower(\"sigint_unit\".\"name\") LIKE lower($2) ESCAPE '\\'",
+            vec![
+                search_phrase.to_string(),
+                format!("%{}%", search_phrase.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")),
+            ],
+        ));
+    }
+
+    let limit = if req.include_inactive == Some(true)
+        && (!search_phrase.is_empty() || req.names.is_some())
+    {
+        SIGINT_UNIT_LIST_MAX_LIMIT
+    } else {
+        crate::config::SIGINT_UNIT_SEARCH_DEFAULT_LIMIT
+    };
+    q = q.order_by_asc(sigint_unit::Column::Name).limit(limit);
+
+    // debug!(
+    //     ">find units query: {}",
+    //     q.build(DbBackend::Postgres).to_string()
+    // );
+
+    q.all(db).await.c(h!())
 }
 
 #[cfg(test)]

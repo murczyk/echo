@@ -202,6 +202,8 @@ where
         }),
         post: message.post.clone(),
         unit: message.unit.clone(),
+        unit_id: None,
+        create_unit: false,
         locations: message
             .location
             .as_deref()
@@ -384,7 +386,7 @@ async fn save_signal_message(
     login: &uuid::Uuid,
     env: &Env,
     signal_message_id: Option<i64>,
-    payload: DirectSubmitPayload,
+    mut payload: DirectSubmitPayload,
 ) -> Result<DirectSubmitRsp, AppError> {
     let is_new_message = signal_message_id.is_none();
     let upload_urls = payload.upload_urls.clone().unwrap_or_default();
@@ -606,6 +608,17 @@ async fn save_signal_message(
         && payload.timestamp.is_none()
         && ((signal_message_id.is_some() && previous_timestamp.is_none())
             || !copy_sources.is_empty());
+    let selected_unit =
+        if is_new_message || payload.unit_id.is_some() || payload.create_unit {
+            super::units::resolve_unit(&txn, login, &payload)
+                .await
+                .c(h!())?
+        } else {
+            None
+        };
+    if let Some(unit) = &selected_unit {
+        payload.unit = Some(unit.name.clone());
+    }
     let submit_item = direct_submit_payload_to_item(
         &payload,
         sender,
@@ -628,6 +641,11 @@ async fn save_signal_message(
     )
     .await
     .c(h!())?;
+    if let Some(unit) = &selected_unit {
+        super::units::attach_unit(&txn, submitted.inbox_id, unit)
+            .await
+            .c(h!())?;
+    }
     if let Some(is_time_null) = is_time_null {
         query::set_inbox_item_is_time_null(
             &txn,
@@ -669,6 +687,11 @@ async fn save_signal_message(
     )
     .await
     .c(h!())?;
+    if selected_unit.is_some() {
+        crate::sigint::unit::fanout_unit_changed_data(env)
+            .await
+            .c(h!())?;
+    }
 
     let req = crate::rer_importer::types::InboxMessagesReq {
         highlight_points: Some(true),
@@ -1701,6 +1724,8 @@ mod tests {
             timestamp: None,
             post: None,
             unit: None,
+            unit_id: None,
+            create_unit: false,
             locations: vec![],
             network: None,
             dmr: vec![],

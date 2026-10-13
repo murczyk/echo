@@ -1305,6 +1305,28 @@ where
     Ok(())
 }
 
+pub(crate) async fn sync_selected_inbox_unit<C>(
+    db: &C,
+    inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
+    unit_id: i64,
+    unit_name: &str,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    sync_resolved_inbox_item(
+        db,
+        inbox_item_id,
+        inbox_item_uuid,
+        vec![UnitTextResolution::resolved(unit_name, unit_id)],
+        None,
+    )
+    .await
+    .context(h!())?;
+    Ok(())
+}
+
 pub(crate) async fn resolve_and_sync_inbox_item<C>(
     db: &C,
     inbox_item_id: i64,

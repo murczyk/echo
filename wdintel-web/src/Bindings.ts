@@ -3540,6 +3540,8 @@ export type DeleteUnitDuplicateReq = {
 
 export type UnitSearchReq = {
   search: string;
+  includeInactive: boolean | null;
+  names: Array<string> | null;
 };
 
 export type UnitDetailsReq = {
