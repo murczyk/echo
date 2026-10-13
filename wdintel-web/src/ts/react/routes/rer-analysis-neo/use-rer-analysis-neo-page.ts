@@ -474,7 +474,9 @@ export function useRerAnalysisNeoPage(
           setTargetMessageContextResponsePending(false);
         }
         setTargetMessageLoading(false);
-        if (!isContextRefresh) setDirectMessageError(messageNavigationErrorText(outcome));
+        if (!isContextRefresh || outcome.status === 'load-error') {
+          setDirectMessageError(messageNavigationErrorText(outcome));
+        }
       },
     );
     targetMessageControllerRef.current = navigation;

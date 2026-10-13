@@ -1579,6 +1579,25 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.directMessageLoading).toBe(false);
     expect(latest?.error).toBeNull();
   });
+  it('reports a focused-window refresh failure without exposing API details or losing focus', async () => {
+    const focusedWindow = buildDirectLinkWindow();
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(focusedWindow);
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    renderHook();
+    await flushEffects();
+
+    inboxMessagesMock.fetchInboxWindow.mockRejectedValueOnce(
+      new Error('private group internal id 123'),
+    );
+    act(() => latest?.updateQueryState({ groupsSelected: ['other-group'] }));
+    await flushEffects();
+
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageError).toBe(
+      'Не вдалося відкрити повідомлення за посиланням. Спробуйте ще раз.',
+    );
+    expect(latest?.directMessageError).not.toContain('private group');
+  });
   it('leaves direct-link context when the date range changes', async () => {
     const targetMessage = {
       text: 'target',
