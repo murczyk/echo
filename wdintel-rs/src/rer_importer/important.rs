@@ -308,19 +308,22 @@ async fn create_notification_event(
             let roles = serde_json::from_value::<Vec<String>>(recipient.roles)
                 .context(h!())?;
             Ok::<_, anyhow::Error>(
-                (crate::users::role_matches(&roles, "Rer")?
-                    || crate::users::role_matches(&roles, "CyberViewer")?)
+                (crate::users::role_matches(&roles, "Rer").context(h!())?
+                    || crate::users::role_matches(&roles, "CyberViewer")
+                        .context(h!())?)
                 .then_some(recipient.id),
             )
         })
-        .collect::<anyhow::Result<Vec<_>>>()?
+        .collect::<anyhow::Result<Vec<_>>>()
+        .context(h!())?
         .into_iter()
         .flatten()
         .filter(|recipient| *recipient != actor)
         .collect::<Vec<_>>();
     let recipients =
         recipients_with_group_access(txn, &active_logins, group_master_key)
-            .await?;
+            .await
+            .context(h!())?;
     if !recipients.is_empty() {
         let receipt_ids = (0..recipients.len())
             .map(|_| Uuid::now_v7())
@@ -465,24 +468,28 @@ async fn important_add(
     req: Json<ImportantAddReq>,
 ) -> Result<Json<ImportantMutationRsp>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).context(h!())?;
     let notification_group = if req.notify_group {
-        let group_master_key =
-            req.group_master_key
-                .as_deref()
-                .ok_or_else(|| AppError::BL {
-                    msg: "Для сповіщення потрібна група".into(),
-                })?;
-        req.operation_id.ok_or_else(|| AppError::BL {
-            msg: "Для сповіщення потрібен ідентифікатор операції".into(),
-        })?;
+        let group_master_key = req
+            .group_master_key
+            .as_deref()
+            .ok_or_else(|| AppError::BL {
+                msg: "Для сповіщення потрібна група".into(),
+            })
+            .context(h!())?;
+        req.operation_id
+            .ok_or_else(|| AppError::BL {
+                msg: "Для сповіщення потрібен ідентифікатор операції".into(),
+            })
+            .context(h!())?;
         validate_notification_context(
             &env,
             login,
             req.message_id,
             group_master_key,
         )
-        .await?;
+        .await
+        .context(h!())?;
         Some(group_master_key)
     } else {
         None

@@ -694,7 +694,7 @@ export function AppNavbar({
               setOpenDropdown={setOpenDropdown}
               onOpenChangelog={onOpenChangelog}
             />
-            {shared.userLoaded ? <NotificationsInbox identity={user.name} /> : null}
+            {shared.userLoaded && isRerOrCyber ? <NotificationsInbox identity={user.name} /> : null}
             {isReconnecting && (
               <Tooltip title="Відновлення з’єднання…">
                 <span

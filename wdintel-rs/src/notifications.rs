@@ -290,6 +290,25 @@ where
     )).one(dbx).await.c(h!())?.map(|boundary| boundary.id))
 }
 
+async fn locked_boundary<C>(
+    dbx: &C,
+    recipient: Uuid,
+    boundary: Uuid,
+) -> Result<Option<Uuid>, AppError>
+where
+    C: ConnectionTrait,
+{
+    #[derive(FromQueryResult)]
+    struct Boundary {
+        id: Uuid,
+    }
+    Ok(Boundary::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select id from notification_read_boundary where id = $1 and recipient_login_id = $2 for update",
+        vec![boundary.into(), recipient.into()],
+    )).one(dbx).await.c(h!())?.map(|boundary| boundary.id))
+}
+
 #[derive(FromQueryResult)]
 struct CompletedBoundary {
     unread_count: i64,
@@ -310,9 +329,10 @@ async fn mark_boundary_as_read<C>(
 where
     C: ConnectionTrait,
 {
-    cleanup_expired_boundaries(dbx).await?;
-    if reusable_boundary(dbx, login, boundary_receipt_id)
-        .await?
+    cleanup_expired_boundaries(dbx).await.context(h!())?;
+    if locked_boundary(dbx, login, boundary_receipt_id)
+        .await
+        .context(h!())?
         .is_none()
     {
         if let Some(completed) = CompletedBoundary::find_by_statement(
@@ -335,7 +355,9 @@ where
         return Ok(NotificationReadAllRsp {
             outcome:
                 NotificationReadAllOutcome::NotificationReadAllBoundaryExpired,
-            unread_count: unread_count(dbx, login, groups).await?,
+            unread_count: unread_count(dbx, login, groups)
+                .await
+                .context(h!())?,
             receipt_ids: vec![],
         });
     }
@@ -351,7 +373,7 @@ where
     ))
     .await
     .c(h!())?;
-    let unread_count = unread_count(dbx, login, groups).await?;
+    let unread_count = unread_count(dbx, login, groups).await.context(h!())?;
     dbx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "insert into notification_read_boundary_completed (boundary_id, recipient_login_id, unread_count, receipt_ids) values ($1, $2, $3, $4) on conflict (boundary_id) do nothing",
@@ -393,8 +415,8 @@ pub async fn notification_list(
     env: actix_web::web::Data<Env>,
     req: Json<NotificationListReq>,
 ) -> Result<Json<NotificationListRsp>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
+    let login = login_id_from_identity(&user).context(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     txn.execute_raw(Statement::from_string(
         DatabaseBackend::Postgres,
@@ -402,8 +424,8 @@ pub async fn notification_list(
     ))
     .await
     .c(h!())?;
-    cleanup_expired_boundaries(&txn).await?;
-    let groups = allowed_groups(&txn, login).await?;
+    cleanup_expired_boundaries(&txn).await.context(h!())?;
+    let groups = allowed_groups(&txn, login).await.context(h!())?;
     let removed_receipt_ids = if req.cursor.is_none() {
         removed_receipt_ids(
             &txn,
@@ -412,20 +434,27 @@ pub async fn notification_list(
             &req.known_receipt_ids
                 [..req.known_receipt_ids.len().min(MAX_RECONCILED_RECEIPTS)],
         )
-        .await?
+        .await
+        .context(h!())?
     } else {
         vec![]
     };
     let mark_all_boundary = if req.cursor.is_none() {
         if let Some(boundary) = req.boundary_id {
-            reusable_boundary(&txn, login, boundary).await?
+            reusable_boundary(&txn, login, boundary)
+                .await
+                .context(h!())?
         } else {
-            create_read_boundary(&txn, login, req.panel_id, &groups).await?
+            create_read_boundary(&txn, login, req.panel_id, &groups)
+                .await
+                .context(h!())?
         }
     } else {
         None
     };
-    let mut rows = visible_rows(&txn, login, &groups, req.cursor).await?;
+    let mut rows = visible_rows(&txn, login, &groups, req.cursor)
+        .await
+        .context(h!())?;
     let has_more = rows.len() as u64 > PAGE_SIZE;
     rows.truncate(PAGE_SIZE as usize);
     let next_cursor = has_more
@@ -452,7 +481,8 @@ pub async fn notification_list(
             },
         })
         .collect();
-    let unread_count = unread_count(&txn, login, &groups).await?;
+    let unread_count =
+        unread_count(&txn, login, &groups).await.context(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(NotificationListRsp {
         items,
@@ -468,11 +498,13 @@ pub async fn notification_unread_count(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<NotificationUnreadCountRsp>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
-    let groups = allowed_groups(&env.dbx, login).await?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
+    let login = login_id_from_identity(&user).context(h!())?;
+    let groups = allowed_groups(&env.dbx, login).await.context(h!())?;
     Ok(Json(NotificationUnreadCountRsp {
-        unread_count: unread_count(&env.dbx, login, &groups).await?,
+        unread_count: unread_count(&env.dbx, login, &groups)
+            .await
+            .context(h!())?,
     }))
 }
 
@@ -482,12 +514,14 @@ pub async fn notification_read(
     env: actix_web::web::Data<Env>,
     req: Json<NotificationReadReq>,
 ) -> Result<Json<NotificationUnreadCountRsp>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
-    let groups = allowed_groups(&env.dbx, login).await?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
+    let login = login_id_from_identity(&user).context(h!())?;
+    let groups = allowed_groups(&env.dbx, login).await.context(h!())?;
     env.dbx.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres, "update notification_receipt nr set read_at = coalesce(nr.read_at, now()) from notification_event ne where nr.event_id = ne.id and nr.id = $1 and nr.recipient_login_id = $2 and ne.group_master_key = any($3) and exists (select 1 from signal_message sm join signal_message_group smg on smg.signal_message_id = sm.id and smg.group_master_key = ne.group_master_key where sm.id = ne.signal_message_id and sm.deleted = false)", vec![req.receipt_id.into(), login.into(), groups.clone().into()])).await.c(h!())?;
     Ok(Json(NotificationUnreadCountRsp {
-        unread_count: unread_count(&env.dbx, login, &groups).await?,
+        unread_count: unread_count(&env.dbx, login, &groups)
+            .await
+            .context(h!())?,
     }))
 }
 
@@ -497,13 +531,14 @@ pub async fn notification_read_all(
     env: actix_web::web::Data<Env>,
     req: Json<NotificationReadAllReq>,
 ) -> Result<Json<NotificationReadAllRsp>, AppError> {
-    ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    ensure_base_role(&env.dbx, &user).await.context(h!())?;
+    let login = login_id_from_identity(&user).context(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
-    let groups = allowed_groups(&txn, login).await?;
+    let groups = allowed_groups(&txn, login).await.context(h!())?;
     let response =
         mark_boundary_as_read(&txn, login, req.boundary_receipt_id, &groups)
-            .await?;
+            .await
+            .context(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(response))
 }
@@ -518,6 +553,8 @@ mod tests {
     };
     use sea_orm::ActiveValue::Set;
     use serial_test::serial;
+    use std::time::Duration;
+    use tokio::sync::oneshot;
 
     async fn create_unread_receipt<C>(
         dbx: &C,
@@ -860,6 +897,144 @@ mod tests {
             .unwrap();
         assert_eq!(later_receipt.id, later);
         assert!(later_receipt.read_at.is_none());
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn echo_3610_serializes_overlapping_boundary_consumption() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        let groups = vec![group.master_key.clone()];
+        let covered = create_unread_receipt(
+            &env.dbx,
+            login.id,
+            login.id,
+            &group.master_key,
+        )
+        .await;
+        let boundary =
+            create_read_boundary(&env.dbx, login.id, Uuid::now_v7(), &groups)
+                .await
+                .unwrap()
+                .unwrap();
+        let later = create_unread_receipt(
+            &env.dbx,
+            login.id,
+            login.id,
+            &group.master_key,
+        )
+        .await;
+
+        let first = env.dbx.begin().await.unwrap();
+        assert_eq!(
+            locked_boundary(&first, login.id, boundary).await.unwrap(),
+            Some(boundary)
+        );
+
+        let (started_tx, started_rx) = oneshot::channel();
+        let (continue_tx, continue_rx) = oneshot::channel();
+        let (pid_tx, pid_rx) = oneshot::channel();
+        let dbx = env.dbx.clone();
+        let concurrent_groups = groups.clone();
+        let mut concurrent = tokio::spawn(async move {
+            let second = dbx.begin().await.unwrap();
+            started_tx.send(()).unwrap();
+            continue_rx.await.unwrap();
+            #[derive(FromQueryResult)]
+            struct BackendProcess {
+                pid: i32,
+            }
+            let pid =
+                BackendProcess::find_by_statement(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    "select pg_backend_pid() pid".to_owned(),
+                ))
+                .one(&second)
+                .await
+                .unwrap()
+                .unwrap()
+                .pid;
+            pid_tx.send(pid).unwrap();
+            let response = mark_boundary_as_read(
+                &second,
+                login.id,
+                boundary,
+                &concurrent_groups,
+            )
+            .await
+            .unwrap();
+            second.commit().await.unwrap();
+            response
+        });
+        started_rx.await.unwrap();
+        continue_tx.send(()).unwrap();
+        let concurrent_pid = pid_rx.await.unwrap();
+        #[derive(FromQueryResult)]
+        struct WaitingProcess {
+            waiting: bool,
+        }
+        let waiting_for_lock = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let waiting = WaitingProcess::find_by_statement(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "select coalesce(wait_event_type = 'Lock', false) waiting from pg_stat_activity where pid = $1",
+                    vec![concurrent_pid.into()],
+                ))
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .map(|process| process.waiting)
+                .unwrap_or(false);
+                if waiting {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(waiting_for_lock.is_ok());
+
+        let applied =
+            mark_boundary_as_read(&first, login.id, boundary, &groups)
+                .await
+                .unwrap();
+        assert_eq!(
+            applied.outcome,
+            NotificationReadAllOutcome::NotificationReadAllApplied
+        );
+        assert_eq!(applied.receipt_ids, vec![covered]);
+        assert!(tokio::time::timeout(
+            Duration::from_millis(100),
+            &mut concurrent
+        )
+        .await
+        .is_err());
+        first.commit().await.unwrap();
+
+        let replay = concurrent.await.unwrap();
+        assert_eq!(
+            replay.outcome,
+            NotificationReadAllOutcome::NotificationReadAllAlreadyCompleted
+        );
+        assert_eq!(replay.receipt_ids, applied.receipt_ids);
+        assert_eq!(replay.unread_count, applied.unread_count);
+
+        #[derive(FromQueryResult)]
+        struct ReceiptState {
+            read_at: Option<NaiveDateTime>,
+        }
+        let later =
+            ReceiptState::find_by_statement(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "select read_at from notification_receipt where id = $1",
+                vec![later.into()],
+            ))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(later.read_at.is_none());
     }
 
     #[actix_web::test]
