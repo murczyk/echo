@@ -12,7 +12,11 @@ import {
   type DirectSubmitResponse,
 } from '../../../services/api/direct-submit';
 import type { RecentValues } from './useRecentValues';
-import { normalizeMessageUnitName } from './message-unit-name';
+import {
+  compatibleMessageUnitSelection,
+  isMessageUnitSelectionValid,
+  MESSAGE_UNIT_SELECTION_ERROR,
+} from './message-unit-selection';
 import {
   DO_NOT_SEND_GROUP_VALUE,
   parseCoords,
@@ -81,6 +85,13 @@ export function useMessageSubmit({
 
   const onSubmit = async (data: MessageFormData) => {
     if (busy || submission.current || !mounted.current) return;
+    if (
+      !isEditMode &&
+      !isMessageUnitSelectionValid(data.unit, data.unitSelection, data.unitNetworkSelection)
+    ) {
+      setErrorMsg(MESSAGE_UNIT_SELECTION_ERROR);
+      return;
+    }
     let createdResult: DirectSubmitResponse | null = null;
 
     const hasTextContent = isReportMode
@@ -206,12 +217,7 @@ export function useMessageSubmit({
         hash_id: metadata.hash_id?.trim() || undefined,
       }));
       const recentValues = buildRecentValues(data, dmrRows);
-      const unitSelection =
-        data.unitSelection &&
-        normalizeMessageUnitName(data.unitSelection.name) ===
-          normalizeMessageUnitName(data.unit ?? '')
-          ? data.unitSelection
-          : undefined;
+      const unitSelection = compatibleMessageUnitSelection(data.unit, data.unitSelection);
 
       const payload = {
         full_body: data.full_body?.trim() || undefined,

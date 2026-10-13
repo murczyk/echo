@@ -2,6 +2,7 @@ export type ManageMessageSubmitEligibilityInput = {
   busy: boolean;
   parsing: boolean;
   schemaValid: boolean;
+  unitSelectionValid?: boolean;
   isEditMode: boolean;
   groupOptional?: boolean;
   allowMissingGroup?: boolean;
@@ -22,6 +23,7 @@ export function isManageMessageSubmitEligible({
   busy,
   parsing,
   schemaValid,
+  unitSelectionValid = true,
   isEditMode,
   groupOptional = false,
   allowMissingGroup = false,
@@ -57,6 +59,7 @@ export function isManageMessageSubmitEligible({
     !busy &&
     !parsing &&
     schemaValid &&
+    unitSelectionValid &&
     hasAccessibleGroup &&
     hasContent &&
     attachmentCount <= maxAttachmentCount

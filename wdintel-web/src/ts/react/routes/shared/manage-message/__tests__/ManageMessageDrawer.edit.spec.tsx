@@ -1957,6 +1957,56 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  it('#3535 copied network assignments preserved all units without introducing unsaved changes', async () => {
+    setRecentValues({});
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ unit: 'Перший, Другий', network: { name: 'Мережа' } }],
+    });
+    networkMocks.getNetworksByIds.mockResolvedValue([
+      { id: 7, name: 'Мережа', unitIds: [51, 52], freqs: [] },
+    ]);
+    unitMocks.getUnitsByIds.mockResolvedValue([
+      { id: 52, name: 'Другий' },
+      { id: 51, name: 'Перший' },
+    ]);
+    const onClose = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={onClose}
+          reportSource={{
+            id: 42,
+            message: buildMessage({ networkIds: [7], networkName: 'Мережа' }),
+          }}
+        />,
+      );
+    });
+    expect(autocompleteValuesByLabel.get('Підрозділ')).toBe('Перший, Другий');
+    expect(textFieldPropsByLabel.get('Підрозділ')?.disabled).toBe(true);
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст розвіддонесення')
+        ?.onChange?.({ target: { value: 'Чернетка' } });
+    });
+    await act(async () => {
+      textFieldPropsByLabel.get('Текст розвіддонесення')?.onChange?.({ target: { value: '' } });
+    });
+    await act(async () => {
+      const close = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Закрити',
+      );
+      close?.click();
+    });
+    expect(onClose).toHaveBeenCalledOnce();
+    root.unmount();
+  });
+
   it('shows the source card header above the original message when creating a report', async () => {
     setRecentValues({});
     referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
@@ -2607,7 +2657,7 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(pickerValuesByLabel.get('Дата перехоплення')).toBeTruthy();
     expect(pickerValuesByLabel.get('Час перехоплення')).toBeNull();
     expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
-    expect(autocompleteValuesByLabel.get('Підрозділ')).toBe('u-1');
+    expect(autocompleteValuesByLabel.get('Підрозділ')).toEqual({ id: 1, name: 'u-1' });
     expect(autocompleteValuesByLabel.get('Назва пристрою')).toBe('device-1');
     expect(textFieldPropsByLabel.get('Частота')?.value ?? '').toBe('');
     expect(textFieldPropsByLabel.get('Пост')?.value ?? '').toBe('');
@@ -3897,7 +3947,7 @@ describe('ManageMessageDrawer edit mode', () => {
     });
 
     expect(networkMocks.getNetworksByIds).toHaveBeenCalledWith([5]);
-    expect(unitMocks.getUnitsByIds).toHaveBeenCalledWith([51]);
+    expect(unitMocks.getUnitsByIds).toHaveBeenCalledWith([51], expect.anything());
     expect(autocompleteValuesByLabel.get('Мережа')).toMatchObject({ id: 5, name: '💻' });
     expect(autocompleteInputValuesByLabel.get('Мережа')).toBe('💻 — 4 зБпС 50 обрБпС');
     expect(autocompleteOptionLabelsByLabel.get('Мережа')).toContain('💻 — 4 зБпС 50 обрБпС');
@@ -5732,7 +5782,10 @@ describe('ManageMessageDrawer edit mode', () => {
       });
 
       expect(autocompleteValuesByLabel.get('Частота (МГц)') ?? '').toBe('');
-      expect(autocompleteValuesByLabel.get('Підрозділ')).toBe('Початковий підрозділ');
+      expect(autocompleteValuesByLabel.get('Підрозділ')).toEqual({
+        id: 1,
+        name: 'Початковий підрозділ',
+      });
       expect(autocompleteValuesByLabel.get('Назва пристрою')).toBe('Початковий пристрій');
       expect(
         dayjs(pickerValuesByLabel.get('Дата перехоплення') as dayjs.ConfigType).isSame(
