@@ -122,7 +122,7 @@ export function useAnalysisDataMessageActions(params: Params) {
         params.patchMessages((id, message) =>
           id === messageId ? { ...message, bookmarked: !currentlyBookmarked } : message,
         );
-        params.refreshMessageCounts();
+        if (params.queryState.orBookmarked) params.refreshMessageCounts();
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {
           params.onError(params.toErrorMessage(loadError));
@@ -145,7 +145,7 @@ export function useAnalysisDataMessageActions(params: Params) {
         params.patchMessages((id, message) =>
           id === messageId ? { ...message, important } : message,
         );
-        params.refreshMessageCounts();
+        if (params.queryState.orImportant) params.refreshMessageCounts();
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {
           params.onError(params.toErrorMessage(loadError));
@@ -196,7 +196,9 @@ export function useAnalysisDataMessageActions(params: Params) {
           if (id !== messageId) return message;
           return toggleHumanTag(message, tagId, currentUserName, currentUserOrganismId);
         });
-        params.refreshMessageCounts();
+        if (params.queryState.tags.includes(tagId) || params.queryState.reportTagsOnlyThisUnit) {
+          params.refreshMessageCounts();
+        }
 
         // Do not reload the inbox after a tag mutation. The Tags facet refreshes immediately when it
         // is already open; the paginated message list reconciles on the next explicit pagination,
@@ -231,7 +233,9 @@ export function useAnalysisDataMessageActions(params: Params) {
         params.patchMessages((id, message) =>
           id === messageId ? removeBotTags(message, tagId) : message,
         );
-        params.refreshMessageCounts();
+        if (params.queryState.tags.includes(tagId) || params.queryState.reportTagsOnlyThisUnit) {
+          params.refreshMessageCounts();
+        }
       } finally {
         setMessageActionCount((current) => Math.max(0, current - 1));
       }
