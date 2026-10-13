@@ -41,10 +41,23 @@ describe('mergeMessageWindow', () => {
     });
 
     expect(result.items).toEqual(existing);
+    expect(result.items).toBe(existing);
     expect(result.items[2]).toBe(existing[2]);
     expect(result.addedItems).toEqual([]);
     expect(result.removedItems).toEqual([]);
   });
+
+  it.each(['above', 'below'] as const)(
+    'keeps the visible window when an exhausted %s request adds no chunk',
+    (edge) => {
+      const existing = items(1, 2, 3);
+      const result = mergeMessageWindow(existing, [], edge, { limit: 40, getId });
+
+      expect(result.items).toBe(existing);
+      expect(result.addedItems).toEqual([]);
+      expect(result.removedItems).toEqual([]);
+    },
+  );
 
   it('deduplicates the first incoming occurrence and orders before trimming', () => {
     const result = mergeMessageWindow(

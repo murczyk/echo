@@ -39,5 +39,7 @@ export function mergeMessageWindow<T>(
   const items =
     edge === 'above' ? ordered.slice(0, ordered.length - removeCount) : ordered.slice(removeCount);
 
-  return { items, addedItems, removedItems };
+  const unchanged =
+    items.length === existing.length && items.every((item, index) => item === existing[index]);
+  return { items: unchanged ? (existing as T[]) : items, addedItems, removedItems };
 }

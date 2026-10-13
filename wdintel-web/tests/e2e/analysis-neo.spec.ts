@@ -22,8 +22,11 @@ test.describe('@smoke @regression', () => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     const response = createLoadedInboxResponse();
     const [messageId, message] = response.inbox_items[0];
-    await setupAnalysisNeoPage(page, { inboxResponse: response });
-    await page.goto('/rer-analysis-neo');
+    await setupAnalysisNeoPage(page, {
+      inboxResponse: response,
+      signalGroups: ['analysis-summary-e2e-group'],
+    });
+    await page.goto('/rer-analysis-neo?groups=analysis-summary-e2e-group');
 
     const card = page.locator(`[data-message-id="${messageId}"]`);
     await expect(card).toBeVisible();
@@ -34,6 +37,7 @@ test.describe('@smoke @regression', () => {
     const link = await page.evaluate(() => navigator.clipboard.readText());
     expect(new URL(link).pathname).toBe('/rer-analysis-neo');
     expect(new URL(link).searchParams.get('m')).toBe(message.messageUid);
+    expect([...new URL(link).searchParams.keys()]).toEqual(['m']);
 
     await page.goto(link);
     await expect(card).toBeVisible();
@@ -43,6 +47,8 @@ test.describe('@smoke @regression', () => {
       element.dispatchEvent(new WheelEvent('wheel', { deltaY: 20, bubbles: true }));
     });
     await expect(card).toHaveAttribute('data-message-feed-highlighted', 'true');
+    await page.getByRole('button', { name: 'Оновити', exact: true }).click();
+    await expect(card).not.toHaveAttribute('data-message-feed-highlighted', 'true');
   });
 
   test('shows one privacy-safe notification for an unavailable Analysis link', async ({ page }) => {
@@ -1015,7 +1021,7 @@ test.describe('@smoke @regression', () => {
     page,
   }) => {
     test.setTimeout(60_000);
-    await page.clock.setFixedTime(new Date('2026-07-13T13:00:00Z'));
+    await page.clock.install({ time: new Date('2026-07-13T13:00:00Z') });
     const initialPage = createOverflowingInboxResponse();
     const [, template] = initialPage.inbox_items[0];
     const anchorMessage = initialPage.inbox_items.find(([messageId]) => messageId === 105)?.[1];
@@ -1239,6 +1245,9 @@ test.describe('@smoke @regression', () => {
     const receivedMessage = page.locator('[data-message-id="1000"]');
     await expect(receivedMessage).toContainText('Realtime analysis message 1');
     await expect(messageList.locator('[data-message-id]')).toHaveCount(21);
+    expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvent);
+    await expect(messageCountStatus).toHaveText('20 з 20');
+    await page.clock.fastForward(30_200);
     await expect.poll(() => inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvent + 2);
     await expect(messageCountStatus).toHaveText('21 з 21');
     await expect(anchor).toContainText('Analysis narrow fixture message 4');
@@ -1286,7 +1295,7 @@ test.describe('@smoke @regression', () => {
 
     releasedEventCount = realtimeMessageIds.length;
     await expect.poll(() => deliveredEventCount).toBe(realtimeMessageIds.length);
-    await expect.poll(() => messageLookupCount).toBe(messageLookupsBeforeEvent + 10);
+    await expect.poll(() => targetedMessageRequests.flat().length).toBe(realtimeMessageIds.length);
     await expect(page.locator('[data-message-id="1001"]')).toContainText(
       'Realtime analysis message 2',
     );
@@ -1306,13 +1315,14 @@ test.describe('@smoke @regression', () => {
     await expect(page.locator('[data-message-id="9001"]')).toHaveCount(0);
     await expect(page.locator('[data-message-id="9002"]')).toHaveCount(0);
     await expect(messageList.locator('[data-message-id]')).toHaveCount(23);
+    await page.clock.fastForward(30_200);
     await expect(messageCountStatus).toHaveText('23 з 23', { timeout: 10_000 });
     await expect
       .poll(() => inboxCountRequestCount, { timeout: 10_000 })
-      .toBe(inboxCountRequestsBeforeEvent + 6);
+      .toBe(inboxCountRequestsBeforeEvent + 4);
     await page.waitForTimeout(5_200);
-    expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvent + 6);
-    expect(targetedMessageRequests).toEqual(realtimeMessageIds.map((messageId) => [messageId]));
+    expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvent + 4);
+    expect(targetedMessageRequests.flat()).toEqual(realtimeMessageIds);
     await expect
       .poll(async () => ({
         anchorOffset: await anchorOffset(),
@@ -1361,6 +1371,7 @@ test.describe('@smoke @regression', () => {
   test('@regression analysis neo ignores repeated realtime events rejected by its filters', async ({
     page,
   }) => {
+    await page.clock.install();
     const initialPage = createLoadedInboxResponse();
     const eventMessageIds = [9001, 9002, 9003, 9004, 9005];
     const targetedMessageRequests: number[][] = [];
@@ -1430,12 +1441,15 @@ test.describe('@smoke @regression', () => {
 
     releaseInboxChangedEvents = true;
     await expect.poll(() => deliveredEventCount).toBe(eventMessageIds.length);
-    await expect.poll(() => targetedMessageRequests.length).toBe(eventMessageIds.length);
+    await expect
+      .poll(() => targetedMessageRequests.flat().length, { timeout: 10_000 })
+      .toBe(eventMessageIds.length);
     await page.waitForTimeout(400);
 
-    expect(targetedMessageRequests).toEqual(eventMessageIds.map((messageId) => [messageId]));
+    expect(targetedMessageRequests.flat()).toEqual(eventMessageIds);
     expect(inboxRequestCount).toBe(inboxRequestsBeforeEvents);
     expect(inboxCountRequestCount).toBe(inboxCountRequestsBeforeEvents);
+    await page.clock.fastForward(30_200);
     await expect
       .poll(() => inboxCountRequestCount, { timeout: 10_000 })
       .toBe(inboxCountRequestsBeforeEvents + 2);

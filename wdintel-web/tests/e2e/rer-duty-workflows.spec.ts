@@ -16,9 +16,9 @@ function buildInboxMessage(id: number, overrides: Partial<InboxMessage> = {}): I
   });
 }
 
-function buildInboxResponse(ids: number[]): InboxMessagesRspRaw {
+function buildInboxResponse(ids: number[], groupMasterKey = 'group-1'): InboxMessagesRspRaw {
   return {
-    inbox_items: ids.map((id) => [id, buildInboxMessage(id) as never]),
+    inbox_items: ids.map((id) => [id, buildInboxMessage(id, { groupMasterKey }) as never]),
     callsigns: [],
     signal_profiles: {},
     signal_groups: [],
@@ -64,6 +64,14 @@ test.describe('Duty characterization workflows @regression', () => {
     await installRerDutyShortStateMocks(page, {
       inboxResponseForRequest: (requestBody) => {
         inboxRequests.push(requestBody);
+        const request = requestBody as {
+          before_id_noninclusive?: number | null;
+          since_id_noninclusive?: number | null;
+        };
+        if (request.before_id_noninclusive === 2) return buildInboxResponse([1]);
+        if (request.before_id_noninclusive != null || request.since_id_noninclusive != null) {
+          return buildInboxResponse([]);
+        }
         return inboxResponse;
       },
     });
@@ -111,11 +119,8 @@ test.describe('Duty characterization workflows @regression', () => {
     await expect(page.locator('[data-duty-feed-column]')).toHaveCount(1);
     const targetCard = page.locator('[data-duty-message-id="2"]');
     await expect(targetCard).toBeVisible();
-    await expect
-      .poll(() =>
-        targetCard.locator('[data-message-card-root]').evaluate((element) => element.style.outline),
-      )
-      .toContain('2px solid');
+    await expect(targetCard).toHaveAttribute('data-message-feed-highlighted', 'true');
+    await expect(targetCard.locator('[data-message-card-root]')).toHaveCSS('outline-width', '2px');
     expect(inboxRequests.length).toBeGreaterThan(0);
     expect(
       inboxRequests.map((requestBody) => {
@@ -187,6 +192,81 @@ test.describe('Duty characterization workflows @regression', () => {
       await expect(columns.locator('[data-duty-message-id]')).toHaveCount(40);
     }
     await cpu.detach();
+  });
+
+  test('four filtered feeds paginate independently when one reaches its older edge @regression', async ({
+    page,
+  }) => {
+    const groups = ['group-1', 'group-2', 'group-3', 'group-4'];
+    const olderRequests: Array<{ group: string; beforeId: number }> = [];
+    await installRerDutyShortStateMocks(page, {
+      signalGroups: groups,
+      inboxResponseForRequest: (requestBody) => {
+        const request = requestBody as {
+          selected_groups?: string[] | null;
+          before_id_noninclusive?: number | null;
+        };
+        const group = request.selected_groups?.[0] ?? '';
+        const groupIndex = groups.indexOf(group);
+        if (groupIndex < 0) return buildInboxResponse([]);
+        const base = groupIndex * 100;
+        const beforeId = request.before_id_noninclusive;
+        if (beforeId != null) olderRequests.push({ group, beforeId });
+        if (beforeId === base + 21) {
+          return buildInboxResponse(
+            Array.from({ length: 20 }, (_, index) => base + index + 1),
+            group,
+          );
+        }
+        if (beforeId != null) return buildInboxResponse([]);
+        return buildInboxResponse(
+          Array.from({ length: 20 }, (_, index) => base + index + 21),
+          group,
+        );
+      },
+    });
+    const state = {
+      messageFeeds: groups.map((group, index) => [`mf-${index}`, { groupsSelected: [group] }]),
+    };
+    await page.goto(`/rer-duty-neo?state=${encodeURIComponent(JSON.stringify(state))}`);
+    const columns = page.locator('[data-duty-feed-column]');
+    await expect(columns).toHaveCount(4);
+    for (let index = 0; index < 4; index += 1) {
+      await expect(columns.nth(index).locator('[data-duty-message-id]')).toHaveCount(20);
+      await expect(
+        columns.nth(index).locator(`[data-duty-message-id="${index * 100 + 21}"]`),
+      ).toBeAttached();
+    }
+    const siblingScrollTops = await Promise.all(
+      [1, 2, 3].map((index) =>
+        columns
+          .nth(index)
+          .locator('[data-duty-feed-scroller="true"]')
+          .evaluate((element) => element.scrollTop),
+      ),
+    );
+
+    await columns.first().locator('[data-message-feed-skeleton="above"]').scrollIntoViewIfNeeded();
+    await expect(columns.first().locator('[data-duty-message-id]')).toHaveCount(40);
+    await expect(columns.first().locator('[data-duty-message-id="1"]')).toBeAttached();
+    expect(olderRequests).toEqual([{ group: 'group-1', beforeId: 21 }]);
+    for (let index = 1; index < 4; index += 1) {
+      await expect(columns.nth(index).locator('[data-duty-message-id]')).toHaveCount(20);
+      await expect(
+        columns.nth(index).locator(`[data-duty-message-id="${index * 100 + 21}"]`),
+      ).toBeAttached();
+      await expect
+        .poll(() =>
+          columns
+            .nth(index)
+            .locator('[data-duty-feed-scroller="true"]')
+            .evaluate(
+              (element, initialScrollTop) => Math.abs(element.scrollTop - initialScrollTop),
+              siblingScrollTops[index - 1],
+            ),
+        )
+        .toBeLessThanOrEqual(1);
+    }
   });
 
   test('@smoke persists the four-feed workspace and closes the selected middle feed', async ({

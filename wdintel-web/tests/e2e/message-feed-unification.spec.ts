@@ -478,10 +478,13 @@ test.describe('Message feed unification @regression', () => {
       await page.goto(`/rer-analysis-neo?m=feed-unification-130&newestFirst=${newestFirst}`);
       const scroller = page.locator('[data-analysis-message-scroller]');
       await expect(scroller.locator('[data-message-id]')).toHaveCount(20);
+      const target = scroller.locator('[data-message-id="130"]');
+      await expect(target).toHaveAttribute('data-message-feed-highlighted', 'true');
       await scroller.hover();
       await page.mouse.wheel(0, -80);
       await expect(scroller.locator('[data-message-feed-skeleton="above"]')).toBeAttached();
       await expect(scroller.locator('[data-message-feed-skeleton="below"]')).toBeAttached();
+      await expect(target).toHaveAttribute('data-message-feed-highlighted', 'true');
       for (const edge of ['above', 'below'] as const) {
         const edgeLoader = scroller.locator(`[data-message-feed-skeleton="${edge}"]`);
         await edgeLoader.scrollIntoViewIfNeeded();
@@ -491,6 +494,10 @@ test.describe('Message feed unification @regression', () => {
         await expect.poll(() => pending.has(direction)).toBe(true);
         pending.get(direction)!();
         await expect(scroller.locator('[data-message-id]')).toHaveCount(40);
+        if (edge === 'above') {
+          await expect(target).toBeAttached();
+          await expect(target).not.toHaveAttribute('data-message-feed-highlighted', 'true');
+        }
         await expect
           .poll(async () => {
             const offset = await scroller
