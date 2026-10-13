@@ -231,12 +231,6 @@ impl Related<super::orbit_unit::Entity> for Entity {
     }
 }
 
-impl Related<super::sigint_unit_orbit_combat_type::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SigintUnitOrbitCombatType.def()
-    }
-}
-
 impl Related<super::sigint_inbox_item_unit_selection::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemUnitSelection.def()

@@ -177,7 +177,7 @@ pub enum EchoMissingMessageStatus {
     Deserialize,
 )]
 #[sea_orm(
-    rs_type = "Enum",
+    rs_type = "String",
     db_type = "Enum",
     enum_name = "intel_product_relation_kind"
 )]
@@ -341,7 +341,7 @@ pub enum SigintInboxItemUnitKind {
     Deserialize,
 )]
 #[sea_orm(
-    rs_type = "Enum",
+    rs_type = "String",
     db_type = "Enum",
     enum_name = "sigint_network_kind"
 )]
