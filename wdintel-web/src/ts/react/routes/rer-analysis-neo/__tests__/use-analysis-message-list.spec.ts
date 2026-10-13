@@ -6,7 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAnalysisMessageList } from '../use-analysis-message-list';
 import { buildInboxReq, emptyQueryState } from '../helpers';
-import type { CallsignInfoRes, InboxMessage } from '../../../../../Bindings';
+import type { CallsignInfoRes, InboxMessage, InboxMessagesRsp } from '../../../../../Bindings';
 
 const fetchAnalysisCallsignInfosMock = vi.hoisted(() => vi.fn());
 const fetchInboxMessagesMock = vi.hoisted(() => vi.fn());
@@ -45,6 +45,18 @@ function pageRange(from: number, to: number): Array<[number, InboxMessage]> {
     from + index * step,
     buildMessage(),
   ]);
+}
+
+function inboxResponse(inboxItems: Array<[number, InboxMessage]>): InboxMessagesRsp {
+  return {
+    inboxItems,
+    callsigns: [],
+    signalGroups: [],
+    signalProfiles: {},
+    pollCursorId: null,
+    freqPelengsSummary: null,
+    pageLimit: 20,
+  };
 }
 
 function buildQueryState() {
@@ -87,6 +99,8 @@ function renderHook(
   initialSummaryCallsignsInfo: Record<string, CallsignInfoRes> = {},
   focusedMessageId: number | null = null,
   focusedTargetMessageIndex: number | null = null,
+  focusedHasMoreEarlier = true,
+  focusedHasMoreLater = true,
 ): Harness {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -111,8 +125,8 @@ function renderHook(
       focusedMessageId,
       focusedTargetMessageIndex,
       focusedMessageActive: focusedMessageId != null,
-      focusedHasMoreEarlier: true,
-      focusedHasMoreLater: true,
+      focusedHasMoreEarlier,
+      focusedHasMoreLater,
       loadMissingNetworksForMessages,
       newestFirst,
       onError: harness.onError,
@@ -958,6 +972,103 @@ describe('useAnalysisMessageList pagination', () => {
     },
   );
 
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it.each([true, false])(
+    'keeps the trimmed older edge reachable in a full linked context when newestFirst=%s',
+    async (newestFirst) => {
+      const h = renderHook(
+        buildQueryState(),
+        undefined,
+        newestFirst,
+        true,
+        {},
+        21,
+        20,
+        false,
+        false,
+      );
+      harnesses.push(h);
+      act(() => h.latest.setMessages(pageRange(1, 41)));
+
+      expect(h.latest.messages.map(([id]) => id)).toEqual(
+        (newestFirst ? pageRange(41, 2) : pageRange(2, 41)).map(([id]) => id),
+      );
+      expect(h.latest.firstLoadedMessageIndex).toBe(newestFirst ? 0 : 1);
+      expect(h.latest.focusedHasMoreEarlier).toBe(true);
+
+      fetchInboxMessagesMock.mockResolvedValueOnce({
+        inboxItems: page(1),
+        callsigns: [],
+        signalGroups: [],
+        signalProfiles: {},
+        pageLimit: 20,
+      });
+      await act(async () => {
+        await h.latest.loadFocusedEarlier();
+      });
+      expect(h.latest.messages.some(([id]) => id === 1)).toBe(true);
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it.each(['earlier', 'later'] as const)(
+    'retains both focused chunks when the %s request finishes first',
+    async (firstCompleted) => {
+      const h = renderHook(buildQueryState(), undefined, true, true, {}, 50);
+      harnesses.push(h);
+      act(() => h.latest.setMessages(pageRange(41, 60)));
+      const earlier = deferred<InboxMessagesRsp>();
+      const later = deferred<InboxMessagesRsp>();
+      fetchInboxMessagesMock.mockImplementation((request) =>
+        request.beforeIdNoninclusive != null ? earlier.promise : later.promise,
+      );
+
+      let earlierLoad!: Promise<boolean>;
+      let laterLoad!: Promise<boolean>;
+      act(() => {
+        earlierLoad = h.latest.loadFocusedEarlier();
+        laterLoad = h.latest.loadFocusedLater();
+      });
+      const finishEarlier = async () => {
+        await act(async () => {
+          earlier.resolve(inboxResponse(pageRange(40, 36)));
+          await earlierLoad;
+        });
+      };
+      const finishLater = async () => {
+        await act(async () => {
+          later.resolve(inboxResponse(pageRange(61, 65)));
+          await laterLoad;
+        });
+      };
+      if (firstCompleted === 'earlier') {
+        await finishEarlier();
+        await finishLater();
+      } else {
+        await finishLater();
+        await finishEarlier();
+      }
+
+      expect(h.latest.messages.map(([id]) => id)).toEqual(pageRange(65, 36).map(([id]) => id));
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('keeps the linked window unchanged after an empty newest-first edge request', async () => {
+    const h = renderHook(buildQueryState(), undefined, true, true, {}, 50);
+    harnesses.push(h);
+    act(() => h.latest.setMessages(pageRange(41, 60)));
+    const originalMessages = h.latest.messages;
+    fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse([]));
+
+    await act(async () => {
+      await h.latest.loadFocusedEarlier();
+    });
+
+    expect(h.latest.messages).toBe(originalMessages);
+    expect(h.latest.focusedHasMoreEarlier).toBe(false);
+  });
+
   it.each([true, false])(
     'keeps bounded focused coordinates after the target is evicted when newestFirst=%s',
     async (newestFirst) => {
@@ -1121,14 +1232,49 @@ describe('useAnalysisMessageList pagination', () => {
       pageLimit: 20,
     });
 
+    let loaded: unknown;
     await act(async () => {
-      await h.latest.loadNextPage();
+      loaded = await h.latest.loadNextPage();
     });
 
+    expect(loaded).toBe(false);
     expect(h.latest.messages).toEqual(currentMessages);
     expect(h.latest.pageIndex).toBe(0);
     expect(h.latest.noMoreToLoad).toBe(true);
   });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it.each(['loadFirstPage', 'loadLastPage', 'loadPrevPage'] as const)(
+    'reports failure without changing the loaded page when %s fails',
+    async (action) => {
+      const h = renderHook();
+      harnesses.push(h);
+      act(() => h.latest.setMessages(page(100)));
+      if (action === 'loadLastPage') {
+        vi.useFakeTimers();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(200);
+        });
+      } else {
+        fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(page(99)));
+        await act(async () => {
+          await h.latest.loadNextPage();
+        });
+      }
+      const currentMessages = h.latest.messages;
+      const currentPageIndex = h.latest.pageIndex;
+      fetchInboxMessagesMock.mockRejectedValueOnce(new Error('offline'));
+
+      let loaded: unknown;
+      await act(async () => {
+        loaded = await h.latest[action]();
+      });
+
+      expect(loaded).toBe(false);
+      expect(h.latest.messages).toBe(currentMessages);
+      expect(h.latest.pageIndex).toBe(currentPageIndex);
+    },
+  );
 
   it('loadPrevPage is a no-op at pageIndex 0', async () => {
     const h = renderHook();

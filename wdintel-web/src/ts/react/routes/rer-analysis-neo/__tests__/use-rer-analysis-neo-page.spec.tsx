@@ -115,10 +115,12 @@ const baseAnalysisData = {
   loadCallsignGraph: vi.fn(),
   loadAllMessages: vi.fn(),
   loadFilterSection: vi.fn(),
+  loadFirstPage: vi.fn(),
   invalidateFilterSectionLoads: vi.fn(),
   invalidateFilterSectionLoadsForPatch: vi.fn(),
   loadCorrelatedFreqs: vi.fn(),
   loadGroupsActivity: vi.fn(),
+  loadLastPage: vi.fn(),
   loadNewCallsigns: vi.fn(),
   loadNextPage: vi.fn(),
   loadMoreMessages: vi.fn(),
@@ -200,10 +202,12 @@ function buildAnalysisData() {
     loadCallsignGraph: vi.fn(),
     loadAllMessages: vi.fn(),
     loadFilterSection: vi.fn(),
+    loadFirstPage: vi.fn(),
     invalidateFilterSectionLoads: vi.fn(),
     invalidateFilterSectionLoadsForPatch: vi.fn(),
     loadCorrelatedFreqs: vi.fn(),
     loadGroupsActivity: vi.fn(),
+    loadLastPage: vi.fn(),
     loadNewCallsigns: vi.fn(),
     loadNextPage: vi.fn(),
     loadMoreMessages: vi.fn(),
@@ -456,6 +460,26 @@ describe('useRerAnalysisNeoPage', () => {
       expect(latest?.error).not.toBeNull();
     },
   );
+
+  it('advances the visible page and URL after a bounded next page loads', async () => {
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: Array.from(
+        { length: 20 },
+        (_, index) => [60 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+      ),
+      messagesTotalCount: 60,
+      loadNextPage: vi.fn().mockResolvedValue(true),
+    };
+
+    renderHook();
+    await flushEffects();
+    await act(async () => latest?.loadNextPage());
+
+    expect(latest?.visibleMessagesPageIndex).toBe(1);
+    expect(latest?.messagePageNavigationTarget).toBe(1);
+    expect(new URLSearchParams(window.location.search).get('messagesPage')).toBe('2');
+  });
 
   // Regression: https://github.com/echoua/echo/issues/3598
   it.each([
@@ -1410,6 +1434,43 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(loadPrevPage).toHaveBeenCalledWith(0);
   });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it.each([
+    { action: 'loadFirstPage', initialPageIndex: 1 },
+    { action: 'loadLastPage', initialPageIndex: 0 },
+    { action: 'loadNextPage', initialPageIndex: 0 },
+    { action: 'loadPrevPage', initialPageIndex: 1 },
+  ] as const)(
+    'keeps the current page and URL when $action cannot load the requested chunk',
+    async ({ action, initialPageIndex }) => {
+      const initialUrl =
+        `${window.location.pathname}` + (initialPageIndex === 1 ? '?messagesPage=2' : '');
+      window.history.replaceState({}, '', initialUrl);
+      currentAnalysisData = {
+        ...buildAnalysisData(),
+        messages: Array.from(
+          { length: 20 },
+          (_, index) => [60 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+        ),
+        firstLoadedMessageIndex: initialPageIndex * 20,
+        pageIndex: initialPageIndex,
+        messagesTotalCount: 60,
+        [action]: vi.fn().mockResolvedValue(false),
+      };
+
+      renderHook();
+      await flushEffects();
+      const initialNavigationTarget = latest?.messagePageNavigationTarget;
+      const initialVisibleUrl = window.location.pathname + window.location.search;
+      await act(async () => latest?.[action]());
+
+      expect(currentAnalysisData[action]).toHaveBeenCalledTimes(1);
+      expect(latest?.visibleMessagesPageIndex).toBe(initialPageIndex);
+      expect(latest?.messagePageNavigationTarget).toBe(initialNavigationTarget);
+      expect(window.location.pathname + window.location.search).toBe(initialVisibleUrl);
+    },
+  );
 
   it('updates the visible chunk across previous and next direct-link navigation', async () => {
     const targetMessage = {

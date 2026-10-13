@@ -87,14 +87,14 @@ export type UseAnalysisDataResult = {
   loadCorrelatedFreqs: () => Promise<void>;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
   loadNewCallsigns: () => Promise<void>;
-  loadFirstPage: () => Promise<void>;
+  loadFirstPage: () => Promise<boolean>;
   loadFocusedEarlier: () => Promise<boolean>;
   loadFocusedLater: () => Promise<boolean>;
-  loadLastPage: () => Promise<void>;
-  loadNextPage: () => Promise<void>;
+  loadLastPage: () => Promise<boolean>;
+  loadNextPage: () => Promise<boolean>;
   loadMoreMessages: () => Promise<boolean>;
   loadPreviousMessages: () => Promise<boolean>;
-  loadPrevPage: (targetPageIndex?: number) => Promise<void>;
+  loadPrevPage: (targetPageIndex?: number) => Promise<boolean>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   loadSettlementMessagesForMap: (
     settlementId: number,

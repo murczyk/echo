@@ -700,8 +700,7 @@ export function useRerAnalysisNeoPage(
       requestLoadedMessagesPage(0);
       return;
     }
-    await data.loadFirstPage();
-    requestLoadedMessagesPage(0);
+    if (await data.loadFirstPage()) requestLoadedMessagesPage(0);
   }, [data.loadFirstPage, isPageStartLoaded, requestLoadedMessagesPage, visibleMessagesPageIndex]);
   const loadLastPage = useCallback(async () => {
     if (data.messagesTotalCount == null || data.messagesTotalCount === 0) return;
@@ -714,8 +713,7 @@ export function useRerAnalysisNeoPage(
       requestLoadedMessagesPage(lastPageIndex);
       return;
     }
-    await data.loadLastPage();
-    requestLoadedMessagesPage(lastPageIndex);
+    if (await data.loadLastPage()) requestLoadedMessagesPage(lastPageIndex);
   }, [
     data.loadLastPage,
     data.messagesTotalCount,
@@ -733,8 +731,7 @@ export function useRerAnalysisNeoPage(
       requestLoadedMessagesPage(targetPageIndex);
       return;
     }
-    await data.loadNextPage();
-    requestLoadedMessagesPage(targetPageIndex);
+    if (await data.loadNextPage()) requestLoadedMessagesPage(targetPageIndex);
   }, [
     data.loadNextPage,
     isPageStartLoaded,
@@ -754,8 +751,7 @@ export function useRerAnalysisNeoPage(
       requestLoadedMessagesPage(targetPageIndex);
       return;
     }
-    await data.loadPrevPage(targetPageIndex);
-    requestLoadedMessagesPage(targetPageIndex);
+    if (await data.loadPrevPage(targetPageIndex)) requestLoadedMessagesPage(targetPageIndex);
   }, [
     data.loadPrevPage,
     isPageStartLoaded,

@@ -172,14 +172,19 @@ export function useAnalysisMessageList({
         const next = typeof action === 'function' ? action(current) : action;
         const addedAtStart = current.length > 0 && next[0]?.[0] !== current[0]?.[0];
         const edge = addedAtStart ? 'above' : 'below';
-        const displayedNext = focusedMessageActive && newestFirst ? [...next].reverse() : next;
-        const targetLocalIndex = displayedNext.findIndex(([id]) => id === focusedMessageId);
         const result = mergeMessageWindow([], next, edge, {
           limit: messageWindowLimit,
           getId: ([id]) => id,
         });
+        const displayedResult =
+          focusedMessageActive && newestFirst ? [...result.items].reverse() : result.items;
+        const targetLocalIndex = displayedResult.findIndex(([id]) => id === focusedMessageId);
         messagesRef.current = result.items;
         setMessageState(result.items);
+        if (focusedMessageActive && result.removedItems.length > 0) {
+          if (edge === 'below') setFocusedHasMoreEarlier(true);
+          else setFocusedHasMoreLater(true);
+        }
         if (focusedMessageActive && focusedTargetMessageIndex != null && targetLocalIndex >= 0) {
           setFirstLoadedMessageIndex(Math.max(0, focusedTargetMessageIndex - targetLocalIndex));
         } else if (edge === 'below' && result.removedItems.length > 0) {
@@ -491,9 +496,7 @@ export function useAnalysisMessageList({
     [fetchPage, messages, newestFirst, pageIndex],
   );
 
-  const loadNextPage = useCallback(async () => {
-    await loadNextMessages(false);
-  }, [loadNextMessages]);
+  const loadNextPage = useCallback(() => loadNextMessages(false), [loadNextMessages]);
 
   const loadMoreMessages = useCallback(() => loadNextMessages(true), [loadNextMessages]);
 
@@ -568,14 +571,19 @@ export function useAnalysisMessageList({
         await loadMessageComments(pageMessages, false);
         if (isStale()) return false;
         const hasMore = !isAnalysisInboxPageExhausted(responseMessages, rsp.pageLimit);
-        const displayedCurrent = newestFirst ? [...messages].reverse() : messages;
+        const currentMessages = messagesRef.current;
+        const displayedCurrent = newestFirst ? [...currentMessages].reverse() : currentMessages;
         const displayedIncoming = newestFirst ? [...pageMessages].reverse() : pageMessages;
         const edge = (direction === 'earlier') === newestFirst ? 'below' : 'above';
         const merged = mergeMessageWindow(displayedCurrent, displayedIncoming, edge, {
           limit: messageWindowLimit,
           getId: ([id]) => id,
         });
-        setMessageState(newestFirst ? [...merged.items].reverse() : merged.items);
+        if (merged.items !== displayedCurrent) {
+          const nextMessages = newestFirst ? [...merged.items].reverse() : merged.items;
+          messagesRef.current = nextMessages;
+          setMessageState(nextMessages);
+        }
         if (edge === 'above') {
           setFirstLoadedMessageIndex((index) => Math.max(0, index - merged.addedItems.length));
         } else {
@@ -652,11 +660,11 @@ export function useAnalysisMessageList({
 
   const loadPrevPage = useCallback(
     async (targetPageIndex = pageIndex - 1) => {
-      if (targetPageIndex < 0 || targetPageIndex >= pageIndex) return;
+      if (targetPageIndex < 0 || targetPageIndex >= pageIndex) return false;
       let prevCursor = pageCursorsRef.current[targetPageIndex];
       if (isNullOrUndefined(prevCursor)) {
         const firstMessage = messages.at(0);
-        if (isNullOrUndefined(firstMessage)) return;
+        if (isNullOrUndefined(firstMessage)) return false;
 
         prevCursor = newestFirst
           ? {
@@ -673,29 +681,34 @@ export function useAnalysisMessageList({
             };
       }
 
-      const fetched = await fetchPage(prevCursor, { targetPageIndex });
-      if (fetched === null) return;
+      const fetched = await fetchPage(prevCursor, { targetPageIndex, keepCurrentOnEmpty: true });
+      if (fetched === null || fetched.length === 0) return false;
 
       pageCursorsRef.current[targetPageIndex] = prevCursor;
+      return true;
     },
     [fetchPage, messages, newestFirst, pageIndex],
   );
 
   const loadFirstPage = useCallback(async () => {
-    if (pageIndex === 0) return;
-    const fetched = await fetchPage(FIRST_PAGE_CURSOR, { targetPageIndex: 0 });
-    if (fetched === null) return;
+    if (pageIndex === 0) return false;
+    const fetched = await fetchPage(FIRST_PAGE_CURSOR, {
+      targetPageIndex: 0,
+      keepCurrentOnEmpty: true,
+    });
+    if (fetched === null || fetched.length === 0) return false;
 
     pageCursorsRef.current = [FIRST_PAGE_CURSOR];
+    return true;
   }, [fetchPage, pageIndex]);
 
   const loadLastPage = useCallback(async () => {
-    if (isNullOrUndefined(messagesTotalCount) || messagesTotalCount === 0) return;
+    if (isNullOrUndefined(messagesTotalCount) || messagesTotalCount === 0) return false;
     const lastPageIndex = Math.max(
       0,
       Math.ceil(messagesTotalCount / ANALYSIS_MESSAGES_PAGE_SIZE) - 1,
     );
-    if (pageIndex === lastPageIndex) return;
+    if (pageIndex === lastPageIndex) return false;
 
     const lastPageSize = messagesTotalCount % ANALYSIS_MESSAGES_PAGE_SIZE;
     const lastPageCursor: AnalysisMessagePageCursor = {
@@ -704,12 +717,16 @@ export function useAnalysisMessageList({
       reverseResults: true,
       resultLimit: lastPageSize || ANALYSIS_MESSAGES_PAGE_SIZE,
     };
-    const fetched = await fetchPage(lastPageCursor, { targetPageIndex: lastPageIndex });
-    if (fetched === null) return;
+    const fetched = await fetchPage(lastPageCursor, {
+      targetPageIndex: lastPageIndex,
+      keepCurrentOnEmpty: true,
+    });
+    if (fetched === null || fetched.length === 0) return false;
 
     pageCursorsRef.current = [FIRST_PAGE_CURSOR];
     pageCursorsRef.current[lastPageIndex] = lastPageCursor;
     setNoMoreToLoad(true);
+    return true;
   }, [fetchPage, messagesTotalCount, newestFirst, pageIndex]);
 
   return {
