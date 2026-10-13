@@ -8,10 +8,10 @@ use super::super::types::{
 use super::super::{map_transaction_body_error, FilesystemError};
 use super::prepare::prepare_items;
 use super::{StartSessionResult, DEVICE_FILE_SYNC_SESSION_TTL_SECS};
-use crate::config::{
+use crate::devices::analytics::{ensure_sync_run, hydrate_active_tags};
+use crate::devices::config::{
     DEVICE_FILE_PAGE_DEFAULT_LIMIT, DEVICE_FILE_PAGE_MAX_LIMIT,
 };
-use crate::devices::analytics::{ensure_sync_run, hydrate_active_tags};
 use crate::file_registry::entities::{
     file_analysis_run, file_entry, file_revision, file_sync_batch,
     file_sync_item, file_sync_session,

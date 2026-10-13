@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
+  BrowseDeviceFilesReq,
   DeviceFileRoot,
   DeviceFileTreeEntry,
   LocateDeviceFileRsp,
@@ -53,6 +54,7 @@ export function useDeviceFileTree({
   enabled,
   roots,
   tagFilter,
+  hasContent = null,
   onDirectoryMissing,
   onDirectoriesLoaded,
 }: {
@@ -61,10 +63,11 @@ export function useDeviceFileTree({
   enabled: boolean;
   roots: DeviceFileRoot[];
   tagFilter: DeviceAnalyticsTagFilter;
+  hasContent?: BrowseDeviceFilesReq['hasContent'];
   onDirectoryMissing: (entryId: string) => void;
   onDirectoriesLoaded: (parentEntryId: string, directoryEntryIds: string[]) => void;
 }) {
-  const dataScope = `${deviceId}:${syncId ?? 'all'}`;
+  const dataScope = `${deviceId}:${syncId ?? 'all'}:${hasContent}`;
   const [resultScope, setResultScope] = useState(dataScope);
   const [branches, setBranches] = useState<Record<string, DeviceFileTreeBranch>>({});
   const [expandedEntryIds, setExpandedEntryIds] = useState<Set<string>>(new Set());
@@ -131,6 +134,7 @@ export function useDeviceFileTree({
             syncId,
             parentEntryId,
             cursor,
+            hasContent,
             tagFilter: tagFilterRef.current,
           }),
           { signal: controller.signal },
@@ -176,7 +180,7 @@ export function useDeviceFileTree({
         }
       }
     },
-    [deviceId, syncId, enabled, tagFilterKey, updateBranch],
+    [deviceId, syncId, enabled, tagFilterKey, hasContent, updateBranch],
   );
 
   const toggleDirectory = useCallback(
@@ -197,6 +201,7 @@ export function useDeviceFileTree({
 
   const revealFile = useCallback(
     async (located: LocateDeviceFileRsp, signal: AbortSignal) => {
+      if (hasContent !== null && located.file.hasContent !== hasContent) return;
       const path = [...located.ancestors, located.file];
       const parentIds = [located.rootEntryId, ...located.ancestors.map((entry) => entry.entryId)];
       const expanded = new Set([...expandedEntryIdsRef.current, ...parentIds]);
@@ -213,7 +218,7 @@ export function useDeviceFileTree({
         }),
       );
     },
-    [loadBranch, updateBranch],
+    [hasContent, loadBranch, updateBranch],
   );
 
   const refreshExpanded = useCallback(async () => {

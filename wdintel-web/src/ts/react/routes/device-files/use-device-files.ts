@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import type { BrowseDeviceFilesReq } from '../../../../Bindings';
 import type { DeviceFileSelection } from './device-file-archive';
 
 import { useDeviceFileCounts } from './use-device-file-counts';
@@ -25,6 +26,7 @@ export function useDeviceFiles({
   tagFilter: DeviceAnalyticsTagFilter;
   linkedFile?: { fileId: string; revision: number | null } | null;
 }) {
+  const [contentFilter, setContentFilter] = useState<BrowseDeviceFilesReq['hasContent']>(null);
   const [archiveEpoch, setArchiveEpoch] = useState(0);
   const [selection, setSelection] = useState<{
     deviceId: string;
@@ -61,6 +63,7 @@ export function useDeviceFiles({
     syncId,
     enabled,
     roots: load.roots,
+    hasContent: contentFilter,
     onDirectoryMissing: load.handleDirectoryMissing,
     tagFilter,
     onDirectoriesLoaded: enqueueLoadedDirectories,
@@ -145,6 +148,8 @@ export function useDeviceFiles({
     ...load,
     deviceId,
     archiveEpoch,
+    contentFilter,
+    setContentFilter,
     tree,
     counts,
     refreshVisible,

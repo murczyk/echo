@@ -1,6 +1,6 @@
 use super::{queue, settings};
 use crate::{
-    config::DEVICE_DOCUMENT_WORKER_SLEEP_SECS,
+    devices::config::DEVICE_DOCUMENT_WORKER_SLEEP_SECS,
     h,
     types::{Env, ShortContext},
 };

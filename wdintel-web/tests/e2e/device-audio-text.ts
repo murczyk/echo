@@ -1,10 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   audioDetail,
+  audioAsrFixture,
   audioFixtureSql,
   localAudioBackend,
   post,
   receiveAudio,
+  removeAudioFixtureCache,
 } from './device-audio-backend';
 import {
   audible,
@@ -12,12 +14,19 @@ import {
   playing,
   ready,
   remember,
+  rememberNativeAudio,
   selectAudio,
   toggleAudioFilter,
   expectAudioFilter,
   toneWav,
 } from './device-audio-player';
-import type { DeviceAudio, SaveDeviceAudioTranscriptionRsp } from '../../src/Bindings';
+import type {
+  DeviceAudio,
+  DeviceAudioPreparation,
+  RetryDeviceAudioTranscriptionRsp,
+  DeviceAudioTranscriptionStatusRsp,
+  SaveDeviceAudioTranscriptionRsp,
+} from '../../src/Bindings';
 
 const savePath = '/api/device/audio/transcription/save';
 const saveClicks = new WeakMap<Page, number>();
@@ -59,7 +68,7 @@ test.describe('@regression real device audio transcription', () => {
   });
   test.beforeEach(async () => {
     test.setTimeout(90_000);
-    backend.reader = await backend.login('parent-cyberviewer');
+    backend.reader = await backend.login('parent-cyber');
     device = await backend.createDevice();
     otherDevice = await backend.createDevice();
     first = await receiveAudio(
@@ -94,6 +103,65 @@ test.describe('@regression real device audio transcription', () => {
       expectedTextVersion: detail.transcription.textVersion,
     });
   }
+  test('#3645 automatic original leaves processing and manual draft save available', async ({
+    page,
+  }) => {
+    await serverSave('Ручний текст');
+    await audioFixtureSql(
+      'files',
+      `UPDATE device_audio SET automatic_transcription='Автоматичний оригінал', automatic_transcribed_at=now() WHERE id='${first.id}';`,
+    );
+    await open(page);
+    await expectAudioFilter(page, false);
+    await field(page).fill('Збережена ручна правка');
+    await page.getByRole('button', { name: 'Автоматична', exact: true }).click();
+    const original = page.getByRole('textbox', { name: 'Автоматична транскрипція', exact: true });
+    await expect(original).toHaveAttribute('readonly', '');
+    await expect(
+      page.getByRole('button', { name: 'Зберегти транскрипцію', exact: true }),
+    ).toBeDisabled();
+    await page.getByRole('button', { name: 'Позначити обробленим', exact: true }).click();
+    await expect(page.locator('[data-device-audio-processing]')).toContainText('Статус: Оброблене');
+    await page.locator(`[data-audio-id="${second.id}"]`).click();
+    await leave(page).getByRole('button', { name: 'Зберегти', exact: true }).click();
+    await expect(leave(page)).not.toBeVisible();
+    await expect(field(page)).toHaveValue('');
+    const saved = await audioDetail(backend.reader, device.id, first.id);
+    expect(saved.transcription.text).toBe('Збережена ручна правка');
+    expect(saved.automaticTranscription.text).toBe('Автоматичний оригінал');
+    expect(saved.audio.processed).toBe(true);
+  });
+  test('#3645 mobile reopening the same audio defaults to manual after viewing the automatic original', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await serverSave('Ручний текст');
+    await audioFixtureSql(
+      'files',
+      `UPDATE device_audio SET automatic_transcription='Автоматичний оригінал', automatic_transcribed_at=now() WHERE id='${first.id}';`,
+    );
+    await open(page);
+    await page.getByRole('button', { name: 'Автоматична', exact: true }).click();
+    await expect(
+      page.getByRole('textbox', { name: 'Автоматична транскрипція', exact: true }),
+    ).toHaveValue('Автоматичний оригінал');
+    await page.getByRole('button', { name: 'До аудіо', exact: true }).click();
+    await expect(page.locator('[data-device-audio-editor]')).not.toBeVisible();
+    await selectAudio(page, first.id);
+    await expect(field(page)).toHaveValue('Ручний текст');
+    await expect(field(page)).not.toHaveAttribute('readonly', '');
+    await expect(page.getByRole('button', { name: 'Ручна', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await page.getByRole('button', { name: 'Автоматична', exact: true }).click();
+    await page.getByRole('tab', { name: 'Аналітика', exact: true }).click();
+    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await expect(field(page)).toHaveValue('Ручний текст');
+    expect(
+      (await audioDetail(backend.reader, device.id, first.id)).automaticTranscription.text,
+    ).toBe('Автоматичний оригінал');
+  });
   test('literal Unicode, markup, whitespace, clear and long text persist across real logins without touching another audio', async ({
     page,
     browser,
@@ -110,7 +178,7 @@ test.describe('@regression real device audio transcription', () => {
       await page.evaluate(() => (window as unknown as Record<string, unknown>).audioTextExecuted),
     ).toBeUndefined();
     const secondContext = await browser.newContext({
-      storageState: await (await backend.login('parent-cyber')).storageState(),
+      storageState: await (await backend.login('parent-cyberviewer')).storageState(),
     });
     const another = await secondContext.newPage();
     try {
@@ -172,7 +240,7 @@ test.describe('@regression real device audio transcription', () => {
     await serverSave('base');
     await open(page);
     const otherContext = await browser.newContext({
-      storageState: await backend.reader.storageState(),
+      storageState: await (await backend.login('parent-admin')).storageState(),
     });
     const other = await otherContext.newPage();
     try {
@@ -420,13 +488,13 @@ test.describe('@regression real device audio transcription', () => {
       await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
       await selectAudio(page, first.id);
       await field(page).fill('navbar draft');
-      await page.getByRole('button', { name: /parent-cyberviewer/ }).click();
+      await page.getByRole('button', { name: /parent-cyber/ }).click();
       await page.getByRole('link', { name: /Налаштування/ }).click();
       await expect(leave(page)).toBeVisible();
       await leave(page).getByRole('button', { name: 'Скасувати', exact: true }).click();
       expect(page.url()).toBe(original);
       await page.waitForTimeout(410);
-      await page.getByRole('button', { name: /parent-cyberviewer/ }).click();
+      await page.getByRole('button', { name: /parent-cyber/ }).click();
       await page.getByRole('link', { name: /Налаштування/ }).click();
       await leave(page).getByRole('button', { name: 'Зберегти', exact: true }).click();
       await expect(page).toHaveURL(/\/settings-neo\?section=my-groups$/);
@@ -464,7 +532,7 @@ test.describe('@regression real device audio transcription', () => {
     await playing(player);
     await field(page).fill('saved before Back');
     const original = page.url();
-    await page.getByRole('link', { name: 'Echo Flying Skull' }).click();
+    await page.locator('a.app-navbar-logo[href="/"]').click();
     await leave(page).getByRole('button', { name: 'Скасувати', exact: true }).click();
     expect(page.url()).toBe(original);
     expect((await nativeState(player)).paused).toBe(false);
@@ -477,7 +545,7 @@ test.describe('@regression real device audio transcription', () => {
     );
     await open(page);
     await field(page).fill('discard on app link');
-    await page.getByRole('link', { name: 'Echo Flying Skull' }).click();
+    await page.locator('a.app-navbar-logo[href="/"]').click();
     await leave(page).getByRole('button', { name: 'Відкинути', exact: true }).click();
     await expect(page).toHaveURL(`${backend.origin}/`);
     expect((await audioDetail(backend.reader, device.id, first.id)).transcription.text).toBe(
@@ -597,11 +665,12 @@ test.describe('@regression real device audio transcription', () => {
     const old = await remember(player);
     await field(page).fill('retained after revocation');
     try {
-      await audioFixtureSql('main', `UPDATE login SET roles='[]'::jsonb WHERE id='${actor.id}';`);
       const denied = page.waitForResponse(
-        (response) => response.url().endsWith(savePath) && response.status() === 403,
+        (response) =>
+          response.url().endsWith('/api/device/audio/transcription/status') &&
+          response.status() === 403,
       );
-      await clickSave(page);
+      await audioFixtureSql('main', `UPDATE login SET roles='[]'::jsonb WHERE id='${actor.id}';`);
       await denied;
       await expect(field(page)).toHaveValue('retained after revocation');
       await expect(field(page)).toHaveAttribute('readonly', '');
@@ -651,7 +720,7 @@ test.describe('@regression real device audio transcription', () => {
     });
     await page
       .locator('button')
-      .filter({ hasText: /parent-cyberviewer/ })
+      .filter({ hasText: /parent-cyber/ })
       .evaluate((element) => element.click());
     await page
       .locator('a')
@@ -671,7 +740,22 @@ test.describe('@regression real device audio transcription', () => {
     test(`real Elm ${mode} 401 bypasses the draft warning and stops native playback`, async ({
       page,
     }) => {
+      if (mode === 'GotUser')
+        await page.route('**/.elm-land/server/main.js*', async (route) => {
+          const response = await route.fetch();
+          const source = await response.text();
+          const ready = 'Interop.onReady({ app, env })';
+          expect(source).toContain(ready);
+          await route.fulfill({
+            response,
+            body: source.replace(
+              ready,
+              `${ready}; window.__deviceAudioLocationPort = app.ports.shared_getLocationRes`,
+            ),
+          });
+        });
       const player = await open(page);
+      const retained = mode === 'GotUser' ? await remember(player) : null;
       await ready(player);
       await player.evaluate((element) => element.play());
       await playing(player);
@@ -702,7 +786,9 @@ test.describe('@regression real device audio transcription', () => {
           response.status() === 401,
         { timeout: 75_000 },
       );
-      if (mode === 'polling')
+      if (mode === 'polling') {
+        // Exercise the Elm 401 path before ASR polling can redirect the page.
+        await page.route('**/api/device/audio/transcription/status', (route) => route.abort());
         await page.route('**/api/event-stream/long-poll', async (route) => {
           const response = await route.fetch({
             headers: { ...route.request().headers(), cookie: '' },
@@ -710,18 +796,45 @@ test.describe('@regression real device audio transcription', () => {
           expect(response.status()).toBe(401);
           await route.fulfill({ response });
         });
+      }
       await page.context().clearCookies();
       if (mode === 'GotUser')
-        await page.evaluate(async () => {
-          const { requestNavigation } = await import('/src/ts/browser/navigation-guard.ts');
-          await requestNavigation(`${location.pathname}?reauth=1`);
+        await page.evaluate(() => {
+          const loc = window.location;
+          (
+            window as unknown as { __deviceAudioLocationPort: { send: (value: unknown) => void } }
+          ).__deviceAudioLocationPort.send({
+            host: loc.host,
+            hostname: loc.hostname,
+            href: loc.href,
+            origin: loc.origin,
+            pathname: loc.pathname,
+            port_: loc.port,
+            protocol: loc.protocol,
+            search: loc.search,
+            hash: loc.hash,
+          });
         });
       await unauthorized;
       await expect(page).toHaveURL(/\/login/);
       expect(unloads).toBe(0);
-      expect(
-        await page.evaluate(() => JSON.parse(sessionStorage.getItem('audio-elm-401')!)),
-      ).toEqual({ paused: true, source: null });
+      if (retained) {
+        expect(
+          await retained.evaluate((element) => ({
+            paused: element.audio.paused,
+            source: element.audio.getAttribute('src'),
+          })),
+        ).toEqual({ paused: true, source: null });
+        await retained.dispose();
+      } else {
+        await expect
+          .poll(() =>
+            page
+              .evaluate(() => JSON.parse(sessionStorage.getItem('audio-elm-401')!))
+              .catch(() => null),
+          )
+          .toEqual({ paused: true, source: null });
+      }
       expect(
         (await audioDetail(await backend.login('parent-cyber'), device.id, first.id)).transcription
           .text,
@@ -794,4 +907,509 @@ test.describe('@regression real device audio transcription', () => {
     ).toEqual({ paused: true, source: null });
     expect((await audioDetail(backend.reader, device.id, first.id)).transcription.text).toBe('');
   });
+});
+
+test('@regression device ASR completes before opening and preserves manual fallback and viewer rights', async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const backend = await localAudioBackend();
+  const contexts: Awaited<ReturnType<typeof browser.newContext>>[] = [];
+  try {
+    backend.reader = await backend.login('parent-cyber');
+    const device = await backend.createDevice();
+    await audioFixtureSql(
+      'main',
+      'UPDATE system_settings SET enable_audio_transcription=false WHERE deleted=false;',
+    );
+    const old = await receiveAudio(
+      backend.source,
+      device.id,
+      'old-empty.wav',
+      '2020-01-01T00:00:00Z',
+      toneWav(1),
+    );
+    await audioFixtureSql('files', `DELETE FROM device_audio_asr_job WHERE audio_id='${old.id}';`);
+    const before = await audioAsrFixture();
+    await audioAsrFixture({ mode: 'delayed', delay_seconds: 1 });
+    await audioFixtureSql(
+      'main',
+      'UPDATE system_settings SET enable_audio_transcription=true WHERE deleted=false;',
+    );
+    const fresh = await receiveAudio(
+      backend.source,
+      device.id,
+      'fresh-auto.wav',
+      '2020-01-01T00:00:00Z',
+      toneWav(1),
+    );
+    const initial = await audioDetail(backend.reader, device.id, fresh.id);
+    const competing = await Promise.all(
+      ['second.wav', 'third.wav'].map((name) =>
+        receiveAudio(backend.source, device.id, name, '2020-01-01T00:00:00Z', toneWav(1)),
+      ),
+    );
+    for (const audio of competing)
+      await expect
+        .poll(
+          async () =>
+            (await audioDetail(backend.reader, device.id, audio.id)).automaticTranscription.state,
+          { timeout: 30_000 },
+        )
+        .toBe('succeeded');
+    await expect
+      .poll(
+        async () =>
+          (await audioDetail(backend.reader, device.id, fresh.id)).automaticTranscription.text,
+        { timeout: 30_000 },
+      )
+      .toBe('Автоматична транскрипція');
+    const completed = await audioDetail(backend.reader, device.id, fresh.id);
+    expect(completed.transcription).toEqual(initial.transcription);
+    expect(completed.audio.processingVersion).toBe(initial.audio.processingVersion);
+    const unchanged = await post<DeviceAudioTranscriptionStatusRsp>(
+      backend.reader,
+      '/api/device/audio/transcription/status',
+      {
+        deviceId: device.id,
+        audioId: fresh.id,
+        knownVersion: completed.automaticTranscription.version,
+      },
+    );
+    expect(unchanged.snapshot).toBeNull();
+    expect(unchanged.availability.canEditManual).toBe(true);
+    const after = await audioAsrFixture();
+    expect(after.inferences - before.inferences).toBe(3);
+    expect(after.max_active).toBe(1);
+    await removeAudioFixtureCache();
+    expect((await audioDetail(backend.reader, device.id, fresh.id)).automaticTranscription).toEqual(
+      completed.automaticTranscription,
+    );
+    expect(
+      (await audioDetail(backend.reader, device.id, old.id)).automaticTranscription.state,
+    ).toBe('not_requested');
+    const context = await browser.newContext({ storageState: await backend.reader.storageState() });
+    contexts.push(context);
+    const page = await context.newPage();
+    await page.goto(`/devices/${device.id}`);
+    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await selectAudio(page, fresh.id);
+    await expect(field(page)).toHaveValue('Автоматична транскрипція');
+    await expect(
+      page.getByRole('button', { name: 'Зберегти транскрипцію', exact: true }),
+    ).toBeDisabled();
+    await save(page, 'Виправлений текст');
+    await field(page).fill('Незбережена правка');
+    await page.getByRole('button', { name: 'Автоматична', exact: true }).click();
+    const auto = page.getByRole('textbox', { name: 'Автоматична транскрипція', exact: true });
+    await expect(auto).toHaveValue('Автоматична транскрипція');
+    await expect(auto).toHaveAttribute('readonly', '');
+    await page.getByRole('button', { name: 'Ручна', exact: true }).click();
+    await expect(field(page)).toHaveValue('Незбережена правка');
+    await page.getByRole('button', { name: 'Автоматична', exact: true }).click();
+    const manual = (await audioDetail(backend.reader, device.id, fresh.id)).transcription;
+    await post<SaveDeviceAudioTranscriptionRsp>(backend.reader, savePath, {
+      deviceId: device.id,
+      audioId: fresh.id,
+      text: '',
+      expectedTextVersion: manual.textVersion,
+    });
+    await page.getByRole('button', { name: 'Перечитати транскрипцію', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Транскрипцію змінено' })
+      .getByRole('button', { name: 'Залишити мою чернетку', exact: true })
+      .click();
+    await expect(field(page)).toHaveValue('Незбережена правка');
+    await expect(field(page)).not.toHaveAttribute('readonly', '');
+    await clickSave(page);
+    await expect(page.locator('[data-device-audio-editor]')).toContainText('Актуальний текст');
+    expect(
+      (await audioDetail(backend.reader, device.id, fresh.id)).automaticTranscription.text,
+    ).toBe('Автоматична транскрипція');
+    await field(page).fill('');
+    await clickSave(page);
+    await expect(field(page)).toHaveValue('Автоматична транскрипція');
+    expect((await audioDetail(backend.reader, device.id, fresh.id)).transcription.text).toBe('');
+    await audioFixtureSql(
+      'main',
+      'UPDATE system_settings SET enable_audio_transcription=false WHERE deleted=false;',
+    );
+    await selectAudio(page, old.id);
+    await expect(field(page)).toHaveValue('');
+    await save(page, 'Лише ручна');
+    expect(
+      (await audioDetail(backend.reader, device.id, old.id)).automaticTranscription.text,
+    ).toBeNull();
+    const viewer = await backend.login('parent-cyberviewer');
+    expect((await audioDetail(viewer, device.id, fresh.id)).canEdit).toBe(false);
+    const viewerContext = await browser.newContext({ storageState: await viewer.storageState() });
+    contexts.push(viewerContext);
+    const viewerPage = await viewerContext.newPage();
+    await viewerPage.goto(`/devices/${device.id}`);
+    await viewerPage.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await selectAudio(viewerPage, fresh.id);
+    await expect(field(viewerPage)).toHaveAttribute('readonly', '');
+    expect(
+      (await audioDetail(backend.reader, device.id, fresh.id)).automaticTranscription.text,
+    ).toBe('Автоматична транскрипція');
+  } finally {
+    await audioAsrFixture({ mode: 'success' });
+    await audioFixtureSql(
+      'main',
+      'UPDATE system_settings SET enable_audio_transcription=false WHERE deleted=false;',
+    );
+    for (const context of contexts) await context.close();
+    await backend.dispose();
+  }
+});
+
+test('@regression device ASR interactive cached historical admission coalesces ten opens and updates a playing dirty editor', async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const backend = await localAudioBackend();
+  const contexts: Awaited<ReturnType<typeof browser.newContext>>[] = [];
+  try {
+    backend.reader = await backend.login('parent-cyber');
+    const device = await backend.createDevice();
+    await audioFixtureSql(
+      'main',
+      'UPDATE system_settings SET enable_audio_transcription=false WHERE deleted=false;',
+    );
+    const old = await receiveAudio(
+      backend.source,
+      device.id,
+      'historical-cached.wav',
+      '2020-01-01T00:00:00Z',
+      toneWav(30),
+    );
+    const clean = await receiveAudio(
+      backend.source,
+      device.id,
+      'historical-clean.wav',
+      '2020-01-02T00:00:00Z',
+      toneWav(25),
+    );
+    for (const audio of [old, clean]) {
+      await expect
+        .poll(
+          async () =>
+            (
+              await post<DeviceAudioPreparation>(
+                backend.reader,
+                '/api/device/audio/playback/prepare',
+                { deviceId: device.id, audioId: audio.id, retry: false },
+              )
+            ).spectrogram,
+        )
+        .toBe('ready');
+      await audioFixtureSql(
+        'files',
+        `DELETE FROM device_audio_asr_job WHERE audio_id='${audio.id}';`,
+      );
+    }
+    const initial = await audioDetail(backend.reader, device.id, old.id);
+    const before = await audioAsrFixture();
+    await audioAsrFixture({ mode: 'delayed', delay_seconds: 10 });
+    await audioFixtureSql(
+      'main',
+      'UPDATE system_settings SET enable_audio_transcription=true WHERE deleted=false;',
+    );
+    await Promise.all(
+      Array.from({ length: 10 }, () =>
+        post(backend.reader, '/api/device/audio/playback/prepare', {
+          deviceId: device.id,
+          audioId: old.id,
+          retry: false,
+        }),
+      ),
+    );
+    const context = await browser.newContext({
+      storageState: await backend.reader.storageState(),
+    });
+    contexts.push(context);
+    const page = await context.newPage();
+    await page.goto(`/devices/${device.id}`);
+    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    const player = await selectAudio(page, old.id);
+    await ready(player);
+    await player.evaluate((element) => element.play());
+    await playing(player);
+    const retained = await remember(player);
+    const native = await rememberNativeAudio(player);
+    const position = (await nativeState(player)).time;
+    await field(page).fill('Моя незбережена чернетка');
+    await expect(page.getByText('Автоматична транскрипція доступна', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    const renderedAt = Date.now();
+    const writtenAt = Number(
+      await audioFixtureSql(
+        'files',
+        `SELECT floor(extract(epoch FROM automatic_transcribed_at)*1000) FROM device_audio WHERE id='${old.id}';`,
+      ),
+    );
+    const delayBound = renderedAt - writtenAt;
+    expect(delayBound).toBeGreaterThanOrEqual(0);
+    expect(delayBound).toBeLessThanOrEqual(5000);
+    await expect(field(page)).toHaveValue('Моя незбережена чернетка');
+    expect(await retained.evaluate((element) => element.isConnected)).toBe(true);
+    expect(await player.evaluate((element, previous) => element.audio === previous, native)).toBe(
+      true,
+    );
+    expect((await nativeState(player)).paused).toBe(false);
+    expect((await nativeState(player)).time).toBeGreaterThan(position);
+    const current = await audioDetail(backend.reader, device.id, old.id);
+    expect(current.transcription).toEqual(initial.transcription);
+    expect(current.audio.processingVersion).toBe(initial.audio.processingVersion);
+    expect((await audioAsrFixture()).inferences - before.inferences).toBe(1);
+    console.log(
+      JSON.stringify({
+        scenario: 'historical-cached-ten-open',
+        dispatches: 1,
+        maxActive: (await audioAsrFixture()).max_active,
+        databaseWriteToRenderUpperBoundMs: delayBound,
+      }),
+    );
+    await save(page, 'Виправлено вручну');
+    await audioAsrFixture({ mode: 'delayed', delay_seconds: 3 });
+    await selectAudio(page, clean.id);
+    await expect(field(page)).toHaveValue('Автоматична транскрипція', { timeout: 15_000 });
+    expect((await audioDetail(backend.reader, device.id, clean.id)).transcription.text).toBe('');
+    expect((await audioAsrFixture()).inferences - before.inferences).toBe(2);
+    let statusRequests = 0;
+    page.on('request', (request) => {
+      if (request.url().endsWith('/api/device/audio/transcription/status')) statusRequests += 1;
+    });
+    await page.getByRole('button', { name: 'Позначити обробленим', exact: true }).click();
+    await expect(page.locator('[data-device-audio-processing]')).toContainText('Статус: Оброблене');
+    await toggleAudioFilter(page);
+    await expect(page.locator('[data-device-audio-player] custom-audio-player')).toHaveCount(0);
+    const stoppedAt = statusRequests;
+    await page.waitForTimeout(2200);
+    expect(statusRequests).toBe(stoppedAt);
+  } finally {
+    await audioFixtureSql(
+      'main',
+      'UPDATE system_settings SET enable_audio_transcription=false WHERE deleted=false;',
+    );
+    await audioAsrFixture({ mode: 'success' });
+    for (const context of contexts) await context.close();
+    await backend.dispose();
+  }
+});
+
+test('@regression device ASR interactive viewer retry observes cross-session terminal changes without media restart', async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const backend = await localAudioBackend();
+  const contexts: Awaited<ReturnType<typeof browser.newContext>>[] = [];
+  try {
+    const device = await backend.createDevice();
+    await audioAsrFixture({ mode: 'no_speech' });
+    await audioFixtureSql(
+      'main',
+      'UPDATE system_settings SET enable_audio_transcription=true WHERE deleted=false;',
+    );
+    const audio = await receiveAudio(
+      backend.source,
+      device.id,
+      'no-speech-retry.wav',
+      '2020-01-01T00:00:00Z',
+      toneWav(30),
+    );
+    await expect
+      .poll(
+        async () =>
+          (await audioDetail(backend.reader, device.id, audio.id)).automaticTranscription.state,
+        { timeout: 30_000 },
+      )
+      .toBe('no_speech');
+    const before = await audioAsrFixture();
+    const firstGeneration = await audioFixtureSql(
+      'files',
+      `SELECT generation FROM device_audio_asr_job WHERE audio_id='${audio.id}';`,
+    );
+    const otherSession = await backend.login('parent-admin');
+    const otherContext = await browser.newContext({
+      storageState: await otherSession.storageState(),
+    });
+    contexts.push(otherContext);
+    const otherPage = await otherContext.newPage();
+    await otherPage.goto(`/devices/${device.id}`);
+    await otherPage.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await selectAudio(otherPage, audio.id);
+    await expect(otherPage.locator('[data-device-audio-asr-status]')).toHaveText(
+      'Мовлення не виявлено',
+    );
+    const context = await browser.newContext({
+      storageState: await backend.reader.storageState(),
+    });
+    contexts.push(context);
+    const page = await context.newPage();
+    await page.goto(`/devices/${device.id}`);
+    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    const player = await selectAudio(page, audio.id);
+    await expect(page.locator('[data-device-audio-asr-status]')).toHaveText('Мовлення не виявлено');
+    await expect(field(page)).toHaveAttribute('readonly', '');
+    await ready(player);
+    await player.evaluate((element) => element.play());
+    await playing(player);
+    const retained = await remember(player);
+    const native = await rememberNativeAudio(player);
+    await post(backend.reader, '/api/device/audio/playback/prepare', {
+      deviceId: device.id,
+      audioId: audio.id,
+      retry: true,
+    });
+    expect(
+      await audioFixtureSql(
+        'files',
+        `SELECT generation FROM device_audio_asr_job WHERE audio_id='${audio.id}';`,
+      ),
+    ).toBe(firstGeneration);
+    expect((await audioAsrFixture()).inferences).toBe(before.inferences);
+    await audioAsrFixture({ mode: 'delayed', delay_seconds: 3 });
+    await page.getByRole('button', { name: 'Повторити транскрибацію', exact: true }).click();
+    const simultaneous = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        post<RetryDeviceAudioTranscriptionRsp>(
+          backend.reader,
+          '/api/device/audio/transcription/retry',
+          {
+            deviceId: device.id,
+            audioId: audio.id,
+          },
+        ),
+      ),
+    );
+    expect(
+      simultaneous.every((response) =>
+        ['already_active', 'already_completed'].includes(response.disposition),
+      ),
+    ).toBe(true);
+    await expect(field(page)).toHaveValue('Автоматична транскрипція', { timeout: 15_000 });
+    expect(await retained.evaluate((element) => element.isConnected)).toBe(true);
+    expect(await player.evaluate((element, previous) => element.audio === previous, native)).toBe(
+      true,
+    );
+    expect((await nativeState(player)).paused).toBe(false);
+    expect((await audioAsrFixture()).inferences - before.inferences).toBe(1);
+    await expect(field(otherPage)).toHaveValue('Автоматична транскрипція');
+    console.log(
+      JSON.stringify({
+        scenario: 'viewer-no-speech-explicit-retry',
+        dispatches: 1,
+        concurrentRetries: 10,
+        maxActive: (await audioAsrFixture()).max_active,
+      }),
+    );
+  } finally {
+    await audioFixtureSql(
+      'main',
+      'UPDATE system_settings SET enable_audio_transcription=false WHERE deleted=false;',
+    );
+    await audioAsrFixture({ mode: 'success' });
+    for (const context of contexts) await context.close();
+    await backend.dispose();
+  }
+});
+
+test('@regression device ASR interactive unknown outcome blocks both retries and is released only by verified fixture recovery', async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const backend = await localAudioBackend();
+  let context: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+  let audioId: string | undefined;
+  try {
+    const device = await backend.createDevice();
+    await audioAsrFixture({ mode: 'lost_response', delay_seconds: 1 });
+    await audioFixtureSql(
+      'main',
+      'UPDATE system_settings SET enable_audio_transcription=true WHERE deleted=false;',
+    );
+    const audio = await receiveAudio(
+      backend.source,
+      device.id,
+      'unknown.wav',
+      '2020-01-01T00:00:00Z',
+      toneWav(15),
+    );
+    audioId = audio.id;
+    await expect
+      .poll(
+        async () =>
+          (await audioDetail(backend.reader, device.id, audio.id)).automaticTranscription.state,
+        { timeout: 20_000 },
+      )
+      .toBe('outcome_unknown');
+    const before = await audioAsrFixture();
+    context = await browser.newContext({ storageState: await backend.reader.storageState() });
+    const page = await context.newPage();
+    await page.goto(`/devices/${device.id}`);
+    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    const player = await selectAudio(page, audio.id);
+    await ready(player);
+    await expect(page.locator('[data-device-audio-asr-status]')).toHaveText(
+      'Потрібна операторська перевірка',
+    );
+    await expect(
+      page.getByRole('button', { name: 'Повторити транскрибацію', exact: true }),
+    ).toHaveCount(0);
+    await post(backend.reader, '/api/device/audio/playback/prepare', {
+      deviceId: device.id,
+      audioId: audio.id,
+      retry: true,
+    });
+    const rejected = await backend.reader.post('/api/device/audio/transcription/retry', {
+      data: { device_id: device.id, audio_id: audio.id },
+    });
+    expect(rejected.status()).toBe(409);
+    expect((await rejected.json()).code).toBe('recovery_required');
+    expect((await audioAsrFixture()).inferences).toBe(before.inferences);
+    console.log(
+      JSON.stringify({
+        scenario: 'unknown-quarantine',
+        additionalDispatches: 0,
+        fixtureActive: before.active,
+      }),
+    );
+  } finally {
+    await audioFixtureSql(
+      'main',
+      'UPDATE system_settings SET enable_audio_transcription=false WHERE deleted=false;',
+    );
+    await context?.close();
+    if (audioId) {
+      const attempt = await audioFixtureSql(
+        'files',
+        `SELECT attempt_id FROM device_audio_asr_job WHERE audio_id='${audioId}' AND state='outcome_unknown';`,
+      );
+      if (attempt) {
+        expect((await audioAsrFixture()).active).toBe(0);
+        expect(attempt).toMatch(/^[0-9a-f-]{36}$/);
+        const { execFileSync } = await import('node:child_process');
+        const { resolve } = await import('node:path');
+        execFileSync(
+          resolve('..', 'target/debug/wdintel-rs'),
+          [
+            '--mode=test',
+            'oneoff-recover-device-audio-transcription',
+            '--audio-id',
+            audioId,
+            '--expected-attempt-id',
+            attempt,
+            '--verification-note',
+            'Owned loopback fixture reports inference completed and zero active calls.',
+            '--yes',
+          ],
+          { env: process.env, stdio: 'pipe' },
+        );
+      }
+    }
+    await audioAsrFixture({ mode: 'success' });
+    await backend.dispose();
+  }
 });

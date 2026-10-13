@@ -32,7 +32,7 @@ export function DeviceAudioConflictDialog({ editor }: { editor: DeviceAudioEdito
               maxRows={12}
               value={editor.draft}
               onChange={(event) => editor.setDraft(event.target.value)}
-              inputProps={{ readOnly: !editor.canEdit }}
+              inputProps={{ readOnly: !editor.canEdit || editor.automaticView }}
             />
           </div>
         </DialogContent>

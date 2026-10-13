@@ -300,7 +300,15 @@ pub struct ListInconsistentUnitsRsp {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Default,
 )]
 pub struct CreateUnitReq {
     #[serde(default)]
@@ -513,6 +521,10 @@ pub struct DeleteUnitDuplicateReq {
 )]
 pub struct UnitSearchReq {
     pub search: String,
+    #[serde(default)]
+    pub include_inactive: Option<bool>,
+    #[serde(default)]
+    pub names: Option<Vec<String>>,
 }
 
 #[derive(

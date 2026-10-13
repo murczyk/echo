@@ -25,6 +25,7 @@ import { DeviceMobileHeader } from './components/DeviceMobileHeader';
 import { DeviceMobileSheet } from '../devices/components/DeviceMobileSheet';
 import { DeviceMobileFilesPanel } from '../device-files/components/DeviceMobileFilesPanel';
 import { useDeviceDetailsPage } from './use-device-details-page';
+import { useDeviceAudioSettings } from './use-device-audio-settings';
 import { useDeviceAudio } from './use-device-audio';
 import { useDeviceAudioEditor } from './use-device-audio-editor';
 import { useDeviceAudioDraftGuard } from './use-device-audio-draft-guard';
@@ -118,6 +119,10 @@ export function DeviceDetailsPage({
   });
   const device = page.device;
   const audio = useDeviceAudio(deviceId, page.permissions.canRead && device?.id === deviceId);
+  const audioSettings = useDeviceAudioSettings(
+    deviceId,
+    activeTab === 'audio' && page.permissions.canRead && device?.id === deviceId,
+  );
   const editorSelection = useRef({ deviceId, audioId: audio.selectedAudioId });
   if (editorSelection.current.deviceId !== deviceId)
     editorSelection.current = { deviceId, audioId: null };
@@ -125,12 +130,16 @@ export function DeviceDetailsPage({
   const audioEditor = useDeviceAudioEditor(
     deviceId,
     editorSelection.current.audioId,
-    page.permissions.canRead &&
+    page.permissions.fieldPermissions.analyticalData &&
       device?.archived === false &&
       (editorSelection.current.audioId === null ||
         audio.processing[editorSelection.current.audioId]?.canEdit !== false),
     audio,
   );
+  useEffect(() => {
+    if (activeTab === 'audio' && audio.selectedAudioId !== null)
+      audioEditor.setAutomaticView(false);
+  }, [activeTab, audio.selectedAudioId, audioEditor.setAutomaticView]);
   const audioGuard = useDeviceAudioDraftGuard(audioEditor);
   const guardedAudio = {
     ...audio,
@@ -147,6 +156,11 @@ export function DeviceDetailsPage({
       if (audio.unprocessedOnly && target && id === audio.selectedAudioId)
         await audioGuard.requestIntent(() => audio.setProcessed(id, target));
       else await audio.setProcessed(id, target);
+    },
+    reconcileProcessing: async (id: string) => {
+      await audio.reconcileProcessing(id);
+      if (audioEditor.accessDenied && audioEditor.detail?.audio.id === id)
+        await audioEditor.reload();
     },
   };
   const sessions = useDeviceSyncSessions({
@@ -356,7 +370,7 @@ export function DeviceDetailsPage({
                 />
               </div>
             ) : !isMobileLayout && activeTab === 'audio' && leftPanelVisible ? (
-              <DeviceAudioSidebar audio={guardedAudio} />
+              <DeviceAudioSidebar audio={guardedAudio} settings={audioSettings} />
             ) : !isMobileLayout && leftPanelVisible ? (
               <Box sx={{ minHeight: 0, overflow: 'hidden' }}>
                 <DeviceDetailsLeftPanel device={device} loading={page.loading} />
@@ -372,6 +386,7 @@ export function DeviceDetailsPage({
               <DeviceDetailsTabPanel
                 audio={guardedAudio}
                 audioEditor={audioEditor}
+                audioSettings={audioSettings}
                 mobile={isMobileLayout}
                 mobileFiles={
                   isMobileLayout ? (

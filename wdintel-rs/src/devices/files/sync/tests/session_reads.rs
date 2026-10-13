@@ -16,6 +16,144 @@ fn request<T: serde::de::DeserializeOwned>(
     serde_json::from_value(body).unwrap()
 }
 
+async fn content_tree_names(
+    env: &Env,
+    actor: &login::Model,
+    device_id: Uuid,
+    sync_id: Option<&str>,
+    parent_entry_id: &str,
+    has_content: Option<bool>,
+) -> Vec<String> {
+    let files = env.file_registry_db().unwrap();
+    let mut cursor = None;
+    let mut names = Vec::new();
+    loop {
+        let page = if let Some(sync_id) = sync_id {
+            read::browse(&env.dbx, files, actor, request(device_id, sync_id, json!({
+                "parent_entry_id": parent_entry_id, "has_content": has_content,
+                "limit": 1, "cursor": cursor
+            }))).await.unwrap()
+        } else {
+            let result = crate::devices::files::bl::browse(
+                &env.dbx,
+                files,
+                actor,
+                BrowseFilesCommand {
+                    device_id,
+                    parent_entry_id: Uuid::parse_str(parent_entry_id).unwrap(),
+                    include_breadcrumbs: false,
+                    limit: Some(1),
+                    cursor: cursor.clone(),
+                    tag_ids: vec![],
+                    tag_match: None,
+                    untagged: false,
+                    has_content,
+                },
+            )
+            .await
+            .unwrap();
+            crate::devices::files::bl::map_browse(result).unwrap()
+        };
+        assert!(page.entries.len() <= 1);
+        names.extend(page.entries.into_iter().map(|entry| entry.name));
+        let Some(next) = page.next_cursor else {
+            return names;
+        };
+        assert_ne!(cursor.as_ref(), Some(&next));
+        cursor = Some(next);
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn content_filter_preserves_ancestors_pagination_and_session_revisions() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device_id) = sync_fixture(&env, "content-filter").await;
+    let files = env.file_registry_db().unwrap();
+    let available =
+        [r"C:\available\nested\a.log", r"C:\available\nested\b.log"];
+    let first = automatic(
+        &env.dbx,
+        files,
+        &actor,
+        device_id,
+        available
+            .iter()
+            .copied()
+            .chain([r"C:\missing\c.log"])
+            .map(raw_item)
+            .collect(),
+    )
+    .await
+    .unwrap();
+    let entries = file_entry::Entity::find()
+        .filter(file_entry::Column::DeviceId.eq(device_id))
+        .all(files.connection())
+        .await
+        .unwrap();
+    for entry in entries
+        .iter()
+        .filter(|entry| entry.name == "a.log" || entry.name == "b.log")
+    {
+        crate::file_registry::test_support::publish_content(
+            files.connection(),
+            entry,
+            actor.id,
+        )
+        .await;
+    }
+    let root_id = entries
+        .iter()
+        .find(|entry| entry.parent_id.is_none())
+        .unwrap()
+        .id
+        .to_string();
+    let nested_id = entries
+        .iter()
+        .find(|entry| entry.name == "nested")
+        .unwrap()
+        .id
+        .to_string();
+    for sync_id in [None, Some(first.sync.sync_id.as_str())] {
+        for (parent, content, expected) in [
+            (&root_id, Some(true), vec!["available"]),
+            (&root_id, Some(false), vec!["missing"]),
+            (&root_id, None, vec!["available", "missing"]),
+            (&nested_id, Some(true), vec!["a.log", "b.log"]),
+            (&nested_id, Some(false), vec![]),
+        ] {
+            let names = content_tree_names(
+                &env, &actor, device_id, sync_id, parent, content,
+            )
+            .await;
+            assert_eq!(names, expected);
+        }
+    }
+    automatic(
+        &env.dbx,
+        files,
+        &actor,
+        device_id,
+        available.into_iter().map(raw_item).collect(),
+    )
+    .await
+    .unwrap();
+    let current =
+        content_tree_names(&env, &actor, device_id, None, &root_id, Some(true))
+            .await;
+    assert!(current.is_empty());
+    let historical = content_tree_names(
+        &env,
+        &actor,
+        device_id,
+        Some(&first.sync.sync_id),
+        &root_id,
+        Some(true),
+    )
+    .await;
+    assert_eq!(historical, vec!["available"]);
+}
+
 #[tokio::test]
 #[serial_test::serial]
 async fn issue_3390_session_reads_keep_revisions_after_later_sync() {
@@ -175,7 +313,7 @@ async fn issue_3390_session_reads_keep_revisions_after_later_sync() {
             .unwrap();
     assert!(
         first_page.next_cursor.as_ref().unwrap().len()
-            < crate::config::DEVICE_FILE_SESSION_CURSOR_MAX_BYTES
+            < crate::devices::config::DEVICE_FILE_SESSION_CURSOR_MAX_BYTES
     );
     paged_search.cursor = first_page.next_cursor;
     let next_page = read::search(&env.dbx, files, &reader, paged_search)

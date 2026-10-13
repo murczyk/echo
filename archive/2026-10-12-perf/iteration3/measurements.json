@@ -1,0 +1,717 @@
+{
+  "host": "echo-pivnich",
+  "issue": 3780,
+  "package": "0.1.1~rc.202610122204-1",
+  "frontend_commit": "af53625bf0b",
+  "installed_utc": "2026-10-13T07:12:45Z",
+  "windows": {
+    "before": {
+      "from_utc": "2026-10-13T06:50:00Z",
+      "to_utc": "2026-10-13T06:55:00Z",
+      "requests_with_surviving_view_context": [
+        {
+          "view": "analysis-classic",
+          "endpoint": "/api/event-stream/long-poll",
+          "requests": 41130
+        },
+        {
+          "view": "analysis-classic",
+          "endpoint": "/api/rer-importer/messages-by-id",
+          "requests": 1
+        },
+        {
+          "view": "analysis-classic",
+          "endpoint": "/api/rer/message/comments-batch",
+          "requests": 2
+        },
+        {
+          "view": "analysis-neo",
+          "endpoint": "/api/event-stream/long-poll",
+          "requests": 1675
+        },
+        {
+          "view": "analysis-neo",
+          "endpoint": "/api/rer-importer/get-inbox-count",
+          "requests": 129
+        },
+        {
+          "view": "analysis-neo",
+          "endpoint": "/api/rer-importer/messages-by-id",
+          "requests": 1
+        },
+        {
+          "view": "analysis-neo",
+          "endpoint": "/api/rer-importer/messages-by-id-matching-filters",
+          "requests": 640
+        },
+        {
+          "view": "duty-classic",
+          "endpoint": "/api/event-stream/long-poll",
+          "requests": 6023
+        },
+        {
+          "view": "duty-classic",
+          "endpoint": "/api/rer-importer/get-inbox-count",
+          "requests": 139
+        },
+        {
+          "view": "duty-classic",
+          "endpoint": "/api/rer-importer/messages-by-id",
+          "requests": 787
+        },
+        {
+          "view": "duty-neo",
+          "endpoint": "/api/event-stream/long-poll",
+          "requests": 6660
+        },
+        {
+          "view": "duty-neo",
+          "endpoint": "/api/rer-importer/get-inbox-count",
+          "requests": 1767
+        },
+        {
+          "view": "duty-neo",
+          "endpoint": "/api/rer-importer/messages-by-id",
+          "requests": 11
+        },
+        {
+          "view": "other",
+          "endpoint": "/api/event-stream/long-poll",
+          "requests": 8397
+        },
+        {
+          "view": "other",
+          "endpoint": "/api/rer-importer/get-inbox-count",
+          "requests": 139
+        },
+        {
+          "view": "other",
+          "endpoint": "/api/rer-importer/messages-by-id",
+          "requests": 198
+        }
+      ],
+      "all_views_deduplicated_lifecycle_http_totals": [
+        {
+          "endpoint": "/api/event-stream/long-poll",
+          "requests": 83662
+        },
+        {
+          "endpoint": "/api/rer-importer/get-inbox-count",
+          "requests": 16893
+        },
+        {
+          "endpoint": "/api/rer-importer/messages-by-id",
+          "requests": 5094
+        },
+        {
+          "endpoint": "/api/rer-importer/messages-by-id-matching-filters",
+          "requests": 2252
+        },
+        {
+          "endpoint": "/api/rer/message/comments-batch",
+          "requests": 54
+        }
+      ],
+      "nolimit_page_activity": [
+        {
+          "page_label": "rer-analysis",
+          "records": 249,
+          "accounts": 4
+        },
+        {
+          "page_label": "rer-duty",
+          "records": 8112,
+          "accounts": 9
+        },
+        {
+          "page_label": "rer-duty-neo",
+          "records": 7991,
+          "accounts": 39
+        }
+      ]
+    },
+    "after": {
+      "from_utc": "2026-10-13T07:40:00Z",
+      "to_utc": "2026-10-13T07:45:00Z",
+      "requests_with_surviving_view_context": [
+        {
+          "view": "analysis-classic",
+          "endpoint": "/api/event-stream/long-poll",
+          "requests": 52397
+        },
+        {
+          "view": "analysis-classic",
+          "endpoint": "/api/rer-importer/messages-by-id",
+          "requests": 11
+        },
+        {
+          "view": "analysis-classic",
+          "endpoint": "/api/rer/message/comments-batch",
+          "requests": 45
+        },
+        {
+          "view": "analysis-neo",
+          "endpoint": "/api/event-stream/long-poll",
+          "requests": 3475
+        },
+        {
+          "view": "analysis-neo",
+          "endpoint": "/api/rer-importer/get-inbox-count",
+          "requests": 608
+        },
+        {
+          "view": "analysis-neo",
+          "endpoint": "/api/rer-importer/messages-by-id",
+          "requests": 71
+        },
+        {
+          "view": "analysis-neo",
+          "endpoint": "/api/rer-importer/messages-by-id-matching-filters",
+          "requests": 2997
+        },
+        {
+          "view": "analysis-neo",
+          "endpoint": "/api/rer/message/comments-batch",
+          "requests": 176
+        },
+        {
+          "view": "duty-classic",
+          "endpoint": "/api/event-stream/long-poll",
+          "requests": 7819
+        },
+        {
+          "view": "duty-classic",
+          "endpoint": "/api/rer-importer/get-inbox-count",
+          "requests": 7149
+        },
+        {
+          "view": "duty-classic",
+          "endpoint": "/api/rer-importer/messages-by-id",
+          "requests": 3533
+        },
+        {
+          "view": "duty-neo",
+          "endpoint": "/api/event-stream/long-poll",
+          "requests": 8710
+        },
+        {
+          "view": "duty-neo",
+          "endpoint": "/api/rer-importer/get-inbox-count",
+          "requests": 7107
+        },
+        {
+          "view": "duty-neo",
+          "endpoint": "/api/rer-importer/messages-by-id",
+          "requests": 92
+        },
+        {
+          "view": "other",
+          "endpoint": "/api/event-stream/long-poll",
+          "requests": 9957
+        },
+        {
+          "view": "other",
+          "endpoint": "/api/rer-importer/get-inbox-count",
+          "requests": 1239
+        },
+        {
+          "view": "other",
+          "endpoint": "/api/rer-importer/messages-by-id",
+          "requests": 807
+        }
+      ],
+      "all_views_deduplicated_lifecycle_http_totals": [
+        {
+          "endpoint": "/api/event-stream/long-poll",
+          "requests": 82691
+        },
+        {
+          "endpoint": "/api/rer-importer/get-inbox-count",
+          "requests": 16105
+        },
+        {
+          "endpoint": "/api/rer-importer/messages-by-id",
+          "requests": 4514
+        },
+        {
+          "endpoint": "/api/rer-importer/messages-by-id-matching-filters",
+          "requests": 2997
+        },
+        {
+          "endpoint": "/api/rer/message/comments-batch",
+          "requests": 221
+        }
+      ],
+      "nolimit_page_activity": [
+        {
+          "page_label": "rer-analysis",
+          "records": 609,
+          "accounts": 8
+        },
+        {
+          "page_label": "rer-duty",
+          "records": 7878,
+          "accounts": 9
+        },
+        {
+          "page_label": "rer-duty-neo",
+          "records": 7131,
+          "accounts": 38
+        }
+      ]
+    }
+  },
+  "hostname_filters": [
+    "echo-pivnich.hyakutake-chromatic.ts.net",
+    "pivnich.echoua.info"
+  ],
+  "limits": [
+    "Before-deployment request records lose view context when fast responses overwrite them.",
+    "Client version, tab identity, visibility, and comparable workload are not recorded."
+  ],
+  "live_buffer_observation": {
+    "started_utc": "2026-10-13T07:49:12.667264+00:00",
+    "ended_utc": "2026-10-13T07:49:57.751845+00:00",
+    "sample_seconds": 45.085,
+    "captured_request_records": 14400,
+    "groups": [
+      {
+        "referer_path": "/rer-analysis",
+        "endpoint": "/api/event-stream/long-poll",
+        "requests": 6831,
+        "requests_per_minute": 9090.91,
+        "interval_median_seconds_timestamp_precision": 0,
+        "matched_responses": 6625,
+        "statuses": {
+          "200": 6625
+        },
+        "response_ms_median": 511,
+        "response_ms_p95": 4713
+      },
+      {
+        "referer_path": "/rer-analysis-neo",
+        "endpoint": "/api/event-stream/long-poll",
+        "requests": 423,
+        "requests_per_minute": 562.94,
+        "interval_median_seconds_timestamp_precision": 0,
+        "matched_responses": 406,
+        "statuses": {
+          "200": 406
+        },
+        "response_ms_median": 512,
+        "response_ms_p95": 4733
+      },
+      {
+        "referer_path": "/rer-analysis-neo",
+        "endpoint": "/api/rer-importer/get-inbox-count",
+        "requests": 84,
+        "requests_per_minute": 111.79,
+        "interval_median_seconds_timestamp_precision": 0,
+        "matched_responses": 84,
+        "statuses": {
+          "200": 84
+        },
+        "response_ms_median": 247,
+        "response_ms_p95": 3313
+      },
+      {
+        "referer_path": "/rer-analysis-neo",
+        "endpoint": "/api/rer-importer/messages-by-id",
+        "requests": 2,
+        "requests_per_minute": 2.66,
+        "interval_median_seconds_timestamp_precision": 21,
+        "matched_responses": 2,
+        "statuses": {
+          "200": 2
+        },
+        "response_ms_median": 97,
+        "response_ms_p95": 97
+      },
+      {
+        "referer_path": "/rer-analysis-neo",
+        "endpoint": "/api/rer-importer/messages-by-id-matching-filters",
+        "requests": 355,
+        "requests_per_minute": 472.45,
+        "interval_median_seconds_timestamp_precision": 0,
+        "matched_responses": 355,
+        "statuses": {
+          "200": 355
+        },
+        "response_ms_median": 39,
+        "response_ms_p95": 102
+      },
+      {
+        "referer_path": "/rer-analysis-neo",
+        "endpoint": "/api/rer/message/comments-batch",
+        "requests": 8,
+        "requests_per_minute": 10.65,
+        "interval_median_seconds_timestamp_precision": 5,
+        "matched_responses": 8,
+        "statuses": {
+          "200": 8
+        },
+        "response_ms_median": 20,
+        "response_ms_p95": 55
+      }
+    ],
+    "coverage": "Supplementary bounded Redis capture; exporter races can miss records; each group aggregates clients and tabs."
+  },
+  "redis_stream_observation": {
+    "sampled_utc": "2026-10-13T07:57:37.219443+00:00",
+    "registered_sessions": 124,
+    "nonempty_streams": 124,
+    "samples": [
+      {
+        "sample_size": 1000,
+        "span_seconds": 281.743,
+        "inbox_events": 1000,
+        "inbox_events_per_minute": 212.96,
+        "unique_message_ids": 357,
+        "repeat_message_events": 643,
+        "largest_same_message_event_counts": [
+          6,
+          6,
+          6,
+          6,
+          5,
+          5,
+          5,
+          5,
+          5,
+          4
+        ],
+        "null_origin_events": 1000
+      },
+      {
+        "sample_size": 1000,
+        "span_seconds": 281.743,
+        "inbox_events": 1000,
+        "inbox_events_per_minute": 212.96,
+        "unique_message_ids": 357,
+        "repeat_message_events": 643,
+        "largest_same_message_event_counts": [
+          6,
+          6,
+          6,
+          6,
+          5,
+          5,
+          5,
+          5,
+          5,
+          4
+        ],
+        "null_origin_events": 1000
+      },
+      {
+        "sample_size": 1000,
+        "span_seconds": 281.738,
+        "inbox_events": 1000,
+        "inbox_events_per_minute": 212.96,
+        "unique_message_ids": 357,
+        "repeat_message_events": 643,
+        "largest_same_message_event_counts": [
+          6,
+          6,
+          6,
+          6,
+          5,
+          5,
+          5,
+          5,
+          5,
+          4
+        ],
+        "null_origin_events": 1000
+      }
+    ]
+  },
+  "neo_referer_browser_groups": {
+    "f696deab67": {
+      "messages-by-id-matching-filters": {
+        "count": 246,
+        "per_minute": 49.2
+      },
+      "long-poll": {
+        "count": 246,
+        "per_minute": 49.2
+      },
+      "get-inbox-count": {
+        "count": 118,
+        "per_minute": 23.6
+      }
+    },
+    "f3b4ea0300": {
+      "messages-by-id-matching-filters": {
+        "count": 237,
+        "per_minute": 47.4
+      },
+      "long-poll": {
+        "count": 237,
+        "per_minute": 47.4
+      },
+      "get-inbox-count": {
+        "count": 114,
+        "per_minute": 22.8
+      }
+    },
+    "504068afe6": {
+      "long-poll": {
+        "count": 200,
+        "per_minute": 40.0
+      }
+    },
+    "ca682c30d7": {
+      "long-poll": {
+        "count": 199,
+        "per_minute": 39.8
+      },
+      "messages-by-id-matching-filters": {
+        "count": 198,
+        "per_minute": 39.6
+      },
+      "get-inbox-count": {
+        "count": 10,
+        "per_minute": 2.0
+      }
+    },
+    "8ea64f4d1f": {
+      "long-poll": {
+        "count": 199,
+        "per_minute": 39.8
+      },
+      "messages-by-id-matching-filters": {
+        "count": 199,
+        "per_minute": 39.8
+      },
+      "get-inbox-count": {
+        "count": 10,
+        "per_minute": 2.0
+      }
+    },
+    "47428c329b": {
+      "long-poll": {
+        "count": 199,
+        "per_minute": 39.8
+      }
+    },
+    "0dd2bc4752": {
+      "long-poll": {
+        "count": 197,
+        "per_minute": 39.4
+      },
+      "messages-by-id-matching-filters": {
+        "count": 197,
+        "per_minute": 39.4
+      },
+      "get-inbox-count": {
+        "count": 104,
+        "per_minute": 20.8
+      }
+    },
+    "cd59094550": {
+      "messages-by-id-matching-filters": {
+        "count": 197,
+        "per_minute": 39.4
+      },
+      "long-poll": {
+        "count": 197,
+        "per_minute": 39.4
+      },
+      "get-inbox-count": {
+        "count": 20,
+        "per_minute": 4.0
+      }
+    },
+    "b2ff28443d": {
+      "messages-by-id-matching-filters": {
+        "count": 197,
+        "per_minute": 39.4
+      },
+      "long-poll": {
+        "count": 197,
+        "per_minute": 39.4
+      },
+      "get-inbox-count": {
+        "count": 10,
+        "per_minute": 2.0
+      }
+    },
+    "ea94c8c693": {
+      "long-poll": {
+        "count": 196,
+        "per_minute": 39.2
+      },
+      "messages-by-id-matching-filters": {
+        "count": 196,
+        "per_minute": 39.2
+      },
+      "get-inbox-count": {
+        "count": 20,
+        "per_minute": 4.0
+      }
+    },
+    "d5c5edf889": {
+      "long-poll": {
+        "count": 196,
+        "per_minute": 39.2
+      },
+      "messages-by-id-matching-filters": {
+        "count": 196,
+        "per_minute": 39.2
+      },
+      "get-inbox-count": {
+        "count": 10,
+        "per_minute": 2.0
+      }
+    },
+    "a47ada212e": {
+      "messages-by-id-matching-filters": {
+        "count": 196,
+        "per_minute": 39.2
+      },
+      "long-poll": {
+        "count": 196,
+        "per_minute": 39.2
+      },
+      "get-inbox-count": {
+        "count": 10,
+        "per_minute": 2.0
+      }
+    },
+    "8fbe40a85e": {
+      "long-poll": {
+        "count": 196,
+        "per_minute": 39.2
+      },
+      "messages-by-id-matching-filters": {
+        "count": 196,
+        "per_minute": 39.2
+      },
+      "get-inbox-count": {
+        "count": 10,
+        "per_minute": 2.0
+      }
+    },
+    "780c718bad": {
+      "messages-by-id-matching-filters": {
+        "count": 196,
+        "per_minute": 39.2
+      },
+      "long-poll": {
+        "count": 196,
+        "per_minute": 39.2
+      },
+      "get-inbox-count": {
+        "count": 20,
+        "per_minute": 4.0
+      }
+    },
+    "a5a04061c8": {
+      "messages-by-id-matching-filters": {
+        "count": 195,
+        "per_minute": 39.0
+      },
+      "long-poll": {
+        "count": 195,
+        "per_minute": 39.0
+      },
+      "get-inbox-count": {
+        "count": 20,
+        "per_minute": 4.0
+      }
+    },
+    "021491dfcc": {
+      "long-poll": {
+        "count": 184,
+        "per_minute": 36.8
+      },
+      "messages-by-id-matching-filters": {
+        "count": 165,
+        "per_minute": 33.0
+      },
+      "comments-batch": {
+        "count": 160,
+        "per_minute": 32.0
+      },
+      "messages-by-id": {
+        "count": 61,
+        "per_minute": 12.2
+      },
+      "get-inbox-count": {
+        "count": 49,
+        "per_minute": 9.8
+      }
+    },
+    "88359eb706": {
+      "messages-by-id-matching-filters": {
+        "count": 161,
+        "per_minute": 32.2
+      },
+      "long-poll": {
+        "count": 159,
+        "per_minute": 31.8
+      },
+      "get-inbox-count": {
+        "count": 68,
+        "per_minute": 13.6
+      },
+      "comments-batch": {
+        "count": 2,
+        "per_minute": 0.4
+      }
+    },
+    "091b4f51db": {
+      "long-poll": {
+        "count": 59,
+        "per_minute": 11.8
+      }
+    },
+    "94e2dda65d": {
+      "long-poll": {
+        "count": 14,
+        "per_minute": 2.8
+      },
+      "comments-batch": {
+        "count": 14,
+        "per_minute": 2.8
+      },
+      "messages-by-id-matching-filters": {
+        "count": 12,
+        "per_minute": 2.4
+      },
+      "messages-by-id": {
+        "count": 10,
+        "per_minute": 2.0
+      },
+      "get-inbox-count": {
+        "count": 9,
+        "per_minute": 1.8
+      }
+    },
+    "f7dcc624c4": {
+      "messages-by-id-matching-filters": {
+        "count": 12,
+        "per_minute": 2.4
+      },
+      "long-poll": {
+        "count": 12,
+        "per_minute": 2.4
+      },
+      "get-inbox-count": {
+        "count": 6,
+        "per_minute": 1.2
+      }
+    },
+    "00fc978162": {
+      "messages-by-id-matching-filters": {
+        "count": 1,
+        "per_minute": 0.2
+      },
+      "long-poll": {
+        "count": 1,
+        "per_minute": 0.2
+      }
+    }
+  }
+}

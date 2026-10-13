@@ -51,6 +51,21 @@ const row: DeviceAudio = {
 const detail: DeviceAudioDetails = {
   audio: row,
   transcription: { text: 'saved', textVersion: 'text-one' },
+  automaticTranscription: {
+    version: 'auto-empty',
+    text: null,
+    state: 'not_requested',
+    retryAt: null,
+    message: null,
+  },
+  transcriptionAvailability: {
+    deviceEnabled: true,
+    globalEnabled: true,
+    canEditManual: true,
+    canManageSetting: true,
+    canRetry: false,
+    blockedReason: null,
+  },
   canEdit: true,
 };
 function deferred<T>() {

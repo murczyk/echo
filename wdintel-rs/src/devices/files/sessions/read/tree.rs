@@ -105,9 +105,14 @@ pub(in crate::devices) async fn browse(
     let mut query = SessionQuery::new(device_id, vec![sync_id]);
     let parent = query.bind(parent_id);
     let mut predicate = format!("entry.parent_id = {parent}");
-    if filter.is_some() {
+    if filter.is_some() || body.has_content.is_some() {
         let tags = query.tag_filter("descendant", filter.as_ref());
-        predicate.push_str(&format!(" and exists (select 1 from session_files descendant where descendant.hierarchy_path::ltree <@ entry.hierarchy_path::ltree and {tags})"));
+        let content = match body.has_content {
+            Some(true) => "descendant.content_path is not null",
+            Some(false) => "descendant.content_path is null",
+            None => "true",
+        };
+        predicate.push_str(&format!(" and exists (select 1 from session_files descendant where descendant.hierarchy_path::ltree <@ entry.hierarchy_path::ltree and {tags} and {content})"));
     }
     let page = load_page(
         files,

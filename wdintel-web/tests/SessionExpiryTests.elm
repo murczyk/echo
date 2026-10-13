@@ -17,7 +17,60 @@ import Url
 tests : Test
 tests =
     describe "Expired sessions stop background requests"
-        [ test "current-user 401 clears authentication and stays on login" <|
+        [ test "#3780 duplicate ticks and stale responses cannot create another poll" <|
+            \_ ->
+                withSession <|
+                    \route shared ->
+                        let
+                            ( polling, _ ) =
+                                Shared.update route (Msg.EventServicePollEvents 0) shared
+
+                            rejectedMessages =
+                                [ Msg.EventServicePollEvents 0
+                                , Msg.EventServicePollEvents polling.eventService.generation
+                                , Msg.EventServiceRetryPolling 0
+                                , Msg.EventServiceEventsReceived 0 (Ok { events = [], lastEventId = Just "obsolete", deploymentMaintenance = Nothing })
+                                , Msg.EventServiceEventsReceived 0 (Err (httpError 401))
+                                ]
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal True polling.eventService.requestInFlight
+                            , \_ -> Expect.equal 1 polling.eventService.generation
+                            , \_ ->
+                                rejectedMessages
+                                    |> List.map (\msg -> Shared.update route msg polling)
+                                    |> List.map (\( updated, effect ) -> ( updated == polling, effect == E.none ))
+                                    |> Expect.equal (List.repeat (List.length rejectedMessages) ( True, True ))
+                            ]
+                            ()
+        , test "#3780 restarting polling ignores responses and retries from the previous generation" <|
+            \_ ->
+                withSession <|
+                    \route shared ->
+                        let
+                            ( polling, _ ) =
+                                Shared.update route (Msg.EventServicePollEvents 0) shared
+
+                            ( stopped, _ ) =
+                                Shared.update route Msg.EventServiceStopPolling polling
+
+                            ( restarted, _ ) =
+                                Shared.update route Msg.EventServiceStartPolling stopped
+
+                            ( current, _ ) =
+                                Shared.update route (Msg.EventServicePollEvents restarted.eventService.generation) restarted
+
+                            obsolete =
+                                [ Msg.EventServiceRetryPolling polling.eventService.generation
+                                , Msg.EventServiceEventsReceived polling.eventService.generation (Err (httpError 401))
+                                , Msg.EventServiceEventsReceived polling.eventService.generation (Ok { events = [], lastEventId = Just "obsolete", deploymentMaintenance = Nothing })
+                                ]
+                        in
+                        obsolete
+                            |> List.map (\msg -> Shared.update route msg current)
+                            |> List.map (\( updated, effect ) -> ( updated == current, effect == E.none ))
+                            |> Expect.equal (List.repeat (List.length obsolete) ( True, True ))
+        , test "current-user 401 clears authentication and stays on login" <|
             \_ ->
                 withSession <|
                     \route shared ->
@@ -38,7 +91,7 @@ tests =
                     \route shared ->
                         let
                             ( signedOut, effect ) =
-                                Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 401))) shared
+                                Shared.update route (Msg.EventServiceEventsReceived 0 (Err (httpError 401))) shared
                         in
                         Expect.all
                             [ \_ -> Expect.equal Nothing signedOut.user
@@ -56,10 +109,10 @@ tests =
                                 Shared.update route Msg.SignOut shared
 
                             lateMessages =
-                                [ Msg.EventServiceEventsReceived (Ok { events = [], lastEventId = Just "late", deploymentMaintenance = Nothing })
-                                , Msg.EventServiceEventsReceived (Err (httpError 500))
-                                , Msg.EventServiceRetryPolling
-                                , Msg.EventServicePollEvents
+                                [ Msg.EventServiceEventsReceived 0 (Ok { events = [], lastEventId = Just "late", deploymentMaintenance = Nothing })
+                                , Msg.EventServiceEventsReceived 0 (Err (httpError 500))
+                                , Msg.EventServiceRetryPolling 0
+                                , Msg.EventServicePollEvents 0
                                 , Msg.EventServiceStartPolling
                                 , Msg.SignOut
                                 ]
@@ -77,7 +130,7 @@ tests =
                     \route shared ->
                         let
                             ( updated, _ ) =
-                                Shared.update route (Msg.EventServiceEventsReceived (Err (httpError 500))) shared
+                                Shared.update route (Msg.EventServiceEventsReceived 0 (Err (httpError 500))) shared
                         in
                         Expect.equal ( True, 1 ) ( updated.eventService.isPolling, updated.eventService.retryCount )
         , test "temporary event failures do not consume the persistent error notification" <|
@@ -86,7 +139,7 @@ tests =
                     \route shared ->
                         let
                             fail failure state =
-                                Shared.update route (Msg.EventServiceEventsReceived (Err (apiError failure))) state
+                                Shared.update route (Msg.EventServiceEventsReceived 0 (Err (apiError failure))) state
 
                             interrupted =
                                 List.range 1 8
@@ -99,7 +152,7 @@ tests =
                                 fail (Http.BadStatus 403) unexpected
 
                             ( recovered, _ ) =
-                                Shared.update route (Msg.EventServiceEventsReceived (Ok { events = [], lastEventId = Just "recovered", deploymentMaintenance = Nothing })) unexpected
+                                Shared.update route (Msg.EventServiceEventsReceived 0 (Ok { events = [], lastEventId = Just "recovered", deploymentMaintenance = Nothing })) unexpected
                         in
                         Expect.all
                             [ \_ -> Expect.equal True interrupted.eventService.isPolling
@@ -175,11 +228,11 @@ temporaryFailureTest failure =
                             shared.eventService
 
                         ( polling, pollingEffect ) =
-                            Shared.update route (Msg.EventServiceEventsReceived (Err (apiError failure)))
+                            Shared.update route (Msg.EventServiceEventsReceived 0 (Err (apiError failure)))
                                 { shared | eventService = { eventService | retryCount = 5 } }
 
                         ( pollingRecovered, _ ) =
-                            Shared.update route (Msg.EventServiceEventsReceived (Ok { events = [], lastEventId = Nothing, deploymentMaintenance = Nothing })) polling
+                            Shared.update route (Msg.EventServiceEventsReceived 0 (Ok { events = [], lastEventId = Nothing, deploymentMaintenance = Nothing })) polling
                     in
                     Expect.all
                         [ \_ -> Expect.equal False interrupted.keepAliveStopped

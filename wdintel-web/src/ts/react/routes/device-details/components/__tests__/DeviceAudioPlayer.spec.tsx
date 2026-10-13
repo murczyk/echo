@@ -59,6 +59,7 @@ beforeEach(() => {
     wave: 'ready',
     spectrogram: 'ready',
     retryAfterMs: 1000,
+    transcriptionAdmissionError: null,
   });
   vi.stubGlobal('localStorage', new Storage());
   container = document.createElement('div');
@@ -80,12 +81,14 @@ it('waits for prepared content and adds delayed graphics without restarting play
       wave: 'queued',
       spectrogram: 'queued',
       retryAfterMs: 1000,
+      transcriptionAdmissionError: null,
     })
     .mockResolvedValueOnce({
       content: 'ready',
       wave: 'preparing',
       spectrogram: 'queued',
       retryAfterMs: 1000,
+      transcriptionAdmissionError: null,
     });
   await act(async () => root.render(<DeviceAudioPlayer deviceId="device" audioId="one" />));
   expect(container.querySelector('custom-audio-player')).toBeNull();
@@ -115,7 +118,13 @@ it('discards a late preparation response after changing the selected recording',
   await act(async () => root.render(<DeviceAudioPlayer deviceId="device" audioId="two" />));
   const current = player();
   await act(async () =>
-    resolve({ content: 'failed', wave: 'failed', spectrogram: 'failed', retryAfterMs: 1000 }),
+    resolve({
+      content: 'failed',
+      wave: 'failed',
+      spectrogram: 'failed',
+      retryAfterMs: 1000,
+      transcriptionAdmissionError: null,
+    }),
   );
   expect(signal!.aborted).toBe(true);
   expect(player()).toBe(current);
@@ -217,4 +226,33 @@ it('retry discards the previous native events and pending access probe', async (
   await act(async () => root.render(<DeviceAudioPlayer deviceId="device" audioId="one" />));
   expect(player()).toBe(instance);
   expect(player().audio).toBe(native);
+});
+
+it('reports cached preparation and admission failure without replacing the native player', async () => {
+  const onPrepared = vi.fn();
+  vi.mocked(prepareDeviceAudio).mockResolvedValue({
+    content: 'ready',
+    wave: 'ready',
+    spectrogram: 'ready',
+    retryAfterMs: 1000,
+    transcriptionAdmissionError: {
+      code: 'transcription_unavailable',
+      message: 'Транскрибація тимчасово недоступна',
+    },
+  });
+  await act(async () =>
+    root.render(<DeviceAudioPlayer deviceId="device" audioId="one" onPrepared={onPrepared} />),
+  );
+  expect(onPrepared).toHaveBeenCalledTimes(1);
+  expect(notify).toHaveBeenCalledWith(
+    expect.objectContaining({ message: 'Транскрибація тимчасово недоступна' }),
+  );
+  const instance = player();
+  instance.audio.currentTime = 12;
+  await act(async () =>
+    root.render(<DeviceAudioPlayer deviceId="device" audioId="one" onPrepared={() => {}} />),
+  );
+  expect(player()).toBe(instance);
+  expect(player().audio.currentTime).toBe(12);
+  expect(prepareDeviceAudio).toHaveBeenCalledTimes(1);
 });

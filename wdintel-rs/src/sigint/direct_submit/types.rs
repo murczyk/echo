@@ -14,7 +14,16 @@ where
     Option::<T>::deserialize(deserializer).map(Some)
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    elm_rs::Elm,
+    elm_rs::ElmEncode,
+    elm_rs::ElmDecode,
+)]
 pub struct DirectSubmitPayload {
     #[serde(default)]
     pub full_body: Option<String>,
@@ -42,6 +51,10 @@ pub struct DirectSubmitPayload {
     #[serde(default)]
     pub unit: Option<String>,
     #[serde(default)]
+    pub unit_id: Option<i64>,
+    #[serde(default)]
+    pub create_unit: bool,
+    #[serde(default)]
     pub locations: Vec<String>,
     #[serde(default)]
     pub network: Option<SubmitNetwork>,
@@ -65,7 +78,16 @@ pub struct DirectSubmitPayload {
     pub copy_source_signal_message_ids: Vec<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    elm_rs::Elm,
+    elm_rs::ElmEncode,
+    elm_rs::ElmDecode,
+)]
 pub struct DirectSubmitAttachmentUpdates {
     #[serde(default)]
     pub replacements: Vec<DirectSubmitAttachmentReplacement>,
@@ -73,13 +95,31 @@ pub struct DirectSubmitAttachmentUpdates {
     pub renames: Vec<DirectSubmitAttachmentRename>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    elm_rs::Elm,
+    elm_rs::ElmEncode,
+    elm_rs::ElmDecode,
+)]
 pub struct DirectSubmitAttachmentReplacement {
     pub media_id: String,
     pub upload_url: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    elm_rs::Elm,
+    elm_rs::ElmEncode,
+    elm_rs::ElmDecode,
+)]
 pub struct DirectSubmitAttachmentRename {
     pub media_id: String,
     pub file_name: String,

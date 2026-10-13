@@ -1835,6 +1835,11 @@ pub async fn main_server(
     }
     .run();
 
+    let audio_asr = tokio::spawn(crate::devices::audio::transcription::run(
+        env.device_audio.clone(),
+        env.echo_gpu_client.clone(),
+        cancel_token.clone(),
+    ));
     let audio_runtime = env.device_audio.clone();
     let audio_cancellation = cancel_token.clone();
     let audio_preparation = tokio::spawn(async move {
@@ -1891,6 +1896,7 @@ pub async fn main_server(
             }
         }
     }).await.c(h!());
+    audio_asr.await.c(h!())?;
     audio_preparation.await.c(h!())?;
     if let Some(metrics) = &env.metrics {
         metrics.shutdown();

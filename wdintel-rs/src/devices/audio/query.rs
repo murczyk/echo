@@ -107,7 +107,11 @@ pub(super) struct AudioDetailRow {
 }
 
 impl AudioDetailRow {
-    pub fn details(self, can_edit: bool) -> DeviceAudioDetails {
+    pub fn details(
+        self,
+        automatic_transcription: super::types::DeviceAudioAutomaticTranscriptionSnapshot,
+        transcription_availability: super::types::DeviceAudioTranscriptionAvailability,
+    ) -> DeviceAudioDetails {
         let audio = AudioRow {
             id: self.id,
             device_id: self.device_id,
@@ -125,7 +129,9 @@ impl AudioDetailRow {
                 text: self.transcription,
                 text_version: self.text_version.to_string(),
             },
-            can_edit,
+            can_edit: transcription_availability.can_edit_manual,
+            automatic_transcription,
+            transcription_availability,
         }
     }
 }
@@ -494,7 +500,16 @@ pub(super) async fn publish(
     attempt: &device_audio_ingest::Model,
     media: &ProbedAudio,
 ) -> anyhow::Result<ReceiveDeviceAudioOutcome> {
+    let policy =
+        super::transcription::publication_guard(runtime, attempt.device_id)
+            .await;
     let transaction = runtime.file_database().c(h!())?.begin().await.c(h!())?;
+    let enabled = super::transcription::publication_setting(
+        &transaction,
+        attempt.device_id,
+    )
+    .await
+    .c(h!())?;
     let current = locked_attempt(&transaction, attempt.id).await.c(h!())?;
     if current.status != "storing" || current.lease_token != attempt.lease_token
     {
@@ -527,9 +542,22 @@ pub(super) async fn publish(
             .c(h!())?
             .ok_or_else(|| anyhow::anyhow!("published audio is missing"))
             .c(h!())?;
+        super::transcription::publish(
+            &transaction,
+            audio.device_id,
+            audio.id,
+            enabled,
+            policy.as_ref(),
+        )
+        .await
+        .c(h!())?;
         accepted(&audio)
     };
-    transaction.commit().await.c(h!())?;
+    if let Some(policy) = policy {
+        policy.commit_files(transaction).await.c(h!())?;
+    } else {
+        transaction.commit().await.c(h!())?;
+    }
     Ok(outcome)
 }
 
@@ -562,6 +590,8 @@ fn ready_audio(
         text_version: Set(Uuid::new_v4()),
         processed: Set(false),
         processing_version: Set(Uuid::new_v4()),
+        automatic_transcription: Set(None),
+        automatic_transcribed_at: Set(None),
     })
 }
 

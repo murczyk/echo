@@ -28,7 +28,6 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 MINIO_IMAGE = "quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z"
 STATE_FILE = "resolved-environment.json"
-PREFIX = "echo-device-file-preview-"
 
 
 def require(condition, message):
@@ -58,21 +57,24 @@ def private_file(path):
             "Test files must be private, regular, and owned by the current user")
 
 
-def load(root):
+def load(root, profile="device-file-preview"):
+    require(profile in ("device-file-preview", "device-audio"), "Unknown test profile")
+    namespace = profile.replace("-", "_")
     root = Path(root).absolute()
     info = root.lstat()
-    require(root == root.resolve() and root.name.startswith(PREFIX) and
+    require(root == root.resolve() and root.name.startswith(f"echo-{profile}-") and
             root.parent == Path(tempfile.gettempdir()).resolve() and stat.S_ISDIR(info.st_mode) and
             info.st_uid == os.getuid() and not info.st_mode & 0o077,
             "Refusing a foreign, symlinked, or non-private test root")
     private_file(root / STATE_FILE)
     environment = json.loads((root / STATE_FILE).read_text())
     run = environment["run"]
+    require(environment.get("profile", "device-file-preview") == profile, "Test profile ownership mismatch")
     require(re.fullmatch(r"[a-f0-9]{20}", run) and environment["root"] == str(root) and
             environment["repository"] == str(REPO), "Test root ownership mismatch")
-    require(environment["main_db"] == f"wd_test_device_file_preview_{run}" and
-            environment["files_db"] == f"wd_files_test_device_file_preview_{run}" and
-            environment["bucket"] == f"device-file-preview-{run}", "Unsafe test resource namespace")
+    require(environment["main_db"] == f"wd_test_{namespace}_{run}" and
+            environment["files_db"] == f"wd_files_test_{namespace}_{run}" and
+            environment["bucket"] == f"{profile}-{run}", "Unsafe test resource namespace")
     ports = [environment[f"{role}_port"] for role in ("api_a", "api_b", "proxy", "front", "redis", "s3")]
     require(len(set(ports)) == len(ports) and all(isinstance(port, int) and 1024 < port < 65536 for port in ports),
             "Invalid dedicated loopback ports")
@@ -148,18 +150,20 @@ def toml_text(config):
     return "\n".join(lines) + "\n"
 
 
-def prepare():
+def prepare(profile="device-file-preview"):
+    require(profile in ("device-file-preview", "device-audio"), "Unknown test profile")
+    namespace = profile.replace("-", "_")
     for dependency in ("just", "cargo", "psql", "pg_restore", "createdb", "dropdb", "node", "redis-server", "docker", "lsof"):
         require(shutil.which(dependency), f"Missing test prerequisite: {dependency}")
     require((REPO / "deploy/wd_test-2025-08-17-07-43.pgrestore").is_file(), "Standard test dump is missing")
     docker_host()
-    root = Path(tempfile.mkdtemp(prefix=PREFIX)).resolve()
+    root = Path(tempfile.mkdtemp(prefix=f"echo-{profile}-")).resolve()
     os.chmod(root, 0o700)
     run = secrets.token_hex(10)
     ports = fresh_ports()
-    environment = {"root": str(root), "repository": str(REPO), "run": run, "stage": "prepared",
-                   "main_db": f"wd_test_device_file_preview_{run}", "files_db": f"wd_files_test_device_file_preview_{run}",
-                   "bucket": f"device-file-preview-{run}", "container_name": f"device-file-preview-{run}",
+    environment = {"root": str(root), "repository": str(REPO), "run": run, "stage": "prepared", "profile": profile,
+                   "main_db": f"wd_test_{namespace}_{run}", "files_db": f"wd_files_test_{namespace}_{run}",
+                   "bucket": f"{profile}-{run}", "container_name": f"{profile}-{run}",
                    "container_id": None, "database_claimed": False, "processes": {}, "config_hashes": {}}
     environment.update({f"{role}_port": port for role, port in zip(("api_a", "api_b", "proxy", "front", "redis", "s3"), ports)})
     config = tomllib.loads((REPO / "deploy/config-test.toml").read_text())
@@ -198,7 +202,7 @@ def prepare():
     private_write(root / "setup.log", "")
     private_write(root / "fixtures-private.json", json.dumps({"run": run, "actors": {}, "seeded": []}))
     save(root, environment)
-    load(root)
+    load(root, profile)
     print(root)
     return root, environment
 
@@ -277,9 +281,10 @@ def signal_group(record, sig):
 
 
 def spawn(root, environment, role):
+    script = "device_audio_harness.py" if environment.get("profile") == "device-audio" else "file_preview_harness.py"
     with (root / f"{role}.log").open("a") as log:
         os.chmod(root / f"{role}.log", 0o600)
-        process = subprocess.Popen([sys.executable, str(Path(__file__)), "run-role", "--root", str(root), "--role", role],
+        process = subprocess.Popen([sys.executable, str(Path(__file__).with_name(script)), "run-role", "--root", str(root), "--role", role],
                                    cwd=REPO, stdout=log, stderr=log, start_new_session=True, env=runtime_env(root, environment))
     started = process_identity(process.pid)
     require(started, f"Owned {role} launcher exited")
@@ -328,8 +333,8 @@ def start_storage(root, environment):
     config = tomllib.loads((root / "config-a.toml").read_text())["s3_config"]
     private_write(root / "minio.env", f"MINIO_ROOT_USER={config['s3_access_key_id']}\nMINIO_ROOT_PASSWORD={config['s3_secret_access_key']}\n")
     identifier = command(["docker", "run", "--detach", "--pull=never", "--name", environment["container_name"],
-                          "--label", f"echo.device-file-preview.run={environment['run']}",
-                          "--label", f"echo.device-file-preview.repository={REPO}",
+                          "--label", f"echo.{environment.get('profile', 'device-file-preview')}.run={environment['run']}",
+                          "--label", f"echo.{environment.get('profile', 'device-file-preview')}.repository={REPO}",
                           "--publish", f"127.0.0.1:{environment['s3_port']}:9000", "--env-file", str(root / "minio.env"),
                           MINIO_IMAGE, "server", "/data"], root)
     environment["container_id"] = identifier
@@ -353,11 +358,11 @@ def restore_databases(root, environment):
     environment["database_claimed"] = True
     save(root, environment)
     try:
-        command(["bash", str(REPO / "deploy/setup_test_database.sh"), f"device_file_preview_{environment['run']}"], root, env)
+        command(["bash", str(REPO / "deploy/setup_test_database.sh"), f"{environment.get('profile', 'device-file-preview').replace('-', '_')}_{environment['run']}"], root, env)
     finally:
         for name in (environment["main_db"], environment["files_db"]):
             if sql(root, environment, f"SELECT 1 FROM pg_database WHERE datname='{name}';"):
-                sql(root, environment, f"COMMENT ON DATABASE {name} IS 'echo-device-file-preview:{environment['run']}';")
+                sql(root, environment, f"COMMENT ON DATABASE {name} IS 'echo-{environment.get('profile', 'device-file-preview')}:{environment['run']}';")
 
 
 def runtime_env(root, environment, role="a"):
@@ -405,7 +410,7 @@ def setup(root, environment, storage_only=False, resume=False):
         require(resume, "Use --resume for this existing owned migration environment")
         for name in (environment["main_db"], environment["files_db"]):
             require(sql(root, environment, f"SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname='{name}';") ==
-                    f"echo-device-file-preview:{environment['run']}", "Cannot resume a foreign or missing database")
+                    f"echo-{environment.get('profile', 'device-file-preview')}:{environment['run']}", "Cannot resume a foreign or missing database")
     else:
         environment["stage"] = "restoring"
         save(root, environment)
@@ -481,8 +486,8 @@ def teardown(root, environment):
         details = json.loads(command(["docker", "inspect", environment["container_id"]]))[0]
         labels = details["Config"]["Labels"]
         require(details["Name"] == "/" + environment["container_name"] and
-                labels.get("echo.device-file-preview.run") == environment["run"] and
-                labels.get("echo.device-file-preview.repository") == str(REPO), "Refusing a foreign Docker container")
+                labels.get(f"echo.{environment.get('profile', 'device-file-preview')}.run") == environment["run"] and
+                labels.get(f"echo.{environment.get('profile', 'device-file-preview')}.repository") == str(REPO), "Refusing a foreign Docker container")
         command(["docker", "rm", "--force", "--volumes", environment["container_id"]], root)
         environment["container_id"] = None
         save(root, environment)
@@ -491,7 +496,7 @@ def teardown(root, environment):
             exists = sql(root, environment, f"SELECT 1 FROM pg_database WHERE datname='{name}';")
             if exists:
                 marker = sql(root, environment, f"SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname='{name}';")
-                require(marker == f"echo-device-file-preview:{environment['run']}", "Refusing to drop a database without the ownership marker")
+                require(marker == f"echo-{environment.get('profile', 'device-file-preview')}:{environment['run']}", "Refusing to drop a database without the ownership marker")
                 command(["dropdb", name], root, postgres_env(root, environment))
         environment["database_claimed"] = False
     environment["processes"] = {}
