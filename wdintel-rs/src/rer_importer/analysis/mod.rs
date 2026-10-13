@@ -2286,8 +2286,8 @@ where
         let linked_comment_exists = intel_product::Entity::find()
             .select_only()
             .expr(Expr::value(1))
-            .filter(intel_product::relation_kind_eq(
-                intel_product::RELATION_KIND_COMMENT,
+            .filter(crate::rer_importer::intel_product_filter::relation_kind_eq(
+                crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
             ))
             .join_as(
                 JoinType::InnerJoin,
@@ -7059,8 +7059,8 @@ pub(crate) async fn accessible_message_ids(
     let parent_access = Query::select()
         .expr(Expr::value(1))
         .from(intel_product::Entity)
-        .and_where(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
+        .and_where(crate::rer_importer::intel_product_filter::relation_kind_eq(
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ))
         .and_where(
             Expr::col((

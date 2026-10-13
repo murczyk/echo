@@ -1607,7 +1607,9 @@ mod tests {
         intel_product::ActiveModel {
             intel_message_id: Set(report.id),
             source_message_id: Set(source.id),
-            relation_kind: Set(intel_product::RELATION_KIND_REPORT),
+            relation_kind: Set(
+                crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
+            ),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -1708,7 +1710,7 @@ mod tests {
         intel_product::ActiveModel {
             intel_message_id: Set(comment.id),
             source_message_id: Set(source_with_comment.id),
-            relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+            relation_kind: Set(crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -1719,7 +1721,7 @@ mod tests {
             intel_product::ActiveModel {
                 intel_message_id: Set(report.id),
                 source_message_id: Set(source_message_id),
-                relation_kind: Set(intel_product::RELATION_KIND_REPORT),
+                relation_kind: Set(crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT),
                 ..Default::default()
             }
             .insert(&env.dbx)

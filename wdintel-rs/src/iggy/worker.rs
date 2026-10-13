@@ -3497,7 +3497,7 @@ mod tests {
         intel_product::ActiveModel {
             intel_message_id: Set(comment.id),
             source_message_id: Set(fixture.item_id),
-            relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+            relation_kind: Set(crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT),
             ..Default::default()
         }
         .insert(&fixture.env.dbx)

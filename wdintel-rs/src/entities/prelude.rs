@@ -7,8 +7,11 @@ pub use super::ai_agent_conversation::Entity as AiAgentConversation;
 pub use super::ai_agent_dispatcher::Entity as AiAgentDispatcher;
 pub use super::ai_agent_echo_proxy::Entity as AiAgentEchoProxy;
 pub use super::ai_agent_engine_runtime_profile::Entity as AiAgentEngineRuntimeProfile;
+pub use super::ai_agent_map::Entity as AiAgentMap;
+pub use super::ai_agent_map_revision::Entity as AiAgentMapRevision;
 pub use super::ai_agent_request::Entity as AiAgentRequest;
 pub use super::ai_agent_request_event::Entity as AiAgentRequestEvent;
+pub use super::ai_agent_request_map_target::Entity as AiAgentRequestMapTarget;
 pub use super::ai_agent_security_review::Entity as AiAgentSecurityReview;
 pub use super::ai_agent_settings::Entity as AiAgentSettings;
 pub use super::ai_agent_user_link::Entity as AiAgentUserLink;
@@ -127,6 +130,7 @@ pub use super::group_stats_recalculation_task::Entity as GroupStatsRecalculation
 pub use super::intel_product::Entity as IntelProduct;
 pub use super::log_users_report_generation::Entity as LogUsersReportGeneration;
 pub use super::login::Entity as Login;
+pub use super::login_totp::Entity as LoginTotp;
 pub use super::media_summary::Entity as MediaSummary;
 pub use super::media_summary_settings::Entity as MediaSummarySettings;
 pub use super::modulation::Entity as Modulation;
@@ -239,7 +243,6 @@ pub use super::signal_message_queue_attachment::Entity as SignalMessageQueueAtta
 pub use super::signal_profile::Entity as SignalProfile;
 pub use super::signal_restapi_error::Entity as SignalRestapiError;
 pub use super::source::Entity as Source;
-pub use super::spatial_ref_sys::Entity as SpatialRefSys;
 pub use super::system_settings::Entity as SystemSettings;
 pub use super::tag::Entity as Tag;
 pub use super::tag_keyword::Entity as TagKeyword;

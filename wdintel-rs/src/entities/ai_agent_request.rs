@@ -48,8 +48,14 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     AiAgentConversation,
+    #[sea_orm(has_many = "super::ai_agent_map::Entity")]
+    AiAgentMap,
+    #[sea_orm(has_many = "super::ai_agent_map_revision::Entity")]
+    AiAgentMapRevision,
     #[sea_orm(has_many = "super::ai_agent_request_event::Entity")]
     AiAgentRequestEvent,
+    #[sea_orm(has_one = "super::ai_agent_request_map_target::Entity")]
+    AiAgentRequestMapTarget,
     #[sea_orm(has_one = "super::ai_agent_security_review::Entity")]
     AiAgentSecurityReview,
     #[sea_orm(has_many = "super::ai_agent_work_record::Entity")]
@@ -92,9 +98,27 @@ impl Related<super::ai_agent_conversation::Entity> for Entity {
     }
 }
 
+impl Related<super::ai_agent_map::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiAgentMap.def()
+    }
+}
+
+impl Related<super::ai_agent_map_revision::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiAgentMapRevision.def()
+    }
+}
+
 impl Related<super::ai_agent_request_event::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiAgentRequestEvent.def()
+    }
+}
+
+impl Related<super::ai_agent_request_map_target::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiAgentRequestMapTarget.def()
     }
 }
 
@@ -104,15 +128,15 @@ impl Related<super::ai_agent_security_review::Entity> for Entity {
     }
 }
 
-impl Related<super::ai_engine::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::AiEngine.def()
-    }
-}
-
 impl Related<super::ai_agent_work_record::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiAgentWorkRecord.def()
+    }
+}
+
+impl Related<super::ai_engine::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiEngine.def()
     }
 }
 

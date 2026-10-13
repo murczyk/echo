@@ -6,29 +6,6 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Debug,
     Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    EnumIter,
-    DeriveActiveEnum,
-    Serialize,
-    Deserialize,
-)]
-#[sea_orm(
-    rs_type = "String",
-    db_type = "Enum",
-    enum_name = "intel_product_relation_kind"
-)]
-pub enum IntelProductRelationKind {
-    #[sea_orm(string_value = "report")]
-    Report,
-    #[sea_orm(string_value = "comment")]
-    Comment,
-}
-
-#[derive(
-    Debug,
-    Clone,
     PartialEq,
     Eq,
     EnumIter,
@@ -199,6 +176,27 @@ pub enum EchoMissingMessageStatus {
     Serialize,
     Deserialize,
 )]
+#[sea_orm(
+    rs_type = "Enum",
+    db_type = "Enum",
+    enum_name = "intel_product_relation_kind"
+)]
+pub enum IntelProductRelationKind {
+    #[sea_orm(string_value = "report")]
+    Report,
+    #[sea_orm(string_value = "comment")]
+    Comment,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
 #[sea_orm(rs_type = "Enum", db_type = "Enum", enum_name = "interseption_kind")]
 pub enum InterseptionKind {
     #[sea_orm(string_value = "rer")]
@@ -343,7 +341,7 @@ pub enum SigintInboxItemUnitKind {
     Deserialize,
 )]
 #[sea_orm(
-    rs_type = "String",
+    rs_type = "Enum",
     db_type = "Enum",
     enum_name = "sigint_network_kind"
 )]
@@ -448,20 +446,19 @@ pub enum StatusEnum {
 #[sea_orm(
     rs_type = "Enum",
     db_type = "Enum",
-    enum_name = "user_settings_tags_layout"
+    enum_name = "user_settings_message_text_preview_lines"
 )]
-pub enum UserSettingsTagsLayout {
-    #[sea_orm(string_value = "full")]
-    Full,
-    #[sea_orm(string_value = "compact")]
-    Compact,
-    #[sea_orm(string_value = "hidden")]
-    Hidden,
+pub enum UserSettingsMessageTextPreviewLines {
+    #[sea_orm(string_value = "twenty")]
+    Twenty,
+    #[sea_orm(string_value = "forty")]
+    Forty,
+    #[sea_orm(string_value = "off")]
+    Off,
 }
-
 #[derive(
-    Clone,
     Debug,
+    Clone,
     PartialEq,
     Eq,
     EnumIter,
@@ -472,13 +469,13 @@ pub enum UserSettingsTagsLayout {
 #[sea_orm(
     rs_type = "Enum",
     db_type = "Enum",
-    enum_name = "user_settings_message_text_preview_lines"
+    enum_name = "user_settings_tags_layout"
 )]
-pub enum UserSettingsMessageTextPreviewLines {
-    #[sea_orm(string_value = "twenty")]
-    Twenty,
-    #[sea_orm(string_value = "forty")]
-    Forty,
-    #[sea_orm(string_value = "off")]
-    Off,
+pub enum UserSettingsTagsLayout {
+    #[sea_orm(string_value = "full")]
+    Full,
+    #[sea_orm(string_value = "compact")]
+    Compact,
+    #[sea_orm(string_value = "hidden")]
+    Hidden,
 }
