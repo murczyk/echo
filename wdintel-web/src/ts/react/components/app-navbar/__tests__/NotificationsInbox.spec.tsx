@@ -45,13 +45,13 @@ function item(receiptId: string, createdAt = 1) {
   };
 }
 
-function renderInbox() {
+function renderInbox(identity = 'user-a') {
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
   roots.push(root);
-  act(() => root.render(<NotificationsInbox identity="user-a" />));
-  return container;
+  act(() => root.render(<NotificationsInbox identity={identity} />));
+  return { container, root };
 }
 
 async function openInbox() {
@@ -100,6 +100,112 @@ describe('NotificationsInbox', () => {
     });
     expect(panel.querySelectorAll('a')).toHaveLength(items.length + 1);
     expect(panel.querySelector('[role="progressbar"]')).toBeNull();
+  });
+
+  it('#3610 ignores a failed refresh superseded by a newer successful refresh', async () => {
+    const initial = {
+      items: [item('initial')],
+      unreadCount: 1,
+      nextCursor: null,
+      markAllBoundary: 'boundary',
+    };
+    const newerItem = {
+      ...item('newer'),
+      quote: { ...item('newer').quote, text: 'newer refresh' },
+    };
+    let resolveNewer!: (value: typeof initial) => void;
+    let rejectOlder!: (reason: Error) => void;
+    const newer = new Promise<typeof initial>((resolve) => {
+      resolveNewer = resolve;
+    });
+    const older = new Promise<typeof initial>((_, reject) => {
+      rejectOlder = reject;
+    });
+    listNotifications
+      .mockResolvedValueOnce(initial)
+      .mockReturnValueOnce(older)
+      .mockReturnValueOnce(newer);
+    notificationUnreadCount.mockResolvedValue(1);
+    renderInbox();
+    await openInbox();
+
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await act(async () => {
+      resolveNewer({ ...initial, items: [newerItem], unreadCount: 1 });
+    });
+    await act(async () => {
+      rejectOlder(new Error('older refresh failed'));
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent).toContain('newer refresh');
+    expect(document.body.textContent).not.toContain('older refresh failed');
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('#3610 ignores a failed refresh invalidated by an identity change', async () => {
+    const initial = {
+      items: [item('receipt')],
+      unreadCount: 1,
+      nextCursor: null,
+      markAllBoundary: 'boundary',
+    };
+    let rejectStaleRefresh!: (reason: Error) => void;
+    const staleRefresh = new Promise<typeof initial>((_, reject) => {
+      rejectStaleRefresh = reject;
+    });
+    listNotifications
+      .mockResolvedValue(initial)
+      .mockResolvedValueOnce(initial)
+      .mockReturnValueOnce(staleRefresh);
+    notificationUnreadCount.mockResolvedValue(0);
+    const { root } = renderInbox();
+    await openInbox();
+
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await act(async () => root.render(<NotificationsInbox identity="user-b" />));
+    await act(async () => {
+      rejectStaleRefresh(new Error('identity refresh failed'));
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent).not.toContain('identity refresh failed');
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('#3610 ignores a failed refresh invalidated by a receipt-read mutation', async () => {
+    const initial = {
+      items: [item('receipt')],
+      unreadCount: 1,
+      nextCursor: null,
+      markAllBoundary: 'boundary',
+    };
+    let rejectStaleRefresh!: (reason: Error) => void;
+    const staleRefresh = new Promise<typeof initial>((_, reject) => {
+      rejectStaleRefresh = reject;
+    });
+    listNotifications
+      .mockResolvedValue(initial)
+      .mockResolvedValueOnce(initial)
+      .mockReturnValueOnce(staleRefresh);
+    notificationUnreadCount.mockResolvedValue(0);
+    readNotification.mockResolvedValueOnce(0);
+    renderInbox();
+    await openInbox();
+
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    const preventNavigation = (event: MouseEvent) => event.preventDefault();
+    document.addEventListener('click', preventNavigation, true);
+    await act(async () => document.querySelector<HTMLAnchorElement>('a')?.click());
+    document.removeEventListener('click', preventNavigation, true);
+    await act(async () => {
+      rejectStaleRefresh(new Error('mutation refresh failed'));
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent).not.toContain('mutation refresh failed');
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it('#3610 marks only receipts returned by the persisted boundary as read', async () => {

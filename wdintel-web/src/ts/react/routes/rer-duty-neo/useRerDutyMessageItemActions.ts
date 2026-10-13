@@ -143,16 +143,23 @@ export function useRerDutyMessageItemActions(params: Params) {
   useEffect(() => {
     const update = (event: Event) => {
       const detail = (event as CustomEvent<{ messageId: number; important: boolean }>).detail;
-      setMessageFeeds((feeds) =>
-        feeds.map((feed) => ({
-          ...feed,
-          items: feed.items.map(([id, message]) =>
-            id === detail.messageId
-              ? [id, { ...message, important: detail.important }]
-              : [id, message],
-          ),
-        })),
-      );
+      setMessageFeeds((feeds) => {
+        let changed = false;
+        const updatedFeeds = feeds.map((feed) => {
+          let feedChanged = false;
+          const items = feed.items.map((item) => {
+            const [id, message] = item;
+            if (id !== detail.messageId || message.important === detail.important) {
+              return item;
+            }
+            changed = true;
+            feedChanged = true;
+            return [id, { ...message, important: detail.important }] as [number, InboxMessage];
+          });
+          return feedChanged ? { ...feed, items } : feed;
+        });
+        return changed ? updatedFeeds : feeds;
+      });
     };
     window.addEventListener(IMPORTANT_MESSAGE_UPDATED_EVENT, update);
     return () => window.removeEventListener(IMPORTANT_MESSAGE_UPDATED_EVENT, update);

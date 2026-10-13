@@ -205,6 +205,13 @@ export function NotificationsInbox({ identity }: { identity: string }) {
       setNextCursor(response.nextCursor);
       if (!preserveError && errorSource.current !== 'count') clearError();
     } catch (requestError) {
+      if (
+        identityRequestVersion !== identityVersion.current ||
+        version !== mutationVersion.current ||
+        responseVersion !== listResponseVersion.current ||
+        requestVersion !== listRequestVersion.current
+      )
+        return;
       const message = loadErrorMessage(requestError);
       showError('list', message);
     } finally {
@@ -413,6 +420,13 @@ export function NotificationsInbox({ identity }: { identity: string }) {
       setNextCursor(response.nextCursor);
       if (pendingCountMutations.current === 0) setUnreadCount(response.unreadCount);
     } catch (requestError) {
+      if (
+        identityRequestVersion !== identityVersion.current ||
+        version !== mutationVersion.current ||
+        responseVersion !== listResponseVersion.current ||
+        requestVersion !== listRequestVersion.current
+      )
+        return;
       const message =
         requestError instanceof Error ? requestError.message : 'Не вдалося завантажити згадки.';
       showError('list', message);
