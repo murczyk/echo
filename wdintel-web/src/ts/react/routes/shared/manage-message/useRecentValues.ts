@@ -44,7 +44,21 @@ export function useRecentValues() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        return { ...DEFAULT_VALUES, ...JSON.parse(stored) };
+        const fields: unknown = JSON.parse(stored);
+        const values = { ...DEFAULT_VALUES };
+        if (fields && typeof fields === 'object') {
+          for (const key of Object.keys(values) as Array<keyof RecentValues>) {
+            const entries = fields[key];
+            if (Array.isArray(entries)) {
+              values[key] = entries
+                .filter(
+                  (entry): entry is string => typeof entry === 'string' && entry.trim() !== '',
+                )
+                .slice(0, MAX_ITEMS);
+            }
+          }
+        }
+        return values;
       }
     } catch (e) {
       console.error('Failed to load recent values', e);

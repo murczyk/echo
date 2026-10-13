@@ -373,7 +373,7 @@ export function useManageMessageDrawer({
 
   const { control, formState, getValues, setValue, reset } = methods;
   const formValues = useWatch({ control });
-  const { unitOptions, unitLoading, recentUnitOptions } = useMessageUnitOptions({
+  const { unitOptions, unitLoading, unitAllowCreate, defaultRecentUnit } = useMessageUnitOptions({
     active: formReady,
     search: formValues.unit ?? '',
     recentNames: recentValues.unit,
@@ -381,19 +381,42 @@ export function useManageMessageDrawer({
     onError: handleReferenceDataError,
     retryAttempt: referenceDataRetryAttempt,
   });
-  const recentUnitOptionsRef = useRef(recentUnitOptions);
-  recentUnitOptionsRef.current = recentUnitOptions;
+  const defaultRecentUnitRef = useRef(defaultRecentUnit);
+  const unitInteractedRef = useRef(false);
+  const onUnitFocus = useCallback(() => {
+    unitInteractedRef.current = true;
+  }, []);
+  defaultRecentUnitRef.current = defaultRecentUnit;
+  const dirtyFields = formState.dirtyFields;
+  const defaultValues = formState.defaultValues;
   useEffect(() => {
     if (!formReady || isEditMode || isReportMode || getValues('unit')) return;
-    if (methods.getFieldState('unit').isDirty) return;
-    const unit = recentUnitOptions[0];
+    if (unitInteractedRef.current || methods.getFieldState('unit').isDirty) return;
+    const unit = defaultRecentUnit;
     if (unit) {
-      reset(
-        { ...getValues(), unit: unit.name, unitSelection: { id: unit.id, name: unit.name } },
-        { keepDirty: true, keepTouched: true, keepErrors: true, keepDefaultValues: true },
+      const originalDirtyDefaults = Object.fromEntries(
+        Object.keys(dirtyFields).map((name) => [name, defaultValues?.[name]]),
       );
+      const unitValues = { unit: unit.name, unitSelection: { id: unit.id, name: unit.name } };
+      const currentValues = { ...getValues(), ...unitValues };
+      // Update defaults before restoring values without emitting manual field changes.
+      reset(
+        { ...currentValues, ...originalDirtyDefaults, ...unitValues },
+        { keepTouched: true, keepErrors: true },
+      );
+      reset(currentValues, { keepDefaultValues: true, keepTouched: true, keepErrors: true });
     }
-  }, [formReady, getValues, isEditMode, isReportMode, methods, recentUnitOptions, reset]);
+  }, [
+    formReady,
+    getValues,
+    isEditMode,
+    isReportMode,
+    methods,
+    defaultRecentUnit,
+    dirtyFields,
+    defaultValues,
+    reset,
+  ]);
   const getInitialCreateFormValues = useCallback(
     (): MessageFormData => ({
       ...EMPTY_FORM_VALUES,
@@ -401,8 +424,8 @@ export function useManageMessageDrawer({
       time: null,
       signalGroupMasterKey: recentValuesRef.current.group[0] ?? '',
       deviceName: cyberEchoEnabled ? (recentValuesRef.current.deviceName[0] ?? '') : '',
-      unit: recentUnitOptionsRef.current[0]?.name ?? '',
-      unitSelection: recentUnitOptionsRef.current[0],
+      unit: defaultRecentUnitRef.current?.name ?? '',
+      unitSelection: defaultRecentUnitRef.current,
     }),
     [cyberEchoEnabled],
   );
@@ -713,6 +736,7 @@ export function useManageMessageDrawer({
 
   useEffect(() => {
     if (!formReady) return;
+    unitInteractedRef.current = false;
     setDeviceNameInput('');
     setPostInput('');
     setNetworkNameInput('');
@@ -1005,6 +1029,7 @@ export function useManageMessageDrawer({
         signalGroupMasterKey: submittedValues.signalGroupMasterKey ?? '',
         deviceName: cyberEchoEnabled ? (submittedValues.deviceName ?? '') : '',
         unit: submittedValues.unit ?? '',
+        unitSelection: submittedValues.unitSelection,
       });
       setDeviceNameInput('');
       setPostInput('');
@@ -1133,6 +1158,8 @@ export function useManageMessageDrawer({
     setPostInput,
     unitOptions,
     unitLoading,
+    unitAllowCreate,
+    onUnitFocus,
     networkNameOptions,
     networkNameLoading,
     setNetworkNameInput,

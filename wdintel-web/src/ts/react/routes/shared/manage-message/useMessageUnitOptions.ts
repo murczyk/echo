@@ -4,6 +4,9 @@ import {
   searchUnitNames,
   type UnitResponse,
 } from '../../../services/api/direct-submit';
+import { normalizeMessageUnitName } from './message-unit-name';
+
+const UNIT_SEARCH_DEBOUNCE_MS = 300;
 
 type Props = {
   active: boolean;
@@ -22,9 +25,16 @@ export function useMessageUnitOptions({
   onError,
   retryAttempt,
 }: Props) {
-  const [results, setResults] = useState<{ search: string; units: UnitResponse[] } | null>(null);
+  const [results, setResults] = useState<{
+    search: string;
+    units: UnitResponse[];
+    succeeded: boolean;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [recentUnitOptions, setRecentUnitOptions] = useState<UnitResponse[]>([]);
+  const [recentResults, setRecentResults] = useState<{
+    names: string[];
+    units: UnitResponse[];
+  } | null>(null);
 
   useEffect(() => {
     if (!active) {
@@ -35,19 +45,25 @@ export function useMessageUnitOptions({
     let current = true;
     const controller = new AbortController();
     setLoading(true);
-    searchUnitNames(search, { signal: controller.signal })
-      .then((units) => {
-        if (current) setResults({ search, units });
-      })
-      .catch((error) => {
-        if (!current) return;
-        setResults({ search, units: [] });
-        onError('Failed to load unit names', error);
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
+    const timer = window.setTimeout(
+      () => {
+        searchUnitNames(search, { signal: controller.signal })
+          .then((units) => {
+            if (current) setResults({ search, units, succeeded: true });
+          })
+          .catch((error) => {
+            if (!current) return;
+            setResults({ search, units: [], succeeded: false });
+            onError('Failed to load unit names', error);
+          })
+          .finally(() => {
+            if (current) setLoading(false);
+          });
+      },
+      search.trim() ? UNIT_SEARCH_DEBOUNCE_MS : 0,
+    );
     return () => {
+      window.clearTimeout(timer);
       current = false;
       controller.abort();
     };
@@ -55,7 +71,7 @@ export function useMessageUnitOptions({
 
   useEffect(() => {
     if (!active || recentNames.length === 0) {
-      setRecentUnitOptions([]);
+      setRecentResults(null);
       return;
     }
     let current = true;
@@ -63,10 +79,18 @@ export function useMessageUnitOptions({
     resolveUnitNames(recentNames, { signal: controller.signal })
       .then((units) => {
         if (!current) return;
-        const recentUnits = recentNames.flatMap((name) =>
-          units.filter((unit) => unit.name.trim().toLowerCase() === name.trim().toLowerCase()),
+        const recentUnits = Array.from(
+          new Map(
+            recentNames
+              .flatMap((name) =>
+                units.filter(
+                  (unit) => normalizeMessageUnitName(unit.name) === normalizeMessageUnitName(name),
+                ),
+              )
+              .map((unit) => [unit.id, unit]),
+          ).values(),
         );
-        setRecentUnitOptions(recentUnits);
+        setRecentResults({ names: recentNames, units: recentUnits });
         replaceRecentNames(Array.from(new Set(recentUnits.map((unit) => unit.name))));
       })
       .catch((error) => {
@@ -78,13 +102,21 @@ export function useMessageUnitOptions({
     };
   }, [active, onError, recentNames, replaceRecentNames, retryAttempt]);
 
+  const recentUnitOptions =
+    active && recentResults?.names === recentNames ? recentResults.units : [];
+  const firstRecentName = recentUnitOptions[0]?.name;
+  const firstRecentMatches = recentUnitOptions.filter(
+    (unit) =>
+      normalizeMessageUnitName(unit.name) === normalizeMessageUnitName(firstRecentName ?? ''),
+  );
+
   const unitOptions = useMemo(
     () =>
       Array.from(
         new Map(
           [
             ...recentUnitOptions.filter((unit) =>
-              unit.name.toLowerCase().includes(search.trim().toLowerCase()),
+              normalizeMessageUnitName(unit.name).includes(normalizeMessageUnitName(search)),
             ),
             ...(results?.search === search ? results.units : []),
           ].map((unit) => [unit.id, unit]),
@@ -96,6 +128,8 @@ export function useMessageUnitOptions({
   return {
     unitOptions,
     unitLoading: active && (loading || results?.search !== search),
+    unitAllowCreate: active && results?.search === search && results.succeeded,
     recentUnitOptions,
+    defaultRecentUnit: firstRecentMatches.length === 1 ? firstRecentMatches[0] : undefined,
   };
 }

@@ -650,6 +650,7 @@ where
         ("sigint_unit_label", "sigint_unit_id"),
         ("sigint_unit_rer_report_metadata", "sigint_unit_id"),
         ("sigint_inbox_item_unit", "unit_id"),
+        ("sigint_inbox_item_unit_selection", "unit_id"),
         ("orbit_unit_sigint_unit", "sigint_unit_id"),
         ("device", "unit_id"),
     ] {

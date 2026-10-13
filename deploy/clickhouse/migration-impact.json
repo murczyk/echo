@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20261013_094137_inbox_unit_selection": {
+      "changes": [{ "table": "public.sigint_inbox_item_unit_selection", "strategy": "excluded" }]
+    },
     "echo:m20261012_155351_api_rate_limit": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_backfill" }

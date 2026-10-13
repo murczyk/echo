@@ -7,6 +7,8 @@ import type {
   DeviceNameResolveRsp,
   DeviceNameSearchResult,
   InboxMessage,
+  Unit,
+  DirectSubmitPayload,
 } from '../../../../Bindings';
 import { normalizeInboxMessageFromWire } from './inbox-messages';
 
@@ -93,10 +95,7 @@ export async function searchPostNames(
   return result?.posts || [];
 }
 
-export type UnitResponse = {
-  id: number;
-  name: string;
-};
+export type UnitResponse = Pick<Unit, 'id' | 'name'>;
 
 export async function searchUnitNames(
   search: string,
@@ -231,8 +230,8 @@ export type DirectSubmitRequest = {
   is_time_null?: InboxMessage['isTimeNull'];
   post?: string;
   unit?: string;
-  unit_id?: number;
-  create_unit?: boolean;
+  unit_id?: DirectSubmitPayload['unitId'];
+  create_unit?: DirectSubmitPayload['createUnit'];
   locations?: string[];
   network?: SubmitNetwork;
   dmr?: SubmitDmrMetadata[];

@@ -30,6 +30,8 @@ type Props = {
   setPostInput: (val: string) => void;
   unitOptions: UnitResponse[];
   unitLoading: boolean;
+  unitAllowCreate: boolean;
+  onUnitFocus: () => void;
   unitLocked: boolean;
 };
 
@@ -47,6 +49,8 @@ export function MetadataSection({
   setPostInput,
   unitOptions,
   unitLoading,
+  unitAllowCreate,
+  onUnitFocus,
   unitLocked,
 }: Props) {
   const radioFeaturesAllowed = useRadioFeatures();
@@ -165,6 +169,8 @@ export function MetadataSection({
                   options={unitOptions}
                   value={field.value ?? ''}
                   loading={unitLoading}
+                  allowCreate={unitAllowCreate}
+                  onFocus={onUnitFocus}
                   disabled={busy || unitLocked}
                   onChange={(name, selection) => {
                     field.onChange(name);

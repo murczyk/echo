@@ -182,6 +182,20 @@ where
 
     let parent_signal_message_ids = vec![source.id];
 
+    let selections =
+        crate::inbox::unit_selection::load_selections(dbx, &[source.id])
+            .await
+            .c(h!())?;
+    let selected_unit_id = selections
+        .get(&source.id)
+        .filter(|selection| {
+            crate::inbox::unit_selection::matches_source(
+                selection,
+                copy_inputs.inbox_item.unit_v2.as_deref(),
+                copy_inputs.inbox_item.unit.as_deref(),
+            )
+        })
+        .map(|selection| selection.unit_id);
     Ok(DirectSubmitPayload {
         is_time_null: copy_inputs.inbox_item.is_time_null,
         full_body: source.body.clone().or_else(|| Some(message.text.clone())),
@@ -202,7 +216,7 @@ where
         }),
         post: message.post.clone(),
         unit: message.unit.clone(),
-        unit_id: None,
+        unit_id: selected_unit_id,
         create_unit: false,
         locations: message
             .location
@@ -608,14 +622,17 @@ async fn save_signal_message(
         && payload.timestamp.is_none()
         && ((signal_message_id.is_some() && previous_timestamp.is_none())
             || !copy_sources.is_empty());
-    let selected_unit =
-        if is_new_message || payload.unit_id.is_some() || payload.create_unit {
-            super::units::resolve_unit(&txn, login, &payload)
-                .await
-                .c(h!())?
-        } else {
-            None
-        };
+    let unit_requested =
+        is_new_message || payload.unit_id.is_some() || payload.create_unit;
+    let selected_unit = if unit_requested {
+        super::units::resolve_unit(&txn, login, &payload)
+            .await
+            .c(h!())?
+    } else {
+        super::units::preserve_unit(&txn, signal_message_id.c(h!())?, &payload)
+            .await
+            .c(h!())?
+    };
     if let Some(unit) = &selected_unit {
         payload.unit = Some(unit.name.clone());
     }
@@ -687,7 +704,7 @@ async fn save_signal_message(
     )
     .await
     .c(h!())?;
-    if selected_unit.is_some() {
+    if unit_requested && selected_unit.is_some() {
         crate::sigint::unit::fanout_unit_changed_data(env)
             .await
             .c(h!())?;

@@ -19,10 +19,17 @@ where
     C: ConnectionTrait,
 {
     let name = payload.unit.as_deref().unwrap_or_default().trim();
+    if payload.create_unit && (payload.unit_id.is_some() || name.is_empty()) {
+        return Err(crate::error::AppError::BL {
+            msg: "Вкажіть назву нового підрозділу або оберіть підрозділ зі списку.".to_string(),
+        })
+        .c(h!());
+    }
     let unit = if let Some(id) = payload.unit_id {
         Some(
             sigint_unit::Entity::find_by_id(id)
                 .filter(sigint_unit::Column::Deleted.eq(false))
+                .lock_exclusive()
                 .one(db)
                 .await
                 .c(h!())?
@@ -38,10 +45,7 @@ where
                 "SELECT pg_advisory_xact_lock($1, hashtext($2))",
                 [
                     SIGINT_DIRECT_SUBMIT_UNIT_LOCK_NAMESPACE.into(),
-                    name.split_whitespace()
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                        .to_lowercase()
+                    crate::inbox::unit_resolution::normalize_unit_label(name)
                         .into(),
                 ],
             ))
@@ -62,6 +66,53 @@ where
     Ok(unit)
 }
 
+pub(super) async fn preserve_unit<C>(
+    db: &C,
+    inbox_id: i64,
+    payload: &DirectSubmitPayload,
+) -> anyhow::Result<Option<sigint_unit::Model>>
+where
+    C: ConnectionTrait,
+{
+    let selections =
+        crate::inbox::unit_selection::load_selections(db, &[inbox_id])
+            .await
+            .c(h!())?;
+    let Some(selection) = selections.get(&inbox_id) else {
+        return Ok(None);
+    };
+    let item = sigint_inbox_item::Entity::find_by_id(inbox_id)
+        .one(db)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let unit_name = item
+        .unit_v2
+        .as_deref()
+        .or(item.unit.as_deref())
+        .unwrap_or_default();
+    if !crate::inbox::unit_selection::matches_source(
+        selection,
+        item.unit_v2.as_deref(),
+        item.unit.as_deref(),
+    ) || crate::inbox::unit_resolution::normalize_unit_label(unit_name)
+        != crate::inbox::unit_resolution::normalize_unit_label(
+            payload.unit.as_deref().unwrap_or_default(),
+        )
+    {
+        crate::inbox::unit_selection::clear_selection(db, inbox_id)
+            .await
+            .c(h!())?;
+        return Ok(None);
+    }
+    sigint_unit::Entity::find_by_id(selection.unit_id)
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .lock_exclusive()
+        .one(db)
+        .await
+        .c(h!())
+}
+
 async fn find_or_create_named_unit<C>(
     db: &C,
     login: &Uuid,
@@ -75,14 +126,11 @@ where
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(Expr::cust_with_values(
             "lower(regexp_replace(btrim(name), '[[:space:]]+', ' ', 'g')) = $1",
-            [name
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .to_lowercase()],
+            [crate::inbox::unit_resolution::normalize_unit_label(name)],
         ))
         .order_by_asc(sigint_unit::Column::Id)
         .limit(2)
+        .lock_exclusive()
         .all(db)
         .await
         .c(h!())?;
@@ -101,7 +149,10 @@ where
             .c(h!())?,
         )),
         1 => Ok(units.into_iter().next()),
-        _ if create => anyhow::bail!("Оберіть підрозділ зі списку."),
+        _ if create => Err(crate::error::AppError::BL {
+            msg: "Оберіть підрозділ зі списку.".to_string(),
+        })
+        .c(h!()),
         _ => Ok(None),
     }
 }
@@ -119,6 +170,9 @@ where
         .await
         .c(h!())?
         .ok_or(crate::error::AppError::NotFound)
+        .c(h!())?;
+    crate::inbox::unit_selection::store_selection(db, &item, unit.id)
+        .await
         .c(h!())?;
     crate::inbox::unit_resolution::sync_selected_inbox_unit(
         db,
@@ -138,7 +192,9 @@ mod tests {
     use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
     use crate::entities::{sigint_inbox_item_unit, sigint_unit_changelog};
     use crate::functest::tests::cleanup;
-    use crate::sigint::direct_submit::bl::submit_signal_message;
+    use crate::sigint::direct_submit::bl::{
+        copy_signal_messages, edit_signal_message, submit_signal_message,
+    };
     use crate::sigint::unit::types::UnitSearchReq;
     use sea_orm::{
         ActiveModelTrait, DatabaseConnection, IntoActiveModel, Set,
@@ -180,6 +236,51 @@ mod tests {
             .unwrap()
             .unwrap()
             .unit_id
+    }
+
+    async fn assert_reconciled_selection(
+        env: &Env,
+        item_id: i64,
+        unit_id: i64,
+    ) {
+        crate::inbox::unit_resolution::run_failed_inbox_unit_worker_once(
+            &env.dbx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(parsed_unit_id(&env.dbx, item_id).await, unit_id);
+        crate::inbox::unit_resolution::reprocess_inbox_items_for_unit(
+            &env.dbx, unit_id,
+        )
+        .await
+        .unwrap();
+        assert_eq!(parsed_unit_id(&env.dbx, item_id).await, unit_id);
+        let txn = env.dbx.begin().await.unwrap();
+        let mut cache = TopKCache::<String, String>::new(64);
+        crate::inbox::construct_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            &env.rq,
+            &env.config,
+            item_id,
+            &mut cache,
+            None,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+        assert_eq!(parsed_unit_id(&env.dbx, item_id).await, unit_id);
+        let now = chrono::Utc::now().naive_utc();
+        crate::inbox::unit_resolution::backfill_inbox_unit_links(
+            &env.dbx,
+            now - chrono::Duration::days(1),
+            now + chrono::Duration::days(1),
+            0,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(parsed_unit_id(&env.dbx, item_id).await, unit_id);
     }
 
     #[tokio::test]
@@ -226,6 +327,13 @@ mod tests {
             parsed_unit_id(&env.dbx, created.signal_message_id).await,
             child.id
         );
+        assert_reconciled_selection(&env, created.signal_message_id, child.id)
+            .await;
+        let copied =
+            copy_signal_messages(&login, &env, vec![created.signal_message_id])
+                .await
+                .unwrap();
+        assert_eq!(copied.payloads[0].unit_id, Some(child.id));
         for id in [parent.id, child.id] {
             assert!(
                 sigint_unit::Entity::find_by_id(id)
@@ -272,6 +380,12 @@ mod tests {
                 parsed_unit_id(&env.dbx, created.signal_message_id).await,
                 units[0].id
             );
+            assert_reconciled_selection(
+                &env,
+                created.signal_message_id,
+                units[0].id,
+            )
+            .await;
         }
         let mut report = payload("Підрозділ донесення 3535");
         report.create_unit = true;
@@ -391,5 +505,259 @@ mod tests {
             unit::find_search_units(&env.dbx, &request).await.unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].id, children[1].id);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_search_3535_kept_exact_parent_visible_among_many_children() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let parent = seed_unit(
+            &env.dbx,
+            &login,
+            CreateUnitReq {
+                name: Some("3535 полк".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        for index in 0..260 {
+            seed_unit(
+                &env.dbx,
+                &login,
+                CreateUnitReq {
+                    name: Some(format!("1 рота {index} 3535 полк")),
+                    ..Default::default()
+                },
+            )
+            .await;
+        }
+        let found = unit::find_search_units(
+            &env.dbx,
+            &UnitSearchReq {
+                search: parent.name.clone(),
+                include_inactive: Some(true),
+                names: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            found.len(),
+            crate::config::SIGINT_UNIT_SEARCH_INACTIVE_LIMIT as usize
+        );
+        assert_eq!(found[0].id, parent.id);
+        assert_eq!(found.iter().filter(|unit| unit.id == parent.id).count(), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn direct_submit_3535_preserved_selection_on_edit_and_merge_and_cleared_changed_source(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let selected = seed_unit(
+            &env.dbx,
+            &login,
+            CreateUnitReq {
+                name: Some("Однакова назва 3535".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let survivor = seed_unit(
+            &env.dbx,
+            &login,
+            CreateUnitReq {
+                name: Some(selected.name.clone()),
+                active: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        let mut request = payload(&selected.name);
+        request.unit_id = Some(selected.id);
+        let created =
+            submit_signal_message(&login, &env, request).await.unwrap();
+        let mut inactive = selected.clone().into_active_model();
+        inactive.active = Set(false);
+        inactive.update(&env.dbx).await.unwrap();
+        let mut edited = payload(&selected.name);
+        edited.text = Some("#3535 edited body".to_string());
+        edit_signal_message(&login, &env, created.signal_message_id, edited)
+            .await
+            .unwrap();
+        assert_eq!(
+            parsed_unit_id(&env.dbx, created.signal_message_id).await,
+            selected.id
+        );
+        assert!(
+            !sigint_unit::Entity::find_by_id(selected.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .active
+        );
+        let txn = env.dbx.begin().await.unwrap();
+        unit::merge_units_in_transaction(login, &txn, selected.id, survivor.id)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+        assert_reconciled_selection(
+            &env,
+            created.signal_message_id,
+            survivor.id,
+        )
+        .await;
+        edit_signal_message(
+            &login,
+            &env,
+            created.signal_message_id,
+            payload(""),
+        )
+        .await
+        .unwrap();
+        assert!(crate::entities::sigint_inbox_item_unit_selection::Entity::find_by_id(created.signal_message_id)
+            .one(&env.dbx).await.unwrap().is_none());
+        assert!(sigint_inbox_item_unit::Entity::find()
+            .filter(
+                sigint_inbox_item_unit::Column::ItemId
+                    .eq(created.signal_message_id)
+            )
+            .filter(
+                sigint_inbox_item_unit::Column::Kind
+                    .eq(SigintInboxItemUnitKind::Parsed)
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn direct_submit_3535_invalidated_selection_after_raw_source_changes()
+    {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let unit = seed_unit(
+            &env.dbx,
+            &login,
+            CreateUnitReq {
+                name: Some("Підрозділ джерела 3535".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let mut request = payload(&unit.name);
+        request.unit_id = Some(unit.id);
+        let created =
+            submit_signal_message(&login, &env, request).await.unwrap();
+        let mut source = crate::entities::signal_message::Entity::find_by_id(
+            created.signal_message_id,
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+        source.body = Set(Some("Змінене джерело без підрозділу".to_string()));
+        source.update(&env.dbx).await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let mut cache = TopKCache::<String, String>::new(64);
+        crate::inbox::construct_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            &env.rq,
+            &env.config,
+            created.signal_message_id,
+            &mut cache,
+            None,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+        assert!(crate::entities::sigint_inbox_item_unit_selection::Entity::find_by_id(created.signal_message_id).one(&env.dbx).await.unwrap().is_none());
+        assert!(sigint_inbox_item_unit::Entity::find()
+            .filter(
+                sigint_inbox_item_unit::Column::ItemId
+                    .eq(created.signal_message_id)
+            )
+            .filter(
+                sigint_inbox_item_unit::Column::Kind
+                    .eq(SigintInboxItemUnitKind::Parsed)
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn direct_submit_3535_rejected_invalid_creation_and_deleted_selection(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let unit = seed_unit(
+            &env.dbx,
+            &login,
+            CreateUnitReq {
+                name: Some("  Дубль\t 3535 ".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let mut request = payload("дубль 3535");
+        request.create_unit = true;
+        let txn = env.dbx.begin().await.unwrap();
+        assert_eq!(
+            resolve_unit(&txn, &login, &request)
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            unit.id
+        );
+        txn.rollback().await.unwrap();
+        seed_unit(
+            &env.dbx,
+            &login,
+            CreateUnitReq {
+                name: Some("Дубль 3535".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        for name in ["дубль 3535", "  "] {
+            request.unit = Some(name.to_string());
+            let error = submit_signal_message(&login, &env, request.clone())
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, crate::error::AppError::BL { .. }),
+                "{error:?}"
+            );
+        }
+        let mut deleted = unit.into_active_model();
+        deleted.deleted = Set(true);
+        let deleted = deleted.update(&env.dbx).await.unwrap();
+        request.unit_id = Some(deleted.id);
+        request.create_unit = false;
+        assert!(matches!(
+            submit_signal_message(&login, &env, request)
+                .await
+                .unwrap_err(),
+            crate::error::AppError::NotFound
+        ));
     }
 }
