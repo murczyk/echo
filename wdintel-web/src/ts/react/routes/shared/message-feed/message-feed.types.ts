@@ -8,6 +8,7 @@ export type MessageFeedPolicy = {
   atBottomThresholdPx: number;
   underfilledEdgeLoading: boolean;
   belowLoadStrategy?: 'scroll-idle' | 'immediate';
+  serializeEdgeLoads?: boolean;
   expandBelowLoadBuffer?: boolean;
   deferResizeWhileLoadingBelow?: boolean;
 };
@@ -112,6 +113,7 @@ export type UseWindowedFeedScrollOptions = {
   onViewportCaptureChange?: (capture: (() => void) | null) => void;
   onFirstVisibleMessage?: (id: number, index: number) => void;
   loadEdgesOnLayout?: boolean;
+  edgeLoadRetryKey?: string | number;
   positionResetKey?: string | number;
   preservePositionOnReset?: boolean;
   itemIds: readonly number[];

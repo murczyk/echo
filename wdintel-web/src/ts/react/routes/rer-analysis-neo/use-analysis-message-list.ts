@@ -104,7 +104,7 @@ export function useAnalysisMessageList({
   const [hasLoadedInitialMessages, setHasLoadedInitialMessages] = useState(false);
   const [messagesPaging, setMessagesPaging] = useState(false);
   const [messages, setMessageState] = useState<Array<[number, InboxMessage]>>([]);
-  const [messageComments, setMessageComments] = useState<Record<number, MessageComment[]>>({});
+  const [messageComments, setMessageCommentsState] = useState<Record<number, MessageComment[]>>({});
   const [noMoreToLoad, setNoMoreToLoad] = useState(false);
   const [focusedHasMoreEarlier, setFocusedHasMoreEarlier] = useState(initialFocusedHasMoreEarlier);
   const [focusedHasMoreLater, setFocusedHasMoreLater] = useState(initialFocusedHasMoreLater);
@@ -114,11 +114,17 @@ export function useAnalysisMessageList({
   const [firstLoadedMessageIndex, setFirstLoadedMessageIndex] = useState(0);
   const [loadingBeforeWindow, setLoadingBeforeWindow] = useState(false);
   const [loadingAfterWindow, setLoadingAfterWindow] = useState(false);
+  const [exhaustedBeforeWindowMessageId, setExhaustedBeforeWindowMessageId] = useState<
+    number | null
+  >(null);
   const highestVisitedPageRef = useRef(0);
   const messageCommentsRef = useRef(messageComments);
+  const recentCommentMessageIdsRef = useRef<number[]>([]);
   const messagesRef = useRef(messages);
   const messageCommentsLoadVersionRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
+  const pageRequestInFlightRef = useRef<number | null>(null);
+  const exhaustedBeforeWindowMessageIdRef = useRef<number | null>(null);
   const focusedLoadGenerationRef = useRef(0);
   const focusedMessageIdRef = useRef(focusedMessageId);
   const focusedMessageActiveRef = useRef(focusedMessageActive);
@@ -161,9 +167,43 @@ export function useAnalysisMessageList({
     [setGroupInfos, setProfiles],
   );
 
+  const retainCommentMessageIds = useCallback(
+    (ids: number[]) => {
+      const incoming = new Set(ids);
+      recentCommentMessageIdsRef.current = [
+        ...recentCommentMessageIdsRef.current.filter((id) => !incoming.has(id)),
+        ...incoming,
+      ].slice(-messageWindowLimit * 3);
+    },
+    [messageWindowLimit],
+  );
+
+  const setMessageComments: React.Dispatch<React.SetStateAction<Record<number, MessageComment[]>>> =
+    useCallback(
+      (action) => {
+        if (typeof action !== 'function' && Object.keys(action).length === 0) {
+          recentCommentMessageIdsRef.current = [];
+        } else {
+          retainCommentMessageIds(messagesRef.current.map(([id]) => id));
+        }
+        setMessageCommentsState((current) => {
+          const next = typeof action === 'function' ? action(current) : action;
+          const retained = new Set(recentCommentMessageIdsRef.current);
+          const entries = Object.entries(next).filter(([id]) => retained.has(Number(id)));
+          return entries.length === Object.keys(next).length ? next : Object.fromEntries(entries);
+        });
+      },
+      [retainCommentMessageIds],
+    );
+
   useEffect(() => {
     messageCommentsRef.current = messageComments;
   }, [messageComments]);
+
+  useEffect(() => {
+    retainCommentMessageIds(messages.map(([id]) => id));
+    setMessageComments((current) => current);
+  }, [messages, retainCommentMessageIds, setMessageComments]);
 
   const setMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>> =
     useCallback(
@@ -202,6 +242,9 @@ export function useAnalysisMessageList({
 
   useEffect(() => {
     loadMoreMessagesRequestRef.current += 1;
+    pageRequestInFlightRef.current = null;
+    exhaustedBeforeWindowMessageIdRef.current = null;
+    setExhaustedBeforeWindowMessageId(null);
     const earlierLoading = isCurrentFocusedLoadScope(
       focusedLoadingDirectionsRef.current.earlier,
       focusedMessageActive,
@@ -244,6 +287,9 @@ export function useAnalysisMessageList({
   const invalidateMessagePageRequests = useCallback(() => {
     invalidateCallsignEnrichment();
     loadMoreMessagesRequestRef.current += 1;
+    pageRequestInFlightRef.current = null;
+    exhaustedBeforeWindowMessageIdRef.current = null;
+    setExhaustedBeforeWindowMessageId(null);
     focusedLoadGenerationRef.current += 1;
     focusedLoadingDirectionsRef.current = { earlier: null, later: null };
     setFocusedLoadingEarlier(false);
@@ -346,6 +392,7 @@ export function useAnalysisMessageList({
 
   const loadMessageComments = useCallback(
     async (loadedMessages: Array<[number, InboxMessage]>, forceReload = false) => {
+      retainCommentMessageIds(loadedMessages.map(([id]) => id));
       await loadMissingMessageCommentsForMessages(
         loadedMessages,
         {
@@ -358,7 +405,7 @@ export function useAnalysisMessageList({
         forceReload,
       );
     },
-    [onError, onUnauthorized],
+    [onError, onUnauthorized, retainCommentMessageIds, setMessageComments],
   );
 
   const fetchPage = useCallback(
@@ -373,9 +420,11 @@ export function useAnalysisMessageList({
     ) => {
       const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
       if (isNullOrUndefined(inboxReq)) return null;
+      if (options.mode && pageRequestInFlightRef.current !== null) return null;
 
       const requestId = loadMoreMessagesRequestRef.current + 1;
       loadMoreMessagesRequestRef.current = requestId;
+      pageRequestInFlightRef.current = requestId;
       const isStale = () => requestId !== loadMoreMessagesRequestRef.current;
 
       setMessagesPaging(true);
@@ -393,6 +442,10 @@ export function useAnalysisMessageList({
         mergeMessageReferences(rsp);
         const pageMessages = transformPageMessages(rsp.inboxItems ?? [], cursor);
         if (options.keepCurrentOnEmpty && pageMessages.length === 0) {
+          if (options.mode === 'above') {
+            exhaustedBeforeWindowMessageIdRef.current = messages[0]?.[0] ?? null;
+            setExhaustedBeforeWindowMessageId(exhaustedBeforeWindowMessageIdRef.current);
+          }
           if (options.markNoMoreOnEmpty) setNoMoreToLoad(true);
           return pageMessages;
         }
@@ -451,6 +504,9 @@ export function useAnalysisMessageList({
         }
         return null;
       } finally {
+        if (pageRequestInFlightRef.current === requestId) {
+          pageRequestInFlightRef.current = null;
+        }
         if (!isStale()) {
           setMessagesPaging(false);
           setLoadingBeforeWindow(false);
@@ -505,6 +561,7 @@ export function useAnalysisMessageList({
   const loadPreviousMessages = useCallback(async () => {
     if (firstLoadedMessageIndex === 0 || messages.length === 0) return false;
     const firstMessageId = messages[0][0];
+    if (exhaustedBeforeWindowMessageIdRef.current === firstMessageId) return false;
     const previousPageIndex = Math.max(
       0,
       Math.floor((firstLoadedMessageIndex - 1) / ANALYSIS_MESSAGES_PAGE_SIZE),
@@ -737,7 +794,8 @@ export function useAnalysisMessageList({
     getCurrentMessagePageCursor,
     hasLoadedInitialMessages,
     firstLoadedMessageIndex,
-    hasMoreBeforeWindow: firstLoadedMessageIndex > 0,
+    hasMoreBeforeWindow:
+      firstLoadedMessageIndex > 0 && messages[0]?.[0] !== exhaustedBeforeWindowMessageId,
     hasMoreAfterWindow: pageIndex < highestVisitedPageRef.current || !noMoreToLoad,
     loadingBeforeWindow,
     loadingAfterWindow,

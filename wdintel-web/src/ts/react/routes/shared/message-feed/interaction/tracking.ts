@@ -39,6 +39,7 @@ export function useWindowedFeedScrollTracking(args: {
   unreadPrefetchNeeded: boolean;
   pendingNewerFlushNeeded: boolean;
   immediateBelowLoad: boolean;
+  serializeEdgeLoads: boolean;
   expandBelowLoadBuffer: boolean;
   captureAnchorSnapshot: () => void;
   publishDebugMetrics: (scroller: HTMLDivElement, previousScrollTop: number) => void;
@@ -60,6 +61,7 @@ export function useWindowedFeedScrollTracking(args: {
     unreadPrefetchNeeded,
     pendingNewerFlushNeeded,
     immediateBelowLoad,
+    serializeEdgeLoads,
     expandBelowLoadBuffer,
     captureAnchorSnapshot,
     publishDebugMetrics,
@@ -109,6 +111,10 @@ export function useWindowedFeedScrollTracking(args: {
         refs.loadNewerIdleTimeoutRef.current = null;
         if (!refs.enabledRef.current) return;
         if (refs.loadingNewerRef.current) return;
+        if (serializeEdgeLoads && refs.loadingOlderRef.current) {
+          refs.loadNewerTriggeredRef.current = false;
+          return;
+        }
         if (!refs.unreadPrefetchNeededRef.current) {
           refs.loadNewerTriggeredRef.current = false;
           return;
@@ -137,7 +143,7 @@ export function useWindowedFeedScrollTracking(args: {
         LOAD_NEWER_SCROLL_IDLE_MS,
       );
     },
-    [cancelLoadNewerIdle, captureAnchorSnapshot, debugFeedId, refs],
+    [cancelLoadNewerIdle, captureAnchorSnapshot, debugFeedId, refs, serializeEdgeLoads],
   );
 
   const scheduleFlushPendingIdle = useCallback(() => {
@@ -312,12 +318,30 @@ export function useWindowedFeedScrollTracking(args: {
 
       reportVisibleMessageIds(atBottom);
 
+      const aboveSkeletonVisible = edgeSkeletonVisible(scroller, 'above');
+      const belowSkeletonVisible = edgeSkeletonVisible(scroller, 'below');
+      const reachedAbove = aboveSkeletonVisible ?? scroller.scrollTop <= topLoadBufferPx;
+      const reachedBelow = belowSkeletonVisible ?? nearBottom;
+      const bothEdgesVisible =
+        serializeEdgeLoads &&
+        reachedAbove &&
+        !hasReachedStart &&
+        reachedBelow &&
+        unreadPrefetchNeeded &&
+        typeof onLoadNewer === 'function';
+      const scrollDelta = currentScrollTop - prevScrollTop;
+      let requestedOlder = false;
       if (opts.allowLoadOlder !== false) {
-        const aboveSkeletonVisible = edgeSkeletonVisible(scroller, 'above');
-        const reachedAbove = aboveSkeletonVisible ?? scroller.scrollTop <= topLoadBufferPx;
-        const shouldLoadOlder = reachedAbove && !loadingOlder && !hasReachedStart;
+        const shouldLoadOlder =
+          reachedAbove &&
+          (!bothEdgesVisible || scrollDelta < -1) &&
+          !loadingOlder &&
+          (!serializeEdgeLoads || !loadingNewer) &&
+          !hasReachedStart;
         if (shouldLoadOlder && !refs.loadOlderTriggeredRef.current) {
           refs.loadOlderTriggeredRef.current = true;
+          requestedOlder = true;
+          if (serializeEdgeLoads) cancelLoadNewerIdle();
           captureAnchorSnapshot();
           recordScrollDebugEvent(
             debugFeedId,
@@ -331,12 +355,13 @@ export function useWindowedFeedScrollTracking(args: {
       }
 
       if (opts.allowLoadNewer !== false) {
-        const belowSkeletonVisible = edgeSkeletonVisible(scroller, 'below');
-        const reachedBelow = belowSkeletonVisible ?? nearBottom;
         const shouldLoadNewer =
           reachedBelow &&
+          (!bothEdgesVisible || scrollDelta > 1) &&
           unreadPrefetchNeeded &&
+          (!serializeEdgeLoads || !loadingOlder) &&
           !loadingNewer &&
+          (!serializeEdgeLoads || !requestedOlder) &&
           typeof onLoadNewer === 'function';
         if (shouldLoadNewer && !refs.loadNewerTriggeredRef.current) {
           refs.loadNewerTriggeredRef.current = true;
@@ -413,6 +438,7 @@ export function useWindowedFeedScrollTracking(args: {
       topLoadBufferPx,
       unreadPrefetchNeeded,
       immediateBelowLoad,
+      serializeEdgeLoads,
       expandBelowLoadBuffer,
     ],
   );

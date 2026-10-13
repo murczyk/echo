@@ -920,6 +920,143 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(onLoadNewer).not.toHaveBeenCalled();
   });
 
+  it('rechecks the opposite edge after one visible-edge load completes', async () => {
+    const onLoadOlder = vi.fn();
+    const onLoadNewer = vi.fn();
+    const options = {
+      policy: {
+        ...historyPolicy,
+        belowLoadStrategy: 'immediate' as const,
+        serializeEdgeLoads: true,
+      },
+      loadEdgesOnLayout: true,
+      hasReachedStart: false,
+      unreadPrefetchNeeded: true,
+      onLoadOlder,
+      onLoadNewer,
+    };
+
+    const ids = Array.from({ length: 20 }, (_, index) => index + 1);
+    await act(async () => root.render(<TestFeed ids={ids} options={options} />));
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+    expect(onLoadNewer).not.toHaveBeenCalled();
+
+    await act(async () =>
+      root.render(<TestFeed ids={ids} options={{ ...options, loadingOlder: true }} />),
+    );
+    expect(onLoadNewer).not.toHaveBeenCalled();
+
+    await act(async () =>
+      root.render(<TestFeed ids={[0, 1]} options={{ ...options, hasReachedStart: true }} />),
+    );
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a failed Analysis edge load without a new boundary', async () => {
+    const onLoadOlder = vi.fn();
+    const options = {
+      policy: { ...historyPolicy, serializeEdgeLoads: true },
+      loadEdgesOnLayout: true,
+      hasReachedStart: false,
+      onLoadOlder,
+    };
+
+    await act(async () => root.render(<TestFeed ids={[1]} options={options} />));
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      root.render(<TestFeed ids={[1]} options={{ ...options, loadingOlder: true }} />),
+    );
+    await act(async () => root.render(<TestFeed ids={[1]} options={options} />));
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a latched Analysis edge after an explicit refresh', async () => {
+    const onLoadOlder = vi.fn();
+    const options = {
+      policy: { ...historyPolicy, serializeEdgeLoads: true },
+      loadEdgesOnLayout: true,
+      hasReachedStart: false,
+      onLoadOlder,
+    };
+    const ids = Array.from({ length: 10 }, (_, index) => index + 1);
+
+    await act(async () => root.render(<TestFeed ids={ids} options={options} />));
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      root.render(<TestFeed ids={ids} options={{ ...options, edgeLoadRetryKey: 1 }} />),
+    );
+    expect(onLoadOlder).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not alternate bounded Analysis edges without another reader scroll', async () => {
+    const onLoadOlder = vi.fn().mockResolvedValue(true);
+    const onLoadNewer = vi.fn().mockResolvedValue(true);
+    const options = {
+      policy: {
+        ...historyPolicy,
+        belowLoadStrategy: 'immediate' as const,
+        serializeEdgeLoads: true,
+        underfilledEdgeLoading: true,
+      },
+      loadEdgesOnLayout: true,
+      hasReachedStart: false,
+      unreadPrefetchNeeded: true,
+      onLoadOlder,
+      onLoadNewer,
+    };
+    viewportHeight = 1000;
+
+    await act(async () => root.render(<TestFeed ids={[1]} options={options} />));
+    const scroller = container.querySelector<HTMLElement>('[data-message-feed-scroller]')!;
+    await act(async () =>
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 })),
+    );
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.render(<TestFeed ids={[0, 1]} options={options} />));
+    expect(onLoadNewer).not.toHaveBeenCalled();
+
+    await act(async () =>
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 80 })),
+    );
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+    await act(async () => root.render(<TestFeed ids={[1, 2]} options={options} />));
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads the requested edge when a short scrollable Analysis feed is at a hard boundary', async () => {
+    const onLoadOlder = vi.fn().mockResolvedValue(true);
+    const onLoadNewer = vi.fn().mockResolvedValue(true);
+    const options = {
+      policy: {
+        ...historyPolicy,
+        serializeEdgeLoads: true,
+        underfilledEdgeLoading: true,
+      },
+      loadEdgesOnLayout: true,
+      hasReachedStart: false,
+      unreadPrefetchNeeded: true,
+      onLoadOlder,
+      onLoadNewer,
+    };
+    const ids = Array.from({ length: 10 }, (_, index) => index + 1);
+
+    await act(async () => root.render(<TestFeed ids={ids} options={options} />));
+    const scroller = container.querySelector<HTMLElement>('[data-message-feed-scroller]')!;
+    expect(onLoadOlder).not.toHaveBeenCalled();
+    await act(async () =>
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 })),
+    );
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+
+    scroller.scrollTop = 400;
+    await act(async () =>
+      scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 80 })),
+    );
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves the leading edge on refresh, but a message anchor while reading history', async () => {
     let capture: (() => void) | null = null;
     const options = {

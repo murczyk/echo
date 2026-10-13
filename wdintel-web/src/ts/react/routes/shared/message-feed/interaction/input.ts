@@ -42,6 +42,7 @@ export function useMessageFeedInput({
   resetKey,
   debugFeedId,
   underfilledEdgeLoading,
+  serializeEdgeLoads,
   onReaderScrollStart,
   hasItems,
 }: Pick<FeedScrollHelpers, 'refs' | 'anchors' | 'follow'> & {
@@ -49,6 +50,7 @@ export function useMessageFeedInput({
   resetKey: string | number | null;
   debugFeedId?: string;
   underfilledEdgeLoading: boolean;
+  serializeEdgeLoads: boolean;
   onReaderScrollStart: () => void;
   hasItems: boolean;
 }) {
@@ -65,12 +67,18 @@ export function useMessageFeedInput({
   const triggerNonScrollableFallback = useCallback(
     (direction: 'older' | 'newer') => {
       const scroller = refs.scrollerRef.current;
+      const scrollable = scroller != null && scroller.scrollHeight > scroller.clientHeight + 1;
+      const atRequestedBoundary =
+        scroller != null &&
+        (direction === 'older'
+          ? scroller.scrollTop <= 1
+          : scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 1);
       if (
         !refs.enabledRef.current ||
         !scroller ||
         refs.itemIdsRef.current.length === 0 ||
         scroller.clientHeight <= 0 ||
-        scroller.scrollHeight > scroller.clientHeight + 1 ||
+        (scrollable && (!serializeEdgeLoads || !atRequestedBoundary)) ||
         refs.loadingOlderRef.current ||
         refs.loadingNewerRef.current ||
         fallbackInputRef.current !== null
@@ -89,7 +97,11 @@ export function useMessageFeedInput({
         }
       } else if (refs.pendingNewerFlushNeededRef.current) {
         if (typeof callbacks.onFlushPendingNewer !== 'function') return;
-      } else if (refs.loadingNewerRef.current || typeof callbacks.onLoadNewer !== 'function') {
+      } else if (
+        refs.loadingNewerRef.current ||
+        (serializeEdgeLoads && !refs.unreadPrefetchNeededRef.current) ||
+        typeof callbacks.onLoadNewer !== 'function'
+      ) {
         return;
       }
 
@@ -118,7 +130,7 @@ export function useMessageFeedInput({
       };
       void Promise.resolve(attempt).then(settleFallbackInput, settleFallbackInput);
     },
-    [anchors, clearFallbackInput, debugFeedId, follow, refs],
+    [anchors, clearFallbackInput, debugFeedId, follow, refs, serializeEdgeLoads],
   );
   const triggerNonScrollableFallbackRef = useRef(triggerNonScrollableFallback);
   triggerNonScrollableFallbackRef.current = triggerNonScrollableFallback;

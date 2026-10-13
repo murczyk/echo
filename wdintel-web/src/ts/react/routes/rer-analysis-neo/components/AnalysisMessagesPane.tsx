@@ -57,6 +57,7 @@ type Props = {
   pageIndex: number;
   pageNavigationTarget: number | null;
   viewportPreservationKey: number;
+  edgeLoadRetryKey: number;
   onViewportCaptureChange: (capture: (() => void) | null) => void;
   scrollResetKey: string;
   noMoreToLoad: boolean;
@@ -125,6 +126,7 @@ function AnalysisMessagesPaneComponent({
   pageIndex,
   pageNavigationTarget,
   viewportPreservationKey,
+  edgeLoadRetryKey,
   onViewportCaptureChange,
   scrollResetKey,
   noMoreToLoad,
@@ -191,8 +193,10 @@ function AnalysisMessagesPaneComponent({
     hasMoreAfterWindow,
     loadingBeforeWindow,
     loadingAfterWindow,
+    isLoading,
     pageNavigationTarget,
     viewportPreservationKey,
+    edgeLoadRetryKey,
     onViewportCaptureChange,
     scrollResetKey,
     onLoadPreviousMessages,

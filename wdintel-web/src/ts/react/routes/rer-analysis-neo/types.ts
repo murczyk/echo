@@ -262,6 +262,7 @@ export type AnalysisPageState = {
   pageIndex: number;
   messagePageNavigationTarget: number | null;
   messageViewportPreservationKey: number;
+  messageEdgeLoadRetryKey: number;
   messageViewportPreserving: boolean;
   visibleMessagesPageIndex: number;
   newestFirst: boolean;

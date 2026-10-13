@@ -37,8 +37,10 @@ it('maps bounded Analysis coordinates and both loading edges to the shared feed'
       hasMoreAfterWindow: true,
       loadingBeforeWindow: true,
       loadingAfterWindow: false,
+      isLoading: false,
       pageNavigationTarget: null,
       viewportPreservationKey: 0,
+      edgeLoadRetryKey: 0,
       onViewportCaptureChange: vi.fn(),
       scrollResetKey: 'test',
       onLoadPreviousMessages,
@@ -63,4 +65,45 @@ it('maps bounded Analysis coordinates and both loading edges to the shared feed'
   expect(latest.loadingBelow).toBe(false);
   expect(latest.hasMoreAbove).toBe(true);
   expect(latest.hasMoreBelow).toBe(true);
+  expect(latest.scrollOptions.loadEdgesOnLayout).toBe(true);
+});
+
+it('pauses edge requests while the Analysis page is refreshing', async () => {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  roots.push({ root, container });
+  let latest!: ReturnType<typeof useAnalysisMessageFeed>;
+  function Harness({ isLoading }: { isLoading: boolean }) {
+    latest = useAnalysisMessageFeed({
+      messages: [[1, { text: '' } as InboxMessage]],
+      directMessageNavigation: null,
+      firstLoadedMessageIndex: 20,
+      hasMoreBeforeWindow: true,
+      hasMoreAfterWindow: true,
+      loadingBeforeWindow: false,
+      loadingAfterWindow: false,
+      isLoading,
+      pageNavigationTarget: null,
+      viewportPreservationKey: 0,
+      edgeLoadRetryKey: 1,
+      onViewportCaptureChange: vi.fn(),
+      scrollResetKey: 'test',
+      onLoadPreviousMessages: vi.fn().mockResolvedValue(true),
+      onLoadMoreMessages: vi.fn().mockResolvedValue(true),
+      onVisiblePageChange: vi.fn(),
+      onPageNavigationHandled: vi.fn(),
+    });
+    return null;
+  }
+
+  await act(async () => root.render(createElement(Harness, { isLoading: true })));
+  expect(latest.scrollOptions.loadEdgesOnLayout).toBe(false);
+  expect(latest.scrollOptions.hasReachedStart).toBe(true);
+  expect(latest.scrollOptions.unreadPrefetchNeeded).toBe(false);
+
+  await act(async () => root.render(createElement(Harness, { isLoading: false })));
+  expect(latest.scrollOptions.loadEdgesOnLayout).toBe(true);
+  expect(latest.scrollOptions.hasReachedStart).toBe(false);
+  expect(latest.scrollOptions.unreadPrefetchNeeded).toBe(true);
 });

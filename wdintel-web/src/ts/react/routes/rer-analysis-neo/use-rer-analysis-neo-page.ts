@@ -162,6 +162,7 @@ export function useRerAnalysisNeoPage(
     null,
   );
   const [messageViewportPreservationKey, setMessageViewportPreservationKey] = useState(0);
+  const [messageEdgeLoadRetryKey, setMessageEdgeLoadRetryKey] = useState(0);
   const [messageViewportPreserving, setMessageViewportPreserving] = useState(false);
   const messageViewportPreservationRequestRef = useRef(0);
   const messageViewportCaptureRef = useRef<(() => void) | null>(null);
@@ -573,17 +574,18 @@ export function useRerAnalysisNeoPage(
     (options: Parameters<typeof data.reload>[0] = {}) => {
       const requestId = messageViewportPreservationRequestRef.current + 1;
       messageViewportPreservationRequestRef.current = requestId;
-      if (options.preserveMessagePage !== true) {
+      const preserveMessagePage = options.preserveMessagePage === true;
+      if (!preserveMessagePage) {
         setMessageViewportPreserving(false);
-        data.reload(options);
-        return;
+      } else {
+        messageViewportCaptureRef.current?.();
+        setMessageViewportPreserving(true);
+        setMessageViewportPreservationKey((current) => current + 1);
       }
-      messageViewportCaptureRef.current?.();
-      setMessageViewportPreserving(true);
-      setMessageViewportPreservationKey((current) => current + 1);
       void Promise.resolve(data.reload(options)).finally(() => {
         if (messageViewportPreservationRequestRef.current === requestId) {
-          setMessageViewportPreserving(false);
+          if (preserveMessagePage) setMessageViewportPreserving(false);
+          setMessageEdgeLoadRetryKey((current) => current + 1);
         }
       });
     },
@@ -1339,6 +1341,7 @@ export function useRerAnalysisNeoPage(
     pageIndex: data.pageIndex,
     messagePageNavigationTarget,
     messageViewportPreservationKey,
+    messageEdgeLoadRetryKey,
     messageViewportPreserving,
     visibleMessagesPageIndex,
     newestFirst,

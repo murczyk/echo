@@ -40,6 +40,7 @@ export function useWindowedFeedScroll({
   onViewportCaptureChange,
   onFirstVisibleMessage,
   loadEdgesOnLayout = false,
+  edgeLoadRetryKey,
   positionResetKey,
   preservePositionOnReset = false,
   initialAnchorSnapshot = null,
@@ -73,6 +74,7 @@ export function useWindowedFeedScroll({
   const initialPosition = policy?.initialPosition ?? 'end';
   const underfilledEdgeLoading = policy?.underfilledEdgeLoading ?? true;
   const immediateBelowLoad = policy?.belowLoadStrategy === 'immediate';
+  const serializeEdgeLoads = policy?.serializeEdgeLoads ?? false;
   const expandBelowLoadBuffer = policy?.expandBelowLoadBuffer ?? true;
   const debugEnabled = diagnostics?.enabled ?? false;
   const focusRef = useRef(focus);
@@ -136,17 +138,38 @@ export function useWindowedFeedScroll({
   }, [itemIds, refs]);
 
   useEffect(() => {
-    if (!loadingOlder) refs.loadOlderTriggeredRef.current = false;
-  }, [loadingOlder, refs]);
+    if (!serializeEdgeLoads && !loadingOlder) refs.loadOlderTriggeredRef.current = false;
+  }, [loadingOlder, refs, serializeEdgeLoads]);
 
   useEffect(() => {
-    if (!loadingNewer) refs.loadNewerTriggeredRef.current = false;
-  }, [loadingNewer, refs]);
+    if (!serializeEdgeLoads && !loadingNewer) refs.loadNewerTriggeredRef.current = false;
+  }, [loadingNewer, refs, serializeEdgeLoads]);
+
+  const firstItemId = itemIds[0] ?? null;
+  useEffect(() => {
+    if (serializeEdgeLoads) refs.loadOlderTriggeredRef.current = false;
+  }, [firstItemId, refs, serializeEdgeLoads]);
 
   const lastItemId = itemIds.length > 0 ? itemIds[itemIds.length - 1] : null;
   useEffect(() => {
     refs.loadNewerTriggeredRef.current = false;
   }, [lastItemId, refs]);
+
+  const previousEdgeLoadRetryKeyRef = useRef(edgeLoadRetryKey);
+  useEffect(() => {
+    if (previousEdgeLoadRetryKeyRef.current === edgeLoadRetryKey) return;
+    previousEdgeLoadRetryKeyRef.current = edgeLoadRetryKey;
+    refs.loadOlderTriggeredRef.current = false;
+    refs.loadNewerTriggeredRef.current = false;
+  }, [edgeLoadRetryKey, refs]);
+
+  const previousHasReachedStartRef = useRef(hasReachedStart);
+  useEffect(() => {
+    if (serializeEdgeLoads && previousHasReachedStartRef.current && !hasReachedStart) {
+      refs.loadOlderTriggeredRef.current = false;
+    }
+    previousHasReachedStartRef.current = hasReachedStart;
+  }, [hasReachedStart, refs, serializeEdgeLoads]);
 
   const anchors = useWindowedFeedScrollAnchors({
     refs,
@@ -203,6 +226,7 @@ export function useWindowedFeedScroll({
     unreadPrefetchNeeded,
     pendingNewerFlushNeeded,
     immediateBelowLoad,
+    serializeEdgeLoads,
     expandBelowLoadBuffer,
     captureAnchorSnapshot: anchors.captureAnchorSnapshot,
     publishDebugMetrics: anchors.publishDebugMetrics,
@@ -373,6 +397,7 @@ export function useWindowedFeedScroll({
     resetKey,
     debugFeedId,
     underfilledEdgeLoading,
+    serializeEdgeLoads,
     onReaderScrollStart,
     hasItems: itemIds.length > 0,
   });
@@ -444,7 +469,16 @@ export function useWindowedFeedScroll({
       (refs.scrollerRef.current?.clientHeight ?? 0) > 0
     )
       tracking.updateScrollState();
-  }, [loadEdgesOnLayout, enabled, itemIds, loadingOlder, loadingNewer, hasReachedStart, tracking]);
+  }, [
+    loadEdgesOnLayout,
+    edgeLoadRetryKey,
+    enabled,
+    itemIds,
+    loadingOlder,
+    loadingNewer,
+    hasReachedStart,
+    tracking,
+  ]);
 
   useEffect(() => {
     return () => {

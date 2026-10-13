@@ -10,8 +10,9 @@ export const ANALYSIS_MESSAGE_FEED_POLICY: MessageFeedPolicy = {
   aboveLoadBufferPx: 480,
   belowLoadBufferPx: 480,
   atBottomThresholdPx: 25,
-  underfilledEdgeLoading: false,
+  underfilledEdgeLoading: true,
   belowLoadStrategy: 'immediate',
+  serializeEdgeLoads: true,
   expandBelowLoadBuffer: false,
   deferResizeWhileLoadingBelow: false,
 };
@@ -31,8 +32,10 @@ type Options = {
   hasMoreAfterWindow: boolean;
   loadingBeforeWindow: boolean;
   loadingAfterWindow: boolean;
+  isLoading: boolean;
   pageNavigationTarget: number | null;
   viewportPreservationKey: number;
+  edgeLoadRetryKey: number;
   onViewportCaptureChange: (capture: (() => void) | null) => void;
   scrollResetKey: string;
   onLoadPreviousMessages: () => Promise<boolean>;
@@ -49,8 +52,10 @@ export function useAnalysisMessageFeed({
   hasMoreAfterWindow,
   loadingBeforeWindow,
   loadingAfterWindow,
+  isLoading,
   pageNavigationTarget,
   viewportPreservationKey,
+  edgeLoadRetryKey,
   onViewportCaptureChange,
   scrollResetKey,
   onLoadPreviousMessages,
@@ -125,7 +130,7 @@ export function useAnalysisMessageFeed({
       : direction === 'later'
         ? directMessageNavigation?.canLoadLater
         : false;
-  const isLoading = (direction: 'earlier' | 'later' | null) =>
+  const isDirectionLoading = (direction: 'earlier' | 'later' | null) =>
     direction === 'earlier'
       ? directMessageNavigation?.loadingEarlier
       : direction === 'later'
@@ -137,8 +142,12 @@ export function useAnalysisMessageFeed({
       : direction === 'later'
         ? directMessageNavigation?.onLoadLater
         : undefined;
-  const loadingAbove = directMessageNavigation ? Boolean(isLoading(above)) : loadingBeforeWindow;
-  const loadingBelow = directMessageNavigation ? Boolean(isLoading(below)) : loadingAfterWindow;
+  const loadingAbove = directMessageNavigation
+    ? Boolean(isDirectionLoading(above))
+    : loadingBeforeWindow;
+  const loadingBelow = directMessageNavigation
+    ? Boolean(isDirectionLoading(below))
+    : loadingAfterWindow;
   const hasMoreAbove = directMessageNavigation ? Boolean(canLoad(above)) : hasMoreBeforeWindow;
   const hasMoreBelow = directMessageNavigation ? Boolean(canLoad(below)) : hasMoreAfterWindow;
   const scrollOptions: MessageFeedScrollOptions = {
@@ -146,16 +155,17 @@ export function useAnalysisMessageFeed({
     focus,
     navigationTarget,
     viewportPreservationKey,
+    edgeLoadRetryKey,
     onViewportCaptureChange,
     resetKey: scrollResetKey,
     initialPositioningReady: !directMessageNavigation?.contextLoading,
-    loadEdgesOnLayout: directMessageNavigation != null && !directMessageNavigation.contextLoading,
-    hasReachedStart: !hasMoreAbove,
+    loadEdgesOnLayout: !isLoading && !directMessageNavigation?.contextLoading,
+    hasReachedStart: isLoading || !hasMoreAbove,
     onLoadOlder: directMessageNavigation
       ? (load(above) ?? (() => undefined))
       : onLoadPreviousMessages,
     onLoadNewer: directMessageNavigation ? load(below) : onLoadMoreMessages,
-    unreadPrefetchNeeded: hasMoreBelow,
+    unreadPrefetchNeeded: !isLoading && hasMoreBelow,
     onFirstVisibleMessage,
   };
   return {

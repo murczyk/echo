@@ -11,11 +11,13 @@ import type { CallsignInfoRes, InboxMessage, InboxMessagesRsp } from '../../../.
 const fetchAnalysisCallsignInfosMock = vi.hoisted(() => vi.fn());
 const fetchInboxMessagesMock = vi.hoisted(() => vi.fn());
 const fetchInboxCountMock = vi.hoisted(() => vi.fn());
+const fetchMessageCommentsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../services/api/analysis', () => ({
   fetchAnalysisCallsignInfos: fetchAnalysisCallsignInfosMock,
   fetchInboxCount: fetchInboxCountMock,
   fetchInboxMessages: fetchInboxMessagesMock,
+  fetchMessageComments: fetchMessageCommentsMock,
 }));
 
 function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
@@ -155,6 +157,7 @@ describe('useAnalysisMessageList pagination', () => {
     fetchAnalysisCallsignInfosMock.mockResolvedValue([]);
     fetchInboxCountMock.mockReset();
     fetchInboxCountMock.mockResolvedValue({ quantity: 42, firstElementTs: null });
+    fetchMessageCommentsMock.mockReset();
   });
 
   // Regression: https://github.com/echoua/echo/issues/2726
@@ -946,6 +949,150 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.loadingAfterWindow).toBe(false);
     expect(h.latest.hasMoreAfterWindow).toBe(true);
     expect(h.onError).toHaveBeenCalled();
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('does not repeat an empty request at the same older window boundary', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    act(() => h.latest.setMessages(pageRange(60, 41)));
+    fetchInboxMessagesMock
+      .mockResolvedValueOnce(inboxResponse(pageRange(40, 21)))
+      .mockResolvedValueOnce(inboxResponse(pageRange(20, 1)))
+      .mockResolvedValueOnce(inboxResponse([]));
+
+    await act(async () => h.latest.loadMoreMessages());
+    await act(async () => h.latest.loadMoreMessages());
+    expect(h.latest.hasMoreBeforeWindow).toBe(true);
+
+    await act(async () => h.latest.loadPreviousMessages());
+    expect(h.latest.hasMoreBeforeWindow).toBe(false);
+    expect(h.latest.messages.map(([id]) => id)).toEqual(pageRange(40, 1).map(([id]) => id));
+    await act(async () => h.latest.loadPreviousMessages());
+    expect(fetchInboxMessagesMock).toHaveBeenCalledTimes(3);
+
+    act(() => h.setQueryState((current) => ({ ...current, search: 'changed' })));
+    expect(h.latest.hasMoreBeforeWindow).toBe(true);
+
+    act(() => h.latest.invalidateMessagePageRequests());
+    expect(h.latest.hasMoreBeforeWindow).toBe(true);
+    fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(pageRange(60, 41)));
+    await act(async () => h.latest.loadPreviousMessages());
+    expect(fetchInboxMessagesMock).toHaveBeenCalledTimes(4);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('keeps an opposite-edge request from invalidating an in-flight scroll page', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    act(() => h.latest.setMessages(pageRange(60, 41)));
+    fetchInboxMessagesMock
+      .mockResolvedValueOnce(inboxResponse(pageRange(40, 21)))
+      .mockResolvedValueOnce(inboxResponse(pageRange(20, 1)));
+    await act(async () => h.latest.loadMoreMessages());
+    await act(async () => h.latest.loadMoreMessages());
+
+    const older = deferred<InboxMessagesRsp>();
+    fetchInboxMessagesMock.mockReturnValueOnce(older.promise);
+    let olderLoad!: Promise<boolean>;
+    let newerLoad!: Promise<boolean>;
+    act(() => {
+      olderLoad = h.latest.loadPreviousMessages();
+      newerLoad = h.latest.loadMoreMessages();
+    });
+    expect(fetchInboxMessagesMock).toHaveBeenCalledTimes(3);
+    expect(h.latest.loadingBeforeWindow).toBe(true);
+    expect(h.latest.loadingAfterWindow).toBe(false);
+
+    await act(async () => {
+      older.resolve(inboxResponse(pageRange(41, 60)));
+      await Promise.all([olderLoad, newerLoad]);
+    });
+    expect(h.latest.messages.map(([id]) => id)).toEqual(pageRange(60, 21).map(([id]) => id));
+    expect(h.latest.loadingBeforeWindow).toBe(false);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('allows scroll pagination after a page button supersedes a slow edge request', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    act(() => h.latest.setMessages(page(60)));
+    const slowScroll = deferred<InboxMessagesRsp>();
+    fetchInboxMessagesMock.mockReturnValueOnce(slowScroll.promise);
+    let staleLoad!: Promise<boolean>;
+    act(() => {
+      staleLoad = h.latest.loadMoreMessages();
+    });
+
+    fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(page(40)));
+    await act(async () => h.latest.loadNextPage());
+    expect(h.latest.messages).toEqual(page(40));
+
+    fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(page(20)));
+    await act(async () => h.latest.loadMoreMessages());
+    expect(fetchInboxMessagesMock).toHaveBeenCalledTimes(3);
+    expect(h.latest.messages).toEqual([...page(40), ...page(20)]);
+
+    await act(async () => {
+      slowScroll.resolve(inboxResponse(page(50)));
+      await staleLoad;
+    });
+    expect(h.latest.messages).toEqual([...page(40), ...page(20)]);
+  });
+
+  it('keeps a page-button request authoritative while it is in flight', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    act(() => h.latest.setMessages(page(60)));
+    const manualPage = deferred<InboxMessagesRsp>();
+    fetchInboxMessagesMock.mockReturnValueOnce(manualPage.promise);
+    let manualLoad!: Promise<boolean>;
+    act(() => {
+      manualLoad = h.latest.loadNextPage();
+      void h.latest.loadMoreMessages();
+    });
+    expect(fetchInboxMessagesMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      manualPage.resolve(inboxResponse(page(40)));
+      await manualLoad;
+    });
+    expect(h.latest.pageIndex).toBe(1);
+    expect(h.latest.messages).toEqual(page(40));
+
+    fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(page(20)));
+    await act(async () => h.latest.loadMoreMessages());
+    expect(h.latest.messages).toEqual([...page(40), ...page(20)]);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('bounds comment entries and reloads comments for an evicted message', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    fetchMessageCommentsMock.mockImplementation(async ({ messages: requested }) => ({
+      data: requested.map(({ messageId }: { messageId: number }) => ({
+        messageId,
+        comments: [],
+      })),
+    }));
+
+    for (let pageIndex = 0; pageIndex < 7; pageIndex += 1) {
+      const messagePage = pageRange(pageIndex * 20 + 1, pageIndex * 20 + 20);
+      act(() => h.latest.setMessages(messagePage));
+      await act(async () => h.latest.loadMessageComments(messagePage));
+    }
+
+    expect(Object.keys(h.latest.messageComments).length).toBeLessThanOrEqual(120);
+    expect(h.latest.messageComments[140]).toEqual([]);
+    expect(h.latest.messageComments[1]).toBeUndefined();
+
+    const firstPage = pageRange(1, 20);
+    act(() => h.latest.setMessages(firstPage));
+    await act(async () => h.latest.loadMessageComments(firstPage));
+    expect(fetchMessageCommentsMock).toHaveBeenLastCalledWith({
+      messages: firstPage.map(([messageId]) => ({ messageId })),
+    });
+    expect(h.latest.messageComments[1]).toEqual([]);
   });
 
   it.each([true, false])(

@@ -250,6 +250,7 @@ export function AnalysisCenterPanel({
             pageIndex={page.pageIndex}
             pageNavigationTarget={page.messagePageNavigationTarget}
             viewportPreservationKey={page.messageViewportPreservationKey}
+            edgeLoadRetryKey={page.messageEdgeLoadRetryKey}
             onViewportCaptureChange={page.setMessageViewportCapture}
             onVisiblePageChange={page.setVisibleMessagesPageIndex}
             onPageNavigationHandled={page.clearMessagePageNavigationTarget}
