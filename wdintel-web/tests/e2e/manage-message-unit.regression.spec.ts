@@ -469,7 +469,7 @@ test('@regression #3535 network assignments required every unit and remained usa
   const input = page.getByRole('combobox', { name: 'Підрозділ' });
   const create = page.getByRole('button', { name: 'Створити', exact: true });
   await expect(create).toBeDisabled();
-  await expect(input).toBeEnabled();
+  await expect(input).toBeDisabled();
   complete = true;
   await page.getByRole('button', { name: 'Повторити завантаження' }).click();
   await expect(input).toHaveValue(`${existingUnit.name}, ${inactiveChild.name}`);
@@ -485,6 +485,74 @@ test('@regression #3535 network assignments required every unit and remained usa
   expect(submissions[0].unit_id).toBeUndefined();
   await body.fill('3535 next network assignment');
   await expect(create).toBeEnabled();
+  await create.press('Enter');
+  await expect.poll(() => submissions.length).toBe(2);
+  expect(submissions[1]).toMatchObject({ network: { name: network.name, signal_name: 'DMR' } });
+});
+
+for (const units of [[existingUnit], [existingUnit, inactiveChild]]) {
+  test(`@regression #3535 clearing a ${units.length}-unit network reconciled its selection`, async ({
+    page,
+  }) => {
+    const submissions = await openDutyUnitEditor(page);
+    const network = {
+      id: 3535,
+      name: 'Мережа 3535',
+      unit_ids: units.map((unit) => unit.id),
+      freqs: [],
+    };
+    await page.route('**/api/sigint/network/search', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ networks: [network] }),
+      }),
+    );
+    await page.route('**/api/sigint/units-by-id', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ units }) }),
+    );
+    await page.route('**/api/sigint/unit/search', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ units: [existingUnit, { ...existingUnit, id: 99999 }] }),
+      }),
+    );
+    await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('3535 cleared network');
+    const networkInput = page.getByRole('combobox', { name: 'Мережа', exact: true });
+    await networkInput.fill(network.name);
+    await page.getByRole('option', { name: new RegExp(`^${network.name}`) }).click();
+    const input = page.getByRole('combobox', { name: 'Підрозділ' });
+    await expect(input).toHaveValue(units.map((unit) => unit.name).join(', '));
+    await expect(input).toBeDisabled();
+    await networkInput.fill('');
+    await expect(input).toBeEnabled();
+    await expect(input).toHaveValue(units.length === 1 ? existingUnit.name : '');
+    const create = page.getByRole('button', { name: 'Створити', exact: true });
+    await expect(create).toBeEnabled();
+    await create.click();
+    await expect.poll(() => submissions.length).toBe(1);
+    expect(submissions[0].unit_id).toBe(units.length === 1 ? existingUnit.id : undefined);
+  });
+}
+
+test('@regression #3535 automatic name resolution preserved a changed identity and dirty baseline', async ({
+  page,
+}) => {
+  const replacement = { ...existingUnit, id: 99999 };
+  await openDutyUnitEditor(page, { unit: [existingUnit.name] }, async (route) => {
+    const request = route.request().postDataJSON();
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ units: request.names ? [existingUnit] : [replacement] }),
+    });
+  });
+  const input = page.getByRole('combobox', { name: 'Підрозділ' });
+  await expect(input).toHaveValue(existingUnit.name);
+  await input.fill('');
+  await input.fill(existingUnit.name);
+  await expect(input).toHaveAttribute('aria-invalid', 'false');
+  await input.press('Tab');
+  await page.getByRole('button', { name: 'Закрити', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Відхилити незбережені зміни?' })).toBeVisible();
 });
 
 test('@regression #3535 a network selected its known unit ID despite duplicate catalog names', async ({
@@ -519,4 +587,54 @@ test('@regression #3535 a network selected its known unit ID despite duplicate c
   await page.getByRole('button', { name: 'Створити', exact: true }).click();
   await expect.poll(() => submissions.length).toBe(1);
   expect(submissions[0]).toMatchObject({ unit_id: inactiveChild.id });
+});
+
+test('@regression #3535 accepting a parsed unit released its network assignment before submission', async ({
+  page,
+}) => {
+  const submissions = await openDutyUnitEditor(page);
+  const network = { id: 3535, name: 'Мережа 3535', unit_ids: [existingUnit.id], freqs: [] };
+  await page.route('**/api/sigint/network/search', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ networks: [network] }),
+    }),
+  );
+  await page.route('**/api/sigint/units-by-id', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ units: [existingUnit] }),
+    }),
+  );
+  await page.route('**/api/1.1/submit-direct/parse', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        text: '3535 parsed network unit',
+        unit_v2: inactiveChild.name,
+        coords: [],
+        to: [],
+        locations: [],
+      }),
+    }),
+  );
+  const networkInput = page.getByRole('combobox', { name: 'Мережа', exact: true });
+  await networkInput.fill(network.name);
+  await page.getByRole('option', { name: new RegExp(`^${network.name}`) }).click();
+  const input = page.getByRole('combobox', { name: 'Підрозділ' });
+  await expect(input).toHaveValue(existingUnit.name);
+  await expect(input).toBeDisabled();
+  await page
+    .getByRole('textbox', { name: 'Текст повідомлення' })
+    .fill(`Підрозділ: ${inactiveChild.name}\n3535 parsed network unit`);
+  await page.getByRole('button', { name: 'Взяти підрозділ із тексту', exact: true }).click();
+  await expect(input).toHaveValue(inactiveChild.name);
+  await expect(input).toBeEnabled();
+  await expect(input).toHaveAttribute('aria-invalid', 'false');
+  await page.getByRole('button', { name: 'Створити', exact: true }).click();
+  await expect.poll(() => submissions.length).toBe(1);
+  expect(submissions[0]).toMatchObject({
+    unit_id: inactiveChild.id,
+    network: { name: network.name },
+  });
 });

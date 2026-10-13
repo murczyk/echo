@@ -1960,7 +1960,7 @@ describe('ManageMessageDrawer edit mode', () => {
   it('#3535 copied network assignments preserved all units without introducing unsaved changes', async () => {
     setRecentValues({});
     directSubmitMocks.copyDirectSubmit.mockResolvedValue({
-      payloads: [{ unit: 'Перший, Другий', network: { name: 'Мережа' } }],
+      payloads: [{ unit: 'Застарілий підрозділ', network: { name: 'Мережа' } }],
     });
     networkMocks.getNetworksByIds.mockResolvedValue([
       { id: 7, name: 'Мережа', unitIds: [51, 52], freqs: [] },
@@ -2004,6 +2004,131 @@ describe('ManageMessageDrawer edit mode', () => {
       close?.click();
     });
     expect(onClose).toHaveBeenCalledOnce();
+    root.unmount();
+  });
+
+  it('#3535 retried source-network hydration without discarding report edits', async () => {
+    setRecentValues({});
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ unit: 'Перший, Другий', network: { name: 'Мережа' } }],
+    });
+    networkMocks.getNetworksByIds
+      .mockRejectedValueOnce(new Error('Network unavailable'))
+      .mockResolvedValue([{ id: 7, name: 'Мережа', unitIds: [51, 52], freqs: [] }]);
+    unitMocks.getUnitsByIds.mockResolvedValue([
+      { id: 51, name: 'Перший' },
+      { id: 52, name: 'Другий' },
+    ]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          reportSource={{
+            id: 42,
+            message: buildMessage({ networkIds: [7], networkName: 'Мережа' }),
+          }}
+        />,
+      );
+    });
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст розвіддонесення')
+        ?.onChange?.({ target: { value: 'Ручна чернетка' } });
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === 'Повторити завантаження')
+        ?.click();
+    });
+    expect(networkMocks.getNetworksByIds).toHaveBeenCalledTimes(2);
+    expect(textFieldPropsByLabel.get('Підрозділ')?.disabled).toBe(true);
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('Ручна чернетка');
+    root.unmount();
+  });
+
+  it.each(['success', 'failure'])(
+    '#3535 stale source hydration (%s) preserved a manually selected network with the same name',
+    async (outcome) => {
+      setRecentValues({});
+      directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+        payloads: [{ network: { name: 'Мережа' } }],
+      });
+      let resolveNetworks!: (networks: unknown[]) => void;
+      let rejectNetworks!: (error: Error) => void;
+      networkMocks.getNetworksByIds.mockImplementation(
+        () =>
+          new Promise((resolve, reject) => {
+            resolveNetworks = resolve;
+            rejectNetworks = reject;
+          }),
+      );
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled
+            currentUser={{ roles: ['Rer'] } as User}
+            onClose={vi.fn()}
+            reportSource={{
+              id: 42,
+              message: buildMessage({ networkIds: [7], networkName: 'Мережа' }),
+            }}
+          />,
+        );
+      });
+      await act(async () => {
+        autocompleteOnChangeByLabel.get('Мережа')?.(null, {
+          id: 8,
+          name: 'Мережа',
+          unit_ids: [],
+          freqs: [],
+        });
+      });
+      await act(async () => {
+        if (outcome === 'success')
+          resolveNetworks([{ id: 7, name: 'Мережа', unitIds: [], freqs: [] }]);
+        else rejectNetworks(new Error('Stale network failure'));
+      });
+      expect(autocompleteValuesByLabel.get('Мережа')).toMatchObject({ id: 8 });
+      expect(container.textContent).not.toContain('Не вдалося завантажити довідкові дані.');
+      root.unmount();
+    },
+  );
+
+  it('#3535 hydrated a replacement report source after the previous network was selected', async () => {
+    setRecentValues({});
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({ payloads: [{}] });
+    networkMocks.getNetworksByIds.mockImplementation(async (ids: number[]) =>
+      ids.map((id) => ({ id, name: `Мережа ${id}`, unitIds: [], freqs: [] })),
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const renderSource = (id: number) =>
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          reportSource={{ id, message: buildMessage({ networkIds: [id] }) }}
+        />,
+      );
+    await act(async () => {
+      renderSource(7);
+    });
+    expect(autocompleteValuesByLabel.get('Мережа')).toMatchObject({ id: 7 });
+    await act(async () => {
+      renderSource(8);
+    });
+    expect(autocompleteValuesByLabel.get('Мережа')).toMatchObject({ id: 8 });
     root.unmount();
   });
 
@@ -4809,6 +4934,61 @@ describe('ManageMessageDrawer edit mode', () => {
 
       expect(autocompleteValuesByLabel.get('Мережа')).toBe('Розпізнана мережа');
 
+      root.unmount();
+    });
+
+    it('#3535 accepting a parsed unit released a verified network assignment', async () => {
+      setRecentValues({});
+      unitMocks.getUnitsByIds.mockResolvedValue([{ id: 51, name: 'Підрозділ мережі' }]);
+      directSubmitMocks.parseDirectSubmit.mockResolvedValueOnce({
+        text: '',
+        unit_v2: 'Розпізнаний підрозділ',
+        coords: [],
+        to: [],
+        locations: [],
+      });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            cyberEchoEnabled={false}
+            currentUser={{ roles: ['Rer'] } as User}
+            onClose={vi.fn()}
+          />,
+        );
+      });
+      await act(async () => {
+        autocompleteOnChangeByLabel.get('Мережа')?.(null, {
+          id: 1,
+          name: 'Мережа',
+          unit_ids: [51],
+          freqs: [],
+        });
+      });
+      expect(textFieldPropsByLabel.get('Підрозділ')?.disabled).toBe(true);
+      await act(async () => {
+        textFieldPropsByLabel
+          .get('Текст повідомлення')
+          ?.onChange?.({ target: { value: 'Розпізнаний підрозділ' } });
+      });
+      await act(async () => {
+        Array.from(container.querySelectorAll('button'))
+          .find((button) => button.textContent === 'Розпарсити')
+          ?.click();
+      });
+      await act(async () => {
+        (
+          container.querySelector(
+            'button[aria-label="Взяти підрозділ із тексту"]',
+          ) as HTMLButtonElement
+        ).click();
+      });
+      expect(autocompleteValuesByLabel.get('Підрозділ')).toBe('Розпізнаний підрозділ');
+      expect(textFieldPropsByLabel.get('Підрозділ')?.disabled).toBe(false);
+      expect(autocompleteValuesByLabel.get('Мережа')).toBe('Мережа');
       root.unmount();
     });
 

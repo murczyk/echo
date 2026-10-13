@@ -14,14 +14,14 @@ type Props = {
 };
 
 export function useMessageUnitSelection({ active, isEditMode, methods, values, results }: Props) {
-  const { getValues, register, resetField, trigger, unregister } = methods;
+  const { getFieldState, getValues, register, resetField, setValue, trigger } = methods;
   useEffect(() => {
     if (!active) return;
     const name = getValues('unit') ?? '';
     const selection = getValues('unitSelection');
     const compatibleSelection = compatibleMessageUnitSelection(name, selection);
     if (selection && !compatibleSelection) {
-      unregister('unitSelection');
+      setValue('unitSelection', undefined, { shouldDirty: true });
       void trigger('unit');
     }
     if (
@@ -41,19 +41,28 @@ export function useMessageUnitSelection({ active, isEditMode, methods, values, r
       ).values(),
     );
     if (matches.length === 1) {
-      register('unitSelection');
-      resetField('unitSelection', { defaultValue: matches[0], keepTouched: true });
+      if (
+        !getFieldState('unit').isDirty &&
+        methods.formState.defaultValues?.unitSelection == null
+      ) {
+        register('unitSelection');
+        resetField('unitSelection', { defaultValue: matches[0], keepTouched: true });
+      } else {
+        setValue('unitSelection', matches[0], { shouldDirty: true });
+      }
       void trigger('unit');
     }
   }, [
     active,
+    getFieldState,
     getValues,
     isEditMode,
+    methods,
     results,
     register,
     resetField,
+    setValue,
     trigger,
-    unregister,
     values.unit,
     values.unitSelection,
     values.unitNetworkSelection,

@@ -180,6 +180,12 @@ export function useManageMessageDrawer({
   const [networkNameInput, setNetworkNameInput] = useState('');
   const [networkUnitNamesById, setNetworkUnitNamesById] = useState<Record<number, string>>({});
   const [selectedNetwork, setSelectedNetworkState] = useState<NetworkSearchResult | null>(null);
+  const networkSelectionRevisionRef = useRef(0);
+  const selectedNetworkRef = useRef(selectedNetwork);
+  const updateSelectedNetwork = useCallback((network: NetworkSearchResult | null) => {
+    selectedNetworkRef.current = network;
+    setSelectedNetworkState(network);
+  }, []);
   const [unitLocked, setUnitLocked] = useState(false);
 
   const signalNameOptions = ['DMR'];
@@ -401,7 +407,8 @@ export function useManageMessageDrawer({
     isEditMode,
     methods,
     selectedNetwork,
-    setSelectedNetwork: setSelectedNetworkState,
+    networkSelectionRevisionRef,
+    setSelectedNetwork: updateSelectedNetwork,
     setUnitLocked,
     setNetworkUnitNamesById,
     onError: handleReferenceDataError,
@@ -646,14 +653,14 @@ export function useManageMessageDrawer({
   });
   const handleAcceptParsedField = useCallback(
     (field: Parameters<typeof acceptParsedField>[0]) => {
-      if (field === 'network_name') {
+      if (field === 'network_name' || (field === 'unit' && getValues('unitNetworkSelection'))) {
         setSelectedNetwork(null);
-        setNetworkNameInput('');
         setUnitLocked(false);
       }
+      if (field === 'network_name') setNetworkNameInput('');
       acceptParsedField(field);
     },
-    [acceptParsedField],
+    [acceptParsedField, getValues, setSelectedNetwork],
   );
 
   const canSubmit = useMemo(() => {
@@ -967,16 +974,19 @@ export function useManageMessageDrawer({
         ? reportSource
         : null;
     if (!source) return;
+    if (selectedNetworkRef.current) return;
     if (
       !isEditMode &&
       compatibleMessageUnitSelection(getValues('unit'), getValues('unitSelection'))
     )
       return;
     let active = true;
+    const initialNetworkSelectionRevision = networkSelectionRevisionRef.current;
     const initialNetworkName = getValues('network_name');
     const initialUnitName = getValues('unit');
     const canHydrate = () =>
       active &&
+      networkSelectionRevisionRef.current === initialNetworkSelectionRevision &&
       getValues('network_name') === initialNetworkName &&
       getValues('unit') === initialUnitName &&
       !getValues('unitNetworkSelection') &&
@@ -1012,7 +1022,7 @@ export function useManageMessageDrawer({
     };
 
     hydrateNetwork().catch((error) => {
-      if (active) handleReferenceDataError('Failed to load message network', error);
+      if (canHydrate()) handleReferenceDataError('Failed to load message network', error);
     });
     return () => {
       active = false;
@@ -1028,6 +1038,7 @@ export function useManageMessageDrawer({
     setSelectedNetwork,
     setValue,
     handleReferenceDataError,
+    referenceDataRetryAttempt,
   ]);
 
   const finalizeDrawerClose = () => {
@@ -1078,6 +1089,9 @@ export function useManageMessageDrawer({
         unitSelection: submittedValues.unitSelection,
         unitNetworkSelection: submittedValues.unitNetworkSelection,
         network_name: submittedValues.unitNetworkSelection ? submittedValues.network_name : '',
+        network_signal_name: submittedValues.unitNetworkSelection
+          ? submittedValues.network_signal_name
+          : '',
       });
       setDeviceNameInput('');
       setPostInput('');

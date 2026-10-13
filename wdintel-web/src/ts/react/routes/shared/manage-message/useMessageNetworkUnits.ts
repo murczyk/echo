@@ -1,15 +1,17 @@
 import { useCallback, useEffect } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { UseFormReturn } from 'react-hook-form';
 import type { NetworkSearchResult } from '../../../services/api/direct-submit';
 import { getUnitsByIds } from '../../../services/api/units';
 import type { MessageFormData } from './manage-message-drawer.schema';
+import { compatibleMessageUnitSelection } from './message-unit-selection';
 
 type Props = {
   active: boolean;
   isEditMode: boolean;
   methods: UseFormReturn<MessageFormData>;
   selectedNetwork: NetworkSearchResult | null;
+  networkSelectionRevisionRef: MutableRefObject<number>;
   setSelectedNetwork: (network: NetworkSearchResult | null) => void;
   setUnitLocked: (locked: boolean) => void;
   setNetworkUnitNamesById: Dispatch<SetStateAction<Record<number, string>>>;
@@ -22,6 +24,7 @@ export function useMessageNetworkUnits({
   isEditMode,
   methods,
   selectedNetwork,
+  networkSelectionRevisionRef,
   setSelectedNetwork,
   setUnitLocked,
   setNetworkUnitNamesById,
@@ -31,12 +34,20 @@ export function useMessageNetworkUnits({
   const { getValues, setValue } = methods;
   const selectNetwork = useCallback(
     (network: NetworkSearchResult | null) => {
+      networkSelectionRevisionRef.current += 1;
       const previousAssignment = getValues('unitNetworkSelection');
       const unitIds = Array.from(new Set(network?.unit_ids ?? []));
       setSelectedNetwork(network);
       setUnitLocked(unitIds.length > 0);
       if (!previousAssignment && unitIds.length === 0) return;
-      if (previousAssignment || unitIds.length > 0) {
+      if (unitIds.length > 0) {
+        setValue('unitSelection', undefined);
+      } else if (
+        previousAssignment &&
+        !isEditMode &&
+        !compatibleMessageUnitSelection(getValues('unit'), getValues('unitSelection'))
+      ) {
+        setValue('unit', '', { shouldDirty: true, shouldValidate: true });
         setValue('unitSelection', undefined);
       }
       setValue(
@@ -45,7 +56,14 @@ export function useMessageNetworkUnits({
         { shouldValidate: true },
       );
     },
-    [getValues, setSelectedNetwork, setUnitLocked, setValue],
+    [
+      getValues,
+      isEditMode,
+      networkSelectionRevisionRef,
+      setSelectedNetwork,
+      setUnitLocked,
+      setValue,
+    ],
   );
 
   useEffect(() => {
@@ -93,7 +111,6 @@ export function useMessageNetworkUnits({
       })
       .catch((error) => {
         if (!isCurrent()) return;
-        setUnitLocked(false);
         onError('Failed to load units for network', error);
       });
     return () => {

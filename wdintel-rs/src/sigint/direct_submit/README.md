@@ -52,7 +52,18 @@ intent until the message is saved. Nonempty unresolved unit text displays
 `Підрозділ не обрано` and blocks creation, including keyboard submission.
 Whitespace-only unit text remains optional. Existing editors continue accepting
 legacy labels. Network assignments retain all verified unit IDs and the locked
-display; incomplete or failed unit lookups block creation and can be retried.
+display; incomplete or failed unit lookups keep the field locked, block creation,
+and can be retried. Clearing a network preserves a verified single-unit selection;
+creation forms clear an unresolved or multiple-unit label so a standalone unit can
+be selected. Repeated creation retains the network signal type along with its name
+and unit assignment.
+
+Copied source-network lookups support retry and cannot overwrite a later manual
+network choice or report edits. Automatic exact-name resolution preserves the
+initial unit identity used by unsaved-change detection and remains automatic for
+parser ownership and pristine-source clearing. Explicitly accepting a conflicting
+parsed unit releases the network-owned unit assignment while retaining the
+network name.
 
 Regression coverage lives in `wdintel-rs/src/sigint/direct_submit/units.rs` and
 `wdintel-web/tests/e2e/manage-message-unit.regression.spec.ts`; parser ownership
