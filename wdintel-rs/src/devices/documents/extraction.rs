@@ -6,6 +6,7 @@ use crate::{
     },
     config::*,
     devices::config::{
+        DEVICE_DOCUMENT_PARSER_VERSION,
         DEVICE_FILE_CONTENT_DOWNLOAD_MAX_ENCRYPTED_BYTES,
         DEVICE_FILE_CONTENT_DOWNLOAD_TIMEOUT_SECS,
     },

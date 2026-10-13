@@ -530,13 +530,64 @@ describe('useRerDutyFeeds', () => {
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(2);
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(2, ['борода']);
   });
+  it('#3780 preserves feed identity for unchanged broadcast payloads', async () => {
+    await act(async () => {
+      root.render(React.createElement(TestHarness));
+      await flushMicrotasks();
+    });
+    const feeds = latest!.messageFeeds;
+    const [messageId, message] = feeds[0].items[0];
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([
+      [messageId, JSON.parse(JSON.stringify(message))],
+    ]);
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([messageId]);
+    });
+    expect(latest!.messageFeeds).toBe(feeds);
+    expect(hoisted.pollNow).not.toHaveBeenCalled();
+  });
+
+  it('#3780 refreshes and removes buffered messages without reconciling the displayed window', async () => {
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [[1, { text: 'displayed', textMarked: [], tags: [], inboxTags: [] }]],
+        pendingNewerItems: [
+          [2, { text: 'buffered', textMarked: [], tags: [], inboxTags: [] }],
+          [3, { text: 'deleted', textMarked: [], tags: [], inboxTags: [] }],
+        ],
+        readIds: new Set([1]),
+        unreadCount: 2,
+        filter: {},
+      },
+    ] as never;
+    const displayedItems = hoisted.messageFeeds[0].items;
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([
+      [2, { text: 'updated before display', textMarked: [], tags: [7], inboxTags: [] }],
+    ]);
+    await act(async () => {
+      root.render(React.createElement(TestHarness));
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([2, 3, 9]);
+    });
+    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([2, 3], expect.anything());
+    expect(latest?.messageFeeds[0].items).toBe(displayedItems);
+    expect(latest?.messageFeeds[0].pendingNewerItems).toEqual([
+      [2, { text: 'updated before display', textMarked: [], tags: [7], inboxTags: [] }],
+    ]);
+    expect(latest?.messageFeeds[0].unreadCount).toBe(1);
+    expect(hoisted.pollNow).not.toHaveBeenCalled();
+  });
 });
 describe('useRerDutyFeeds inbox refreshes', () => {
   beforeEach(() => {
     hoisted.fetchMessagesByIds.mockClear();
   });
 
-  it('skips fetching when no visible ids overlap', async () => {
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it('skips hydration and count polling when no visible ids overlap', async () => {
     const localContainer = document.createElement('div');
     const localRoot = createRoot(localContainer);
     hoisted.messageFeeds = [
@@ -560,7 +611,7 @@ describe('useRerDutyFeeds inbox refreshes', () => {
       });
 
       expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
-      expect(hoisted.pollNow).toHaveBeenCalledOnce();
+      expect(hoisted.pollNow).not.toHaveBeenCalled();
     } finally {
       await act(async () => {
         localRoot.unmount();

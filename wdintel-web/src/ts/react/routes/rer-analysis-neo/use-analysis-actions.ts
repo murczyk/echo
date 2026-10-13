@@ -29,6 +29,7 @@ type Params = {
   reconcileTagMutation: (messageId: number) => Promise<void>;
   registerLocalInboxChangeOrigin: () => string;
   refreshTagFacet: () => Promise<void>;
+  refreshMessageCounts: () => void;
   reload: () => Promise<void>;
   setMapOpenMessages: Setter<Array<[number, InboxMessage]>>;
   setMessages: Setter<Array<[number, InboxMessage]>>;
@@ -134,6 +135,7 @@ export function useAnalysisActions(params: Params) {
     reconcileTagMutation: params.reconcileTagMutation,
     registerLocalInboxChangeOrigin: params.registerLocalInboxChangeOrigin,
     refreshTagFacet: params.refreshTagFacet,
+    refreshMessageCounts: params.refreshMessageCounts,
     reload: params.reload,
     setMapOpenMessages: params.setMapOpenMessages,
     setMessages: params.setMessages,

@@ -1,5 +1,6 @@
 use self::schema::device_active_model;
 use crate::config::{IDENTITY_DURATION_HOURS, ROLE_ADMIN};
+use crate::devices::config as device_config;
 use crate::devices::ROLE_CYBER;
 use crate::entities::{
     area_of_responsibility, device_settings, login, organism, sigint_unit,
@@ -227,7 +228,7 @@ async fn target_api_smoke_covers_all_routes() {
     .await
     .unwrap();
     let mut settings =
-        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+        device_settings::Entity::find_by_id(device_config::DEVICE_SETTINGS_ID)
             .one(&env.dbx)
             .await
             .unwrap()
@@ -1596,7 +1597,7 @@ async fn device_file_content_rejections_are_tus_compliant_and_side_effect_free()
 async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let mut settings =
-        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+        device_settings::Entity::find_by_id(device_config::DEVICE_SETTINGS_ID)
             .one(&env.dbx)
             .await
             .unwrap()
@@ -1710,7 +1711,7 @@ async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
         json!({"hasMattermostWebhook": true})
     );
     let stored =
-        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+        device_settings::Entity::find_by_id(device_config::DEVICE_SETTINGS_ID)
             .one(&env.dbx)
             .await
             .unwrap()
@@ -1734,7 +1735,7 @@ async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
     );
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let stored =
-        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+        device_settings::Entity::find_by_id(device_config::DEVICE_SETTINGS_ID)
             .one(&env.dbx)
             .await
             .unwrap()
@@ -1748,7 +1749,7 @@ async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
         json!({"hasMattermostWebhook": false})
     );
     let stored =
-        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+        device_settings::Entity::find_by_id(device_config::DEVICE_SETTINGS_ID)
             .one(&env.dbx)
             .await
             .unwrap()

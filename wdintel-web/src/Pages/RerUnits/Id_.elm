@@ -1333,7 +1333,7 @@ changelogFieldLabel field =
             "Армія"
 
         "military_district" ->
-            "Група армій/Фронт/Види та роди ЗС"
+            "Група армій/Фронт"
 
         "combat_type_id" ->
             "Види та роди ЗС"
@@ -1634,7 +1634,7 @@ unitOverviewCard canEdit shared state details =
             , overviewField "Дивізія" unit.division
             , overviewField "Корпус" unit.corps
             , overviewField "Армія" unit.army
-            , overviewField "Група армій/Фронт/Види та роди ЗС" unit.militaryDistrict
+            , overviewField "Група армій/Фронт" unit.militaryDistrict
             , overviewField "Регіон/ТВД/Збройні Сили" unit.armyRegion
             , overviewField "Види та роди ЗС" (Maybe.withDefault "" unit.combatTypeName)
             , overviewField

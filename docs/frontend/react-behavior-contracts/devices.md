@@ -172,6 +172,15 @@
 - **Source implementation:** `wdintel-web/src/ts/react/routes/device-files/helpers.ts`
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 
+## Device file tree content filter
+
+- **Behavior ID:** `device-file-tree-content-filter`
+- **Expected observable result:** the Files tree offers “Усі файли”, “З контентом”, and “Без контенту”. Folders remain when a descendant file matches; content and tag filters must match the same file. Root drives remain available for navigation. Folder counters show the total number of files, independent of this filter.
+- **Scope:** applies to the tree, including subsequent pages and refreshes; the separate search and journal retain their own filters. Session views use content belonging to the selected session's revision; the current tree uses the current revision.
+- **Loading and concurrency:** changing the filter clears branch pages and cursors, cancels pending requests, and reloads the roots. Late responses and file-link expansion must not inject files excluded by the current filter.
+- **Persistence and accessibility:** defaults to all files and remains in memory while viewing the device. On desktop and mobile, the tree header's “Фільтри файлів” button opens a menu with mutually exclusive, checked options. Selecting an option closes the menu; an active content filter highlights the button and is included in its accessible label. The button is hidden in search mode.
+- **Existing tests:** `wdintel-web/src/ts/react/routes/device-files/__tests__/use-device-file-tree.spec.tsx`, `wdintel-web/tests/e2e/device-details.spec.ts`, `wdintel-rs/src/devices/files/sync/tests/session_reads.rs`.
+
 ## Device list local query behavior
 
 - **Status:** inferred characterization

@@ -101,6 +101,7 @@ type FailureMetadataCache = HashMap<String, FailureMetadata>;
 
 #[derive(Default)]
 struct InboxUnitBackfillCache {
+    selections: HashMap<i64, super::unit_selection::InboxUnitSelection>,
     unit_text_resolutions:
         HashMap<UnitTextResolutionCacheKey, Vec<UnitTextResolution>>,
     failure_metadata: FailureMetadataCache,
@@ -1305,6 +1306,28 @@ where
     Ok(())
 }
 
+pub(crate) async fn sync_selected_inbox_unit<C>(
+    db: &C,
+    inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
+    unit_id: i64,
+    unit_name: &str,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    sync_resolved_inbox_item(
+        db,
+        inbox_item_id,
+        inbox_item_uuid,
+        vec![UnitTextResolution::resolved(unit_name, unit_id)],
+        None,
+    )
+    .await
+    .context(h!())?;
+    Ok(())
+}
+
 pub(crate) async fn resolve_and_sync_inbox_item<C>(
     db: &C,
     inbox_item_id: i64,
@@ -1315,9 +1338,73 @@ pub(crate) async fn resolve_and_sync_inbox_item<C>(
 where
     C: ConnectionTrait,
 {
-    let resolved_unit_texts = resolve_unit_text_candidates(db, unit_v2, unit)
+    resolve_and_sync_inbox_item_with_source(
+        db,
+        inbox_item_id,
+        inbox_item_uuid,
+        unit_v2,
+        unit,
+        false,
+    )
+    .await
+    .context(h!())
+}
+
+pub(crate) async fn resolve_and_sync_reprocessed_inbox_item<C>(
+    db: &C,
+    inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
+    unit_v2: Option<&str>,
+    unit: Option<&str>,
+) -> anyhow::Result<Option<i64>>
+where
+    C: ConnectionTrait,
+{
+    resolve_and_sync_inbox_item_with_source(
+        db,
+        inbox_item_id,
+        inbox_item_uuid,
+        unit_v2,
+        unit,
+        true,
+    )
+    .await
+    .context(h!())
+}
+
+async fn resolve_and_sync_inbox_item_with_source<C>(
+    db: &C,
+    inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
+    unit_v2: Option<&str>,
+    unit: Option<&str>,
+    reprocessed: bool,
+) -> anyhow::Result<Option<i64>>
+where
+    C: ConnectionTrait,
+{
+    let selections =
+        super::unit_selection::load_selections(db, &[inbox_item_id])
+            .await
+            .context(h!())?;
+    let resolved_unit_texts = if let Some(resolution) =
+        selected_unit_resolution(
+            db,
+            inbox_item_id,
+            unit_v2,
+            unit,
+            selections.get(&inbox_item_id),
+            reprocessed,
+        )
         .await
-        .context(h!())?;
+        .context(h!())?
+    {
+        vec![resolution]
+    } else {
+        resolve_unit_text_candidates(db, unit_v2, unit)
+            .await
+            .context(h!())?
+    };
     sync_resolved_inbox_item(
         db,
         inbox_item_id,
@@ -1340,10 +1427,24 @@ async fn resolve_and_sync_inbox_item_cached<C>(
 where
     C: ConnectionTrait,
 {
-    let resolved_unit_texts =
+    let resolved_unit_texts = if let Some(resolution) =
+        selected_unit_resolution(
+            db,
+            inbox_item_id,
+            unit_v2,
+            unit,
+            cache.selections.get(&inbox_item_id),
+            false,
+        )
+        .await
+        .context(h!())?
+    {
+        vec![resolution]
+    } else {
         resolve_unit_text_candidates_cached(db, unit_v2, unit, cache)
             .await
-            .context(h!())?;
+            .context(h!())?
+    };
     sync_resolved_inbox_item(
         db,
         inbox_item_id,
@@ -1353,6 +1454,47 @@ where
     )
     .await
     .context(h!())
+}
+
+async fn selected_unit_resolution<C>(
+    db: &C,
+    inbox_item_id: i64,
+    unit_v2: Option<&str>,
+    unit: Option<&str>,
+    selection: Option<&super::unit_selection::InboxUnitSelection>,
+    reprocessed: bool,
+) -> anyhow::Result<Option<UnitTextResolution>>
+where
+    C: ConnectionTrait,
+{
+    let Some(selection) = selection else {
+        return Ok(None);
+    };
+    if selection.body_hash != selection.source_body_hash
+        || (!reprocessed
+            && !super::unit_selection::matches_source(selection, unit_v2, unit))
+    {
+        super::unit_selection::clear_selection(db, inbox_item_id)
+            .await
+            .context(h!())?;
+        return Ok(None);
+    }
+    if reprocessed
+        && (selection.unit_v2.as_deref() != unit_v2
+            || selection.unit.as_deref() != unit)
+    {
+        super::unit_selection::restore_metadata(db, selection)
+            .await
+            .context(h!())?;
+    }
+    Ok(Some(UnitTextResolution::resolved(
+        selection
+            .unit_v2
+            .as_deref()
+            .or(selection.unit.as_deref())
+            .unwrap_or_default(),
+        selection.unit_id,
+    )))
 }
 
 async fn sync_resolved_inbox_item<C>(
@@ -1674,7 +1816,15 @@ pub(crate) async fn backfill_inbox_unit_links(
         }
         let item_ids = items.iter().map(|item| item.id).collect_vec();
         let last_item_id = items.last().unwrap().id;
-        let mut cache = InboxUnitBackfillCache::default();
+        let mut cache = InboxUnitBackfillCache {
+            selections: super::unit_selection::load_selections(
+                &transaction,
+                &item_ids,
+            )
+            .await
+            .context(h!())?,
+            ..Default::default()
+        };
         for item in &items {
             resolve_and_sync_inbox_item_cached(
                 &transaction,

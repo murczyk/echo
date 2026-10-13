@@ -170,6 +170,7 @@ pub(in crate::devices) async fn browse(
         tag_ids,
         tag_match,
         untagged,
+        has_content,
     } = command;
     let device_id = device_query::authorize_file_registry_access(
         main_db,
@@ -216,14 +217,17 @@ pub(in crate::devices) async fn browse(
     let requested_page = KeysetPageRequest::try_new(limit, after)
         .map_err(map_read_error)
         .c(h!())?;
-    let (entries, next_cursor) = if let Some(tag_filter) = &tag_filter {
+    let filtered = tag_filter.is_some() || has_content.is_some();
+    let (entries, next_cursor) = if filtered {
         filtered_browse_page(
             file_registry_db,
             &scope,
             requested_page,
-            tag_filter,
+            tag_filter.as_ref(),
+            has_content,
         )
-        .await?
+        .await
+        .c(h!())?
     } else {
         let page =
             query::list_children(file_registry_db, &scope, requested_page)
@@ -373,7 +377,8 @@ async fn filtered_browse_page(
     file_registry_db: &FileRegistryDb,
     scope: &super::types::DirectoryScope,
     requested_page: KeysetPageRequest<EntrySortKey>,
-    tag_filter: &TagFilter,
+    tag_filter: Option<&TagFilter>,
+    has_content: Option<bool>,
 ) -> Result<(Vec<TreeEntry>, Option<String>), AppError> {
     let target_len = usize::try_from(requested_page.limit())
         .expect("validated file page limit must fit usize");
@@ -384,7 +389,7 @@ async fn filtered_browse_page(
             file_registry_db,
             scope,
             KeysetPageRequest::try_new(
-                Some(crate::config::DEVICE_FILE_PAGE_MAX_LIMIT),
+                Some(crate::devices::config::DEVICE_FILE_PAGE_MAX_LIMIT),
                 after,
             )
             .expect("configured file page limit must be valid"),
@@ -394,20 +399,33 @@ async fn filtered_browse_page(
         .c(h!())?;
         let page_len = page.entries.len();
         let has_later_page = page.next.is_some();
-        let entry_ids =
-            page.entries.iter().map(tree_entry_id).collect::<Vec<_>>();
+        let entry_ids = page
+            .entries
+            .iter()
+            .filter(|entry| {
+                tag_filter.is_some() || matches!(entry, TreeEntry::Directory(_))
+            })
+            .map(tree_entry_id)
+            .collect::<Vec<_>>();
         let matching_entry_ids = query::find_matching_tree_entry_ids(
             file_registry_db,
             scope.device_id(),
             &entry_ids,
             tag_filter,
+            has_content,
         )
         .await
         .map_err(map_read_error)
         .c(h!())?;
         for (index, entry) in page.entries.into_iter().enumerate() {
             let entry_id = tree_entry_id(&entry);
-            if matching_entry_ids.contains(&entry_id) {
+            let matches = match &entry {
+                TreeEntry::File(file) if tag_filter.is_none() => {
+                    has_content.is_none_or(|value| file.has_content == value)
+                }
+                _ => matching_entry_ids.contains(&entry_id),
+            };
+            if matches {
                 entries.push(entry);
                 if entries.len() == target_len {
                     let has_later_candidate =
@@ -443,7 +461,7 @@ async fn filtered_search_page(
             scope,
             filters,
             KeysetPageRequest::try_new(
-                Some(crate::config::DEVICE_FILE_PAGE_MAX_LIMIT),
+                Some(crate::devices::config::DEVICE_FILE_PAGE_MAX_LIMIT),
                 after,
             )
             .expect("configured file page limit must be valid"),

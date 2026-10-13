@@ -910,7 +910,7 @@ export const FeedColumnContent = memo(
           listProps={{
             'data-duty-feed-list': 'true',
             'data-duty-idle-offload': idleOffload.mountedItemIds != null ? 'true' : undefined,
-            className: 'm-0 list-none rer-duty pt-2 px-echo-md',
+            className: 'm-0 list-none rer-duty pt-2 pl-3',
           }}
           beforeList={
             !feed.loadingOlder && feed.hasReachedStart ? (

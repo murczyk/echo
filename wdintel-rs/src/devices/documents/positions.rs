@@ -145,7 +145,7 @@ pub(crate) async fn lookup(
         .c(h!())?;
     tx.execute_unprepared(&format!(
         "set local statement_timeout='{}ms'",
-        crate::config::DEVICE_DOCUMENT_QUERY_TIMEOUT_MS
+        crate::devices::config::DEVICE_DOCUMENT_QUERY_TIMEOUT_MS
     ))
     .await
     .c(h!())?;

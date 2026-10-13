@@ -2150,6 +2150,7 @@ export type BrowseDeviceFilesReq = {
   tagIds: Array<string> | null;
   tagMatch: TagMatch | null;
   untagged: boolean | null;
+  hasContent: boolean | null;
 };
 
 export type BrowseDeviceFilesRsp = {
@@ -2335,7 +2336,89 @@ export type DeviceAudioTranscription = {
 export type DeviceAudioDetails = {
   audio: DeviceAudio;
   transcription: DeviceAudioTranscription;
+  automaticTranscription: DeviceAudioAutomaticTranscriptionSnapshot;
+  transcriptionAvailability: DeviceAudioTranscriptionAvailability;
   canEdit: boolean;
+};
+
+export type DeviceAudioAutomaticTranscriptionState =
+  | 'not_requested'
+  | 'queued'
+  | 'preparing'
+  | 'running'
+  | 'retry_wait'
+  | 'succeeded'
+  | 'no_speech'
+  | 'failed'
+  | 'outcome_unknown'
+  | 'cancelled'
+;
+
+export type DeviceAudioTranscriptionDisposition =
+  | 'queued'
+  | 'already_active'
+  | 'already_completed'
+;
+
+export type DeviceAudioAutomaticTranscriptionSnapshot = {
+  version: string;
+  text: string | null;
+  state: DeviceAudioAutomaticTranscriptionState;
+  retryAt: string | null;
+  message: string | null;
+};
+
+export type DeviceAudioTranscriptionAvailability = {
+  deviceEnabled: boolean;
+  globalEnabled: boolean;
+  canEditManual: boolean;
+  canManageSetting: boolean;
+  canRetry: boolean;
+  blockedReason: string | null;
+};
+
+export type DeviceAudioTranscriptionStatusReq = {
+  deviceId: string;
+  audioId: string;
+  knownVersion: string | null;
+};
+
+export type DeviceAudioTranscriptionStatusRsp = {
+  snapshot: DeviceAudioAutomaticTranscriptionSnapshot | null;
+  availability: DeviceAudioTranscriptionAvailability;
+};
+
+export type RetryDeviceAudioTranscriptionReq = {
+  deviceId: string;
+  audioId: string;
+};
+
+export type RetryDeviceAudioTranscriptionRsp = {
+  snapshot: DeviceAudioAutomaticTranscriptionSnapshot;
+  availability: DeviceAudioTranscriptionAvailability;
+  disposition: DeviceAudioTranscriptionDisposition;
+};
+
+export type DeviceAudioAsrSettingsReq = {
+  deviceId: string;
+};
+
+export type SetDeviceAudioAsrSettingsReq = {
+  deviceId: string;
+  enabled: boolean;
+};
+
+export type DeviceAudioAsrSettingsRsp = {
+  deviceId: string;
+  enabled: boolean;
+  globalEnabled: boolean;
+  canManageSetting: boolean;
+  blockedReason: string | null;
+};
+
+export type DeviceAudioTranscriptionAdmissionError = {
+  code: string;
+  message: string;
 };
 
 export type DeviceAudioPreparation = {
@@ -2343,6 +2426,7 @@ export type DeviceAudioPreparation = {
   wave: DeviceAudioPreparationState;
   spectrogram: DeviceAudioPreparationState;
   retryAfterMs: number;
+  transcriptionAdmissionError: DeviceAudioTranscriptionAdmissionError | null;
 };
 
 export type PrepareDeviceAudioReq = {
@@ -3457,6 +3541,8 @@ export type DeleteUnitDuplicateReq = {
 
 export type UnitSearchReq = {
   search: string;
+  includeInactive: boolean | null;
+  names: Array<string> | null;
 };
 
 export type UnitDetailsReq = {
@@ -3786,6 +3872,67 @@ export type DeviceNameSearchResult = {
 
 export type DeviceNameSearchRsp = {
   devices: Array<DeviceNameSearchResult>;
+};
+
+export type SubmitNetwork = {
+  signalName: string | null;
+  cc: number | null;
+  name: string | null;
+};
+
+export type SubmitDmrMetadata = {
+  timestamp: string;
+  cc: number | null;
+  freq: string;
+  signalName: string;
+  senderId: number | null;
+  senderName: string | null;
+  callGroupId: number | null;
+  callGroupName: string | null;
+  hashId: string | null;
+};
+
+export type DirectSubmitPayload = {
+  fullBody: string | null;
+  text: string | null;
+  comment: string | null;
+  freq: string | null;
+  coords: Array<GeoCoordinates>;
+  fromCallsign: string | null;
+  to: Array<string>;
+  tags: Array<string> | null;
+  timestamp: string | null;
+  isTimeNull: boolean | null;
+  post: string | null;
+  unit: string | null;
+  unitId: number | null;
+  createUnit: boolean;
+  locations: Array<string>;
+  network: SubmitNetwork | null;
+  dmr: Array<SubmitDmrMetadata>;
+  signalGroupMasterKey: string | null;
+  deviceNameId: number | null | null;
+  uploadUrls: Array<string> | null;
+  attachmentUpdates: DirectSubmitAttachmentUpdates | null;
+  deletedMediaIds: Array<string> | null;
+  retainedMediaIds: Array<string> | null;
+  parentSignalMessageIds: Array<number>;
+  copySourceSignalMessageIds: Array<number>;
+};
+
+export type DirectSubmitAttachmentUpdates = {
+  replacements: Array<DirectSubmitAttachmentReplacement>;
+  renames: Array<DirectSubmitAttachmentRename>;
+};
+
+export type DirectSubmitAttachmentReplacement = {
+  mediaId: string;
+  uploadUrl: string;
+};
+
+export type DirectSubmitAttachmentRename = {
+  mediaId: string;
+  fileName: string;
 };
 
 export type DirectSubmitParsePayload = {
@@ -5008,6 +5155,8 @@ export type SystemSettingsCurrentRsp = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   twoFactorAuthEnabled: boolean;
+  apiRateLimitReplenishIntervalMs: number;
+  apiRateLimitBurstSize: number;
   excludeOrbitOtherUnits: boolean;
 };
 
@@ -5051,6 +5200,8 @@ export type SystemSettingsItem = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   twoFactorAuthEnabled: boolean;
+  apiRateLimitReplenishIntervalMs: number;
+  apiRateLimitBurstSize: number;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheEnabled: boolean;
   messengerMediaCacheRetentionHours: number;
@@ -5097,6 +5248,8 @@ export type CreateSystemSettingsReq = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
+  apiRateLimitReplenishIntervalMs: number | null;
+  apiRateLimitBurstSize: number | null;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheEnabled: boolean;
   messengerMediaCacheRetentionHours: number;

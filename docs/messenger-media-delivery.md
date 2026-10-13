@@ -51,24 +51,46 @@ while configured capacity and local storage are healthy.
 
 `GET /api/messenger/media/{id}` serves original bytes, preferring a retained local
 file. `GET /api/messenger/media/{id}/playback` checks the same authorization and
-serves an immutable MP4 playback copy. Both support byte ranges and prevent
-shared HTTP caching. Preparing copies return `503` with `Retry-After`; failed
-normalization returns `422`. Disabled normalization or unsupported source codecs
-redirect to the original URL. Each selected URL keeps one representation during
-playback; original downloads never use a remuxed copy.
+selects a playback representation. Plaintext cache misses redirect immediately
+to the original byte-range stream; downloading or preparing a complete local
+copy never gates them. Ready MP4 copies remain available for ordinary videos.
+Encrypted media retains the existing local-decryption readiness flow.
 
-Playback copies currently support H.264 8-bit 4:2:0 video with optional AAC audio.
-FFmpeg copies encoded streams, normalizes H.264 decoder configuration, and moves
-MP4 metadata before video data using `+faststart`. The resulting configuration is
-checked against its embedded SPS. It does not transcode unsupported codecs or
-reduce video bitrate. Adaptive HLS renditions remain a separate improvement for
-slow mobile networks.
+For plaintext MP4s of at least 8 MiB averaging over 8 Mbps, playback redirects to
+`/playback/preview.m3u8`. The VOD playlist describes independently seekable
+one-second segments. Up to eight seconds are prepared per source connection,
+and each completed segment becomes playable immediately. Playback requests also
+prepare a short run four seconds ahead, using the same two-worker limit; this
+look-ahead stops advancing when the browser stops requesting segments. Generation starts on demand from the retained original when available,
+otherwise from a short-lived, server-only signed B2/S3 URL using byte ranges.
+No complete original download or whole-video transcode is required. Preview
+encoding limits resolution to 720p, frame rate to 30 fps, and video bitrate to
+3 Mbps (H.264 with optional AAC audio). Original downloads preserve all bytes
+and quality. MP4 inspection failures fall back to ordinary playback.
 
-The browser performs a one-byte readiness request, then streams the video. Each
-readiness request times out after 30 seconds; automatic retries stop after two
-minutes. A stalled player also exposes recovery controls after 30 seconds.
-Blocked autoplay prompts an explicit tap, and playback failures expose Retry,
-Open original, and Download controls.
+Every playlist and segment request repeats the original media access checks.
+URLs contain no storage credentials, and responses prohibit shared HTTP caching.
+The browser lazy-loads hls.js for controlled buffering and retries, falling back
+to native HLS on browsers without MediaSource support.
+Closing the preview destroys its stream; seeking requests the relevant segment
+without downloading the preceding video. A stalled player exposes Retry after
+30 seconds, and blocked autoplay prompts an explicit tap.
+
+Preview files live separately under
+`<storage_dir>/messenger_media_cache/preview-v1`, with private permissions,
+atomic publication, and file locks shared by application processes. At most two
+preview jobs run concurrently with two codec threads each. Busy requests return
+503 for retry. Probes time out after 5 seconds and segments after 30 seconds;
+segments are limited to 8 MiB. New segment generation prunes the preview cache
+to a 512 MiB budget with headroom for in-flight jobs and expires day-old files.
+The configured retention free-space floor also applies to previews (with a
+1 GiB fallback when no retention settings exist). These expendable previews
+do not consume the protected-original retention budget.
+
+Playback-copy normalization continues to support H.264 8-bit 4:2:0 with optional
+AAC, using stream copy and `+faststart`. It does not reduce bitrate; the separate
+preview path handles bandwidth-heavy sources. Unsupported and encrypted formats
+continue through their original playback paths.
 
 ## Rollout and recovery
 
@@ -83,9 +105,10 @@ origin traffic, and playback latency. The worker logs reconciliation counts and
 retries missing originals after storage recovers. Investigation of ingest lag is
 separate from this delivery path.
 
-To roll back, turn off **Увімкнути локальний кеш медіа** in the same admin form
-and save. Original
-objects and existing media metadata remain compatible. Retained local files can
+To disable original retention, turn off **Увімкнути локальний кеш медіа** in the
+same admin form and save. Preview streaming is independent of that setting.
+Roll back preview streaming by restoring the previous backend and frontend
+together. Original objects and existing media metadata remain compatible. Retained local files can
 be removed after stopping the new worker; never remove active cache files or
 lock files while their processes are running.
 
@@ -94,3 +117,13 @@ shared-reference retention, concurrent reservations, restart recovery, disk
 exhaustion, and real iPhone/Safari playback. Use controlled network conditions
 when comparing first-byte and first-frame latency; local retention cannot ensure
 that a slow mobile connection can sustain the original video's bitrate.
+
+
+Preview regression coverage lives in
+`wdintel-rs/src/messenger/media_preview/tests.rs` and
+`wdintel-web/tests/e2e/message-card-media-preview.spec.ts` (#3769).
+Staging acceptance must measure first frame and sustained playback on a large
+cold object, reopen it with warm segments, seek to an uncached position, and
+check that closing stops further requests. A cold source still depends on B2
+latency and how quickly FFmpeg can decode the source GOP; the original bitrate
+and keyframe spacing can affect preparation time.

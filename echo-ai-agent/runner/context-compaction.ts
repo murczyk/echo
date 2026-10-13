@@ -30,6 +30,7 @@ interface ContextSettings {
   providerApiKey?: string;
   timeContext?: unknown;
   signal?: AbortSignal;
+  saveCheckpoint?: (summary: string) => Promise<void>;
 }
 
 const MAX_COMPACTION_PASSES = 3;
@@ -340,6 +341,7 @@ async function compactOnce(
       }
       throw new ContextCompactionLimitError("context compaction did not reduce the request");
     }
+    await settings.saveCheckpoint?.(summary);
     session.sessionManager.appendCompaction(
       summary,
       entries[cut]?.id ?? "",
@@ -424,6 +426,7 @@ async function compactAllForOutputRetry(
     runtime.selectedEngine.contextWindow -
     availableTokens(runtime, session.agent.state);
   const messages = compactedMessages(summary, tokensBefore, []);
+  await settings.saveCheckpoint?.(summary);
   session.sessionManager.appendCompaction(
     summary,
     "",

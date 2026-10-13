@@ -404,9 +404,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
     apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
     apiRef.current!.cancelFollowTail('mf-0');
-    hoisted.fetchInboxCount
-      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
-      .mockResolvedValueOnce({ quantity: 21, firstElementTs: null });
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 21, firstElementTs: null });
     await startPoll();
     await act(async () => {
       await flushMicrotasks();

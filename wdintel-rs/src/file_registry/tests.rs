@@ -662,6 +662,8 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20261007_162050_file_preview".to_string(),
             "m20261008_124822_device_audio_preparation".to_string(),
             "m20261008_183827_file_preview_archive_members".to_string(),
+            "m20261010_130006_device_audio_asr".to_string(),
+            "m20261012_094502_device_audio_asr_scan_indexes".to_string(),
         ]
     );
 }

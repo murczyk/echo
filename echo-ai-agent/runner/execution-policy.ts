@@ -140,6 +140,7 @@ function quoteExcerpt(text: string): string {
 export interface BudgetEvidence {
   messages: CitedMessage[];
   files: FileSection[];
+  saved?: { text: string; citations: string[] }[];
 }
 
 function evidenceRecords(
@@ -174,8 +175,10 @@ export function chooseBudgetAnswer(
     fileCitationHref(section.source),
   ),
 ): string {
+  const savedOnly = !evidence.messages.length && !evidence.files.length && Boolean(evidence.saved?.length);
   const valid =
     candidate &&
+    (!savedOnly || evidence.saved!.some((record) => record.citations.some((citation) => candidate.includes(citation)))) &&
     !needsCitationRepair(candidate, evidence.messages) &&
     (!evidence.files.length ||
       evidence.files.some((section) =>
@@ -212,7 +215,7 @@ export async function synthesizeBudgetEvidence(
   const { engine, policy, signal } = options;
   if (signal.aborted) return null;
   const records = evidenceRecords(options.evidence);
-  if (!records.length) return null;
+  if (!records.length && !options.evidence.saved?.length) return null;
   const messages: Context["messages"] = [
     { role: "user", content: options.prompt, timestamp: Date.now() },
   ];
@@ -235,7 +238,8 @@ export async function synthesizeBudgetEvidence(
       messages.push(checkpoint);
     }
   }
-  for (const record of records.reverse()) {
+  const saved = (options.evidence.saved ?? []).map((record) => ({ savedEvidence: record.text, citations: record.citations }));
+  for (const record of [...records, ...saved].reverse()) {
     const message = {
       role: "user" as const,
       content: JSON.stringify(record),

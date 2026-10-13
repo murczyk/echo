@@ -188,3 +188,7 @@ export async function audible(player: Locator) {
 export async function remember(player: Locator) {
   return player.evaluateHandle((element: CustomAudioPlayer) => element);
 }
+
+export async function rememberNativeAudio(player: Locator) {
+  return player.evaluateHandle((element: CustomAudioPlayer) => element.audio);
+}

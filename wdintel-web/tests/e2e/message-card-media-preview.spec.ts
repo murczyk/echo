@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { minimalInboxMessage } from '../../src/ts/react/routes/rer-duty-neo/inbox-message-mocks';
 
@@ -234,6 +236,143 @@ test.describe('@smoke @regression', () => {
       originalUrl,
     );
     await expect(dialog.getByRole('button', { name: 'Скачати' })).toBeVisible();
+  });
+
+  test('ECHO-3769 starts streaming, retries a busy segment, seeks, and stops on close', async ({
+    page,
+  }) => {
+    const directory = await mkdtemp(resolve(tmpdir(), 'echo-video-preview-'));
+    try {
+      for (const start of [0, 8]) {
+        const length = start === 0 ? 8 : 4;
+        execFileSync('ffmpeg', [
+          '-v',
+          'error',
+          '-f',
+          'lavfi',
+          '-i',
+          'testsrc2=size=320x180:rate=30',
+          '-f',
+          'lavfi',
+          '-i',
+          'sine=frequency=440:sample_rate=48000',
+          '-t',
+          String(length),
+          '-c:v',
+          'libx264',
+          '-threads',
+          '2',
+          '-preset',
+          'ultrafast',
+          '-tune',
+          'zerolatency',
+          '-g',
+          '30',
+          '-sc_threshold',
+          '0',
+          '-c:a',
+          'aac',
+          '-af',
+          'aresample=48000,atrim=end=' + (length - 1024 / 48000) + ',asetpts=PTS+1024',
+          '-avoid_negative_ts',
+          'disabled',
+          '-output_ts_offset',
+          String(start),
+          '-muxdelay',
+          '0',
+          '-f',
+          'hls',
+          '-hls_time',
+          '1',
+          '-hls_playlist_type',
+          'vod',
+          '-hls_flags',
+          'temp_file+independent_segments',
+          '-start_number',
+          String(start),
+          '-hls_segment_filename',
+          resolve(directory, '%d.ts'),
+          resolve(directory, 'part' + start + '.m3u8'),
+        ]);
+      }
+      await writeFile(
+        resolve(directory, 'preview.m3u8'),
+        '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n' +
+          Array.from({ length: 12 }, (_, index) => '#EXTINF:1.000000,\n' + index + '.ts\n').join(
+            '',
+          ) +
+          '#EXT-X-ENDLIST\n',
+      );
+      await openMessageCardPreviewHost(page, 'duty');
+      const originalUrl = '/api/messenger/media/streaming-preview-test';
+      const inbox = buildMessageCardMediaPreviewInboxResponse();
+      const attachment = inbox.inbox_items[0][1].media?.find((item) => item.id === 'e2e-video-1');
+      if (!attachment) throw new Error('Missing video fixture');
+      attachment.href = originalUrl;
+      await page.route('**/api/rer-importer/get-inbox', (route) => route.fulfill({ json: inbox }));
+      let segmentRequests = 0;
+      let originalRequests = 0;
+      await page.route('**/api/messenger/media/streaming-preview-test**', async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path === originalUrl) {
+          originalRequests += 1;
+          await route.fulfill({ status: 500 });
+        } else if (path.endsWith('/playback')) {
+          await route.fulfill({
+            status: 307,
+            headers: { Location: originalUrl + '/playback/preview.m3u8' },
+          });
+        } else if (path.endsWith('.m3u8')) {
+          await route.fulfill({
+            contentType: 'application/vnd.apple.mpegurl',
+            body: await readFile(resolve(directory, 'preview.m3u8')),
+          });
+        } else {
+          segmentRequests += 1;
+          if (segmentRequests === 1) {
+            await route.fulfill({ status: 503, headers: { 'Retry-After': '1' } });
+            return;
+          }
+          const name = path.split('/').pop()!;
+          await route.fulfill({
+            contentType: 'video/mp2t',
+            body: await readFile(resolve(directory, name)),
+          });
+        }
+      });
+      await page.reload();
+      await page.getByRole('button', { name: /^Розгорнути медіа:/ }).click();
+      const dialog = await openVideoPreview(page);
+      const video = dialog.locator('video');
+      await expect
+        .poll(() => video.evaluate((video) => video.readyState))
+        .toBeGreaterThanOrEqual(2);
+      await video.evaluate(async (video) => {
+        video.muted = true;
+        await video.play();
+      });
+      await expect.poll(() => video.evaluate((video) => video.currentTime)).toBeGreaterThan(2.5);
+      await video.evaluate((video) => {
+        video.currentTime = 10;
+      });
+      await expect.poll(() => video.evaluate((video) => video.currentTime)).toBeGreaterThan(10.5);
+      await video.evaluate((video) => {
+        video.currentTime = 7;
+      });
+      await expect.poll(() => video.evaluate((video) => video.currentTime)).toBeGreaterThan(9);
+      expect(originalRequests).toBe(0);
+      await expect(dialog.getByRole('link', { name: 'Відкрити в новій вкладці' })).toHaveAttribute(
+        'href',
+        originalUrl,
+      );
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      const countAfterClose = segmentRequests;
+      await page.waitForTimeout(1000);
+      expect(segmentRequests).toBe(countAfterClose);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   for (const host of ['duty', 'analysis'] as const) {

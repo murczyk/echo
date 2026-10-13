@@ -104,7 +104,7 @@ pub(super) async fn verified_content(
         .c(h!())
 }
 
-async fn verified_content_with_permit(
+pub(super) async fn verified_content_with_permit(
     runtime: Arc<DeviceAudioRuntime>,
     key: String,
     expected: SourceFingerprint,

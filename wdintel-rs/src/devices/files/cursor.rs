@@ -1,5 +1,5 @@
 use super::FilesystemError;
-use crate::config::DEVICE_FILE_CURSOR_MAX_BYTES;
+use crate::devices::config::DEVICE_FILE_CURSOR_MAX_BYTES;
 use uuid::Uuid;
 
 pub(in crate::devices) fn encode(boundary_entry_id: Uuid) -> String {

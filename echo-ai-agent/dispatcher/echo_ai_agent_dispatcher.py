@@ -11,6 +11,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
@@ -18,9 +19,9 @@ from typing import Any, NoReturn
 INSTANCE_PREFIX = "echo-ai-agent-"
 TEMPLATE_NAME = "echo-ai-agent-019fc7f7-9770-7f83-9c1a-211af29b02e6"
 PROFILE_NAME = "echo-ai-agent"
-HARNESS_RELEASE = "2026.10.10.5"
+HARNESS_RELEASE = "2026.10.11.2"
 COMPATIBLE_RUNNER_RELEASES = frozenset(
-    {HARNESS_RELEASE, "2026.10.10.4", "2026.10.10.3", "2026.10.10.2", "2026.10.10.1", "2026.10.09.15", "2026.10.09.14", "2026.10.09.13", "2026.10.09.12", "2026.10.09.11", "2026.10.09.10", "2026.10.09.9", "2026.10.09.8", "2026.10.09.7", "2026.10.09.6", "2026.10.09.5", "2026.10.09.4", "2026.10.09.3", "2026.10.09.2", "2026.10.09.1", "2026.10.08.3", "2026.10.08.2", "2026.10.08.1", "2026.10.06.1", "2026.10.05.2", "2026.10.05.1", "2026.10.04.1", "2026.10.03.1", "2026.10.01.6", "2026.10.01.5", "2026.10.01.4", "2026.10.01.3", "2026.10.01.2", "2026.10.01.1", "2026.09.29.9", "2026.09.29.8", "2026.09.29.7", "2026.09.29.6", "2026.09.29.5", "2026.09.29.4", "2026.09.29.3", "2026.09.29.2", "2026.09.29.1", "2026.09.28.1", "2026.09.27.3", "2026.09.27.2", "2026.09.27.1", "2026.08.25.2", "2026.08.25.1", "2026.08.22.1", "2026.08.05.2"}
+    {HARNESS_RELEASE, "2026.10.11.1", "2026.10.10.5", "2026.10.10.4", "2026.10.10.3", "2026.10.10.2", "2026.10.10.1", "2026.10.09.15", "2026.10.09.14", "2026.10.09.13", "2026.10.09.12", "2026.10.09.11", "2026.10.09.10", "2026.10.09.9", "2026.10.09.8", "2026.10.09.7", "2026.10.09.6", "2026.10.09.5", "2026.10.09.4", "2026.10.09.3", "2026.10.09.2", "2026.10.09.1", "2026.10.08.3", "2026.10.08.2", "2026.10.08.1", "2026.10.06.1", "2026.10.05.2", "2026.10.05.1", "2026.10.04.1", "2026.10.03.1", "2026.10.01.6", "2026.10.01.5", "2026.10.01.4", "2026.10.01.3", "2026.10.01.2", "2026.10.01.1", "2026.09.29.9", "2026.09.29.8", "2026.09.29.7", "2026.09.29.6", "2026.09.29.5", "2026.09.29.4", "2026.09.29.3", "2026.09.29.2", "2026.09.29.1", "2026.09.28.1", "2026.09.27.3", "2026.09.27.2", "2026.09.27.1", "2026.08.25.2", "2026.08.25.1", "2026.08.22.1", "2026.08.05.2"}
 )
 RUNNER_PROTOCOL_VERSION = 1
 NODE_VERSION = "24.19.0"
@@ -35,6 +36,8 @@ MAX_EVENT_CHARACTERS = 1024 * 1024
 STDERR_CHUNK_CHARACTERS = 4096
 STDERR_TAIL_BYTES = 8 * 1024
 LOCK_PATH = Path("/run/lock/echo-ai-agent-dispatcher.lock")
+LOCK_WAIT_SECONDS = 45
+DEPLOY_LOCK_PATH = Path("/run/lock/echo-ai-agent-deploy.lock")
 NAMESPACE_RELEASES = Path("/etc/echo-ai-agent/namespace-releases")
 ROLLOUT_LOCK_ROOT = Path("/run/lock/echo-ai-agent-rollout")
 UUID7_RE = re.compile(
@@ -770,19 +773,48 @@ def dispatch_with_rollout_lock(request: Request, namespace: str, lock_file: Any)
     namespace_lock = ROLLOUT_LOCK_ROOT / f"{namespace}.lock"
     if not namespace_lock.exists():
         fail("namespace rollout lock is not provisioned")
-    with namespace_lock.open("r", encoding="utf-8") as lease:
+    with (
+        DEPLOY_LOCK_PATH.open("r", encoding="utf-8") as deployment_lease,
+        namespace_lock.open("r", encoding="utf-8") as lease,
+    ):
+        try:
+            fcntl.flock(deployment_lease, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            fail("host upgrade is in progress; retry after recovery")
         try:
             fcntl.flock(lease, fcntl.LOCK_SH | fcntl.LOCK_NB)
         except BlockingIOError:
             fail("namespace upgrade is in progress")
         if maintenance.exists() and request.operation != "test_connection":
             fail("namespace upgrade is in progress; retry after recovery")
+        return dispatch_with_instance_lock(request, namespace, lock_file)
+
+
+def dispatch_with_instance_lock(request: Request, namespace: str, lock_file: Any) -> dict[str, Any]:
+    instance_lock = Path.home() / f"{instance_name(request.body)}.lock"
+    deadline = time.monotonic() + LOCK_WAIT_SECONDS
+    with instance_lock.open("a", encoding="utf-8") as instance_lease:
         exclusive = request.operation in MUTATING_OPERATIONS
-        fcntl.flock(lock_file, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+        wait_for_lock(instance_lease, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH, deadline)
+        if not exclusive:
+            return dispatch(request, namespace)
+        wait_for_lock(lock_file, fcntl.LOCK_EX, deadline)
         try:
             return dispatch(request, namespace)
         finally:
             fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+
+def wait_for_lock(lease: Any, mode: int, deadline: float) -> None:
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            fail("agent operation is busy; retry after the current operation")
+        try:
+            fcntl.flock(lease, mode | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            time.sleep(min(0.05, remaining))
 
 
 def main() -> int:

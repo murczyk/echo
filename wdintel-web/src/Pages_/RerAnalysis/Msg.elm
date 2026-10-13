@@ -18,9 +18,7 @@ type Msg
     | InitGotTime Posix
     | GotCurrentUser (Result ApiError B.User)
     | DateRangePickerMsg Shared.Components.DateRangePicker.Msg
-    | EventPollTrigger (Maybe String)
-    | EventPollReceived (Result ApiError B.LongPollRsp)
-    | InboxEvents (List B.EventMsg)
+    | InboxEvents (List Int)
     | InboxMessagesUpdated (Result ApiError B.MessageIdsRsp)
     | GotInbox (Result ApiError B.InboxMessagesRsp)
     | GotInboxMore (Result ApiError B.InboxMessagesRsp)

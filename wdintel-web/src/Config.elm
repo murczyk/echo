@@ -2,6 +2,7 @@ module Config exposing
     ( adjacentFreqsRangeOptions
     , analysisHourAfterWhichWeTakeADayTomorrow
     , babakNewCallsignMinMentionsDefault
+    , eventServicePollTracker
     , featureAudioTranscriptionBesidePlayer
     , featureDisableRerDutyDedup
     , featureEnableTornado
@@ -11,6 +12,7 @@ module Config exposing
     , waterfallLoadEarlierThresholdMs
     , waterfallMessageLimit
     , waterfallNetworkRetryDelayMs
+    , waterfallPollingMinIntervalMs
     )
 
 {-| Show tornado on visible messages
@@ -20,6 +22,11 @@ module Config exposing
 featureEnableTornado : Bool
 featureEnableTornado =
     False
+
+
+eventServicePollTracker : String
+eventServicePollTracker =
+    "shared-event-stream"
 
 
 featureShowCallsignsMetadata : Bool
@@ -61,6 +68,11 @@ waterfallMessageLimit =
 
 waterfallNetworkRetryDelayMs : Float
 waterfallNetworkRetryDelayMs =
+    5000
+
+
+waterfallPollingMinIntervalMs : Float
+waterfallPollingMinIntervalMs =
     5000
 
 

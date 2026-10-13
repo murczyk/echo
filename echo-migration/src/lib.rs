@@ -465,6 +465,12 @@ mod m20261008_080110_rer_report_admin;
 
 mod m20261009_201221_ai_agent_reasoning_policy;
 
+mod m20261011_112422_ai_agent_completion_event;
+mod m20261011_112649_ai_agent_work_memory;
+mod m20261012_082021_signal_message_group_duplicate_lookup_index;
+mod m20261012_155351_api_rate_limit;
+mod m20261013_094137_inbox_unit_selection;
+
 pub struct Migrator;
 
 mod m20261008_051638_ai_position_highlight_flags;
@@ -1119,6 +1125,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20261010_085100_settlement_alias::Migration),
             Box::new(m20261010_094039_settlement_alias_lookup_indexes::Migration),
             Box::new(m20261010_110158_ai_settlement_worker_groups::Migration),
+            Box::new(m20261011_112422_ai_agent_completion_event::Migration),
+            Box::new(m20261011_112649_ai_agent_work_memory::Migration),
+            Box::new(m20261012_082021_signal_message_group_duplicate_lookup_index::Migration),
+            Box::new(m20261012_155351_api_rate_limit::Migration),
+            Box::new(m20261013_094137_inbox_unit_selection::Migration),
         ]
     }
 }

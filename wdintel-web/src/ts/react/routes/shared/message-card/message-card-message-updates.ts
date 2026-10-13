@@ -4,7 +4,35 @@ export type MessageItem = [number, InboxMessage];
 
 export type MessageFeedWithItems = {
   items: MessageItem[];
+  pendingNewerItems?: MessageItem[];
 };
+
+export function inboxMessagesEqual(left: InboxMessage, right: InboxMessage): boolean {
+  return left === right || JSON.stringify(left) === JSON.stringify(right);
+}
+
+function mergeUpdatedMessageItems(
+  items: MessageItem[],
+  requestedIds: Set<number>,
+  updatesById: Map<number, InboxMessage>,
+  removedMessageIds: Set<number>,
+): MessageItem[] {
+  let changed = false;
+  const nextItems = items.flatMap((item) => {
+    const [messageId, message] = item;
+    if (!requestedIds.has(messageId)) return [item];
+    const refreshedMessage = updatesById.get(messageId);
+    if (refreshedMessage == null) {
+      changed = true;
+      removedMessageIds.add(messageId);
+      return [];
+    }
+    if (inboxMessagesEqual(refreshedMessage, message)) return [item];
+    changed = true;
+    return [[messageId, refreshedMessage] as MessageItem];
+  });
+  return changed ? nextItems : items;
+}
 
 export function mergeUpdatedDutyFeedMessages<T extends MessageFeedWithItems & { id: string }>(
   currentFeeds: T[],
@@ -22,27 +50,24 @@ export function mergeUpdatedDutyFeedMessages<T extends MessageFeedWithItems & { 
     const feedRuntime = feed as T & { readIds?: Set<number>; unreadCount?: number };
     const removedMessageIds = new Set<number>();
     const originalReadIds = feedRuntime.readIds instanceof Set ? feedRuntime.readIds : null;
-    let feedChanged = false;
-    const nextItems = feedRuntime.items
-      .map(([messageId, message]) => {
-        if (!requestedIds.has(messageId)) return [messageId, message] as MessageItem;
-        const refreshedMessage = updatesById.get(messageId);
-        if (refreshedMessage == null) {
-          feedChanged = true;
-          removedMessageIds.add(messageId);
-          return null;
-        }
-        if (refreshedMessage === message) {
-          return [messageId, message] as MessageItem;
-        }
-        feedChanged = true;
-        return [messageId, refreshedMessage] as MessageItem;
-      })
-      .filter((item): item is MessageItem => item != null);
-    if (!feedChanged) return feed;
+    const nextItems = mergeUpdatedMessageItems(
+      feed.items,
+      requestedIds,
+      updatesById,
+      removedMessageIds,
+    );
+    const pendingNewerItems = feed.pendingNewerItems
+      ? mergeUpdatedMessageItems(
+          feed.pendingNewerItems,
+          requestedIds,
+          updatesById,
+          removedMessageIds,
+        )
+      : feed.pendingNewerItems;
+    if (nextItems === feed.items && pendingNewerItems === feed.pendingNewerItems) return feed;
     changed = true;
     if (removedMessageIds.size === 0) {
-      return { ...feed, items: nextItems };
+      return { ...feed, items: nextItems, pendingNewerItems };
     }
 
     const readIds =
@@ -61,6 +86,7 @@ export function mergeUpdatedDutyFeedMessages<T extends MessageFeedWithItems & { 
     return {
       ...feed,
       items: nextItems,
+      pendingNewerItems,
       readIds,
       unreadCount,
     };

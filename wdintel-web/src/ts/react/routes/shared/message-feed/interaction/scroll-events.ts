@@ -55,6 +55,16 @@ export function useMessageFeedScrollEvents({
       // A resize-generated scroll event must not replace the pre-resize anchor.
       return;
     }
+    if (
+      scroller &&
+      snapshot &&
+      scroller.scrollTop ===
+        Math.min(snapshot.scrollTop, Math.max(0, scroller.scrollHeight - scroller.clientHeight)) &&
+      scroller.scrollHeight !== snapshot.scrollHeight
+    ) {
+      // A delayed restoration scroll event must not capture a subsequent, unrestored reflow.
+      return;
+    }
     if (refs.followAnimatingRef.current) {
       if (!scroller) return;
       // Programmatic ease only increases scrollTop; an upward delta is user input.

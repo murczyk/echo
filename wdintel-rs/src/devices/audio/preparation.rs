@@ -290,6 +290,27 @@ pub(super) async fn prepare(
     content::validate_source(&runtime, device_id, audio_id)
         .await
         .c(h!())?;
+    let transcription_admission_error = match transcription::open(
+        &runtime,
+        transcription::ActorAudioCommand {
+            actor_id: actor,
+            target: transcription::AudioTarget {
+                device_id,
+                audio_id,
+            },
+        },
+    )
+    .await
+    {
+        Ok(_) => None,
+        Err(error) => {
+            log::warn!("device audio ASR admission failed: audio_id={audio_id}, error={error:#}");
+            Some(DeviceAudioTranscriptionAdmissionError {
+                code: "transcription_unavailable".into(),
+                message: "Транскрибація тимчасово недоступна. Аудіо можна прослухати.".into(),
+            })
+        }
+    };
     let ready = content::readiness(&runtime, audio_id).await.c(h!())?;
     let job = if ready.iter().all(|ready| *ready) {
         None
@@ -314,6 +335,7 @@ pub(super) async fn prepare(
         wave: states[1],
         spectrogram: states[2],
         retry_after_ms: DEVICE_AUDIO_PREPARATION_POLL_MS,
+        transcription_admission_error,
     })
 }
 
@@ -322,6 +344,7 @@ pub(super) async fn accepted(
     attempt: &crate::file_registry::entities::device_audio_ingest::Model,
     source: &std::path::Path,
 ) {
+    runtime.asr_wake.notify_one();
     if let Err(error) =
         content::stage_original(&runtime, attempt.audio_id, source).await
     {

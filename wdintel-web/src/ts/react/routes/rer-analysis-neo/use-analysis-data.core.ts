@@ -30,6 +30,7 @@ import {
 } from '../shared/useInboxChangedMessageIds';
 import { useLocalInboxChangeOrigins } from './use-local-inbox-change-origins';
 import { useTargetedInboxReconciliation } from './use-targeted-inbox-reconciliation';
+import { inboxMessagesEqual } from '../shared/message-card/message-card-message-updates';
 
 export { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-data.support';
 
@@ -363,18 +364,27 @@ function mergeRefreshedMessages(
   shouldKeepRefreshedMessage: (messageId: number, message: InboxMessage) => boolean,
 ): Array<[number, InboxMessage]> {
   const nextMessages: Array<[number, InboxMessage]> = [];
-  for (const [messageId, currentMessage] of currentMessages) {
+  let changed = false;
+  for (const currentItem of currentMessages) {
+    const [messageId, currentMessage] = currentItem;
     const refreshedMessage = refreshedMessages.get(messageId);
     if (refreshedMessage == null) {
-      if (!changedMessageIds.has(messageId)) nextMessages.push([messageId, currentMessage]);
+      if (!changedMessageIds.has(messageId)) nextMessages.push(currentItem);
+      else changed = true;
     } else {
       const nextMessage = mergeRefreshedMessage(refreshedMessage, withoutModelTags);
       if (shouldKeepRefreshedMessage(messageId, nextMessage)) {
-        nextMessages.push([messageId, nextMessage]);
+        if (inboxMessagesEqual(currentMessage, nextMessage)) nextMessages.push(currentItem);
+        else {
+          changed = true;
+          nextMessages.push([messageId, nextMessage]);
+        }
+      } else {
+        changed = true;
       }
     }
   }
-  return nextMessages;
+  return changed ? nextMessages : currentMessages;
 }
 
 function messageRealtimeOrderValue(
@@ -764,17 +774,19 @@ export function useAnalysisData({
           const matchingItems =
             exactMessageIds.length === 0
               ? []
-              : await fetchMessagesByIdsMatchingFilters(exactMessageIds, inboxReq);
+              : await fetchMessagesByIdsMatchingFilters(exactMessageIds, inboxReq, { signal });
           matchingMessageItems = matchingItems;
           matchingMapMessageItems = matchingItems;
         } else {
           [matchingMessageItems, matchingMapMessageItems] = await Promise.all([
             exactFilterMessageIds.length === 0
               ? []
-              : fetchMessagesByIdsMatchingFilters(exactFilterMessageIds, inboxReq),
+              : fetchMessagesByIdsMatchingFilters(exactFilterMessageIds, inboxReq, { signal }),
             exactMapFilterMessageIds.length === 0
               ? []
-              : fetchMessagesByIdsMatchingFilters(exactMapFilterMessageIds, mapInboxReq),
+              : fetchMessagesByIdsMatchingFilters(exactMapFilterMessageIds, mapInboxReq, {
+                  signal,
+                }),
           ]);
         }
         if (isScopeStale() || retryForLatestMessageWindow()) return;
@@ -1012,6 +1024,7 @@ export function useAnalysisData({
   );
   const refreshChangedMessagesTargeted = useTargetedInboxReconciliation(
     reconcileChangedMessagesBatch,
+    reloadTriggerKey,
   );
   refreshChangedMessagesTargetedRef.current = refreshChangedMessagesTargeted;
 
@@ -1053,7 +1066,8 @@ export function useAnalysisData({
       queryState,
       completeLocalInboxChangeOrigin: localInboxChangeOrigins.completeOrigin,
       failLocalInboxChangeOrigin: localInboxChangeOrigins.failOrigin,
-      reconcileTagMutation: (messageId) => refreshChangedMessagesTargeted([messageId]),
+      reconcileTagMutation: (messageId) =>
+        refreshChangedMessagesTargeted([messageId], { immediate: true }),
       registerLocalInboxChangeOrigin: localInboxChangeOrigins.registerOrigin,
       refreshTagFacet,
       reloadRef,
@@ -1141,7 +1155,7 @@ export function useAnalysisData({
       if (event.origin == null) return false;
       const disposition = localInboxChangeOrigins.classifyOrigin(event.origin);
       if (disposition === 'reconcile') {
-        void refreshChangedMessagesTargeted([event.messageId]);
+        void refreshChangedMessagesTargeted([event.messageId], { immediate: true });
       }
       return disposition !== 'unmatched';
     },

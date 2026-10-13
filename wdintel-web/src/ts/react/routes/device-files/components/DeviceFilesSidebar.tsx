@@ -11,6 +11,7 @@ import { PowerIconButton } from '../../../components/PowerIconButton';
 import type { DeviceAnalyticsTagFilter } from '../types';
 import type { DeviceAnalyticsTagsState } from '../use-device-analytics-tags';
 import type { DeviceFilesState } from '../use-device-files';
+import { DeviceFileFiltersMenu } from './DeviceFileFiltersMenu';
 import { DeviceFileSearchControls } from './DeviceFileSearchControls';
 import { DeviceFileSearchResults } from './DeviceFileSearchResults';
 import { DeviceFileTree } from './DeviceFileTree';
@@ -135,6 +136,12 @@ export function DeviceFilesSidebar({
               </PowerIconButton>
             </Tooltip>
           </div>
+          {mode === DeviceFilesSidebarMode.Explorer ? (
+            <DeviceFileFiltersMenu
+              contentFilter={files.contentFilter}
+              setContentFilter={files.setContentFilter}
+            />
+          ) : null}
           <Tooltip title="Оновити файлові дані">
             <span>
               <PowerIconButton

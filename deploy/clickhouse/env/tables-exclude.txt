@@ -96,6 +96,7 @@ public.ai_agent_container
 public.ai_agent_conversation
 public.ai_agent_request
 public.ai_agent_request_event
+public.ai_agent_work_record
 public.ai_agent_map
 public.ai_agent_map_revision
 public.ai_agent_request_map_target
@@ -137,3 +138,6 @@ public.device_document_settings
 
 # Admin CSV import recovery state.
 public.rer_csv_import_message
+
+# Explicit inbox unit selection; analytics consumes the reconciled unit links.
+public.sigint_inbox_item_unit_selection

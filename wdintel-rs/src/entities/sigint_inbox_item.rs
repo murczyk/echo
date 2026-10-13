@@ -92,6 +92,8 @@ pub enum Relation {
     SigintInboxItemTag,
     #[sea_orm(has_many = "super::sigint_inbox_item_unit::Entity")]
     SigintInboxItemUnit,
+    #[sea_orm(has_one = "super::sigint_inbox_item_unit_selection::Entity")]
+    SigintInboxItemUnitSelection,
     #[sea_orm(has_one = "super::sigint_inbox_item_unit_tag_queue::Entity")]
     SigintInboxItemUnitTagQueue,
     #[sea_orm(has_many = "super::sigint_inbox_tag_model_error::Entity")]
@@ -223,6 +225,12 @@ impl Related<super::sigint_search::Entity> for Entity {
 impl Related<super::signal_message::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalMessage.def()
+    }
+}
+
+impl Related<super::sigint_inbox_item_unit_selection::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemUnitSelection.def()
     }
 }
 

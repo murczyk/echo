@@ -1,0 +1,55 @@
+SET
+SET
+CREATE TABLE
+INSERT 0 38774958
+ANALYZE
+ heap_size 
+-----------
+ 5092 MB
+(1 row)
+
+                                                                                                QUERY PLAN                                                                                                
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Gather  (cost=1000.00..975936.70 rows=1 width=16) (actual rows=1 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   Buffers: shared hit=15993 read=635823 dirtied=608513 written=606509
+   ->  Parallel Seq Scan on signal_message_group  (cost=0.00..974936.60 rows=1 width=16) (actual rows=0 loops=3)
+         Filter: ((signal_message_id <> 0) AND (datasource_group_id = 777) AND (created_at = '2026-01-01 05:23:08'::timestamp without time zone) AND (sender = '5ef059938ba799aaa845e1c2e8a762bd'::text))
+         Rows Removed by Filter: 12924986
+         Buffers: shared hit=15993 read=635823 dirtied=608513 written=606509
+ Planning:
+   Buffers: shared hit=40 read=2
+ Planning Time: 0.238 ms
+ JIT:
+   Functions: 12
+   Options: Inlining true, Optimization true, Expressions true, Deforming true
+ Execution Time: 2927.979 ms
+(15 rows)
+
+CREATE INDEX
+ANALYZE
+                                                                                QUERY PLAN                                                                                 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Index Only Scan using signal_message_group_duplicate_lookup_idx on signal_message_group  (cost=0.56..8.59 rows=1 width=16) (actual rows=1 loops=1)
+   Index Cond: ((datasource_group_id = 777) AND (created_at = '2026-01-01 05:23:08'::timestamp without time zone) AND (sender = '5ef059938ba799aaa845e1c2e8a762bd'::text))
+   Filter: (signal_message_id <> 0)
+   Heap Fetches: 1
+   Buffers: shared hit=3 read=5
+ Planning:
+   Buffers: shared hit=37 read=1
+ Planning Time: 0.274 ms
+ Execution Time: 0.456 ms
+(9 rows)
+
+                                                                     QUERY PLAN                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------------
+ Index Only Scan using signal_message_group_duplicate_lookup_idx on signal_message_group  (cost=0.56..8.59 rows=1 width=16) (actual rows=1 loops=1)
+   Index Cond: ((datasource_group_id = 775) AND (created_at = '2026-01-01 05:23:08'::timestamp without time zone) AND (sender IS NULL))
+   Filter: (signal_message_id <> 0)
+   Heap Fetches: 1
+   Buffers: shared hit=3 read=2
+ Planning Time: 0.042 ms
+ Execution Time: 0.155 ms
+(7 rows)
+

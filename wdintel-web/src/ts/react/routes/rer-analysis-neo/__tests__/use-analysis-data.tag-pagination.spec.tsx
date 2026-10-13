@@ -206,6 +206,7 @@ describe('useAnalysisData tag pagination', () => {
     root = null;
     container?.remove();
     container = null;
+    vi.useRealTimers();
     vi.resetAllMocks();
   });
 
@@ -288,6 +289,7 @@ describe('useAnalysisData tag pagination', () => {
     expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [2],
       expect.objectContaining({ search: 'server-filtered' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(api.fetchInboxMessages).not.toHaveBeenCalled();
@@ -630,7 +632,9 @@ describe('useAnalysisData tag pagination', () => {
     await act(async () => {
       resolveFilterProbe?.([message(999, 7)]);
       await filterProbe;
-      await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledTimes(2), {
+        timeout: 3_000,
+      });
       await Promise.resolve();
     });
 
@@ -642,17 +646,17 @@ describe('useAnalysisData tag pagination', () => {
   });
 
   it('keeps a matching unseen event off a deep page while refreshing its counts', async () => {
+    vi.useFakeTimers();
     api.fetchInboxMessages
       .mockResolvedValueOnce({ inboxItems: [message(1, 7)], callsigns: [], pageLimit: 20 })
       .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 })
       .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 });
 
     await renderAnalysisData();
-    await act(async () => {
-      await vi.waitFor(() => expect(api.fetchInboxMessages).toHaveBeenCalledTimes(1));
-      await vi.waitFor(() => expect(current!.messages).toHaveLength(1));
-      await vi.waitFor(() => expect(api.fetchInboxCount).toHaveBeenCalledTimes(2));
-    });
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(api.fetchInboxMessages).toHaveBeenCalledTimes(1);
+    expect(current!.messages).toHaveLength(1);
+    expect(api.fetchInboxCount).toHaveBeenCalledTimes(2);
     await act(async () => await current!.loadNextPage());
     expect(current!.pageIndex).toBe(1);
     const pageTwoMessages = current!.messages;
@@ -669,10 +673,11 @@ describe('useAnalysisData tag pagination', () => {
           detail: { events: [{ messageId: 999, origin: 'foreign-tab.origin' }] },
         }),
       );
-      await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(0);
     });
+    expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce();
     await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      await vi.advanceTimersByTimeAsync(250);
     });
 
     expect(current!.messagesTotalCount).toBe(2);
@@ -690,11 +695,13 @@ describe('useAnalysisData tag pagination', () => {
     expect(api.fetchInboxMessages).not.toHaveBeenCalled();
 
     await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 5_000));
+      await vi.advanceTimersByTimeAsync(29_749);
     });
+    expect(api.fetchInboxCount).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
 
     expect(api.fetchInboxCount).toHaveBeenCalledTimes(2);
     expect(current!.messagesTotalCount).toBe(3);
     expect(current!.messagesOverallCount).toBe(4);
-  }, 10_000);
+  });
 });

@@ -101,6 +101,9 @@ export function makeMessageSchema(
       comment: z.string().optional(),
       post: z.string().optional(),
       unit: z.string().optional(),
+      unitSelection: z
+        .object({ name: z.string(), id: z.number().optional(), create: z.boolean().optional() })
+        .optional(),
       locations: z.array(z.string()).optional(),
       network_signal_name: z.string().optional(),
       network_name: z.string().optional(),

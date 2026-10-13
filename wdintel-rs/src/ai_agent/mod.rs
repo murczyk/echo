@@ -17,6 +17,7 @@ pub(crate) mod reasoning;
 mod review;
 mod route_registry;
 pub mod types;
+pub mod work_memory;
 pub mod worker;
 
 use crate::config::{

@@ -12,6 +12,7 @@ import {
   type DirectSubmitResponse,
 } from '../../../services/api/direct-submit';
 import type { RecentValues } from './useRecentValues';
+import { normalizeMessageUnitName } from './message-unit-name';
 import {
   DO_NOT_SEND_GROUP_VALUE,
   parseCoords,
@@ -205,6 +206,12 @@ export function useMessageSubmit({
         hash_id: metadata.hash_id?.trim() || undefined,
       }));
       const recentValues = buildRecentValues(data, dmrRows);
+      const unitSelection =
+        data.unitSelection &&
+        normalizeMessageUnitName(data.unitSelection.name) ===
+          normalizeMessageUnitName(data.unit ?? '')
+          ? data.unitSelection
+          : undefined;
 
       const payload = {
         full_body: data.full_body?.trim() || undefined,
@@ -241,6 +248,8 @@ export function useMessageSubmit({
           ? data.post || undefined
           : (editTarget?.message.post ?? undefined),
         unit: data.unit || undefined,
+        unit_id: unitSelection?.id,
+        create_unit: unitSelection?.create,
         locations: data.locations || [],
         network: networkObj,
         dmr: radioFeaturesAllowed
