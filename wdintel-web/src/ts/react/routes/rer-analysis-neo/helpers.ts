@@ -211,28 +211,10 @@ export function parseAnalysisPanelQueryStateFromWindow(): AnalysisPanelQueryStat
   };
 }
 
-export function parseMessageUidFromWindow(): string | null {
-  if (typeof window === 'undefined') return null;
-  const url = new URL(window.location.href);
-  const param =
-    url.searchParams.get('m') || url.searchParams.get('mid') || url.searchParams.get('messageUid');
-  const trimmed = param?.trim();
-  return trimmed && trimmed !== '' ? trimmed : null;
-}
-
-export function removeMessageUidFromWindowUrl(): void {
-  if (typeof window === 'undefined') return;
-  const url = new URL(window.location.href);
-  url.searchParams.delete('m');
-  url.searchParams.delete('mid');
-  url.searchParams.delete('messageUid');
-  const query = url.searchParams.toString();
-  window.history.replaceState(
-    {},
-    '',
-    `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`,
-  );
-}
+export {
+  readLinkedMessageReferenceFromWindow as parseMessageUidFromWindow,
+  removeLinkedMessageReferenceFromWindowUrl as removeMessageUidFromWindowUrl,
+} from '../shared/message-navigation/message-navigation-url';
 
 export function createInitialQueryState(
   parsed: AnalysisQueryState,

@@ -19,6 +19,7 @@ import { getCanonicalUnitIdValue, isCanonicalUnitIdValue } from '../../utils/uni
 import { normalizeRerDutyQueryStateWf } from '../../../rer-duty-filter-normalizer';
 import { readPersistedDutyFilterState } from './duty-filter-persistence';
 import { mergeMessageWindow } from '../shared/message-feed/windowing';
+import { readLinkedMessageReferenceFromWindow as parseDutyMessageUidFromWindow } from '../shared/message-navigation/message-navigation-url';
 
 export type DutyFeedFilterOptions = {
   adjacentFreqsRange: number;
@@ -1227,14 +1228,7 @@ export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {
   };
 }
 
-export function parseDutyMessageUidFromWindow(): string | null {
-  if (typeof window === 'undefined') return null;
-  const url = new URL(window.location.href);
-  const param =
-    url.searchParams.get('m') || url.searchParams.get('mid') || url.searchParams.get('messageUid');
-  const trimmed = param?.trim();
-  return trimmed && trimmed !== '' ? trimmed : null;
-}
+export { parseDutyMessageUidFromWindow };
 
 export function resolveDutyTargetMessageIds(
   identifier: string,
