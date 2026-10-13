@@ -1,6 +1,6 @@
 # Linked Message Navigation Design
 
-**Status:** Proposed for written review
+**Status:** Approved for implementation planning
 
 **Issue:** [#3689](https://github.com/echoua/echo/issues/3689)
 
