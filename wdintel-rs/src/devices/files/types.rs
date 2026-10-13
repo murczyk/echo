@@ -197,15 +197,17 @@ impl<K> KeysetPageRequest<K> {
         limit: Option<u64>,
         after: Option<K>,
     ) -> Result<Self, FilesystemError> {
-        let limit =
-            limit.unwrap_or(crate::config::DEVICE_FILE_PAGE_DEFAULT_LIMIT);
-        if !(1..=crate::config::DEVICE_FILE_PAGE_MAX_LIMIT).contains(&limit) {
+        let limit = limit
+            .unwrap_or(crate::devices::config::DEVICE_FILE_PAGE_DEFAULT_LIMIT);
+        if !(1..=crate::devices::config::DEVICE_FILE_PAGE_MAX_LIMIT)
+            .contains(&limit)
+        {
             return Err(FilesystemError::Validation(vec![
                 FilesystemFieldError {
                     path: "limit".to_string(),
                     message: format!(
                         "must be between 1 and {}",
-                        crate::config::DEVICE_FILE_PAGE_MAX_LIMIT
+                        crate::devices::config::DEVICE_FILE_PAGE_MAX_LIMIT
                     ),
                 },
             ]));

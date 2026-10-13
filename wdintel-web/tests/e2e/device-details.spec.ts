@@ -244,6 +244,7 @@ function systemSettings() {
     show_classic_analysis: false,
     show_peleng_distance_to_battleline: false,
     hide_orbit_data: false,
+    hide_networks: false,
     disable_bot_tags: false,
     duty_exclude_menu_enabled: true,
     analysis_aor_filter_enabled: false,
@@ -321,6 +322,10 @@ async function installMocks(page: Page, roles = ['Cyber']): Promise<ApiTracker> 
     }
     if (pathname === '/api/user/settings') {
       await fulfillJson(route, { tagsLayout: 'compact', disableAutoScroll: false });
+      return;
+    }
+    if (pathname === '/api/user/author-identities') {
+      await fulfillJson(route, { authors: [] });
       return;
     }
     if (pathname === '/api/device/list') {

@@ -1,4 +1,4 @@
-use crate::{config, error::AppError, h, types::ShortContext};
+use crate::{devices::config, error::AppError, h, types::ShortContext};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 

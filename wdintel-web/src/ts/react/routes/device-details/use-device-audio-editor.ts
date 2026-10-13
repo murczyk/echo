@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DeviceAudioDetails, DeviceAudioTranscription } from '../../../../Bindings';
+import type {
+  DeviceAudioDetails,
+  DeviceAudioTranscription,
+  DeviceAudioAutomaticTranscriptionSnapshot,
+  DeviceAudioTranscriptionAvailability,
+} from '../../../../Bindings';
 import { useOptionalPowerSnackbar } from '../../components/PowerSnackbar';
 import {
   getDeviceAudioDetail,
@@ -16,6 +21,9 @@ type EditorState = {
   phase: EditorPhase;
   detail: DeviceAudioDetails | null;
   confirmed: DeviceAudioTranscription | null;
+  baseline: string;
+  automaticView: boolean;
+  automaticNotice: boolean;
   draft: string;
   generation: number;
   saving: boolean;
@@ -38,6 +46,9 @@ function empty(scope: string): EditorState {
     phase: 'loading',
     detail: null,
     confirmed: null,
+    baseline: '',
+    automaticView: false,
+    automaticNotice: false,
     draft: '',
     generation: 0,
     saving: false,
@@ -45,6 +56,14 @@ function empty(scope: string): EditorState {
     conflict: null,
     message: null,
   };
+}
+
+function displayText(detail: DeviceAudioDetails, manual = detail.transcription.text) {
+  return manual !== '' ? manual : (detail.automaticTranscription?.text ?? '');
+}
+
+function dirty(state: EditorState) {
+  return state.confirmed !== null && state.draft !== state.baseline;
 }
 
 function useEditorContext(deviceId: string, audioId: string | null, editable: boolean) {
@@ -144,7 +163,7 @@ function useEditorReader(
         const changed = snapshot
           ? conflict || detail.transcription.text !== snapshot.text
           : previous.confirmed !== null &&
-            previous.draft !== previous.confirmed.text &&
+            dirty(previous) &&
             detail.transcription.textVersion !== previous.confirmed.textVersion;
         if (changed) {
           update({
@@ -155,14 +174,17 @@ function useEditorReader(
             message: 'Транскрипцію змінено. Зіставте актуальний текст зі своєю чернеткою.',
           });
         } else {
+          const baseline = displayText(detail);
+          const preserveDraft = snapshot
+            ? previous.generation !== snapshot.generation
+            : dirty(previous);
           update({
             detail,
             accessDenied: false,
             confirmed: detail.transcription,
-            draft:
-              snapshot || (previous.confirmed && previous.draft !== previous.confirmed.text)
-                ? previous.draft
-                : detail.transcription.text,
+            baseline: preserveDraft && !snapshot ? previous.baseline : baseline,
+            draft: preserveDraft ? previous.draft : baseline,
+            automaticView: previous.automaticView && detail.transcription.text !== '',
             conflict: null,
             phase: 'ready',
             message: snapshot
@@ -228,7 +250,7 @@ function useEditorWriter(
     )
       return false;
     if (current.conflict || current.phase === 'unknownOutcome') return false;
-    if (current.draft === current.confirmed.text) return true;
+    if (!dirty(current)) return true;
     const snapshot: SaveSnapshot = {
       scope,
       session,
@@ -247,8 +269,14 @@ function useEditorWriter(
           expectedTextVersion: snapshot.version,
         });
         if (!active()) return false;
+        const baseline = state.current.detail
+          ? displayText(state.current.detail, response.transcription.text)
+          : response.transcription.text;
         update({
           confirmed: response.transcription,
+          baseline,
+          automaticView: state.current.automaticView && response.transcription.text !== '',
+          ...(state.current.generation === snapshot.generation ? { draft: baseline } : {}),
           detail: state.current.detail
             ? { ...state.current.detail, transcription: response.transcription }
             : null,
@@ -256,7 +284,7 @@ function useEditorWriter(
           conflict: null,
           message: null,
         });
-        return state.current.draft === response.transcription.text;
+        return !dirty(state.current);
       } catch (error) {
         if (!active()) return false;
         const conflict = error instanceof HttpRequestError && error.status === 409;
@@ -309,7 +337,12 @@ export function useDeviceAudioEditor(
     !['loading', 'loadError'].includes(current.phase);
   const setDraft = useCallback(
     (draft: string) => {
-      if (permission.current && state.current.detail?.canEdit && state.current.confirmed) {
+      if (
+        permission.current &&
+        state.current.detail?.canEdit &&
+        state.current.confirmed &&
+        !state.current.automaticView
+      ) {
         update({ draft, generation: state.current.generation + 1 });
       }
     },
@@ -321,7 +354,14 @@ export function useDeviceAudioEditor(
       if (!previous.conflict || previous.saving) return;
       update({
         confirmed: previous.conflict,
-        draft: useServerText ? previous.conflict.text : previous.draft,
+        automaticView: previous.conflict.text === '' ? false : previous.automaticView,
+        baseline: previous.detail
+          ? displayText(previous.detail, previous.conflict.text)
+          : previous.conflict.text,
+        draft:
+          useServerText && previous.detail
+            ? displayText(previous.detail, previous.conflict.text)
+            : previous.draft,
         generation: previous.generation + 1,
         conflict: null,
         phase: 'ready',
@@ -333,9 +373,13 @@ export function useDeviceAudioEditor(
   const discard = useCallback(() => {
     const current = state.current;
     const base = current.conflict ?? current.confirmed;
+    const baseline =
+      base && current.detail ? displayText(current.detail, base.text) : current.baseline;
     update({
-      draft: writes.current.get(scope)?.snapshot.text ?? base?.text ?? current.draft,
+      draft: writes.current.get(scope)?.snapshot.text ?? baseline,
+      baseline,
       confirmed: base,
+      automaticView: base?.text === '' ? false : current.automaticView,
       generation: current.generation + 1,
       conflict: null,
       phase: current.saving ? 'saving' : base ? 'ready' : current.phase,
@@ -356,22 +400,68 @@ export function useDeviceAudioEditor(
     const current = state.current;
     return (
       current.confirmed !== null &&
-      (current.draft !== current.confirmed.text ||
+      (dirty(current) ||
         current.saving ||
         current.conflict !== null ||
         current.phase === 'unknownOutcome')
     );
   }, []);
+  const setAutomaticView = useCallback(
+    (automatic: boolean) => {
+      if (automatic && !state.current.detail?.automaticTranscription?.text) return;
+      update({ automaticView: automatic, automaticNotice: false });
+    },
+    [update],
+  );
+  const denyAccess = useCallback(() => {
+    if (!editor.active()) return;
+    update({
+      accessDenied: true,
+      ...(state.current.detail ? { detail: { ...state.current.detail, canEdit: false } } : {}),
+    });
+  }, [editor.active, update]);
+  const mergeAutomatic = useCallback(
+    (
+      snapshot: DeviceAudioAutomaticTranscriptionSnapshot | null,
+      availability: DeviceAudioTranscriptionAvailability,
+    ) => {
+      const previous = state.current;
+      if (!editor.active() || !previous.detail || !previous.confirmed) return;
+      const detail = {
+        ...previous.detail,
+        automaticTranscription: snapshot ?? previous.detail.automaticTranscription,
+        transcriptionAvailability: availability,
+        canEdit: availability.canEditManual,
+      };
+      const clean =
+        !dirty(previous) &&
+        !previous.saving &&
+        previous.conflict === null &&
+        previous.phase === 'ready';
+      const arrived =
+        snapshot?.text != null && snapshot.text !== previous.detail.automaticTranscription?.text;
+      const baseline = displayText(detail, previous.confirmed.text);
+      update({
+        detail,
+        ...(clean ? { baseline, draft: baseline } : {}),
+        automaticNotice: previous.automaticNotice || (arrived && !clean),
+      });
+    },
+    [editor.active, update],
+  );
   return {
     ...current,
     hasUnsavedChanges,
     canEdit,
-    dirty: current.confirmed !== null && current.draft !== current.confirmed.text,
+    dirty: dirty(current),
     setDraft,
     save,
     reload,
     acceptCurrent,
     discard,
+    setAutomaticView,
+    mergeAutomatic,
+    denyAccess,
   };
 }
 export type DeviceAudioEditorState = ReturnType<typeof useDeviceAudioEditor>;

@@ -107,7 +107,7 @@ async function directStatus(
   target: boolean,
 ) {
   const current = await audioDetail(backend.reader, deviceId, audioId);
-  return post<SetDeviceAudioProcessingRsp>(backend.reader, statusPath, {
+  return post<SetDeviceAudioProcessingRsp>(backend.source, statusPath, {
     deviceId,
     audioId,
     processed: target,
@@ -141,7 +141,7 @@ test.describe('@regression real device audio processing reader matrix', () => {
     await backend?.dispose();
   });
   for (const role of ['parent-cyber', 'parent-cyberviewer', 'parent-admin']) {
-    test(`${role} completes real 100/40 workflow and 60→59→60 across every page and relogin`, async ({
+    test(`${role} ${role === 'parent-cyberviewer' ? 'reads every page but cannot edit text or processing' : 'completes real 100/40 workflow and 60→59→60 across every page and relogin'}`, async ({
       page,
       context,
       browser,
@@ -161,6 +161,42 @@ test.describe('@regression real device audio processing reader matrix', () => {
       await playing(player);
       await audible(player);
       expect((await audioDetail(reader, device.id, rows[99].id)).audio.processed).toBe(false);
+      if (role === 'parent-cyberviewer') {
+        const before = await audioDetail(reader, device.id, rows[99].id);
+        await expect(field(page)).toHaveAttribute('readonly', '');
+        await expect(
+          page.getByRole('button', { name: 'Зберегти транскрипцію', exact: true }),
+        ).toBeDisabled();
+        await expect(
+          page.getByRole('button', { name: 'Позначити обробленим', exact: true }),
+        ).toBeDisabled();
+        expect(
+          (
+            await reader.post(savePath, {
+              data: {
+                device_id: device.id,
+                audio_id: rows[99].id,
+                text: 'denied',
+                expected_text_version: before.transcription.textVersion,
+              },
+            })
+          ).status(),
+        ).toBe(403);
+        expect(
+          (
+            await reader.post(statusPath, {
+              data: {
+                device_id: device.id,
+                audio_id: rows[99].id,
+                processed: true,
+                expected_processing_version: before.audio.processingVersion,
+              },
+            })
+          ).status(),
+        ).toBe(403);
+        expect(await audioDetail(reader, device.id, rows[99].id)).toEqual(before);
+        return;
+      }
       await save(page, `workflow ${role}`);
       expect((await audioDetail(reader, device.id, rows[99].id)).audio.processed).toBe(false);
       await mark(page, true);
@@ -292,7 +328,7 @@ test.describe('@regression real device audio processing races', () => {
     await backend?.dispose();
   });
   test.beforeEach(async ({ page, context }) => {
-    backend.reader = await backend.login('parent-cyberviewer');
+    backend.reader = await backend.login('parent-cyber');
     device = await backend.createDevice();
     first = await receiveAudio(
       backend.source,
@@ -772,7 +808,14 @@ test.describe('@regression real device audio processing races', () => {
     await committed.promise;
     await field(page).fill('recovery draft');
     try {
+      const deniedTranscription = page.waitForResponse(
+        (response) =>
+          response.url().endsWith('/api/device/audio/transcription/status') &&
+          response.status() === 403,
+      );
       await audioFixtureSql('main', `UPDATE login SET roles='[]'::jsonb WHERE id='${actor.id}';`);
+      await (await deniedTranscription).finished();
+      await expect(field(page)).toHaveAttribute('readonly', '');
       release.resolve();
       await expect(panel(page)).toContainText('Не вдалося звірити статус');
       await stopped(held);
@@ -993,7 +1036,9 @@ test.describe('@regression real device audio processing races', () => {
       await playing(player);
       releaseStatus.resolve();
       await expect(
-        page.locator(`[data-audio-id="${second.id}"]`).getByText('Оброблене', { exact: true }),
+        page
+          .locator(`[data-audio-id="${second.id}"]`)
+          .getByRole('img', { name: 'Оброблене', exact: true }),
       ).toHaveCount(1);
       releaseDetail.resolve();
       await expect(panel(page)).toContainText('Статус: Оброблене');

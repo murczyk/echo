@@ -83,7 +83,8 @@ async fn seed_common_file_names(env: &Env, template: &file_entry::Model) {
     use sea_orm::{ConnectionTrait, TransactionTrait};
     let db = env.file_registry_db().unwrap().connection();
     let tx = db.begin().await.unwrap();
-    let count = crate::config::DEVICE_DOCUMENT_SEARCH_CANDIDATE_LIMIT + 1;
+    let count =
+        crate::devices::config::DEVICE_DOCUMENT_SEARCH_CANDIDATE_LIMIT + 1;
     tx.execute_unprepared(&format!(
         "create temporary table file_search_seed on commit drop as
          select gen_random_uuid() as id, n, 'common-doc-'||n||'.txt' as name

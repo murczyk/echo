@@ -175,7 +175,7 @@ async fn issue_3390_session_reads_keep_revisions_after_later_sync() {
             .unwrap();
     assert!(
         first_page.next_cursor.as_ref().unwrap().len()
-            < crate::config::DEVICE_FILE_SESSION_CURSOR_MAX_BYTES
+            < crate::devices::config::DEVICE_FILE_SESSION_CURSOR_MAX_BYTES
     );
     paged_search.cursor = first_page.next_cursor;
     let next_page = read::search(&env.dbx, files, &reader, paged_search)

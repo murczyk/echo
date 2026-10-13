@@ -1,7 +1,7 @@
 use super::types::*;
 use crate::{
     attachments::store::rows,
-    config::*,
+    devices::config::*,
     h,
     types::{Env, ShortContext},
 };

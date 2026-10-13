@@ -1,3 +1,4 @@
+import type { DeviceAudioSettingsState } from '../use-device-audio-settings';
 import CheckIcon from '@mui/icons-material/Check';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import { ListItemIcon, Menu, MenuItem, Tooltip } from '@mui/material';
@@ -17,7 +18,13 @@ function readShowRecordingStart() {
   }
 }
 
-export function DeviceAudioSidebar({ audio }: { audio: DeviceAudioState }) {
+export function DeviceAudioSidebar({
+  audio,
+  settings,
+}: {
+  audio: DeviceAudioState;
+  settings: DeviceAudioSettingsState;
+}) {
   const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
   const [showRecordingStart, setShowRecordingStart] = useState(readShowRecordingStart);
   const updateShowRecordingStart = (show: boolean) => {
@@ -58,6 +65,7 @@ export function DeviceAudioSidebar({ audio }: { audio: DeviceAudioState }) {
             </PowerIconButton>
           </Tooltip>
           <DeviceAudioSettingsMenu
+            settings={settings}
             showRecordingStart={showRecordingStart}
             onShowRecordingStartChange={updateShowRecordingStart}
           />

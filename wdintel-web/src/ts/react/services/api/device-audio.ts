@@ -1,4 +1,11 @@
 import type {
+  DeviceAudioAsrSettingsReq,
+  DeviceAudioAsrSettingsRsp,
+  SetDeviceAudioAsrSettingsReq,
+  DeviceAudioTranscriptionStatusReq,
+  DeviceAudioTranscriptionStatusRsp,
+  RetryDeviceAudioTranscriptionReq,
+  RetryDeviceAudioTranscriptionRsp,
   DeviceAudioDetailReq,
   DeviceAudioPreparation,
   PrepareDeviceAudioReq,
@@ -66,5 +73,41 @@ export async function prepareDeviceAudio(
 ): Promise<DeviceAudioPreparation> {
   return transformSnakeToCamel(
     await postJson('/api/device/audio/playback/prepare', transformCamelToSnake(req), options),
+  );
+}
+
+export async function getDeviceAudioTranscriptionStatus(
+  req: DeviceAudioTranscriptionStatusReq,
+  options?: RequestOptions,
+): Promise<DeviceAudioTranscriptionStatusRsp> {
+  return transformSnakeToCamel(
+    await postJson('/api/device/audio/transcription/status', transformCamelToSnake(req), options),
+  );
+}
+
+export async function retryDeviceAudioTranscription(
+  req: RetryDeviceAudioTranscriptionReq,
+  options?: RequestOptions,
+): Promise<RetryDeviceAudioTranscriptionRsp> {
+  return transformSnakeToCamel(
+    await postJson('/api/device/audio/transcription/retry', transformCamelToSnake(req), options),
+  );
+}
+
+export async function getDeviceAudioSettings(
+  req: DeviceAudioAsrSettingsReq,
+  options?: RequestOptions,
+): Promise<DeviceAudioAsrSettingsRsp> {
+  return transformSnakeToCamel(
+    await postJson('/api/device/audio/settings', transformCamelToSnake(req), options),
+  );
+}
+
+export async function setDeviceAudioSettings(
+  req: SetDeviceAudioAsrSettingsReq,
+  options?: RequestOptions,
+): Promise<DeviceAudioAsrSettingsRsp> {
+  return transformSnakeToCamel(
+    await postJson('/api/device/audio/settings/set', transformCamelToSnake(req), options),
   );
 }

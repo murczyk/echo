@@ -384,7 +384,7 @@ async fn filtered_browse_page(
             file_registry_db,
             scope,
             KeysetPageRequest::try_new(
-                Some(crate::config::DEVICE_FILE_PAGE_MAX_LIMIT),
+                Some(crate::devices::config::DEVICE_FILE_PAGE_MAX_LIMIT),
                 after,
             )
             .expect("configured file page limit must be valid"),
@@ -443,7 +443,7 @@ async fn filtered_search_page(
             scope,
             filters,
             KeysetPageRequest::try_new(
-                Some(crate::config::DEVICE_FILE_PAGE_MAX_LIMIT),
+                Some(crate::devices::config::DEVICE_FILE_PAGE_MAX_LIMIT),
                 after,
             )
             .expect("configured file page limit must be valid"),

@@ -2335,7 +2335,89 @@ export type DeviceAudioTranscription = {
 export type DeviceAudioDetails = {
   audio: DeviceAudio;
   transcription: DeviceAudioTranscription;
+  automaticTranscription: DeviceAudioAutomaticTranscriptionSnapshot;
+  transcriptionAvailability: DeviceAudioTranscriptionAvailability;
   canEdit: boolean;
+};
+
+export type DeviceAudioAutomaticTranscriptionState =
+  | 'not_requested'
+  | 'queued'
+  | 'preparing'
+  | 'running'
+  | 'retry_wait'
+  | 'succeeded'
+  | 'no_speech'
+  | 'failed'
+  | 'outcome_unknown'
+  | 'cancelled'
+;
+
+export type DeviceAudioTranscriptionDisposition =
+  | 'queued'
+  | 'already_active'
+  | 'already_completed'
+;
+
+export type DeviceAudioAutomaticTranscriptionSnapshot = {
+  version: string;
+  text: string | null;
+  state: DeviceAudioAutomaticTranscriptionState;
+  retryAt: string | null;
+  message: string | null;
+};
+
+export type DeviceAudioTranscriptionAvailability = {
+  deviceEnabled: boolean;
+  globalEnabled: boolean;
+  canEditManual: boolean;
+  canManageSetting: boolean;
+  canRetry: boolean;
+  blockedReason: string | null;
+};
+
+export type DeviceAudioTranscriptionStatusReq = {
+  deviceId: string;
+  audioId: string;
+  knownVersion: string | null;
+};
+
+export type DeviceAudioTranscriptionStatusRsp = {
+  snapshot: DeviceAudioAutomaticTranscriptionSnapshot | null;
+  availability: DeviceAudioTranscriptionAvailability;
+};
+
+export type RetryDeviceAudioTranscriptionReq = {
+  deviceId: string;
+  audioId: string;
+};
+
+export type RetryDeviceAudioTranscriptionRsp = {
+  snapshot: DeviceAudioAutomaticTranscriptionSnapshot;
+  availability: DeviceAudioTranscriptionAvailability;
+  disposition: DeviceAudioTranscriptionDisposition;
+};
+
+export type DeviceAudioAsrSettingsReq = {
+  deviceId: string;
+};
+
+export type SetDeviceAudioAsrSettingsReq = {
+  deviceId: string;
+  enabled: boolean;
+};
+
+export type DeviceAudioAsrSettingsRsp = {
+  deviceId: string;
+  enabled: boolean;
+  globalEnabled: boolean;
+  canManageSetting: boolean;
+  blockedReason: string | null;
+};
+
+export type DeviceAudioTranscriptionAdmissionError = {
+  code: string;
+  message: string;
 };
 
 export type DeviceAudioPreparation = {
@@ -2343,6 +2425,7 @@ export type DeviceAudioPreparation = {
   wave: DeviceAudioPreparationState;
   spectrogram: DeviceAudioPreparationState;
   retryAfterMs: number;
+  transcriptionAdmissionError: DeviceAudioTranscriptionAdmissionError | null;
 };
 
 export type PrepareDeviceAudioReq = {

@@ -6024,6 +6024,8 @@ deviceAudioTranscriptionEncoder struct =
 type alias DeviceAudioDetails =
     { audio : DeviceAudio
     , transcription : DeviceAudioTranscription
+    , automaticTranscription : DeviceAudioAutomaticTranscriptionSnapshot
+    , transcriptionAvailability : DeviceAudioTranscriptionAvailability
     , canEdit : Bool
     }
 
@@ -6033,7 +6035,224 @@ deviceAudioDetailsEncoder struct =
     Json.Encode.object
         [ ( "audio", (deviceAudioEncoder) struct.audio )
         , ( "transcription", (deviceAudioTranscriptionEncoder) struct.transcription )
+        , ( "automatic_transcription", (deviceAudioAutomaticTranscriptionSnapshotEncoder) struct.automaticTranscription )
+        , ( "transcription_availability", (deviceAudioTranscriptionAvailabilityEncoder) struct.transcriptionAvailability )
         , ( "can_edit", (Json.Encode.bool) struct.canEdit )
+        ]
+
+
+type DeviceAudioAutomaticTranscriptionState
+    = AudioAsrNotRequested
+    | AudioAsrQueued
+    | AudioAsrPreparing
+    | AudioAsrRunning
+    | AudioAsrRetryWait
+    | AudioAsrSucceeded
+    | AudioAsrNoSpeech
+    | AudioAsrFailed
+    | AudioAsrOutcomeUnknown
+    | AudioAsrCancelled
+
+
+deviceAudioAutomaticTranscriptionStateEncoder : DeviceAudioAutomaticTranscriptionState -> Json.Encode.Value
+deviceAudioAutomaticTranscriptionStateEncoder enum =
+    case enum of
+        AudioAsrNotRequested ->
+            Json.Encode.string "not_requested"
+        AudioAsrQueued ->
+            Json.Encode.string "queued"
+        AudioAsrPreparing ->
+            Json.Encode.string "preparing"
+        AudioAsrRunning ->
+            Json.Encode.string "running"
+        AudioAsrRetryWait ->
+            Json.Encode.string "retry_wait"
+        AudioAsrSucceeded ->
+            Json.Encode.string "succeeded"
+        AudioAsrNoSpeech ->
+            Json.Encode.string "no_speech"
+        AudioAsrFailed ->
+            Json.Encode.string "failed"
+        AudioAsrOutcomeUnknown ->
+            Json.Encode.string "outcome_unknown"
+        AudioAsrCancelled ->
+            Json.Encode.string "cancelled"
+
+type DeviceAudioTranscriptionDisposition
+    = AudioAsrRetryQueued
+    | AudioAsrRetryAlreadyActive
+    | AudioAsrRetryAlreadyCompleted
+
+
+deviceAudioTranscriptionDispositionEncoder : DeviceAudioTranscriptionDisposition -> Json.Encode.Value
+deviceAudioTranscriptionDispositionEncoder enum =
+    case enum of
+        AudioAsrRetryQueued ->
+            Json.Encode.string "queued"
+        AudioAsrRetryAlreadyActive ->
+            Json.Encode.string "already_active"
+        AudioAsrRetryAlreadyCompleted ->
+            Json.Encode.string "already_completed"
+
+type alias DeviceAudioAutomaticTranscriptionSnapshot =
+    { version : String
+    , text : Maybe (String)
+    , state : DeviceAudioAutomaticTranscriptionState
+    , retryAt : Maybe (String)
+    , message : Maybe (String)
+    }
+
+
+deviceAudioAutomaticTranscriptionSnapshotEncoder : DeviceAudioAutomaticTranscriptionSnapshot -> Json.Encode.Value
+deviceAudioAutomaticTranscriptionSnapshotEncoder struct =
+    Json.Encode.object
+        [ ( "version", (Json.Encode.string) struct.version )
+        , ( "text", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.text )
+        , ( "state", (deviceAudioAutomaticTranscriptionStateEncoder) struct.state )
+        , ( "retry_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.retryAt )
+        , ( "message", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.message )
+        ]
+
+
+type alias DeviceAudioTranscriptionAvailability =
+    { deviceEnabled : Bool
+    , globalEnabled : Bool
+    , canEditManual : Bool
+    , canManageSetting : Bool
+    , canRetry : Bool
+    , blockedReason : Maybe (String)
+    }
+
+
+deviceAudioTranscriptionAvailabilityEncoder : DeviceAudioTranscriptionAvailability -> Json.Encode.Value
+deviceAudioTranscriptionAvailabilityEncoder struct =
+    Json.Encode.object
+        [ ( "device_enabled", (Json.Encode.bool) struct.deviceEnabled )
+        , ( "global_enabled", (Json.Encode.bool) struct.globalEnabled )
+        , ( "can_edit_manual", (Json.Encode.bool) struct.canEditManual )
+        , ( "can_manage_setting", (Json.Encode.bool) struct.canManageSetting )
+        , ( "can_retry", (Json.Encode.bool) struct.canRetry )
+        , ( "blocked_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.blockedReason )
+        ]
+
+
+type alias DeviceAudioTranscriptionStatusReq =
+    { deviceId : String
+    , audioId : String
+    , knownVersion : Maybe (String)
+    }
+
+
+deviceAudioTranscriptionStatusReqEncoder : DeviceAudioTranscriptionStatusReq -> Json.Encode.Value
+deviceAudioTranscriptionStatusReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "audio_id", (Json.Encode.string) struct.audioId )
+        , ( "known_version", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.knownVersion )
+        ]
+
+
+type alias DeviceAudioTranscriptionStatusRsp =
+    { snapshot : Maybe (DeviceAudioAutomaticTranscriptionSnapshot)
+    , availability : DeviceAudioTranscriptionAvailability
+    }
+
+
+deviceAudioTranscriptionStatusRspEncoder : DeviceAudioTranscriptionStatusRsp -> Json.Encode.Value
+deviceAudioTranscriptionStatusRspEncoder struct =
+    Json.Encode.object
+        [ ( "snapshot", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceAudioAutomaticTranscriptionSnapshotEncoder)) struct.snapshot )
+        , ( "availability", (deviceAudioTranscriptionAvailabilityEncoder) struct.availability )
+        ]
+
+
+type alias RetryDeviceAudioTranscriptionReq =
+    { deviceId : String
+    , audioId : String
+    }
+
+
+retryDeviceAudioTranscriptionReqEncoder : RetryDeviceAudioTranscriptionReq -> Json.Encode.Value
+retryDeviceAudioTranscriptionReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "audio_id", (Json.Encode.string) struct.audioId )
+        ]
+
+
+type alias RetryDeviceAudioTranscriptionRsp =
+    { snapshot : DeviceAudioAutomaticTranscriptionSnapshot
+    , availability : DeviceAudioTranscriptionAvailability
+    , disposition : DeviceAudioTranscriptionDisposition
+    }
+
+
+retryDeviceAudioTranscriptionRspEncoder : RetryDeviceAudioTranscriptionRsp -> Json.Encode.Value
+retryDeviceAudioTranscriptionRspEncoder struct =
+    Json.Encode.object
+        [ ( "snapshot", (deviceAudioAutomaticTranscriptionSnapshotEncoder) struct.snapshot )
+        , ( "availability", (deviceAudioTranscriptionAvailabilityEncoder) struct.availability )
+        , ( "disposition", (deviceAudioTranscriptionDispositionEncoder) struct.disposition )
+        ]
+
+
+type alias DeviceAudioAsrSettingsReq =
+    { deviceId : String
+    }
+
+
+deviceAudioAsrSettingsReqEncoder : DeviceAudioAsrSettingsReq -> Json.Encode.Value
+deviceAudioAsrSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        ]
+
+
+type alias SetDeviceAudioAsrSettingsReq =
+    { deviceId : String
+    , enabled : Bool
+    }
+
+
+setDeviceAudioAsrSettingsReqEncoder : SetDeviceAudioAsrSettingsReq -> Json.Encode.Value
+setDeviceAudioAsrSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "enabled", (Json.Encode.bool) struct.enabled )
+        ]
+
+
+type alias DeviceAudioAsrSettingsRsp =
+    { deviceId : String
+    , enabled : Bool
+    , globalEnabled : Bool
+    , canManageSetting : Bool
+    , blockedReason : Maybe (String)
+    }
+
+
+deviceAudioAsrSettingsRspEncoder : DeviceAudioAsrSettingsRsp -> Json.Encode.Value
+deviceAudioAsrSettingsRspEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "global_enabled", (Json.Encode.bool) struct.globalEnabled )
+        , ( "can_manage_setting", (Json.Encode.bool) struct.canManageSetting )
+        , ( "blocked_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.blockedReason )
+        ]
+
+
+type alias DeviceAudioTranscriptionAdmissionError =
+    { code : String
+    , message : String
+    }
+
+
+deviceAudioTranscriptionAdmissionErrorEncoder : DeviceAudioTranscriptionAdmissionError -> Json.Encode.Value
+deviceAudioTranscriptionAdmissionErrorEncoder struct =
+    Json.Encode.object
+        [ ( "code", (Json.Encode.string) struct.code )
+        , ( "message", (Json.Encode.string) struct.message )
         ]
 
 
@@ -6042,6 +6261,7 @@ type alias DeviceAudioPreparation =
     , wave : DeviceAudioPreparationState
     , spectrogram : DeviceAudioPreparationState
     , retryAfterMs : Int
+    , transcriptionAdmissionError : Maybe (DeviceAudioTranscriptionAdmissionError)
     }
 
 
@@ -6052,6 +6272,7 @@ deviceAudioPreparationEncoder struct =
         , ( "wave", (deviceAudioPreparationStateEncoder) struct.wave )
         , ( "spectrogram", (deviceAudioPreparationStateEncoder) struct.spectrogram )
         , ( "retry_after_ms", (Json.Encode.int) struct.retryAfterMs )
+        , ( "transcription_admission_error", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceAudioTranscriptionAdmissionErrorEncoder)) struct.transcriptionAdmissionError )
         ]
 
 
@@ -21368,7 +21589,217 @@ deviceAudioDetailsDecoder =
     Json.Decode.succeed DeviceAudioDetails
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio" (deviceAudioDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription" (deviceAudioTranscriptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "automatic_transcription" (deviceAudioAutomaticTranscriptionSnapshotDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription_availability" (deviceAudioTranscriptionAvailabilityDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_edit" (Json.Decode.bool)))
+
+
+deviceAudioAutomaticTranscriptionStateDecoder : Json.Decode.Decoder DeviceAudioAutomaticTranscriptionState
+deviceAudioAutomaticTranscriptionStateDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "not_requested" ->
+                            Json.Decode.succeed AudioAsrNotRequested
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "queued" ->
+                            Json.Decode.succeed AudioAsrQueued
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "preparing" ->
+                            Json.Decode.succeed AudioAsrPreparing
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "running" ->
+                            Json.Decode.succeed AudioAsrRunning
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "retry_wait" ->
+                            Json.Decode.succeed AudioAsrRetryWait
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "succeeded" ->
+                            Json.Decode.succeed AudioAsrSucceeded
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "no_speech" ->
+                            Json.Decode.succeed AudioAsrNoSpeech
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "failed" ->
+                            Json.Decode.succeed AudioAsrFailed
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "outcome_unknown" ->
+                            Json.Decode.succeed AudioAsrOutcomeUnknown
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "cancelled" ->
+                            Json.Decode.succeed AudioAsrCancelled
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+deviceAudioTranscriptionDispositionDecoder : Json.Decode.Decoder DeviceAudioTranscriptionDisposition
+deviceAudioTranscriptionDispositionDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "queued" ->
+                            Json.Decode.succeed AudioAsrRetryQueued
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "already_active" ->
+                            Json.Decode.succeed AudioAsrRetryAlreadyActive
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "already_completed" ->
+                            Json.Decode.succeed AudioAsrRetryAlreadyCompleted
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+deviceAudioAutomaticTranscriptionSnapshotDecoder : Json.Decode.Decoder DeviceAudioAutomaticTranscriptionSnapshot
+deviceAudioAutomaticTranscriptionSnapshotDecoder =
+    Json.Decode.succeed DeviceAudioAutomaticTranscriptionSnapshot
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (deviceAudioAutomaticTranscriptionStateDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retry_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceAudioTranscriptionAvailabilityDecoder : Json.Decode.Decoder DeviceAudioTranscriptionAvailability
+deviceAudioTranscriptionAvailabilityDecoder =
+    Json.Decode.succeed DeviceAudioTranscriptionAvailability
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "global_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_edit_manual" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_manage_setting" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_retry" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "blocked_reason" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceAudioTranscriptionStatusReqDecoder : Json.Decode.Decoder DeviceAudioTranscriptionStatusReq
+deviceAudioTranscriptionStatusReqDecoder =
+    Json.Decode.succeed DeviceAudioTranscriptionStatusReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_version" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceAudioTranscriptionStatusRspDecoder : Json.Decode.Decoder DeviceAudioTranscriptionStatusRsp
+deviceAudioTranscriptionStatusRspDecoder =
+    Json.Decode.succeed DeviceAudioTranscriptionStatusRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "snapshot" (Json.Decode.nullable (deviceAudioAutomaticTranscriptionSnapshotDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "availability" (deviceAudioTranscriptionAvailabilityDecoder)))
+
+
+retryDeviceAudioTranscriptionReqDecoder : Json.Decode.Decoder RetryDeviceAudioTranscriptionReq
+retryDeviceAudioTranscriptionReqDecoder =
+    Json.Decode.succeed RetryDeviceAudioTranscriptionReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_id" (Json.Decode.string)))
+
+
+retryDeviceAudioTranscriptionRspDecoder : Json.Decode.Decoder RetryDeviceAudioTranscriptionRsp
+retryDeviceAudioTranscriptionRspDecoder =
+    Json.Decode.succeed RetryDeviceAudioTranscriptionRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "snapshot" (deviceAudioAutomaticTranscriptionSnapshotDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "availability" (deviceAudioTranscriptionAvailabilityDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disposition" (deviceAudioTranscriptionDispositionDecoder)))
+
+
+deviceAudioAsrSettingsReqDecoder : Json.Decode.Decoder DeviceAudioAsrSettingsReq
+deviceAudioAsrSettingsReqDecoder =
+    Json.Decode.succeed DeviceAudioAsrSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+
+
+setDeviceAudioAsrSettingsReqDecoder : Json.Decode.Decoder SetDeviceAudioAsrSettingsReq
+setDeviceAudioAsrSettingsReqDecoder =
+    Json.Decode.succeed SetDeviceAudioAsrSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+
+
+deviceAudioAsrSettingsRspDecoder : Json.Decode.Decoder DeviceAudioAsrSettingsRsp
+deviceAudioAsrSettingsRspDecoder =
+    Json.Decode.succeed DeviceAudioAsrSettingsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "global_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_manage_setting" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "blocked_reason" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceAudioTranscriptionAdmissionErrorDecoder : Json.Decode.Decoder DeviceAudioTranscriptionAdmissionError
+deviceAudioTranscriptionAdmissionErrorDecoder =
+    Json.Decode.succeed DeviceAudioTranscriptionAdmissionError
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "code" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
 
 
 deviceAudioPreparationDecoder : Json.Decode.Decoder DeviceAudioPreparation
@@ -21378,6 +21809,7 @@ deviceAudioPreparationDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "wave" (deviceAudioPreparationStateDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "spectrogram" (deviceAudioPreparationStateDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retry_after_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription_admission_error" (Json.Decode.nullable (deviceAudioTranscriptionAdmissionErrorDecoder))))
 
 
 prepareDeviceAudioReqDecoder : Json.Decode.Decoder PrepareDeviceAudioReq

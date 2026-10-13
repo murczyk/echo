@@ -5,7 +5,9 @@ use crate::devices::analytics::{normalize_tag_filter, types::*};
 use crate::devices::files::{bl, query, types::*};
 use crate::devices::types::parse_uuid;
 use crate::file_registry::{entities::file_entry, FileRegistryDb};
-use crate::{config, entities::login, error::AppError, h, types::ShortContext};
+use crate::{
+    devices::config, entities::login, error::AppError, h, types::ShortContext,
+};
 use sea_orm::{
     AccessMode, DatabaseConnection, FromQueryResult, IsolationLevel,
     QueryResult, TransactionTrait,
