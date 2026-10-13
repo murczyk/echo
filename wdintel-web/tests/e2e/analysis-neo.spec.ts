@@ -15,6 +15,46 @@ async function setupAnalysisNeoPage(
 
 // Regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke @regression', () => {
+  test('copies an Analysis link and highlights its target when opened', async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const response = createLoadedInboxResponse();
+    const [messageId, message] = response.inbox_items[0];
+    await setupAnalysisNeoPage(page, { inboxResponse: response });
+    await page.goto('/rer-analysis-neo');
+
+    const card = page.locator(`[data-message-id="${messageId}"]`);
+    await expect(card).toBeVisible();
+    await card.getByRole('button', { name: /^Копіювати/ }).click();
+    await page.getByRole('menuitem', { name: 'Копіювати посилання на повідомлення' }).click();
+    await expect(page.getByText('Посилання на повідомлення скопійовано.')).toBeVisible();
+
+    const link = await page.evaluate(() => navigator.clipboard.readText());
+    expect(new URL(link).pathname).toBe('/rer-analysis-neo');
+    expect(new URL(link).searchParams.get('m')).toBe(message.messageUid);
+
+    await page.goto(link);
+    await expect(card).toBeVisible();
+    await expect
+      .poll(() =>
+        card.locator('[data-message-card-root]').evaluate((element) => element.style.outline),
+      )
+      .toContain('2px solid');
+  });
+
+  test('shows one privacy-safe notification for an unavailable Analysis link', async ({ page }) => {
+    await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
+    await page.goto('/rer-analysis-neo?m=unavailable-message');
+
+    const notification = page.getByText(
+      'Повідомлення за посиланням не знайдено або воно недоступне.',
+    );
+    await expect(notification).toHaveCount(1);
+    await expect(page).toHaveURL(/\/rer-analysis-neo\?m=unavailable-message/);
+  });
+
   // Regression: https://github.com/echoua/echo/issues/2726
   for (const { roles, from, to } of [
     { roles: ['Rer'], from: '2026-09-24T00:00', to: '2026-09-25T00:00' },
@@ -701,7 +741,7 @@ test.describe('@smoke @regression', () => {
 
     const messageList = page.locator('section[aria-labelledby] ul').first();
     const messageScrollContainer = messageList.locator('..');
-    await expect(messageList.locator('li')).toHaveCount(20);
+    await expect(messageList.locator('[data-message-id]')).toHaveCount(20);
     await expect
       .poll(() =>
         messageScrollContainer.evaluate((element) => element.scrollHeight > element.clientHeight),
@@ -710,7 +750,7 @@ test.describe('@smoke @regression', () => {
 
     const tab = page.getByRole('tab', { name: 'Повідомлення' });
     const tabBoxBefore = await tab.boundingBox();
-    const card = messageList.locator('li').first();
+    const card = messageList.locator('[data-message-id]').first();
     const cardBox = await card.boundingBox();
     expect(tabBoxBefore).not.toBeNull();
     expect(cardBox).not.toBeNull();
@@ -732,7 +772,7 @@ test.describe('@smoke @regression', () => {
     expect(tabBoxAfter?.y).toBe(tabBoxBefore!.y);
     expect(documentScrollAfter).toBe(documentScrollBefore);
 
-    const cardBoxes = await messageList.locator('li').evaluateAll((items) =>
+    const cardBoxes = await messageList.locator('[data-message-id]').evaluateAll((items) =>
       items.map((item) => {
         const box = item.getBoundingClientRect();
         return { left: box.left, right: box.right };
@@ -884,7 +924,7 @@ test.describe('@smoke @regression', () => {
       element.scrollTop = element.scrollHeight;
       element.dispatchEvent(new Event('scroll', { bubbles: true }));
     });
-    await expect(messageList.locator('li')).toHaveCount(40);
+    await expect(messageList.locator('[data-message-id]')).toHaveCount(40);
 
     const anchor = page.locator('[data-message-id="122"]');
     await expect(anchor).toBeVisible();
@@ -957,7 +997,7 @@ test.describe('@smoke @regression', () => {
 
     const messageList = page.locator('section[aria-labelledby] ul').first();
     const scrollContainer = messageList.locator('..');
-    await expect(messageList.locator('li')).toHaveCount(20);
+    await expect(messageList.locator('[data-message-id]')).toHaveCount(20);
     await expect.poll(() => scrollContainer.evaluate((element) => element.scrollTop)).toBe(0);
 
     refreshRequested = true;
