@@ -14,6 +14,11 @@ retries return the current aggregate importance state without recreating a
 personal mark or mention. Notifications are not backfilled, and removing an
 importance mark never removes prior receipts.
 
+Apply the standard migration runner during deployment. The follow-up repair
+migration safely creates a missing `notification_read_boundary_completed`
+table and its cleanup index on installations that recorded an early inbox
+migration; it neither removes data nor rewrites migration history.
+
 Inbox reads are per recipient. “Mark all as read” uses the panel snapshot
 boundary, leaving subsequently created mentions unread. Refreshes reuse the
 open panel’s boundary rather than copying the unread set again. Each open

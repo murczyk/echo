@@ -468,6 +468,7 @@ mod m20261009_201221_ai_agent_reasoning_policy;
 mod m20261011_112422_ai_agent_completion_event;
 mod m20261011_112649_ai_agent_work_memory;
 mod m20261012_120000_notification_inbox;
+mod m20261013_090000_notification_read_boundary_completed_repair;
 
 pub struct Migrator;
 
@@ -1126,6 +1127,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261011_112422_ai_agent_completion_event::Migration),
             Box::new(m20261011_112649_ai_agent_work_memory::Migration),
             Box::new(m20261012_120000_notification_inbox::Migration),
+            Box::new(m20261013_090000_notification_read_boundary_completed_repair::Migration),
         ]
     }
 }

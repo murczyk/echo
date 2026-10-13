@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
+import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Button,
   Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
-  FormControlLabel,
   Switch,
+  Typography,
 } from '@mui/material';
 import { useOptionalPowerSnackbar } from '../PowerSnackbar';
 import { importantAdd } from '../../services/api/inbox-message-actions';
@@ -26,14 +26,20 @@ export function requestImportantMessage(request: ImportantMessageRequest) {
 export function ImportantMessageDialog() {
   const { notify } = useOptionalPowerSnackbar();
   const [request, setRequest] = useState<ImportantMessageRequest | null>(null);
+  const [open, setOpen] = useState(false);
   const [notifyGroup, setNotifyGroup] = useState(false);
   const [operationId, setOperationId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestVersion = useRef(0);
+  const closingRequestVersion = useRef<number | null>(null);
 
   useEffect(() => {
     const open = (event: Event) => {
+      requestVersion.current += 1;
+      closingRequestVersion.current = null;
       setRequest((event as CustomEvent<ImportantMessageRequest>).detail);
+      setOpen(true);
       setNotifyGroup(false);
       setOperationId(crypto.randomUUID());
       setError(null);
@@ -42,8 +48,16 @@ export function ImportantMessageDialog() {
     return () => window.removeEventListener(IMPORTANT_MESSAGE_REQUEST_EVENT, open);
   }, []);
 
-  const close = () => {
-    if (!pending) setRequest(null);
+  const close = (force = false) => {
+    if (pending && !force) return;
+    closingRequestVersion.current = requestVersion.current;
+    setOpen(false);
+  };
+  const clearAfterExit = () => {
+    if (closingRequestVersion.current !== requestVersion.current) return;
+    closingRequestVersion.current = null;
+    setRequest(null);
+    setError(null);
   };
   const submit = async () => {
     if (!request) return;
@@ -61,7 +75,7 @@ export function ImportantMessageDialog() {
           detail: { messageId: request.messageId, important },
         }),
       );
-      setRequest(null);
+      close(true);
     } catch (submitError) {
       const message =
         submitError instanceof Error ? submitError.message : 'Не вдалося позначити повідомлення.';
@@ -74,38 +88,42 @@ export function ImportantMessageDialog() {
   const canNotify = Boolean(request?.groupMasterKey);
 
   return (
-    <Dialog open={request !== null} onClose={close} aria-labelledby="important-message-title">
-      <DialogTitle id="important-message-title">
-        <span className="block text-sm uppercase tracking-wider text-(--color-text-secondary)">
-          Важливе повідомлення
-        </span>
-        <span className="mt-2 block text-2xl">Хочете сповістити групу?</span>
-      </DialogTitle>
-      <DialogContent className="min-w-[min(32rem,calc(100vw-2rem))]">
-        <p className="m-0 text-(--color-text-secondary)">
-          Можна сповістити всіх користувачів, які мають доступ до цієї групи. Вони побачать вашу
-          згадку у «Вхідних».
-        </p>
-        <div className="mt-6 rounded border border-(--color-border) px-4 py-2">
-          <FormControlLabel
-            className="m-0 w-full"
-            control={
-              <Switch
-                checked={notifyGroup}
-                disabled={!canNotify || pending}
-                onChange={(_, value) => setNotifyGroup(value)}
-              />
-            }
-            label={
-              <span>
-                <span className="block font-medium">Сповістити всіх?</span>
-                <span className="block text-sm text-(--color-text-secondary)">
-                  {canNotify
-                    ? 'Усіх користувачів із доступом до групи, крім вас.'
-                    : 'Для цього повідомлення немає придатного контексту групи.'}
-                </span>
-              </span>
-            }
+    <Dialog
+      open={open}
+      onClose={() => close()}
+      aria-labelledby="important-message-title"
+      slotProps={{
+        transition: { onExited: clearAfterExit },
+        paper: { sx: { width: 'min(600px, calc(100vw - 32px))', maxWidth: 'calc(100vw - 32px)' } },
+      }}
+    >
+      <DialogContent className="!border-b !border-[var(--color-border)] !px-[24px] !py-[16px]">
+        <div className="flex items-center gap-4 py-4">
+          <span className="flex size-[50px] shrink-0 items-center justify-center rounded-lg !border !border-[var(--echo-color-error)] bg-[color-mix(in_srgb,var(--echo-color-error)_15%,transparent)] text-[var(--echo-color-error)]">
+            <FlagOutlinedIcon sx={{ fontSize: 24 }} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <Typography
+              component="span"
+              color="text.secondary"
+              className="block text-xs font-normal tracking-[1px]"
+            >
+              ВАЖЛИВЕ ПОВІДОМЛЕННЯ
+            </Typography>
+            <h2
+              id="important-message-title"
+              className="m-0 mt-1 text-[var(--color-text)]"
+              style={{ fontSize: '16px', fontWeight: 400, lineHeight: '28px' }}
+            >
+              Сповістити всіх?
+            </h2>
+          </div>
+          <Switch
+            checked={notifyGroup}
+            disabled={!canNotify || pending}
+            onChange={(_, value) => setNotifyGroup(value)}
+            size="small"
+            inputProps={{ 'aria-label': 'Сповістити всіх?' }}
           />
         </div>
         {error ? (
@@ -115,7 +133,7 @@ export function ImportantMessageDialog() {
         ) : null}
       </DialogContent>
       <DialogActions>
-        <Button onClick={close} disabled={pending}>
+        <Button onClick={() => close()} disabled={pending}>
           Закрити
         </Button>
         <Button variant="contained" onClick={() => void submit()} disabled={pending}>

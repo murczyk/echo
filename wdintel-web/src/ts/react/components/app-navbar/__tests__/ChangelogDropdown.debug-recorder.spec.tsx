@@ -120,7 +120,7 @@ describe('changelog debug-recorder activator', () => {
       changelogPreview: null,
       deploymentMaintenance: null,
     });
-    expect(button.querySelector('.bi-megaphone')).not.toBeNull();
+    expect(button.querySelector('[data-testid="changelog-campaign-icon"]')).not.toBeNull();
     act(() => button.click());
     expect(container.querySelector('[data-testid="changelog-dropdown-body"]')).toBeNull();
   });
@@ -133,6 +133,6 @@ describe('changelog debug-recorder activator', () => {
     });
     expect(container.textContent).toContain('Оновлення системи');
     expect(container.textContent).toContain('відбувається оновлення системи');
-    expect(container.querySelector('.bi-cone-striped')).not.toBeNull();
+    expect(container.querySelector('[data-testid="changelog-maintenance-icon"]')).not.toBeNull();
   });
 });

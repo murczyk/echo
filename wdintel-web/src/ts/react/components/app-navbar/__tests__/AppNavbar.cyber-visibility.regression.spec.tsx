@@ -2,6 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { act } from 'react';
+import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppNavbar } from '../AppNavbar';
@@ -24,6 +25,12 @@ vi.mock('../../../../debug-recorder', () => ({
   configureBrowserDebugRecorder: configureDebugRecorderMock,
   clearBrowserDebugRecording: clearDebugRecorderMock,
   mountDebugRecorderPanelIfNeeded: mountDebugRecorderPanelMock,
+}));
+
+vi.mock('../../../mui-theme', () => ({
+  NeoMuiThemeProvider: ({ children }: { children: ReactNode }) => (
+    <div data-testid="neo-mui-theme-provider">{children}</div>
+  ),
 }));
 
 type Rendered = {
@@ -157,6 +164,19 @@ describe('AppNavbar', () => {
     const logout = host.querySelector<HTMLButtonElement>('[data-testid="mock-profile-dropdown"]');
     act(() => logout?.click());
     expect(order).toEqual(['clear', 'logout']);
+    act(() => host.remove());
+  });
+
+  it('#3610 mounts the navbar custom element inside the Neo MUI theme boundary', async () => {
+    await import('../../../app-navbar-element');
+    const host = document.createElement('app-navbar') as HTMLElement & { props: unknown };
+    act(() => {
+      document.body.append(host);
+      host.props = defaultProps;
+    });
+
+    expect(host.querySelector('[data-testid="neo-mui-theme-provider"]')).not.toBeNull();
+
     act(() => host.remove());
   });
 
@@ -575,7 +595,7 @@ describe('AppNavbar', () => {
     });
 
     // Find the fullscreen toggle button
-    const toggleButton = container.querySelector('button[title="Повноекранний режим"]');
+    const toggleButton = container.querySelector('button[aria-label="Повноекранний режим"]');
     expect(toggleButton).not.toBeNull();
     expect(toggleButton?.className).toContain('rounded');
 

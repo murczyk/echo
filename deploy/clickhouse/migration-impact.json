@@ -10,6 +10,11 @@
         { "table": "public.importance_operation", "strategy": "excluded" }
       ]
     },
+    "echo:m20261013_090000_notification_read_boundary_completed_repair": {
+      "changes": [
+        { "table": "public.notification_read_boundary_completed", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261011_112422_ai_agent_completion_event": { "changes": [] },
     "echo:m20261011_112649_ai_agent_work_memory": { "changes": [{ "table": "public.ai_agent_work_record", "strategy": "excluded" }] },
     "echo:m20261009_074414_system_settings_hide_networks": {

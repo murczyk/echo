@@ -1,7 +1,8 @@
-import React from 'react';
-import { createRoot, Root } from 'react-dom/client';
-import { AppNavbar, AppNavbarProps } from './components/app-navbar/AppNavbar';
+import { useMemo } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { AppNavbar, type AppNavbarProps } from './components/app-navbar/AppNavbar';
 import { clearBrowserDebugRecording } from '../debug-recorder';
+import { NeoMuiThemeProvider } from './mui-theme';
 
 type ParsedNavbarProps = Omit<
   AppNavbarProps,
@@ -15,7 +16,7 @@ function AppNavbarRoot({
   parsedProps: ParsedNavbarProps | null;
   host: HTMLElement;
 }) {
-  const callbacks = React.useMemo(() => {
+  const callbacks = useMemo(() => {
     return {
       onLogout: () => {
         clearBrowserDebugRecording();
@@ -35,7 +36,11 @@ function AppNavbarRoot({
 
   if (!parsedProps) return null;
 
-  return <AppNavbar {...parsedProps} {...callbacks} />;
+  return (
+    <NeoMuiThemeProvider>
+      <AppNavbar {...parsedProps} {...callbacks} />
+    </NeoMuiThemeProvider>
+  );
 }
 
 class AppNavbarElement extends HTMLElement {

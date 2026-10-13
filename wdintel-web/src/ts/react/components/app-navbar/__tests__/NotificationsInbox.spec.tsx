@@ -67,6 +67,41 @@ afterEach(() => {
 });
 
 describe('NotificationsInbox', () => {
+  it.each([
+    { name: 'empty', items: [] },
+    { name: 'populated', items: [item('existing')] },
+  ])('#3610 keeps the $name panel stable during background refresh', async ({ items }) => {
+    const response = {
+      items,
+      unreadCount: items.length,
+      nextCursor: null,
+      markAllBoundary: 'boundary',
+      removedReceiptIds: [],
+    };
+    let resolveRefresh!: (value: typeof response) => void;
+    const pendingRefresh = new Promise<typeof response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    listNotifications.mockResolvedValueOnce(response).mockReturnValueOnce(pendingRefresh);
+    notificationUnreadCount.mockResolvedValueOnce(items.length);
+    renderInbox();
+    await openInbox();
+
+    const panel = document.querySelector('section[aria-label="Вхідні"]')!;
+    const content = panel.innerHTML;
+    await act(async () => window.dispatchEvent(new Event('focus')));
+
+    expect(listNotifications).toHaveBeenCalledTimes(2);
+    expect(panel.innerHTML).toBe(content);
+    expect(panel.querySelector('[role="progressbar"]')).toBeNull();
+
+    await act(async () => {
+      resolveRefresh({ ...response, items: [item('new')], unreadCount: 1 });
+    });
+    expect(panel.querySelectorAll('a')).toHaveLength(items.length + 1);
+    expect(panel.querySelector('[role="progressbar"]')).toBeNull();
+  });
+
   it('#3610 marks only receipts returned by the persisted boundary as read', async () => {
     listNotifications.mockResolvedValueOnce({
       items: [item('covered'), item('newer', 2)],
@@ -90,8 +125,9 @@ describe('NotificationsInbox', () => {
     });
 
     expect(readAllNotifications).toHaveBeenCalledWith({ boundaryReceiptId: 'boundary' });
-    expect(document.body.textContent).toContain('Вхідні (1)');
-    expect(document.querySelectorAll('a.font-medium')).toHaveLength(1);
+    expect(document.querySelector('h2')?.textContent).toBe('Вхідні');
+    expect(document.querySelector('button[aria-label="Вхідні"]')?.textContent).toContain('1');
+    expect(document.querySelectorAll('[data-testid="notification-unread-dot"]')).toHaveLength(1);
   });
 
   it('#3610 tracks a link activation without delaying navigation', async () => {
@@ -152,7 +188,7 @@ describe('NotificationsInbox', () => {
       });
     });
 
-    expect(document.querySelectorAll('a.font-medium')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-testid="notification-unread-dot"]')).toHaveLength(0);
     expect(document.body.textContent).not.toContain('Вхідні (1)');
   });
 
@@ -164,6 +200,58 @@ describe('NotificationsInbox', () => {
 
     expect(document.body.textContent).toContain('network failure');
     expect(document.body.textContent).not.toContain('Поки що немає згадок');
+  });
+
+  it('#3610 deduplicates repeated polling failures and exposes a retry action', async () => {
+    listNotifications
+      .mockRejectedValueOnce(new Error('network failure'))
+      .mockRejectedValueOnce(new Error('network failure'))
+      .mockResolvedValueOnce({
+        items: [],
+        unreadCount: 0,
+        nextCursor: null,
+        markAllBoundary: null,
+      });
+    renderInbox();
+
+    await openInbox();
+    await act(async () => window.dispatchEvent(new Event('focus')));
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).toContain('network failure');
+    const retry = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === 'Повторити',
+    );
+    expect(retry).toBeDefined();
+
+    await act(async () => retry?.click());
+
+    expect(document.body.textContent).not.toContain('network failure');
+    expect(document.body.textContent).toContain('Поки що немає згадок');
+  });
+
+  it('#3610 retries an initial unread-count failure after the panel list loads', async () => {
+    notificationUnreadCount
+      .mockRejectedValueOnce(new Error('Internal server error'))
+      .mockResolvedValueOnce(1);
+    listNotifications.mockResolvedValueOnce({
+      items: [item('receipt')],
+      unreadCount: 1,
+      nextCursor: null,
+      markAllBoundary: 'boundary',
+    });
+    renderInbox();
+
+    await openInbox();
+
+    expect(document.body.textContent).toContain('Не вдалося оновити Вхідні');
+    const retry = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === 'Повторити',
+    );
+    await act(async () => retry?.click());
+
+    expect(notificationUnreadCount).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).not.toContain('Не вдалося оновити Вхідні');
   });
 
   it('#3610 loads the unread badge before the panel is opened', async () => {
@@ -238,7 +326,7 @@ describe('NotificationsInbox', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    expect(document.querySelectorAll('a.font-medium')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-testid="notification-unread-dot"]')).toHaveLength(2);
     expect(readAllNotifications).toHaveBeenCalledWith({
       boundaryReceiptId: 'expired-boundary',
     });
@@ -267,7 +355,7 @@ describe('NotificationsInbox', () => {
       resolveFirst!(0);
     });
 
-    expect(document.querySelectorAll('a.font-medium')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-testid="notification-unread-dot"]')).toHaveLength(0);
     expect(document.body.textContent).not.toContain('Вхідні (1)');
   });
 
@@ -299,7 +387,7 @@ describe('NotificationsInbox', () => {
     expect(listNotifications).toHaveBeenLastCalledWith(
       expect.objectContaining({ cursor: 'next-page' }),
     );
-    expect(document.querySelectorAll('a.font-medium')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-testid="notification-unread-dot"]')).toHaveLength(2);
   });
 
   it('#3610 reconciles the badge when reads finish in request order', async () => {
@@ -324,7 +412,7 @@ describe('NotificationsInbox', () => {
       resolveSecond!(0);
     });
 
-    expect(document.querySelectorAll('a.font-medium')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-testid="notification-unread-dot"]')).toHaveLength(0);
     expect(document.body.textContent).not.toContain('Вхідні (1)');
   });
 });
