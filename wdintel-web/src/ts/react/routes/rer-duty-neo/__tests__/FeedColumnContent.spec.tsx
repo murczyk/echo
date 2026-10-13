@@ -1,12 +1,12 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, useMemo } from 'react';
+import { act, createRef, useMemo } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CallsignInfoRes, InboxMessage, Network } from '../../../../../Bindings';
-import { FeedColumnContent } from '../FeedColumnContent';
+import { FeedColumnContent, type FeedColumnContentHandle } from '../FeedColumnContent';
 import { minimalInboxMessage } from '../inbox-message-mocks';
 import type { FeedColumnModel, TailAvailability } from '../types';
 import { emptyFilter, type MessageFeedState } from '../utils';
@@ -167,6 +167,91 @@ describe('FeedColumnContent', () => {
     expect(container.querySelector('[data-message-feed-skeleton="above"]')).not.toBeNull();
     expect(container.querySelectorAll('[data-message-feed-skeleton-card]')).toHaveLength(1);
     expect(container.querySelector('[data-duty-message-id="1"]')).not.toBeNull();
+  });
+
+  it('shares linked and editor highlight behavior with the Analysis feed', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const ref = createRef<FeedColumnContentHandle>();
+    await act(async () => root.render(<FeedColumnContent ref={ref} column={column} />));
+    const card = container.querySelector('[data-duty-message-id="1"]');
+    expect(card).not.toBeNull();
+
+    await act(async () => {
+      expect(ref.current?.highlightLinkedMessage(1)).toBe(true);
+    });
+    expect(card?.getAttribute('data-message-feed-highlighted')).toBe('true');
+
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          ref={ref}
+          column={{ ...column, view: { ...column.view, editorHighlightedMessageId: 1 } }}
+        />,
+      ),
+    );
+    expect(card?.getAttribute('data-message-feed-highlighted')).toBe('true');
+  });
+
+  it('clears a Duty link highlight after buffered newer messages become visible', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const ref = createRef<FeedColumnContentHandle>();
+    const highlighted = () => container.querySelector('[data-message-feed-highlighted]');
+
+    await act(async () => root.render(<FeedColumnContent ref={ref} column={column} />));
+    await act(async () => ref.current?.highlightLinkedMessage(1));
+
+    const newerAvailable = {
+      ...column,
+      feed: { ...column.feed, evictedNewerTailId: 2 },
+    };
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          ref={ref}
+          column={{
+            ...newerAvailable,
+            view: { ...column.view, loadingNewer: true },
+          }}
+        />,
+      ),
+    );
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          ref={ref}
+          column={{
+            ...newerAvailable,
+            view: { ...column.view, pendingNewerFlushNeeded: true },
+          }}
+        />,
+      ),
+    );
+    expect(highlighted()?.getAttribute('data-duty-message-id')).toBe('1');
+
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          ref={ref}
+          column={{
+            ...column,
+            feed: {
+              ...column.feed,
+              items: [
+                [1, message],
+                [2, message],
+              ],
+            },
+          }}
+        />,
+      ),
+    );
+    expect(highlighted()).toBeNull();
   });
 
   it('copies a Duty message link to the Duty route', async () => {

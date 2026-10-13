@@ -13,6 +13,7 @@ import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
 
 type Props = {
   page: AnalysisPageViewModel;
+  editorHighlightedMessageId: number | null;
   centerTab: AnalysisCenterTab;
   centerTabs: AnalysisCenterTab[];
   isCompactLayout?: boolean;
@@ -28,6 +29,7 @@ type Props = {
 
 export function AnalysisCenterPanel({
   page,
+  editorHighlightedMessageId,
   centerTab,
   centerTabs,
   isCompactLayout = false,
@@ -229,6 +231,7 @@ export function AnalysisCenterPanel({
           }}
         >
           <AnalysisMessagesPane
+            editorHighlightedMessageId={editorHighlightedMessageId}
             authUserName={page.authUserName}
             currentUser={page.currentUser}
             copiedFeedbackId={page.copiedFeedbackId}

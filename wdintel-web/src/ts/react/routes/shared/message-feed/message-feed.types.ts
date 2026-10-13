@@ -176,6 +176,7 @@ export type WindowedFeedScrollHandle = {
 export type MessageFeedHandle = {
   scrollToBottom: WindowedFeedScrollHandle['scrollToBottom'];
   scrollToMessage: WindowedFeedScrollHandle['scrollToItem'];
+  highlightLinkedMessage: (id: number) => boolean;
   getItemElement: WindowedFeedScrollHandle['getItemElement'];
   getScrollerElement: () => HTMLDivElement | null;
   getBottomSpacerPx: () => number;

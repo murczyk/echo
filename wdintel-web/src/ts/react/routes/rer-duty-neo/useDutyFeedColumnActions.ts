@@ -15,7 +15,7 @@ export type RerDutyFeedsBundle = ReturnType<typeof useRerDutyFeeds>;
 
 export type DutyFeedColumnActionsDeps = {
   feeds: RerDutyFeedsBundle;
-  openReportEditor: (feedId: string, reportId: number) => void;
+  openReportEditor: (feedId: string, reportId: number, sourceMessageId: number) => void;
   openMessageEditor: (
     feedId: string,
     target: { id: number; message: InboxMessage },
@@ -111,8 +111,8 @@ export function useDutyFeedColumnActions(
           focusTarget,
         );
       },
-      onMessageEditReport: (reportId) => {
-        deps.openReportEditor(feedId, reportId);
+      onMessageEditReport: (reportId, sourceMessageId) => {
+        deps.openReportEditor(feedId, reportId, sourceMessageId);
       },
       onMessageExcludeEntity: (entity, value) =>
         applyFilter(feedId, excludeMessageEntityFromFilters(feed.filter, entity, value)),
@@ -212,7 +212,8 @@ export function useDutyFeedColumnActions(
       onMessageCopy: (text, feedbackId) => latest().onMessageCopy(text, feedbackId),
       onMessageCreateReport: (msgId, message, etalonDisplayModel, focusTarget) =>
         latest().onMessageCreateReport(msgId, message, etalonDisplayModel, focusTarget),
-      onMessageEditReport: (reportId) => latest().onMessageEditReport(reportId),
+      onMessageEditReport: (reportId, sourceMessageId) =>
+        latest().onMessageEditReport(reportId, sourceMessageId),
       onMessageExcludeEntity: (entity, value) => latest().onMessageExcludeEntity(entity, value),
       onMessageToggleTag: (msgId, tagId) => latest().onMessageToggleTag(msgId, tagId),
       onMessageEdit: (messageId, message, focusTarget) =>

@@ -44,6 +44,7 @@ export type MessageFeedProps<T> = Omit<MessageFeedViewportProps<T>, 'scroll'> & 
   hasMoreAbove?: boolean;
   hasMoreBelow?: boolean;
   skeletonCount?: number;
+  editorHighlightedMessageId?: number | null;
 };
 
 function MessageFeedInner<T>(
@@ -56,6 +57,7 @@ function MessageFeedInner<T>(
     hasMoreBelow = false,
     isLoading = false,
     skeletonCount = 3,
+    editorHighlightedMessageId = null,
     items,
     getMessageId,
     scrollerProps,
@@ -152,6 +154,63 @@ function MessageFeedInner<T>(
     loadingOlder: shown.loadingAbove,
     loadingNewer: shown.loadingBelow,
   });
+  const [linkedHighlightedMessageId, setLinkedHighlightedMessageId] = useState<number | null>(null);
+  const highlightedElementRef = useRef<HTMLElement | null>(null);
+  const highlightLoadStartRef = useRef<{ items: readonly T[]; ids: readonly number[] } | null>(
+    null,
+  );
+  const highlightedMessageId = editorHighlightedMessageId ?? linkedHighlightedMessageId;
+  useLayoutEffect(() => {
+    const loadingContent =
+      shown.isLoading ||
+      (shown.hasMoreAbove && shown.loadingAbove) ||
+      (shown.hasMoreBelow && shown.loadingBelow);
+    if (linkedHighlightedMessageId === null) {
+      highlightLoadStartRef.current = null;
+    } else if (loadingContent || scrollOptions.pendingNewerFlushNeeded) {
+      highlightLoadStartRef.current ??= { items: visibleItems, ids: visibleItemIds };
+    } else if (highlightLoadStartRef.current !== null) {
+      const started = highlightLoadStartRef.current;
+      if (started.items !== visibleItems || !areNumberArraysEqual(started.ids, visibleItemIds)) {
+        highlightLoadStartRef.current = null;
+        setLinkedHighlightedMessageId(null);
+      } else if (items === visibleItems) {
+        highlightLoadStartRef.current = null;
+      }
+    }
+    if (
+      linkedHighlightedMessageId !== null &&
+      !visibleItemIds.includes(linkedHighlightedMessageId)
+    ) {
+      setLinkedHighlightedMessageId(null);
+    }
+  }, [
+    items,
+    linkedHighlightedMessageId,
+    scrollOptions.pendingNewerFlushNeeded,
+    shown,
+    visibleItemIds,
+    visibleItems,
+  ]);
+  useLayoutEffect(() => {
+    const nextElement =
+      highlightedMessageId === null ? null : scroll.getItemElement(highlightedMessageId);
+    if (highlightedElementRef.current !== nextElement) {
+      highlightedElementRef.current?.removeAttribute('data-message-feed-highlighted');
+      highlightedElementRef.current = nextElement;
+    }
+    nextElement?.setAttribute('data-message-feed-highlighted', 'true');
+    return () => nextElement?.removeAttribute('data-message-feed-highlighted');
+  }, [highlightedMessageId, scroll.getItemElement, shown.children, visibleItems]);
+  const highlightLinkedMessage = useCallback(
+    (id: number) => {
+      if (!scroll.getItemElement(id)) return false;
+      highlightLoadStartRef.current = null;
+      setLinkedHighlightedMessageId(id);
+      return true;
+    },
+    [scroll.getItemElement],
+  );
   const [atNewestEdge, setAtNewestEdge] = useState(false);
   const newestEdge = newestNavigation?.edge;
   const updateNewestEdge = useCallback(() => {
@@ -166,6 +225,7 @@ function MessageFeedInner<T>(
     () => ({
       scrollToBottom: scroll.scrollToBottom,
       scrollToMessage: scroll.scrollToItem,
+      highlightLinkedMessage,
       getItemElement: scroll.getItemElement,
       getScrollerElement: () => scroll.scrollerRef.current,
       getBottomSpacerPx: () => scroll.bottomSpacerPx,
@@ -173,6 +233,7 @@ function MessageFeedInner<T>(
     [
       scroll.bottomSpacerPx,
       scroll.getItemElement,
+      highlightLinkedMessage,
       scroll.scrollerRef,
       scroll.scrollToBottom,
       scroll.scrollToItem,

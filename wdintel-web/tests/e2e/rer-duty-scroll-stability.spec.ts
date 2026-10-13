@@ -86,9 +86,11 @@ test('a direct-linked Duty window loads newer history without unread badges @reg
   const scroller = page.locator('[data-duty-feed-scroller="true"]');
   const targetCard = page.locator('[data-duty-message-id="41"] [data-message-card-root]');
   await expect(targetCard).toBeAttached();
-  await expect
-    .poll(() => targetCard.evaluate((element) => element.style.outline))
-    .toContain('2px solid');
+  const targetRow = page.locator('[data-duty-message-id="41"]');
+  await expect(targetRow).toHaveAttribute('data-message-feed-highlighted', 'true');
+  await expect(targetCard).toHaveCSS('outline-width', '2px');
+  await page.waitForTimeout(1900);
+  await expect(targetRow).toHaveAttribute('data-message-feed-highlighted', 'true');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect.poll(() => countSinceIds).toContain(141);
   await expect(page.locator('[data-duty-scroll-unread-badge]')).toHaveCount(0);

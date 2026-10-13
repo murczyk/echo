@@ -14,6 +14,12 @@
   box-sizing: border-box;
 }
 
+.message-feed-list [data-message-feed-highlighted='true'] [data-message-card-root],
+.message-feed-list [data-message-feed-highlighted='true'][data-message-card-root] {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: -2px;
+}
+
 .message-feed-skeletons {
   display: grid;
   gap: 10px;

@@ -163,6 +163,180 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     );
   });
 
+  it('keeps a linked card highlighted through scrolling until a new chunk commits', async () => {
+    const feedRef = createRef<MessageFeedHandle>();
+    const scrollOptions = {
+      hasReachedStart: false,
+      onLoadOlder: () => undefined,
+      autoScrollAllowed: false,
+    };
+    const renderFeed = (ids: number[], loadingAbove: boolean) => (
+      <MessageFeed
+        ref={feedRef}
+        items={ids}
+        getMessageId={getId}
+        scrollOptions={scrollOptions}
+        loadingAbove={loadingAbove}
+        hasMoreAbove
+        renderMessage={(id) => (
+          <div data-message-id={id}>
+            <div data-message-card-root>message {id}</div>
+          </div>
+        )}
+      />
+    );
+    const highlighted = () => container.querySelector('[data-message-feed-highlighted]');
+
+    await act(async () => root.render(renderFeed([1, 2], false)));
+    await act(async () => feedRef.current?.highlightLinkedMessage(2));
+    expect(highlighted()?.getAttribute('data-message-id')).toBe('2');
+
+    const scroller = container.querySelector<HTMLElement>('[data-message-feed-scroller]')!;
+    await act(async () => scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: 40 })));
+    expect(highlighted()?.getAttribute('data-message-id')).toBe('2');
+
+    await act(async () => root.render(renderFeed([1, 2], true)));
+    expect(highlighted()?.getAttribute('data-message-id')).toBe('2');
+    await act(async () => root.render(renderFeed([0, 1, 2], false)));
+    expect(highlighted()).toBeNull();
+  });
+
+  it('clears a linked highlight when a buffered newer chunk reaches the visible feed', async () => {
+    const feedRef = createRef<MessageFeedHandle>();
+    const initialItems = [1, 2];
+    const renderFeed = (
+      items: number[],
+      loadingBelow: boolean,
+      pendingNewerFlushNeeded: boolean,
+    ) => (
+      <MessageFeed
+        ref={feedRef}
+        items={items}
+        getMessageId={getId}
+        scrollOptions={{
+          hasReachedStart: true,
+          onLoadOlder: () => undefined,
+          autoScrollAllowed: false,
+          pendingNewerFlushNeeded,
+        }}
+        loadingBelow={loadingBelow}
+        hasMoreBelow
+        renderMessage={renderMessage}
+      />
+    );
+    const highlighted = () => container.querySelector('[data-message-feed-highlighted]');
+
+    await act(async () => root.render(renderFeed(initialItems, false, false)));
+    await act(async () => feedRef.current?.highlightLinkedMessage(1));
+    await act(async () => root.render(renderFeed(initialItems, true, false)));
+    await act(async () => root.render(renderFeed(initialItems, false, true)));
+    expect(highlighted()?.getAttribute('data-message-id')).toBe('1');
+
+    await act(async () => root.render(renderFeed([1, 2, 3], false, false)));
+    expect(highlighted()).toBeNull();
+  });
+
+  it('clears a linked highlight when an already-buffered newer chunk is flushed', async () => {
+    const feedRef = createRef<MessageFeedHandle>();
+    const renderFeed = (items: number[], pendingNewerFlushNeeded: boolean) => (
+      <MessageFeed
+        ref={feedRef}
+        items={items}
+        getMessageId={getId}
+        scrollOptions={{
+          hasReachedStart: true,
+          onLoadOlder: () => undefined,
+          autoScrollAllowed: false,
+          pendingNewerFlushNeeded,
+        }}
+        hasMoreBelow
+        renderMessage={renderMessage}
+      />
+    );
+    const highlighted = () => container.querySelector('[data-message-feed-highlighted]');
+
+    await act(async () => root.render(renderFeed([1, 2], true)));
+    await act(async () => feedRef.current?.highlightLinkedMessage(1));
+    expect(highlighted()?.getAttribute('data-message-id')).toBe('1');
+
+    await act(async () => root.render(renderFeed([1, 2, 3], false)));
+    expect(highlighted()).toBeNull();
+  });
+
+  it('keeps an editor source highlighted through content refresh and clears it on close', async () => {
+    const feedRef = createRef<MessageFeedHandle>();
+    const scrollOptions = {
+      hasReachedStart: true,
+      onLoadOlder: () => undefined,
+      autoScrollAllowed: false,
+    };
+    const renderFeed = (
+      ids: number[],
+      editorHighlightedMessageId: number | null,
+      isLoading = false,
+    ) => (
+      <MessageFeed
+        ref={feedRef}
+        items={ids}
+        getMessageId={getId}
+        scrollOptions={scrollOptions}
+        editorHighlightedMessageId={editorHighlightedMessageId}
+        isLoading={isLoading}
+        renderMessage={(id) => (
+          <div data-message-id={id}>
+            <div data-message-card-root>message {id}</div>
+          </div>
+        )}
+      />
+    );
+    const highlighted = () => container.querySelector('[data-message-feed-highlighted]');
+
+    await act(async () => root.render(renderFeed([1, 2], null)));
+    await act(async () => feedRef.current?.highlightLinkedMessage(1));
+    await act(async () => root.render(renderFeed([1, 2], 2)));
+    expect(highlighted()?.getAttribute('data-message-id')).toBe('2');
+    await act(async () => root.render(renderFeed([1, 2], null)));
+    expect(highlighted()?.getAttribute('data-message-id')).toBe('1');
+    await act(async () => root.render(renderFeed([1, 2], 2)));
+
+    await act(async () => root.render(renderFeed([1, 2], 2, true)));
+    await act(async () => root.render(renderFeed([1, 2], 2)));
+    expect(highlighted()?.getAttribute('data-message-id')).toBe('2');
+    await act(async () => root.render(renderFeed([1, 2], null)));
+    expect(highlighted()).toBeNull();
+  });
+
+  it('preserves a linked highlight on failed load and clears it on a successful reload', async () => {
+    const feedRef = createRef<MessageFeedHandle>();
+    const scrollOptions = {
+      hasReachedStart: true,
+      onLoadOlder: () => undefined,
+      autoScrollAllowed: false,
+    };
+    const messages = [1, 2];
+    const renderFeed = (items: number[], isLoading: boolean) => (
+      <MessageFeed
+        ref={feedRef}
+        items={items}
+        getMessageId={getId}
+        scrollOptions={scrollOptions}
+        isLoading={isLoading}
+        renderMessage={(id) => <div data-message-id={id}>message {id}</div>}
+      />
+    );
+    const highlighted = () => container.querySelector('[data-message-feed-highlighted]');
+
+    await act(async () => root.render(renderFeed(messages, false)));
+    await act(async () => feedRef.current?.highlightLinkedMessage(2));
+    await act(async () => root.render(renderFeed(messages, true)));
+    await act(async () => root.render(renderFeed(messages, false)));
+    expect(highlighted()?.getAttribute('data-message-id')).toBe('2');
+
+    await act(async () => root.render(renderFeed(messages, true)));
+    await act(async () => root.render(renderFeed([...messages], false)));
+    expect(highlighted()).toBeNull();
+  });
+
   it('reports the newest edge through optional navigation for both list directions', async () => {
     const scrollOptions = {
       policy: historyPolicy,

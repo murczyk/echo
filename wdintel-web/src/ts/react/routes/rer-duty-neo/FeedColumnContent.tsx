@@ -103,6 +103,7 @@ export type FeedColumnContentScrollOptions = {
 export type FeedColumnContentHandle = {
   scrollToBottom: (behavior?: ScrollBehavior, options?: FeedColumnContentScrollOptions) => void;
   scrollToMessage: (id: number, behavior?: ScrollBehavior) => HTMLElement | null;
+  highlightLinkedMessage: (id: number) => boolean;
 };
 
 function useStableCallback<T extends (...args: any[]) => any>(callback: T | undefined): T {
@@ -157,7 +158,7 @@ type DutyMessageCardItemProps = {
     etalonDisplayModel: MessageCardEtalonDisplayModel,
     focusTarget: HTMLElement,
   ) => void;
-  onMessageEditReport: (reportId: number) => void;
+  onMessageEditReport: (reportId: number, sourceMessageId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
   onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
@@ -292,7 +293,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       onCreateReport={(visibleEtalonDisplayModel, focusTarget) =>
         onMessageCreateReport(id, msg, visibleEtalonDisplayModel, focusTarget)
       }
-      onEditReport={onMessageEditReport}
+      onEditReport={(reportId) => onMessageEditReport(reportId, id)}
       onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
       onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
       onEditDetails={(focusTarget) => onMessageEdit(id, msg, focusTarget)}
@@ -343,7 +344,7 @@ type DutyMessageListProps = {
     etalonDisplayModel: MessageCardEtalonDisplayModel,
     focusTarget: HTMLElement,
   ) => void;
-  onMessageEditReport: (reportId: number) => void;
+  onMessageEditReport: (reportId: number, sourceMessageId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
   onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
@@ -787,6 +788,8 @@ export const FeedColumnContent = memo(
           });
           return feedRef.current?.scrollToMessage(id, behavior) ?? null;
         },
+        highlightLinkedMessage: (id: number) =>
+          feedRef.current?.highlightLinkedMessage(id) ?? false,
       }),
       [idleOffload.wakeFromOffload],
     );
@@ -887,6 +890,7 @@ export const FeedColumnContent = memo(
           }}
           items={feed.items}
           getMessageId={getMessageId}
+          editorHighlightedMessageId={view.editorHighlightedMessageId}
           isLoading={feed.loading}
           loadingAbove={feed.loadingOlder}
           loadingBelow={loadingNewer}
@@ -944,6 +948,7 @@ export const FeedColumnContent = memo(
       prevView.loadingNewer !== nextView.loadingNewer ||
       prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||
       prevView.pendingNewerFlushNeeded !== nextView.pendingNewerFlushNeeded ||
+      prevView.editorHighlightedMessageId !== nextView.editorHighlightedMessageId ||
       prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
     ) {
       return false;

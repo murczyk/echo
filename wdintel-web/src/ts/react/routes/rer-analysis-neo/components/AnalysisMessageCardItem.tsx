@@ -54,7 +54,7 @@ type AnalysisMessageCardItemProps = {
     etalonDisplayModel: MessageCardEtalonDisplayModel,
     focusTarget: HTMLElement,
   ) => void;
-  onEditReport: (id: number) => void | Promise<void>;
+  onEditReport: (reportId: number, sourceMessageId?: number) => void | Promise<void>;
   onCopyFeedback: (value: string) => void;
   onDeleteOpen: (messageId: number) => void;
   onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
@@ -231,7 +231,7 @@ export const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       onCreateReport={(visibleEtalonDisplayModel, focusTarget) =>
         onCreateReport(id, visibleEtalonDisplayModel, focusTarget)
       }
-      onEditReport={onEditReport}
+      onEditReport={(reportId) => onEditReport(reportId, id)}
       onDelete={() => onDeleteOpen(id)}
       onEditDetails={(focusTarget) => onOpenEditor(id, focusTarget)}
       onToggleTag={(tagId) => onToggleMessageTag(id, tagId)}

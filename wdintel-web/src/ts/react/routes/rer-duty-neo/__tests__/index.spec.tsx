@@ -68,6 +68,11 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
       <output data-testid="card-network-visibility">
         {String(buildFeedColumnModel(messageFeeds[0]).messageCard.hideNetworks)}
       </output>
+      {messageFeeds.map((feed) => (
+        <output key={feed.id} data-testid={`editor-highlight-${feed.id}`}>
+          {buildFeedColumnModel(feed).view.editorHighlightedMessageId ?? 'none'}
+        </output>
+      ))}
       <button type="button" aria-label="Додати повідомлення" onClick={openCreateMessageComposer}>
         Додати повідомлення
       </button>
@@ -130,7 +135,12 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
           <button
             type="button"
             aria-label="Редагувати розвіддонесення"
-            onClick={() => buildFeedColumnModel(messageFeeds[0]).actions.onMessageEditReport(91)}
+            onClick={() =>
+              buildFeedColumnModel(messageFeeds[0]).actions.onMessageEditReport(
+                91,
+                messageFeeds[0].items[0][0],
+              )
+            }
           />
           <button
             type="button"
@@ -618,12 +628,21 @@ describe('RerDutyNeoPage creation workflow', () => {
 
     await click(container.querySelector('button[aria-label="Редагувати повідомлення"]'));
     expect(container.querySelector('[data-testid="composer"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="editor-highlight-feed-1"]')?.textContent).toBe(
+      '42',
+    );
+    expect(container.querySelector('[data-testid="editor-highlight-feed-2"]')?.textContent).toBe(
+      'none',
+    );
 
     await click(container.querySelector('button[aria-label="Зберегти редагування"]'));
 
     expect(state.handleEditedMessage).toHaveBeenCalledTimes(1);
     expect(state.reloadEditedFeeds).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="composer"]')).toBeNull();
+    expect(container.querySelector('[data-testid="editor-highlight-feed-1"]')?.textContent).toBe(
+      'none',
+    );
 
     await act(async () => {
       root.unmount();
@@ -895,6 +914,9 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(drawer?.getAttribute('data-edit-target-load-status')).toBe('loading');
     expect(drawer?.getAttribute('data-edit-as-report')).toBe('true');
     expect(drawer?.getAttribute('data-edit-target-id')).toBe('');
+    expect(container.querySelector('[data-testid="editor-highlight-feed-1"]')?.textContent).toBe(
+      '42',
+    );
     const signal = fetchMessagesByIdsMock.mock.calls[0]?.[2]?.signal as AbortSignal;
     expect(signal).toBeInstanceOf(AbortSignal);
 
@@ -941,6 +963,12 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(
       container.querySelector('[data-testid="composer"]')?.getAttribute('data-edit-target-id'),
     ).toBe('42');
+    expect(container.querySelector('[data-testid="editor-highlight-feed-1"]')?.textContent).toBe(
+      '42',
+    );
+    expect(container.querySelector('[data-testid="editor-highlight-feed-2"]')?.textContent).toBe(
+      'none',
+    );
 
     editorGuardMocks.dirty = true;
     await click(container.querySelector('button[aria-label="Редагувати повідомлення стрічки 2"]'));
@@ -966,6 +994,12 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(
       container.querySelector('[data-testid="composer"]')?.getAttribute('data-edit-target-id'),
     ).toBe('84');
+    expect(container.querySelector('[data-testid="editor-highlight-feed-1"]')?.textContent).toBe(
+      'none',
+    );
+    expect(container.querySelector('[data-testid="editor-highlight-feed-2"]')?.textContent).toBe(
+      '84',
+    );
     root.unmount();
   });
 
@@ -1106,7 +1140,10 @@ describe('RerDutyNeoPage creation workflow', () => {
     });
     const target = document.createElement('article');
     const scrollToMessage = vi.fn(() => target);
-    Object.assign(state.columnRefsRef.current, { 'feed-1': { scrollToMessage } });
+    const highlightLinkedMessage = vi.fn(() => true);
+    Object.assign(state.columnRefsRef.current, {
+      'feed-1': { scrollToMessage, highlightLinkedMessage },
+    });
 
     expect(state.setFeedInitialTarget).toHaveBeenCalledWith('feed-1', {
       beforeIdNoninclusive: 41,
@@ -1118,7 +1155,7 @@ describe('RerDutyNeoPage creation workflow', () => {
     await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
 
     expect(scrollToMessage).toHaveBeenCalledOnce();
-    expect(target.style.transition).toBe('none');
+    expect(highlightLinkedMessage).toHaveBeenCalledExactlyOnceWith(41);
     expect(notifyMock).not.toHaveBeenCalled();
     await act(async () => root.unmount());
   });

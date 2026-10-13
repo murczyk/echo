@@ -36,6 +36,7 @@ export type FeedColumnModel = {
     initialPositioningReady?: boolean;
     scrollTrackingEnabled?: boolean;
     loadingNewer?: boolean;
+    editorHighlightedMessageId?: number | null;
     explicitNavigationLoading?: boolean;
     arrowResultMessage?: string | null;
     bottomUnreadCount?: number;
@@ -102,7 +103,7 @@ export type FeedColumnModel = {
       etalonDisplayModel: MessageCardEtalonDisplayModel,
       focusTarget: HTMLElement,
     ) => void;
-    onMessageEditReport: (reportId: number) => void;
+    onMessageEditReport: (reportId: number, sourceMessageId: number) => void;
     onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
     onMessageToggleTag: (msgId: number, tagId: number) => void;
     onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;

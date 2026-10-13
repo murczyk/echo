@@ -43,10 +43,7 @@ import { isAbortError } from '../../services/api/client';
 import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 import { MessageDeviceAccessProvider } from '../shared/message-card/MessageDeviceAccess';
-import {
-  scrollToAndHighlightMessage,
-  type MessageCardEtalonDisplayModel,
-} from '../shared/message-card/message-card.utils';
+import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 import { dutyEditorLayoutColumns } from './duty-editor-layout';
 import {
   createMessageNavigationController,
@@ -81,6 +78,8 @@ export function RerDutyNeoPage({
   const narrowScreen = useMediaQuery(theme.breakpoints.down(1024));
   const authUserName = authUserNameProp ?? null;
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
+  const [editorSourceFeedId, setEditorSourceFeedId] = useState<string | null>(null);
+  const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<{ id: number; message: InboxMessage } | null>(null);
   const [editAsReport, setEditAsReport] = useState(false);
@@ -124,6 +123,7 @@ export function RerDutyNeoPage({
       sourceFeedId: string | null,
       commit: () => void,
       invokingControl?: HTMLElement,
+      sourceMessageId?: number,
     ) => {
       if (!canWriteMessages(currentUser?.roles)) return;
       const focusTarget =
@@ -132,6 +132,8 @@ export function RerDutyNeoPage({
       editorInitialFocusTargetRef.current = focusTarget;
       const applyIntent = () => {
         if (sourceFeedId) setActiveFeedId(sourceFeedId);
+        setEditorSourceFeedId(sourceFeedId);
+        setEditorSourceMessageId(sourceMessageId ?? null);
         commit();
       };
       if (editorRef.current) {
@@ -175,9 +177,13 @@ export function RerDutyNeoPage({
     [cancelReportEditLoad],
   );
   const openReportEditor = useCallback(
-    (sourceFeedId: string, reportId: number) => {
-      requestEditorIntent(`edit-report:${reportId}`, sourceFeedId, () =>
-        startReportEditor(reportId),
+    (sourceFeedId: string, reportId: number, sourceMessageId: number) => {
+      requestEditorIntent(
+        `edit-report:${reportId}`,
+        sourceFeedId,
+        () => startReportEditor(reportId),
+        undefined,
+        sourceMessageId,
       );
     },
     [requestEditorIntent, startReportEditor],
@@ -200,6 +206,7 @@ export function RerDutyNeoPage({
           setEditTarget(target);
         },
         invokingControl,
+        target.id,
       );
     },
     [cancelReportEditLoad, requestEditorIntent],
@@ -226,6 +233,7 @@ export function RerDutyNeoPage({
           setReportSource(source);
         },
         invokingControl,
+        source.id,
       );
     },
     [cancelReportEditLoad, requestEditorIntent],
@@ -339,8 +347,7 @@ export function RerDutyNeoPage({
         for (const id of targetIds) {
           const element = columnRefsRef.current[feedId]?.scrollToMessage?.(id, 'auto');
           if (!element) continue;
-          scrollToAndHighlightMessage(element, { scroll: false });
-          return true;
+          if (columnRefsRef.current[feedId]?.highlightLinkedMessage?.(id)) return true;
         }
         return false;
       },
@@ -402,8 +409,11 @@ export function RerDutyNeoPage({
     pending.resolve({ feedId: pending.feedId, targetIds: pending.targetIds });
   }, [messageFeeds, targetFeedId, error, errorNotificationVersion]);
 
+  const editorHighlightedMessageId = createMessageOpen ? null : editorSourceMessageId;
   const buildFeedColumnModel = useDutyFeedColumnModel({
     feeds,
+    editorSourceFeedId,
+    editorHighlightedMessageId,
     narrowScreen,
     authUserName,
     currentUser,
@@ -446,6 +456,8 @@ export function RerDutyNeoPage({
     setEditTarget(null);
     setEditAsReport(false);
     setReportSource(null);
+    setEditorSourceFeedId(null);
+    setEditorSourceMessageId(null);
   }, [cancelReportEditLoad]);
   const editorIntentKey = createMessageOpen
     ? 'create-message'

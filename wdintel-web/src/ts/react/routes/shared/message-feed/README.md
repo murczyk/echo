@@ -38,7 +38,12 @@ import files from the implementation directories directly.
   fetches without an available page do not add a skeleton.
   Each mounted feed owns independent scroll and loading state.
 - Use the `MessageFeedHandle` ref's `scrollToMessage` for a mounted target and
-  `scrollToBottom` for tail landing.
+  `scrollToBottom` for tail landing. Call `highlightLinkedMessage` after a
+  linked target mounts. Its outline survives reader scrolling and clears when
+  a new chunk or manual refresh commits, or when the card leaves the window.
+  Pass `editorHighlightedMessageId` while a card action owns an open editor;
+  it takes precedence over linked highlighting and clears when the editor closes.
+  Each feed owns its own highlight state, including Duty's separate columns.
 - Pass `newestNavigation` only on feeds that need a jump-to-newest control.
   Its `edge` is `top` for newest-first lists and `bottom` for oldest-first
   lists; `renderControl` receives whether the viewport is at that physical
@@ -96,6 +101,6 @@ Browser coverage is in `wdintel-web/tests/e2e/message-feed-unification.spec.ts`,
 from frontend generation/builds to avoid dev-server reloads during navigation
 assertions.
 
-This stage preserves existing copied-link destinations. Duty links targeting
-Duty, search, Important lists, replies and mentions are subsequent producers
-of navigation requests, not additional scroll implementations.
+Copied links keep their host-specific destinations. Search, Important lists,
+replies and mentions can reuse the feed's mounted-target navigation and
+highlighting without adding another scroll implementation.

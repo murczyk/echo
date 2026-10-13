@@ -43,6 +43,7 @@ export type FeedColumnScrollOptions = {
 export type FeedColumnHandle = {
   scrollToEnd: (behavior?: ScrollBehavior, options?: FeedColumnScrollOptions) => void;
   scrollToMessage?: (id: number, behavior?: ScrollBehavior) => HTMLElement | null;
+  highlightLinkedMessage?: (id: number) => boolean;
 };
 export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
   { column, onPanelOpenChange },
@@ -241,6 +242,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       },
       scrollToMessage(id: number, behavior: ScrollBehavior = 'auto') {
         return contentRef.current?.scrollToMessage(id, behavior) ?? null;
+      },
+      highlightLinkedMessage(id: number) {
+        return contentRef.current?.highlightLinkedMessage(id) ?? false;
       },
     }),
     [feed.items.length],

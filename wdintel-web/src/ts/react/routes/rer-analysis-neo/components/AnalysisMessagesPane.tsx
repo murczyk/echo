@@ -25,10 +25,7 @@ import type {
   User,
 } from '../../../../../Bindings';
 import { DeleteConfirmDialog } from '../../rer-duty-neo/dialogs';
-import {
-  scrollToAndHighlightMessage,
-  type MessageCardEtalonDisplayModel,
-} from '../../shared/message-card/message-card.utils';
+import type { MessageCardEtalonDisplayModel } from '../../shared/message-card/message-card.utils';
 import { blurActiveElement } from '../../../utils/focus';
 import { PowerAlert } from '../../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
@@ -72,7 +69,7 @@ type Props = {
     etalonDisplayModel: MessageCardEtalonDisplayModel,
     focusTarget: HTMLElement,
   ) => void;
-  onEditReport: (messageId: number) => void | Promise<void>;
+  onEditReport: (reportId: number, sourceMessageId?: number) => void | Promise<void>;
   onLoadMoreMessages: () => Promise<boolean>;
   onLoadPreviousMessages: () => Promise<boolean>;
   onVisiblePageChange: (pageIndex: number) => void;
@@ -104,6 +101,7 @@ type Props = {
   unitsMap?: Record<number, Unit>;
   directMessageNavigation: AnalysisDirectMessageNavigation | null;
   onLinkedMessageMounted?: (messageId: number) => void;
+  editorHighlightedMessageId?: number | null;
 };
 
 const getMessageId = ([id]: [number, InboxMessage]) => id;
@@ -164,6 +162,7 @@ function AnalysisMessagesPaneComponent({
   unitsMap,
   directMessageNavigation,
   onLinkedMessageMounted,
+  editorHighlightedMessageId,
 }: Props) {
   const theme = useTheme();
   const { notify } = useOptionalPowerSnackbar();
@@ -173,7 +172,6 @@ function AnalysisMessagesPaneComponent({
   const referenceTimeMsRef = useRef<number | null>(Date.now());
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const debugSnapshotTimerRef = useRef<number | null>(null);
-  const clearTargetHighlightRef = useRef<(() => void) | null>(null);
   const highlightedTargetIdRef = useRef<number | null>(null);
   const feedRef = useRef<MessageFeedHandle>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -243,30 +241,23 @@ function AnalysisMessagesPaneComponent({
         window.clearTimeout(copyFeedbackTimerRef.current);
       if (debugSnapshotTimerRef.current !== null)
         window.clearTimeout(debugSnapshotTimerRef.current);
-      clearTargetHighlightRef.current?.();
     },
     [],
   );
 
   useEffect(() => {
-    if (directMessageNavigation == null || !directMessageNavigation.focusActive) {
-      clearTargetHighlightRef.current?.();
-      clearTargetHighlightRef.current = null;
+    if (directMessageNavigation == null) {
       highlightedTargetIdRef.current = null;
       return;
     }
     if (messages.length === 0) return;
-    const targetElement = feedRef.current?.getItemElement(directMessageNavigation.targetMessageId);
-    if (targetElement) {
-      if (highlightedTargetIdRef.current !== directMessageNavigation.targetMessageId) {
-        clearTargetHighlightRef.current?.();
+    const targetId = directMessageNavigation.targetMessageId;
+    if (feedRef.current?.getItemElement(targetId)) {
+      if (highlightedTargetIdRef.current !== targetId) {
         highlightedTargetIdRef.current = directMessageNavigation.targetMessageId;
-        clearTargetHighlightRef.current = scrollToAndHighlightMessage(targetElement, {
-          scroll: false,
-          persistentHighlight: true,
-        });
+        feedRef.current?.highlightLinkedMessage(targetId);
       }
-      onLinkedMessageMounted?.(directMessageNavigation.targetMessageId);
+      if (directMessageNavigation.focusActive) onLinkedMessageMounted?.(targetId);
     }
   }, [directMessageNavigation, messages, onLinkedMessageMounted]);
 
@@ -330,6 +321,7 @@ function AnalysisMessagesPaneComponent({
         scrollOptions={scrollOptions}
         items={displayedMessages}
         getMessageId={getMessageId}
+        editorHighlightedMessageId={editorHighlightedMessageId}
         isLoading={isLoading}
         loadingAbove={feedLoadingAbove || Boolean(directMessageNavigation?.contextLoading)}
         loadingBelow={

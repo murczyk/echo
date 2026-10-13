@@ -37,11 +37,12 @@ test.describe('@smoke @regression', () => {
 
     await page.goto(link);
     await expect(card).toBeVisible();
-    await expect
-      .poll(() =>
-        card.locator('[data-message-card-root]').evaluate((element) => element.style.outline),
-      )
-      .toContain('2px solid');
+    await expect(card).toHaveAttribute('data-message-feed-highlighted', 'true');
+    await expect(card.locator('[data-message-card-root]')).toHaveCSS('outline-width', '2px');
+    await page.locator('[data-analysis-message-scroller]').evaluate((element) => {
+      element.dispatchEvent(new WheelEvent('wheel', { deltaY: 20, bubbles: true }));
+    });
+    await expect(card).toHaveAttribute('data-message-feed-highlighted', 'true');
   });
 
   test('shows one privacy-safe notification for an unavailable Analysis link', async ({ page }) => {
