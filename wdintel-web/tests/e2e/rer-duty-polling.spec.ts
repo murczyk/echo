@@ -123,6 +123,41 @@ test.describe('@regression Classic Duty polling', () => {
     expect(fixture.pollStarts()).toBe(2);
   });
 
+  for (const status of [200, 503]) {
+    test(`retries a blocked count after its ${status} response without waiting for another tick`, async ({
+      page,
+    }) => {
+      await page.clock.install();
+      await page.clock.pauseAt(new Date());
+      await installDutyPollingMocks(page);
+      const countStarts: number[] = [];
+      let pendingCount: Route | undefined;
+      await page.route('**/api/rer-importer/get-inbox-count', async (route) => {
+        countStarts.push(await page.evaluate(() => Date.now()));
+        if (countStarts.length === 1) {
+          pendingCount = route;
+        } else {
+          await route.fulfill({ json: { quantity: 0, first_element_ts: null } });
+        }
+      });
+      await page.goto('/rer-duty');
+      await page.clock.runFor(500);
+      await expect(page.getByText('Duty message 40', { exact: false }).first()).toBeVisible();
+      await page.clock.runFor(5000);
+      await expect.poll(() => countStarts.length).toBe(1);
+      await page.clock.runFor(6000);
+      expect(countStarts).toHaveLength(1);
+
+      await pendingCount!.fulfill({ status, json: { quantity: 0, first_element_ts: null } });
+      await page.clock.runFor(50);
+      await expect.poll(() => countStarts.length).toBe(2);
+      expect(countStarts[1] - countStarts[0]).toBeGreaterThanOrEqual(5000);
+      expect(countStarts[1] - countStarts[0]).toBeLessThan(10_000);
+      await page.clock.runFor(4000);
+      expect(countStarts).toHaveLength(2);
+    });
+  }
+
   for (const intervalSec of [5, 12]) {
     test(`repeated scroll-to-latest reloads preserve the ${intervalSec}-second automatic pace`, async ({
       page,
@@ -136,6 +171,13 @@ test.describe('@regression Classic Duty polling', () => {
 
       const scroller = page.locator('#waterfall-wf-0');
       for (let reload = 0; reload < 4; reload++) {
+        await expect
+          .poll(() =>
+            scroller.evaluate(
+              (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+            ),
+          )
+          .toBeLessThanOrEqual(1);
         await scroller.evaluate((element) => {
           element.style.scrollBehavior = 'auto';
           element.scrollTop = 0;

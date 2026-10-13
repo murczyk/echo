@@ -153,6 +153,7 @@ type alias Model =
     , id : String
     , pollIntervalMs : Float
     , lastInboxPollStartedAt : Maybe Posix
+    , inboxPollPending : Bool
     , height : Int
     , lastScroll : Maybe Posix
     , lastBottomCheck : Maybe Posix
@@ -238,6 +239,7 @@ init radioFeaturesAllowed id_ ms =
       , id = id_
       , pollIntervalMs = Config.waterfallPollingMinIntervalMs
       , lastInboxPollStartedAt = Nothing
+      , inboxPollPending = False
       , height = 200
       , lastScroll = Nothing
       , lastBottomCheck = Nothing
@@ -628,7 +630,10 @@ pollInbox now waterfall =
                 |> Maybe.map (\elapsed -> elapsed >= 0 && elapsed < waterfall.pollIntervalMs)
                 |> Maybe.withDefault False
     in
-    if tooEarly || waterfall.loadingInboxMessages || waterfall.loadingInboxDigest then
+    if waterfall.loadingInboxMessages || waterfall.loadingInboxDigest then
+        ( { waterfall | inboxPollPending = True }, E.none )
+
+    else if tooEarly then
         ( waterfall, E.none )
 
     else
@@ -646,6 +651,17 @@ pollInbox now waterfall =
           }
         , effect
         )
+
+
+retryPendingInboxPoll : ( Model, Effect Msg ) -> ( Model, Effect Msg )
+retryPendingInboxPoll ( waterfall, effect ) =
+    if waterfall.inboxPollPending && not waterfall.loadingInboxMessages && not waterfall.loadingInboxDigest && waterfall.loadingStrategy /= AutoScrollToLatest InProgress then
+        ( { waterfall | inboxPollPending = False }
+        , E.batch [ effect, E.getCurrentTime InboxLoopLoadNewer ]
+        )
+
+    else
+        ( waterfall, effect )
 
 
 pollNewerInbox : Model -> ( Model, Effect Msg )
@@ -1482,6 +1498,12 @@ update shared user msg previousModel =
         model =
             { previousModel | pollIntervalMs = pollIntervalMs }
     in
+    updateMessage shared user msg model
+        |> retryPendingInboxPoll
+
+
+updateMessage : Shared.Model -> B.User -> Msg -> Model -> ( Model, Effect Msg )
+updateMessage shared user msg model =
     case msg of
         NoOp ->
             ( model, E.none )
