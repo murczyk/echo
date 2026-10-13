@@ -384,7 +384,14 @@ export function useManageMessageDrawer({
     defaultValues: EMPTY_FORM_VALUES,
   });
 
-  const { control, formState, getValues, setValue, reset } = methods;
+  const { control, formState, getValues, setValue, reset, watch } = methods;
+  const explicitUnitSelectionRef = useRef(false);
+  useEffect(() => {
+    const subscription = watch((_values, { name, type }) => {
+      if (name === 'unit' && type === 'change') explicitUnitSelectionRef.current = true;
+    });
+    return () => subscription.unsubscribe();
+  }, [watch]);
   const formValues = useWatch({ control });
   const { unitOptions, unitLoading, unitAllowCreate, unitSearchResults, defaultRecentUnit } =
     useMessageUnitOptions({
@@ -777,6 +784,7 @@ export function useManageMessageDrawer({
   useEffect(() => {
     if (!formReady) return;
     unitInteractedRef.current = false;
+    explicitUnitSelectionRef.current = false;
     setDeviceNameInput('');
     setPostInput('');
     setNetworkNameInput('');
@@ -861,8 +869,12 @@ export function useManageMessageDrawer({
         );
         const payload = payloads[0];
         if (isReportCreateMode && payload) {
+          const copiedValues = mapDirectSubmitCopyToForm(payload);
+          explicitUnitSelectionRef.current = Boolean(
+            compatibleMessageUnitSelection(copiedValues.unit, copiedValues.unitSelection),
+          );
           reset({
-            ...mapDirectSubmitCopyToForm(payload),
+            ...copiedValues,
             full_body: '',
             text: '',
             comment: '',
@@ -975,11 +987,7 @@ export function useManageMessageDrawer({
         : null;
     if (!source) return;
     if (selectedNetworkRef.current) return;
-    if (
-      !isEditMode &&
-      compatibleMessageUnitSelection(getValues('unit'), getValues('unitSelection'))
-    )
-      return;
+    if (!isEditMode && explicitUnitSelectionRef.current) return;
     let active = true;
     const initialNetworkSelectionRevision = networkSelectionRevisionRef.current;
     const initialNetworkName = getValues('network_name');
@@ -990,8 +998,7 @@ export function useManageMessageDrawer({
       getValues('network_name') === initialNetworkName &&
       getValues('unit') === initialUnitName &&
       !getValues('unitNetworkSelection') &&
-      (isEditMode ||
-        !compatibleMessageUnitSelection(getValues('unit'), getValues('unitSelection')));
+      (isEditMode || !explicitUnitSelectionRef.current);
     const hydrateNetwork = async () => {
       const linkedNetworkIds = source.message.networkIds ?? [];
       const freeformName = source.message.networkName?.trim();

@@ -59,11 +59,12 @@ be selected. Repeated creation retains the network signal type along with its na
 and unit assignment.
 
 Copied source-network lookups support retry and cannot overwrite a later manual
-network choice or report edits. Automatic exact-name resolution preserves the
-initial unit identity used by unsaved-change detection and remains automatic for
-parser ownership and pristine-source clearing. Explicitly accepting a conflicting
-parsed unit releases the network-owned unit assignment while retaining the
-network name.
+network or unit choice, persisted unit selection, or report edits. Automatic exact
+unit matches do not cancel source-network hydration or its retries.
+Automatic exact-name resolution preserves the initial unit identity used by
+unsaved-change detection and remains automatic for parser ownership and
+pristine-source clearing. Explicitly accepting a conflicting parsed unit releases
+the network-owned unit assignment while retaining the network name.
 
 Regression coverage lives in `wdintel-rs/src/sigint/direct_submit/units.rs` and
 `wdintel-web/tests/e2e/manage-message-unit.regression.spec.ts`; parser ownership
