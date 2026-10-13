@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { AppNavbar, type AppNavbarProps } from './components/app-navbar/AppNavbar';
+import { PowerSnackbarProvider } from './components/PowerSnackbar';
 import { clearBrowserDebugRecording } from '../debug-recorder';
 import { NeoMuiThemeProvider } from './mui-theme';
 
@@ -38,7 +39,9 @@ function AppNavbarRoot({
 
   return (
     <NeoMuiThemeProvider>
-      <AppNavbar {...parsedProps} {...callbacks} />
+      <PowerSnackbarProvider>
+        <AppNavbar {...parsedProps} {...callbacks} />
+      </PowerSnackbarProvider>
     </NeoMuiThemeProvider>
   );
 }

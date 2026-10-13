@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { createLoadedInboxResponse, installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
 const item = {
@@ -19,6 +19,56 @@ const item = {
     coords: null,
   },
 };
+
+async function snackbarContrast(page: Page) {
+  return page
+    .getByRole('alert')
+    .filter({ hasText: 'Не вдалося оновити Вхідні:' })
+    .evaluate((element) => {
+      const parse = (color: string) => color.match(/\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+      const luminance = (color: number[]) => {
+        const [red, green, blue] = color.map((value) => {
+          const normalized = value / 255;
+          return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+      };
+      const style = window.getComputedStyle(element);
+      const foreground = luminance(parse(style.color));
+      const background = luminance(parse(style.backgroundColor));
+      return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+    });
+}
+
+test('#3610 Inbox error snackbar remains readable in both themes @smoke', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('echo-theme-mode', 'light'));
+  await installAnalysisNeoApiMocks(page);
+  await page.route('**/api/notifications/unread-count', (route) =>
+    route.fulfill({ status: 500, body: 'count unavailable' }),
+  );
+
+  await page.goto('/rer-analysis-neo');
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Не вдалося оновити Вхідні:' }),
+  ).toBeVisible();
+  const snackbarColors = () =>
+    page
+      .getByRole('alert')
+      .filter({ hasText: 'Не вдалося оновити Вхідні:' })
+      .evaluate((element) => {
+        const style = window.getComputedStyle(element);
+        return [style.color, style.backgroundColor];
+      });
+  const lightColors = await snackbarColors();
+  expect(await snackbarContrast(page)).toBeGreaterThanOrEqual(4.5);
+
+  await page.evaluate(() => {
+    document.documentElement.setAttribute('data-bs-theme', 'dark');
+    window.dispatchEvent(new Event('echo-theme-applied'));
+  });
+  await expect.poll(snackbarColors).not.toEqual(lightColors);
+  await expect.poll(() => snackbarContrast(page)).toBeGreaterThanOrEqual(4.5);
+});
 
 test('#3610 inbox loads its badge before opening and reuses the boundary while polling @smoke', async ({
   page,
@@ -88,10 +138,11 @@ test('#3610 expired mark-all keeps rows unread and refreshes the snapshot @smoke
 
   await page.goto('/rer-analysis-neo');
   await page.getByLabel('Вхідні').click();
+  const panel = page.locator('section[aria-label="Вхідні"]');
   const markAll = page.getByRole('button', { name: 'Позначити всі як прочитані' });
   await expect(markAll).toBeEnabled();
   await markAll.click();
-  await expect(page.getByText('Вхідні змінилися', { exact: false })).toBeVisible();
+  await expect(panel.getByText('Вхідні змінилися', { exact: false })).toBeVisible();
   await expect.poll(() => lists).toBeGreaterThanOrEqual(2);
   await expect(page.getByTestId('notification-unread-dot')).toHaveCount(1);
 });
