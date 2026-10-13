@@ -22,17 +22,34 @@ export function DeviceAudioPlayer({
   deviceId,
   audioId,
   active = true,
+  onPrepared,
 }: {
   deviceId: string;
   audioId: string;
   active?: boolean;
+  onPrepared?: () => void;
 }) {
   return active ? (
-    <PlayerSession key={`${deviceId}:${audioId}`} deviceId={deviceId} audioId={audioId} />
+    <PlayerSession
+      key={`${deviceId}:${audioId}`}
+      deviceId={deviceId}
+      audioId={audioId}
+      onPrepared={onPrepared}
+    />
   ) : null;
 }
 
-function PlayerSession({ deviceId, audioId }: { deviceId: string; audioId: string }) {
+function PlayerSession({
+  deviceId,
+  audioId,
+  onPrepared,
+}: {
+  deviceId: string;
+  audioId: string;
+  onPrepared?: () => void;
+}) {
+  const preparedRef = useRef(onPrepared);
+  preparedRef.current = onPrepared;
   const [state, setState] = useState<PlaybackState>({ phase: 'loading' });
   const { notify } = useOptionalPowerSnackbar();
   const notifyRef = useRef(notify);
@@ -44,6 +61,7 @@ function PlayerSession({ deviceId, audioId }: { deviceId: string; audioId: strin
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let graphicsWarning = false;
+    let admissionWarning = false;
     setPreparation(null);
     setPreparationError(null);
     setState({ phase: 'loading' });
@@ -62,6 +80,14 @@ function PlayerSession({ deviceId, audioId }: { deviceId: string; audioId: strin
         );
         if (controller.signal.aborted) return;
         setPreparation(result);
+        preparedRef.current?.();
+        if (result.transcriptionAdmissionError && !admissionWarning) {
+          admissionWarning = true;
+          notifyRef.current({
+            severity: 'warning',
+            message: result.transcriptionAdmissionError.message,
+          });
+        }
         if (result.content === 'failed') {
           throw new Error('Не вдалося підготувати аудіо. Спробуйте ще раз.');
         }

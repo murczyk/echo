@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 
 mod admin;
 mod analytics_health;
+mod api_rate_limit;
 pub mod discord;
 mod healthcheck;
 pub mod middleware;
@@ -1781,11 +1782,14 @@ pub async fn main_server(
     };
 
     let env_for_server = env.clone();
+    let api_rate_limiter =
+        web::Data::new(api_rate_limit::ApiRateLimiter::default());
     let server_builder = HttpServer::new(move || {
         let env = env_for_server.clone();
         let cookie_secret = env.config.cookie_session_secret.clone();
         let redis_for_middleware = env.redis.clone();
         App::new()
+            .app_data(api_rate_limiter.clone())
             .wrap(actix_web::middleware::Compress::default())
             .wrap(actix_web::middleware::from_fn(
                 crate::utils::multipart_admission::limit_requests,
@@ -1797,6 +1801,12 @@ pub async fn main_server(
             // .wrap(
             //     actix_web::middleware::Logger::default()
             // )
+            .wrap(actix_web::middleware::from_fn(
+                crate::ai_agent::middleware::enforce_agent_routes,
+            ))
+            .wrap(actix_web::middleware::from_fn(
+                api_rate_limit::throttle_api_users,
+            ))
             .wrap(
                 IdentityMiddleware::builder()
                     .visit_deadline(Some(std::time::Duration::from_secs(
@@ -1806,9 +1816,6 @@ pub async fn main_server(
             )
             .wrap(actix_web::middleware::from_fn(
                 middleware::purge_legacy_identity_middleware,
-            ))
-            .wrap(actix_web::middleware::from_fn(
-                crate::ai_agent::middleware::enforce_agent_routes,
             ))
             .wrap(SessionMiddleware::new(
                 redis_session_store.clone(),
@@ -1832,6 +1839,11 @@ pub async fn main_server(
     }
     .run();
 
+    let audio_asr = tokio::spawn(crate::devices::audio::transcription::run(
+        env.device_audio.clone(),
+        env.echo_gpu_client.clone(),
+        cancel_token.clone(),
+    ));
     let audio_runtime = env.device_audio.clone();
     let audio_cancellation = cancel_token.clone();
     let audio_preparation = tokio::spawn(async move {
@@ -1888,6 +1900,7 @@ pub async fn main_server(
             }
         }
     }).await.c(h!());
+    audio_asr.await.c(h!())?;
     audio_preparation.await.c(h!())?;
     if let Some(metrics) = &env.metrics {
         metrics.shutdown();

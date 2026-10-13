@@ -226,7 +226,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     expect(apiRef.current!.tailAvailabilityByFeedId['mf-0'] ?? 'unknown').toBe('unknown');
   });
 
-  it('keeps confirmed tail available when tail count resolves after leaving bottom', async () => {
+  it('#3780 keeps confirmed tail available when a shared count resolves after leaving bottom', async () => {
     const { apiRef, scrollToEnd } = await mountLoadedFeed();
     hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
     await act(async () => {
@@ -237,12 +237,10 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
 
     apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
     const tailCount = deferred<{ quantity: number; firstElementTs: number | null }>('tailCount');
-    hoisted.fetchInboxCount
-      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
-      .mockImplementationOnce(() => tailCount.promise);
+    hoisted.fetchInboxCount.mockImplementationOnce(() => tailCount.promise);
     await startPoll();
-    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(2);
-    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('checking');
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(1);
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('exhausted');
 
     apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
     await act(async () => {

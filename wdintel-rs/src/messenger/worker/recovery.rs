@@ -2946,6 +2946,8 @@ mod tests {
             hide_orbit_data: Set(false),
             disable_bot_tags: Set(None),
             hide_networks: Set(None),
+            api_rate_limit_replenish_interval_ms: Set(None),
+            api_rate_limit_burst_size: Set(None),
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),

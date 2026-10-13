@@ -48,6 +48,7 @@ type Params = {
   reconcileTagMutation: (messageId: number) => Promise<void>;
   registerLocalInboxChangeOrigin: () => string;
   refreshTagFacet: () => Promise<void>;
+  refreshMessageCounts: () => void;
   reload: (options?: AnalysisReloadOptions) => Promise<void>;
   setMapOpenMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
   setMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
@@ -124,6 +125,7 @@ export function useAnalysisDataMessageActions(params: Params) {
         params.patchMessages((id, message) =>
           id === messageId ? { ...message, bookmarked: !currentlyBookmarked } : message,
         );
+        if (params.queryState.orBookmarked) params.refreshMessageCounts();
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {
           params.onError(params.toErrorMessage(loadError));
@@ -151,6 +153,7 @@ export function useAnalysisDataMessageActions(params: Params) {
         params.patchMessages((id, message) =>
           id === messageId ? { ...message, important } : message,
         );
+        if (params.queryState.orImportant) params.refreshMessageCounts();
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {
           params.onError(params.toErrorMessage(loadError));
@@ -212,6 +215,9 @@ export function useAnalysisDataMessageActions(params: Params) {
           if (id !== messageId) return message;
           return toggleHumanTag(message, tagId, currentUserName, currentUserOrganismId);
         });
+        if (params.queryState.tags.includes(tagId) || params.queryState.reportTagsOnlyThisUnit) {
+          params.refreshMessageCounts();
+        }
 
         // Do not reload the inbox after a tag mutation. The Tags facet refreshes immediately when it
         // is already open; the paginated message list reconciles on the next explicit pagination,
@@ -246,6 +252,9 @@ export function useAnalysisDataMessageActions(params: Params) {
         params.patchMessages((id, message) =>
           id === messageId ? removeBotTags(message, tagId) : message,
         );
+        if (params.queryState.tags.includes(tagId) || params.queryState.reportTagsOnlyThisUnit) {
+          params.refreshMessageCounts();
+        }
       } finally {
         setMessageActionCount((current) => Math.max(0, current - 1));
       }

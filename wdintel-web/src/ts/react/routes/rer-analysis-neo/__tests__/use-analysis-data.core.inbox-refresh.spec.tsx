@@ -348,6 +348,22 @@ afterEach(() => {
   container = null;
 });
 describe('useAnalysisData inbox refreshes', () => {
+  it('#3780 preserves list and map identity for unchanged broadcast payloads', async () => {
+    const message = inboxMessage({ text: 'displayed' });
+    hoisted.messages = [[1, message]];
+    hoisted.mapOpenMessages = [[1, message]];
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[1, JSON.parse(JSON.stringify(message))]]);
+    renderHook();
+    const messages = latest!.messages;
+    const mapMessages = latest!.mapAttrs.messages;
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1]);
+    });
+    expect(latest!.messages).toBe(messages);
+    expect(latest!.mapAttrs.messages).toBe(mapMessages);
+    expect(hoisted.scheduleOverallMessageCountRefresh).not.toHaveBeenCalled();
+  });
+
   it('inserts an ordinary unseen message that matches the current filters', async () => {
     const currentMessage = inboxMessage({
       text: 'one',
@@ -380,6 +396,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [9],
       expect.objectContaining({ selectedTags: [3] }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([
@@ -408,6 +425,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [91],
       expect.objectContaining({ highlightPoints: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[91, report]]);
@@ -475,6 +493,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [91],
       expect.objectContaining({ highlightPoints: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expectFetchMessagesByIdsCalledWith([42]);
     expect(latest?.messages.map(([messageId]) => messageId)).toEqual([91, 42]);
@@ -496,6 +515,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [91],
       expect.objectContaining({ highlightPoints: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
@@ -940,6 +960,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [9],
       expect.objectContaining({ search: 'needle' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
@@ -958,6 +979,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [9],
       expect.objectContaining({ onlyWithMedia: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
@@ -978,6 +1000,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [2],
       expect.objectContaining({ onlyWithMedia: false }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([]);
@@ -1067,6 +1090,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [1],
       expect.objectContaining({ search: 'needle' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[1, updatedMessage]]);
@@ -1107,6 +1131,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [1],
       expect.objectContaining({ selectedTags: [7], orImportant: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[1, updatedMessage]]);
@@ -1131,6 +1156,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [1],
       expect.objectContaining({ selectedDeviceNames: ['device-1'] }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([]);
@@ -1151,6 +1177,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [2],
       expect.objectContaining({ search: 'needle' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.mapAttrs.messages).toEqual([]);
@@ -1175,6 +1202,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [9, 1, 10],
       expect.objectContaining({ search: 'needle' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(latest?.messages).toEqual([[9, newMessage]]);
@@ -1197,6 +1225,7 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
       [1, 2, 3],
       expect.objectContaining({ highlightPoints: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();

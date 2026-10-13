@@ -279,11 +279,13 @@ async fn process_next(
             return Ok(true);
         }
     };
-    if let Err(error) =
-        complete_job(dbx, &job, &source, &config, extraction).await
-    {
-        fail_job(dbx, &job, format!("{error:#}")).await.c(h!())?;
-        return Ok(true);
+    match complete_job(dbx, &job, &source, &config, extraction).await {
+        Ok(true) => {}
+        Ok(false) => return Ok(true),
+        Err(error) => {
+            fail_job(dbx, &job, format!("{error:#}")).await.c(h!())?;
+            return Ok(true);
+        }
     }
     if let Err(error) = fanout_mult(
         redis,
@@ -515,7 +517,7 @@ async fn complete_job(
     source: &Source,
     config: &WorkerConfig,
     extraction: Extraction,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let transaction = dbx.begin().await.c(h!())?;
     // Source rows first, then the job: the same order as an edit, which
     // holds the message and then re-enqueues the job.
@@ -524,7 +526,7 @@ async fn complete_job(
         .c(h!())?
     {
         transaction.commit().await.c(h!())?;
-        return Ok(());
+        return Ok(false);
     }
     let current = ai_position_worker_job::Entity::find_by_id(job.id)
         .lock_exclusive()
@@ -536,14 +538,14 @@ async fn complete_job(
         != Some(job.created_at)
     {
         transaction.commit().await.c(h!())?;
-        return Ok(());
+        return Ok(false);
     }
     replace_mentions(&transaction, job, source, config, extraction)
         .await
         .c(h!())?;
     delete_job(&transaction, job.id).await.c(h!())?;
     transaction.commit().await.c(h!())?;
-    Ok(())
+    Ok(true)
 }
 
 async fn replace_mentions<C>(
@@ -1061,7 +1063,7 @@ mod tests {
             assert_eq!(job.sigint_inbox_item_id, Some(message.id));
             let source = load_source(&env.dbx, &job).await.unwrap().unwrap();
             assert_eq!(source.text, BODY);
-            complete_job(
+            assert!(complete_job(
                 &env.dbx,
                 &job,
                 &source,
@@ -1069,7 +1071,7 @@ mod tests {
                 extraction(with_coordinate),
             )
             .await
-            .unwrap();
+            .unwrap());
             let mentions = ai_position_mention::Entity::find()
                 .filter(
                     ai_position_mention::Column::SigintInboxItemId
@@ -1784,9 +1786,15 @@ mod tests {
             .await
             .unwrap();
 
-        complete_job(&env.dbx, &job, &source, &config, extraction(true))
-            .await
-            .unwrap();
+        assert!(!complete_job(
+            &env.dbx,
+            &job,
+            &source,
+            &config,
+            extraction(true)
+        )
+        .await
+        .unwrap());
 
         assert!(ai_position_mention::Entity::find()
             .filter(
@@ -1797,6 +1805,36 @@ mod tests {
             .unwrap()
             .is_none());
         assert!(ai_position_worker_job::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn skipped_stale_source_does_not_request_fanout_3780() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        enable_worker(&env.dbx).await;
+        let (message_id, _, _) = grouped_message(&env.dbx, false).await;
+        let config = load_worker_config(&env.dbx).await.unwrap().unwrap();
+        enqueue_message_if_enabled(&env.dbx, message_id)
+            .await
+            .unwrap();
+        let job = load_next_job(&env.dbx).await.unwrap().unwrap();
+        let mut source = load_source(&env.dbx, &job).await.unwrap().unwrap();
+        source.text = "stale extraction source".to_string();
+        assert!(!complete_job(
+            &env.dbx,
+            &job,
+            &source,
+            &config,
+            extraction(true)
+        )
+        .await
+        .unwrap());
+        assert!(linked_names(&env.dbx, message_id).await.is_empty());
+        assert!(ai_position_worker_job::Entity::find_by_id(job.id)
             .one(&env.dbx)
             .await
             .unwrap()

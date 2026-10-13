@@ -19,7 +19,8 @@ use anyhow::Context;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, TransactionTrait,
+    DatabaseBackend, DatabaseConnection, DatabaseTransaction, EntityTrait,
+    QueryFilter, QueryOrder, Statement, TransactionTrait,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,6 +121,16 @@ fn map_system_settings_item(
             .show_peleng_distance_to_battleline,
         disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
         hide_networks: settings.hide_networks.unwrap_or(false),
+        api_rate_limit_replenish_interval_ms: settings
+            .api_rate_limit_replenish_interval_ms
+            .map(i64::from)
+            .unwrap_or(
+                crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
+            ),
+        api_rate_limit_burst_size: settings
+            .api_rate_limit_burst_size
+            .map(i64::from)
+            .unwrap_or(crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT),
         two_factor_auth_enabled: settings
             .two_factor_auth_enabled
             .unwrap_or(true),
@@ -660,7 +671,7 @@ fn system_settings_active_model(
             req.rer_duty_test_replay_interval_sec
         ),
         created_at: sea_orm::ActiveValue::NotSet,
-        updated_at: sea_orm::ActiveValue::NotSet,
+        updated_at: Set(now_utc()),
         echo_im_sync_since: Set(echo_im_sync_cursor.created_at),
         echo_im_sync_since_inbox_message_id: Set(
             echo_im_sync_cursor.inbox_message_id
@@ -709,6 +720,20 @@ fn system_settings_active_model(
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
         ai_position_highlights_enabled: Set(req.ai_position_highlights_enabled),
+        api_rate_limit_replenish_interval_ms: Set(Some(
+            req.api_rate_limit_replenish_interval_ms
+                .unwrap_or(
+                    crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
+                )
+                .try_into()
+                .c(h!())?,
+        )),
+        api_rate_limit_burst_size: Set(Some(
+            req.api_rate_limit_burst_size
+                .unwrap_or(crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT)
+                .try_into()
+                .c(h!())?,
+        )),
         two_factor_auth_enabled: Set(Some(req.two_factor_auth_enabled)),
         exclude_orbit_other_units: Set(Some(req.exclude_orbit_other_units)),
         messenger_media_cache_enabled: Set(Some(
@@ -754,6 +779,20 @@ where
     Ok(())
 }
 
+async fn begin_system_settings_update(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<DatabaseTransaction> {
+    let txn = dbx.begin().await.c(h!())?;
+    txn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock($1)",
+        [crate::config::SYSTEM_SETTINGS_UPDATE_ADVISORY_LOCK_KEY.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(txn)
+}
+
 async fn create_system_settings_for_login(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
@@ -763,7 +802,7 @@ async fn create_system_settings_for_login(
     validate_peleng_bounds(req)?;
     validate_report_generation_settings(req)?;
     validate_rer_duty_test_replay_settings(req)?;
-    let txn = dbx.begin().await.c(h!())?;
+    let txn = begin_system_settings_update(dbx).await.context(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
     let settings = get_active_system_settings(&txn).await.c(h!())?;
     let hide_orbit_data = settings
@@ -771,6 +810,8 @@ async fn create_system_settings_for_login(
         .map(|settings| settings.hide_orbit_data)
         .unwrap_or(false);
     let mut req = req.clone();
+    reconcile_api_rate_limit_settings(&mut req, settings.as_ref());
+    validate_api_rate_limit_settings(&req).context(h!())?;
     req.ai_position_highlights_enabled = Some(
         req.ai_position_highlights_enabled
             .or_else(|| {
@@ -807,7 +848,7 @@ async fn activate_system_settings_for_login(
     login: &uuid::Uuid,
     id: i64,
 ) -> Result<system_settings::Model, AppError> {
-    let txn = dbx.begin().await.c(h!())?;
+    let txn = begin_system_settings_update(dbx).await.context(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
     let hide_orbit_data = get_active_system_settings(&txn)
         .await
@@ -848,7 +889,7 @@ async fn set_rer_report_enabled_for_login(
     login: &uuid::Uuid,
     enabled: bool,
 ) -> Result<system_settings::Model, AppError> {
-    let txn = dbx.begin().await.c(h!())?;
+    let txn = begin_system_settings_update(dbx).await.context(h!())?;
     let settings = get_active_system_settings(&txn)
         .await
         .c(h!())?
@@ -859,7 +900,7 @@ async fn set_rer_report_enabled_for_login(
     let mut settings: system_settings::ActiveModel = settings.into();
     settings.id = sea_orm::ActiveValue::NotSet;
     settings.created_at = sea_orm::ActiveValue::NotSet;
-    settings.updated_at = sea_orm::ActiveValue::NotSet;
+    settings.updated_at = Set(now_utc());
     settings.updated_by_login_id = Set(Some(*login));
     settings.deleted = Set(false);
     settings.rer_report_enabled = Set(Some(enabled));
@@ -922,6 +963,16 @@ pub async fn current_system_settings(
             hide_orbit_data: settings.hide_orbit_data,
             disable_bot_tags: settings.disable_bot_tags.unwrap_or(false),
             hide_networks: settings.hide_networks.unwrap_or(false),
+            api_rate_limit_replenish_interval_ms: settings
+                .api_rate_limit_replenish_interval_ms
+                .map(i64::from)
+                .unwrap_or(
+                    crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
+                ),
+            api_rate_limit_burst_size: settings
+                .api_rate_limit_burst_size
+                .map(i64::from)
+                .unwrap_or(crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT),
             two_factor_auth_enabled: settings
                 .two_factor_auth_enabled
                 .unwrap_or(true),
@@ -975,6 +1026,10 @@ pub async fn current_system_settings(
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: false,
+            api_rate_limit_replenish_interval_ms:
+                crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
+            api_rate_limit_burst_size:
+                crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT,
             two_factor_auth_enabled: true,
             exclude_orbit_other_units: true,
         },
@@ -1057,6 +1112,61 @@ pub async fn activate_system_settings(
     Ok(Json(map_system_settings_item(settings)?))
 }
 
+fn reconcile_api_rate_limit_settings(
+    req: &mut CreateSystemSettingsReq,
+    settings: Option<&system_settings::Model>,
+) {
+    req.api_rate_limit_replenish_interval_ms = Some(
+        req.api_rate_limit_replenish_interval_ms
+            .or_else(|| {
+                settings
+                    .and_then(|settings| {
+                        settings.api_rate_limit_replenish_interval_ms
+                    })
+                    .map(i64::from)
+            })
+            .unwrap_or(
+                crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
+            ),
+    );
+    req.api_rate_limit_burst_size = Some(
+        req.api_rate_limit_burst_size
+            .or_else(|| {
+                settings
+                    .and_then(|settings| settings.api_rate_limit_burst_size)
+                    .map(i64::from)
+            })
+            .unwrap_or(crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT),
+    );
+}
+
+fn validate_api_rate_limit_settings(
+    req: &CreateSystemSettingsReq,
+) -> Result<(), AppError> {
+    let replenish_interval_ms = req
+        .api_rate_limit_replenish_interval_ms
+        .unwrap_or(crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT);
+    let burst_size = req
+        .api_rate_limit_burst_size
+        .unwrap_or(crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT);
+    if !(1..=crate::config::API_RATE_LIMIT_VALUE_MAX)
+        .contains(&replenish_interval_ms)
+        || !(1..=crate::config::API_RATE_LIMIT_VALUE_MAX).contains(&burst_size)
+    {
+        return Err(AppError::BL { msg: "API: інтервал поповнення та запас запитів мають бути додатними цілими числами в межах 2147483647".to_string() });
+    }
+    if replenish_interval_ms as u64 * burst_size as u64
+        > crate::config::API_RATE_LIMIT_CAPACITY_MS_MAX
+    {
+        return Err(AppError::BL {
+            msg:
+                "API: поєднання інтервалу поповнення та запасу запитів завелике"
+                    .to_string(),
+        });
+    }
+    Ok(())
+}
+
 fn validate_media_cache_settings(
     req: &CreateSystemSettingsReq,
 ) -> Result<(), AppError> {
@@ -1094,6 +1204,200 @@ mod tests {
         crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3788_legacy_saves_preserve_quotas_and_history_restores_defaults(
+    ) {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let legacy = insert_settings(&env.dbx, old_ts(), false).await;
+        let mut req = settings_req(false);
+        req.api_rate_limit_replenish_interval_ms = Some(750);
+        req.api_rate_limit_burst_size = Some(4);
+        let saved = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+
+        let mut legacy_body = serde_json::to_value(&req).unwrap();
+        legacy_body
+            .as_object_mut()
+            .unwrap()
+            .remove("api_rate_limit_replenish_interval_ms");
+        legacy_body
+            .as_object_mut()
+            .unwrap()
+            .remove("api_rate_limit_burst_size");
+        let mut req: CreateSystemSettingsReq =
+            serde_json::from_value(legacy_body).unwrap();
+        for (interval, burst, expected) in [
+            (None, None, (750, 4)),
+            (Some(1000), None, (1000, 4)),
+            (None, Some(3), (1000, 3)),
+        ] {
+            req.api_rate_limit_replenish_interval_ms = interval;
+            req.api_rate_limit_burst_size = burst;
+            let settings =
+                create_system_settings_for_login(&env.dbx, &login, &req)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                (
+                    settings.api_rate_limit_replenish_interval_ms,
+                    settings.api_rate_limit_burst_size
+                ),
+                (Some(expected.0), Some(expected.1))
+            );
+        }
+        let settings =
+            activate_system_settings_for_login(&env.dbx, &login, legacy.id)
+                .await
+                .unwrap();
+        let settings = map_system_settings_item(settings).unwrap();
+        assert_eq!(
+            (
+                settings.api_rate_limit_replenish_interval_ms,
+                settings.api_rate_limit_burst_size
+            ),
+            (500, 5)
+        );
+        let settings =
+            activate_system_settings_for_login(&env.dbx, &login, saved.id)
+                .await
+                .unwrap();
+        assert_eq!(
+            (
+                settings.api_rate_limit_replenish_interval_ms,
+                settings.api_rate_limit_burst_size
+            ),
+            (Some(750), Some(4))
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3788_invalid_quota_updates_leave_active_settings_unchanged()
+    {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let mut req = settings_req(false);
+        let saved = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        for (interval, burst) in [
+            (0, 2),
+            (500, -1),
+            (i64::from(i32::MAX) + 1, 2),
+            (i64::from(i32::MAX), i64::from(i32::MAX)),
+        ] {
+            req.api_rate_limit_replenish_interval_ms = Some(interval);
+            req.api_rate_limit_burst_size = Some(burst);
+            assert!(create_system_settings_for_login(&env.dbx, &login, &req)
+                .await
+                .is_err());
+            assert_eq!(
+                get_active_system_settings(&env.dbx)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .id,
+                saved.id
+            );
+        }
+    }
+
+    async fn wait_for_blocked_settings_saves(dbx: &DatabaseConnection) {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                let waiting: i64 = dbx.query_one_raw(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    "select count(*) from pg_stat_activity where datname = current_database() and state = 'active' and wait_event_type = 'Lock'",
+                )).await.unwrap().unwrap().try_get_by_index(0).unwrap();
+                if waiting >= 3 {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3788_concurrent_partial_saves_preserve_both_quotas() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let req = settings_req(false);
+        let saved = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        let blocker = env.dbx.begin().await.unwrap();
+        blocker
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "select id from system_settings where id = $1 for update",
+                [saved.id.into()],
+            ))
+            .await
+            .unwrap();
+        let mut interval = req.clone();
+        interval.api_rate_limit_replenish_interval_ms = Some(1000);
+        interval.api_rate_limit_burst_size = None;
+        let mut burst = req;
+        burst.api_rate_limit_replenish_interval_ms = None;
+        burst.api_rate_limit_burst_size = Some(4);
+        let mut saves = Vec::new();
+        for req in [interval, burst] {
+            let env = env.clone();
+            saves.push(tokio::spawn(async move {
+                create_system_settings_for_login(&env.dbx, &login, &req).await
+            }));
+        }
+        let report_env = env.clone();
+        saves.push(tokio::spawn(async move {
+            set_rer_report_enabled_for_login(&report_env.dbx, &login, true)
+                .await
+        }));
+        wait_for_blocked_settings_saves(&env.dbx).await;
+        let activated_at = now_utc();
+        blocker
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "update system_settings set updated_at = $1 where id = $2",
+                [activated_at.into(), saved.id.into()],
+            ))
+            .await
+            .unwrap();
+        blocker.commit().await.unwrap();
+        let mut latest_revision = (activated_at, saved.id);
+        for save in saves {
+            let settings = save.await.unwrap().unwrap();
+            assert!(settings.updated_at > activated_at);
+            latest_revision =
+                latest_revision.max((settings.updated_at, settings.id));
+        }
+        let settings =
+            get_active_system_settings(&env.dbx).await.unwrap().unwrap();
+        assert_eq!((settings.updated_at, settings.id), latest_revision);
+        assert_eq!(
+            (
+                settings.api_rate_limit_replenish_interval_ms,
+                settings.api_rate_limit_burst_size
+            ),
+            (Some(1000), Some(4))
+        );
+        assert_eq!(
+            system_settings::Entity::find()
+                .filter(system_settings::Column::Deleted.eq(false))
+                .all(&env.dbx)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -1701,6 +2005,12 @@ mod tests {
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: Some(false),
+            api_rate_limit_replenish_interval_ms: Some(
+                crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
+            ),
+            api_rate_limit_burst_size: Some(
+                crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT,
+            ),
             two_factor_auth_enabled: true,
             exclude_orbit_other_units: true,
             messenger_media_cache_enabled: false,
@@ -1780,6 +2090,8 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            api_rate_limit_replenish_interval_ms: Set(None),
+            api_rate_limit_burst_size: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),
             messenger_media_cache_enabled: Set(None),

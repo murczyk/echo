@@ -6,11 +6,11 @@ use super::{
     EntrySortKey, FileSearchFilters, FilesystemError, KeysetPageRequest,
     RawFileSearchFilters, SearchEntry, SearchFilesCommand, TreeEntry,
 };
-use crate::config::{
-    read_config, DEVICE_FILE_CURSOR_MAX_BYTES, DEVICE_FILE_PAGE_MAX_LIMIT,
-    ROLE_ADMIN,
-};
+use crate::config::{read_config, ROLE_ADMIN};
 use crate::devices::access;
+use crate::devices::config::{
+    DEVICE_FILE_CURSOR_MAX_BYTES, DEVICE_FILE_PAGE_MAX_LIMIT,
+};
 use crate::devices::ROLE_CYBER;
 use crate::entities::{device, login, organism};
 use crate::file_registry::entities::file_entry;
@@ -2026,6 +2026,7 @@ async fn assert_stage_eight_actor_reads(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2048,6 +2049,7 @@ async fn assert_stage_eight_actor_reads(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2126,6 +2128,7 @@ async fn assert_stage_eight_browse_composition(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2166,6 +2169,7 @@ async fn assert_stage_eight_browse_composition(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2201,6 +2205,7 @@ async fn assert_stage_eight_browse_composition(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2228,6 +2233,7 @@ async fn assert_stage_eight_browse_composition(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2255,6 +2261,7 @@ async fn assert_stage_eight_browse_composition(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2460,6 +2467,7 @@ async fn assert_stage_eight_validation_contract(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2481,6 +2489,7 @@ async fn assert_stage_eight_validation_contract(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2502,6 +2511,7 @@ async fn assert_stage_eight_validation_contract(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2612,6 +2622,7 @@ async fn assert_stage_eight_live_scope_errors(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2631,6 +2642,7 @@ async fn assert_stage_eight_live_scope_errors(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2686,6 +2698,7 @@ async fn assert_stage_eight_outage_short_circuits(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2730,6 +2743,7 @@ async fn assert_stage_eight_outage_short_circuits(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2774,6 +2788,7 @@ async fn assert_stage_eight_outage_short_circuits(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2852,7 +2867,7 @@ fn assert_dependency_filesystem_error(error: AppError) {
 mod cursor_tests {
     use super::super::cursor::*;
     use super::super::*;
-    use crate::config::DEVICE_FILE_CURSOR_MAX_BYTES;
+    use crate::devices::config::DEVICE_FILE_CURSOR_MAX_BYTES;
     use uuid::Uuid;
 
     #[test]
@@ -3012,7 +3027,7 @@ mod metadata_tests {
     use super::super::metadata::*;
     use super::super::types::NormalizedFileMetadata;
     use super::super::*;
-    use crate::config::{
+    use crate::devices::config::{
         DEVICE_FILE_EXTENSION_MAX_CHARS, DEVICE_FILE_MIME_TYPE_MAX_CHARS,
     };
     use chrono::{DateTime, NaiveDate};
@@ -3210,7 +3225,7 @@ mod path_tests {
     use super::super::path::*;
     use super::super::types::ParsedSourcePath;
     use super::super::*;
-    use crate::config::{
+    use crate::devices::config::{
         DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS,
         DEVICE_FILE_PATH_COMPONENT_MAX_CHARS,
         DEVICE_FILE_PATH_COMPONENT_MAX_COUNT,
@@ -3496,7 +3511,7 @@ mod types_tests {
 mod validation_tests {
     use super::super::validation::*;
     use super::super::*;
-    use crate::config::{
+    use crate::devices::config::{
         DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES,
         DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS,
         DEVICE_FILE_PATH_COMPONENTS_MAX_CHARS,

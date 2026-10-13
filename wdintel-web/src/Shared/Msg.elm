@@ -52,9 +52,9 @@ type Msg
     | LoggedResponseDecodeError (Result ApiError ())
     | EventServiceStartPolling
     | EventServiceStopPolling
-    | EventServicePollEvents
-    | EventServiceEventsReceived (Result ApiError B.LongPollRsp)
-    | EventServiceRetryPolling
+    | EventServicePollEvents Int
+    | EventServiceEventsReceived Int (Result ApiError B.LongPollRsp)
+    | EventServiceRetryPolling Int
     | EventServiceResetRetryCount
     | EventReceived B.EventMsg -- Event received from backend
     | SubscribeToEvents Route.Path.Path (List B.EventType) -- Page subscribes to event types

@@ -5707,6 +5707,7 @@ type alias BrowseDeviceFilesReq =
     , tagIds : Maybe (List (String))
     , tagMatch : Maybe (TagMatch)
     , untagged : Maybe (Bool)
+    , hasContent : Maybe (Bool)
     }
 
 
@@ -5722,6 +5723,7 @@ browseDeviceFilesReqEncoder struct =
         , ( "tag_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.tagIds )
         , ( "tag_match", (Maybe.withDefault Json.Encode.null << Maybe.map (tagMatchEncoder)) struct.tagMatch )
         , ( "untagged", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.untagged )
+        , ( "has_content", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.hasContent )
         ]
 
 
@@ -6186,6 +6188,8 @@ deviceAudioTranscriptionEncoder struct =
 type alias DeviceAudioDetails =
     { audio : DeviceAudio
     , transcription : DeviceAudioTranscription
+    , automaticTranscription : DeviceAudioAutomaticTranscriptionSnapshot
+    , transcriptionAvailability : DeviceAudioTranscriptionAvailability
     , canEdit : Bool
     }
 
@@ -6195,7 +6199,224 @@ deviceAudioDetailsEncoder struct =
     Json.Encode.object
         [ ( "audio", (deviceAudioEncoder) struct.audio )
         , ( "transcription", (deviceAudioTranscriptionEncoder) struct.transcription )
+        , ( "automatic_transcription", (deviceAudioAutomaticTranscriptionSnapshotEncoder) struct.automaticTranscription )
+        , ( "transcription_availability", (deviceAudioTranscriptionAvailabilityEncoder) struct.transcriptionAvailability )
         , ( "can_edit", (Json.Encode.bool) struct.canEdit )
+        ]
+
+
+type DeviceAudioAutomaticTranscriptionState
+    = AudioAsrNotRequested
+    | AudioAsrQueued
+    | AudioAsrPreparing
+    | AudioAsrRunning
+    | AudioAsrRetryWait
+    | AudioAsrSucceeded
+    | AudioAsrNoSpeech
+    | AudioAsrFailed
+    | AudioAsrOutcomeUnknown
+    | AudioAsrCancelled
+
+
+deviceAudioAutomaticTranscriptionStateEncoder : DeviceAudioAutomaticTranscriptionState -> Json.Encode.Value
+deviceAudioAutomaticTranscriptionStateEncoder enum =
+    case enum of
+        AudioAsrNotRequested ->
+            Json.Encode.string "not_requested"
+        AudioAsrQueued ->
+            Json.Encode.string "queued"
+        AudioAsrPreparing ->
+            Json.Encode.string "preparing"
+        AudioAsrRunning ->
+            Json.Encode.string "running"
+        AudioAsrRetryWait ->
+            Json.Encode.string "retry_wait"
+        AudioAsrSucceeded ->
+            Json.Encode.string "succeeded"
+        AudioAsrNoSpeech ->
+            Json.Encode.string "no_speech"
+        AudioAsrFailed ->
+            Json.Encode.string "failed"
+        AudioAsrOutcomeUnknown ->
+            Json.Encode.string "outcome_unknown"
+        AudioAsrCancelled ->
+            Json.Encode.string "cancelled"
+
+type DeviceAudioTranscriptionDisposition
+    = AudioAsrRetryQueued
+    | AudioAsrRetryAlreadyActive
+    | AudioAsrRetryAlreadyCompleted
+
+
+deviceAudioTranscriptionDispositionEncoder : DeviceAudioTranscriptionDisposition -> Json.Encode.Value
+deviceAudioTranscriptionDispositionEncoder enum =
+    case enum of
+        AudioAsrRetryQueued ->
+            Json.Encode.string "queued"
+        AudioAsrRetryAlreadyActive ->
+            Json.Encode.string "already_active"
+        AudioAsrRetryAlreadyCompleted ->
+            Json.Encode.string "already_completed"
+
+type alias DeviceAudioAutomaticTranscriptionSnapshot =
+    { version : String
+    , text : Maybe (String)
+    , state : DeviceAudioAutomaticTranscriptionState
+    , retryAt : Maybe (String)
+    , message : Maybe (String)
+    }
+
+
+deviceAudioAutomaticTranscriptionSnapshotEncoder : DeviceAudioAutomaticTranscriptionSnapshot -> Json.Encode.Value
+deviceAudioAutomaticTranscriptionSnapshotEncoder struct =
+    Json.Encode.object
+        [ ( "version", (Json.Encode.string) struct.version )
+        , ( "text", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.text )
+        , ( "state", (deviceAudioAutomaticTranscriptionStateEncoder) struct.state )
+        , ( "retry_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.retryAt )
+        , ( "message", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.message )
+        ]
+
+
+type alias DeviceAudioTranscriptionAvailability =
+    { deviceEnabled : Bool
+    , globalEnabled : Bool
+    , canEditManual : Bool
+    , canManageSetting : Bool
+    , canRetry : Bool
+    , blockedReason : Maybe (String)
+    }
+
+
+deviceAudioTranscriptionAvailabilityEncoder : DeviceAudioTranscriptionAvailability -> Json.Encode.Value
+deviceAudioTranscriptionAvailabilityEncoder struct =
+    Json.Encode.object
+        [ ( "device_enabled", (Json.Encode.bool) struct.deviceEnabled )
+        , ( "global_enabled", (Json.Encode.bool) struct.globalEnabled )
+        , ( "can_edit_manual", (Json.Encode.bool) struct.canEditManual )
+        , ( "can_manage_setting", (Json.Encode.bool) struct.canManageSetting )
+        , ( "can_retry", (Json.Encode.bool) struct.canRetry )
+        , ( "blocked_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.blockedReason )
+        ]
+
+
+type alias DeviceAudioTranscriptionStatusReq =
+    { deviceId : String
+    , audioId : String
+    , knownVersion : Maybe (String)
+    }
+
+
+deviceAudioTranscriptionStatusReqEncoder : DeviceAudioTranscriptionStatusReq -> Json.Encode.Value
+deviceAudioTranscriptionStatusReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "audio_id", (Json.Encode.string) struct.audioId )
+        , ( "known_version", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.knownVersion )
+        ]
+
+
+type alias DeviceAudioTranscriptionStatusRsp =
+    { snapshot : Maybe (DeviceAudioAutomaticTranscriptionSnapshot)
+    , availability : DeviceAudioTranscriptionAvailability
+    }
+
+
+deviceAudioTranscriptionStatusRspEncoder : DeviceAudioTranscriptionStatusRsp -> Json.Encode.Value
+deviceAudioTranscriptionStatusRspEncoder struct =
+    Json.Encode.object
+        [ ( "snapshot", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceAudioAutomaticTranscriptionSnapshotEncoder)) struct.snapshot )
+        , ( "availability", (deviceAudioTranscriptionAvailabilityEncoder) struct.availability )
+        ]
+
+
+type alias RetryDeviceAudioTranscriptionReq =
+    { deviceId : String
+    , audioId : String
+    }
+
+
+retryDeviceAudioTranscriptionReqEncoder : RetryDeviceAudioTranscriptionReq -> Json.Encode.Value
+retryDeviceAudioTranscriptionReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "audio_id", (Json.Encode.string) struct.audioId )
+        ]
+
+
+type alias RetryDeviceAudioTranscriptionRsp =
+    { snapshot : DeviceAudioAutomaticTranscriptionSnapshot
+    , availability : DeviceAudioTranscriptionAvailability
+    , disposition : DeviceAudioTranscriptionDisposition
+    }
+
+
+retryDeviceAudioTranscriptionRspEncoder : RetryDeviceAudioTranscriptionRsp -> Json.Encode.Value
+retryDeviceAudioTranscriptionRspEncoder struct =
+    Json.Encode.object
+        [ ( "snapshot", (deviceAudioAutomaticTranscriptionSnapshotEncoder) struct.snapshot )
+        , ( "availability", (deviceAudioTranscriptionAvailabilityEncoder) struct.availability )
+        , ( "disposition", (deviceAudioTranscriptionDispositionEncoder) struct.disposition )
+        ]
+
+
+type alias DeviceAudioAsrSettingsReq =
+    { deviceId : String
+    }
+
+
+deviceAudioAsrSettingsReqEncoder : DeviceAudioAsrSettingsReq -> Json.Encode.Value
+deviceAudioAsrSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        ]
+
+
+type alias SetDeviceAudioAsrSettingsReq =
+    { deviceId : String
+    , enabled : Bool
+    }
+
+
+setDeviceAudioAsrSettingsReqEncoder : SetDeviceAudioAsrSettingsReq -> Json.Encode.Value
+setDeviceAudioAsrSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "enabled", (Json.Encode.bool) struct.enabled )
+        ]
+
+
+type alias DeviceAudioAsrSettingsRsp =
+    { deviceId : String
+    , enabled : Bool
+    , globalEnabled : Bool
+    , canManageSetting : Bool
+    , blockedReason : Maybe (String)
+    }
+
+
+deviceAudioAsrSettingsRspEncoder : DeviceAudioAsrSettingsRsp -> Json.Encode.Value
+deviceAudioAsrSettingsRspEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "global_enabled", (Json.Encode.bool) struct.globalEnabled )
+        , ( "can_manage_setting", (Json.Encode.bool) struct.canManageSetting )
+        , ( "blocked_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.blockedReason )
+        ]
+
+
+type alias DeviceAudioTranscriptionAdmissionError =
+    { code : String
+    , message : String
+    }
+
+
+deviceAudioTranscriptionAdmissionErrorEncoder : DeviceAudioTranscriptionAdmissionError -> Json.Encode.Value
+deviceAudioTranscriptionAdmissionErrorEncoder struct =
+    Json.Encode.object
+        [ ( "code", (Json.Encode.string) struct.code )
+        , ( "message", (Json.Encode.string) struct.message )
         ]
 
 
@@ -6204,6 +6425,7 @@ type alias DeviceAudioPreparation =
     , wave : DeviceAudioPreparationState
     , spectrogram : DeviceAudioPreparationState
     , retryAfterMs : Int
+    , transcriptionAdmissionError : Maybe (DeviceAudioTranscriptionAdmissionError)
     }
 
 
@@ -6214,6 +6436,7 @@ deviceAudioPreparationEncoder struct =
         , ( "wave", (deviceAudioPreparationStateEncoder) struct.wave )
         , ( "spectrogram", (deviceAudioPreparationStateEncoder) struct.spectrogram )
         , ( "retry_after_ms", (Json.Encode.int) struct.retryAfterMs )
+        , ( "transcription_admission_error", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceAudioTranscriptionAdmissionErrorEncoder)) struct.transcriptionAdmissionError )
         ]
 
 
@@ -9108,6 +9331,8 @@ deleteUnitDuplicateReqEncoder struct =
 
 type alias UnitSearchReq =
     { search : String
+    , includeInactive : Maybe (Bool)
+    , names : Maybe (List (String))
     }
 
 
@@ -9115,6 +9340,8 @@ unitSearchReqEncoder : UnitSearchReq -> Json.Encode.Value
 unitSearchReqEncoder struct =
     Json.Encode.object
         [ ( "search", (Json.Encode.string) struct.search )
+        , ( "include_inactive", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeInactive )
+        , ( "names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.names )
         ]
 
 
@@ -9997,6 +10224,152 @@ deviceNameSearchRspEncoder : DeviceNameSearchRsp -> Json.Encode.Value
 deviceNameSearchRspEncoder struct =
     Json.Encode.object
         [ ( "devices", (Json.Encode.list (deviceNameSearchResultEncoder)) struct.devices )
+        ]
+
+
+type alias SubmitNetwork =
+    { signalName : Maybe (String)
+    , cc : Maybe (Int)
+    , name : Maybe (String)
+    }
+
+
+submitNetworkEncoder : SubmitNetwork -> Json.Encode.Value
+submitNetworkEncoder struct =
+    Json.Encode.object
+        [ ( "signal_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signalName )
+        , ( "cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.cc )
+        , ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
+        ]
+
+
+type alias SubmitDmrMetadata =
+    { timestamp : String
+    , cc : Maybe (Int)
+    , freq : String
+    , signalName : String
+    , senderId : Maybe (Int)
+    , senderName : Maybe (String)
+    , callGroupId : Maybe (Int)
+    , callGroupName : Maybe (String)
+    , hashId : Maybe (String)
+    }
+
+
+submitDmrMetadataEncoder : SubmitDmrMetadata -> Json.Encode.Value
+submitDmrMetadataEncoder struct =
+    Json.Encode.object
+        [ ( "timestamp", (Json.Encode.string) struct.timestamp )
+        , ( "cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.cc )
+        , ( "freq", (Json.Encode.string) struct.freq )
+        , ( "signal_name", (Json.Encode.string) struct.signalName )
+        , ( "sender_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.senderId )
+        , ( "sender_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.senderName )
+        , ( "call_group_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.callGroupId )
+        , ( "call_group_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.callGroupName )
+        , ( "hash_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.hashId )
+        ]
+
+
+type alias DirectSubmitPayload =
+    { fullBody : Maybe (String)
+    , text : Maybe (String)
+    , comment : Maybe (String)
+    , freq : Maybe (String)
+    , coords : List (GeoCoordinates)
+    , fromCallsign : Maybe (String)
+    , to : List (String)
+    , tags : Maybe (List (String))
+    , timestamp : Maybe (String)
+    , isTimeNull : Maybe (Bool)
+    , post : Maybe (String)
+    , unit : Maybe (String)
+    , unitId : Maybe (Int)
+    , createUnit : Bool
+    , locations : List (String)
+    , network : Maybe (SubmitNetwork)
+    , dmr : List (SubmitDmrMetadata)
+    , signalGroupMasterKey : Maybe (String)
+    , deviceNameId : Maybe (Maybe (Int))
+    , uploadUrls : Maybe (List (String))
+    , attachmentUpdates : Maybe (DirectSubmitAttachmentUpdates)
+    , deletedMediaIds : Maybe (List (String))
+    , retainedMediaIds : Maybe (List (String))
+    , parentSignalMessageIds : List (Int)
+    , copySourceSignalMessageIds : List (Int)
+    }
+
+
+directSubmitPayloadEncoder : DirectSubmitPayload -> Json.Encode.Value
+directSubmitPayloadEncoder struct =
+    Json.Encode.object
+        [ ( "full_body", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fullBody )
+        , ( "text", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.text )
+        , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.comment )
+        , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.freq )
+        , ( "coords", (Json.Encode.list (geoCoordinatesEncoder)) struct.coords )
+        , ( "from", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fromCallsign )
+        , ( "to", (Json.Encode.list (Json.Encode.string)) struct.to )
+        , ( "tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.tags )
+        , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.timestamp )
+        , ( "is_time_null", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isTimeNull )
+        , ( "post", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.post )
+        , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unit )
+        , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.unitId )
+        , ( "create_unit", (Json.Encode.bool) struct.createUnit )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "network", (Maybe.withDefault Json.Encode.null << Maybe.map (submitNetworkEncoder)) struct.network )
+        , ( "dmr", (Json.Encode.list (submitDmrMetadataEncoder)) struct.dmr )
+        , ( "signal_group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signalGroupMasterKey )
+        , ( "device_name_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int))) struct.deviceNameId )
+        , ( "upload_urls", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.uploadUrls )
+        , ( "attachment_updates", (Maybe.withDefault Json.Encode.null << Maybe.map (directSubmitAttachmentUpdatesEncoder)) struct.attachmentUpdates )
+        , ( "deleted_media_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.deletedMediaIds )
+        , ( "retained_media_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.retainedMediaIds )
+        , ( "parent_signal_message_ids", (Json.Encode.list (Json.Encode.int)) struct.parentSignalMessageIds )
+        , ( "copy_source_signal_message_ids", (Json.Encode.list (Json.Encode.int)) struct.copySourceSignalMessageIds )
+        ]
+
+
+type alias DirectSubmitAttachmentUpdates =
+    { replacements : List (DirectSubmitAttachmentReplacement)
+    , renames : List (DirectSubmitAttachmentRename)
+    }
+
+
+directSubmitAttachmentUpdatesEncoder : DirectSubmitAttachmentUpdates -> Json.Encode.Value
+directSubmitAttachmentUpdatesEncoder struct =
+    Json.Encode.object
+        [ ( "replacements", (Json.Encode.list (directSubmitAttachmentReplacementEncoder)) struct.replacements )
+        , ( "renames", (Json.Encode.list (directSubmitAttachmentRenameEncoder)) struct.renames )
+        ]
+
+
+type alias DirectSubmitAttachmentReplacement =
+    { mediaId : String
+    , uploadUrl : String
+    }
+
+
+directSubmitAttachmentReplacementEncoder : DirectSubmitAttachmentReplacement -> Json.Encode.Value
+directSubmitAttachmentReplacementEncoder struct =
+    Json.Encode.object
+        [ ( "media_id", (Json.Encode.string) struct.mediaId )
+        , ( "upload_url", (Json.Encode.string) struct.uploadUrl )
+        ]
+
+
+type alias DirectSubmitAttachmentRename =
+    { mediaId : String
+    , fileName : String
+    }
+
+
+directSubmitAttachmentRenameEncoder : DirectSubmitAttachmentRename -> Json.Encode.Value
+directSubmitAttachmentRenameEncoder struct =
+    Json.Encode.object
+        [ ( "media_id", (Json.Encode.string) struct.mediaId )
+        , ( "file_name", (Json.Encode.string) struct.fileName )
         ]
 
 
@@ -13090,6 +13463,8 @@ type alias SystemSettingsCurrentRsp =
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
     , twoFactorAuthEnabled : Bool
+    , apiRateLimitReplenishIntervalMs : Int
+    , apiRateLimitBurstSize : Int
     , excludeOrbitOtherUnits : Bool
     }
 
@@ -13132,6 +13507,8 @@ systemSettingsCurrentRspEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
+        , ( "api_rate_limit_replenish_interval_ms", (Json.Encode.int) struct.apiRateLimitReplenishIntervalMs )
+        , ( "api_rate_limit_burst_size", (Json.Encode.int) struct.apiRateLimitBurstSize )
         , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
         ]
 
@@ -13176,6 +13553,8 @@ type alias SystemSettingsItem =
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
     , twoFactorAuthEnabled : Bool
+    , apiRateLimitReplenishIntervalMs : Int
+    , apiRateLimitBurstSize : Int
     , excludeOrbitOtherUnits : Bool
     , messengerMediaCacheEnabled : Bool
     , messengerMediaCacheRetentionHours : Int
@@ -13226,6 +13605,8 @@ systemSettingsItemEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
+        , ( "api_rate_limit_replenish_interval_ms", (Json.Encode.int) struct.apiRateLimitReplenishIntervalMs )
+        , ( "api_rate_limit_burst_size", (Json.Encode.int) struct.apiRateLimitBurstSize )
         , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
         , ( "messenger_media_cache_enabled", (Json.Encode.bool) struct.messengerMediaCacheEnabled )
         , ( "messenger_media_cache_retention_hours", (Json.Encode.int) struct.messengerMediaCacheRetentionHours )
@@ -13281,6 +13662,8 @@ type alias CreateSystemSettingsReq =
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Maybe (Bool)
     , twoFactorAuthEnabled : Bool
+    , apiRateLimitReplenishIntervalMs : Maybe (Int)
+    , apiRateLimitBurstSize : Maybe (Int)
     , excludeOrbitOtherUnits : Bool
     , messengerMediaCacheEnabled : Bool
     , messengerMediaCacheRetentionHours : Int
@@ -13326,6 +13709,8 @@ createSystemSettingsReqEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.aiPositionHighlightsEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
+        , ( "api_rate_limit_replenish_interval_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.apiRateLimitReplenishIntervalMs )
+        , ( "api_rate_limit_burst_size", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.apiRateLimitBurstSize )
         , ( "exclude_orbit_other_units", (Json.Encode.bool) struct.excludeOrbitOtherUnits )
         , ( "messenger_media_cache_enabled", (Json.Encode.bool) struct.messengerMediaCacheEnabled )
         , ( "messenger_media_cache_retention_hours", (Json.Encode.int) struct.messengerMediaCacheRetentionHours )
@@ -21156,6 +21541,7 @@ browseDeviceFilesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_match" (Json.Decode.nullable (tagMatchDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "untagged" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_content" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 browseDeviceFilesRspDecoder : Json.Decode.Decoder BrowseDeviceFilesRsp
@@ -21521,7 +21907,217 @@ deviceAudioDetailsDecoder =
     Json.Decode.succeed DeviceAudioDetails
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio" (deviceAudioDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription" (deviceAudioTranscriptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "automatic_transcription" (deviceAudioAutomaticTranscriptionSnapshotDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription_availability" (deviceAudioTranscriptionAvailabilityDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_edit" (Json.Decode.bool)))
+
+
+deviceAudioAutomaticTranscriptionStateDecoder : Json.Decode.Decoder DeviceAudioAutomaticTranscriptionState
+deviceAudioAutomaticTranscriptionStateDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "not_requested" ->
+                            Json.Decode.succeed AudioAsrNotRequested
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "queued" ->
+                            Json.Decode.succeed AudioAsrQueued
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "preparing" ->
+                            Json.Decode.succeed AudioAsrPreparing
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "running" ->
+                            Json.Decode.succeed AudioAsrRunning
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "retry_wait" ->
+                            Json.Decode.succeed AudioAsrRetryWait
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "succeeded" ->
+                            Json.Decode.succeed AudioAsrSucceeded
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "no_speech" ->
+                            Json.Decode.succeed AudioAsrNoSpeech
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "failed" ->
+                            Json.Decode.succeed AudioAsrFailed
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "outcome_unknown" ->
+                            Json.Decode.succeed AudioAsrOutcomeUnknown
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "cancelled" ->
+                            Json.Decode.succeed AudioAsrCancelled
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+deviceAudioTranscriptionDispositionDecoder : Json.Decode.Decoder DeviceAudioTranscriptionDisposition
+deviceAudioTranscriptionDispositionDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "queued" ->
+                            Json.Decode.succeed AudioAsrRetryQueued
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "already_active" ->
+                            Json.Decode.succeed AudioAsrRetryAlreadyActive
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "already_completed" ->
+                            Json.Decode.succeed AudioAsrRetryAlreadyCompleted
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+deviceAudioAutomaticTranscriptionSnapshotDecoder : Json.Decode.Decoder DeviceAudioAutomaticTranscriptionSnapshot
+deviceAudioAutomaticTranscriptionSnapshotDecoder =
+    Json.Decode.succeed DeviceAudioAutomaticTranscriptionSnapshot
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (deviceAudioAutomaticTranscriptionStateDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retry_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceAudioTranscriptionAvailabilityDecoder : Json.Decode.Decoder DeviceAudioTranscriptionAvailability
+deviceAudioTranscriptionAvailabilityDecoder =
+    Json.Decode.succeed DeviceAudioTranscriptionAvailability
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "global_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_edit_manual" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_manage_setting" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_retry" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "blocked_reason" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceAudioTranscriptionStatusReqDecoder : Json.Decode.Decoder DeviceAudioTranscriptionStatusReq
+deviceAudioTranscriptionStatusReqDecoder =
+    Json.Decode.succeed DeviceAudioTranscriptionStatusReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_version" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceAudioTranscriptionStatusRspDecoder : Json.Decode.Decoder DeviceAudioTranscriptionStatusRsp
+deviceAudioTranscriptionStatusRspDecoder =
+    Json.Decode.succeed DeviceAudioTranscriptionStatusRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "snapshot" (Json.Decode.nullable (deviceAudioAutomaticTranscriptionSnapshotDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "availability" (deviceAudioTranscriptionAvailabilityDecoder)))
+
+
+retryDeviceAudioTranscriptionReqDecoder : Json.Decode.Decoder RetryDeviceAudioTranscriptionReq
+retryDeviceAudioTranscriptionReqDecoder =
+    Json.Decode.succeed RetryDeviceAudioTranscriptionReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_id" (Json.Decode.string)))
+
+
+retryDeviceAudioTranscriptionRspDecoder : Json.Decode.Decoder RetryDeviceAudioTranscriptionRsp
+retryDeviceAudioTranscriptionRspDecoder =
+    Json.Decode.succeed RetryDeviceAudioTranscriptionRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "snapshot" (deviceAudioAutomaticTranscriptionSnapshotDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "availability" (deviceAudioTranscriptionAvailabilityDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disposition" (deviceAudioTranscriptionDispositionDecoder)))
+
+
+deviceAudioAsrSettingsReqDecoder : Json.Decode.Decoder DeviceAudioAsrSettingsReq
+deviceAudioAsrSettingsReqDecoder =
+    Json.Decode.succeed DeviceAudioAsrSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+
+
+setDeviceAudioAsrSettingsReqDecoder : Json.Decode.Decoder SetDeviceAudioAsrSettingsReq
+setDeviceAudioAsrSettingsReqDecoder =
+    Json.Decode.succeed SetDeviceAudioAsrSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+
+
+deviceAudioAsrSettingsRspDecoder : Json.Decode.Decoder DeviceAudioAsrSettingsRsp
+deviceAudioAsrSettingsRspDecoder =
+    Json.Decode.succeed DeviceAudioAsrSettingsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "global_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_manage_setting" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "blocked_reason" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceAudioTranscriptionAdmissionErrorDecoder : Json.Decode.Decoder DeviceAudioTranscriptionAdmissionError
+deviceAudioTranscriptionAdmissionErrorDecoder =
+    Json.Decode.succeed DeviceAudioTranscriptionAdmissionError
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "code" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
 
 
 deviceAudioPreparationDecoder : Json.Decode.Decoder DeviceAudioPreparation
@@ -21531,6 +22127,7 @@ deviceAudioPreparationDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "wave" (deviceAudioPreparationStateDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "spectrogram" (deviceAudioPreparationStateDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retry_after_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription_admission_error" (Json.Decode.nullable (deviceAudioTranscriptionAdmissionErrorDecoder))))
 
 
 prepareDeviceAudioReqDecoder : Json.Decode.Decoder PrepareDeviceAudioReq
@@ -23813,6 +24410,8 @@ unitSearchReqDecoder : Json.Decode.Decoder UnitSearchReq
 unitSearchReqDecoder =
     Json.Decode.succeed UnitSearchReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_inactive" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "names" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
 
 
 unitDetailsReqDecoder : Json.Decode.Decoder UnitDetailsReq
@@ -24326,6 +24925,79 @@ deviceNameSearchRspDecoder : Json.Decode.Decoder DeviceNameSearchRsp
 deviceNameSearchRspDecoder =
     Json.Decode.succeed DeviceNameSearchRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices" (Json.Decode.list (deviceNameSearchResultDecoder))))
+
+
+submitNetworkDecoder : Json.Decode.Decoder SubmitNetwork
+submitNetworkDecoder =
+    Json.Decode.succeed SubmitNetwork
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cc" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
+
+
+submitDmrMetadataDecoder : Json.Decode.Decoder SubmitDmrMetadata
+submitDmrMetadataDecoder =
+    Json.Decode.succeed SubmitDmrMetadata
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cc" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "call_group_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "call_group_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hash_id" (Json.Decode.nullable (Json.Decode.string))))
+
+
+directSubmitPayloadDecoder : Json.Decode.Decoder DirectSubmitPayload
+directSubmitPayloadDecoder =
+    Json.Decode.succeed DirectSubmitPayload
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "full_body" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.list (geoCoordinatesDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "from" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "to" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "is_time_null" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "create_unit" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network" (Json.Decode.nullable (submitNetworkDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dmr" (Json.Decode.list (submitDmrMetadataDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_group_master_key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_name_id" (Json.Decode.nullable (Json.Decode.nullable (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "upload_urls" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachment_updates" (Json.Decode.nullable (directSubmitAttachmentUpdatesDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted_media_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retained_media_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_signal_message_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "copy_source_signal_message_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+directSubmitAttachmentUpdatesDecoder : Json.Decode.Decoder DirectSubmitAttachmentUpdates
+directSubmitAttachmentUpdatesDecoder =
+    Json.Decode.succeed DirectSubmitAttachmentUpdates
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "replacements" (Json.Decode.list (directSubmitAttachmentReplacementDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "renames" (Json.Decode.list (directSubmitAttachmentRenameDecoder))))
+
+
+directSubmitAttachmentReplacementDecoder : Json.Decode.Decoder DirectSubmitAttachmentReplacement
+directSubmitAttachmentReplacementDecoder =
+    Json.Decode.succeed DirectSubmitAttachmentReplacement
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "upload_url" (Json.Decode.string)))
+
+
+directSubmitAttachmentRenameDecoder : Json.Decode.Decoder DirectSubmitAttachmentRename
+directSubmitAttachmentRenameDecoder =
+    Json.Decode.succeed DirectSubmitAttachmentRename
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.string)))
 
 
 directSubmitParsePayloadDecoder : Json.Decode.Decoder DirectSubmitParsePayload
@@ -26253,6 +26925,8 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_replenish_interval_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_burst_size" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
 
 
@@ -26298,6 +26972,8 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_replenish_interval_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_burst_size" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_retention_hours" (Json.Decode.int)))
@@ -26348,6 +27024,8 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_replenish_interval_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_burst_size" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exclude_orbit_other_units" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_retention_hours" (Json.Decode.int)))

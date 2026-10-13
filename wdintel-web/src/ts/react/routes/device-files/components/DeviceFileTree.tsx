@@ -198,7 +198,7 @@ function BranchStatus({
         color="text.secondary"
         sx={{ display: 'block', py: 0.75, pl: 5 + depth * 2, pr: 1 }}
       >
-        Каталог порожній
+        {files.contentFilter === null ? 'Каталог порожній' : 'Немає файлів за вибраним фільтром'}
       </Typography>
     );
   }

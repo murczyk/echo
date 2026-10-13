@@ -252,7 +252,7 @@ test('restores every feed position through editor tabs and close @regression', a
   await page.getByRole('tab', { name: 'Стрічка 2' }).click();
   await expectVisibleAnchor(page.locator('[data-duty-feed-scroller="true"]'), secondAnchor);
 
-  await page.getByRole('button', { name: 'Скасувати', exact: true }).click();
+  await page.getByRole('button', { name: 'Закрити', exact: true }).click();
 
   await expect(feeds).toHaveCount(2);
   await expectVisibleAnchor(feeds.nth(0).locator('[data-duty-feed-scroller="true"]'), firstAnchor);

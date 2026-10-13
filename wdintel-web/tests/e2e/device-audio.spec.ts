@@ -1,3 +1,4 @@
+import './device-audio-settings';
 import './device-audio-processing';
 import './device-audio-text';
 import { expect, test, type Page } from '@playwright/test';
@@ -390,7 +391,7 @@ test('@regression device audio validates real media, exact names, scope and the 
     const sourceRead = await backend.source.post('/api/device/audio/list', {
       data: { device_id: device.id },
     });
-    expect(sourceRead.status()).toBe(403);
+    expect(sourceRead.status()).toBe(200);
     const foreignReader = await backend.login('foreign-cyber');
     expect(
       (

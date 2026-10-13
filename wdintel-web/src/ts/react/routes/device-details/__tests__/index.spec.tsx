@@ -6,10 +6,16 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { DeviceDetails } from '../../../../../Bindings';
+import type { DeviceDetails, DeviceAudioDetails } from '../../../../../Bindings';
 import { createNeoMuiTheme } from '../../../mui-theme';
 import { DeviceDetailsPage } from '.././index';
-import { listDeviceAudio } from '../../../services/api/device-audio';
+import {
+  listDeviceAudio,
+  getDeviceAudioDetail,
+  getDeviceAudioSettings,
+  getDeviceAudioTranscriptionStatus,
+  prepareDeviceAudio,
+} from '../../../services/api/device-audio';
 
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 const testTheme = createNeoMuiTheme('light');
@@ -25,7 +31,16 @@ const pageMock = vi.hoisted(() => ({
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
-vi.mock('../../../services/api/device-audio', () => ({ listDeviceAudio: vi.fn() }));
+vi.mock('../../../services/api/device-audio', () => ({
+  listDeviceAudio: vi.fn(),
+  getDeviceAudioDetail: vi.fn(),
+  getDeviceAudioSettings: vi.fn(),
+  getDeviceAudioTranscriptionStatus: vi.fn(),
+  prepareDeviceAudio: vi.fn(),
+}));
+vi.mock('../../../services/api/author-identities', () => ({
+  fetchAuthorIdentities: async () => ({ authors: [] }),
+}));
 vi.mock('../use-device-sync-sessions', () => ({
   useDeviceSyncSessions: pageMock.useDeviceSyncSessions,
 }));
@@ -320,4 +335,94 @@ it('keeps_audio_usable_when_file_sessions_fail', async () => {
     { deviceId: DEVICE_ID, unprocessedOnly: false, limit: 50, cursor: null },
     expect.objectContaining({ signal: expect.any(AbortSignal) }),
   );
+});
+
+it('#3645 reopens the same mobile audio with manual text after returning from the automatic original', async () => {
+  const media = vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+    matches: query.includes('width'),
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => true,
+  }));
+  const detail: DeviceAudioDetails = {
+    audio: {
+      id: 'audio-one',
+      deviceId: DEVICE_ID,
+      name: 'recording.wav',
+      recordingStartedAt: '2026-10-03T00:00:00Z',
+      recordingEndedAt: '2026-10-03T00:00:01Z',
+      durationSeconds: 1,
+      processed: false,
+      processingVersion: 'p1',
+    },
+    transcription: { text: 'manual text', textVersion: 'v1' },
+    automaticTranscription: {
+      version: 'a1',
+      text: 'automatic original',
+      state: 'succeeded',
+      retryAt: null,
+      message: null,
+    },
+    transcriptionAvailability: {
+      deviceEnabled: true,
+      globalEnabled: true,
+      canEditManual: true,
+      canManageSetting: true,
+      canRetry: false,
+      blockedReason: null,
+    },
+    canEdit: true,
+  };
+  vi.mocked(listDeviceAudio).mockResolvedValue({ audio: [detail.audio], nextCursor: null });
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(detail);
+  vi.mocked(getDeviceAudioSettings).mockResolvedValue({
+    deviceId: DEVICE_ID,
+    enabled: true,
+    globalEnabled: true,
+    canManageSetting: true,
+    blockedReason: null,
+  });
+  vi.mocked(getDeviceAudioTranscriptionStatus).mockResolvedValue({
+    audioId: detail.audio.id,
+    snapshot: detail.automaticTranscription,
+    availability: detail.transcriptionAvailability,
+  });
+  vi.mocked(prepareDeviceAudio).mockResolvedValue({
+    audioId: detail.audio.id,
+    content: 'queued',
+    wave: 'queued',
+    spectrogram: 'queued',
+    retryAfterMs: 1000,
+    transcriptionAdmissionError: null,
+  });
+  const button = (label: string) =>
+    Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find(
+      (element) => element.textContent === label,
+    )!;
+  const row = () => container!.querySelector<HTMLButtonElement>('[data-audio-id="audio-one"]')!;
+  try {
+    await act(async () => renderPage());
+    await act(async () => button('Аудіо').click());
+    await act(async () => row().click());
+    await act(async () => button('Автоматична').click());
+    expect(container!.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe(
+      'automatic original',
+    );
+    await act(async () => button('До аудіо').click());
+    expect(container!.querySelector('[data-device-audio-editor]')).toBeNull();
+    await act(async () => new Promise((done) => setTimeout(done, 410)));
+    await act(async () => row().click());
+    expect(container!.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('manual text');
+    expect(button('Ручна').getAttribute('aria-pressed')).toBe('true');
+    await act(async () => button('Автоматична').click());
+    await act(async () => button('Аналітика').click());
+    await act(async () => button('Аудіо').click());
+    expect(container!.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('manual text');
+  } finally {
+    media.mockRestore();
+  }
 });

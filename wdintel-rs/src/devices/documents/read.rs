@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     attachments::{store::rows, types::AttachmentSection},
-    config::*,
+    devices::config::*,
     h,
     types::{Env, ShortContext},
 };

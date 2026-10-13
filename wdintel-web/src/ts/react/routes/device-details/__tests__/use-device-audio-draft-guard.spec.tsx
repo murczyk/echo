@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useDeviceAudioEditor } from '../use-device-audio-editor';
 import { useDeviceAudioDraftGuard } from '../use-device-audio-draft-guard';
+import { DeviceAudioLeaveDialog } from '../components/DeviceAudioLeaveDialog';
 import {
   getDeviceAudioDetail,
   saveDeviceAudioTranscription,
@@ -29,7 +30,7 @@ let cleanup: () => void;
 function Harness() {
   editor = useDeviceAudioEditor('device', 'one', true);
   guard = useDeviceAudioDraftGuard(editor);
-  return <p>{editor.draft}</p>;
+  return <DeviceAudioLeaveDialog guard={guard} editor={editor} />;
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -56,6 +57,21 @@ beforeEach(async () => {
       processingVersion: 'p1',
     },
     transcription: { text: 'base', textVersion: 'v1' },
+    automaticTranscription: {
+      version: 'auto-v1',
+      text: 'automatic original',
+      state: 'succeeded',
+      retryAt: null,
+      message: null,
+    },
+    transcriptionAvailability: {
+      deviceEnabled: true,
+      globalEnabled: true,
+      canEditManual: true,
+      canManageSetting: true,
+      canRetry: false,
+      blockedReason: null,
+    },
     canEdit: true,
   });
   container = document.createElement('div');
@@ -68,6 +84,35 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   cleanup();
+});
+it('#3645 saves the retained manual draft from the leave dialog while viewing the automatic original', async () => {
+  await act(async () => editor.setAutomaticView(true));
+  let navigated = false;
+  let pending!: Promise<boolean>;
+  await act(async () => {
+    pending = guard.requestIntent(() => {
+      navigated = true;
+    });
+  });
+  const save = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+  ).find((button) => button.textContent === 'Зберегти')!;
+  expect(save.disabled).toBe(false);
+  vi.mocked(saveDeviceAudioTranscription).mockResolvedValueOnce({
+    audioId: 'one',
+    transcription: { text: 'submitted', textVersion: 'v2' },
+  });
+  await act(async () => save.click());
+  expect(await pending).toBe(true);
+  expect(navigated).toBe(true);
+  expect(editor.confirmed?.text).toBe('submitted');
+  expect(editor.detail?.automaticTranscription.text).toBe('automatic original');
+  expect(saveDeviceAudioTranscription).toHaveBeenCalledWith({
+    deviceId: 'device',
+    audioId: 'one',
+    text: 'submitted',
+    expectedTextVersion: 'v1',
+  });
 });
 it('save_before_intent_waits_for_current_draft and a newer edit requires another decision', async () => {
   const write = deferred<Awaited<ReturnType<typeof saveDeviceAudioTranscription>>>();

@@ -60,6 +60,7 @@ export function buildBrowseDeviceFilesReq(params: {
   parentEntryId: string;
   cursor: string | null;
   tagFilter: DeviceAnalyticsTagFilter;
+  hasContent?: BrowseDeviceFilesReq['hasContent'];
 }): BrowseDeviceFilesReq {
   return {
     deviceId: params.deviceId,
@@ -68,6 +69,7 @@ export function buildBrowseDeviceFilesReq(params: {
     includeBreadcrumbs: true,
     limit: DEVICE_FILE_PAGE_SIZE,
     cursor: params.cursor,
+    hasContent: params.hasContent ?? null,
     tagIds: params.tagFilter.tagIds.length === 0 ? null : params.tagFilter.tagIds,
     tagMatch: params.tagFilter.tagIds.length === 0 ? null : params.tagFilter.tagMatch,
     untagged: params.tagFilter.untagged || null,

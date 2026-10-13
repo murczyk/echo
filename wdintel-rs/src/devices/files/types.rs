@@ -197,15 +197,17 @@ impl<K> KeysetPageRequest<K> {
         limit: Option<u64>,
         after: Option<K>,
     ) -> Result<Self, FilesystemError> {
-        let limit =
-            limit.unwrap_or(crate::config::DEVICE_FILE_PAGE_DEFAULT_LIMIT);
-        if !(1..=crate::config::DEVICE_FILE_PAGE_MAX_LIMIT).contains(&limit) {
+        let limit = limit
+            .unwrap_or(crate::devices::config::DEVICE_FILE_PAGE_DEFAULT_LIMIT);
+        if !(1..=crate::devices::config::DEVICE_FILE_PAGE_MAX_LIMIT)
+            .contains(&limit)
+        {
             return Err(FilesystemError::Validation(vec![
                 FilesystemFieldError {
                     path: "limit".to_string(),
                     message: format!(
                         "must be between 1 and {}",
-                        crate::config::DEVICE_FILE_PAGE_MAX_LIMIT
+                        crate::devices::config::DEVICE_FILE_PAGE_MAX_LIMIT
                     ),
                 },
             ]));
@@ -248,6 +250,7 @@ pub(in crate::devices) struct BrowseFilesCommand {
     pub(in crate::devices) tag_ids: Vec<String>,
     pub(in crate::devices) tag_match: Option<TagMatch>,
     pub(in crate::devices) untagged: bool,
+    pub(in crate::devices) has_content: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -758,6 +761,7 @@ pub struct BrowseDeviceFilesReq {
     pub tag_ids: Option<Vec<String>>,
     pub tag_match: Option<TagMatch>,
     pub untagged: Option<bool>,
+    pub has_content: Option<bool>,
 }
 
 #[derive(

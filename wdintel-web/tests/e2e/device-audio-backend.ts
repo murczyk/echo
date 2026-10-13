@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { request, type APIRequestContext } from '@playwright/test';
 import type {
@@ -193,6 +193,38 @@ export function audioDetail(api: APIRequestContext, deviceId: string, audioId: s
   return post<DeviceAudioDetails>(api, '/api/device/audio/detail', { deviceId, audioId });
 }
 
+export async function audioAsrFixture(control?: { mode: string; delay_seconds?: number }) {
+  const root = process.env.AUDIO_TEST_ROOT;
+  const origin = process.env.AUDIO_ASR_RS_URL;
+  if (!root || !origin || new URL(origin).hostname !== '127.0.0.1')
+    throw new Error('Dedicated loopback ASR fixture required.');
+  const token = await readFile(resolve(root, 'asr-token'), 'utf8');
+  const response = await fetch(`${origin}/__fixture/${control ? 'control' : 'state'}`, {
+    method: control ? 'POST' : 'GET',
+    headers: { 'X-Fixture-Token': token, 'Content-Type': 'application/json' },
+    ...(control ? { body: JSON.stringify(control) } : {}),
+  });
+  if (!response.ok) throw new Error(`ASR fixture: HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function removeAudioFixtureCache() {
+  const root = process.env.AUDIO_TEST_ROOT;
+  if (!root || !resolve(process.env.ECHO_CONFIG_PATH ?? '').startsWith(`${resolve(root)}/`))
+    throw new Error('Private audio fixture config required.');
+  const environment = JSON.parse(
+    await readFile(resolve(root, 'resolved-environment.json'), 'utf8'),
+  );
+  if (environment.run !== process.env.AUDIO_TEST_RUN || environment.profile !== 'device-audio')
+    throw new Error('Audio cache must belong to this test run.');
+  for (const role of ['a', 'b'])
+    await rm(resolve(root, `storage-${role}`, 'device-audio-cache'), {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+    });
+}
+
 export async function audioFixtureSql(database: 'main' | 'files', sql: string) {
   const { execFileSync } = await import('node:child_process');
   const root = process.env.AUDIO_TEST_ROOT;
@@ -227,8 +259,12 @@ export async function audioFixtureSql(database: 'main' | 'files', sql: string) {
   )
     throw new Error('Unsafe audio fixture database.');
   const execute = (input: string) =>
-    execFileSync('psql', ['-X', '-At', '-v', 'ON_ERROR_STOP=1'], { input, env, encoding: 'utf8' });
+    execFileSync('psql', ['-X', '-q', '-At', '-v', 'ON_ERROR_STOP=1'], {
+      input,
+      env,
+      encoding: 'utf8',
+    });
   if (execute('SELECT current_database();').trim() !== expected)
     throw new Error('Actual fixture database mismatch.');
-  execute(`BEGIN;\n${sql}\nCOMMIT;`);
+  return execute(`BEGIN;\n${sql}\nCOMMIT;`).trim();
 }

@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     attachments::store::{execute, rows},
-    config::*,
+    devices::config::*,
     error::AppError,
     h,
     types::{Env, ShortContext},

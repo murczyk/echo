@@ -6,7 +6,7 @@ mod read {
         ListDevicesResult,
     };
     use super::validation::normalize_device_list_pagination;
-    use crate::config::DEVICE_NAME_MAX_CHARS;
+    use crate::devices::config::DEVICE_NAME_MAX_CHARS;
     use crate::entities::login;
     use crate::error::AppError;
     use crate::h;
@@ -604,7 +604,7 @@ pub(super) mod custom_fields {
 }
 
 pub(super) mod validation {
-    use crate::config::{
+    use crate::devices::config::{
         DEVICE_CUSTOM_FIELDS_MAX_COUNT, DEVICE_CUSTOM_FIELD_KEY_MAX_CHARS,
         DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS, DEVICE_EXTERNAL_URL_MAX_CHARS,
         DEVICE_LIST_DEFAULT_LIMIT, DEVICE_LIST_MAX_LIMIT,

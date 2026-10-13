@@ -29,7 +29,160 @@ pub struct DeviceAudioTranscription {
 pub struct DeviceAudioDetails {
     pub audio: DeviceAudio,
     pub transcription: DeviceAudioTranscription,
+    pub automatic_transcription: DeviceAudioAutomaticTranscriptionSnapshot,
+    pub transcription_availability: DeviceAudioTranscriptionAvailability,
     pub can_edit: bool,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Deserialize,
+    Serialize,
+)]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "Generated Elm constructors share a module namespace"
+)]
+pub enum DeviceAudioAutomaticTranscriptionState {
+    #[serde(rename = "not_requested")]
+    AudioAsrNotRequested,
+    #[serde(rename = "queued")]
+    AudioAsrQueued,
+    #[serde(rename = "preparing")]
+    AudioAsrPreparing,
+    #[serde(rename = "running")]
+    AudioAsrRunning,
+    #[serde(rename = "retry_wait")]
+    AudioAsrRetryWait,
+    #[serde(rename = "succeeded")]
+    AudioAsrSucceeded,
+    #[serde(rename = "no_speech")]
+    AudioAsrNoSpeech,
+    #[serde(rename = "failed")]
+    AudioAsrFailed,
+    #[serde(rename = "outcome_unknown")]
+    AudioAsrOutcomeUnknown,
+    #[serde(rename = "cancelled")]
+    AudioAsrCancelled,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Deserialize,
+    Serialize,
+)]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "Generated Elm constructors share a module namespace"
+)]
+pub enum DeviceAudioTranscriptionDisposition {
+    #[serde(rename = "queued")]
+    AudioAsrRetryQueued,
+    #[serde(rename = "already_active")]
+    AudioAsrRetryAlreadyActive,
+    #[serde(rename = "already_completed")]
+    AudioAsrRetryAlreadyCompleted,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceAudioAutomaticTranscriptionSnapshot {
+    pub version: Uuid,
+    pub text: Option<String>,
+    pub state: DeviceAudioAutomaticTranscriptionState,
+    pub retry_at: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceAudioTranscriptionAvailability {
+    pub device_enabled: bool,
+    pub global_enabled: bool,
+    pub can_edit_manual: bool,
+    pub can_manage_setting: bool,
+    pub can_retry: bool,
+    pub blocked_reason: Option<String>,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceAudioTranscriptionStatusReq {
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub device_id: String,
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub audio_id: String,
+    pub known_version: Option<Uuid>,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceAudioTranscriptionStatusRsp {
+    pub snapshot: Option<DeviceAudioAutomaticTranscriptionSnapshot>,
+    pub availability: DeviceAudioTranscriptionAvailability,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetryDeviceAudioTranscriptionReq {
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub device_id: String,
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub audio_id: String,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetryDeviceAudioTranscriptionRsp {
+    pub snapshot: DeviceAudioAutomaticTranscriptionSnapshot,
+    pub availability: DeviceAudioTranscriptionAvailability,
+    pub disposition: DeviceAudioTranscriptionDisposition,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceAudioAsrSettingsReq {
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub device_id: String,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetDeviceAudioAsrSettingsReq {
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub device_id: String,
+    pub enabled: bool,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceAudioAsrSettingsRsp {
+    pub device_id: String,
+    pub enabled: bool,
+    pub global_enabled: bool,
+    pub can_manage_setting: bool,
+    pub blocked_reason: Option<String>,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceAudioTranscriptionAdmissionError {
+    pub code: String,
+    pub message: String,
 }
 
 #[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
@@ -69,6 +222,8 @@ pub struct DeviceAudioPreparation {
     pub wave: DeviceAudioPreparationState,
     pub spectrogram: DeviceAudioPreparationState,
     pub retry_after_ms: u64,
+    pub transcription_admission_error:
+        Option<DeviceAudioTranscriptionAdmissionError>,
 }
 
 #[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]

@@ -7,7 +7,6 @@ import Core.Auth
 import Bindings as B
 import Config
 import Core.Callsigns.MessageHint as MessageHint
-import Core.EventHelpers
 import Core.Types exposing (ApiError)
 import Date
 import Dict exposing (Dict)
@@ -33,7 +32,6 @@ import Pages_.RerAnalysis.Msg exposing (..)
 import Pages_.RerAnalysis.Query as Query exposing (emptyQueryState)
 import Pages_.RerAnalysis.Senders as RerAnalysisSenders
 import Pages_.RerAnalysis.Utils as RerAnalysisUtils
-import Process
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -46,7 +44,6 @@ import Shared.Components.RerMessage
 import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Toast
 import String
-import Task
 import Time exposing (Posix)
 import Utils.Api.ErrorHandling
 import Utils.Api.Temp exposing (leExpectJson)
@@ -314,7 +311,6 @@ init user route _ =
             , hideNetworks = False
             , withoutModelTags = False
             , editSidebar = Nothing
-            , eventLastId = Nothing
             , palitras = NotAsked
             }
 
@@ -348,11 +344,9 @@ init user route _ =
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
         , E.map RowsMsg Shared.Components.RerMessage.init
-        , Core.EventHelpers.subscribeToInboxChanges route.path
         , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder initialQueryState)
         , E.sendCmd <| Api.aor_list GotAllAors { sortBy = Nothing }
         , palitrasEff
-        , pollEvents Nothing
         ]
     )
 
@@ -443,30 +437,6 @@ getInboxReq model =
     , onlyWithNetwork = Nothing
     , withoutModelTags = Just model.withoutModelTags
     }
-
-
-pollEventsDelayed : Float -> Maybe String -> Effect Msg
-pollEventsDelayed delayMs lastEventId =
-    E.sendCmd <| Task.perform (\_ -> EventPollTrigger lastEventId) (Process.sleep delayMs)
-
-
-pollEvents : Maybe String -> Effect Msg
-pollEvents lastEventId =
-    let
-        request : B.LongPollReq
-        request =
-            { sessionId = "current"
-            , lastEventId = lastEventId
-            , deploymentMaintenanceProtocol = Nothing
-            , knownDeploymentMaintenanceId = Nothing
-            }
-    in
-    E.sendCmd <|
-        Http.post
-            { url = "/api/event-stream/long-poll"
-            , body = Http.jsonBody (B.longPollReqEncoder request)
-            , expect = leExpectJson EventPollReceived B.longPollRspDecoder
-            }
 
 
 cmdLoadCallsignGraph : Model -> { dtFromPosix : Posix, dtToPosix : Posix } -> Effect Msg
@@ -1524,33 +1494,6 @@ update user shared route msg model =
     case msg of
         NoOp ->
             ( model, E.none )
-
-        EventPollTrigger lastId ->
-            ( model, pollEvents lastId )
-
-        EventPollReceived (Err _) ->
-            ( model, pollEventsDelayed 1000 model.eventLastId )
-
-        EventPollReceived (Ok rsp) ->
-            let
-                inboxEvents =
-                    rsp.events
-                        |> List.filter
-                            (\event ->
-                                case event.eventType of
-                                    B.EtInboxChanged _ ->
-                                        True
-
-                                    _ ->
-                                        False
-                            )
-
-                effects =
-                    [ pollEvents rsp.lastEventId
-                    , E.sendMsg <| InboxEvents inboxEvents
-                    ]
-            in
-            ( { model | eventLastId = rsp.lastEventId }, E.batch effects )
 
         ToastMsg imsg ->
             let
@@ -4894,7 +4837,7 @@ getSinceDateForGroupsActivity period dtFromPosix dtToPosix =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Sub.none
+    Ports.rer_analysis_inboxChanged InboxEvents
 
 
 rerReportFilename : Time.Zone -> Posix -> String

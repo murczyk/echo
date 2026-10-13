@@ -1,4 +1,6 @@
-use crate::config::{DEVICE_MATTERMOST_TIMEOUT_SEC, DEVICE_SETTINGS_ID};
+use crate::devices::config::{
+    DEVICE_MATTERMOST_TIMEOUT_SEC, DEVICE_SETTINGS_ID,
+};
 use crate::entities::device_settings;
 use crate::error::AppError;
 use crate::h;

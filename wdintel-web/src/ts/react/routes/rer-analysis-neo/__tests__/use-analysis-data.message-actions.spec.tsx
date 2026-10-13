@@ -15,6 +15,7 @@ import type {
 import { minimalInboxMessage } from '../../rer-duty-neo/inbox-message-mocks';
 import { emptyQueryState } from '../helpers';
 import { useAnalysisDataMessageActions } from '../use-analysis-data.message-actions';
+import { useAnalysisMessageCounts } from '../use-analysis-message-counts';
 
 const hoisted = vi.hoisted(() => ({
   bookmarkAdd: vi.fn(),
@@ -22,6 +23,7 @@ const hoisted = vi.hoisted(() => ({
   commentSave: vi.fn(),
   deleteMessage: vi.fn(),
   editAnalysisFreqUnitName: vi.fn(),
+  fetchInboxCount: vi.fn(),
   importantAdd: vi.fn(),
   importantRemove: vi.fn(),
   inboxMessageTagsAdd: vi.fn(),
@@ -36,6 +38,7 @@ vi.mock('../../../services/api/analysis', () => ({
   commentSave: hoisted.commentSave,
   deleteMessage: hoisted.deleteMessage,
   editAnalysisFreqUnitName: hoisted.editAnalysisFreqUnitName,
+  fetchInboxCount: hoisted.fetchInboxCount,
   importantAdd: hoisted.importantAdd,
   importantRemove: hoisted.importantRemove,
   inboxMessageTagsAdd: hoisted.inboxMessageTagsAdd,
@@ -124,6 +127,7 @@ function TestHarness(props: {
   onError?: ReturnType<typeof vi.fn>;
   reload?: ReturnType<typeof vi.fn>;
   refreshTagFacet?: ReturnType<typeof vi.fn>;
+  refreshMessageCounts?: () => void;
   completeLocalInboxChangeOrigin?: ReturnType<typeof vi.fn>;
   failLocalInboxChangeOrigin?: ReturnType<typeof vi.fn>;
   reconcileTagMutation?: ReturnType<typeof vi.fn>;
@@ -181,6 +185,7 @@ function TestHarness(props: {
     reconcileTagMutation,
     registerLocalInboxChangeOrigin,
     refreshTagFacet,
+    refreshMessageCounts: props.refreshMessageCounts ?? vi.fn(),
     onUnauthorized,
     reload,
     setMapOpenMessages,
@@ -210,6 +215,7 @@ describe('useAnalysisDataMessageActions', () => {
     vi.clearAllMocks();
     hoisted.importantAdd.mockResolvedValue(true);
     hoisted.importantRemove.mockResolvedValue(false);
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
     hoisted.inboxMessageTagsAdd.mockResolvedValue(undefined);
     hoisted.inboxMessageTagsRm.mockResolvedValue(undefined);
     hoisted.inboxMessageTagsModelError.mockResolvedValue(undefined);
@@ -224,6 +230,7 @@ describe('useAnalysisDataMessageActions', () => {
       container.remove();
       document.body.innerHTML = '';
     });
+    vi.useRealTimers();
   });
 
   async function renderHarness(
@@ -262,6 +269,82 @@ describe('useAnalysisDataMessageActions', () => {
     });
     return apiRef;
   }
+
+  it.each([
+    ['bookmark', {}, false],
+    ['bookmark', { orImportant: true }, false],
+    ['bookmark', { orBookmarked: true }, true],
+    ['important', {}, false],
+    ['important', { orBookmarked: true }, false],
+    ['important', { orImportant: true }, true],
+    ['tag', {}, false],
+    ['tag', { tags: [4] }, false],
+    ['tag', { tags: [3] }, true],
+    ['tag', { tags: [3], tagsExcludeMode: true }, true],
+    ['tag', { reportTagsOnlyThisUnit: true }, true],
+    ['botTag', {}, false],
+    ['botTag', { tags: [4] }, false],
+    ['botTag', { tags: [3] }, true],
+    ['botTag', { tags: [3], tagsExcludeMode: true }, true],
+    ['botTag', { reportTagsOnlyThisUnit: true }, true],
+  ] as const)(
+    '#3780 bounds count traffic after %s mutations with filters %j (recount: %s)',
+    async (action, filters, recount) => {
+      vi.useFakeTimers();
+      const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+      const queryState = {
+        ...emptyQueryState(),
+        fromDateTimeStr: '2026-04-01T00:00',
+        toDateTimeStr: '2026-04-02T00:00',
+        ...filters,
+        tags: 'tags' in filters ? [...filters.tags] : [],
+      };
+      const onError = vi.fn();
+      const onUnauthorized = vi.fn(() => false);
+      function CountHarness() {
+        const { refreshMessageCounts } = useAnalysisMessageCounts({
+          deferInitialLoad: false,
+          newestFirst: true,
+          onError,
+          onUnauthorized,
+          optionsFreqValues: [],
+          queryState,
+        });
+        return (
+          <TestHarness
+            apiRef={apiRef}
+            initialMessages={
+              action === 'botTag'
+                ? [[1, buildMessage({ inboxTags: [buildTag(3, { model: 'bot' })] })]]
+                : undefined
+            }
+            queryState={queryState}
+            refreshMessageCounts={refreshMessageCounts}
+          />
+        );
+      }
+      await act(async () => root.render(<CountHarness />));
+      await act(async () => vi.advanceTimersByTimeAsync(200));
+      expect(hoisted.fetchInboxCount).toHaveBeenCalled();
+      hoisted.fetchInboxCount.mockClear();
+
+      for (let i = 0; i < 2; i += 1) {
+        await act(async () => {
+          const actions = apiRef.current!;
+          const message = actions.messages[0]![1];
+          if (action === 'bookmark') await actions.onToggleMessageBookmark(1, message.bookmarked);
+          else if (action === 'important')
+            await actions.onToggleMessageImportant(1, message.important);
+          else if (action === 'tag') await actions.onToggleMessageTag(1, 3);
+          else await actions.onMarkBotTagWrong(1, 3);
+        });
+        await act(async () => vi.advanceTimersByTimeAsync(200));
+      }
+
+      expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(recount ? 4 : 0);
+      expect(apiRef.current!.messageActionCount).toBe(0);
+    },
+  );
 
   it('uses the authoritative aggregate importance returned by the server', async () => {
     hoisted.importantRemove.mockResolvedValueOnce(true);

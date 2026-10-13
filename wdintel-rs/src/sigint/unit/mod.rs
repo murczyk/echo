@@ -1431,7 +1431,7 @@ async fn render_created_unit_with_optional_network(
     Ok(CreateUnitWithAutoNetworkRsp { unit, network_id })
 }
 
-async fn insert_unit_with_changelog<'a, 'async_trait, C>(
+pub(crate) async fn insert_unit_with_changelog<'a, 'async_trait, C>(
     dbx: &'a C,
     login: &uuid::Uuid,
     req: &CreateUnitReq,
@@ -2628,12 +2628,13 @@ enum UnitReferenceStep {
     Labels,
     RerReportMetadata,
     InboxLinks,
+    InboxSelections,
     OrbitLinks,
     Devices,
 }
 
 impl UnitReferenceStep {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::Callsigns,
         Self::Signals,
         Self::NetworkUnits,
@@ -2642,6 +2643,7 @@ impl UnitReferenceStep {
         Self::Labels,
         Self::RerReportMetadata,
         Self::InboxLinks,
+        Self::InboxSelections,
         Self::OrbitLinks,
         Self::Devices,
     ];
@@ -2656,6 +2658,7 @@ impl UnitReferenceStep {
             Self::Labels => "Мітки",
             Self::RerReportMetadata => "Метадані звіту РЕР",
             Self::InboxLinks => "Прив’язки повідомлень",
+            Self::InboxSelections => "Вибрані підрозділи повідомлень",
             Self::OrbitLinks => "Прив’язки ORBIT",
             Self::Devices => "Пристрої",
         }
@@ -2750,6 +2753,11 @@ where
         )
         .await
         .c(h!())?,
+        UnitReferenceStep::InboxSelections => {
+            move_inbox_unit_selections(old_unit_id, new_unit_id, dbx, limit)
+                .await
+                .c(h!())?
+        }
         UnitReferenceStep::OrbitLinks => {
             move_orbit_unit_links(old_unit_id, new_unit_id, dbx, limit)
                 .await
@@ -2762,6 +2770,45 @@ where
         }
     };
     Ok(moved)
+}
+
+async fn move_inbox_unit_selections<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    db: &C,
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    let mut selections = sigint_inbox_item_unit_selection::Entity::find()
+        .filter(
+            sigint_inbox_item_unit_selection::Column::UnitId.eq(old_unit_id),
+        )
+        .order_by_asc(sigint_inbox_item_unit_selection::Column::ItemId);
+    if let Some(limit) = limit {
+        selections = selections.limit(limit);
+    }
+    let ids = selections
+        .select_only()
+        .column(sigint_inbox_item_unit_selection::Column::ItemId)
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .c(h!())?;
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let result = sigint_inbox_item_unit_selection::Entity::update_many()
+        .col_expr(
+            sigint_inbox_item_unit_selection::Column::UnitId,
+            Expr::value(new_unit_id),
+        )
+        .filter(sigint_inbox_item_unit_selection::Column::ItemId.is_in(ids))
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(result.rows_affected)
 }
 
 async fn move_unit_callsigns<C>(
@@ -3450,37 +3497,17 @@ pub async fn units_search(
     env: actix_web::web::Data<Env>,
     req: Json<UnitSearchReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer"])
         .await
         .c(h!())?;
-    let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
+    let can_view_orbit =
+        orbit::can_view_orbit_data(&env.dbx, &login).await.c(h!())?;
 
-    let search_phrase = req.search.trim();
-    let mut q = available_units_query(false);
-
-    if !search_phrase.is_empty() {
-        q = q.filter(Expr::cust_with_values(
-            "search_tsv::tsvector @@ websearch_to_tsquery('russian', $1) OR lower(\"sigint_unit\".\"name\") LIKE lower($2) ESCAPE '\\'",
-            vec![
-                search_phrase.to_string(),
-                format!("%{}%", search_phrase.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")),
-            ],
-        ));
-    }
-
-    q = q.order_by_asc(sigint_unit::Column::Name).limit(50);
-
-    // debug!(
-    //     ">find units query: {}",
-    //     q.build(DbBackend::Postgres).to_string()
-    // );
-
-    let units = q.all(&env.dbx).await.context(h!())?;
-
+    let units = find_search_units(&env.dbx, &req).await.c(h!())?;
     let mut res = vec![];
     for unit in units {
-        let mut unit = render_unit(&unit)?;
+        let mut unit = render_unit(&unit).c(h!())?;
         if !can_view_orbit {
             redact_unit_orbit_data(&mut unit);
         }
@@ -3490,6 +3517,96 @@ pub async fn units_search(
         .await
         .c(h!())?;
     Ok(Json(ListUnitsByIdRsp { units: res }))
+}
+
+pub(crate) async fn find_search_units<C>(
+    db: &C,
+    req: &UnitSearchReq,
+) -> anyhow::Result<Vec<sigint_unit::Model>>
+where
+    C: ConnectionTrait,
+{
+    let search_phrase = req.search.trim();
+    let mut q = available_units_query(req.include_inactive.unwrap_or(false));
+
+    if let Some(names) = &req.names {
+        let normalized_name = Expr::cust(
+            "lower(regexp_replace(btrim(name), '[[:space:]]+', ' ', 'g'))",
+        );
+        q = q
+            .filter(Expr::expr(normalized_name.clone()).is_in(
+                names.iter().map(|name| {
+                    crate::inbox::unit_resolution::normalize_unit_label(name)
+                }),
+            ))
+            .order_by_asc(normalized_name);
+    } else {
+        if !search_phrase.is_empty() {
+            q = q.filter(Expr::cust_with_values(
+                "search_tsv::tsvector @@ websearch_to_tsquery('russian', $1) OR lower(\"sigint_unit\".\"name\") LIKE lower($2) ESCAPE '\\'",
+                vec![
+                    search_phrase.to_string(),
+                    format!("%{}%", search_phrase.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")),
+                ],
+            ));
+        }
+        q = q.order_by_asc(sigint_unit::Column::Name);
+    }
+
+    let limit = if req.include_inactive == Some(true)
+        && (!search_phrase.is_empty() || req.names.is_some())
+    {
+        crate::config::SIGINT_UNIT_SEARCH_INACTIVE_LIMIT
+    } else {
+        crate::config::SIGINT_UNIT_SEARCH_DEFAULT_LIMIT
+    };
+    q = q.order_by_asc(sigint_unit::Column::Id).limit(limit);
+
+    // debug!(
+    //     ">find units query: {}",
+    //     q.build(DbBackend::Postgres).to_string()
+    // );
+
+    search_units_with_exact_matches(db, req, q, limit)
+        .await
+        .c(h!())
+}
+
+async fn search_units_with_exact_matches<C>(
+    db: &C,
+    req: &UnitSearchReq,
+    mut query: sea_orm::Select<sigint_unit::Entity>,
+    limit: u64,
+) -> anyhow::Result<Vec<sigint_unit::Model>>
+where
+    C: ConnectionTrait,
+{
+    let mut units = if req.include_inactive == Some(true)
+        && req.names.is_none()
+        && !req.search.trim().is_empty()
+    {
+        available_units_query(true)
+            .filter(Expr::cust_with_values(
+                "lower(regexp_replace(btrim(name), '[[:space:]]+', ' ', 'g')) = $1",
+                [crate::inbox::unit_resolution::normalize_unit_label(&req.search)],
+            ))
+            .order_by_asc(sigint_unit::Column::Id)
+            .limit(limit)
+            .all(db).await.c(h!())?
+    } else {
+        Vec::new()
+    };
+    let remaining = limit - units.len() as u64;
+    if remaining == 0 {
+        return Ok(units);
+    }
+    if !units.is_empty() {
+        query = query.filter(
+            sigint_unit::Column::Id.is_not_in(units.iter().map(|unit| unit.id)),
+        );
+    }
+    units.extend(query.limit(remaining).all(db).await.c(h!())?);
+    Ok(units)
 }
 
 #[cfg(test)]
@@ -3817,6 +3934,8 @@ mod tests {
             hide_orbit_data: Set(false),
             disable_bot_tags: Set(None),
             hide_networks: Set(None),
+            api_rate_limit_replenish_interval_ms: Set(None),
+            api_rate_limit_burst_size: Set(None),
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
@@ -5616,7 +5735,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn skips_unsupported_orbit_units_and_imports_later_units() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
             .await

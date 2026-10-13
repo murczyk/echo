@@ -6,6 +6,7 @@ mod preparation;
 mod probe;
 mod query;
 mod storage;
+pub(crate) mod transcription;
 pub(crate) mod types;
 mod upload;
 mod worker;
@@ -21,6 +22,10 @@ pub(crate) fn routes() -> impl actix_web::dev::HttpServiceFactory {
             .route(actix_web::web::post().to(list_http)),
         actix_web::web::resource("/api/device/audio/detail")
             .route(actix_web::web::post().to(detail_http)),
+        actix_web::web::resource("/api/device/audio/transcription/retry")
+            .route(actix_web::web::post().to(transcription_retry_http)),
+        actix_web::web::resource("/api/device/audio/transcription/status")
+            .route(actix_web::web::post().to(transcription_status_http)),
         actix_web::web::resource("/api/device/audio/transcription/save")
             .app_data(actix_web::web::JsonConfig::default().limit(usize::MAX))
             .route(actix_web::web::post().to(save_transcription_http)),
@@ -28,6 +33,10 @@ pub(crate) fn routes() -> impl actix_web::dev::HttpServiceFactory {
             .route(actix_web::web::post().to(set_processed_http)),
         actix_web::web::resource("/api/device/audio/playback/prepare")
             .route(actix_web::web::post().to(prepare_http)),
+        actix_web::web::resource("/api/device/audio/settings")
+            .route(actix_web::web::post().to(settings_http)),
+        actix_web::web::resource("/api/device/audio/settings/set")
+            .route(actix_web::web::post().to(set_settings_http)),
         content::routes(),
     )
 }
@@ -113,6 +122,86 @@ async fn receive_http(
         )
         .into()),
     }
+}
+
+async fn settings_http(
+    env: actix_web::web::Data<crate::types::Env>,
+    user: actix_identity::Identity,
+    request: actix_web::web::Json<types::DeviceAudioAsrSettingsReq>,
+) -> Result<HttpResponse, DeviceAudioHttpError> {
+    let command = transcription::SettingsCommand {
+        actor_id: crate::users::login_id_from_identity(&user).c(h!())?,
+        device_id: crate::devices::types::parse_uuid(&request.device_id),
+    };
+    Ok(HttpResponse::Ok().json(
+        transcription::settings(&env.device_audio, command)
+            .await
+            .c(h!())?,
+    ))
+}
+
+async fn set_settings_http(
+    env: actix_web::web::Data<crate::types::Env>,
+    user: actix_identity::Identity,
+    request: actix_web::web::Json<types::SetDeviceAudioAsrSettingsReq>,
+) -> Result<HttpResponse, DeviceAudioHttpError> {
+    let command = transcription::SetSettingsCommand {
+        scope: transcription::SettingsCommand {
+            actor_id: crate::users::login_id_from_identity(&user).c(h!())?,
+            device_id: crate::devices::types::parse_uuid(&request.device_id),
+        },
+        enabled: request.enabled,
+    };
+    Ok(HttpResponse::Ok().json(
+        transcription::set_settings(&env.device_audio, command)
+            .await
+            .c(h!())?,
+    ))
+}
+
+async fn transcription_retry_http(
+    env: actix_web::web::Data<crate::types::Env>,
+    user: actix_identity::Identity,
+    request: actix_web::web::Json<types::RetryDeviceAudioTranscriptionReq>,
+) -> Result<HttpResponse, DeviceAudioHttpError> {
+    let actor_id = crate::users::login_id_from_identity(&user).c(h!())?;
+    let command = transcription::ActorAudioCommand {
+        actor_id,
+        target: transcription::AudioTarget {
+            device_id: crate::devices::types::parse_uuid(&request.device_id),
+            audio_id: crate::devices::types::parse_uuid(&request.audio_id),
+        },
+    };
+    Ok(HttpResponse::Ok().json(
+        transcription::retry(&env.device_audio, command)
+            .await
+            .c(h!())?,
+    ))
+}
+
+async fn transcription_status_http(
+    env: actix_web::web::Data<crate::types::Env>,
+    user: actix_identity::Identity,
+    request: actix_web::web::Json<types::DeviceAudioTranscriptionStatusReq>,
+) -> Result<HttpResponse, DeviceAudioHttpError> {
+    let actor_id = crate::users::login_id_from_identity(&user).c(h!())?;
+    let command = transcription::StatusCommand {
+        audio: transcription::ActorAudioCommand {
+            actor_id,
+            target: transcription::AudioTarget {
+                device_id: crate::devices::types::parse_uuid(
+                    &request.device_id,
+                ),
+                audio_id: crate::devices::types::parse_uuid(&request.audio_id),
+            },
+        },
+        known_version: request.known_version,
+    };
+    Ok(HttpResponse::Ok().json(
+        transcription::status(&env.device_audio, command)
+            .await
+            .c(h!())?,
+    ))
 }
 
 async fn save_transcription_http(
@@ -248,6 +337,8 @@ pub(crate) struct DeviceAudioRuntime {
     probe_permits: Arc<Semaphore>,
     decrypt_permits: Arc<Semaphore>,
     playback_decrypt_permits: Arc<Semaphore>,
+    asr_materialization_permits: Arc<Semaphore>,
+    asr_wake: Arc<tokio::sync::Notify>,
     preparation: Arc<preparation::Preparation>,
     namespace_scan: Arc<tokio::sync::Mutex<Option<tokio::fs::ReadDir>>>,
     metrics: Option<crate::telemetry::Metrics>,
@@ -291,6 +382,10 @@ pub(crate) fn build_runtime(
             DEVICE_AUDIO_BACKGROUND_CONCURRENCY
                 + DEVICE_AUDIO_INTERACTIVE_CONCURRENCY,
         )),
+        asr_materialization_permits: Arc::new(Semaphore::new(
+            crate::devices::config::DEVICE_AUDIO_ASR_CONCURRENCY,
+        )),
+        asr_wake: Arc::new(tokio::sync::Notify::new()),
         preparation: Arc::new(preparation::Preparation::new()),
         namespace_scan: Arc::new(tokio::sync::Mutex::new(None)),
         metrics,

@@ -4,8 +4,9 @@ use super::query::{
     DeviceReadScope,
 };
 use super::types::*;
-use crate::config::{DEVICE_CUSTOM_FIELDS_MAX_COUNT, ROLE_ADMIN};
+use crate::config::ROLE_ADMIN;
 use crate::devices::access;
+use crate::devices::config::DEVICE_CUSTOM_FIELDS_MAX_COUNT;
 use crate::devices::tests::schema::device_active_model;
 use crate::devices::ROLE_CYBER;
 use crate::entities::{
@@ -1265,7 +1266,7 @@ mod custom_fields_tests {
 
 mod validation_tests {
     use super::super::bl::validation::*;
-    use crate::config::DEVICE_EXTERNAL_URL_MAX_CHARS;
+    use crate::devices::config::DEVICE_EXTERNAL_URL_MAX_CHARS;
     use crate::types::{AppError, BTreeMap};
 
     fn assert_form_field(err: AppError, field: &str) {
