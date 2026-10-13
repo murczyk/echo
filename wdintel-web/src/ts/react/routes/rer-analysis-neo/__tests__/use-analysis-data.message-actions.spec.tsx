@@ -181,6 +181,7 @@ function TestHarness(props: {
     reconcileTagMutation,
     registerLocalInboxChangeOrigin,
     refreshTagFacet,
+    refreshMessageCounts: vi.fn(),
     onUnauthorized,
     reload,
     setMapOpenMessages,

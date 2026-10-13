@@ -7,6 +7,8 @@ import Route.Path
 
 type alias EventState =
     { isPolling : Bool
+    , requestInFlight : Bool
+    , generation : Int
     , lastEventId : Maybe String
     , error : Maybe String
     , connectionInterrupted : Bool
