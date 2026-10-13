@@ -216,11 +216,7 @@ suite =
                     { messagesRendered = True
                     , renderedMessageIds = [ 7, 8 ]
                     }
-                    [ inboxChangedEvent 9
-                    , inboxChangedEvent 7
-                    , inboxChangedEvent 7
-                    , genericEvent
-                    ]
+                    [ 9, 7, 7 ]
                     |> Expect.equal [ 7 ]
         , test "does not refresh list messages while the map is rendered" <|
             \_ ->
@@ -228,7 +224,7 @@ suite =
                     { messagesRendered = False
                     , renderedMessageIds = [ 7 ]
                     }
-                    [ inboxChangedEvent 7 ]
+                    [ 7 ]
                     |> Expect.equal []
         , test "refresh replacement requests new marked callsigns without duplicating requested keys" <|
             \_ ->
@@ -376,24 +372,4 @@ anonymousUser =
     , goiIntegrations = []
     , lastReleaseSeen = Nothing
     , rerReportEligible = False
-    }
-
-
-inboxChangedEvent : Int -> B.EventMsg
-inboxChangedEvent messageId =
-    { id = String.fromInt messageId
-    , eventType = B.EtInboxChanged messageId
-    , createdAt = 0
-    , origin = Nothing
-    , intelligenceReport = False
-    }
-
-
-genericEvent : B.EventMsg
-genericEvent =
-    { id = "generic"
-    , eventType = B.EtGeneric
-    , createdAt = 0
-    , origin = Nothing
-    , intelligenceReport = False
     }

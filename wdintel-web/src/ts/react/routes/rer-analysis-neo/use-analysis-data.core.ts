@@ -772,17 +772,19 @@ export function useAnalysisData({
           const matchingItems =
             exactMessageIds.length === 0
               ? []
-              : await fetchMessagesByIdsMatchingFilters(exactMessageIds, inboxReq);
+              : await fetchMessagesByIdsMatchingFilters(exactMessageIds, inboxReq, { signal });
           matchingMessageItems = matchingItems;
           matchingMapMessageItems = matchingItems;
         } else {
           [matchingMessageItems, matchingMapMessageItems] = await Promise.all([
             exactFilterMessageIds.length === 0
               ? []
-              : fetchMessagesByIdsMatchingFilters(exactFilterMessageIds, inboxReq),
+              : fetchMessagesByIdsMatchingFilters(exactFilterMessageIds, inboxReq, { signal }),
             exactMapFilterMessageIds.length === 0
               ? []
-              : fetchMessagesByIdsMatchingFilters(exactMapFilterMessageIds, mapInboxReq),
+              : fetchMessagesByIdsMatchingFilters(exactMapFilterMessageIds, mapInboxReq, {
+                  signal,
+                }),
           ]);
         }
         if (isScopeStale() || retryForLatestMessageWindow()) return;
@@ -1022,6 +1024,7 @@ export function useAnalysisData({
   );
   const refreshChangedMessagesTargeted = useTargetedInboxReconciliation(
     reconcileChangedMessagesBatch,
+    reloadTriggerKey,
   );
   refreshChangedMessagesTargetedRef.current = refreshChangedMessagesTargeted;
 
@@ -1063,7 +1066,8 @@ export function useAnalysisData({
       queryState,
       completeLocalInboxChangeOrigin: localInboxChangeOrigins.completeOrigin,
       failLocalInboxChangeOrigin: localInboxChangeOrigins.failOrigin,
-      reconcileTagMutation: (messageId) => refreshChangedMessagesTargeted([messageId]),
+      reconcileTagMutation: (messageId) =>
+        refreshChangedMessagesTargeted([messageId], { immediate: true }),
       registerLocalInboxChangeOrigin: localInboxChangeOrigins.registerOrigin,
       refreshTagFacet,
       reloadRef,
@@ -1152,7 +1156,7 @@ export function useAnalysisData({
       if (event.origin == null) return false;
       const disposition = localInboxChangeOrigins.classifyOrigin(event.origin);
       if (disposition === 'reconcile') {
-        void refreshChangedMessagesTargeted([event.messageId]);
+        void refreshChangedMessagesTargeted([event.messageId], { immediate: true });
       }
       return disposition !== 'unmatched';
     },

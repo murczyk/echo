@@ -4,6 +4,10 @@ Merged investigation of `echo-skhid` and `echo-pivnich` on **2026-10-12**.
 All observation times are UTC. The measurements below retain their original
 windows; they are not a fresh production sample taken during this merge.
 
+Post-deployment measurements and the remaining Analysis polling fixes are in
+the [October 13 follow-up](../iteration3/findings.md). Iteration 2 did not
+resolve the Analysis request storm.
+
 ## Iteration 2 implementation scope
 
 Issue: [#3780](https://github.com/echoua/echo/issues/3780). Implementation is

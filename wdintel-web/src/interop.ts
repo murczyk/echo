@@ -849,6 +849,7 @@ export const onReady = ({ app, env }) => {
           intelligenceReport: boolean;
         }>,
       ) => {
+        app.ports.rer_analysis_inboxChanged?.send(events.map(({ messageId }) => messageId));
         window.dispatchEvent(
           new CustomEvent('echo-inbox-changed', {
             detail: { events },

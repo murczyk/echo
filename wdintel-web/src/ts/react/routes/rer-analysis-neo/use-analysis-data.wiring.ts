@@ -68,6 +68,7 @@ export function buildAnalysisActionsParams({
     reconcileTagMutation,
     registerLocalInboxChangeOrigin,
     refreshTagFacet,
+    refreshMessageCounts: messageList.refreshMessageCounts,
     reload: (options?: AnalysisReloadOptions) => reloadRef.current(options),
     setMapOpenMessages: mapData.setMapOpenMessages,
     setMessages: messageList.setMessages,

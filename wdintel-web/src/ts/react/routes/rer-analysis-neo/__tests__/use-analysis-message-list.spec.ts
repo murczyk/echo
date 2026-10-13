@@ -492,7 +492,7 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesTotalLoading).toBe(false);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_200);
+      await vi.advanceTimersByTimeAsync(30_200);
     });
 
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
@@ -526,7 +526,7 @@ describe('useAnalysisMessageList pagination', () => {
       h.latest.scheduleOverallMessageCountRefresh();
     });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_200);
+      await vi.advanceTimersByTimeAsync(30_200);
     });
 
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
@@ -545,7 +545,7 @@ describe('useAnalysisMessageList pagination', () => {
     await act(async () => vi.advanceTimersByTimeAsync(200));
     const signals = fetchInboxCountMock.mock.calls.map(([, options]) => options?.signal);
     act(() => h.latest.scheduleOverallMessageCountRefresh());
-    await act(async () => vi.advanceTimersByTimeAsync(8_000));
+    await act(async () => vi.advanceTimersByTimeAsync(35_000));
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
     expect(signals.every((signal) => signal?.aborted === false)).toBe(true);
     await act(async () => {
@@ -646,7 +646,7 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesTotalCount).toBe(42);
     expect(h.latest.messagesTotalLoading).toBe(false);
     fetchInboxCountMock.mockResolvedValueOnce({ quantity: 43, firstElementTs: null });
-    await act(async () => vi.advanceTimersByTimeAsync(4_999));
+    await act(async () => vi.advanceTimersByTimeAsync(29_999));
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
     await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
@@ -671,7 +671,7 @@ describe('useAnalysisMessageList pagination', () => {
 
     await act(async () => vi.advanceTimersByTimeAsync(200));
     act(() => h.latest.scheduleOverallMessageCountRefresh());
-    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
     act(() => h.latest.refreshMessageCounts());
     await act(async () => {
       await vi.advanceTimersByTimeAsync(200);
@@ -690,7 +690,7 @@ describe('useAnalysisMessageList pagination', () => {
   });
 
   // Regression: https://github.com/echoua/echo/issues/3780
-  it('keeps a quiet pending event until five seconds after a two-second count start', async () => {
+  it('keeps a quiet pending event until thirty seconds after a two-second count start', async () => {
     vi.useFakeTimers();
     const initial = deferred<{ quantity: number; firstElementTs: null }>();
     fetchInboxCountMock.mockReturnValueOnce(initial.promise);
@@ -704,7 +704,7 @@ describe('useAnalysisMessageList pagination', () => {
       await Promise.resolve();
     });
     expect(h.latest.messagesTotalCount).toBe(41);
-    await act(async () => vi.advanceTimersByTimeAsync(2_999));
+    await act(async () => vi.advanceTimersByTimeAsync(27_999));
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
     await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
@@ -722,7 +722,7 @@ describe('useAnalysisMessageList pagination', () => {
     harnesses.push(h);
     await act(async () => vi.advanceTimersByTimeAsync(200));
     act(() => h.latest.scheduleOverallMessageCountRefresh());
-    await act(async () => vi.advanceTimersByTimeAsync(8_000));
+    await act(async () => vi.advanceTimersByTimeAsync(35_000));
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
     expect(h.onError).toHaveBeenCalledOnce();
     expect(h.onError).toHaveBeenCalledWith('count failed');

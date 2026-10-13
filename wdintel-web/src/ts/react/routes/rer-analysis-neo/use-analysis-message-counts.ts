@@ -7,6 +7,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 import { buildInboxOverallCountReq, buildInboxReq } from './helpers';
 import type { AnalysisQueryState } from './types';
 import { toErrorMessage } from './use-analysis-data.shared';
+import { ANALYSIS_SYSTEM_COUNT_INTERVAL_MS } from './config';
 
 type Params = {
   deferInitialLoad: boolean;
@@ -18,7 +19,6 @@ type Params = {
 };
 
 const MESSAGE_COUNTS_DEBOUNCE_MS = 200;
-const ANALYSIS_SYSTEM_COUNT_INTERVAL_MS = 5_000;
 // Covers sequential analytics/PostgreSQL timeouts plus transport allowance, as in Duty.
 const ANALYSIS_COUNT_REQUEST_DEADLINE_MS = 65_000;
 type MessageCountRefreshMode = 'immediate' | 'deferred';
