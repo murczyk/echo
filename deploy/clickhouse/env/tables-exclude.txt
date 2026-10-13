@@ -51,6 +51,12 @@ public.battle_line_aor_geometry
 
 # PostgreSQL-only audit history.
 public.sigint_activity_decision_changelog
+public.notification_event
+public.notification_receipt
+public.notification_read_boundary
+public.notification_read_boundary_receipt
+public.notification_read_boundary_completed
+public.importance_operation
 
 
 # ORBIT unit catalog remains PostgreSQL-only.

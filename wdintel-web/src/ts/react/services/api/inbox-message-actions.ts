@@ -33,7 +33,12 @@ export async function bookmarkRemove(req: BookmarkRmReq): Promise<void> {
 }
 
 export async function importantAdd(req: ImportantAddReq): Promise<boolean> {
-  const raw = await postJson<unknown>('/api/rer/important/add', { message_id: req.messageId });
+  const raw = await postJson<unknown>('/api/rer/important/add', {
+    message_id: req.messageId,
+    group_master_key: req.groupMasterKey,
+    notify_group: req.notifyGroup,
+    operation_id: req.operationId,
+  });
   return transformSnakeToCamel<ImportantMutationRsp>(raw).important;
 }
 

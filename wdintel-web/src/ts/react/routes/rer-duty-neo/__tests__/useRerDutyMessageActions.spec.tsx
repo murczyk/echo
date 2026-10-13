@@ -50,6 +50,7 @@ const hoisted = vi.hoisted(() => ({
   clearExplicitScheduledWork: vi.fn(),
   getExplicitScrollNavigation: vi.fn(() => ({ onUnavailable: vi.fn() })),
   addPalitraHighlightBlacklistEntry: vi.fn(),
+  requestImportantMessage: vi.fn(),
 }));
 
 vi.mock('../../../services/api/inbox', () => ({
@@ -70,6 +71,11 @@ vi.mock('../../../services/api/inbox', () => ({
 
 vi.mock('../../../services/api/palitra', () => ({
   addPalitraHighlightBlacklistEntry: hoisted.addPalitraHighlightBlacklistEntry,
+}));
+
+vi.mock('../../../components/app-navbar/ImportantMessageDialog', () => ({
+  IMPORTANT_MESSAGE_UPDATED_EVENT: 'echo-important-message-updated',
+  requestImportantMessage: hoisted.requestImportantMessage,
 }));
 
 vi.mock('../../../../copy-to-clipboard', () => ({
@@ -334,6 +340,32 @@ describe('useRerDutyMessageActions', () => {
 
     expect(hoisted.importantRemove).toHaveBeenCalledWith({ messageId: 1 });
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].important).toBe(true);
+  });
+
+  it('#3610 opens the shared notification dialog for a new Duty importance mark', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({
+              items: [[1, buildMessage({ important: false, groupMasterKey: 'group-a' })]],
+            }),
+          ]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleMessageImportant('mf-0', 1, false);
+    });
+
+    expect(hoisted.requestImportantMessage).toHaveBeenCalledWith({
+      messageId: 1,
+      groupMasterKey: 'group-a',
+    });
+    expect(hoisted.importantAdd).not.toHaveBeenCalled();
   });
 
   it('uses the last message id cursor when loading newer mail from the arrow button', async () => {

@@ -22,6 +22,8 @@ import { shouldHandleAsSpaClick } from '../../utils/browser';
 import { requestNavigation } from '../../../browser/navigation-guard';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../../routes/ai-agent-chat/conversation-url';
 import { mountLogoCoin } from '../../../logo-coin';
+import { ImportantMessageDialog } from './ImportantMessageDialog';
+import { NotificationsInbox } from './NotificationsInbox';
 import {
   DEBUG_RECORDER_SLOT_ID,
   configureBrowserDebugRecorder,
@@ -642,6 +644,7 @@ export function AppNavbar({
           />
 
           <div className="app-navbar-toolbar ml-auto flex shrink-0 items-center gap-2">
+            {shared.userLoaded ? <NotificationsInbox identity={user.name} /> : null}
             {isReconnecting && (
               <Tooltip title="Відновлення з’єднання…">
                 <span
@@ -697,6 +700,7 @@ export function AppNavbar({
           </div>
         </div>
       </nav>
+      <ImportantMessageDialog />
     </header>
   );
 }

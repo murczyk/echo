@@ -2512,7 +2512,7 @@ update shared user msg model =
                                 E.sendCmd <| Api.rer_important_rm (ImportantRemoveDone id) { messageId = id }
 
                             else
-                                E.sendCmd <| Api.rer_important_add (ImportantAddDone id) { messageId = id }
+                                E.sendCmd <| Api.rer_important_add (ImportantAddDone id) { messageId = id, groupMasterKey = Nothing, notifyGroup = False, operationId = Nothing }
 
                         Nothing ->
                             E.none
