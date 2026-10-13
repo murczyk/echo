@@ -5545,6 +5545,7 @@ type alias BrowseDeviceFilesReq =
     , tagIds : Maybe (List (String))
     , tagMatch : Maybe (TagMatch)
     , untagged : Maybe (Bool)
+    , hasContent : Maybe (Bool)
     }
 
 
@@ -5560,6 +5561,7 @@ browseDeviceFilesReqEncoder struct =
         , ( "tag_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.tagIds )
         , ( "tag_match", (Maybe.withDefault Json.Encode.null << Maybe.map (tagMatchEncoder)) struct.tagMatch )
         , ( "untagged", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.untagged )
+        , ( "has_content", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.hasContent )
         ]
 
 
@@ -21224,6 +21226,7 @@ browseDeviceFilesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_match" (Json.Decode.nullable (tagMatchDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "untagged" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_content" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 browseDeviceFilesRspDecoder : Json.Decode.Decoder BrowseDeviceFilesRsp

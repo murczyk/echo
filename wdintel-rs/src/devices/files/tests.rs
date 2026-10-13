@@ -2026,6 +2026,7 @@ async fn assert_stage_eight_actor_reads(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2048,6 +2049,7 @@ async fn assert_stage_eight_actor_reads(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2126,6 +2128,7 @@ async fn assert_stage_eight_browse_composition(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2166,6 +2169,7 @@ async fn assert_stage_eight_browse_composition(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2201,6 +2205,7 @@ async fn assert_stage_eight_browse_composition(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2228,6 +2233,7 @@ async fn assert_stage_eight_browse_composition(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2255,6 +2261,7 @@ async fn assert_stage_eight_browse_composition(
             tag_ids: Vec::new(),
             tag_match: None,
             untagged: false,
+            has_content: None,
         },
     )
     .await
@@ -2460,6 +2467,7 @@ async fn assert_stage_eight_validation_contract(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2481,6 +2489,7 @@ async fn assert_stage_eight_validation_contract(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2502,6 +2511,7 @@ async fn assert_stage_eight_validation_contract(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2612,6 +2622,7 @@ async fn assert_stage_eight_live_scope_errors(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2631,6 +2642,7 @@ async fn assert_stage_eight_live_scope_errors(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2686,6 +2698,7 @@ async fn assert_stage_eight_outage_short_circuits(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2730,6 +2743,7 @@ async fn assert_stage_eight_outage_short_circuits(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await
@@ -2774,6 +2788,7 @@ async fn assert_stage_eight_outage_short_circuits(
                 tag_ids: Vec::new(),
                 tag_match: None,
                 untagged: false,
+                has_content: None,
             },
         )
         .await

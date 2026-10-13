@@ -2150,6 +2150,7 @@ export type BrowseDeviceFilesReq = {
   tagIds: Array<string> | null;
   tagMatch: TagMatch | null;
   untagged: boolean | null;
+  hasContent: boolean | null;
 };
 
 export type BrowseDeviceFilesRsp = {

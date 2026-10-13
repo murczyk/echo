@@ -121,13 +121,15 @@ pub(in crate::devices) async fn find_matching_tree_entry_ids(
     file_registry_db: &FileRegistryDb,
     device_id: Uuid,
     entry_ids: &[Uuid],
-    tag_filter: &crate::devices::analytics::types::TagFilter,
+    tag_filter: Option<&crate::devices::analytics::types::TagFilter>,
+    has_content: Option<bool>,
 ) -> Result<BTreeSet<Uuid>, FilesystemError> {
     browse::find_matching_tree_entry_ids(
         file_registry_db.connection(),
         device_id,
         entry_ids,
         tag_filter,
+        has_content,
     )
     .await
 }

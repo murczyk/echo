@@ -161,6 +161,7 @@ pub(crate) async fn browse(
             tag_ids: body.tag_ids.unwrap_or_default(),
             tag_match: body.tag_match,
             untagged: body.untagged.unwrap_or(false),
+            has_content: body.has_content,
         },
     )
     .await
