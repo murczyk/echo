@@ -16,6 +16,7 @@ import {
   buildAnalysisReq,
   buildInboxReq,
   ANALYSIS_MESSAGES_PAGE_SIZE,
+  ANALYSIS_MESSAGE_WINDOW_LIMIT,
   createInitialQueryState,
   createResetQueryState,
   adjustQueryDateRangeForDirectMessage,
@@ -54,6 +55,7 @@ import { uniquePointEtalonsForMapSearch } from '../rer-duty-neo/utils';
 import { getAnalysisSidebarTabs, type AnalysisCenterTab, type AnalysisSidebarTab } from './types';
 import { fetchAnalysisCallsignFrequencyMatches } from '../../services/api/analysis';
 import { toErrorMessage } from './use-analysis-data.shared';
+import { mergeMessageWindow } from '../shared/message-feed/windowing';
 
 function initState(
   parsedQueryState: AnalysisQueryState,
@@ -102,6 +104,20 @@ function inboxWindowMatchesMessages(
   if (inboxWindow.inbox.inboxItems.length !== messages.length) return false;
   const messageIds = new Set(messages.map(([messageId]) => messageId));
   return inboxWindow.inbox.inboxItems.every(([messageId]) => messageIds.has(messageId));
+}
+
+function boundFocusedInboxWindow(inboxWindow: InboxWindowRsp): InboxWindowRsp {
+  const inboxItems = inboxWindow.inbox.inboxItems;
+  if (inboxItems.length <= ANALYSIS_MESSAGE_WINDOW_LIMIT) return inboxWindow;
+  const bounded = mergeMessageWindow([], inboxItems, 'below', {
+    limit: ANALYSIS_MESSAGE_WINDOW_LIMIT,
+    getId: ([id]) => id,
+  });
+  return {
+    ...inboxWindow,
+    inbox: { ...inboxWindow.inbox, inboxItems: bounded.items },
+    hasMoreBefore: inboxWindow.hasMoreBefore || bounded.removedItems.length > 0,
+  };
 }
 
 type DeviceAccess =
@@ -215,6 +231,10 @@ export function useRerAnalysisNeoPage(
   } | null>(null);
   const targetMessageIdRef = useRef<number | null>(null);
   const targetMessageContextSawReloadRef = useRef(false);
+  const dataMessagesRef = useRef<Array<[number, InboxMessage]> | null>(null);
+  const targetMessageContextPreviousMessagesRef = useRef<Array<[number, InboxMessage]> | null>(
+    null,
+  );
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
   const dutySettings = useDutySettings();
@@ -367,6 +387,7 @@ export function useRerAnalysisNeoPage(
     const isContextRefresh = targetMessageLoadedRef.current;
     if (isContextRefresh) {
       targetMessageContextSawReloadRef.current = false;
+      targetMessageContextPreviousMessagesRef.current = dataMessagesRef.current;
       setTargetMessageContextLoading(true);
       setTargetMessageContextResponsePending(true);
     } else {
@@ -418,7 +439,7 @@ export function useRerAnalysisNeoPage(
             setDirectMessageError(null);
             targetMessageLoadedRef.current = true;
             targetMessageIdRef.current = window.targetMessageId;
-            setTargetMessageWindow(window);
+            setTargetMessageWindow(boundFocusedInboxWindow(window));
             setTargetMessageContextResponsePending(false);
             return { targetMessageId: window.targetMessageId, window };
           } catch (error) {
@@ -570,6 +591,7 @@ export function useRerAnalysisNeoPage(
     queryState: effectiveQueryState,
     hideNetworks,
   });
+  dataMessagesRef.current = data.messages;
   const reload = useCallback(
     (options: Parameters<typeof data.reload>[0] = {}) => {
       const requestId = messageViewportPreservationRequestRef.current + 1;
@@ -582,14 +604,17 @@ export function useRerAnalysisNeoPage(
         setMessageViewportPreserving(true);
         setMessageViewportPreservationKey((current) => current + 1);
       }
-      void Promise.resolve(data.reload(options)).finally(() => {
+      const reloadOptions = preserveMessagePage
+        ? { ...options, messagePageIndex: visibleMessagesPageIndex }
+        : options;
+      void Promise.resolve(data.reload(reloadOptions)).finally(() => {
         if (messageViewportPreservationRequestRef.current === requestId) {
           if (preserveMessagePage) setMessageViewportPreserving(false);
           setMessageEdgeLoadRetryKey((current) => current + 1);
         }
       });
     },
-    [data.reload],
+    [data.reload, visibleMessagesPageIndex],
   );
   const isPageStartLoaded = useCallback(
     (targetPageIndex: number) => {
@@ -1185,6 +1210,16 @@ export function useRerAnalysisNeoPage(
     if (!targetMessageContextLoading || targetMessageContextResponsePending) return;
 
     if (targetMessageContextActive) {
+      if (data.messagesLoading) {
+        targetMessageContextSawReloadRef.current = true;
+        return;
+      }
+      if (
+        !targetMessageContextSawReloadRef.current &&
+        data.messages === targetMessageContextPreviousMessagesRef.current
+      ) {
+        return;
+      }
       if (
         targetMessageWindow == null ||
         !inboxWindowMatchesMessages(targetMessageWindow, data.messages)

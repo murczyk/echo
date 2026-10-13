@@ -1298,6 +1298,56 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.directMessageNavigation?.focusActive).toBe(false);
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('finishes a linked-context refresh when the 41-message response is displayed in a 40-message window', async () => {
+    const baseWindow = buildDirectLinkWindow();
+    const targetMessage = baseWindow.inbox.inboxItems[0][1];
+    const inboxItems = Array.from(
+      { length: 41 },
+      (_, index) =>
+        [index + 30, { ...targetMessage, text: `message-${index + 30}` }] as [number, InboxMessage],
+    );
+    const focusedWindow: InboxWindowRsp = {
+      ...baseWindow,
+      messagesBefore: 20,
+      messagesAfter: 20,
+      inbox: { ...baseWindow.inbox, inboxItems },
+    };
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(focusedWindow);
+
+    renderHook();
+    await flushEffects();
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: inboxItems.slice(1),
+    };
+    act(() => latest?.setNewestFirst(false));
+    await flushEffects();
+    expect(latest?.directMessageLoading).toBe(false);
+
+    const refreshedItems = inboxItems.map(
+      ([id, message]) => [id, { ...message, text: `refreshed-${id}` }] as [number, InboxMessage],
+    );
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce({
+      ...focusedWindow,
+      inbox: { ...focusedWindow.inbox, inboxItems: refreshedItems },
+    });
+    act(() => latest?.updateQueryState({ groupsSelected: ['group-1'] }));
+    await flushEffects();
+    expect(latest?.directMessageLoading).toBe(true);
+
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: refreshedItems.slice(1),
+    };
+    act(() => latest?.setNewestFirst(true));
+    await flushEffects();
+
+    expect(latest?.directMessageLoading).toBe(false);
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+  });
+
   // https://github.com/echoua/echo/issues/3455
   it('uses saved creation-time sorting for direct-link context', async () => {
     const targetMessage = { text: 'target', date: null, timestamp: null } as InboxMessage;
@@ -1411,6 +1461,34 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.visibleMessagesPageIndex).toBe(2);
     expect(latest?.messagePageNavigationTarget).toBeNull();
     expect(new URL(window.location.href).searchParams.get('messagesPage')).toBe('3');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('refreshes the page made visible by scrolling rather than the last loaded edge', async () => {
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: Array.from(
+        { length: 40 },
+        (_, index) => [40 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+      ),
+      pageIndex: 1,
+      messagesTotalCount: 40,
+    };
+    renderHook();
+    await flushEffects();
+    act(() => latest?.setVisibleMessagesPageIndex(1));
+    act(() => latest?.setVisibleMessagesPageIndex(0));
+    expect(latest?.visibleMessagesPageIndex).toBe(0);
+
+    await act(async () => {
+      latest?.reload({ preserveMessagePage: true });
+      await Promise.resolve();
+    });
+
+    expect(currentAnalysisData.reload).toHaveBeenCalledWith({
+      preserveMessagePage: true,
+      messagePageIndex: 0,
+    });
   });
 
   it('requests an evicted previous bounded page when its button is clicked', async () => {

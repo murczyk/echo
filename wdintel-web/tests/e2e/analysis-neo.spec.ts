@@ -933,7 +933,7 @@ test.describe('@smoke @regression', () => {
     });
     await expect(messageList.locator('[data-message-id]')).toHaveCount(40);
 
-    const anchor = page.locator('[data-message-id="122"]');
+    const anchor = page.locator('[data-message-id="112"]');
     await expect(anchor).toBeVisible();
     await anchor.evaluate((element) => {
       const container = element.closest('ul')?.parentElement;
@@ -951,6 +951,8 @@ test.describe('@smoke @regression', () => {
           container.clientTop,
       );
     });
+
+    await expect.poll(() => new URL(page.url()).searchParams.get('messagesPage')).toBe('2');
 
     await page.getByRole('button', { name: 'Оновити' }).click();
 

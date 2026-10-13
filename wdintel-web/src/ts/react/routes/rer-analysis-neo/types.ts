@@ -162,6 +162,7 @@ export type AnalysisMessagePageCursor = {
 
 export type AnalysisReloadOptions = {
   preserveMessagePage?: boolean;
+  messagePageIndex?: number;
   refreshMessageCounts?: boolean;
 };
 export type AnalysisSidebarTab =

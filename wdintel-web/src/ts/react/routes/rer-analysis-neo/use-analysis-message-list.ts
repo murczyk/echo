@@ -358,16 +358,16 @@ export function useAnalysisMessageList({
   }, [enrichCallsignsForMessages, messages]);
 
   const getCurrentMessagePageCursor = useCallback(
-    () => pageCursorsRef.current[pageIndex] ?? FIRST_PAGE_CURSOR,
+    (targetPageIndex = pageIndex) => pageCursorsRef.current[targetPageIndex] ?? FIRST_PAGE_CURSOR,
     [pageIndex],
   );
 
   const replaceCurrentMessagePage = useCallback(
-    (pageMessages: Array<[number, InboxMessage]>) => {
+    (pageMessages: Array<[number, InboxMessage]>, targetPageIndex = pageIndex) => {
       setMessageState((current) => {
         const pageStart = Math.max(
           0,
-          pageIndex * ANALYSIS_MESSAGES_PAGE_SIZE - firstLoadedMessageIndex,
+          targetPageIndex * ANALYSIS_MESSAGES_PAGE_SIZE - firstLoadedMessageIndex,
         );
         const refreshedIds = new Set(pageMessages.map(([messageId]) => messageId));
         const retainedBefore = current
@@ -577,7 +577,9 @@ export function useAnalysisMessageList({
       keepCurrentOnEmpty: true,
       targetPageIndex: previousPageIndex,
     });
-    return fetched !== null && fetched.length > 0;
+    if (fetched === null || fetched.length === 0) return false;
+    pageCursorsRef.current[previousPageIndex] = previousCursor;
+    return true;
   }, [fetchPage, firstLoadedMessageIndex, messages, newestFirst]);
 
   const loadFocusedMessages = useCallback(

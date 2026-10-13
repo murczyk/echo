@@ -258,7 +258,7 @@ describe('loadFilterSectionData', () => {
 });
 
 describe('reloadAnalysisData', () => {
-  it('#3598 skips network statistics while hidden and clears messages loading without waiting for freqs', async () => {
+  async function runHiddenNetworkReload(preserveMessageTailExhaustion: boolean) {
     const inboxDeferred = deferred<ReloadInboxRsp>();
     const freqsDeferred = deferred<{
       freqs: Array<{ freq: string; count: number; isNew: boolean }>;
@@ -303,6 +303,7 @@ describe('reloadAnalysisData', () => {
         reverseResults: true,
         resultLimit: 2,
       },
+      preserveMessageTailExhaustion,
       newestFirst: true,
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
@@ -377,7 +378,11 @@ describe('reloadAnalysisData', () => {
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(
       buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null),
     );
-    expect(setNoMoreToLoad).toHaveBeenCalledWith(true);
+    if (preserveMessageTailExhaustion) {
+      expect(setNoMoreToLoad).not.toHaveBeenCalled();
+    } else {
+      expect(setNoMoreToLoad).toHaveBeenCalledWith(true);
+    }
 
     freqsDeferred.resolve({ freqs: [] });
     await reloadPromise;
@@ -385,6 +390,14 @@ describe('reloadAnalysisData', () => {
 
     expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(9);
     expect(invalidateCorrelatedFreqsCache).toHaveBeenCalledTimes(1);
+  }
+
+  it('#3598 skips network statistics while hidden and clears messages loading without waiting for freqs', async () => {
+    await runHiddenNetworkReload(false);
+  });
+
+  it('preserves tail exhaustion when refreshing a retained page', async () => {
+    await runHiddenNetworkReload(true);
   });
   it('#3001 applies fast counters independently and drops a late counter after cancellation', async () => {
     const groupsCount = deferred<number>();

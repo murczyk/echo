@@ -68,8 +68,9 @@ type Params = {
   ) => Promise<void>;
   invalidateMessagePaging: () => void;
   invalidateMessagePageRequests: () => void;
-  getCurrentMessagePageCursor: () => import('./types').AnalysisMessagePageCursor;
-  replaceCurrentMessagePage: (messages: Array<[number, InboxMessage]>) => void;
+  currentMessagePageIndex: number;
+  getCurrentMessagePageCursor: (pageIndex?: number) => import('./types').AnalysisMessagePageCursor;
+  replaceCurrentMessagePage: (messages: Array<[number, InboxMessage]>, pageIndex?: number) => void;
   refreshMessageCounts: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<Partial<import('../../../../Bindings').CountStatsRsp> | null>;
@@ -122,6 +123,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     hideNetworks,
     focusedWindow = null,
     focusedMessageActive = false,
+    currentMessagePageIndex,
     getLoadedFilterSections,
     getCurrentMessagePageCursor,
     getReloadFilterSections,
@@ -201,10 +203,16 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       reloadAbortControllerRef.current = abortController;
       const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
       const preserveMessagePage = options.preserveMessagePage === true;
-      const messagePageCursor = preserveMessagePage ? getCurrentMessagePageCursor() : undefined;
+      const messagePageIndex = options.messagePageIndex;
+      const messagePageCursor = preserveMessagePage
+        ? getCurrentMessagePageCursor(messagePageIndex)
+        : undefined;
       const setReloadedMessages =
         preserveMessagePage && !focusedMessageActive
-          ? replaceCurrentMessagePage
+          ? messagePageIndex === undefined
+            ? replaceCurrentMessagePage
+            : (messages: Array<[number, InboxMessage]>) =>
+                replaceCurrentMessagePage(messages, messagePageIndex)
           : (messages: Array<[number, InboxMessage]>) => setMessages(messages);
 
       if (shouldRefreshMessageCounts) refreshMessageCounts();
@@ -222,6 +230,11 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
             : invalidateMessagePaging,
           includeDefaultFilterSections: leftPanelOpen,
           messagePageCursor,
+          preserveMessageTailExhaustion:
+            preserveMessagePage &&
+            !focusedMessageActive &&
+            messagePageIndex !== undefined &&
+            messagePageIndex !== currentMessagePageIndex,
           newestFirst,
           onError,
           onUnauthorized,
@@ -303,6 +316,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       leftPanelOpen,
       loadInitialFilterSections,
       loadMessageComments,
+      currentMessagePageIndex,
       newestFirst,
       newCallsignsLoadedKeyRef,
       newCallsignsPendingKeyRef,

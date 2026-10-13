@@ -376,6 +376,47 @@ test.describe('Message feed unification @regression', () => {
     expect(requests).toHaveLength(requestCount);
   });
 
+  test('Analysis refreshes the retained page selected by scrolling back', async ({ page }) => {
+    await installPages(page);
+    await page.goto('/rer-analysis-neo');
+    const scroller = page.locator('[data-analysis-message-scroller]');
+    await expect(scroller.locator('[data-message-id]')).toHaveCount(20);
+    await scroller.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await expect(scroller.locator('[data-message-id]')).toHaveCount(40);
+    await scroller.locator('[data-message-id="135"]').evaluate((element) => {
+      const container = element.closest('ul')!.parentElement!;
+      container.scrollTop +=
+        element.getBoundingClientRect().top - container.getBoundingClientRect().top;
+      container.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await expect.poll(() => new URL(page.url()).searchParams.get('messagesPage')).toBe('2');
+
+    let refreshRequests = 0;
+    await page.route('**/api/rer-importer/get-inbox', (route) => {
+      const request = route.request().postDataJSON() as FourPageRequest;
+      if (request.before_id_noninclusive != null) return route.fallback();
+      refreshRequests += 1;
+      const response = messagePage(160);
+      response.inbox_items[0][1].text = 'Refreshed visible first page';
+      return route.fulfill({ json: response });
+    });
+    await scroller.evaluate((element) => {
+      element.scrollTop = 0;
+      element.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await expect.poll(() => new URL(page.url()).searchParams.get('messagesPage')).toBeNull();
+    await page.getByRole('button', { name: 'Оновити' }).click();
+
+    await expect(scroller.locator('[data-message-id="160"]')).toContainText(
+      'Refreshed visible first page',
+    );
+    await expect(scroller.locator('[data-message-id="140"]')).toContainText('Feed message 140');
+    expect(refreshRequests).toBe(1);
+  });
+
   test('Analysis keeps a focused target centered through viewport resizing', async ({ page }) => {
     await installPages(page);
     await page.goto('/rer-analysis-neo?m=feed-unification-150');

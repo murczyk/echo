@@ -843,6 +843,7 @@ type ReloadParams = {
   setNewCallsignsLoadedKey: (key: string | null) => void;
   shouldLoadNewCallsigns: boolean;
   setNoMoreToLoad: Setter<boolean>;
+  preserveMessageTailExhaustion?: boolean;
   setOptions: Setter<AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, CallsignInfoRes>>;
@@ -893,7 +894,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   params.setMessagesLoading(true);
   params.setFiltersLoading(true);
   params.setMapLoading(shouldLoadMap);
-  params.setNoMoreToLoad(false);
+  if (!params.preserveMessageTailExhaustion) params.setNoMoreToLoad(false);
 
   try {
     const loadCriticalData = async (
@@ -983,7 +984,9 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         ),
       );
       params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(inboxRsp.callsigns, null));
-      params.setNoMoreToLoad(isAnalysisInboxPageExhausted(displayedMessages, inboxRsp.pageLimit));
+      if (!params.preserveMessageTailExhaustion) {
+        params.setNoMoreToLoad(isAnalysisInboxPageExhausted(displayedMessages, inboxRsp.pageLimit));
+      }
       params.setHasLoadedInitialMessages(true);
       params.setMessagesLoading(false);
       void params.loadMessageComments?.(displayedMessages, true);
@@ -1063,12 +1066,14 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             params.setSummaryCallsignsInfo(
               buildSummaryCallsignsInfo(rebuiltMessagePageRsp.callsigns, null),
             );
-            params.setNoMoreToLoad(
-              isAnalysisInboxPageExhausted(
-                displayedRebuiltMessages,
-                rebuiltMessagePageRsp.pageLimit,
-              ),
-            );
+            if (!params.preserveMessageTailExhaustion) {
+              params.setNoMoreToLoad(
+                isAnalysisInboxPageExhausted(
+                  displayedRebuiltMessages,
+                  rebuiltMessagePageRsp.pageLimit,
+                ),
+              );
+            }
             resolvedAnalysisReq = rebuiltAnalysisReq;
             resolvedInboxReq = rebuiltInboxReq;
             resolvedInboxRsp = rebuiltMessagePageRsp;

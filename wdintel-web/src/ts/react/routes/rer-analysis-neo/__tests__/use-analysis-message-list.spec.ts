@@ -1300,6 +1300,32 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messages).toEqual([...firstPage, ...refreshedPage]);
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('refreshes the retained page selected by scrolling without replacing the last edge-loaded page', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    const firstPage = pageRange(40, 21);
+    const secondPage = pageRange(20, 1);
+    act(() => h.latest.setMessages(firstPage));
+    fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(secondPage));
+    await act(async () => {
+      await h.latest.loadMoreMessages();
+    });
+    expect(h.latest.pageIndex).toBe(1);
+
+    const refreshedFirstPage = firstPage.map(
+      ([id, message]) => [id, { ...message, text: `refreshed-${id}` }] as [number, InboxMessage],
+    );
+    expect(h.latest.getCurrentMessagePageCursor(0)).toEqual({
+      beforeIdNoninclusive: null,
+      sinceIdNoninclusive: null,
+    });
+    act(() => h.latest.replaceCurrentMessagePage(refreshedFirstPage, 0));
+
+    expect(h.latest.messages).toEqual([...refreshedFirstPage, ...secondPage]);
+    expect(h.latest.pageIndex).toBe(1);
+  });
+
   it('updates messages and pageIndex together before message hydration finishes', async () => {
     const hydration = deferred<void>();
     const h = renderHook(
@@ -1606,6 +1632,31 @@ describe('useAnalysisMessageList pagination', () => {
     expect(fetchInboxMessagesMock.mock.calls.at(-1)?.[0]).toMatchObject({
       sinceIdNoninclusive: 2,
       newestFirst: false,
+    });
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('remembers the cursor of a page prepended by scrolling for its manual refresh', async () => {
+    vi.useFakeTimers();
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(pageRange(1, 20)));
+    await act(async () => {
+      await h.latest.loadLastPage();
+    });
+    fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(pageRange(3, 22)));
+    await act(async () => {
+      await h.latest.loadPreviousMessages();
+    });
+
+    expect(h.latest.getCurrentMessagePageCursor(1)).toEqual({
+      beforeIdNoninclusive: null,
+      sinceIdNoninclusive: 2,
+      requestNewestFirst: false,
+      reverseResults: true,
     });
   });
 

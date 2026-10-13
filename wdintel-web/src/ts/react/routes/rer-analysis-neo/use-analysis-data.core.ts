@@ -1111,6 +1111,7 @@ export function useAnalysisData({
       loadMessageComments: messageList.loadMessageComments,
       invalidateMessagePaging: messageList.invalidateMessagePaging,
       invalidateMessagePageRequests: messageList.invalidateMessagePageRequests,
+      currentMessagePageIndex: messageList.pageIndex,
       getCurrentMessagePageCursor: messageList.getCurrentMessagePageCursor,
       replaceCurrentMessagePage: messageList.replaceCurrentMessagePage,
       refreshMessageCounts: messageList.refreshMessageCounts,
