@@ -3,7 +3,6 @@ import { Box, TextField, Autocomplete } from '@mui/material';
 import { useFormContext, Controller } from 'react-hook-form';
 import { FormSectionWrapper } from './FormSectionWrapper';
 import { type MessageFormData } from '../manage-message-drawer.schema';
-import { getUnitsByIds } from '../../../../services/api/units';
 import type { NetworkSearchResult } from '../../../../services/api/direct-submit';
 import { ParserFieldFeedback } from '../MessageParserFeedback';
 
@@ -21,8 +20,6 @@ type Props = {
   freqOptions: string[];
   freqLoading: boolean;
   setFreqInput: (val: string) => void;
-  unitLocked: boolean;
-  setUnitLocked: (val: boolean) => void;
 };
 
 export function NetworkSection({
@@ -39,11 +36,7 @@ export function NetworkSection({
   freqOptions,
   freqLoading,
   setFreqInput,
-  unitLocked,
-  setUnitLocked,
 }: Props) {
-  const selectedNetworkRef = React.useRef(selectedNetwork);
-  selectedNetworkRef.current = selectedNetwork;
   const {
     control,
     trigger,
@@ -170,41 +163,18 @@ export function NetworkSection({
                       setNetworkNameInput(newValue);
                       field.onChange(newValue);
                       setSelectedNetwork(null);
-                      setUnitLocked(false);
                       if (radioFeaturesAllowed && newValue) {
                         setValue('network_signal_name', 'DMR', { shouldValidate: true });
                       }
                     }
                   }}
-                  onChange={async (_, newValue) => {
+                  onChange={(_, newValue) => {
                     const network = typeof newValue === 'string' ? null : newValue;
                     const name = network ? network.name : newValue || '';
                     field.onChange(name);
-                    selectedNetworkRef.current = network;
                     setSelectedNetwork(network);
                     if (radioFeaturesAllowed && name) {
                       setValue('network_signal_name', 'DMR', { shouldValidate: true });
-                    }
-
-                    if (network && network.unit_ids && network.unit_ids.length > 0) {
-                      // Autofill and lock unit(s) from the selected network
-                      try {
-                        const units = await getUnitsByIds(network.unit_ids);
-                        if (selectedNetworkRef.current?.id !== network.id) return;
-                        if (units.length > 0) {
-                          setValue('unit', units.map((u) => u.name).join(', '), {
-                            shouldValidate: true,
-                          });
-                          setUnitLocked(true);
-                        } else {
-                          setUnitLocked(false);
-                        }
-                      } catch (e) {
-                        console.error('Failed to fetch units for network', e);
-                        if (selectedNetworkRef.current?.id === network.id) setUnitLocked(false);
-                      }
-                    } else {
-                      setUnitLocked(false);
                     }
                   }}
                   renderInput={(params) => (
