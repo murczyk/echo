@@ -258,10 +258,11 @@ async fn create_notification_event(
         .filter(signal_group::Column::MasterKey.eq(group_master_key))
         .select_only()
         .column(signal_group::Column::Name)
-        .into_tuple::<String>()
+        .into_tuple::<Option<String>>()
         .one(txn)
         .await
-        .context(h!())?;
+        .context(h!())?
+        .flatten();
     let message_uuid = signal_message::Entity::find_by_id(message_id)
         .select_only()
         .column(signal_message::Column::IdUuid)
@@ -847,6 +848,163 @@ mod tests {
                 .await
                 .unwrap(),
             2
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn echo_3610_allows_null_group_name_notification_snapshots() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let actor = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        signal_group::Entity::update_many()
+            .col_expr(signal_group::Column::Name, Expr::value(None::<String>))
+            .filter(signal_group::Column::MasterKey.eq(&group.master_key))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let recipient = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                organism_id: Set(actor.organism_id),
+                sigint_zone_id: Set(actor.sigint_zone_id),
+                roles: Set(serde_json::json!(["Rer"])),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = mk_sigint_inbox_item(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        env.dbx
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "insert into signal_message_group (signal_message_id, group_master_key) values ($1, $2)",
+                vec![inbox_item.id.into(), group.master_key.clone().into()],
+            ))
+            .await
+            .unwrap();
+        let operation_id = Uuid::now_v7();
+
+        assert!(set_importance(
+            &env,
+            actor.id,
+            inbox_item.id,
+            true,
+            Some(&group.master_key),
+            Some(operation_id),
+        )
+        .await
+        .unwrap());
+
+        let important = sigint_important::Entity::find()
+            .filter(sigint_important::Column::LoginId.eq(Some(actor.id)))
+            .filter(sigint_important::Column::SignalMessageId.eq(inbox_item.id))
+            .filter(sigint_important::Column::Deleted.eq(false))
+            .one(&env.dbx)
+            .await
+            .unwrap();
+        assert!(important.is_some());
+        let event = notification_event::Entity::find()
+            .filter(notification_event::Column::OperationId.eq(operation_id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.group_name_snapshot, None);
+        let session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::from(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(session_store, Key::generate()))
+                .route("/test/login/{login_id}", web::post().to(login))
+                .service(crate::notifications::notification_list),
+        )
+        .await;
+        let login_response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/test/login/{}", recipient.id))
+                .to_request(),
+        )
+        .await;
+        let session_cookie = login_response
+            .response()
+            .cookies()
+            .next()
+            .unwrap()
+            .into_owned();
+        let list_response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/notifications/list")
+                .cookie(session_cookie)
+                .set_json(crate::notifications::NotificationListReq {
+                    cursor: None,
+                    boundary_id: None,
+                    panel_id: Uuid::now_v7(),
+                    known_receipt_ids: vec![],
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(list_response.status(), StatusCode::OK);
+        let list: crate::notifications::NotificationListRsp =
+            test::read_body_json(list_response).await;
+        let item = list
+            .items
+            .iter()
+            .find(|item| item.event_id == event.id)
+            .unwrap();
+        assert_eq!(item.group_name, group.master_key);
+        let receipt_count = notification_receipt::Entity::find()
+            .filter(notification_receipt::Column::EventId.eq(event.id))
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert!(notification_receipt::Entity::find()
+            .filter(notification_receipt::Column::EventId.eq(event.id))
+            .filter(
+                notification_receipt::Column::RecipientLoginId.eq(recipient.id)
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+
+        assert!(set_importance(
+            &env,
+            actor.id,
+            inbox_item.id,
+            true,
+            Some(&group.master_key),
+            Some(operation_id),
+        )
+        .await
+        .unwrap());
+        assert_eq!(
+            notification_event::Entity::find()
+                .filter(
+                    notification_event::Column::OperationId.eq(operation_id)
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            notification_receipt::Entity::find()
+                .filter(notification_receipt::Column::EventId.eq(event.id))
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            receipt_count
         );
     }
 
