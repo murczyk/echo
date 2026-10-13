@@ -169,6 +169,43 @@ describe('FeedColumnContent', () => {
     expect(container.querySelector('[data-duty-message-id="1"]')).not.toBeNull();
   });
 
+  it('copies a Duty message link to the Duty route', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const onMessageCopy = vi.fn();
+    const messageUuid = '019a4aa8-0000-7000-8000-000000000065';
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          column={{
+            ...column,
+            feed: {
+              ...column.feed,
+              items: [[1, minimalInboxMessage({ messageUuid, text: 'Linked message' })]],
+            },
+            actions: { ...column.actions, onMessageCopy },
+          }}
+        />,
+      ),
+    );
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[title="Копіювати…"]')?.click(),
+    );
+    const copyLinkItem = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent?.includes('Копіювати посилання на повідомлення'));
+    expect(copyLinkItem).toBeDefined();
+    await act(async () => copyLinkItem?.click());
+
+    expect(onMessageCopy).toHaveBeenCalledWith(
+      `${window.location.origin}/rer-duty-neo?m=${messageUuid}`,
+      'link-1',
+    );
+  });
+
   it('keeps newest navigation visible at a chunk boundary until the tail is confirmed', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -192,6 +229,36 @@ describe('FeedColumnContent', () => {
     expect(arrow).not.toBeNull();
     await act(async () => arrow?.click());
     expect(onArrowClick).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the lower skeleton until a buffered historical tail is rendered', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const loaded = {
+      ...column,
+      feed: {
+        ...column.feed,
+        items: [[1, minimalInboxMessage({ createdAtOrder: 100 })]] as MessageFeedState['items'],
+        historicalReadThrough: { id: 2, timestamp: 200 },
+      },
+    };
+    await act(async () => root.render(<FeedColumnContent column={loaded} />));
+    expect(container.querySelector('[data-message-feed-skeleton="below"]')).not.toBeNull();
+
+    const buffered = {
+      ...loaded,
+      view: { ...loaded.view, loadingNewer: true },
+      feed: {
+        ...loaded.feed,
+        pendingNewerItems: [
+          [2, minimalInboxMessage({ createdAtOrder: 200 })],
+        ] as MessageFeedState['items'],
+      },
+    };
+    await act(async () => root.render(<FeedColumnContent column={buffered} />));
+    expect(container.querySelector('[data-message-feed-skeleton="below"]')).not.toBeNull();
   });
 
   it('keeps newest navigation visible during a pending newer load even with a stale exhausted status', async () => {

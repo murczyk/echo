@@ -16,6 +16,7 @@ import type {
 import { minimalInboxMessage } from '../inbox-message-mocks';
 import { buildInboxReq, emptyFilter, type MessageFeedState } from '../utils';
 import { useRerDutyMessageActions } from '../useRerDutyMessageActions';
+import { PowerSnackbarProvider } from '../../../components/PowerSnackbar';
 
 const hoisted = vi.hoisted(() => ({
   deleteMessage: vi.fn(),
@@ -310,6 +311,25 @@ describe('useRerDutyMessageActions', () => {
       document.body.innerHTML = '';
     });
     vi.useRealTimers();
+  });
+
+  it('shows the shared success snackbar after copying a message link', async () => {
+    hoisted.copyTextToClipboard.mockResolvedValueOnce(undefined);
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <PowerSnackbarProvider>
+          <TestHarness apiRef={apiRef} />
+        </PowerSnackbarProvider>,
+      );
+    });
+
+    await act(async () => {
+      apiRef.current?.handleMessageCopy('https://example.test/rer-duty-neo?m=target', 'link-7');
+      await flushMicrotasks();
+    });
+
+    expect(document.body.textContent).toContain('Посилання на повідомлення скопійовано.');
   });
 
   it('uses the authoritative aggregate importance returned by the server', async () => {

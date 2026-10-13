@@ -10,6 +10,7 @@ import {
   emptyFilter,
   DUTY_FEED_UNREAD_PREFETCH_MIN,
   feedHasUnloadedEvictedNewerTail,
+  feedHasUnloadedHistoricalNewer,
   feedLoadedUnreadCount,
   feedPendingNewerUnreadCount,
   feedNewerSinceId,
@@ -434,9 +435,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             ([id, timestamp]) => !readThroughTarget(id, timestamp),
           ).length +
           (feed.pendingNewerItems ?? []).filter(([id]) => !feed.readIds.has(id)).length;
+        const readCursor =
+          feed.historicalReadThrough != null &&
+          compareMessageTuple(target, feed.historicalReadThrough) < 0
+            ? feed.historicalReadThrough
+            : target;
         advanceFeedReadCursor(
           feedId,
-          target,
+          readCursor,
           remainingUnreadCount,
           buildFeedCountSignature(feed, freqs),
         );
@@ -983,15 +989,16 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
           if (entry.quantity <= 0) {
             invalidateTailPreview(feedId);
+            const hasUnloadedHistoricalNewer = feedHasUnloadedHistoricalNewer(currentFeed);
             setTailAvailability(
               feedId,
-              hasUnloadedEvictedNewerTail
+              hasUnloadedEvictedNewerTail || hasUnloadedHistoricalNewer
                 ? 'available'
                 : currentFeed.items.length > 0
                   ? 'exhausted'
                   : 'unknown',
             );
-            if (hasUnloadedEvictedNewerTail) {
+            if (hasUnloadedEvictedNewerTail || hasUnloadedHistoricalNewer) {
               delete newestExhaustedCursorByFeedIdRef.current[feedId];
             } else if (loadedTailId != null) {
               newestExhaustedCursorByFeedIdRef.current[feedId] = loadedTailId;

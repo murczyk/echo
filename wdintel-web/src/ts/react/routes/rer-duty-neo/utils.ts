@@ -954,6 +954,8 @@ export type MessageFeedState = {
   /** Count of retained unread messages without an individual identity. */
   unresolvedUnreadCount?: number;
   unreadCount: number;
+  /** Newest message already present when a direct link opened an older window. */
+  historicalReadThrough?: MessageCursor | null;
   /**
    * Newer pages held off the DOM while not following (Elm `notRenderedMessagesYet`).
    * Flushed into `items` on follow / arrow / reach-bottom.
@@ -1018,6 +1020,24 @@ export function feedHasUnloadedEvictedNewerTail(feed: MessageFeedState): boolean
   const evictedNewerTailId = feed.evictedNewerTailId ?? null;
   if (evictedNewerTailId === null) return false;
   return ![...feed.items, ...feedPendingNewerItems(feed)].some(([id]) => id === evictedNewerTailId);
+}
+
+export function feedHasUnloadedHistoricalNewer(feed: MessageFeedState): boolean {
+  const tail = feed.pendingNewerItems?.at(-1) ?? feed.items.at(-1);
+  return (
+    feed.historicalReadThrough != null &&
+    tail != null &&
+    compareMessageTuple(messageOrderCursor(tail[0], tail[1]), feed.historicalReadThrough) < 0
+  );
+}
+
+export function feedHasUnrenderedHistoricalNewer(feed: MessageFeedState): boolean {
+  const tail = feed.items.at(-1);
+  return (
+    feed.historicalReadThrough != null &&
+    tail != null &&
+    compareMessageTuple(messageOrderCursor(tail[0], tail[1]), feed.historicalReadThrough) < 0
+  );
 }
 
 /**
@@ -1090,12 +1110,14 @@ export function appendNewerItemsToFeed(
   const trimmedPreviousUnreadIds = windowed.removedItems
     .filter(([id]) => previousIds.has(id) && !feed.readIds.has(id))
     .map(([id]) => id);
+  const historicalReadIds = historicalReadMessageIds(feed, windowed.addedItems);
   const readIds =
-    markAllRead || trimmedPreviousUnreadIds.length > 0
+    markAllRead || trimmedPreviousUnreadIds.length > 0 || historicalReadIds.length > 0
       ? new Set<number>([
           ...feed.readIds,
           ...(markAllRead ? windowed.items.map(([id]) => id) : []),
           ...trimmedPreviousUnreadIds,
+          ...historicalReadIds,
         ])
       : feed.readIds;
   const unreadAddedCount = windowed.addedItems.filter(([id]) => !readIds.has(id)).length;
@@ -1114,6 +1136,16 @@ export function appendNewerItemsToFeed(
     hasReachedStart: windowed.removedItems.length > 0 ? false : feed.hasReachedStart,
     pendingNewerItems: [],
   };
+}
+
+export function historicalReadMessageIds(feed: MessageFeedState, items: MessageItem[]): number[] {
+  const readThrough = feed.historicalReadThrough;
+  if (readThrough == null) return [];
+  return items
+    .filter(
+      ([id, message]) => compareMessageTuple(messageOrderCursor(id, message), readThrough) <= 0,
+    )
+    .map(([id]) => id);
 }
 
 /** Flush off-DOM pending newer rows into the visible window. */
@@ -1179,6 +1211,21 @@ export function feedIndicatorUnreadCount(
     ([id]) => !loadedIds.has(id) && !pendingIds.has(id),
   );
   const currentTailId = feed.items.at(-1)?.[0];
+  const historicalReadThrough = feed.historicalReadThrough;
+  const currentTail = feed.items.at(-1);
+  if (
+    historicalReadThrough != null &&
+    currentTail != null &&
+    compareMessageTuple(
+      messageOrderCursor(currentTail[0], currentTail[1]),
+      historicalReadThrough,
+    ) <= 0
+  ) {
+    return Math.max(
+      feed.unreadCount,
+      loadedUnread + pendingUnread + comparableWindowedUnread.length,
+    );
+  }
   const hasMatchingPreview = currentTailId != null && preview?.tailId === currentTailId;
   if (hasMatchingPreview) {
     const tail = feed.items.at(-1);

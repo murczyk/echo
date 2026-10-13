@@ -35,6 +35,138 @@ function buildShortInboxResponse(ids: number[]): InboxMessagesRspRaw {
   return response;
 }
 
+test('a direct-linked Duty window loads newer history without unread badges @regression', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const messageUuid = '019a4aa8-0000-7000-8000-000000000065';
+  const target = [41, { ...buildInboxMessage(41), messageUuid }] as const;
+  const countSinceIds: Array<number | null> = [];
+  const newerSinceIds: number[] = [];
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    inboxCountResponseForRequest: (requestBody) => {
+      const sinceId = readSinceId(requestBody);
+      countSinceIds.push(sinceId);
+      return { quantity: Math.max(0, 141 - (sinceId ?? 0)), first_element_ts: null };
+    },
+    inboxResponseForRequest: (requestBody) => {
+      const beforeId = readBeforeId(requestBody);
+      const sinceId = readSinceId(requestBody);
+      if (beforeId === 41) return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 1));
+      if (sinceId === 41) return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 42));
+      if (sinceId === 60 || sinceId === 80) {
+        newerSinceIds.push(sinceId);
+        return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + sinceId + 1));
+      }
+      if (beforeId != null || sinceId != null) return buildInboxResponse([]);
+      return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 122));
+    },
+  });
+  await page.route('**/api/rer-importer/inbox-item-context', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        message: target,
+        group_master_keys: ['group-1'],
+        sigint_inbox_item_ids: [41],
+        since_ts: null,
+        till_ts: null,
+      }),
+    }),
+  );
+  await page.route('**/api/rer-importer/messages-by-id-with-metadata', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ ...buildInboxResponse([]), inbox_items: [target] }),
+    }),
+  );
+
+  await page.goto(`/rer-duty-neo?m=${messageUuid}`);
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  const targetCard = page.locator('[data-duty-message-id="41"] [data-message-card-root]');
+  await expect(targetCard).toBeAttached();
+  await expect
+    .poll(() => targetCard.evaluate((element) => element.style.outline))
+    .toContain('2px solid');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => countSinceIds).toContain(141);
+  await expect(page.locator('[data-duty-scroll-unread-badge]')).toHaveCount(0);
+  await expect(page.locator('[data-message-feed-skeleton="below"]')).toBeAttached();
+
+  await scroller.focus();
+  await scroller.press('End');
+  await expect.poll(() => newerSinceIds).toContain(60);
+  await expect(page.locator('[data-duty-message-id="80"]')).toBeAttached();
+  await expect(page.locator('[data-message-feed-skeleton="below"]')).toBeAttached();
+  await expect(page.locator('[data-duty-scroll-unread-badge]')).toHaveCount(0);
+
+  await scroller.press('End');
+  await expect.poll(() => newerSinceIds).toContain(80);
+  await expect(page.locator('[data-duty-message-id="100"]')).toBeAttached();
+  await expect(page.locator('[data-duty-scroll-unread-badge]')).toHaveCount(0);
+});
+
+test('a direct-linked Duty arrow loads historical newer messages with zero unread @regression', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const messageUuid = '019a4aa8-0000-7000-8000-000000000065';
+  const target = [41, { ...buildInboxMessage(41), messageUuid }] as const;
+  const newerRequests: Array<{ sinceId: number; nolimit: boolean }> = [];
+  await installRerDutyShortStateMocks(page, {
+    inboxCountResponseForRequest: () => ({ quantity: 0, first_element_ts: null }),
+    inboxResponseForRequest: (requestBody) => {
+      const beforeId = readBeforeId(requestBody);
+      const sinceId = readSinceId(requestBody);
+      if (beforeId === 41) return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 1));
+      if (sinceId === 41) return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 42));
+      if (sinceId != null) {
+        const nolimit = readNoLimit(requestBody);
+        newerRequests.push({ sinceId, nolimit });
+        return buildInboxResponse(
+          Array.from({ length: nolimit ? 81 : 20 }, (_, i) => i + sinceId + 1),
+        );
+      }
+      if (beforeId != null) return buildInboxResponse([]);
+      return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 122));
+    },
+  });
+  await page.route('**/api/rer-importer/inbox-item-context', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        message: target,
+        group_master_keys: ['group-1'],
+        sigint_inbox_item_ids: [41],
+        since_ts: null,
+        till_ts: null,
+      }),
+    }),
+  );
+  await page.route('**/api/rer-importer/messages-by-id-with-metadata', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ ...buildInboxResponse([]), inbox_items: [target] }),
+    }),
+  );
+
+  await page.goto(`/rer-duty-neo?m=${messageUuid}`);
+  await expect(page.locator('[data-duty-message-id="41"]')).toBeAttached();
+  await expect(page.locator('[data-message-feed-skeleton="below"]')).toBeAttached();
+  await page.locator('[data-duty-feed-scroll-button] button').click();
+
+  await expect
+    .poll(() => newerRequests.some(({ sinceId, nolimit }) => sinceId === 60 && nolimit), {
+      timeout: 5_000,
+    })
+    .toBe(true);
+  await expect(page.locator('[data-duty-message-id="141"]')).toBeAttached();
+  await expect
+    .poll(() => readBottomDistance(page.locator('[data-duty-feed-scroller="true"]')))
+    .toBeLessThanOrEqual(1);
+});
+
 const compactTagIds = Array.from({ length: 18 }, (_, index) => index + 1);
 const compactTagsResponse = compactTagIds.map((id) => [
   id,

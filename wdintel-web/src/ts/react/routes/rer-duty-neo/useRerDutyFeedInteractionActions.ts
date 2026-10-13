@@ -4,6 +4,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import {
   compareMessageTuple,
   feedHasUnloadedEvictedNewerTail,
+  feedHasUnloadedHistoricalNewer,
   messageOrderCursor,
   messageOrderTimestamp,
   type MessageFeedState,
@@ -180,7 +181,8 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       registerExplicitLoading(explicitOperation, releaseLoading);
       try {
         if (feed.items.length > 0) {
-          const hasUnloadedEvictedNewerTail = feedHasUnloadedEvictedNewerTail(feed);
+          const hasUnloadedNewerHistory =
+            feedHasUnloadedEvictedNewerTail(feed) || feedHasUnloadedHistoricalNewer(feed);
           const result = await requestValidatedInboxCount(feedId);
           if (!isCurrent()) return;
           if (!result) {
@@ -188,7 +190,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
             return;
           }
           const { quantity } = result;
-          if (quantity === 0 && !hasUnloadedEvictedNewerTail) {
+          if (quantity === 0 && !hasUnloadedNewerHistory) {
             if (!capturedCursor) {
               showArrowResult(feedId, 'Немає нових повідомлень');
               return;

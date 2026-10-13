@@ -40,7 +40,7 @@ import {
   type MessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
-import { feedListRenderStateEqual } from './utils';
+import { feedHasUnrenderedHistoricalNewer, feedListRenderStateEqual } from './utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 import {
   MessageFeed,
@@ -255,7 +255,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
       onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
       onCopyMessageLink={() =>
-        onMessageCopy(buildMessageLinkFullUrl(msg, 'analysis', id), `link-${id}`)
+        onMessageCopy(buildMessageLinkFullUrl(msg, 'duty', id), `link-${id}`)
       }
       onCopyTextWithNetwork={
         etalonDisplayModel.primaryKind === 'network' && etalonDisplayModel.copyEtalonValue != null
@@ -892,8 +892,9 @@ export const FeedColumnContent = memo(
           loadingBelow={loadingNewer}
           hasMoreAbove={!feed.hasReachedStart}
           hasMoreBelow={
-            feed.evictedNewerTailId != null &&
-            feed.items.every(([id]) => id !== feed.evictedNewerTailId)
+            (feed.evictedNewerTailId != null &&
+              feed.items.every(([id]) => id !== feed.evictedNewerTailId)) ||
+            feedHasUnrenderedHistoricalNewer(feed)
           }
           itemSelector="[data-duty-message-id]"
           scrollerProps={{

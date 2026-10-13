@@ -310,6 +310,43 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     ]);
   });
 
+  it('keeps a newer page requested before pending messages move into the visible window', async () => {
+    const { apiRef } = await mountLoadedFeed(true);
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          items: rangeRsp(1, 20).inboxItems,
+          pendingNewerItems: rangeRsp(21, 40).inboxItems,
+        })),
+      );
+    });
+    const response = deferred<InboxMessagesRsp>('newer page after pending flush');
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => response.promise);
+    const load = apiRef.current!.loadFeedNewerMessages('mf-0', { showLoading: true });
+    expect(hoisted.fetchInboxMessages.mock.lastCall?.[0].sinceIdNoninclusive).toBe(40);
+
+    await act(async () => {
+      apiRef.current!.flushPendingNewerMessages('mf-0', {
+        urgent: true,
+        allowWindowTrim: true,
+      });
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(40);
+
+    let result: Awaited<typeof load> | undefined;
+    await act(async () => {
+      response.resolve(rangeRsp(41, 60));
+      result = await load;
+      await flushMicrotasks();
+    });
+    expect(result).toEqual({ ok: true, addedCount: 20 });
+    expect(apiRef.current!.messageFeeds[0].pendingNewerItems.map(([id]) => id)).toEqual(
+      rangeRsp(41, 60).inboxItems.map(([id]) => id),
+    );
+  });
+
   it('#3360 keeps reading rows when a delayed ON response arrives after scroll-away', async () => {
     const { apiRef } = await mountLoadedFeed();
     await act(async () => {

@@ -19,6 +19,8 @@ import {
 } from '../../services/api/inbox';
 import { addPalitraHighlightBlacklistEntry } from '../../services/api/palitra';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
+import { useOptionalPowerSnackbar } from '../../components/PowerSnackbar';
+import { notifyMessageCopySuccess } from '../shared/message-card/message-card-copy-feedback';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import {
   hasBotTag,
@@ -68,6 +70,7 @@ type Params = {
 
 export function useRerDutyMessageItemActions(params: Params) {
   const { messageFeeds, setMessageFeeds, authUserName, currentUserOrganismId, setError } = params;
+  const { notify } = useOptionalPowerSnackbar();
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deleteConfirmFeedId, setDeleteConfirmFeedId] = useState<string | null>(null);
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(null);
@@ -132,17 +135,22 @@ export function useRerDutyMessageItemActions(params: Params) {
     [setMessageFeeds, setError],
   );
 
-  const handleMessageCopy = useCallback((text: string, feedbackId: string) => {
-    void copyTextToClipboard(text).catch((err) => {
-      console.error('Failed to copy text to clipboard', err);
-    });
-    if (copiedFeedbackTimeoutRef.current) clearTimeout(copiedFeedbackTimeoutRef.current);
-    setCopiedFeedbackId(feedbackId);
-    copiedFeedbackTimeoutRef.current = setTimeout(() => {
-      setCopiedFeedbackId(null);
-      copiedFeedbackTimeoutRef.current = null;
-    }, 1000);
-  }, []);
+  const handleMessageCopy = useCallback(
+    (text: string, feedbackId: string) => {
+      void copyTextToClipboard(text)
+        .then(() => notifyMessageCopySuccess(feedbackId, notify))
+        .catch((err) => {
+          console.error('Failed to copy text to clipboard', err);
+        });
+      if (copiedFeedbackTimeoutRef.current) clearTimeout(copiedFeedbackTimeoutRef.current);
+      setCopiedFeedbackId(feedbackId);
+      copiedFeedbackTimeoutRef.current = setTimeout(() => {
+        setCopiedFeedbackId(null);
+        copiedFeedbackTimeoutRef.current = null;
+      }, 1000);
+    },
+    [notify],
+  );
 
   const handleDeleteConfirm = useCallback(async () => {
     if (deleteConfirmId == null || deleteConfirmFeedId == null) return;

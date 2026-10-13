@@ -37,6 +37,7 @@ import type { AddPointHighlightBlacklistRequest } from '../../shared/message-car
 import type { AnalysisDirectMessageNavigation } from '../types';
 import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../../hooks/duty-settings-defaults';
 import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
+import { notifyMessageCopySuccess } from '../../shared/message-card/message-card-copy-feedback';
 import { DEBUG_SCROLL_HEARTBEAT_MS } from '../../../../debug-recorder/config';
 import { recordAnalysisDebugScrollSnapshot, useAnalysisDebugEnabled } from '../analysis-debug';
 
@@ -279,9 +280,7 @@ function AnalysisMessagesPaneComponent({
         setCopiedFeedbackId((current) => (current === value ? null : current));
         copyFeedbackTimerRef.current = null;
       }, 1000);
-      if (value.startsWith('link-')) {
-        notify({ severity: 'success', message: 'Посилання на повідомлення скопійовано.' });
-      }
+      notifyMessageCopySuccess(value, notify);
     },
     [notify],
   );

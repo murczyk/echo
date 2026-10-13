@@ -51,6 +51,83 @@ async function addFrequencies(page: Page, panel: Locator, values: string[]): Pro
 }
 
 test.describe('Duty characterization workflows @regression', () => {
+  test('a copied Duty link opens one feed without forcing the message group @regression', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(90_000);
+    const messageUuid = '019a4aa8-0000-7000-8000-000000000065';
+    const inboxResponse = buildInboxResponse([1, 2]);
+    inboxResponse.inbox_items[1][1].messageUuid = messageUuid;
+    const inboxRequests: unknown[] = [];
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await installRerDutyShortStateMocks(page, {
+      inboxResponseForRequest: (requestBody) => {
+        inboxRequests.push(requestBody);
+        return inboxResponse;
+      },
+    });
+    await page.route('**/api/rer-importer/inbox-item-context', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          message: inboxResponse.inbox_items[1],
+          group_master_keys: ['group-1'],
+          sigint_inbox_item_ids: [2],
+          since_ts: null,
+          till_ts: null,
+        }),
+      }),
+    );
+    await page.route('**/api/rer-importer/messages-by-id-with-metadata', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...inboxResponse,
+          inbox_items: [inboxResponse.inbox_items[1]],
+        }),
+      }),
+    );
+
+    await page.goto('/rer-duty-neo');
+    for (let count = 2; count <= 4; count += 1) {
+      await page.getByRole('button', { name: 'Додати стрічку' }).click();
+    }
+    await expect(page.locator('[data-duty-feed-column]')).toHaveCount(4);
+    const card = page
+      .locator('[data-duty-feed-column]')
+      .first()
+      .locator('[data-duty-message-id="2"]');
+    await card.getByRole('button', { name: 'Більше дій' }).click();
+    await page.getByRole('menuitem', { name: /^Копіювати/ }).click();
+    await page.getByRole('menuitem', { name: 'Копіювати посилання на повідомлення' }).click();
+    await expect(page.getByText('Посилання на повідомлення скопійовано.')).toBeVisible();
+    const link = await page.evaluate(() => navigator.clipboard.readText());
+    expect(new URL(link).pathname).toBe('/rer-duty-neo');
+    expect(new URL(link).searchParams.get('m')).toBe(messageUuid);
+
+    inboxRequests.length = 0;
+    await page.goto(link);
+    await expect(page.locator('[data-duty-feed-column]')).toHaveCount(1);
+    const targetCard = page.locator('[data-duty-message-id="2"]');
+    await expect(targetCard).toBeVisible();
+    await expect
+      .poll(() =>
+        targetCard.locator('[data-message-card-root]').evaluate((element) => element.style.outline),
+      )
+      .toContain('2px solid');
+    expect(inboxRequests.length).toBeGreaterThan(0);
+    expect(
+      inboxRequests.map((requestBody) => {
+        const request = requestBody as {
+          selected_groups?: string[] | null;
+          selectedGroups?: string[] | null;
+        };
+        return request.selected_groups ?? request.selectedGroups ?? null;
+      }),
+    ).toEqual(inboxRequests.map(() => null));
+  });
+
   test('#3689 retains mounted cards in four feeds under CPU load and mounts only the active mobile tab', async ({
     page,
   }) => {

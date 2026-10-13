@@ -503,6 +503,71 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(loadedIds.at(-1)).toBe(60);
   });
 
+  it('does not count pre-existing newer messages as unread after opening a direct link', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    hoisted.fetchInboxMessages.mockClear();
+    hoisted.fetchInboxMessages.mockImplementation(async (request) => {
+      if (request.loadLatest) return rangeRsp(62, 81);
+      if (request.beforeIdNoninclusive === 41) return rangeRsp(1, 40);
+      if (request.sinceIdNoninclusive === 41) return rangeRsp(42, 61);
+      if (request.sinceIdNoninclusive === 60) return rangeRsp(61, 80);
+      if (request.sinceIdNoninclusive === 80)
+        return inboxRsp([[82, minimalInboxMessage({ createdAtOrder: 8200 })]]);
+      return inboxRsp([]);
+    });
+    hoisted.fetchMessagesByIdsWithMetadata.mockResolvedValueOnce(
+      inboxRsp([[41, minimalInboxMessage({ createdAtOrder: 4100 })]]),
+    );
+    hoisted.fetchInboxCount.mockImplementation(async (request) => ({
+      quantity: Math.max(0, 81 - (request.sinceIdNoninclusive ?? 0)),
+      firstElementTs: null,
+    }));
+
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', {
+        beforeIdNoninclusive: 41,
+        messageIds: [41],
+      });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true);
+      await flushMicrotasks();
+    });
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(0);
+
+    await startPoll();
+    await act(async () => flushMicrotasks());
+
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(0);
+
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { showLoading: false });
+      await flushMicrotasks();
+    });
+
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(0);
+
+    await act(async () => {
+      apiRef.current!.flushPendingNewerMessages('mf-0', { allowWindowTrim: true, urgent: true });
+      await flushMicrotasks();
+    });
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(0);
+
+    await act(async () => {
+      apiRef.current!.catchUpFeedUnreadToTail('mf-0', { id: 80, timestamp: 8000 });
+      await flushMicrotasks();
+      await apiRef.current!.requestValidatedInboxCount('mf-0');
+    });
+    expect(hoisted.fetchInboxCount).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sinceIdNoninclusive: 81 }),
+      expect.anything(),
+    );
+
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { showLoading: false });
+      await flushMicrotasks();
+    });
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(1);
+  });
+
   it('merges reference metadata loaded exclusively for a direct-link target', async () => {
     const setProfiles = vi.fn();
     const setGroupInfos = vi.fn();
