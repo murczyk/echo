@@ -11,9 +11,14 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub login_id: Uuid,
+    #[sea_orm(unique_key = "messenger_account_datasource_id_external_id_key")]
     pub datasource_id: i64,
+    #[sea_orm(unique)]
     pub datasource_group_id: i64,
-    #[sea_orm(column_type = "Text")]
+    #[sea_orm(
+        column_type = "Text",
+        unique_key = "messenger_account_datasource_id_external_id_key"
+    )]
     pub external_id: String,
     #[sea_orm(column_type = "Text")]
     pub display_name: String,

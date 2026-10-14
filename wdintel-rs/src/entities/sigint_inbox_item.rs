@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: i64,
-    pub id_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub date: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -36,7 +35,7 @@ pub struct Model {
     pub location: Option<String>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub tags: Option<Json>,
-    pub datetime_old: Option<DateTime>,
+    pub datetime: Option<DateTime>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub signal_tokens: Option<Json>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
@@ -50,14 +49,25 @@ pub struct Model {
     pub device_name_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub network: Option<String>,
-    pub datetime: Option<DateTime>,
+    pub datetime_old: Option<DateTime>,
+    pub id_uuid: Option<Uuid>,
     pub is_time_null: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::ai_callsign_action::Entity")]
+    AiCallsignAction,
+    #[sea_orm(has_many = "super::ai_callsign_feedback::Entity")]
+    AiCallsignFeedback,
+    #[sea_orm(has_many = "super::ai_callsign_override::Entity")]
+    AiCallsignOverride,
     #[sea_orm(has_one = "super::ai_callsign_worker_job::Entity")]
     AiCallsignWorkerJob,
+    #[sea_orm(has_many = "super::ai_position_mention::Entity")]
+    AiPositionMention,
+    #[sea_orm(has_many = "super::ai_position_worker_job::Entity")]
+    AiPositionWorkerJob,
     #[sea_orm(has_one = "super::ai_settlement_worker_job::Entity")]
     AiSettlementWorkerJob,
     #[sea_orm(
@@ -120,9 +130,39 @@ pub enum Relation {
     SignalMessage,
 }
 
+impl Related<super::ai_callsign_action::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignAction.def()
+    }
+}
+
+impl Related<super::ai_callsign_feedback::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignFeedback.def()
+    }
+}
+
+impl Related<super::ai_callsign_override::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignOverride.def()
+    }
+}
+
 impl Related<super::ai_callsign_worker_job::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiCallsignWorkerJob.def()
+    }
+}
+
+impl Related<super::ai_position_mention::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiPositionMention.def()
+    }
+}
+
+impl Related<super::ai_position_worker_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiPositionWorkerJob.def()
     }
 }
 
@@ -192,6 +232,12 @@ impl Related<super::sigint_inbox_item_unit::Entity> for Entity {
     }
 }
 
+impl Related<super::sigint_inbox_item_unit_selection::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemUnitSelection.def()
+    }
+}
+
 impl Related<super::sigint_inbox_item_unit_tag_queue::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemUnitTagQueue.def()
@@ -228,9 +274,16 @@ impl Related<super::signal_message::Entity> for Entity {
     }
 }
 
-impl Related<super::sigint_inbox_item_unit_selection::Entity> for Entity {
+impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::SigintInboxItemUnitSelection.def()
+        super::ai_callsign_override::Relation::Login.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::ai_callsign_override::Relation::SigintInboxItem
+                .def()
+                .rev(),
+        )
     }
 }
 

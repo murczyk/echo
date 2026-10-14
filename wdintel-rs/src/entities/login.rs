@@ -91,6 +91,8 @@ pub enum Relation {
     LogUsersReportGeneration,
     #[sea_orm(has_one = "super::login_totp::Entity")]
     LoginTotp,
+    #[sea_orm(has_many = "super::messenger_account::Entity")]
+    MessengerAccount,
     #[sea_orm(has_many = "super::network_freq_last_datetime_in_aor::Entity")]
     NetworkFreqLastDatetimeInAor,
     #[sea_orm(has_many = "super::network_recalculation_task::Entity")]
@@ -330,6 +332,12 @@ impl Related<super::log_users_report_generation::Entity> for Entity {
 impl Related<super::login_totp::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::LoginTotp.def()
+    }
+}
+
+impl Related<super::messenger_account::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerAccount.def()
     }
 }
 

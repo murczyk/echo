@@ -50,7 +50,6 @@ pub struct Model {
     pub hide_orbit_data: bool,
     pub show_peleng_distance_to_battleline: bool,
     pub disable_bot_tags: Option<bool>,
-    pub hide_networks: Option<bool>,
     pub duty_exclude_menu_enabled: Option<bool>,
     pub two_factor_auth_enabled: Option<bool>,
     pub analysis_aor_filter_enabled: Option<bool>,
@@ -61,6 +60,7 @@ pub struct Model {
     pub messenger_media_cache_min_free_gib: Option<i64>,
     pub rer_report_enabled: Option<bool>,
     pub ai_position_highlights_enabled: Option<bool>,
+    pub hide_networks: Option<bool>,
     pub api_rate_limit_replenish_interval_ms: Option<i32>,
     pub api_rate_limit_burst_size: Option<i32>,
 }

@@ -913,9 +913,12 @@ pub async fn oneoff_export_sigint_comments(
 
     let time_condition = message_time_condition(from_dt, to_dt);
     let rows: Vec<CommentExportRow> = sigint_comment::Entity::find()
-        .join(
+        .join_rev(
             JoinType::InnerJoin,
-            sigint_comment::Relation::SignalMessage.def(),
+            signal_message::Entity::belongs_to(sigint_comment::Entity)
+                .from(signal_message::Column::Id)
+                .to(sigint_comment::Column::SignalMessageId)
+                .into()
         )
         .join(
             JoinType::InnerJoin,

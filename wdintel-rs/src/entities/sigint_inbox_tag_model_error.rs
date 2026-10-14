@@ -11,7 +11,6 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub sigint_inbox_item_id: i64,
-    pub sigint_inbox_item_uuid: Option<Uuid>,
     pub tag_id: i64,
     #[sea_orm(column_type = "Text")]
     pub model: String,
@@ -20,6 +19,7 @@ pub struct Model {
     pub confidence: f64,
     pub removed_by_login_id: Uuid,
     pub removed_at: DateTimeWithTimeZone,
+    pub sigint_inbox_item_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

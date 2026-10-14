@@ -10,14 +10,12 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub id_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub body: Option<String>,
     pub created_at: DateTime,
     pub timestamp: Option<DateTime>,
     #[sea_orm(column_type = "Text", nullable)]
     pub sender: Option<String>,
-    pub login_id: Option<Uuid>,
     pub format: Option<i64>,
     pub deleted: bool,
     pub external_id: Option<i64>,
@@ -29,6 +27,8 @@ pub struct Model {
     pub echo_inbox_message_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub attachments_hash: Option<String>,
+    pub login_id: Option<Uuid>,
+    pub id_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -53,8 +53,6 @@ pub enum Relation {
     RerCsvImportMessage,
     #[sea_orm(has_many = "super::sigint_bookmark::Entity")]
     SigintBookmark,
-    #[sea_orm(has_many = "super::sigint_comment::Entity")]
-    SigintComment,
     #[sea_orm(has_many = "super::sigint_important::Entity")]
     SigintImportant,
     #[sea_orm(has_one = "super::sigint_inbox_item::Entity")]
@@ -88,12 +86,6 @@ impl Related<super::rer_csv_import_message::Entity> for Entity {
 impl Related<super::sigint_bookmark::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintBookmark.def()
-    }
-}
-
-impl Related<super::sigint_comment::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SigintComment.def()
     }
 }
 

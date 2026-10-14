@@ -13,12 +13,12 @@ pub struct Model {
     pub created_at: DateTime,
     #[sea_orm(unique_key = "sigint_inbox_item_failed_unit_label_relation_uq")]
     pub inbox_item_id: i64,
-    pub inbox_item_uuid: Option<Uuid>,
-    pub signal_message_created_at: Option<DateTime>,
     #[sea_orm(unique_key = "sigint_inbox_item_failed_unit_label_relation_uq")]
     pub failed_unit_label_id: i64,
     pub deleted: bool,
     pub deleted_at: Option<DateTime>,
+    pub inbox_item_uuid: Option<Uuid>,
+    pub signal_message_created_at: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -15,7 +15,6 @@ pub struct Model {
         unique_key = "sigint_inbox_item_settlement_item_id_settlement_text_key"
     )]
     pub item_id: i64,
-    pub item_uuid: Option<Uuid>,
     #[sea_orm(
         column_type = "Text",
         unique_key = "sigint_inbox_item_settlement_item_id_settlement_text_key"
@@ -23,6 +22,7 @@ pub struct Model {
     pub settlement_text: String,
     pub settlement_id: Option<i32>,
     pub is_undefined: Option<bool>,
+    pub item_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

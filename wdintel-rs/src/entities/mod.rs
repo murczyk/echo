@@ -135,6 +135,7 @@ pub mod login;
 pub mod login_totp;
 pub mod media_summary;
 pub mod media_summary_settings;
+pub mod messenger_account;
 pub mod modulation;
 pub mod network_callsign;
 pub mod network_freq_last_datetime_in_aor;

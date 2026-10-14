@@ -11,7 +11,6 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub source_inbox_item_id: i64,
-    pub source_inbox_item_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Double")]
     pub lat: f64,
     #[sea_orm(column_type = "Double")]
@@ -29,6 +28,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub pelengation_object: Option<String>,
     pub battle_line_distance: Option<i32>,
+    pub source_inbox_item_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

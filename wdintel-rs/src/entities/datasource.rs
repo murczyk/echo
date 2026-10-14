@@ -73,6 +73,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Login1,
+    #[sea_orm(has_many = "super::messenger_account::Entity")]
+    MessengerAccount,
     #[sea_orm(has_many = "super::sigint_zone_datasource::Entity")]
     SigintZoneDatasource,
     #[sea_orm(has_many = "super::signal_group::Entity")]
@@ -96,6 +98,12 @@ impl Related<super::datasource_group::Entity> for Entity {
 impl Related<super::echo_client_lock::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoClientLock.def()
+    }
+}
+
+impl Related<super::messenger_account::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerAccount.def()
     }
 }
 

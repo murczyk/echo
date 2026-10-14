@@ -15,7 +15,6 @@ pub struct Model {
         unique_key = "sigint_inbox_item_callsign_sigint_inbox_item_id_source_call_key"
     )]
     pub sigint_inbox_item_id: i64,
-    pub sigint_inbox_item_uuid: Option<Uuid>,
     #[sea_orm(
         column_type = "Text",
         unique_key = "sigint_inbox_item_callsign_sigint_inbox_item_id_source_call_key"
@@ -32,6 +31,7 @@ pub struct Model {
     pub deleted: bool,
     pub created_by_id: Uuid,
     pub deleted_by_id: Option<Uuid>,
+    pub sigint_inbox_item_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

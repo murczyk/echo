@@ -11,7 +11,6 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub sigint_inbox_item_id: i64,
-    pub sigint_inbox_item_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub color_code: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -37,6 +36,7 @@ pub struct Model {
     pub sender_name_end_index: Option<i32>,
     pub hash_id_start_index: Option<i32>,
     pub hash_id_end_index: Option<i32>,
+    pub sigint_inbox_item_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

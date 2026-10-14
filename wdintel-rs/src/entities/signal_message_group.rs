@@ -11,16 +11,16 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub signal_message_id: i64,
-    pub signal_message_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub group_master_key: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub sender: Option<String>,
-    pub login_id: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub message_uid: Option<String>,
     pub datasource_group_id: Option<i64>,
     pub created_at: DateTime,
+    pub login_id: Option<Uuid>,
+    pub signal_message_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -34,14 +34,6 @@ pub enum Relation {
     )]
     DatasourceGroup,
     #[sea_orm(
-        belongs_to = "super::signal_group::Entity",
-        from = "Column::GroupMasterKey",
-        to = "super::signal_group::Column::MasterKey",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
-    SignalGroup,
-    #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::LoginId",
         to = "super::login::Column::Id",
@@ -49,6 +41,14 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     Login,
+    #[sea_orm(
+        belongs_to = "super::signal_group::Entity",
+        from = "Column::GroupMasterKey",
+        to = "super::signal_group::Column::MasterKey",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    SignalGroup,
     #[sea_orm(
         belongs_to = "super::signal_message::Entity",
         from = "Column::SignalMessageId",
@@ -65,15 +65,15 @@ impl Related<super::datasource_group::Entity> for Entity {
     }
 }
 
-impl Related<super::signal_group::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SignalGroup.def()
-    }
-}
-
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::signal_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalGroup.def()
     }
 }
 
