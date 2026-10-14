@@ -1448,6 +1448,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::list_units_by_id)
             .service(crate::sigint::unit::create_unit)
             .service(crate::sigint::unit::create_unit_with_auto_network)
+            .service(crate::sigint::unit::message_creation::create_unit_for_message)
             .service(crate::sigint::unit::create_device_network)
             .service(crate::sigint::unit::update_unit)
             .service(crate::sigint::unit::delete_unit)

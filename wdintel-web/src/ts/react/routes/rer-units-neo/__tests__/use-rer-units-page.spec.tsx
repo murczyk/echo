@@ -141,6 +141,106 @@ describe('useRerUnitsPage loading', () => {
   });
 });
 describe('useRerUnitsPage mutations', () => {
+  it('#3535 reconciles rows and counts even when attachment metadata fails', async () => {
+    const req = { limit: 20, offset: 0 } as ListUnitsReq;
+    api.getUnitsPage
+      .mockResolvedValueOnce({
+        units: [activeUnit, inactiveUnit],
+        totalCount: 2,
+        statusCounts: { active: 1, inactive: 1 },
+      })
+      .mockResolvedValueOnce({
+        units: [activeUnit],
+        totalCount: 1,
+        statusCounts: { active: 1, inactive: 0 },
+      });
+    api.getUnitIdsWithVisibleAttachments
+      .mockResolvedValueOnce([inactiveUnit.id])
+      .mockRejectedValueOnce(new Error('Attachment metadata failed'));
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(Harness, { req })));
+    await flushEffects();
+    await act(async () => latestPage?.refreshUnitsAfterMutation('Merge completed.'));
+
+    expect(latestPage?.units.map((unit) => unit.id)).toEqual([activeUnit.id]);
+    expect(latestPage?.totalCount).toBe(1);
+    expect(latestPage?.statusCounts).toEqual({ active: 1, inactive: 0 });
+    expect(latestPage?.attachmentUnitIds).toEqual(new Set());
+    expect(latestPage?.status?.text).toContain('Attachment metadata failed');
+    expect(latestPage?.loadError).toBeNull();
+    expect(latestPage?.loading).toBe(false);
+  });
+
+  it('#3535 exposes a failed reconciliation for retry and clears the recovered error', async () => {
+    const req = { limit: 20, offset: 0 } as ListUnitsReq;
+    const response = {
+      units: [activeUnit],
+      totalCount: 1,
+      statusCounts: { active: 1, inactive: 0 },
+    };
+    api.getUnitsPage
+      .mockResolvedValueOnce(response)
+      .mockRejectedValueOnce(new Error('List unavailable'))
+      .mockResolvedValueOnce(response);
+    api.getUnitIdsWithVisibleAttachments.mockResolvedValue([]);
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(Harness, { req })));
+    await flushEffects();
+    await act(async () => latestPage?.refreshUnitsAfterMutation('Merge completed.'));
+    expect(latestPage?.loadError).toBe('List unavailable');
+    await act(async () => latestPage?.refreshUnitsAfterMutation('Merge completed.'));
+    expect(latestPage?.loadError).toBeNull();
+    expect(latestPage?.status?.severity).toBe('success');
+  });
+
+  it('#3535 reconciles the current page when a merge finishes after pagination', async () => {
+    const req = { limit: 20, offset: 0 } as ListUnitsReq;
+    const nextReq = { limit: 20, offset: 20 } as ListUnitsReq;
+    api.getUnitsPage.mockImplementation((request: ListUnitsReq) =>
+      Promise.resolve({
+        units: request.offset === 0 ? [activeUnit] : [inactiveUnit],
+        totalCount: 21,
+        statusCounts: { active: 20, inactive: 1 },
+      }),
+    );
+    api.getUnitIdsWithVisibleAttachments.mockResolvedValue([]);
+    api.loadPendingUnitMerge.mockReturnValueOnce({
+      taskId: 42,
+      original: activeUnit,
+      duplicate: { ...inactiveUnit, id: 3 },
+    });
+    let finishTask: (() => void) | undefined;
+    api.waitForBgtaskCompletion.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishTask = resolve;
+        }),
+    );
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(Harness, { req })));
+    await flushEffects();
+    await act(async () => root?.render(createElement(Harness, { req: nextReq })));
+    await flushEffects();
+    await act(async () => finishTask?.());
+    await flushEffects();
+
+    expect(api.getUnitsPage).toHaveBeenLastCalledWith(
+      nextReq,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(latestPage?.units.map((unit) => unit.id)).toEqual([inactiveUnit.id]);
+    expect(latestPage?.mergeTarget).toBeNull();
+  });
+
   it('keeps the terminal merge refresh over a stale mount load', async () => {
     const req = { limit: 20, offset: 0 } as ListUnitsReq;
     let resolveInitial: ((response: unknown) => void) | undefined;
