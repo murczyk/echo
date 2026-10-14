@@ -30,7 +30,9 @@ import {
   parseNewestFirstFromWindow,
   parseMessagesPageIndexFromWindow,
   parseMessageUidFromWindow,
+  readAnalysisGroupScopeFromUrl,
   removeMessageUidFromWindowUrl,
+  writeAnalysisGroupScopeToUrl,
   writeMessagesPageIndexToWindowUrl,
 } from './helpers';
 import { fetchInboxWindow } from '../../services/api/inbox-messages';
@@ -56,6 +58,11 @@ import { getAnalysisSidebarTabs, type AnalysisCenterTab, type AnalysisSidebarTab
 import { fetchAnalysisCallsignFrequencyMatches } from '../../services/api/analysis';
 import { toErrorMessage } from './use-analysis-data.shared';
 import { mergeMessageWindow } from '../shared/message-feed/windowing';
+import {
+  isAnalysisGroupViewAcknowledgeable,
+  useGroupFeedNavigation,
+  type GroupScope,
+} from '../shared/group-navigation';
 
 function initState(
   parsedQueryState: AnalysisQueryState,
@@ -141,6 +148,7 @@ export function useRerAnalysisNeoPage(
     initState(initialParsedQueryState, initialNow, initialRadioFeaturesAllowed),
   );
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
+  const [groupScope, setGroupScope] = useState<GroupScope>(readAnalysisGroupScopeFromUrl);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentUserStatus, setCurrentUserStatus] = useState<'loading' | 'success' | 'error'>(
     'loading',
@@ -211,7 +219,7 @@ export function useRerAnalysisNeoPage(
   const [selectedSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(() =>
     initialPanelQueryState.rightPanelOpen ? 'callsigns' : null,
   );
-  const [targetMessageUid] = useState(parseMessageUidFromWindow);
+  const [targetMessageUid, setTargetMessageUid] = useState(parseMessageUidFromWindow);
   const [targetMessageWindow, setTargetMessageWindow] = useState<InboxWindowRsp | null>(null);
   const [targetMessageLoading, setTargetMessageLoading] = useState(targetMessageUid !== null);
   const [targetMessageContextLoading, setTargetMessageContextLoading] = useState(false);
@@ -325,6 +333,13 @@ export function useRerAnalysisNeoPage(
       hideNetworks,
     ],
   );
+  const scopedEffectiveQueryState = useMemo(
+    () =>
+      groupScope.kind === 'group'
+        ? { ...effectiveQueryState, groupsSelected: [groupScope.masterKey] }
+        : effectiveQueryState,
+    [effectiveQueryState, groupScope],
+  );
   useEffect(() => {
     if (dutySettings.loadInProgress) return;
     setQueryState((current) =>
@@ -344,7 +359,8 @@ export function useRerAnalysisNeoPage(
             rerReportFilterAccess.status === 'denied' || hideNetworks
               ? false
               : initialQueryState.onlyWithNetwork,
-          groupsSelected: queryState.groupsSelected,
+          groupsSelected:
+            groupScope.kind === 'group' ? [groupScope.masterKey] : queryState.groupsSelected,
           freqsSelected: queryState.freqsSelected,
           networksSelected: hideNetworks ? [] : queryState.networksSelected,
           withoutNetwork: hideNetworks ? false : queryState.withoutNetwork,
@@ -363,6 +379,7 @@ export function useRerAnalysisNeoPage(
       queryState.networksSelected,
       queryState.withoutNetwork,
       dutySettings.messageSortBy,
+      groupScope,
     ],
   );
 
@@ -532,6 +549,76 @@ export function useRerAnalysisNeoPage(
     clearTargetMessageFocus();
   }, [clearTargetMessageFocus]);
 
+  const selectGroupScope = useCallback(
+    (
+      scope: GroupScope,
+      oldestUnreadMessageRef: string | null = null,
+      options: { replace?: boolean } = {},
+    ) => {
+      clearTargetMessageContext();
+      setTargetMessageUid(null);
+      setGroupScope(scope);
+      writeAnalysisGroupScopeToUrl(scope, options);
+      if (scope.kind !== 'group' || oldestUnreadMessageRef == null) return;
+      setTargetMessageUid(oldestUnreadMessageRef);
+      setTargetMessageContextActive(true);
+      setTargetMessageFocusActive(true);
+      setTargetMessageLoading(true);
+    },
+    [clearTargetMessageContext],
+  );
+  const groupNavigation = useGroupFeedNavigation({
+    enabled: leftPanelOpen,
+    scope: groupScope,
+    onSelect: selectGroupScope,
+    onError: (groupError) => setDirectMessageError(toErrorMessage(groupError)),
+  });
+  const groupAckControllerRef = useRef<AbortController | null>(null);
+  const acknowledgeGroupAtNewest = useCallback(() => {
+    if (
+      groupScope.kind !== 'group' ||
+      groupNavigation.selectedCursor == null ||
+      groupNavigation.selectedGroup.unreadCount === 0 ||
+      !isAnalysisGroupViewAcknowledgeable(effectiveQueryState)
+    ) {
+      return;
+    }
+    groupAckControllerRef.current?.abort();
+    const controller = new AbortController();
+    groupAckControllerRef.current = controller;
+    void groupNavigation
+      .acknowledge(
+        { masterKey: groupScope.masterKey, cursor: groupNavigation.selectedCursor },
+        controller.signal,
+      )
+      .catch(() => {});
+  }, [effectiveQueryState, groupNavigation, groupScope]);
+
+  useEffect(() => {
+    groupAckControllerRef.current?.abort();
+  }, [groupScope]);
+  useEffect(() => () => groupAckControllerRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (!groupNavigation.ready || groupScope.kind !== 'group') return;
+    const groupIsAvailable = groupNavigation.groups.some(
+      (group) => group.kind === 'group' && group.masterKey === groupScope.masterKey,
+    );
+    if (groupIsAvailable) return;
+    setDirectMessageError('Обрана група більше недоступна.');
+    selectGroupScope({ kind: 'all' }, null, { replace: true });
+  }, [groupNavigation.groups, groupNavigation.ready, groupScope, selectGroupScope]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      clearTargetMessageContext();
+      setTargetMessageUid(null);
+      setGroupScope(readAnalysisGroupScopeFromUrl());
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [clearTargetMessageContext]);
+
   const onLinkedMessageMounted = useCallback((messageId: number) => {
     if (pendingLinkedMessageLandingRef.current?.messageId === messageId) {
       pendingLinkedMessageLandingRef.current.resolve(true);
@@ -588,7 +675,7 @@ export function useRerAnalysisNeoPage(
     rightSidebarVisible: rightPanelOpen,
     rightSidebarTab,
     shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
-    queryState: effectiveQueryState,
+    queryState: scopedEffectiveQueryState,
     hideNetworks,
   });
   dataMessagesRef.current = data.messages;
@@ -1169,6 +1256,10 @@ export function useRerAnalysisNeoPage(
     leftPanelTouchedRef.current = true;
     setLeftPanelOpen((current) => !current);
   }, []);
+  const openLeftPanel = useCallback(() => {
+    leftPanelTouchedRef.current = true;
+    setLeftPanelOpen(true);
+  }, []);
 
   const toggleRightPanel = useCallback(() => {
     setRightPanelOpen((current) => {
@@ -1335,6 +1426,7 @@ export function useRerAnalysisNeoPage(
     isFilterSectionEmptyLoading: data.isFilterSectionEmptyLoading,
     isFilterSectionStale: data.isFilterSectionStale,
     groupInfos,
+    groupNavigation,
     groupsActivityPeriod: data.groupsActivityPeriod,
     groupsActivity: data.groupsActivity,
     groupsActivityLoadedFreq: data.groupsActivityLoadedFreq,
@@ -1470,6 +1562,9 @@ export function useRerAnalysisNeoPage(
     setSavedFilterName: savedFilters.setSavedFilterName,
     showFreqOnMap,
     toggleLeftPanel,
+    openLeftPanel,
+    selectGroupScope,
+    acknowledgeGroupAtNewest,
     toggleRightPanel,
     toggleUnitFromMap,
     saveEditor: editor.saveEditor,

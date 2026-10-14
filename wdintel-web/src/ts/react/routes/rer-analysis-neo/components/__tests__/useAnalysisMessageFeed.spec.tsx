@@ -38,6 +38,7 @@ it('maps bounded Analysis coordinates and both loading edges to the shared feed'
       loadingBeforeWindow: true,
       loadingAfterWindow: false,
       isLoading: false,
+      newestFirst: true,
       pageNavigationTarget: null,
       viewportPreservationKey: 0,
       edgeLoadRetryKey: 0,
@@ -84,6 +85,7 @@ it('pauses edge requests while the Analysis page is refreshing', async () => {
       loadingBeforeWindow: false,
       loadingAfterWindow: false,
       isLoading,
+      newestFirst: true,
       pageNavigationTarget: null,
       viewportPreservationKey: 0,
       edgeLoadRetryKey: 1,
@@ -107,3 +109,49 @@ it('pauses edge requests while the Analysis page is refreshing', async () => {
   expect(latest.scrollOptions.hasReachedStart).toBe(false);
   expect(latest.scrollOptions.unreadPrefetchNeeded).toBe(true);
 });
+
+it.each([
+  { newestFirst: true, edge: 'start' as const },
+  { newestFirst: false, edge: 'bottom' as const },
+])(
+  'reports the chronological newest edge when newestFirst=$newestFirst',
+  ({ newestFirst, edge }) => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push({ root, container });
+    const onChronologicalNewestReached = vi.fn();
+    let latest!: ReturnType<typeof useAnalysisMessageFeed>;
+    function Harness() {
+      latest = useAnalysisMessageFeed({
+        messages: [[1, { text: '' } as InboxMessage]],
+        directMessageNavigation: null,
+        firstLoadedMessageIndex: 0,
+        hasMoreBeforeWindow: false,
+        hasMoreAfterWindow: false,
+        loadingBeforeWindow: false,
+        loadingAfterWindow: false,
+        isLoading: false,
+        newestFirst,
+        pageNavigationTarget: null,
+        viewportPreservationKey: 0,
+        edgeLoadRetryKey: 0,
+        onViewportCaptureChange: vi.fn(),
+        scrollResetKey: 'group-a',
+        onLoadPreviousMessages: vi.fn().mockResolvedValue(false),
+        onLoadMoreMessages: vi.fn().mockResolvedValue(false),
+        onVisiblePageChange: vi.fn(),
+        onPageNavigationHandled: vi.fn(),
+        onChronologicalNewestReached,
+      });
+      return null;
+    }
+    act(() => root.render(createElement(Harness)));
+
+    if (edge === 'start') latest.scrollOptions.onFirstVisibleMessage?.(1, 0);
+    else
+      latest.scrollOptions.onReachedBottom?.({ hasSeenNotAtBottom: true, navigationIntent: null });
+
+    expect(onChronologicalNewestReached).toHaveBeenCalledTimes(1);
+  },
+);

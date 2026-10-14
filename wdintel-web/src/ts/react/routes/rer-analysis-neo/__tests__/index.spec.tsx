@@ -62,7 +62,9 @@ const manageMessageDrawerPropsHistory = vi.hoisted(
       adaptiveEmbeddedForm?: boolean;
       fillEmbeddedSurface?: boolean;
       transparentEmbeddedSurface?: boolean;
+      initialGroupMasterKey?: string | null;
       initialFocusTarget?: HTMLElement | null;
+      initialGroupMasterKey?: string | null;
     }>,
 );
 
@@ -440,6 +442,34 @@ function buildPage() {
     editTargetLoadState: { status: 'idle' },
     filtersLoading: false,
     groupInfos: {},
+    groupNavigation: {
+      groups: [
+        {
+          kind: 'all',
+          masterKey: null,
+          name: 'Всі групи',
+          unreadCount: 0,
+          oldestUnreadMessageRef: null,
+          latestCursor: null,
+        },
+      ],
+      scope: { kind: 'all' },
+      ready: true,
+      loading: false,
+      error: null,
+      select: vi.fn(),
+      refresh: vi.fn(),
+      acknowledge: vi.fn(),
+      selectedGroup: {
+        kind: 'all',
+        masterKey: null,
+        name: 'Всі групи',
+        unreadCount: 0,
+        oldestUnreadMessageRef: null,
+        latestCursor: null,
+      },
+      selectedCursor: null,
+    },
     includeOnlyNewFreqs: false,
     inboxReq: null,
     isDirty: false,
@@ -567,6 +597,9 @@ function buildPage() {
     setRightSidebarTab: vi.fn(),
     showFreqOnMap: vi.fn(),
     toggleLeftPanel: vi.fn(),
+    openLeftPanel: vi.fn(),
+    selectGroupScope: vi.fn(),
+    acknowledgeGroupAtNewest: vi.fn(),
     toggleReportTaskRunLogs: vi.fn(),
     toggleRightPanel: vi.fn(),
     toggleUnitFromMap: vi.fn(),
@@ -1044,7 +1077,44 @@ describe('RerAnalysisNeoPage', () => {
     expect(page.setCenterTab).not.toHaveBeenCalled();
     expect(manageMessageDrawerPropsHistory.at(-1)).toMatchObject({
       open: true,
-      intentKey: 'create-message',
+      intentKey: 'create-message:all',
+    });
+    root.unmount();
+  });
+
+  it('prefills create with the dedicated Analysis group', async () => {
+    const page = buildPage();
+    const group = {
+      kind: 'group' as const,
+      masterKey: 'group-b',
+      name: 'Bravo',
+      ignoreOperativny: false,
+      unreadCount: 2,
+      oldestUnreadMessageRef: 'message-b',
+      lastActivityAt: 1,
+      latestCursor: { createdAt: 1, messageId: 2 },
+    };
+    page.groupNavigation = {
+      ...page.groupNavigation,
+      groups: [page.groupNavigation.groups[0], group],
+      scope: { kind: 'group', masterKey: 'group-b' },
+      selectedGroup: group,
+      selectedCursor: group.latestCursor,
+    };
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
+    });
+
+    expect(manageMessageDrawerPropsHistory.at(-1)).toMatchObject({
+      intentKey: 'create-message:group-b',
+      initialGroupMasterKey: 'group-b',
     });
     root.unmount();
   });
@@ -1274,7 +1344,7 @@ describe('RerAnalysisNeoPage', () => {
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
     });
-    expect(manageMessageDrawerPropsHistory.at(-1)?.intentKey).toBe('create-message');
+    expect(manageMessageDrawerPropsHistory.at(-1)?.intentKey).toBe('create-message:all');
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="analysis-create-report"]')?.click();

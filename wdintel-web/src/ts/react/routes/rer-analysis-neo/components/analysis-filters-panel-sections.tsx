@@ -59,6 +59,7 @@ type Props = Pick<
   unitsExactMatchOnlyDefault: boolean | null;
   analysisAorFilterEnabled: boolean;
   hideNetworks: boolean;
+  hideGroupSelection: boolean;
   rerReportFilterEnabled: boolean;
   toggleSection: (section: FilterSectionId) => void;
 };
@@ -238,6 +239,7 @@ export function AnalysisFiltersPanelSections({
   unitsExactMatchOnlyDefault,
   analysisAorFilterEnabled,
   hideNetworks,
+  hideGroupSelection,
   rerReportFilterEnabled,
   setIncludeOnlyNewFreqs,
   toggleSection,
@@ -487,29 +489,31 @@ export function AnalysisFiltersPanelSections({
           ) : null}
         </Stack>
       </FilterSection>
-      <FilterSection
-        title="Групи"
-        countLabel={countLabel(
-          'groups',
-          options.groups.length,
-          derived.groupsSelectedCount,
-          counts?.groupsCount,
-        )}
-        expanded={expandedSections.groups}
-        onToggle={() => toggleSection('groups')}
-        onLoad={loadSection('groups')}
-      >
-        <AnalysisFilterField
-          label="Групи"
-          options={derived.groupOptions}
-          loading={isFilterSectionLoading('groups') || isFilterSectionStale('groups')}
-          emptyLoading={isFilterSectionEmptyLoading('groups', derived.groupOptions.length)}
-          value={queryState.groupsSelected}
-          deferredCommit
-          preserveSelectedOptionValuesOnChange
-          onChange={(groupsSelected) => updateQueryState({ groupsSelected })}
-        />
-      </FilterSection>
+      {!hideGroupSelection ? (
+        <FilterSection
+          title="Групи"
+          countLabel={countLabel(
+            'groups',
+            options.groups.length,
+            derived.groupsSelectedCount,
+            counts?.groupsCount,
+          )}
+          expanded={expandedSections.groups}
+          onToggle={() => toggleSection('groups')}
+          onLoad={loadSection('groups')}
+        >
+          <AnalysisFilterField
+            label="Групи"
+            options={derived.groupOptions}
+            loading={isFilterSectionLoading('groups') || isFilterSectionStale('groups')}
+            emptyLoading={isFilterSectionEmptyLoading('groups', derived.groupOptions.length)}
+            value={queryState.groupsSelected}
+            deferredCommit
+            preserveSelectedOptionValuesOnChange
+            onChange={(groupsSelected) => updateQueryState({ groupsSelected })}
+          />
+        </FilterSection>
+      ) : null}
       <FilterSection
         title="Відправники"
         countLabel={countLabel(

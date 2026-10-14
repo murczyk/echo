@@ -41,6 +41,7 @@ export function AnalysisFiltersPanel({
   page,
   isCompactLayout = false,
   fullHeight = false,
+  hideGroupSelection = false,
 }: AnalysisFiltersPanelProps) {
   const {
     isDirty,
@@ -228,6 +229,7 @@ export function AnalysisFiltersPanel({
                   unitsExactMatchOnlyDefault={unitsExactMatchOnlyDefault}
                   analysisAorFilterEnabled={analysisAorFilterEnabled}
                   hideNetworks={hideNetworks}
+                  hideGroupSelection={hideGroupSelection}
                   rerReportFilterEnabled={rerReportFilterEnabled}
                   setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
                   toggleSection={toggleSection}
@@ -291,6 +293,7 @@ export function AnalysisFiltersPanel({
                   unitsExactMatchOnlyDefault={unitsExactMatchOnlyDefault}
                   analysisAorFilterEnabled={analysisAorFilterEnabled}
                   hideNetworks={hideNetworks}
+                  hideGroupSelection={hideGroupSelection}
                   rerReportFilterEnabled={rerReportFilterEnabled}
                   setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
                   toggleSection={toggleSection}

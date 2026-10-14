@@ -77,8 +77,16 @@ export function useGroupFeedNavigation({
   }, [allUnreadCount, snapshot.groups]);
   const selectedGroup =
     scope.kind === 'group'
-      ? (groups.find((group) => group.kind === 'group' && group.masterKey === scope.masterKey) ??
-        groups[0])
+      ? (groups.find((group) => group.kind === 'group' && group.masterKey === scope.masterKey) ?? {
+          kind: 'group' as const,
+          masterKey: scope.masterKey,
+          name: scope.masterKey,
+          ignoreOperativny: false,
+          unreadCount: 0,
+          oldestUnreadMessageRef: null,
+          lastActivityAt: null,
+          latestCursor: null,
+        })
       : groups[0];
 
   const acknowledge = useCallback(
@@ -96,6 +104,7 @@ export function useGroupFeedNavigation({
   return {
     groups,
     scope,
+    ready: !snapshot.stale,
     loading: snapshot.loading,
     error: snapshot.error,
     select: onSelect,

@@ -10,6 +10,7 @@ import { ANALYSIS_CENTER_TAB_META } from './analysis-center-tabs';
 import { analysisCompactTabsSx, analysisNewestFirstLabelSx } from './analysis-tab-styles';
 import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
 import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
+import { GroupIsland } from '../shared/group-navigation';
 
 type Props = {
   page: AnalysisPageViewModel;
@@ -196,6 +197,16 @@ export function AnalysisCenterPanel({
         ) : null}
       </Stack>
 
+      {centerTab === 'messages' ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', px: 1, py: 0.5, flexShrink: 0 }}>
+          <GroupIsland
+            group={page.groupNavigation.selectedGroup}
+            expanded={page.leftPanelOpen}
+            onOpen={page.openLeftPanel}
+          />
+        </Box>
+      ) : null}
+
       <Box
         sx={{
           flex: 1,
@@ -238,6 +249,7 @@ export function AnalysisCenterPanel({
             groupInfos={page.groupInfos}
             paginationLoading={page.messagesPaging}
             isLoading={page.hasLoadedInitialMessages && page.messagesLoading}
+            newestFirst={page.newestFirst}
             botTagAction={page.botTagAction}
             messageComments={page.messageComments}
             messages={page.messages}
@@ -254,7 +266,12 @@ export function AnalysisCenterPanel({
             onViewportCaptureChange={page.setMessageViewportCapture}
             onVisiblePageChange={page.setVisibleMessagesPageIndex}
             onPageNavigationHandled={page.clearMessagePageNavigationTarget}
-            scrollResetKey={`${page.queryState.fromDateTimeStr}|${page.queryState.toDateTimeStr}`}
+            onChronologicalNewestReached={page.acknowledgeGroupAtNewest}
+            scrollResetKey={`${page.queryState.fromDateTimeStr}|${page.queryState.toDateTimeStr}|${
+              page.groupNavigation.scope.kind === 'group'
+                ? page.groupNavigation.scope.masterKey
+                : 'all'
+            }`}
             noMoreToLoad={page.noMoreToLoad}
             onDeleteMessage={page.onDeleteMessage}
             onCancelBotTagAction={page.onCancelBotTagAction}

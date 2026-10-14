@@ -27,6 +27,10 @@ import type { MessageCardBotTagAction } from '../shared/message-card/message-car
 import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 import type { MessageTimeBasis } from '../../services/api/user-settings';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
+import type {
+  GroupFeedNavigationModel,
+  GroupScope,
+} from '../shared/group-navigation/group-navigation.types';
 
 export type AnalysisReportTaskRun = {
   id: number;
@@ -218,6 +222,7 @@ export type AnalysisPageState = {
   isFilterSectionEmptyLoading: (section: AnalysisFilterSectionId, optionCount: number) => boolean;
   isFilterSectionStale: (section: AnalysisFilterSectionId) => boolean;
   groupInfos: Record<string, SignalGroupEntry>;
+  groupNavigation: GroupFeedNavigationModel;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   includeOnlyNewFreqs: boolean;
   inboxReq: InboxMessagesReq | null;
@@ -378,6 +383,9 @@ export type AnalysisPageActions = {
   setVisibleMessagesPageIndex: (pageIndex: number) => void;
   setRightSidebarTab: (tab: AnalysisSidebarTab) => void;
   toggleLeftPanel: () => void;
+  openLeftPanel: () => void;
+  selectGroupScope: (scope: GroupScope, oldestUnreadMessageRef?: string | null) => void;
+  acknowledgeGroupAtNewest: () => void;
   toggleRightPanel: () => void;
   selectOnlyFreq: (freq: string) => void;
   openPointsOnMap: (etalons: string[], message: InboxMessage) => void;

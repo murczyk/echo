@@ -404,6 +404,31 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.radioFeaturesAllowed).toBe(true);
   });
 
+  it('scopes the effective inbox request without mutating the aggregate group filter', async () => {
+    renderHook(['Rer']);
+    await act(async () => {
+      latest?.updateQueryState({ groupsSelected: ['group-a', 'group-c'] });
+    });
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+
+    expect(latest?.queryState.groupsSelected).toEqual(['group-a', 'group-c']);
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.groupsSelected).toEqual([
+      'group-b',
+    ]);
+    expect(new URL(window.location.href).searchParams.get('group')).toBe('group-b');
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'all' });
+    });
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.groupsSelected).toEqual([
+      'group-a',
+      'group-c',
+    ]);
+    expect(new URL(window.location.href).searchParams.has('group')).toBe(false);
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3568
   it('reconciles a bare date range when the user lookup adds Rer access', async () => {
     currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester', roles: ['Rer'] } as User);

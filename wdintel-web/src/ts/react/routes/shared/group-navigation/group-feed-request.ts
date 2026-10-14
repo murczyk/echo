@@ -5,7 +5,10 @@ import type {
 } from '../../../../../Bindings';
 import type { GroupScope } from './group-navigation.types';
 
-type AnalysisAcknowledgeFilter = RerAnalysisQueryState & {
+type AnalysisAcknowledgeFilter = Omit<
+  RerAnalysisQueryState,
+  'dateFromStr' | 'timeFromStr' | 'dateToStr' | 'timeToStr'
+> & {
   includeOnlyNewFreqs?: boolean;
   onlyWithMedia?: boolean;
   onlyWithNetwork?: boolean;

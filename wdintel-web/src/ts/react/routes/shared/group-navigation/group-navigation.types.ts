@@ -20,6 +20,7 @@ export type GroupNavigationItem =
 export type GroupFeedNavigationModel = {
   groups: GroupNavigationItem[];
   scope: GroupScope;
+  ready: boolean;
   loading: boolean;
   error: unknown;
   select: (scope: GroupScope) => void;

@@ -46,6 +46,7 @@ type Props = {
   groupInfos: Record<string, SignalGroupEntry>;
   paginationLoading: boolean;
   isLoading?: boolean;
+  newestFirst: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   firstLoadedMessageIndex: number;
@@ -75,6 +76,7 @@ type Props = {
   onLoadPreviousMessages: () => Promise<boolean>;
   onVisiblePageChange: (pageIndex: number) => void;
   onPageNavigationHandled: () => void;
+  onChronologicalNewestReached?: () => void;
   onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   onSaveMessageUpdate: (
@@ -115,6 +117,7 @@ function AnalysisMessagesPaneComponent({
   groupInfos,
   paginationLoading,
   isLoading = false,
+  newestFirst,
   messageComments,
   messages,
   firstLoadedMessageIndex,
@@ -140,6 +143,7 @@ function AnalysisMessagesPaneComponent({
   onLoadPreviousMessages,
   onVisiblePageChange,
   onPageNavigationHandled,
+  onChronologicalNewestReached,
   onOpenPointsOnMap,
   onAddPointHighlightBlacklist,
   onSaveMessageUpdate,
@@ -194,6 +198,7 @@ function AnalysisMessagesPaneComponent({
     loadingBeforeWindow,
     loadingAfterWindow,
     isLoading,
+    newestFirst,
     pageNavigationTarget,
     viewportPreservationKey,
     edgeLoadRetryKey,
@@ -203,6 +208,7 @@ function AnalysisMessagesPaneComponent({
     onLoadMoreMessages,
     onVisiblePageChange,
     onPageNavigationHandled,
+    onChronologicalNewestReached,
   });
   const recordDebugScrollSnapshot = useCallback(() => {
     const container = scrollerRef.current;

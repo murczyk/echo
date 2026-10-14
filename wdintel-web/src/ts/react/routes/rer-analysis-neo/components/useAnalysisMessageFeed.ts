@@ -33,6 +33,7 @@ type Options = {
   loadingBeforeWindow: boolean;
   loadingAfterWindow: boolean;
   isLoading: boolean;
+  newestFirst: boolean;
   pageNavigationTarget: number | null;
   viewportPreservationKey: number;
   edgeLoadRetryKey: number;
@@ -42,6 +43,7 @@ type Options = {
   onLoadMoreMessages: () => Promise<boolean>;
   onVisiblePageChange: (pageIndex: number) => void;
   onPageNavigationHandled: () => void;
+  onChronologicalNewestReached?: () => void;
 };
 
 export function useAnalysisMessageFeed({
@@ -53,6 +55,7 @@ export function useAnalysisMessageFeed({
   loadingBeforeWindow,
   loadingAfterWindow,
   isLoading,
+  newestFirst,
   pageNavigationTarget,
   viewportPreservationKey,
   edgeLoadRetryKey,
@@ -62,6 +65,7 @@ export function useAnalysisMessageFeed({
   onLoadMoreMessages,
   onVisiblePageChange,
   onPageNavigationHandled,
+  onChronologicalNewestReached,
 }: Options) {
   const onFirstVisibleMessage = useCallback(
     (_id: number, index: number) => {
@@ -73,8 +77,19 @@ export function useAnalysisMessageFeed({
               Math.floor((firstLoadedMessageIndex + index) / ANALYSIS_MESSAGES_PAGE_SIZE),
             ),
       );
+      if (newestFirst && index === 0 && !hasMoreBeforeWindow && !isLoading) {
+        onChronologicalNewestReached?.();
+      }
     },
-    [directMessageNavigation, firstLoadedMessageIndex, onVisiblePageChange],
+    [
+      directMessageNavigation,
+      firstLoadedMessageIndex,
+      hasMoreBeforeWindow,
+      isLoading,
+      newestFirst,
+      onChronologicalNewestReached,
+      onVisiblePageChange,
+    ],
   );
   const pageMessageId =
     pageNavigationTarget === null
@@ -167,6 +182,12 @@ export function useAnalysisMessageFeed({
     onLoadNewer: directMessageNavigation ? load(below) : onLoadMoreMessages,
     unreadPrefetchNeeded: !isLoading && hasMoreBelow,
     onFirstVisibleMessage,
+    onReachedBottom:
+      !newestFirst && !hasMoreBelow && !isLoading
+        ? () => {
+            onChronologicalNewestReached?.();
+          }
+        : undefined,
   };
   return {
     scrollOptions,

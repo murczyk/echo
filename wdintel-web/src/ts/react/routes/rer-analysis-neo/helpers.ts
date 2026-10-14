@@ -21,6 +21,7 @@ import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
 import { getCanonicalUnitIdValue, getUnitIdFilterValue } from '../../utils/unit-search';
 import type { AnalysisQueryState } from './types';
+import type { GroupScope } from '../shared/group-navigation';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
 export const ANALYSIS_MESSAGES_PAGE_SIZE = 20;
@@ -41,6 +42,7 @@ const ONLY_WITH_MEDIA_PARAM = 'only_with_media';
 const LEFT_PANEL_OPEN_PARAM = 'leftPanelOpen';
 const RIGHT_PANEL_OPEN_PARAM = 'rightPanelOpen';
 const MESSAGES_PAGE_PARAM = 'messagesPage';
+const GROUP_SCOPE_PARAM = 'group';
 
 export type AnalysisPanelQueryState = {
   leftPanelOpen: boolean | null;
@@ -209,6 +211,25 @@ export function parseAnalysisPanelQueryStateFromWindow(): AnalysisPanelQueryStat
     leftPanelOpen: parseOptionalBooleanParam(searchParams.get(LEFT_PANEL_OPEN_PARAM)),
     rightPanelOpen: parseOptionalBooleanParam(searchParams.get(RIGHT_PANEL_OPEN_PARAM)),
   };
+}
+
+export function readAnalysisGroupScopeFromUrl(): GroupScope {
+  if (typeof window === 'undefined') return { kind: 'all' };
+  const masterKey = new URL(window.location.href).searchParams.get(GROUP_SCOPE_PARAM)?.trim();
+  return masterKey ? { kind: 'group', masterKey } : { kind: 'all' };
+}
+
+export function writeAnalysisGroupScopeToUrl(
+  scope: GroupScope,
+  options: { replace?: boolean } = {},
+): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (scope.kind === 'group') url.searchParams.set(GROUP_SCOPE_PARAM, scope.masterKey);
+  else url.searchParams.delete(GROUP_SCOPE_PARAM);
+  const href = `${url.pathname}${url.search}${url.hash}`;
+  if (options.replace) window.history.replaceState({}, '', href);
+  else window.history.pushState({}, '', href);
 }
 
 export {

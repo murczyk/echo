@@ -746,7 +746,7 @@ test.describe('@smoke @regression', () => {
     await setupAnalysisNeoPage(page, { inboxResponse: createOverflowingInboxResponse() });
     await page.goto('/rer-analysis-neo');
 
-    const messageList = page.locator('section[aria-labelledby] ul').first();
+    const messageList = page.locator('[data-analysis-message-scroller] ul').first();
     const messageScrollContainer = messageList.locator('..');
     await expect(messageList.locator('[data-message-id]')).toHaveCount(20);
     await expect
@@ -925,7 +925,7 @@ test.describe('@smoke @regression', () => {
     });
     await page.goto('/rer-analysis-neo');
 
-    const messageList = page.locator('section[aria-labelledby] ul').first();
+    const messageList = page.locator('[data-analysis-message-scroller] ul').first();
     const scrollContainer = messageList.locator('..');
     await scrollContainer.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
@@ -1004,7 +1004,7 @@ test.describe('@smoke @regression', () => {
     });
     await page.goto('/rer-analysis-neo');
 
-    const messageList = page.locator('section[aria-labelledby] ul').first();
+    const messageList = page.locator('[data-analysis-message-scroller] ul').first();
     const scrollContainer = messageList.locator('..');
     await expect(messageList.locator('[data-message-id]')).toHaveCount(20);
     await expect.poll(() => scrollContainer.evaluate((element) => element.scrollTop)).toBe(0);
@@ -1160,7 +1160,7 @@ test.describe('@smoke @regression', () => {
     });
     await page.goto('/rer-analysis-neo?search=Analysis');
 
-    const messageList = page.locator('section[aria-labelledby] ul').first();
+    const messageList = page.locator('[data-analysis-message-scroller] ul').first();
     await expect(messageList.locator('[data-message-id]')).toHaveCount(20);
     const messageCountStatus = page
       .locator('[role="status"]')

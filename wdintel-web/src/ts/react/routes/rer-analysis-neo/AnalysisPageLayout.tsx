@@ -95,7 +95,9 @@ export function RerAnalysisNeoPage({
   const leftPanelVisible = page.leftPanelOpen;
   const requestedRightPanelVisible = page.rightPanelOpen;
   const editorIntentKey = createMessageOpen
-    ? 'create-message'
+    ? `create-message:${
+        page.groupNavigation.scope.kind === 'group' ? page.groupNavigation.scope.masterKey : 'all'
+      }`
     : page.reportSource
       ? `create-report:${page.reportSource.id}`
       : page.editorMessage
@@ -185,7 +187,7 @@ export function RerAnalysisNeoPage({
       const applyIntent = () => {
         setEditorSourceMessageId(sourceMessageId ?? null);
         if (page.rightPanelOpen) page.toggleRightPanel();
-        if (key === 'create-message') {
+        if (key.startsWith('create-message:')) {
           if (
             isPresent(page.editorMessage) ||
             isPresent(page.reportSource) ||
@@ -214,9 +216,18 @@ export function RerAnalysisNeoPage({
       page.toggleRightPanel,
     ],
   );
-  const openCreateMessageComposer = useCallback(() => {
-    requestEditorIntent('create-message', () => setCreateMessageOpen(true));
-  }, [requestEditorIntent]);
+  const openCreateMessageComposer = useCallback(
+    (focusTarget?: HTMLElement) => {
+      const scopeKey =
+        page.groupNavigation.scope.kind === 'group' ? page.groupNavigation.scope.masterKey : 'all';
+      requestEditorIntent(
+        `create-message:${scopeKey}`,
+        () => setCreateMessageOpen(true),
+        focusTarget,
+      );
+    },
+    [page.groupNavigation.scope, requestEditorIntent],
+  );
   const openMessageEditor = useCallback(
     (messageId: number, invokingControl?: HTMLElement) => {
       const message = page.messages.find(([id]) => id === messageId)?.[1];
@@ -463,6 +474,11 @@ export function RerAnalysisNeoPage({
                     focusFallbackRef={createMessageFabRef}
                     cyberEchoEnabled={page.cyberEchoEnabled}
                     currentUser={page.currentUser}
+                    initialGroupMasterKey={
+                      page.groupNavigation.scope.kind === 'group'
+                        ? page.groupNavigation.scope.masterKey
+                        : null
+                    }
                     editTarget={page.editorMessage}
                     editAsReport={page.editorEditAsReport}
                     editTargetLoadState={page.editTargetLoadState}
