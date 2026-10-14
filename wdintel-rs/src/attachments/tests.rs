@@ -316,6 +316,7 @@ async fn attachment_search_preserves_cdc_only_history_and_recent_changes_3780()
     execute(source, "CREATE TABLE IF NOT EXISTS public.echo_analytics_attachment_search(singleton boolean PRIMARY KEY CHECK(singleton), started_at timestamp NOT NULL, history_complete boolean NOT NULL DEFAULT false)", vec![]).await.unwrap();
     execute(source, "INSERT INTO public.echo_analytics_attachment_search VALUES(true, now() AT TIME ZONE 'UTC', false) ON CONFLICT(singleton) DO UPDATE SET started_at=EXCLUDED.started_at,history_complete=false", vec![]).await.unwrap();
     execute(source, "UPDATE attachment_document SET created_at=(now() AT TIME ZONE 'UTC')-interval '1 day',updated_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE media_id=$1", vec![job.media_id.into()]).await.unwrap();
+    execute(source, "UPDATE attachment_search_change SET changed_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE singleton", vec![]).await.unwrap();
     for query in [
         "Береза",
         "-Береза",
@@ -381,6 +382,7 @@ async fn attachment_search_preserves_cdc_only_history_and_recent_changes_3780()
     )
     .await
     .is_err());
+    assert_media_mutations_require_source(source, job.media_id).await;
     execute(
         source,
         "DROP TABLE public.echo_analytics_attachment_search",
@@ -404,6 +406,81 @@ async fn attachment_search_preserves_cdc_only_history_and_recent_changes_3780()
     )
     .await
     .is_err());
+}
+
+async fn assert_media_mutations_require_source(
+    source: &sea_orm::DatabaseConnection,
+    media_id: Uuid,
+) {
+    execute(source, "UPDATE attachment_document SET updated_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE media_id=$1", vec![media_id.into()]).await.unwrap();
+    let document = attachment_document::Entity::find_by_id(media_id)
+        .one(source)
+        .await
+        .unwrap()
+        .unwrap();
+    signal_message_media::ActiveModel {
+        id: Set(media_id),
+        file_name: Set(Some("renamed.txt".into())),
+        ..Default::default()
+    }
+    .update(source)
+    .await
+    .unwrap();
+    assert_eq!(
+        attachment_document::Entity::find_by_id(media_id)
+            .one(source)
+            .await
+            .unwrap()
+            .unwrap()
+            .updated_at,
+        document.updated_at
+    );
+    assert_mutation_search_falls_back(source).await;
+    execute(source, "UPDATE attachment_search_change SET changed_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE singleton", vec![]).await.unwrap();
+    super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("renamed".into()),
+        90_000,
+    )
+    .await
+    .unwrap();
+    signal_message_media::Entity::delete_by_id(media_id)
+        .exec(source)
+        .await
+        .unwrap();
+    assert!(attachment_document::Entity::find_by_id(media_id)
+        .one(source)
+        .await
+        .unwrap()
+        .is_none());
+    assert_mutation_search_falls_back(source).await;
+}
+
+async fn assert_mutation_search_falls_back(
+    source: &sea_orm::DatabaseConnection,
+) {
+    for query in [
+        "history",
+        "renamed",
+        "-renamed",
+        "Береза",
+        "-Вільха",
+        "\"зміна позиції\"",
+    ] {
+        let error = super::analytics::ensure_search_coverage(
+            source,
+            source,
+            &Some(query.into()),
+            90_000,
+        )
+        .await
+        .unwrap_err();
+        assert!(error
+            .chain()
+            .any(|error| error
+                .is::<super::analytics::AttachmentSearchCoverageError>()));
+    }
 }
 
 #[tokio::test]

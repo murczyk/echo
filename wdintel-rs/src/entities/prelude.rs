@@ -55,6 +55,7 @@ pub use super::area_of_responsibility_report_order::Entity as AreaOfResponsibili
 pub use super::attachment_chunk::Entity as AttachmentChunk;
 pub use super::attachment_document::Entity as AttachmentDocument;
 pub use super::attachment_job::Entity as AttachmentJob;
+pub use super::attachment_search_change::Entity as AttachmentSearchChange;
 pub use super::attachment_settings::Entity as AttachmentSettings;
 pub use super::battle_line_aor_geometry::Entity as BattleLineAorGeometry;
 pub use super::battle_line_version::Entity as BattleLineVersion;

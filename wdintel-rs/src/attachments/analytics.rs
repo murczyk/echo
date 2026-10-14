@@ -122,7 +122,7 @@ async fn source_matches_incomplete_coverage(
     let row = source
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            format!("SELECT (NOT ${history_parameter} AND EXISTS(SELECT 1 FROM attachment_chunk chunk JOIN attachment_document doc ON doc.media_id=chunk.media_id AND doc.revision=chunk.revision WHERE doc.created_at < ${started_at_parameter} AND ({predicate}))) OR COALESCE((SELECT doc.updated_at FROM attachment_document doc ORDER BY doc.updated_at DESC LIMIT 1) >= ${recent_parameter}, false) AS requires_source"),
+            format!("SELECT (NOT ${history_parameter} AND EXISTS(SELECT 1 FROM attachment_chunk chunk JOIN attachment_document doc ON doc.media_id=chunk.media_id AND doc.revision=chunk.revision WHERE doc.created_at < ${started_at_parameter} AND ({predicate}))) OR COALESCE((SELECT doc.updated_at FROM attachment_document doc ORDER BY doc.updated_at DESC LIMIT 1) >= ${recent_parameter}, false) OR COALESCE((SELECT changed_at FROM attachment_search_change WHERE singleton) >= ${recent_parameter}, true) AS requires_source"),
             values,
         ))
         .await

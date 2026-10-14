@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20261014_144721_attachment_search_change": {
+      "changes": [{ "table": "public.attachment_search_change", "strategy": "excluded" }]
+    },
     "echo:m20261014_140818_attachment_chunk_summary_index": { "changes": [] },
     "echo:m20261014_124732_attachment_document_updated_at_index": { "changes": [] },
     "echo:m20261012_120000_notification_inbox": {

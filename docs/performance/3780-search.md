@@ -49,6 +49,13 @@ or period can also cause fallback. Older attachment matches remain available
 without copying history automatically or combining incomplete negative
 predicates. Other text searches can use analytics with new-only replication.
 
+Filename changes, media moves and deletions update the source-only singleton
+`attachment_search_change`. Its timestamp survives deletion of the document and
+forces the same fallback for all text terms during the freshness window.
+Migration `m20261014_144721_attachment_search_change` initializes it at deployment
+time, covering mutations from before the triggers were installed. The table stays
+excluded from analytics; the coverage probe reads one source row.
+
 Body, filename, attachment-content, frequency, UID, prefix, quoted, and negative
 search semantics are unchanged. Existing freshness checks, source tails,
 revalidation, ordering, and fallback capacity controls remain in place.

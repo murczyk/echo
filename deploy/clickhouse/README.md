@@ -734,7 +734,9 @@ Attachment documents and chunks use CDC-only additions, declared in
 [env/tables-cdc-only.txt](env/tables-cdc-only.txt). Normal reconciliation uses
 PeerDB's `skipInitialSnapshotForTableAdditions` for those tables. Searches with
 possible unreplicated historical or recent attachment matches fall back to
-PostgreSQL. The explicit `oneoff-replicate-historical-attachments` command copies
+PostgreSQL. A source-only mutation marker also covers filename changes, media
+moves and deletions during replication lag.
+The explicit `oneoff-replicate-historical-attachments` command copies
 their history and verifies coverage; rollout and recovery are documented in
 [#3780 search performance](../../docs/performance/3780-search.md).
 
