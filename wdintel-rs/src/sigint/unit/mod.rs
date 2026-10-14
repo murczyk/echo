@@ -374,6 +374,9 @@ async fn read_units_with_orbit_visibility(
             .c(h!())?;
         units = apply_unit_search_order(units, req, can_view_orbit);
     } else if let Some((column, order)) = simple_unit_list_sort(&sort_by) {
+        units = apply_unit_list_cursor(dbx, units, req, column, &order)
+            .await
+            .c(h!())?;
         units = units
             .order_by(column, order.clone())
             .order_by(sigint_unit::Column::Id, order);
@@ -520,18 +523,26 @@ async fn read_units_with_orbit_visibility(
         .offset
         .and_then(|offset| u64::try_from(offset).ok())
         .unwrap_or(0);
-    let units = units.limit(limit).offset(offset).all(dbx).await.c(h!())?;
+    let has_cursor =
+        req.after_unit_id.is_some() || req.before_unit_id.is_some();
+    let fetch_limit = if has_cursor { limit + 1 } else { limit };
+    let mut units = units
+        .limit(fetch_limit)
+        .offset(offset)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let show_load_more = if has_cursor {
+        units.len() as u64 > limit
+    } else {
+        offset.saturating_add(units.len() as u64) < total_count_u64
+    };
+    units.truncate(limit as usize);
     let mut res = vec![];
     for unit in units {
         res.push(render_unit(&unit)?);
     }
     combat_type::populate_names(dbx, &mut res).await.c(h!())?;
-    let show_load_more =
-        if req.after_unit_id.is_some() || req.before_unit_id.is_some() {
-            res.len() as u64 == limit
-        } else {
-            offset.saturating_add(res.len() as u64) < total_count_u64
-        };
     Ok(ListUnitsRsp {
         show_load_more,
         total_count,
@@ -552,6 +563,59 @@ fn selected_unit_count(
         }
         None => status_counts.active,
     }
+}
+
+async fn apply_unit_list_cursor(
+    dbx: &DatabaseConnection,
+    units: Select<sigint_unit::Entity>,
+    req: &ListUnitsReq,
+    column: sigint_unit::Column,
+    order: &Order,
+) -> anyhow::Result<Select<sigint_unit::Entity>> {
+    let ascending = matches!(order, Order::Asc);
+    let cursor_id = if ascending {
+        req.after_unit_id
+    } else {
+        req.before_unit_id
+    };
+    let Some(cursor_id) = cursor_id else {
+        return Ok(units);
+    };
+    let cursor = find_unit(dbx, cursor_id).await.c(h!())?;
+    let value = cursor.get(column);
+    let key = Expr::tuple([
+        Expr::col((sigint_unit::Entity, column)),
+        sigint_unit::Column::Id.into_simple_expr(),
+    ]);
+    let boundary = SimpleExpr::Tuple(vec![value.into(), cursor_id.into()]);
+    if !matches!(column, sigint_unit::Column::OrbitNote) {
+        return Ok(units.filter(if ascending {
+            key.gt(boundary)
+        } else {
+            key.lt(boundary)
+        }));
+    }
+    let condition = if cursor.orbit_note.is_none() {
+        let id_boundary = if ascending {
+            sigint_unit::Column::Id.gt(cursor_id)
+        } else {
+            sigint_unit::Column::Id.lt(cursor_id)
+        };
+        let null_boundary =
+            Condition::all().add(column.is_null()).add(id_boundary);
+        if ascending {
+            Condition::any().add(null_boundary)
+        } else {
+            Condition::any()
+                .add(null_boundary)
+                .add(column.is_not_null())
+        }
+    } else if ascending {
+        Condition::any().add(key.gt(boundary)).add(column.is_null())
+    } else {
+        Condition::any().add(key.lt(boundary))
+    };
+    Ok(units.filter(condition))
 }
 
 fn unit_list_sort(
@@ -4801,6 +4865,77 @@ mod tests {
             &[matching_prefix.id, misleading_division.id],
         )
         .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn regression_3535_unlinked_units_seek_past_duplicate_names() {
+        let env = cleanup().await.unwrap();
+        let mut units = Vec::new();
+        for active in [true, false, true] {
+            units.push(
+                crate::functest::tests::mk_sigint_unit(
+                    &env.dbx,
+                    sigint_unit::ActiveModel {
+                        name: Set("3535 same name".to_string()),
+                        comment: Set("3535 same comment".to_string()),
+                        active: Set(active),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        let request = ListUnitsReq {
+            include_inactive: true,
+            filter_has_orbit: Some(false),
+            limit: Some(1),
+            ..Default::default()
+        };
+        for sort_by in [
+            ListUnitsSortBy::UnitNameAsc,
+            ListUnitsSortBy::UnitNameDesc,
+            ListUnitsSortBy::UnitCommentAsc,
+            ListUnitsSortBy::UnitCommentDesc,
+        ] {
+            let descending = matches!(
+                sort_by,
+                ListUnitsSortBy::UnitNameDesc
+                    | ListUnitsSortBy::UnitCommentDesc
+            );
+            let expected = if descending { [2, 1, 0] } else { [0, 1, 2] };
+            let mut request = ListUnitsReq {
+                sort_by: Some(sort_by),
+                ..request.clone()
+            };
+            for (index, expected) in expected.into_iter().enumerate() {
+                let page = read_units(&env.dbx, &request).await.unwrap();
+                assert_eq!(page.units.len(), 1);
+                assert_eq!(page.units[0].id, units[expected].id);
+                assert_eq!(page.total_count, 3);
+                assert_eq!(page.show_load_more, index < 2);
+                if descending {
+                    request.before_unit_id = Some(page.units[0].id);
+                } else {
+                    request.after_unit_id = Some(page.units[0].id);
+                }
+            }
+        }
+        link_current_duplicate_candidate(&env.dbx, units[1].id).await;
+        let page = read_units(
+            &env.dbx,
+            &ListUnitsReq {
+                sort_by: Some(ListUnitsSortBy::UnitNameAsc),
+                after_unit_id: Some(units[1].id),
+                ..request
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(page.total_count, 2);
+        assert_eq!(page.units[0].id, units[2].id);
+        assert!(!page.show_load_more);
     }
 
     #[tokio::test]

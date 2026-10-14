@@ -63,6 +63,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   const canEdit = useMemo(() => hasRole(authUserRoles, 'UnitsEditor'), [authUserRoles]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [showLoadMore, setShowLoadMore] = useState(false);
   const [statusCounts, setStatusCounts] = useState({ active: 0, inactive: 0 });
   const [attachmentUnitIds, setAttachmentUnitIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -106,6 +107,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
         if (!isCurrent()) return;
         setUnits(response.units);
         setTotalCount(response.totalCount);
+        setShowLoadMore(response.showLoadMore);
         setStatusCounts(response.statusCounts);
         try {
           const unitIds = response.units.map((unit) => unit.id);
@@ -357,6 +359,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
       if (!isCurrent()) return;
       setUnits(response.units);
       setTotalCount(response.totalCount);
+      setShowLoadMore(response.showLoadMore);
       setStatusCounts(response.statusCounts);
       setAttachmentUnitIds(new Set());
       setStatus({ severity: 'success', text: successText });
@@ -566,6 +569,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   return {
     units,
     totalCount,
+    showLoadMore,
     statusCounts,
     attachmentUnitIds,
     loading,

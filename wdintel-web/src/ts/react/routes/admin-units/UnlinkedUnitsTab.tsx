@@ -49,7 +49,7 @@ const COLUMNS: AppMrtColumnDef<Unit>[] = [
   },
 ];
 
-function useUnlinkedUnitsRequest(pageIndex: number) {
+function useUnlinkedUnitsRequest() {
   const tableState = useTableStateContext();
   const [filters, setFilters] = useState({
     globalFilter: tableState.globalFilter,
@@ -81,11 +81,12 @@ function useUnlinkedUnitsRequest(pageIndex: number) {
         statusFilter: 'all',
         sorting: tableState.sorting,
         searchMode: 'strict',
-        pagination: { pageIndex, pageSize: UNLINKED_UNITS_PAGE_SIZE },
+        pagination: { pageIndex: 0, pageSize: UNLINKED_UNITS_PAGE_SIZE },
       }),
       filterHasOrbit: false,
+      offset: null,
     }),
-    [filters, pageIndex, tableState.sorting],
+    [filters, tableState.sorting],
   );
 }
 
@@ -133,22 +134,36 @@ function UnlinkedUnitsTable({
 }
 
 function UnlinkedUnitsTabBody({ authUserRoles }: { authUserRoles: string[] }) {
-  const tableState = useTableStateContext();
-  const [pageIndex, setPageIndex] = useState(0);
   const [orbitTarget, setOrbitTarget] = useState<Unit | null>(null);
-  const listReq = useUnlinkedUnitsRequest(pageIndex);
+  const request = useUnlinkedUnitsRequest();
+  const [pagination, setPagination] = useState({
+    request,
+    cursors: [null] as (number | null)[],
+  });
+  if (pagination.request !== request) {
+    setPagination({ request, cursors: [null] });
+  }
+  const pageIndex = pagination.cursors.length - 1;
+  const cursor = pagination.cursors[pageIndex];
+  const listReq = useMemo(
+    () => ({
+      ...request,
+      afterUnitId: request.sortBy?.endsWith('Desc') ? null : cursor,
+      beforeUnitId: request.sortBy?.endsWith('Desc') ? cursor : null,
+    }),
+    [request, cursor],
+  );
   const page = useRerUnitsPage(authUserRoles, listReq);
   const loading = page.loading || !page.settingsReady;
 
   useEffect(() => {
-    setPageIndex(0);
-  }, [tableState.globalFilter, tableState.columnFilters, tableState.sorting]);
-
-  useEffect(() => {
-    if (page.loading) return;
-    const lastPageIndex = Math.max(0, Math.ceil(page.totalCount / UNLINKED_UNITS_PAGE_SIZE) - 1);
-    setPageIndex((current) => Math.min(current, lastPageIndex));
-  }, [page.loading, page.totalCount]);
+    if (page.loading || page.loadError !== null || page.units.length > 0) return;
+    setPagination((current) =>
+      current.cursors.length === 1
+        ? current
+        : { ...current, cursors: current.cursors.slice(0, -1) },
+    );
+  }, [page.loading, page.loadError, page.units.length]);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-echo-md">
@@ -161,9 +176,23 @@ function UnlinkedUnitsTabBody({ authUserRoles }: { authUserRoles: string[] }) {
             pageIndex={pageIndex}
             pageSize={UNLINKED_UNITS_PAGE_SIZE}
             totalCount={page.totalCount}
+            hasNextPage={page.showLoadMore}
             loading={loading || page.loadError !== null || page.orbitDataHidden}
-            onPrevPage={() => setPageIndex((current) => Math.max(0, current - 1))}
-            onNextPage={() => setPageIndex((current) => current + 1)}
+            onPrevPage={() =>
+              setPagination((current) => ({
+                ...current,
+                cursors: current.cursors.slice(0, Math.max(1, current.cursors.length - 1)),
+              }))
+            }
+            onNextPage={() => {
+              const lastUnit = page.units.at(-1);
+              if (lastUnit) {
+                setPagination((current) => ({
+                  ...current,
+                  cursors: [...current.cursors, lastUnit.id],
+                }));
+              }
+            }}
           />
         }
         additionalInternalActions={

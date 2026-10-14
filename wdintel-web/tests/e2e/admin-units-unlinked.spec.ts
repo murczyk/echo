@@ -55,11 +55,25 @@ test('#3113 administers all unlinked units through the default first tab @regres
     );
     if (req.filter_has_orbit === false) listRequests.push(req);
     const offset = req.offset ?? 0;
+    const cursorId = req.after_unit_id ?? req.before_unit_id;
+    const cursor = units.find((unit) => unit.id === cursorId);
+    const descending = req.sort_by?.endsWith('Desc');
+    const ordered = [...filtered].sort((left, right) => {
+      const comparison = left.name.localeCompare(right.name) || left.id - right.id;
+      return descending ? -comparison : comparison;
+    });
+    const remaining = cursor
+      ? ordered.filter((unit) => {
+          const comparison = unit.name.localeCompare(cursor.name) || unit.id - cursor.id;
+          return descending ? comparison < 0 : comparison > 0;
+        })
+      : ordered;
+    const pageUnits = remaining.slice(offset, offset + (req.limit ?? remaining.length));
     return route.fulfill({
       json: {
-        units: filtered.slice(offset, offset + (req.limit ?? filtered.length)),
+        units: pageUnits,
         total_count: filtered.length,
-        show_load_more: false,
+        show_load_more: offset + pageUnits.length < remaining.length,
         status_counts: {
           active: filtered.filter((unit) => unit.active).length,
           inactive: filtered.filter((unit) => !unit.active).length,
@@ -124,14 +138,45 @@ test('#3113 administers all unlinked units through the default first tab @regres
     filter_active: null,
     filter_has_orbit: false,
     limit: 20,
-    offset: 0,
+    offset: null,
+    after_unit_id: null,
   });
   await expect(page.getByText('3113 підрозділ 22', { exact: true })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Наступна сторінка' }).click();
   const inactiveRow = page.getByRole('row').filter({ hasText: '3113 підрозділ 21' });
   await expect(inactiveRow).toContainText('Неактивний');
-  expect(listRequests.at(-1)?.offset).toBe(20);
+  expect(listRequests.at(-1)).toMatchObject({ offset: null, after_unit_id: 20 });
+  await page.getByRole('button', { name: 'Попередня сторінка' }).click();
+  await expect(page.getByText('1-20 з 21', { exact: true })).toBeVisible();
+  expect(listRequests.at(-1)).toMatchObject({ offset: null, after_unit_id: null });
+  await page.getByRole('button', { name: 'Наступна сторінка' }).click();
+  await expect(inactiveRow).toContainText('Неактивний');
+  await page
+    .getByRole('button', { name: 'Сортувати по Підрозділ за зростанням', exact: true })
+    .click();
+  await expect(page.getByText('1-20 з 21', { exact: true })).toBeVisible();
+  expect(listRequests.at(-1)).toMatchObject({
+    sort_by: 'UnitNameDesc',
+    after_unit_id: null,
+    before_unit_id: null,
+    offset: null,
+  });
+  await page.getByRole('button', { name: 'Наступна сторінка' }).click();
+  await expect(page.getByText('21-21 з 21', { exact: true })).toBeVisible();
+  expect(listRequests.at(-1)).toMatchObject({ offset: null, before_unit_id: 2 });
+  await page.getByRole('textbox', { name: 'Пошук', exact: true }).fill('3113');
+  await expect.poll(() => listRequests.at(-1)?.filter_text).toBe('3113');
+  await expect(page.getByText('1-20 з 21', { exact: true })).toBeVisible();
+  expect(listRequests.at(-1)).toMatchObject({
+    sort_by: 'NaturalMilitarySortAsc',
+    after_unit_id: null,
+    before_unit_id: null,
+    offset: null,
+  });
+  await page.goto('/admin/units');
+  await page.getByRole('button', { name: 'Наступна сторінка' }).click();
+  await expect(inactiveRow).toContainText('Неактивний');
   await inactiveRow.getByRole('button', { name: 'Прив’язати до Orbit', exact: true }).click();
   const orbitDialog = page.getByRole('dialog');
   await expect(orbitDialog.getByText('Orbit підрозділ 21', { exact: true }).first()).toBeVisible();
