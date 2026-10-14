@@ -12,7 +12,7 @@ import type {
 type Options = {
   enabled: boolean;
   scope: GroupScope;
-  allUnreadCount: number;
+  allUnreadCount?: number;
   onSelect: (scope: GroupScope) => void;
   onError: (error: unknown) => void;
   store?: GroupFeedStateStore;
@@ -36,8 +36,9 @@ export function useGroupFeedNavigation({
 
   useInboxChangedMessageIds({
     onMessageIds: useCallback(() => {
+      if (!enabled) return;
       store.invalidate();
-    }, [store]),
+    }, [enabled, store]),
   });
 
   useEffect(() => {
@@ -59,20 +60,21 @@ export function useGroupFeedNavigation({
     onError(snapshot.error);
   }, [onError, snapshot.error]);
 
-  const groups = useMemo<GroupNavigationItem[]>(
-    () => [
+  const groups = useMemo<GroupNavigationItem[]>(() => {
+    const aggregateUnreadCount =
+      allUnreadCount ?? snapshot.groups.reduce((sum, group) => sum + group.unreadCount, 0);
+    return [
       {
         kind: 'all',
         masterKey: null,
         name: 'Всі групи',
-        unreadCount: allUnreadCount,
+        unreadCount: aggregateUnreadCount,
         oldestUnreadMessageRef: null,
         latestCursor: null,
       },
       ...snapshot.groups.map((group) => ({ kind: 'group' as const, ...group })),
-    ],
-    [allUnreadCount, snapshot.groups],
-  );
+    ];
+  }, [allUnreadCount, snapshot.groups]);
   const selectedGroup =
     scope.kind === 'group'
       ? (groups.find((group) => group.kind === 'group' && group.masterKey === scope.masterKey) ??
@@ -84,7 +86,7 @@ export function useGroupFeedNavigation({
       try {
         return await store.acknowledge(request, signal);
       } catch (error) {
-        onError(error);
+        if (!signal?.aborted) onError(error);
         throw error;
       }
     },

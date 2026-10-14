@@ -123,4 +123,24 @@ describe('group feed state store', () => {
     expect(fetchStates).not.toHaveBeenCalled();
     release();
   });
+
+  it('does not publish an acknowledgement completed after its scope was aborted', async () => {
+    const response = deferred<GroupFeedState>();
+    const acknowledge = vi.fn(() => response.promise);
+    const store = createGroupFeedStateStore({ acknowledge });
+    const controller = new AbortController();
+    const pending = store.acknowledge(
+      {
+        masterKey: 'g-1',
+        cursor: { createdAt: 10, messageId: 11 },
+      },
+      controller.signal,
+    );
+
+    controller.abort();
+    response.resolve(group('g-1', 0));
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(store.getSnapshot().groups).toEqual([]);
+  });
 });

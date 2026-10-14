@@ -327,7 +327,8 @@ test('keeps every feed position and the last scroll action inset while the edito
     '59px',
   );
 
-  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  await feeds.nth(0).hover();
+  await feeds.nth(0).getByRole('button', { name: 'Додати повідомлення' }).click();
 
   await expect(page.locator('[data-manage-message-presentation="embedded"]')).toBeVisible();
   await expect(page.locator('[data-duty-feed-column]')).toHaveCount(2);
@@ -389,7 +390,8 @@ test('restores every feed position through editor tabs and close @regression', a
   const firstAnchor = await readVisibleAnchor(firstScroller);
   const secondAnchor = await readVisibleAnchor(secondScroller);
 
-  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  await feeds.nth(0).hover();
+  await feeds.nth(0).getByRole('button', { name: 'Додати повідомлення' }).click();
 
   await expect(page.getByRole('tab', { name: 'Стрічка 1' })).toBeVisible();
   await expectVisibleAnchor(page.locator('[data-duty-feed-scroller="true"]'), firstAnchor);

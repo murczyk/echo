@@ -57,6 +57,7 @@ import {
   withDutyFeedRequestDeadline,
 } from './dutyFeedRequestDeadline';
 import { buildPersistedDutyFilterState, persistDutyFilterState } from './duty-filter-persistence';
+import { applyGroupScopeToInboxRequest } from '../shared/group-navigation';
 
 export type FeedStateDeps = {
   freqs: string[];
@@ -600,7 +601,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               deniedDeviceNames: null,
             }
           : feed.filter;
-      return buildInboxReq({
+      const request = buildInboxReq({
         ...opts,
         filter: radioFeaturesAllowed
           ? filter
@@ -609,6 +610,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,
       });
+      return applyGroupScopeToInboxRequest(
+        request,
+        feed.groupScopeMasterKey
+          ? { kind: 'group', masterKey: feed.groupScopeMasterKey }
+          : { kind: 'all' },
+      );
     },
     [deviceAccess.status, freqs, radioFeaturesAllowed],
   );
@@ -1309,6 +1316,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     applyFilter: crud.applyFilter,
     toggleGroup: crud.toggleGroup,
     selectAllGroups: crud.selectAllGroups,
+    setGroupScope: crud.setGroupScope,
     createMessageFeed: crud.createMessageFeed,
     removeMessageFeed: crud.removeMessageFeed,
     buildReqForFeed,

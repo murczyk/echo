@@ -25,6 +25,7 @@ export type DutyFeedFilterOptions = {
   adjacentFreqsRange: number;
   highlightSignalsEnabled: boolean;
   onlyMyUnitTagsEnabled: boolean;
+  groupScopeMasterKey?: string | null;
 };
 
 export type RerDutyState = {
@@ -259,6 +260,10 @@ function normalizePersistedFeedOptions(value: unknown): DutyFeedFilterOptions | 
     adjacentFreqsRange,
     highlightSignalsEnabled: raw.highlightSignalsEnabled === true,
     onlyMyUnitTagsEnabled: raw.onlyMyUnitTagsEnabled === true,
+    groupScopeMasterKey:
+      typeof raw.groupScopeMasterKey === 'string' && raw.groupScopeMasterKey.trim() !== ''
+        ? raw.groupScopeMasterKey
+        : null,
   };
 }
 
@@ -507,12 +512,25 @@ export function stableStringify(state: unknown): string {
 export function toShortQueryState(messageFeeds: MessageFeedState[]): RerDutyQueryState {
   return {
     waterfalls: messageFeeds.map((f) => [f.id, f.filter]),
+    groupScopes: messageFeeds.flatMap((feed) =>
+      feed.groupScopeMasterKey ? [[feed.id, feed.groupScopeMasterKey] as [string, string]] : [],
+    ),
   };
 }
 
 export function toRerDutyStateFromShort(state: RerDutyQueryState): RerDutyState {
+  const groupScopes = new Map(state.groupScopes ?? []);
   return {
-    messageFeeds: normalizeFeedEntries(state.waterfalls ?? []),
+    messageFeeds: normalizeFeedEntries(state.waterfalls ?? []).map(([id, filter]) => [
+      id,
+      filter,
+      {
+        adjacentFreqsRange: 0,
+        highlightSignalsEnabled: false,
+        onlyMyUnitTagsEnabled: false,
+        groupScopeMasterKey: groupScopes.get(id) ?? null,
+      },
+    ]),
   };
 }
 
@@ -937,6 +955,7 @@ export function dedupeMessageItems(items: MessageItem[]): MessageItem[] {
 export type MessageFeedState = {
   id: string;
   filter: RerDutyFeedFilterState;
+  groupScopeMasterKey?: string | null;
   items: MessageItem[];
   loading: boolean;
   loadingOlder: boolean;
@@ -1270,6 +1289,7 @@ export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {
         adjacentFreqsRange: f.adjacentFreqsRange,
         highlightSignalsEnabled: f.highlightSignalsEnabled,
         onlyMyUnitTagsEnabled: f.onlyMyUnitTagsEnabled,
+        groupScopeMasterKey: f.groupScopeMasterKey,
       },
     ]),
   };

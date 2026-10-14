@@ -122,6 +122,13 @@ describe('group feed requests', () => {
         field,
       ).toBe(false);
     });
+    expect(
+      isDutyGroupViewAcknowledgeable({
+        ...emptyDutyFilter,
+        highlightKeywordsEnabled: true,
+        highlightKeywordSetId: 7,
+      }),
+    ).toBe(false);
   });
 
   it('recognizes Analysis content filters as acknowledgement-unsafe', () => {

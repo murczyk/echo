@@ -133,6 +133,7 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
 
   const acknowledge = async (request: AcknowledgeGroupFeedReq, signal?: AbortSignal) => {
     const group = await acknowledgeRequest(request, signal);
+    if (signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
     const groupIndex = snapshot.groups.findIndex((item) => item.masterKey === group.masterKey);
     const groups = [...snapshot.groups];
     if (groupIndex === -1) groups.push(group);

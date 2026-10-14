@@ -3106,6 +3106,7 @@ savedFilterRenameReqEncoder struct =
 
 type alias RerDutyQueryState =
     { waterfalls : Maybe (List (( String, RerDutyQueryStateWf )))
+    , groupScopes : Maybe (List (( String, String )))
     }
 
 
@@ -3113,6 +3114,7 @@ rerDutyQueryStateEncoder : RerDutyQueryState -> Json.Encode.Value
 rerDutyQueryStateEncoder struct =
     Json.Encode.object
         [ ( "waterfalls", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (\( a, b) -> Json.Encode.list identity [ Json.Encode.string a, rerDutyQueryStateWfEncoder b ]))) struct.waterfalls )
+        , ( "group_scopes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (\( a, b) -> Json.Encode.list identity [ Json.Encode.string a, Json.Encode.string b ]))) struct.groupScopes )
         ]
 
 
@@ -20159,6 +20161,7 @@ rerDutyQueryStateDecoder : Json.Decode.Decoder RerDutyQueryState
 rerDutyQueryStateDecoder =
     Json.Decode.succeed RerDutyQueryState
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "waterfalls" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (rerDutyQueryStateWfDecoder)))))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string)))))))
 
 
 rerDutyQueryStateWfDecoder : Json.Decode.Decoder RerDutyQueryStateWf

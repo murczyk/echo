@@ -1206,6 +1206,7 @@ export type SavedFilterRenameReq = {
 
 export type RerDutyQueryState = {
   waterfalls: Array<[string, RerDutyQueryStateWf]> | null;
+  groupScopes: Array<[string, string]> | null;
 };
 
 export type RerDutyQueryStateWf = {

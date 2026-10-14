@@ -17,6 +17,7 @@ import type { DutyWorkspaceFabAvoidance } from './duty-scroll-fab-position';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { AnchorSnapshot, ReachedBottomContext } from '../shared/message-feed';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
+import type { GroupScope } from '../shared/group-navigation';
 
 export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' | 'exhausted';
 
@@ -52,6 +53,12 @@ export type FeedColumnModel = {
     onScrollAnchorSnapshotChange?: (feedId: string, snapshot: AnchorSnapshot | null) => void;
   };
   filterPanel: FeedFilterPanelModel;
+  groupNavigation?: {
+    scope: GroupScope;
+    groupName: string;
+    onSelect: (scope: GroupScope, oldestUnreadMessageRef: string | null) => void;
+    onError: (error: unknown) => void;
+  };
   keywordsPanel: {
     keywordSets: OrganismKeywordSetDto[];
     onFilterChange: (feedId: string, nextFilter: RerDutyFeedFilterState) => void;
@@ -108,6 +115,7 @@ export type FeedColumnModel = {
     onMessageToggleTag: (msgId: number, tagId: number) => void;
     onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
     onCreateFeed?: () => void;
+    onCreateMessage?: (focusTarget?: HTMLElement) => void;
     onScrollToTop?: () => void;
     /** Called at the physical bottom. Return false to preserve the current anchor instead of following an unread pending tail. */
     onReachedBottom?: (context: ReachedBottomContext) => boolean | void;

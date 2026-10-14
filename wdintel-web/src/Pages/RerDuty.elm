@@ -525,6 +525,7 @@ modelQueryState : Model -> B.RerDutyQueryState
 modelQueryState model =
     { waterfalls =
         Just <| List.map (\( wfId, wf ) -> ( wfId, waterfallQueryState wf )) model.waterfalls
+    , groupScopes = Nothing
     }
 
 

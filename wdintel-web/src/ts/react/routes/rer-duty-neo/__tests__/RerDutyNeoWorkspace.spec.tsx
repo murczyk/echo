@@ -11,9 +11,6 @@ import type { MessageFeedState } from '.././utils';
 import { MAX_MESSAGE_FEEDS } from '.././utils';
 
 const renderedFeedColumns = new Map<string, FeedColumnModel>();
-const createMessageFabPropsHistory = vi.hoisted(
-  () => [] as Array<{ onClick?: () => void; rightInset?: number }>,
-);
 
 vi.mock('.././FeedColumn', () => ({
   FeedColumn: forwardRef<HTMLDivElement, { column: FeedColumnModel }>(function FeedColumnMock(
@@ -28,13 +25,6 @@ vi.mock('.././FeedColumn', () => ({
     }, [column]);
     return <div ref={ref} data-testid={`feed-column-${column.feed.id}`} />;
   }),
-}));
-
-vi.mock('../../shared/manage-message/CreateMessageFab', () => ({
-  CreateMessageFab: ({ onClick, rightInset }: { onClick: () => void; rightInset?: number }) => {
-    createMessageFabPropsHistory.push({ onClick, rightInset });
-    return <button type="button" aria-label="Додати повідомлення" onClick={onClick} />;
-  },
 }));
 
 function buildFeed(id: string): MessageFeedState {
@@ -183,7 +173,6 @@ describe('RerDutyNeoWorkspace', () => {
 
   beforeEach(() => {
     renderedFeedColumns.clear();
-    createMessageFabPropsHistory.splice(0);
   });
 
   afterEach(() => {
@@ -427,6 +416,7 @@ describe('RerDutyNeoWorkspace', () => {
       },
     });
     const columnRefsRef = { current: {} as Record<string, null> };
+    const openCreateMessageComposer = vi.fn();
 
     await act(async () => {
       root.render(
@@ -435,7 +425,7 @@ describe('RerDutyNeoWorkspace', () => {
           buildFeedColumnModel={narrowBuildFeedColumnModel}
           columnRefsRef={columnRefsRef}
           createMessageFeed={() => {}}
-          openCreateMessageComposer={vi.fn()}
+          openCreateMessageComposer={openCreateMessageComposer}
           isInitialLoading={false}
           messageFeeds={messageFeeds}
           narrowScreen
@@ -445,15 +435,11 @@ describe('RerDutyNeoWorkspace', () => {
       );
     });
 
-    const fab = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Додати повідомлення"]',
-    );
-    expect(fab).not.toBeNull();
-    expect(container.contains(fab)).toBe(true);
-    expect(createMessageFabPropsHistory.at(-1)?.rightInset).toBe(5);
     expect(renderedFeedColumns.has('feed-1')).toBe(false);
     expect(renderedFeedColumns.get('feed-2')?.view.workspaceFabAvoidance).toBe('above');
     expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
+    renderedFeedColumns.get('feed-2')?.actions.onCreateMessage?.();
+    expect(openCreateMessageComposer).toHaveBeenCalledWith('feed-2', undefined);
   });
 
   it('enables scroll tracking only for the active narrow feed and flips it on tab change', async () => {
@@ -547,13 +533,10 @@ describe('RerDutyNeoWorkspace', () => {
 
     await renderWorkspace(1);
     expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('none');
-    expect(container.querySelectorAll('button[aria-label="Додати повідомлення"]')).toHaveLength(1);
     await act(async () => {
-      container
-        .querySelector('button[aria-label="Додати повідомлення"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      renderedFeedColumns.get('feed-1')?.actions.onCreateMessage?.();
     });
-    expect(openCreateMessageComposer).toHaveBeenCalledTimes(1);
+    expect(openCreateMessageComposer).toHaveBeenCalledWith('feed-1', undefined);
     openCreateMessageComposer.mockReset();
 
     await renderWorkspace(MAX_MESSAGE_FEEDS - 1);
@@ -572,18 +555,18 @@ describe('RerDutyNeoWorkspace', () => {
     ).toBe('left');
     expect(
       Array.from(renderedFeedColumns.values()).every(
-        (column) => !Object.prototype.hasOwnProperty.call(column.actions, 'onCreateMessage'),
+        (column) => typeof column.actions.onCreateMessage === 'function',
       ),
     ).toBe(true);
-    expect(container.querySelectorAll('button[aria-label="Додати повідомлення"]')).toHaveLength(1);
     await act(async () => {
       renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.actions.onCreateFeed?.();
-      container
-        .querySelector('button[aria-label="Додати повідомлення"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.actions.onCreateMessage?.();
     });
     expect(createMessageFeed).toHaveBeenCalledTimes(1);
-    expect(openCreateMessageComposer).toHaveBeenCalledTimes(1);
+    expect(openCreateMessageComposer).toHaveBeenCalledWith(
+      `feed-${MAX_MESSAGE_FEEDS - 1}`,
+      undefined,
+    );
 
     createMessageFeed.mockReset();
     openCreateMessageComposer.mockReset();
@@ -604,14 +587,11 @@ describe('RerDutyNeoWorkspace', () => {
     );
     expect(
       Array.from(renderedFeedColumns.values()).every(
-        (column) => !Object.prototype.hasOwnProperty.call(column.actions, 'onCreateMessage'),
+        (column) => typeof column.actions.onCreateMessage === 'function',
       ),
     ).toBe(true);
-    expect(container.querySelectorAll('button[aria-label="Додати повідомлення"]')).toHaveLength(1);
     await act(async () => {
-      container
-        .querySelector('button[aria-label="Додати повідомлення"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS}`)?.actions.onCreateMessage?.();
     });
 
     expect(workspaceAfter.style.paddingTop).toBe(workspaceBefore.style.paddingTop);
@@ -650,7 +630,7 @@ describe('RerDutyNeoWorkspace', () => {
     expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
   });
 
-  it('still renders the create-message FAB in narrow and desktop workspace states', async () => {
+  it('exposes a create-message action on each loaded narrow and desktop column', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -665,7 +645,7 @@ describe('RerDutyNeoWorkspace', () => {
           columnRefsRef={columnRefsRef}
           createMessageFeed={() => {}}
           openCreateMessageComposer={() => {}}
-          isInitialLoading={true}
+          isInitialLoading={false}
           messageFeeds={messageFeeds}
           narrowScreen
           onSelectFeed={() => {}}
@@ -674,12 +654,7 @@ describe('RerDutyNeoWorkspace', () => {
       );
     });
 
-    const narrowFab = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Додати повідомлення"]',
-    );
-    expect(narrowFab).not.toBeNull();
-    expect(container.contains(narrowFab)).toBe(true);
-    expect(createMessageFabPropsHistory.at(-1)?.rightInset).toBe(5);
+    expect(renderedFeedColumns.get('feed-1')?.actions.onCreateMessage).toBeDefined();
 
     await act(async () => {
       root.render(
@@ -698,12 +673,7 @@ describe('RerDutyNeoWorkspace', () => {
       );
     });
 
-    const desktopFab = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Додати повідомлення"]',
-    );
-    expect(desktopFab).not.toBeNull();
-    expect(container.contains(desktopFab)).toBe(true);
-    expect(createMessageFabPropsHistory.at(-1)?.rightInset).toBe(5);
+    expect(renderedFeedColumns.get('feed-1')?.actions.onCreateMessage).toBeDefined();
   });
 
   it('does not mutate the source column view when enabling scroll tracking', async () => {
@@ -783,6 +753,7 @@ describe('RerDutyNeoWorkspace', () => {
     expect(container.querySelector('[data-testid="feed-column-feed-3"]')).not.toBeNull();
     expect(container.querySelector('[role="tablist"][aria-label="Стрічки"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Додати повідомлення"]')).toBeNull();
+    expect(renderedFeedColumns.get('feed-3')?.actions.onCreateMessage).toBeUndefined();
   });
 
   it('restores all feed columns and the create action after the embedded editor closes', async () => {
@@ -833,6 +804,10 @@ describe('RerDutyNeoWorkspace', () => {
     await act(async () => render(false, false));
     expect(container.querySelectorAll('[data-testid^="feed-column-"]')).toHaveLength(4);
     expect(renderedFeedColumns.has('feed-3')).toBe(true);
-    expect(container.querySelector('[aria-label="Додати повідомлення"]')).not.toBeNull();
+    expect(
+      Array.from(renderedFeedColumns.values()).every(
+        (column) => typeof column.actions.onCreateMessage === 'function',
+      ),
+    ).toBe(true);
   });
 });

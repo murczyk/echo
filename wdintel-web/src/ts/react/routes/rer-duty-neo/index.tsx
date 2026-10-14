@@ -50,11 +50,20 @@ import {
   messageNavigationErrorText,
   type MessageNavigationHost,
 } from '../shared/message-navigation';
+import type { GroupScope } from '../shared/group-navigation';
 
 type DutyLinkedMessageLanding = { feedId: string; targetIds: number[] };
 
 type PendingDutyLinkedMessage = DutyLinkedMessageLanding & {
   filterSignature: string;
+  errorVersion: number;
+  sawLoading: boolean;
+  resolve: (landing: DutyLinkedMessageLanding | null) => void;
+  reject: (reason: unknown) => void;
+};
+
+type PendingDutyGroupNavigation = DutyLinkedMessageLanding & {
+  groupMasterKey: string;
   errorVersion: number;
   sawLoading: boolean;
   resolve: (landing: DutyLinkedMessageLanding | null) => void;
@@ -88,7 +97,7 @@ export function RerDutyNeoPage({
   });
   const editorRef = useRef<ManageMessageEditorHandle>(null);
   const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
-  const createMessageFabRef = useRef<HTMLButtonElement | null>(null);
+  const createMessageFabRef = useRef<HTMLElement | null>(null);
   const reportLoadControllerRef = useRef<AbortController | null>(null);
   const cancelReportEditLoad = useCallback(() => {
     reportLoadControllerRef.current?.abort();
@@ -266,6 +275,7 @@ export function RerDutyNeoPage({
     setDeleteConfirmFeedId,
     deleteConfirmId,
     applyFilter,
+    setGroupScope,
     setFeedInitialTarget,
     setWatchModeByFeedId,
     cancelFollowTail,
@@ -409,7 +419,116 @@ export function RerDutyNeoPage({
     pending.resolve({ feedId: pending.feedId, targetIds: pending.targetIds });
   }, [messageFeeds, targetFeedId, error, errorNotificationVersion]);
 
+  const groupNavigationRequestRef = useRef<{
+    feedId: string;
+    groupMasterKey: string;
+  } | null>(null);
+  const pendingGroupNavigationRef = useRef<PendingDutyGroupNavigation | null>(null);
+  const setGroupScopeRef = useRef(setGroupScope);
+  setGroupScopeRef.current = setGroupScope;
+  const groupNavigationHostRef = useRef<MessageNavigationHost<DutyLinkedMessageLanding> | null>(
+    null,
+  );
+  if (groupNavigationHostRef.current === null) {
+    groupNavigationHostRef.current = {
+      materialize: (context) => {
+        const request = groupNavigationRequestRef.current;
+        if (!request) return Promise.resolve(null);
+        const targetIds = resolveDutyTargetMessageIds(
+          '',
+          context.sigintInboxItemIds.length > 0
+            ? context.sigintInboxItemIds
+            : context.message == null
+              ? []
+              : [context.message[0]],
+        );
+        if (targetIds.length === 0) return Promise.resolve(null);
+        return new Promise<DutyLinkedMessageLanding | null>((resolve, reject) => {
+          pendingGroupNavigationRef.current = {
+            ...request,
+            targetIds,
+            errorVersion: errorNotificationVersionRef.current,
+            sawLoading: false,
+            resolve,
+            reject,
+          };
+          setFeedInitialTargetRef.current(request.feedId, {
+            beforeIdNoninclusive: targetIds[0],
+            messageIds: targetIds,
+          });
+          setGroupScopeRef.current(request.feedId, request.groupMasterKey);
+        });
+      },
+      land: async ({ feedId, targetIds }, signal) => {
+        if (signal.aborted) return false;
+        for (const id of targetIds) {
+          const element = columnRefsRef.current[feedId]?.scrollToMessage?.(id, 'auto');
+          if (!element) continue;
+          if (columnRefsRef.current[feedId]?.highlightLinkedMessage?.(id)) return true;
+        }
+        return false;
+      },
+      invalidateNavigation: () => {
+        pendingGroupNavigationRef.current?.resolve(null);
+        pendingGroupNavigationRef.current = null;
+      },
+    };
+  }
+  const groupNavigationControllerRef = useRef<ReturnType<
+    typeof createMessageNavigationController<DutyLinkedMessageLanding>
+  > | null>(null);
+  if (groupNavigationControllerRef.current === null) {
+    groupNavigationControllerRef.current = createMessageNavigationController(
+      () => groupNavigationHostRef.current!,
+      (outcome) => {
+        const request = groupNavigationRequestRef.current;
+        if (outcome.status !== 'focused' && outcome.status !== 'cancelled' && request) {
+          setGroupScopeRef.current(request.feedId, request.groupMasterKey);
+        }
+        const message = messageNavigationErrorText(outcome);
+        if (message) notifyRef.current({ message, severity: 'error' });
+      },
+    );
+  }
+
+  useEffect(() => {
+    const pending = pendingGroupNavigationRef.current;
+    if (!pending) return;
+    const feed = messageFeeds.find((candidate) => candidate.id === pending.feedId);
+    if (!feed || feed.groupScopeMasterKey !== pending.groupMasterKey) {
+      groupNavigationControllerRef.current?.cancel();
+      return;
+    }
+    if (error && errorNotificationVersion !== pending.errorVersion) {
+      pendingGroupNavigationRef.current = null;
+      pending.reject(new Error(error));
+      return;
+    }
+    if (feed.loading) {
+      pending.sawLoading = true;
+      return;
+    }
+    if (!pending.sawLoading) return;
+    pendingGroupNavigationRef.current = null;
+    pending.resolve({ feedId: pending.feedId, targetIds: pending.targetIds });
+  }, [error, errorNotificationVersion, messageFeeds]);
+
+  useEffect(() => () => groupNavigationControllerRef.current?.cancel(), []);
+
   const editorHighlightedMessageId = createMessageOpen ? null : editorSourceMessageId;
+  const selectGroupScope = useCallback(
+    (feedId: string, scope: GroupScope, oldestUnreadMessageRef: string | null) => {
+      groupNavigationControllerRef.current?.cancel();
+      groupNavigationRequestRef.current = null;
+      if (scope.kind === 'all' || oldestUnreadMessageRef == null) {
+        setGroupScope(feedId, scope.kind === 'group' ? scope.masterKey : null);
+        return;
+      }
+      groupNavigationRequestRef.current = { feedId, groupMasterKey: scope.masterKey };
+      void groupNavigationControllerRef.current?.navigate(oldestUnreadMessageRef);
+    },
+    [setGroupScope],
+  );
   const buildFeedColumnModel = useDutyFeedColumnModel({
     feeds,
     editorSourceFeedId,
@@ -427,6 +546,7 @@ export function RerDutyNeoPage({
     openReportEditor,
     openMessageEditor,
     openReportComposer,
+    selectGroupScope,
   });
 
   const activeFeedIdSafe = messageFeeds.some((feed) => feed.id === activeFeedId)
@@ -441,15 +561,26 @@ export function RerDutyNeoPage({
     flushPendingNewerMessages(activeFeedIdSafe, { urgent: true });
   }, [activeFeedIdSafe, flushPendingNewerMessages]);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
-  const openCreateMessageComposer = useCallback(() => {
-    requestEditorIntent('create-message', activeFeedIdSafe, () => {
-      cancelReportEditLoad();
-      setEditTarget(null);
-      setEditAsReport(false);
-      setReportSource(null);
-      setCreateMessageOpen(true);
-    });
-  }, [activeFeedIdSafe, cancelReportEditLoad, requestEditorIntent]);
+  const openCreateMessageComposer = useCallback(
+    (feedId: string, focusTarget?: HTMLElement) => {
+      const sourceFeed = messageFeeds.find((feed) => feed.id === feedId);
+      const scopeKey = sourceFeed?.groupScopeMasterKey ?? 'all';
+      createMessageFabRef.current = focusTarget ?? null;
+      requestEditorIntent(
+        `create-message:${feedId}:${scopeKey}`,
+        feedId,
+        () => {
+          cancelReportEditLoad();
+          setEditTarget(null);
+          setEditAsReport(false);
+          setReportSource(null);
+          setCreateMessageOpen(true);
+        },
+        focusTarget,
+      );
+    },
+    [cancelReportEditLoad, messageFeeds, requestEditorIntent],
+  );
   const closeMessageEditor = useCallback(() => {
     cancelReportEditLoad();
     setCreateMessageOpen(false);
@@ -460,7 +591,9 @@ export function RerDutyNeoPage({
     setEditorSourceMessageId(null);
   }, [cancelReportEditLoad]);
   const editorIntentKey = createMessageOpen
-    ? 'create-message'
+    ? `create-message:${editorSourceFeedId ?? 'unknown'}:${
+        messageFeeds.find((feed) => feed.id === editorSourceFeedId)?.groupScopeMasterKey ?? 'all'
+      }`
     : reportSource
       ? `create-report:${reportSource.id}`
       : editTarget
@@ -609,7 +742,6 @@ export function RerDutyNeoPage({
                     buildFeedColumnModel={buildFeedColumnModel}
                     columnRefsRef={columnRefsRef}
                     createMessageFeed={createMessageFeed}
-                    createMessageFabRef={createMessageFabRef}
                     openCreateMessageComposer={openCreateMessageComposer}
                     isInitialLoading={isInitialLoading}
                     messageFeeds={messageFeeds}
@@ -659,6 +791,12 @@ export function RerDutyNeoPage({
             ref={editorRef}
             open={editorOpen}
             intentKey={editorIntentKey ?? 'closed'}
+            initialGroupMasterKey={
+              createMessageOpen
+                ? (messageFeeds.find((feed) => feed.id === editorSourceFeedId)
+                    ?.groupScopeMasterKey ?? null)
+                : null
+            }
             presentation={editorPresentation}
             adaptiveEmbeddedForm
             fillEmbeddedSurface

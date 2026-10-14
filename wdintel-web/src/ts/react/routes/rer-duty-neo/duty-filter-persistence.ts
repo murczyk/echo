@@ -15,10 +15,22 @@ type PersistableDutyFeed = DutyFeedFilterOptions & {
 export function buildPersistedDutyFilterState(messageFeeds: readonly PersistableDutyFeed[]) {
   return {
     messageFeeds: messageFeeds.map(
-      ({ id, filter, adjacentFreqsRange, highlightSignalsEnabled, onlyMyUnitTagsEnabled }) => [
+      ({
         id,
         filter,
-        { adjacentFreqsRange, highlightSignalsEnabled, onlyMyUnitTagsEnabled },
+        adjacentFreqsRange,
+        highlightSignalsEnabled,
+        onlyMyUnitTagsEnabled,
+        groupScopeMasterKey,
+      }) => [
+        id,
+        filter,
+        {
+          adjacentFreqsRange,
+          highlightSignalsEnabled,
+          onlyMyUnitTagsEnabled,
+          groupScopeMasterKey,
+        },
       ],
     ),
   };

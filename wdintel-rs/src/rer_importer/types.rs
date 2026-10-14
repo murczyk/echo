@@ -1583,6 +1583,8 @@ pub struct SavedFilterRenameReq {
 )]
 pub struct RerDutyQueryState {
     pub waterfalls: Option<Vec<(String, RerDutyQueryStateWf)>>,
+    #[serde(default)]
+    pub group_scopes: Option<Vec<(String, String)>>,
 }
 
 #[derive(
