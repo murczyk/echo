@@ -4500,7 +4500,7 @@ async fn get_postgres_inbox_page(
     env: &Env,
     req: &InboxMessagesReq,
     internal_lower_bound: Option<NaiveDateTime>,
-) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+) -> anyhow::Result<Vec<(i64, InboxMessage)>> {
     let transaction = dbx
         .begin_with_config(
             Some(IsolationLevel::RepeatableRead),
@@ -4532,11 +4532,9 @@ async fn get_postgres_inbox_page(
         .c(h!())?
     };
     transaction.commit().await.c(h!())?;
-    Ok(
-        aggregate_to_inbox_messages(login, messages, logins, &req, &env)
-            .await
-            .c(h!())?,
-    )
+    aggregate_to_inbox_messages(login, messages, logins, &req, &env)
+        .await
+        .c(h!())
 }
 
 pub async fn get_inbox_messages_created_between(
@@ -4664,7 +4662,7 @@ async fn fetch_inbox_messages_with_statement(
 async fn fetch_inbox_message_descriptions<C: ConnectionTrait>(
     dbx: &C,
     statement: Statement,
-) -> Result<Vec<InboxMessageDesc>, AppError> {
+) -> anyhow::Result<Vec<InboxMessageDesc>> {
     let results = dbx.query_all_raw(statement).await.context(h!())?;
 
     let messages: Vec<InboxMessageDesc> = results

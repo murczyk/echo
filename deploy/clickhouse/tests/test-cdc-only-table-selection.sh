@@ -34,12 +34,13 @@ catalog_psql() { cat >/dev/null; cat "$ECHO_TEST_CASE_DIR/status"; }
 peerdb_psql() { printf '2\n' >"$ECHO_TEST_CASE_DIR/status"; }
 clickhouse_admin_http() {
   if [[ $1 == *'SELECT name FROM system.tables'* ]]; then
-    printf '%s\n' signal_message stale
+    cat "$ECHO_TEST_CASE_DIR/raw-tables"
   elif [[ $1 == *'SELECT count()'* ]]; then
     printf '1\n'
   fi
 }
 record_attachment_search_cutover() { touch "$ECHO_TEST_CASE_DIR/cutover"; }
+invalidate_attachment_search_coverage() { rm -f "$ECHO_TEST_CASE_DIR/cutover"; touch "$ECHO_TEST_CASE_DIR/invalidated"; }
 ensure_attachment_search_coverage_table() { :; }
 postgres_psql() { [[ ! -f "$ECHO_TEST_CASE_DIR/cutover" ]] || printf 't\n'; }
 reconcile_analytics_schema_with_retry() { :; }
@@ -47,12 +48,25 @@ LIB
 cat >"$case_dir/bin/curl" <<'CURL'
 #!/usr/bin/env bash
 set -euo pipefail
+for argument in "$@"; do
+  if [[ $argument == */v1/mirrors/status ]]; then
+    jq -cn --argjson mappings "$(cat "$ECHO_TEST_CASE_DIR/mappings")" \
+      '{cdcStatus: {config: {tableMappings: $mappings}}}'
+    exit 0
+  fi
+done
 while (($#)); do
   if [[ $1 == --data ]]; then
     printf '%s\n' "$2" >>"$ECHO_TEST_CASE_DIR/requests"
     if [[ ${ECHO_TEST_FAIL_CDC:-false} == true ]] && jq -e '.flowConfigUpdate.cdcFlowConfigUpdate.skipInitialSnapshotForTableAdditions' <<<"$2" >/dev/null; then
+      [[ -f "$ECHO_TEST_CASE_DIR/invalidated" && ! -f "$ECHO_TEST_CASE_DIR/cutover" ]]
       exit 22
     fi
+    jq --argjson update "$(jq '.flowConfigUpdate.cdcFlowConfigUpdate' <<<"$2")" \
+      'map(select(.sourceTableIdentifier as $source | all($update.removedTables[]; .sourceTableIdentifier != $source))) + $update.additionalTables' \
+      "$ECHO_TEST_CASE_DIR/mappings" >"$ECHO_TEST_CASE_DIR/next-mappings"
+    mv "$ECHO_TEST_CASE_DIR/next-mappings" "$ECHO_TEST_CASE_DIR/mappings"
+    jq -r '.[].destinationTableIdentifier' "$ECHO_TEST_CASE_DIR/mappings" >"$ECHO_TEST_CASE_DIR/raw-tables"
     shift
   fi
   shift
@@ -61,6 +75,13 @@ printf '1\n' >"$ECHO_TEST_CASE_DIR/status"
 printf '{}\n'
 CURL
 chmod +x "$case_dir/bin/curl"
+reset_mirror() {
+  printf '[{"sourceTableIdentifier":"public.signal_message","destinationTableIdentifier":"signal_message"},{"sourceTableIdentifier":"public.stale","destinationTableIdentifier":"stale"}]\n' >"$case_dir/mappings"
+  printf '%s\n' signal_message stale >"$case_dir/raw-tables"
+  printf '2\n' >"$case_dir/status"
+  rm -f "$case_dir/requests" "$case_dir/cutover" "$case_dir/invalidated"
+}
+reset_mirror
 printf '2\n' >"$case_dir/status"
 PATH="$case_dir/bin:$PATH" bash "$case_dir/bin/reconcile-table-selection.sh" --yes
 jq -se '
@@ -72,18 +93,30 @@ jq -se '
   and ([.[1].flowConfigUpdate.cdcFlowConfigUpdate.additionalTables[].sourceTableIdentifier] | sort == ["public.attachment_chunk", "public.attachment_document"])
 ' "$case_dir/requests" >/dev/null
 [[ -f "$case_dir/cutover" ]]
-rm "$case_dir/cutover" "$case_dir/requests"
-printf '2\n' >"$case_dir/status"
+reset_mirror
+touch "$case_dir/cutover"
 if ECHO_TEST_FAIL_CDC=true PATH="$case_dir/bin:$PATH" bash "$case_dir/bin/reconcile-table-selection.sh" --yes; then
   printf 'failed CDC-only addition unexpectedly succeeded\n' >&2
   exit 1
 fi
 [[ ! -f "$case_dir/cutover" ]]
 [[ $(<"$case_dir/status") == 2 ]]
+# Retry the successfully applied ordinary batch without re-adding its mapping.
 rm "$case_dir/requests"
+PATH="$case_dir/bin:$PATH" bash "$case_dir/bin/reconcile-table-selection.sh" --yes
+jq -se 'length == 1 and .[0].flowConfigUpdate.cdcFlowConfigUpdate.skipInitialSnapshotForTableAdditions == true' "$case_dir/requests" >/dev/null
+[[ -f "$case_dir/cutover" ]]
+reset_mirror
 printf 'unsupported-runtime\n' >"$PEERDB_FLOW_BINARY"
 if PATH="$case_dir/bin:$PATH" bash "$case_dir/bin/reconcile-table-selection.sh" --yes; then
   printf 'unsupported runtime unexpectedly accepted CDC-only additions\n' >&2
+  exit 1
+fi
+[[ ! -f "$case_dir/requests" && ! -f "$case_dir/cutover" ]]
+reset_mirror
+printf '%s\n' attachment_document >>"$case_dir/raw-tables"
+if PATH="$case_dir/bin:$PATH" bash "$case_dir/bin/reconcile-table-selection.sh" --yes; then
+  printf 'unmapped attachment raw table unexpectedly accepted\n' >&2
   exit 1
 fi
 [[ ! -f "$case_dir/requests" && ! -f "$case_dir/cutover" ]]

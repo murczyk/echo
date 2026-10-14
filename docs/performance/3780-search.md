@@ -29,17 +29,22 @@ The existing source publication enables PostgreSQL 18's
 which also publishes the stored attachment search vector; verify it in the raw
 table and gateway after a new attachment is processed.
 
-After the CDC-only mapping is running, reconciliation records the source UTC
-cutover in the gateway-local `public.echo_analytics_attachment_search` table.
+Reconciliation compares the desired tables with PeerDB's actual mappings,
+verifies the resulting mappings, and clears attachment coverage before repairing
+mapping drift. Unmapped raw tables and missing mapped raw tables stop ordinary
+reconciliation for explicit recovery instead of issuing duplicate additions.
+After the CDC-only mapping and schema reconciliation succeed, it records the
+source UTC cutover in the gateway-local `public.echo_analytics_attachment_search`
+table.
 `history_complete=false` is retained until the historical oneoff succeeds.
 When metadata is absent, search falls back safely.
 
 Before querying analytics, the application checks older source attachment
 chunks for any search term, including quoted and negative terms. It also checks
-messages with attachment documents changed within the replication freshness
-window against the complete current text predicate. This includes negative
-searches after a term was removed. Matching requests use PostgreSQL for the
-complete operation. This is conservative: a match outside the requested groups
+attachment documents changed within the replication freshness window. Any recent
+document change forces fallback because the analytical copy may still contain
+removed positive terms or omit new terms. Matching requests use PostgreSQL for
+the complete operation. This is conservative: a match outside the requested groups
 or period can also cause fallback. Older attachment matches remain available
 without copying history automatically or combining incomplete negative
 predicates. Other text searches can use analytics with new-only replication.
@@ -49,6 +54,17 @@ search semantics are unchanged. Existing freshness checks, source tails,
 revalidation, ordering, and fallback capacity controls remain in place.
 
 ## Rollout and historical oneoff
+
+Before applying `m20261014_124732_attachment_document_updated_at_index`, check
+available disk space and long-running transactions on the source. Its concurrent
+index build keeps writes available; it changes no replicated columns and needs
+no ClickHouse resnapshot. If interrupted, inspect `pg_index.indisvalid` for
+`public.attachment_document_updated_at_idx`. If that index is invalid, run
+`DROP INDEX CONCURRENTLY public.attachment_document_updated_at_idx` outside a
+transaction and retry migrations. The timestamp-leading index bounds the
+recent-change probe independently of document state. The probe reads the newest
+timestamp before comparing the cutoff, preserving its bounded seek with generic
+prepared plans.
 
 1. Deploy the matching source and analytics control bundles through the normal
    Echo deployment workflow. Their release IDs must agree.
@@ -76,16 +92,20 @@ wdintel-rs --mode=live oneoff-replicate-historical-attachments
 ```
 
 The command delegates to the paired analytics host with the release handshake,
-holds the shared reconciliation lock, marks history incomplete, and forces a
+holds the shared reconciliation lock, clears coverage, and forces a
 targeted snapshot of documents followed by chunks. Only those two raw tables
 and their views are replaced; source attachment data is preserved. Existing
 targeted-resnapshot state tracks interruption and recovery. Health verification
 must pass before history is marked complete. The command can temporarily
 increase source reads and retained WAL; its progress is logged per table.
 
-If it fails, retain `history_complete=false`, inspect the reported mirror/state
+If it fails, leave the coverage row absent, inspect the reported mirror/state
 error, and rerun the same command after correcting it before another deployment.
-Deployment refuses unresolved targeted snapshot state. Do not mark history
+Forced-copy intent is preserved in retry state; automatic deployment repairs
+refuse this state and direct recovery still performs the requested copy.
+The explicit oneoff also repairs a missing attachment raw table. Ordinary
+reconciliation restores `history_complete=false` after successful recovery;
+only the historical oneoff can set it to true. Do not mark history
 complete manually. A paused mirror requires prompt recovery because WAL remains
 retained. To roll back application routing, deploy the prior backend; source
 history and CDC data remain available.

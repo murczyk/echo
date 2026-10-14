@@ -334,6 +334,14 @@ read_state_strategy() {
     || die "invalid targeted resnapshot state: $state_file"
 }
 
+read_state_force_resnapshot() {
+  local source_table=$1 state_file
+  state_file=$(state_file_for_table "$source_table")
+  [[ -f "$state_file" ]] || { printf false; return 0; }
+  jq -er '(.force_resnapshot // false) | select(type == "boolean") | tostring' "$state_file" \
+    || die "invalid targeted resnapshot state: $state_file"
+}
+
 write_state_mapping() {
   local source_table=$1 strategy=$2 mapping=$3 state_file temporary_file
   ensure_state_dir
@@ -343,7 +351,9 @@ write_state_mapping() {
     --arg table "$source_table" \
     --arg strategy "$strategy" \
     --argjson mapping "$mapping" \
-    '{sourceTableIdentifier: $table, strategy: $strategy, mapping: $mapping}' \
+    --argjson force_resnapshot "$force_resnapshot" \
+    '{sourceTableIdentifier: $table, strategy: $strategy, mapping: $mapping,
+      force_resnapshot: $force_resnapshot}' \
     >"$temporary_file"
   chmod 0600 "$temporary_file"
   mv -f -- "$temporary_file" "$state_file"
@@ -455,6 +465,7 @@ require_empty_additive_table() {
 resnapshot_table() {
   local strategy=$1 source_table=$2 current_mapping state_mapping
   local state_strategy mapping destination
+  local force_resnapshot=$force_resnapshot
   local source_schema raw_schema source_only raw_only
   local raw_exists=false
 
@@ -464,6 +475,9 @@ resnapshot_table() {
   current_mapping=$(current_mapping_json "$source_table")
   state_mapping=$(read_state_mapping "$source_table")
   state_strategy=$(read_state_strategy "$source_table")
+  if [[ $(read_state_force_resnapshot "$source_table") == true ]]; then
+    force_resnapshot=true
+  fi
   [[ -n "$current_mapping" || -n "$state_mapping" ]] \
     || die "$source_table is not mapped in mirror $MIRROR_NAME"
   if [[ -n "$state_strategy" && "$state_strategy" != "$strategy" ]]; then
@@ -511,7 +525,7 @@ resnapshot_table() {
     [[ "$batch_mode" == true ]] || repair_complete=true
     return 0
   fi
-  if [[ -z "$state_mapping" && "$raw_exists" != true ]]; then
+  if [[ -z "$state_mapping" && "$raw_exists" != true && "$force_resnapshot" == false ]]; then
     die "$CLICKHOUSE_RAW_DB.$destination is missing without recoverable resnapshot state"
   fi
   if [[ "$strategy" == cdc_additive && -z "$state_mapping" ]] \
@@ -525,6 +539,9 @@ resnapshot_table() {
   fi
   require_empty_additive_table "$strategy" "$source_table"
 
+  if source_table_cdc_only "$source_table"; then
+    invalidate_attachment_search_coverage
+  fi
   if [[ -z "$state_mapping" ]]; then
     [[ -n "$current_mapping" ]] \
       || die "$source_table mapping disappeared before the repair started"
@@ -626,6 +643,8 @@ for line in batch.splitlines():
     add_entry(*fields)
 for path in sorted(pathlib.Path(state_dir).glob(f"{mirror}-*.json")):
     state = json.loads(path.read_text())
+    if state.get("force_resnapshot") is True:
+        raise SystemExit("unfinished attachment history copy; rerun oneoff-replicate-historical-attachments")
     table = state["sourceTableIdentifier"]
     if path.name != f"{mirror}-{table.replace('.', '__')}.json":
         raise SystemExit(f"invalid retry state filename: {path.name}")

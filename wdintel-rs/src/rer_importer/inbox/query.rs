@@ -2074,7 +2074,7 @@ pub(crate) async fn load_postgres_inbox_page_ids<C: ConnectionTrait>(
     env: &Env,
     req: &InboxMessagesReq,
     internal_lower_bound: Option<NaiveDateTime>,
-) -> Result<Vec<i64>, AppError> {
+) -> anyhow::Result<Vec<i64>> {
     let query = build_filtered_inbox_query_with_scope(
         dbx,
         login,
@@ -2094,7 +2094,7 @@ pub(crate) async fn load_postgres_inbox_page_ids<C: ConnectionTrait>(
     .await
     .c(h!())?
     .limit(INBOX_MESSAGES_PAGE_LIMIT as u64);
-    Ok(query.into_tuple::<i64>().all(dbx).await.c(h!())?)
+    query.into_tuple::<i64>().all(dbx).await.c(h!())
 }
 
 pub(crate) async fn build_inbox_page_details_query<C: ConnectionTrait>(
@@ -2102,7 +2102,7 @@ pub(crate) async fn build_inbox_page_details_query<C: ConnectionTrait>(
     login: &uuid::Uuid,
     req: &InboxMessagesReq,
     ids: &[i64],
-) -> Result<String, AppError> {
+) -> anyhow::Result<String> {
     let groups =
         crate::messenger::group::get_identity_sigint_groups(dbx, login)
             .await
@@ -2111,7 +2111,9 @@ pub(crate) async fn build_inbox_page_details_query<C: ConnectionTrait>(
         .filter(signal_message::Column::Id.is_in(ids.to_vec()))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(message_is_accessible_exists(groups, None, false));
-    finish_inbox_query(dbx, login, req, query, false).await
+    finish_inbox_query(dbx, login, req, query, false)
+        .await
+        .c(h!())
 }
 
 pub(crate) async fn load_postgres_fresh_tail_inbox_candidates(

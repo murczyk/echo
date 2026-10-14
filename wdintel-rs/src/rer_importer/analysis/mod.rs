@@ -3415,7 +3415,7 @@ pub fn filter_search<Q>(q: Q, search: &Option<String>) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect,
 {
-    filter_search_with_correlated_terms(q, search, false)
+    Ok(filter_search_with_correlated_terms(q, search, false).c(h!())?)
 }
 
 pub(crate) fn filter_search_with_correlated_terms<Q>(
@@ -3644,7 +3644,7 @@ async fn query_summary_table_freq_analytics(
             req,
             db,
             &env.dbx,
-            freshness_max_age_ms
+            freshness_max_age_ms,
         ),
         analytics_unit::resolve_analytics_unit_filters(
             &env.dbx,
@@ -6674,7 +6674,6 @@ fn build_new_callsign_filtered_items_query(
         &req.search,
         scope.is_some(),
     )
-    .c(h!())
     .c(h!())?;
     let query = filter_selected_device_names(query, &req.selected_device_names)
         .c(h!())?;

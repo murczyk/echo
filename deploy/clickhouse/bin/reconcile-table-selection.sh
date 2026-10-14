@@ -70,6 +70,18 @@ append_mapping_json() {
     <<<"$json"
 }
 
+read_mirror_mappings() {
+  local payload response
+  payload=$(jq -cn --arg mirror "$MIRROR_NAME" \
+    '{flowJobName: $mirror, includeFlowInfo: true, excludeBatches: true}')
+  response=$(curl --silent --show-error --fail-with-body \
+    --connect-timeout 5 --max-time 30 \
+    --header 'Content-Type: application/json' --data "$payload" \
+    "http://127.0.0.1:${PEERDB_FLOW_HTTP_PORT:-8113}/v1/mirrors/status")
+  jq -ec '.cdcStatus.config.tableMappings | select(type == "array")' \
+    <<<"$response" || die "PeerDB did not return its table mappings"
+}
+
 apply_mapping_batch() {
   local additional=$1 removed=$2 skip_snapshot=$3 payload response
   pause_mirror
@@ -107,48 +119,64 @@ apply_selection() {
     selected_source_by_target["$target"]=$source
   done
 
-  declare -A all_source_by_target=()
-  while IFS= read -r source; do
+  local mappings
+  mappings=$(read_mirror_mappings)
+  declare -A mapped_source_by_target=() mapped_target_by_source=()
+  while IFS=$'\t' read -r source target; do
     [[ -n "$source" ]] || continue
-    target=$(source_table_target "$source")
-    previous=${all_source_by_target[$target]:-}
-    [[ -z "$previous" || "$previous" == "$source" ]] \
-      || die "source tables collide at target $target: $previous and $source"
-    all_source_by_target["$target"]=$source
-  done < <(
-    source_psql -Atq -v ON_ERROR_STOP=1 <<'SQL'
-SELECT namespace.nspname || '.' || relation.relname
-FROM pg_catalog.pg_class relation
-JOIN pg_catalog.pg_namespace namespace ON namespace.oid = relation.relnamespace
-WHERE relation.relkind IN ('r', 'p')
-  AND namespace.nspname <> 'information_schema'
-  AND namespace.nspname !~ '^pg_'
-ORDER BY namespace.nspname, relation.relname;
-SQL
-  )
+    [[ "$source" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
+      || die "invalid PeerDB source table: $source"
+    validate_identifier destination_table "$target"
+    [[ -z "${mapped_source_by_target[$target]:-}" \
+      && -z "${mapped_target_by_source[$source]:-}" ]] \
+      || die "duplicate PeerDB mapping for $source -> $target"
+    [[ "$target" == "$(source_table_target "$source")" ]] \
+      || die "unexpected PeerDB destination for $source: $target"
+    mapped_source_by_target["$target"]=$source
+    mapped_target_by_source["$source"]=$target
+  done < <(jq -r '.[] | [.sourceTableIdentifier, .destinationTableIdentifier] | @tsv' <<<"$mappings")
 
   declare -A raw_lookup=()
   while IFS= read -r target; do
-    [[ -n "$target" ]] && raw_lookup["$target"]=1
+    [[ -n "$target" ]] || continue
+    validate_identifier raw_table "$target"
+    raw_lookup["$target"]=1
   done < <(
     clickhouse_admin_http \
       "SELECT name FROM system.tables WHERE database = '$CLICKHOUSE_RAW_DB' AND NOT startsWith(name, '_peerdb_') ORDER BY name"
   )
 
+  for target in attachment_document attachment_chunk; do
+    if [[ -z "${mapped_source_by_target[$target]:-}" \
+      || -z "${raw_lookup[$target]:-}" ]]; then
+      invalidate_attachment_search_coverage
+      break
+    fi
+  done
+
   declare -a added_sources=() added_targets=()
   declare -a removed_sources=() removed_targets=()
+  declare -a stale_targets=()
   for target in "${!selected_source_by_target[@]}"; do
-    [[ -n "${raw_lookup[$target]:-}" ]] && continue
+    if [[ -n "${mapped_source_by_target[$target]:-}" ]]; then
+      [[ -n "${raw_lookup[$target]:-}" ]] \
+        || die "mapped raw table $target is missing; recover its targeted resnapshot before reconciling"
+      continue
+    fi
+    [[ -z "${raw_lookup[$target]:-}" ]] \
+      || die "unmapped raw table $target already exists; inspect interrupted table repair before reconciling"
     added_sources+=("${selected_source_by_target[$target]}")
     added_targets+=("$target")
   done
+  for target in "${!mapped_source_by_target[@]}"; do
+    [[ -z "${selected_source_by_target[$target]:-}" ]] || continue
+    removed_sources+=("${mapped_source_by_target[$target]}")
+    removed_targets+=("$target")
+    [[ -n "${raw_lookup[$target]:-}" ]] || stale_targets+=("$target")
+  done
   for target in "${!raw_lookup[@]}"; do
     [[ -z "${selected_source_by_target[$target]:-}" ]] || continue
-    source=${all_source_by_target[$target]:-}
-    [[ -n "$source" ]] \
-      || die "cannot map stale ClickHouse table $target back to a source table; use a full mirror resync"
-    removed_sources+=("$source")
-    removed_targets+=("$target")
+    stale_targets+=("$target")
   done
 
   log "Table selection changes: add ${#added_sources[@]}, remove ${#removed_sources[@]}"
@@ -186,7 +214,6 @@ SQL
     fi
     if [[ "$cdc_only_json" != '[]' ]]; then
       apply_mapping_batch "$cdc_only_json" '[]' true
-      record_attachment_search_cutover
     fi
   else
     peerdb_psql -q -v ON_ERROR_STOP=1 \
@@ -210,12 +237,25 @@ SQL
     sleep "$poll_interval"
   done
 
-  for target in "${removed_targets[@]}"; do
+  local expected_mappings actual_mappings
+  expected_mappings=$(
+    for source in "${SOURCE_TABLES[@]}"; do
+      printf '%s\t%s\n' "$source" "$(source_table_target "$source")"
+    done | LC_ALL=C sort
+  )
+  mappings=$(read_mirror_mappings)
+  actual_mappings=$(jq -r '.[] | [.sourceTableIdentifier, .destinationTableIdentifier] | @tsv' <<<"$mappings" | LC_ALL=C sort)
+  [[ "$expected_mappings" == "$actual_mappings" ]] \
+    || die "PeerDB mappings do not match the requested table selection"
+
+  for target in "${stale_targets[@]}"; do
     clickhouse_admin_http \
       "DROP VIEW IF EXISTS \`$CLICKHOUSE_CURRENT_DB\`.\`$target\`"
     clickhouse_admin_http \
       "DROP TABLE IF EXISTS \`$CLICKHOUSE_RAW_DB\`.\`$target\` SYNC"
   done
+
+  reconcile_analytics_schema_with_retry "$SCRIPT_DIR"
 
   if [[ -n "${selected_source_by_target[attachment_document]:-}" \
     && -n "${selected_source_by_target[attachment_chunk]:-}" ]]; then
@@ -226,7 +266,6 @@ SQL
     fi
   fi
 
-  reconcile_analytics_schema_with_retry "$SCRIPT_DIR"
   log "Mirror table selection is reconciled"
 }
 

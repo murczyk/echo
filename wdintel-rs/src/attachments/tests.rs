@@ -362,10 +362,21 @@ async fn attachment_search_preserves_cdc_only_history_and_recent_changes_3780()
     .await
     .is_err());
     execute(source, "UPDATE attachment_chunk SET text='Вільха',summary=NULL WHERE media_id=$1", vec![job.media_id.into()]).await.unwrap();
+    for query in ["Береза", "-Береза", "\"зміна позиції\""]
+    {
+        assert!(super::analytics::ensure_search_coverage(
+            source,
+            source,
+            &Some(query.into()),
+            90_000
+        )
+        .await
+        .is_err());
+    }
     assert!(super::analytics::ensure_search_coverage(
         source,
         source,
-        &Some("-Береза".into()),
+        &Some("-Вільха".into()),
         90_000
     )
     .await

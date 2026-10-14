@@ -69,20 +69,7 @@ pub fn text_predicate(
     text_predicate_with_correlation(
         query, message, scope, structured, values, false,
     )
-}
-
-pub(crate) fn recent_message_predicate(
-    query: &str,
-    values: &mut Vec<Value>,
-) -> anyhow::Result<String> {
-    text_predicate_with_correlation(
-        query,
-        "signal_message.id",
-        "all",
-        true,
-        values,
-        true,
-    )
+    .c(h!())
 }
 
 fn text_predicate_with_correlation(

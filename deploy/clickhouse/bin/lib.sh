@@ -1118,6 +1118,13 @@ SET started_at=EXCLUDED.started_at, history_complete=false;
 SQL
 }
 
+invalidate_attachment_search_coverage() {
+  ensure_attachment_search_coverage_table
+  postgres_psql --dbname "$GATEWAY_DB" -q -v ON_ERROR_STOP=1 <<'SQL'
+DELETE FROM public.echo_analytics_attachment_search WHERE singleton;
+SQL
+}
+
 ensure_yes() {
   local answer=${1:-}
   [[ "$answer" == "--yes" ]] || die "destructive operation requires --yes"

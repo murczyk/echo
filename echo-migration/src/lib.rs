@@ -472,6 +472,7 @@ mod m20261012_120000_notification_inbox;
 mod m20261012_155351_api_rate_limit;
 mod m20261013_090000_notification_read_boundary_completed_repair;
 mod m20261013_094137_inbox_unit_selection;
+mod m20261014_124732_attachment_document_updated_at_index;
 
 pub struct Migrator;
 
@@ -1134,6 +1135,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261012_155351_api_rate_limit::Migration),
             Box::new(m20261013_090000_notification_read_boundary_completed_repair::Migration),
             Box::new(m20261013_094137_inbox_unit_selection::Migration),
+            Box::new(m20261014_124732_attachment_document_updated_at_index::Migration),
         ]
     }
 }

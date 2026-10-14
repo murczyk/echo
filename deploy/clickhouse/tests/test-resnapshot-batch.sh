@@ -73,6 +73,14 @@ streamed_entries=$(
 [[ "$streamed_entries" == $'replicated_snapshot\tpublic.sigint_network\nreplicated_snapshot\tpublic.user_settings' ]]
 
 # Authorization and complete preflight must reject the batch before mutation.
+force_resnapshot=true
+write_state_mapping public.attachment_document replicated_snapshot \
+  "$(current_mapping_json public.attachment_document)"
+force_resnapshot=false
+if (resnapshot_batch <<<"$entries") >"$case_dir/history-rejection.log" 2>&1; then exit 1; fi
+grep -q 'unfinished attachment history copy' "$case_dir/history-rejection.log"
+[[ ! -s "$operations" ]]
+clear_state_mapping public.attachment_document
 if (resnapshot_batch <<<'replicated_snapshot public.unknown') >/dev/null 2>&1; then exit 1; fi
 if (resnapshot_batch <<<$'replicated_snapshot\tpublic.unknown') >/dev/null 2>&1; then exit 1; fi
 printf 'legacy\n' >>"$case_dir/raw/user_settings"

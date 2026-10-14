@@ -1,5 +1,6 @@
 {
   "migrations": {
+    "echo:m20261014_124732_attachment_document_updated_at_index": { "changes": [] },
     "echo:m20261012_120000_notification_inbox": {
       "changes": [
         { "table": "public.notification_event", "strategy": "excluded" },

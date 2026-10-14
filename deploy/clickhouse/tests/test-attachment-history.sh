@@ -16,14 +16,13 @@ validate_runtime_identifiers() { :; }
 acquire_analytics_reconcile_lock() { :; }
 require_expected_control_release() { :; }
 ensure_attachment_search_coverage_table() { :; }
+invalidate_attachment_search_coverage() { printf 'incomplete\n' >"$ECHO_TEST_CASE_DIR/coverage"; }
 log() { :; }
 source_psql() { printf '2026-10-14 12:00:00\n'; }
 postgres_psql() {
   local sql
   sql=$(cat)
-  if [[ $sql == *'history_complete=false'* ]]; then
-    printf 'incomplete\n' >"$ECHO_TEST_CASE_DIR/coverage"
-  elif [[ $sql == *'history_complete=true'* ]]; then
+  if [[ $sql == *'history_complete=true'* ]]; then
     [[ $(<"$ECHO_TEST_CASE_DIR/snapshots") == $'public.attachment_document\npublic.attachment_chunk' ]]
     [[ -f "$ECHO_TEST_CASE_DIR/healthy" ]]
     printf 'complete\n' >"$ECHO_TEST_CASE_DIR/coverage"

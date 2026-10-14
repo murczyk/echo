@@ -57,7 +57,6 @@ pub(crate) async fn ensure_search_coverage(
         coverage,
         predicate,
         values,
-        search,
         freshness_max_age_ms,
     )
     .await
@@ -108,7 +107,6 @@ async fn source_matches_incomplete_coverage(
     coverage: AttachmentSearchCoverage,
     predicate: String,
     mut values: Vec<Value>,
-    search: &str,
     freshness_max_age_ms: u64,
 ) -> anyhow::Result<bool> {
     let started_at_parameter = values.len() + 1;
@@ -121,12 +119,10 @@ async fn source_matches_incomplete_coverage(
         (Utc::now().naive_utc() - Duration::milliseconds(freshness_max_age_ms))
             .into(),
     );
-    let recent_predicate =
-        super::search::recent_message_predicate(search, &mut values).c(h!())?;
     let row = source
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            format!("SELECT (NOT ${history_parameter} AND EXISTS(SELECT 1 FROM attachment_chunk chunk JOIN attachment_document doc ON doc.media_id=chunk.media_id AND doc.revision=chunk.revision WHERE doc.created_at < ${started_at_parameter} AND ({predicate}))) OR EXISTS(SELECT 1 FROM attachment_document doc JOIN signal_message_media media ON media.id=doc.media_id JOIN signal_message ON signal_message.id=media.signal_message_id WHERE doc.updated_at >= ${recent_parameter} AND ({recent_predicate})) AS requires_source"),
+            format!("SELECT (NOT ${history_parameter} AND EXISTS(SELECT 1 FROM attachment_chunk chunk JOIN attachment_document doc ON doc.media_id=chunk.media_id AND doc.revision=chunk.revision WHERE doc.created_at < ${started_at_parameter} AND ({predicate}))) OR COALESCE((SELECT doc.updated_at FROM attachment_document doc ORDER BY doc.updated_at DESC LIMIT 1) >= ${recent_parameter}, false) AS requires_source"),
             values,
         ))
         .await

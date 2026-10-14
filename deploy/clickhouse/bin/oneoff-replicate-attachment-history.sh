@@ -13,10 +13,7 @@ validate_runtime_identifiers
 acquire_analytics_reconcile_lock
 require_expected_control_release
 
-ensure_attachment_search_coverage_table
-postgres_psql --dbname "$GATEWAY_DB" -q -v ON_ERROR_STOP=1 <<'SQL'
-UPDATE public.echo_analytics_attachment_search SET history_complete=false WHERE singleton;
-SQL
+invalidate_attachment_search_coverage
 
 for table in public.attachment_document public.attachment_chunk; do
   log "Copying historical rows for $table"
