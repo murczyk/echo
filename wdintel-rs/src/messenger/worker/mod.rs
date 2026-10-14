@@ -1552,9 +1552,10 @@ mod tests {
         echo_client_config::ActiveModel {
             client_id: Set(lock.client_id),
             process_name: Set("echo-3679".into()),
-            signal_api_attachment_path: Set(
-                attachments.path().to_string_lossy().into_owned(),
-            ),
+            signal_api_attachment_path: Set(attachments
+                .path()
+                .to_string_lossy()
+                .into_owned()),
             signal_port: Set(0),
             whatsapp_app_name: Set("echo-3679".into()),
             ..Default::default()
@@ -1592,7 +1593,8 @@ mod tests {
         .unwrap();
 
         for _ in 0..2 {
-            echo_im::worker::cleanup_signal_attachment_worker_once(&env.dbx).await;
+            echo_im::worker::cleanup_signal_attachment_worker_once(&env.dbx)
+                .await;
             for path in [&inbox, &outbox, &fresh] {
                 assert_eq!(std::fs::read(path).unwrap(), b"attachment");
             }
@@ -1600,7 +1602,10 @@ mod tests {
             assert!(!hidden.exists());
             assert!(attachments.path().is_dir());
         }
-        echo_attachment::Entity::delete_many().exec(&env.dbx).await.unwrap();
+        echo_attachment::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
         echo_outbox_message_attachment::Entity::delete_many()
             .exec(&env.dbx)
             .await

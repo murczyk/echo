@@ -57,6 +57,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Login,
+    #[sea_orm(has_many = "super::report_download_history::Entity")]
+    ReportDownloadHistory,
 }
 
 impl Related<super::bgtask::Entity> for Entity {
@@ -68,6 +70,12 @@ impl Related<super::bgtask::Entity> for Entity {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::report_download_history::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ReportDownloadHistory.def()
     }
 }
 

@@ -2,8 +2,6 @@
 
 use super::sea_orm_active_enums::IntelProductRelationKind;
 use sea_orm::entity::prelude::*;
-use sea_orm::sea_query::{Alias, Expr, SimpleExpr};
-use sea_orm::{ActiveEnum, ExprTrait};
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -13,41 +11,19 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub intel_message_id: i64,
-    pub intel_message_uuid: Option<Uuid>,
     #[sea_orm(primary_key, auto_increment = false)]
     pub source_message_id: i64,
-    pub source_message_uuid: Option<Uuid>,
-    pub relation_kind: IntelProductRelationKind,
     pub created_at: DateTime,
-}
-
-pub const RELATION_KIND_REPORT: IntelProductRelationKind =
-    IntelProductRelationKind::Report;
-pub const RELATION_KIND_COMMENT: IntelProductRelationKind =
-    IntelProductRelationKind::Comment;
-
-/// Uses string literals so PostgreSQL infers the enum while the analytics
-/// gateway can parse the same SQL without knowing PostgreSQL enum types.
-pub fn relation_kind_is_in<I>(relation_kinds: I) -> SimpleExpr
-where
-    I: IntoIterator<Item = IntelProductRelationKind>,
-{
-    Expr::col((Entity, Column::RelationKind))
-        .cast_as(Alias::new("text"))
-        .is_in(relation_kinds.into_iter().map(|kind| kind.to_value()))
-}
-
-pub fn relation_kind_eq(relation_kind: IntelProductRelationKind) -> SimpleExpr {
-    Expr::col((Entity, Column::RelationKind))
-        .cast_as(Alias::new("text"))
-        .eq(relation_kind.to_value())
+    pub relation_kind: IntelProductRelationKind,
+    pub intel_message_uuid: Option<Uuid>,
+    pub source_message_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::signal_message::Entity",
-        from = "Column::SourceMessageId",
+        from = "Column::IntelMessageId",
         to = "super::signal_message::Column::Id",
         on_update = "NoAction",
         on_delete = "Cascade"
@@ -55,7 +31,7 @@ pub enum Relation {
     SignalMessage2,
     #[sea_orm(
         belongs_to = "super::signal_message::Entity",
-        from = "Column::IntelMessageId",
+        from = "Column::SourceMessageId",
         to = "super::signal_message::Column::Id",
         on_update = "NoAction",
         on_delete = "Cascade"

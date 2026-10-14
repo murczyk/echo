@@ -129,6 +129,8 @@ export function useMessageUnitOptions({
     unitOptions,
     unitLoading: active && (loading || results?.search !== search),
     unitAllowCreate: active && results?.search === search && results.succeeded,
+    unitSearchResults:
+      active && !loading && results?.search === search && results.succeeded ? results : null,
     recentUnitOptions,
     defaultRecentUnit: firstRecentMatches.length === 1 ? firstRecentMatches[0] : undefined,
   };

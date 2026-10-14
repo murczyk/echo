@@ -144,4 +144,13 @@ impl Related<super::sigint_origin::Entity> for Entity {
     }
 }
 
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::network_freq_last_datetime_in_aor::Relation::Login.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some (super :: network_freq_last_datetime_in_aor :: Relation :: SigintNetworkFreq . def () . rev ())
+    }
+}
+
 impl ActiveModelBehavior for ActiveModel {}

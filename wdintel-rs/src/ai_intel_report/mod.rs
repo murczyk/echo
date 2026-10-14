@@ -1038,6 +1038,7 @@ mod tests {
     use std::time::Duration as StdDuration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use uuid::Uuid;
+    use crate::rer_importer::intel_product_filter;
 
     fn engine_record(url: String) -> ai_engine::Model {
         let now = Utc::now().naive_utc();
@@ -1313,7 +1314,7 @@ mod tests {
             intel_message_uuid: Set(report.id_uuid),
             source_message_id: Set(source.id),
             source_message_uuid: Set(source.id_uuid),
-            relation_kind: Set(intel_product::RELATION_KIND_REPORT),
+            relation_kind: Set(intel_product_filter::RELATION_KIND_REPORT),
             created_at: Set(product_created_at),
         }
         .insert(dbx)
@@ -1455,7 +1456,7 @@ mod tests {
             intel_message_uuid: Set(report.id_uuid),
             source_message_id: Set(parent.id),
             source_message_uuid: Set(parent.id_uuid),
-            relation_kind: Set(intel_product::RELATION_KIND_REPORT),
+            relation_kind: Set(intel_product_filter::RELATION_KIND_REPORT),
             created_at: Set(now),
         }
         .insert(&env.dbx)
