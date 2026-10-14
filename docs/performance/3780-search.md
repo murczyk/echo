@@ -66,6 +66,17 @@ recent-change probe independently of document state. The probe reads the newest
 timestamp before comparing the cutoff, preserving its bounded seek with generic
 prepared plans.
 
+Apply `m20261014_140818_attachment_chunk_summary_index` with the same disk-space
+and long-transaction checks. Its concurrent GIN trigram index on
+`attachment_chunk.summary` completes the indexed `text`/`member`/`summary`
+substring predicate used by both positive and negative quoted coverage probes.
+It changes no replicated columns and needs no ClickHouse resnapshot. If the
+build is interrupted, inspect `pg_index.indisvalid` for
+`public.attachment_chunk_summary_idx`; drop an invalid index with
+`DROP INDEX CONCURRENTLY public.attachment_chunk_summary_idx` outside a
+transaction before retrying migrations. The index adds source disk usage and
+write overhead when chunk summaries change.
+
 1. Deploy the matching source and analytics control bundles through the normal
    Echo deployment workflow. Their release IDs must agree.
 2. Run `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes` on the source if
