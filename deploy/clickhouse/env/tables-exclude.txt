@@ -57,6 +57,7 @@ public.notification_read_boundary
 public.notification_read_boundary_receipt
 public.notification_read_boundary_completed
 public.importance_operation
+public.user_group_feed_read_state
 
 
 # ORBIT unit catalog remains PostgreSQL-only.

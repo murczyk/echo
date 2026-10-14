@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20261014_172633_user_group_feed_read_state": {
+      "changes": [
+        { "table": "public.user_group_feed_read_state", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261012_120000_notification_inbox": {
       "changes": [
         { "table": "public.notification_event", "strategy": "excluded" },
