@@ -1664,17 +1664,30 @@ async fn fanout_created_network(
     network: sigint_network::Model,
 ) -> Result<(), AppError> {
     fanout_network_changed_data(env).await.c(h!())?;
+    enqueue_created_network_recalculations(&env.dbx, &network)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn enqueue_created_network_recalculations<C>(
+    db: &C,
+    network: &sigint_network::Model,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     crate::sigint::network::etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![],
-        &env.dbx,
+        db,
         format!("created cyber network {}", network.id),
     )
     .await
     .c(h!())?;
-    if !crate::sigint::unit_tag::sigint_network_unit_mask(&network).is_empty() {
+    if !crate::sigint::unit_tag::sigint_network_unit_mask(network).is_empty() {
         crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
-            &env.dbx,
+            db,
         )
         .await
         .c(h!())?;

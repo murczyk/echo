@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::{
-    SIGINT_DIRECT_SUBMIT_UNIT_LOCK_NAMESPACE,
+    REDIS_MAXLEN, SIGINT_DIRECT_SUBMIT_UNIT_LOCK_NAMESPACE,
     SIGINT_MESSAGE_UNIT_PENDING_NETWORK_REDIS_PREFIX,
 };
 use redis::AsyncCommands;
@@ -59,6 +59,9 @@ async fn create_unit_for_message_for_login(
     };
     let retry_key = message_unit_network_retry_key(login, unit.id);
     if let Some(network) = created_network {
+        enqueue_created_network_recalculations(&transaction, &network)
+            .await
+            .c(h!())?;
         env.redis
             .clone()
             .set::<_, _, ()>(&retry_key, network.id)
@@ -72,11 +75,9 @@ async fn create_unit_for_message_for_login(
     .await
     .c(h!())?
     .unit;
-    if !req.skip_network_creation {
-        replay_message_unit_network(env, &name, &retry_key, unit.id)
-            .await
-            .c(h!())?;
-    }
+    replay_message_unit_network(env, &name, &retry_key, unit.id)
+        .await
+        .c(h!())?;
     Ok(unit)
 }
 
@@ -112,11 +113,63 @@ async fn replay_message_unit_network(
         .one(&transaction)
         .await
         .c(h!())?;
-    if let Some(network) = network {
-        fanout_created_network(env, network).await.c(h!())?;
+    if network.is_some() {
+        fanout_pending_message_unit_network(&mut redis, retry_key, network_id)
+            .await
+            .c(h!())?;
+    } else {
+        redis
+            .del::<_, ()>(&[
+                retry_key.to_string(),
+                format!("{retry_key}:delivered"),
+            ])
+            .await
+            .c(h!())?;
     }
-    redis.del::<_, ()>(retry_key).await.c(h!())?;
     transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
+async fn fanout_pending_message_unit_network(
+    redis: &mut redis::aio::ConnectionManager,
+    retry_key: &str,
+    network_id: i64,
+) -> anyhow::Result<()> {
+    let mut sessions = crate::session::get_all_sessions(redis).await.c(h!())?;
+    sessions.sort_by_key(|session| session.session_id);
+    let script = redis::Script::new(
+        r#"
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+    return 0
+end
+for i = 3, #KEYS do
+    if redis.call('SISMEMBER', KEYS[2], KEYS[i]) == 0 then
+        redis.call('XADD', KEYS[i], 'MAXLEN', '~', ARGV[2], '*', 'v', ARGV[3])
+        redis.call('SADD', KEYS[2], KEYS[i])
+    end
+end
+redis.call('DEL', KEYS[1], KEYS[2])
+return 1
+        "#,
+    );
+    let mut invocation = script.prepare_invoke();
+    invocation
+        .key(retry_key)
+        .key(format!("{retry_key}:delivered"));
+    for session in sessions {
+        invocation
+            .key(crate::event_stream::session_stream_id(session.session_id));
+    }
+    invocation
+        .arg(network_id)
+        .arg(REDIS_MAXLEN)
+        .arg(
+            serde_json::to_string(&EventMsg::new(EventType::ETNetworkChanged))
+                .c(h!())?,
+        )
+        .invoke_async::<i64>(redis)
+        .await
+        .c(h!())?;
     Ok(())
 }
 
@@ -297,7 +350,11 @@ mod tests {
         req.skip_network_creation = false;
         req.locations = vec!["Київ".to_string()];
         req.unit_mask = vec![req.unit.name.clone().unwrap()];
-        let session_id = uuid::Uuid::new_v4();
+        let first_session_id = uuid::Uuid::new_v4();
+        let second_session_id = uuid::Uuid::new_v4();
+        let healthy_session_id =
+            std::cmp::min(first_session_id, second_session_id);
+        let session_id = std::cmp::max(first_session_id, second_session_id);
         let mut redis = env.redis.clone();
         crate::session::add_session(&mut redis, session_id, &login)
             .await
@@ -309,7 +366,6 @@ mod tests {
             .unwrap();
         let failed =
             create_unit_for_message_for_login(&login, &env, req.clone()).await;
-        redis.del::<_, ()>(&stream_id).await.unwrap();
         assert!(failed.is_err());
         let units = find_exact_named_units(&env.dbx, &unit_name_req(&req.unit))
             .await
@@ -320,8 +376,37 @@ mod tests {
                 .count(&env.dbx)
                 .await
                 .unwrap(),
-            0
+            1
         );
+        let retry_key = message_unit_network_retry_key(&login, units[0].id);
+        assert!(redis.exists::<_, bool>(&retry_key).await.unwrap());
+        crate::session::add_session(&mut redis, healthy_session_id, &login)
+            .await
+            .unwrap();
+        let healthy_stream_id =
+            crate::event_stream::session_stream_id(healthy_session_id);
+        for _ in 0..2 {
+            assert!(replay_message_unit_network(
+                &env,
+                &unit_name_req(&req.unit),
+                &retry_key,
+                units[0].id,
+            )
+            .await
+            .is_err());
+        }
+        let reply: StreamRangeReply =
+            redis.xrange_all(&healthy_stream_id).await.unwrap();
+        assert_eq!(reply.ids.len(), 1);
+        assert!(redis.exists::<_, bool>(&retry_key).await.unwrap());
+        assert!(redis
+            .sismember::<_, _, bool>(
+                format!("{retry_key}:delivered"),
+                &healthy_stream_id,
+            )
+            .await
+            .unwrap());
+        redis.del::<_, ()>(&stream_id).await.unwrap();
         mk_sigint_network_unit(
             &env.dbx,
             sigint_network_unit::ActiveModel {
@@ -331,6 +416,8 @@ mod tests {
         )
         .await
         .unwrap();
+        req.skip_network_creation = true;
+        req.locations.clear();
         let retried =
             create_unit_for_message_for_login(&login, &env, req.clone())
                 .await
@@ -339,10 +426,24 @@ mod tests {
             .await
             .unwrap();
         let events = take_session_events(&mut redis, session_id).await;
+        let healthy_events =
+            take_session_events(&mut redis, healthy_session_id).await;
+        assert!(!redis.exists::<_, bool>(&retry_key).await.unwrap());
+        assert!(!redis
+            .exists::<_, bool>(format!("{retry_key}:delivered"))
+            .await
+            .unwrap());
         assert_eq!(retried.id, units[0].id);
         assert_eq!(repeated.id, retried.id);
         assert_eq!(
             events
+                .iter()
+                .filter(|event| **event == EventType::ETNetworkChanged)
+                .count(),
+            1
+        );
+        assert_eq!(
+            healthy_events
                 .iter()
                 .filter(|event| **event == EventType::ETNetworkChanged)
                 .count(),
@@ -355,6 +456,77 @@ mod tests {
                 .unwrap(),
             2
         );
+        assert_eq!(
+            network_invalidation_task::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            sigint_inbox_item_unit_tag_queue::Entity::find()
+                .filter(
+                    sigint_inbox_item_unit_tag_queue::Column::SigintInboxItemId
+                        .eq(item_id),
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn message_unit_3535_rolled_back_partial_recalculations() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        super::super::tests::insert_settings(&env.dbx, true).await;
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let item_id = non_rer_inbox_item(&env.dbx).await;
+        let mut req = request("Підрозділ відкату створення 3535");
+        req.skip_network_creation = false;
+        req.locations = vec!["Київ".to_string()];
+        req.unit_mask = vec![req.unit.name.clone().unwrap()];
+        env.dbx
+            .execute_unprepared(
+                "ALTER TABLE sigint_inbox_item_unit_tag_queue ADD CONSTRAINT \
+                 message_unit_3535_rejected_queue CHECK (false) NOT VALID",
+            )
+            .await
+            .unwrap();
+        let failed =
+            create_unit_for_message_for_login(&login, &env, req.clone()).await;
+        env.dbx
+            .execute_unprepared(
+                "ALTER TABLE sigint_inbox_item_unit_tag_queue DROP CONSTRAINT \
+                 message_unit_3535_rejected_queue",
+            )
+            .await
+            .unwrap();
+        assert!(failed.is_err());
+        assert_eq!(
+            sigint_unit::Entity::find().count(&env.dbx).await.unwrap(),
+            0
+        );
+        assert_eq!(
+            sigint_network::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            network_invalidation_task::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+        create_unit_for_message_for_login(&login, &env, req)
+            .await
+            .unwrap();
         assert_eq!(
             network_invalidation_task::Entity::find()
                 .count(&env.dbx)
