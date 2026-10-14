@@ -58,6 +58,12 @@ create full units without requiring `UnitsEditor`; merging existing duplicates
 still requires `UnitsEditor`. Saving this form immediately
 creates the unit and selects its ID in the message; cancelling leaves the text
 unresolved. Cancelling the message afterwards does not remove the saved unit.
+`POST /api/sigint/unit/create-for-message` accepts the full unit and optional
+network fields using `CreateUnitWithAutoNetworkReq` and returns a `Unit`.
+It shares the direct-submit normalized-name lock, reuses a unique non-deleted
+exact match without changing its fields or networks, and rejects ambiguous
+matches before inserting. Newly created units and their optional network are
+saved in one transaction.
 Both unit creation entry points skip the network step when `hide_networks` is
 enabled, even when the devices section is enabled. Nonempty unresolved unit text displays
 `Підрозділ не обрано` and blocks creation, including keyboard submission.
@@ -77,7 +83,8 @@ unsaved-change detection and remains automatic for parser ownership and
 pristine-source clearing. Explicitly accepting a conflicting parsed unit releases
 the network-owned unit assignment while retaining the network name.
 
-Regression coverage lives in `wdintel-rs/src/sigint/direct_submit/units.rs` and
+Regression coverage lives in `wdintel-rs/src/sigint/direct_submit/units.rs`,
+`wdintel-rs/src/sigint/unit/message_creation.rs`, and
 `wdintel-web/tests/e2e/manage-message-unit.regression.spec.ts`; parser ownership
 is covered by
 `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`.

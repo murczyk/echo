@@ -3,7 +3,7 @@ import type { Unit } from '../../../../../Bindings';
 import type { UnitFormSubmit } from '../../rer-units-neo/components/UnitFormDrawer';
 import { formatUnitError } from '../../rer-units-neo/helpers';
 import { currentSystemSettings } from '../../../services/api/system-settings';
-import { createUnit, createUnitWithAutoNetwork } from '../../../services/api/units';
+import { createUnitForMessage } from '../../../services/api/units';
 
 type CreationForm = {
   initialName: string;
@@ -65,10 +65,10 @@ export function useMessageUnitCreation(onCreated: (unit: Unit) => void) {
     setSubmitting(true);
     setError(null);
     try {
-      const unit =
-        value.autoNetwork === undefined
-          ? await createUnit(value.unit)
-          : (await createUnitWithAutoNetwork({ unit: value.unit, ...value.autoNetwork })).unit;
+      const unit = await createUnitForMessage({
+        unit: value.unit,
+        ...(value.autoNetwork ?? { skipNetworkCreation: true, locations: [], unitMask: [] }),
+      });
       if (session.current !== version) return;
       onCreated(unit);
       setForm(null);

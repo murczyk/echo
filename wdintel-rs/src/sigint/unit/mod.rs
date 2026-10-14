@@ -31,6 +31,7 @@ pub mod changelog;
 pub mod combat_type;
 pub mod labels;
 mod merge_task;
+pub(crate) mod message_creation;
 pub(crate) use merge_task::guard_capacity as unit_merge_guard_capacity;
 pub mod orbit;
 pub mod types;
@@ -1275,28 +1276,15 @@ pub async fn create_unit_with_auto_network_for_login(
     let transaction =
         begin_unit_creation_transaction(&env.dbx, &req.unit).await?;
     let unit = insert_merge_link_unit(&transaction, login, &req.unit).await?;
-    let (network_id, created_network) = match network_locations {
-        None => (None, None),
-        Some(locations) => {
-            if let Some(network) =
-                active_network_for_unit(&transaction, unit.id).await?
-            {
-                (Some(network.id), None)
-            } else {
-                let network = insert_auto_cyber_network(
-                    &transaction,
-                    login,
-                    &req,
-                    unit.id,
-                    locations,
-                    req.unit_mask.clone(),
-                )
-                .await
-                .c(h!())?;
-                (Some(network.id), Some(network))
-            }
-        }
-    };
+    let (network_id, created_network) = create_optional_unit_network(
+        &transaction,
+        login,
+        &req,
+        unit.id,
+        network_locations,
+    )
+    .await
+    .c(h!())?;
     transaction.commit().await.context(h!())?;
 
     render_created_unit_with_optional_network(
@@ -1307,6 +1295,38 @@ pub async fn create_unit_with_auto_network_for_login(
         created_network,
     )
     .await
+}
+
+async fn create_optional_unit_network(
+    transaction: &DatabaseTransaction,
+    login: &uuid::Uuid,
+    req: &CreateUnitWithAutoNetworkReq,
+    unit_id: i64,
+    network_locations: Option<Vec<String>>,
+) -> anyhow::Result<(Option<i64>, Option<sigint_network::Model>)> {
+    Ok(match network_locations {
+        None => (None, None),
+        Some(locations) => {
+            if let Some(network) = active_network_for_unit(transaction, unit_id)
+                .await
+                .c(h!())?
+            {
+                (Some(network.id), None)
+            } else {
+                let network = insert_auto_cyber_network(
+                    transaction,
+                    login,
+                    req,
+                    unit_id,
+                    locations,
+                    req.unit_mask.clone(),
+                )
+                .await
+                .c(h!())?;
+                (Some(network.id), Some(network))
+            }
+        }
+    })
 }
 
 async fn begin_unit_creation_transaction(

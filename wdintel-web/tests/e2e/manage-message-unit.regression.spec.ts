@@ -23,7 +23,7 @@ async function installUnitCreationApi(page: Page) {
   await page.route('**/api/sigint/unit/create-duplicate-candidates', (route) =>
     route.fulfill({ json: { units: [] } }),
   );
-  for (const endpoint of ['create', 'create-with-auto-network']) {
+  for (const endpoint of ['create', 'create-with-auto-network', 'create-for-message']) {
     await page.route(`**/api/sigint/unit/${endpoint}`, async (route) => {
       const request = route.request().postDataJSON();
       creations.push(request);
@@ -31,7 +31,7 @@ async function installUnitCreationApi(page: Page) {
       const unit = { ...details, id: createdUnitId, name: details.name || details.battalion };
       await route.fulfill({
         json:
-          endpoint === 'create'
+          endpoint !== 'create-with-auto-network'
             ? unit
             : { unit, network_id: request.skip_network_creation ? null : 3535 },
       });
@@ -152,7 +152,7 @@ for (const entry of ['message', 'units'] as const) {
       }
       await page.getByRole('button', { name: 'Створити', exact: true }).click();
       await expect.poll(() => creations.length).toBe(1);
-      const details = hideNetworks ? creations[0] : creations[0].unit;
+      const details = entry === 'units' && hideNetworks ? creations[0] : creations[0].unit;
       if (!hideNetworks) {
         expect(creations[0]).toMatchObject({ skip_network_creation: false, locations: ['Київ'] });
       }
@@ -207,12 +207,12 @@ test('@regression #3535 unit save failure preserved fields and keyboard input di
 }) => {
   const submissions = await openDutyUnitEditor(page);
   let attempts = 0;
-  await page.route('**/api/sigint/unit/create', async (route) => {
+  await page.route('**/api/sigint/unit/create-for-message', async (route) => {
     attempts += 1;
     await route.fulfill(
       attempts === 1
         ? { status: 500, json: { error: 'Не вдалося зберегти підрозділ' } }
-        : { json: { ...route.request().postDataJSON(), id: createdUnitId } },
+        : { json: { ...route.request().postDataJSON().unit, id: createdUnitId } },
     );
   });
   await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('3535 unit retry');
@@ -238,6 +238,49 @@ test('@regression #3535 unit save failure preserved fields and keyboard input di
   await expect(page.getByText('Новий підрозділ', { exact: true })).toHaveCount(0);
   expect(attempts).toBe(2);
   await expect(page.getByRole('combobox', { name: 'Підрозділ' })).toHaveValue(renamedUnit);
+});
+
+for (const rename of [false, true]) {
+  test(`@regression #3535 message unit reused the server exact match with rename=${rename}`, async ({
+    page,
+  }) => {
+    const submissions = await openDutyUnitEditor(page);
+    await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('3535 reused unit');
+    await page.getByRole('combobox', { name: 'Підрозділ' }).fill(newUnitName);
+    await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
+    const name = rename ? existingUnit.name : newUnitName;
+    await page.getByRole('textbox', { name: 'Назва', exact: true }).fill(name);
+    const reused = { ...existingUnit, name };
+    await page.route('**/api/sigint/unit/create-for-message', (route) => {
+      expect(route.request().postDataJSON().unit.name).toBe(name);
+      return route.fulfill({ json: reused });
+    });
+    await saveNewUnit(page, name);
+    await expect(page.getByRole('combobox', { name: 'Підрозділ' })).toHaveValue(name);
+    await page.getByRole('button', { name: 'Створити', exact: true }).click();
+    await expect.poll(() => submissions.length).toBe(1);
+    expect(submissions[0]).toMatchObject({ unit: name, unit_id: existingUnit.id });
+  });
+}
+
+test('@regression #3535 ambiguous unit names preserved the form and displayed the server error', async ({
+  page,
+}) => {
+  const submissions = await openDutyUnitEditor(page);
+  await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('3535 ambiguous unit');
+  await page.getByRole('combobox', { name: 'Підрозділ' }).fill(newUnitName);
+  await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
+  await page.getByRole('textbox', { name: 'Коментар', exact: true }).fill('Збережені дані');
+  await page.route('**/api/sigint/unit/create-for-message', (route) =>
+    route.fulfill({ status: 400, json: { error: 'Оберіть підрозділ зі списку.' } }),
+  );
+  await page.getByRole('button', { name: 'Створити', exact: true }).click();
+  await expect(page.getByText('Оберіть підрозділ зі списку.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Назва', exact: true })).toHaveValue(newUnitName);
+  await expect(page.getByRole('textbox', { name: 'Коментар', exact: true })).toHaveValue(
+    'Збережені дані',
+  );
+  expect(submissions).toHaveLength(0);
 });
 
 test('@regression #3535 message writers created full units without unit editing permissions', async ({
