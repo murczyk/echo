@@ -950,6 +950,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                           <MetadataSection
                             showAdvanced={showAdvanced}
                             busy={busy}
+                            isEditMode={isEditMode}
                             recentValues={recentValues}
                             tagOptions={tagOptions}
                             postOptions={drawerState.postOptions}
@@ -980,8 +981,6 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             freqOptions={drawerState.freqOptions}
                             freqLoading={drawerState.freqLoading}
                             setFreqInput={drawerState.setFreqInput}
-                            unitLocked={drawerState.unitLocked}
-                            setUnitLocked={drawerState.setUnitLocked}
                           />
 
                           <LocationsSection

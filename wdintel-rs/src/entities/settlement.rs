@@ -30,7 +30,7 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::settlement_alias::Entity")]
+    #[sea_orm(has_one = "super::settlement_alias::Entity")]
     SettlementAlias,
     #[sea_orm(has_many = "super::sigint_inbox_item_settlement::Entity")]
     SigintInboxItemSettlement,

@@ -1,0 +1,1712 @@
+{
+  "host": "echo-pivnich",
+  "issue": 3780,
+  "investigation_date_utc": "2026-10-13",
+  "production_access": "read-only via the existing unlocked SSH agent",
+  "deployment": {
+    "package": "0.1.1~rc.202610131240-1",
+    "served_version": "1.0.eec468a0d0f (13.Oct 12:18)",
+    "commit": "eec468a0d0f",
+    "included_fix_commits": [
+      "20847ff1c",
+      "656e98f00"
+    ],
+    "installed_utc": "2026-10-13T14:00:15Z",
+    "api_started_utc": "2026-10-13T14:00:52Z",
+    "background_worker_started_utc": "2026-10-13T14:01:27Z",
+    "long_poll_min_response_time_ms": 2000,
+    "analysis_system_count_interval_ms": 30000,
+    "analysis_message_reconciliation_interval_ms": 2000,
+    "classic_analysis_private_long_poll_removed": true,
+    "loaded_release_in_existing_browser_tabs": "unknown"
+  },
+  "methodology": {
+    "http_hostname_filter": [
+      "echo-pivnich.hyakutake-chromatic.ts.net",
+      "pivnich.echoua.info"
+    ],
+    "http_total": "COUNT(DISTINCT request_id) across lifecycle records timestamped within each half-open window",
+    "view_total": "request lifecycle records only, COUNT(DISTINCT request_id), route determined from referer",
+    "response_latency": "response/error lifecycle records, approximate percentile aggregates",
+    "page_activity": "matching public_host; json_get_bool(payload, nolimit)=true; heartbeat/page visits excluded",
+    "analysis_browser_group": "first 10 hexadecimal characters of SHA256(referer + separator + user_agent); may combine tabs",
+    "duty_repeat_group": "account plus canonical JSON request payload; may combine feeds and tabs",
+    "duty_repeat_share_denominator": "all consecutive intervals within each account/payload group, excluding the first record",
+    "statistics": "retained observational samples; differing accounts, feeds, tabs, filters, and initial loads; no matched CPU baseline",
+    "sanitization": "no account names, credentials, raw referers, query parameters, message identifiers, or SQL literals retained"
+  },
+  "windows": {
+    "before": {
+      "from_utc": "2026-10-13T13:45:00Z",
+      "to_utc": "2026-10-13T13:50:00Z",
+      "duration_seconds": 300,
+      "http_requests_deduplicated_across_lifecycle_records": [
+        {
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 88360,
+          "request_records": 88074,
+          "responses": 88001,
+          "mean_response_ms": 964.7191509187396,
+          "min_response_ms": 501,
+          "max_response_ms": 50020,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 16377,
+          "request_records": 16368,
+          "responses": 16362,
+          "mean_response_ms": 128.99712749052682,
+          "min_response_ms": 4,
+          "max_response_ms": 18369,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 2721,
+          "request_records": 2719,
+          "responses": 2721,
+          "mean_response_ms": 124.79713340683573,
+          "min_response_ms": 18,
+          "max_response_ms": 1583,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer-importer/messages-by-id-matching-filters",
+          "requests": 2051,
+          "request_records": 2051,
+          "responses": 2051,
+          "mean_response_ms": 46.79912237932716,
+          "min_response_ms": 16,
+          "max_response_ms": 315,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer/message/comments-batch",
+          "requests": 20,
+          "request_records": 20,
+          "responses": 20,
+          "mean_response_ms": 24.0,
+          "min_response_ms": 3,
+          "max_response_ms": 50,
+          "failures": 0
+        }
+      ],
+      "request_only_view_totals": [
+        {
+          "view": "analysis-classic",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 56108
+        },
+        {
+          "view": "analysis-classic",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 2
+        },
+        {
+          "view": "analysis-classic",
+          "request_path": "/api/rer/message/comments-batch",
+          "requests": 20
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 2816
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 682
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/rer-importer/messages-by-id-matching-filters",
+          "requests": 2051
+        },
+        {
+          "view": "duty-classic",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 8642
+        },
+        {
+          "view": "duty-classic",
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 8226
+        },
+        {
+          "view": "duty-classic",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 2091
+        },
+        {
+          "view": "duty-neo",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 9510
+        },
+        {
+          "view": "duty-neo",
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 6203
+        },
+        {
+          "view": "duty-neo",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 127
+        },
+        {
+          "view": "other",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 10998
+        },
+        {
+          "view": "other",
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 1257
+        },
+        {
+          "view": "other",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 499
+        }
+      ],
+      "page_activity_nolimit_true": [
+        {
+          "page": "rer-analysis",
+          "records": 682,
+          "accounts": 7,
+          "search_records": 173
+        },
+        {
+          "page": "rer-duty",
+          "records": 8857,
+          "accounts": 12,
+          "search_records": 0
+        },
+        {
+          "page": "rer-duty-neo",
+          "records": 6241,
+          "accounts": 38,
+          "search_records": 0
+        }
+      ],
+      "approximate_response_latency": [
+        {
+          "request_path": "/api/event-stream/long-poll",
+          "median_ms": 512,
+          "p95_ms": 3804,
+          "p99_ms": 4763,
+          "responses": 88001
+        },
+        {
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "median_ms": 10,
+          "p95_ms": 480,
+          "p99_ms": 1538,
+          "responses": 16362
+        },
+        {
+          "request_path": "/api/rer-importer/messages-by-id",
+          "median_ms": 72,
+          "p95_ms": 398,
+          "p99_ms": 1138,
+          "responses": 2721
+        },
+        {
+          "request_path": "/api/rer-importer/messages-by-id-matching-filters",
+          "median_ms": 36,
+          "p95_ms": 109,
+          "p99_ms": 178,
+          "responses": 2051
+        },
+        {
+          "request_path": "/api/rer/message/comments-batch",
+          "median_ms": 24,
+          "p95_ms": 41,
+          "p99_ms": 50,
+          "responses": 20
+        }
+      ]
+    },
+    "after": {
+      "from_utc": "2026-10-13T14:05:00Z",
+      "to_utc": "2026-10-13T14:10:00Z",
+      "duration_seconds": 300,
+      "http_requests_deduplicated_across_lifecycle_records": [
+        {
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 43124,
+          "request_records": 42788,
+          "responses": 42754,
+          "mean_response_ms": 2246.186602423165,
+          "min_response_ms": 2001,
+          "max_response_ms": 50039,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 14474,
+          "request_records": 14450,
+          "responses": 14472,
+          "mean_response_ms": 128.11256218905473,
+          "min_response_ms": 4,
+          "max_response_ms": 19778,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 1202,
+          "request_records": 1202,
+          "responses": 1202,
+          "mean_response_ms": 114.01331114808653,
+          "min_response_ms": 18,
+          "max_response_ms": 1257,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer-importer/messages-by-id-matching-filters",
+          "requests": 987,
+          "request_records": 987,
+          "responses": 987,
+          "mean_response_ms": 41.17629179331307,
+          "min_response_ms": 17,
+          "max_response_ms": 585,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer/message/comments-batch",
+          "requests": 50,
+          "request_records": 50,
+          "responses": 50,
+          "mean_response_ms": 19.38,
+          "min_response_ms": 10,
+          "max_response_ms": 42,
+          "failures": 0
+        }
+      ],
+      "request_only_view_totals": [
+        {
+          "view": "analysis-classic",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 26909
+        },
+        {
+          "view": "analysis-classic",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 16
+        },
+        {
+          "view": "analysis-classic",
+          "request_path": "/api/rer/message/comments-batch",
+          "requests": 19
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 1253
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 562
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 6
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/rer-importer/messages-by-id-matching-filters",
+          "requests": 987
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/rer/message/comments-batch",
+          "requests": 31
+        },
+        {
+          "view": "duty-classic",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 3773
+        },
+        {
+          "view": "duty-classic",
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 6418
+        },
+        {
+          "view": "duty-classic",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 862
+        },
+        {
+          "view": "duty-neo",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 4520
+        },
+        {
+          "view": "duty-neo",
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 6273
+        },
+        {
+          "view": "duty-neo",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 71
+        },
+        {
+          "view": "other",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 6333
+        },
+        {
+          "view": "other",
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 1197
+        },
+        {
+          "view": "other",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 247
+        }
+      ],
+      "page_activity_nolimit_true": [
+        {
+          "page": "rer-analysis",
+          "records": 562,
+          "accounts": 9,
+          "search_records": 165
+        },
+        {
+          "page": "rer-duty",
+          "records": 7020,
+          "accounts": 11,
+          "search_records": 0
+        },
+        {
+          "page": "rer-duty-neo",
+          "records": 6302,
+          "accounts": 38,
+          "search_records": 0
+        }
+      ],
+      "approximate_response_latency": [
+        {
+          "request_path": "/api/event-stream/long-poll",
+          "median_ms": 2009,
+          "p95_ms": 3759,
+          "p99_ms": 5002,
+          "responses": 42754
+        },
+        {
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "median_ms": 10,
+          "p95_ms": 411,
+          "p99_ms": 1334,
+          "responses": 14472
+        },
+        {
+          "request_path": "/api/rer-importer/messages-by-id",
+          "median_ms": 70,
+          "p95_ms": 375,
+          "p99_ms": 986,
+          "responses": 1202
+        },
+        {
+          "request_path": "/api/rer-importer/messages-by-id-matching-filters",
+          "median_ms": 34,
+          "p95_ms": 77,
+          "p99_ms": 114,
+          "responses": 987
+        },
+        {
+          "request_path": "/api/rer/message/comments-batch",
+          "median_ms": 17,
+          "p95_ms": 39,
+          "p99_ms": 42,
+          "responses": 50
+        }
+      ]
+    },
+    "followup": {
+      "from_utc": "2026-10-13T14:10:00Z",
+      "to_utc": "2026-10-13T14:15:00Z",
+      "duration_seconds": 300,
+      "http_requests_deduplicated_across_lifecycle_records": [
+        {
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 41070,
+          "request_records": 40700,
+          "responses": 40844,
+          "mean_response_ms": 2296.794437371462,
+          "min_response_ms": 2002,
+          "max_response_ms": 50054,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 13955,
+          "request_records": 13953,
+          "responses": 13935,
+          "mean_response_ms": 118.64901327592393,
+          "min_response_ms": 4,
+          "max_response_ms": 17980,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 1202,
+          "request_records": 1202,
+          "responses": 1202,
+          "mean_response_ms": 124.08402662229618,
+          "min_response_ms": 19,
+          "max_response_ms": 1257,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer-importer/messages-by-id-matching-filters",
+          "requests": 958,
+          "request_records": 958,
+          "responses": 958,
+          "mean_response_ms": 41.7901878914405,
+          "min_response_ms": 17,
+          "max_response_ms": 755,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer/message/comments-batch",
+          "requests": 57,
+          "request_records": 57,
+          "responses": 57,
+          "mean_response_ms": 17.68421052631579,
+          "min_response_ms": 2,
+          "max_response_ms": 47,
+          "failures": 0
+        }
+      ]
+    },
+    "latest": {
+      "from_utc": "2026-10-13T14:20:00Z",
+      "to_utc": "2026-10-13T14:25:00Z",
+      "duration_seconds": 300,
+      "http_requests_deduplicated_across_lifecycle_records": [
+        {
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 40464,
+          "request_records": 40259,
+          "responses": 40144,
+          "mean_response_ms": 2234.8737046632123,
+          "min_response_ms": 2002,
+          "max_response_ms": 50040,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 12621,
+          "request_records": 12604,
+          "responses": 12619,
+          "mean_response_ms": 102.66098739995245,
+          "min_response_ms": 3,
+          "max_response_ms": 17681,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 1221,
+          "request_records": 1220,
+          "responses": 1221,
+          "mean_response_ms": 138.68304668304668,
+          "min_response_ms": 18,
+          "max_response_ms": 1239,
+          "failures": 1
+        },
+        {
+          "request_path": "/api/rer-importer/messages-by-id-matching-filters",
+          "requests": 993,
+          "request_records": 993,
+          "responses": 993,
+          "mean_response_ms": 40.22155085599194,
+          "min_response_ms": 16,
+          "max_response_ms": 892,
+          "failures": 0
+        },
+        {
+          "request_path": "/api/rer/message/comments-batch",
+          "requests": 67,
+          "request_records": 67,
+          "responses": 67,
+          "mean_response_ms": 15.671641791044776,
+          "min_response_ms": 2,
+          "max_response_ms": 33,
+          "failures": 0
+        }
+      ],
+      "request_only_view_totals": [
+        {
+          "view": "analysis-classic",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 25182
+        },
+        {
+          "view": "analysis-classic",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 1
+        },
+        {
+          "view": "analysis-classic",
+          "request_path": "/api/rer/message/comments-batch",
+          "requests": 21
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 1292
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 520
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 8
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/rer-importer/messages-by-id-matching-filters",
+          "requests": 993
+        },
+        {
+          "view": "analysis-neo",
+          "request_path": "/api/rer/message/comments-batch",
+          "requests": 46
+        },
+        {
+          "view": "duty-classic",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 3945
+        },
+        {
+          "view": "duty-classic",
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 4860
+        },
+        {
+          "view": "duty-classic",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 883
+        },
+        {
+          "view": "duty-neo",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 4165
+        },
+        {
+          "view": "duty-neo",
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 5869
+        },
+        {
+          "view": "duty-neo",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 75
+        },
+        {
+          "view": "other",
+          "request_path": "/api/event-stream/long-poll",
+          "requests": 5675
+        },
+        {
+          "view": "other",
+          "request_path": "/api/rer-importer/get-inbox-count",
+          "requests": 1355
+        },
+        {
+          "view": "other",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "requests": 253
+        }
+      ],
+      "page_activity_nolimit_true": [
+        {
+          "page": "rer-analysis",
+          "records": 520,
+          "accounts": 8,
+          "search_records": 136
+        },
+        {
+          "page": "rer-duty",
+          "records": 5640,
+          "accounts": 11,
+          "search_records": 0
+        },
+        {
+          "page": "rer-duty-neo",
+          "records": 5898,
+          "accounts": 34,
+          "search_records": 0
+        }
+      ],
+      "failed_responses": [
+        {
+          "ts": "2026-10-13 14:21:32.000000",
+          "event_type": "response",
+          "request_path": "/api/rer-importer/messages-by-id",
+          "response_status": 500,
+          "response_time_ms": 1070
+        }
+      ]
+    }
+  },
+  "original_duty_page_activity": {
+    "source": "../iteration2/findings.md#production-request-evidence",
+    "date_utc": "2026-10-12",
+    "five_minute_sample_around_14_11": {
+      "duration_seconds": 300,
+      "classic_duty": {
+        "records": 10763,
+        "accounts": 13
+      },
+      "duty_neo": {
+        "records": 8035,
+        "accounts": 36
+      }
+    },
+    "other_five_minute_sample": {
+      "duration_seconds": 300,
+      "classic_duty_records": 8788,
+      "duty_neo_records": 8300
+    },
+    "three_minute_cadence_sample_ending_around_14_14": {
+      "duration_seconds": 180,
+      "classic_duty_records": 6660,
+      "classic_identical_repeats_under_1_second": 6007,
+      "duty_neo_records": 5101,
+      "neo_identical_repeats_under_4_seconds": 2915,
+      "neo_share_repeat_intervals_under_4_seconds_percent": 59.5
+    },
+    "iteration1_backend_route_log": {
+      "source": "../iteration1/perf.md#echo-pivnich",
+      "from_utc": "2026-10-12T07:18:00Z",
+      "to_utc": "2026-10-12T07:23:18Z",
+      "operation": "rer duty inbox messages count",
+      "route": "analytics",
+      "events": 3682,
+      "p50_ms": 494,
+      "p95_ms": 3696,
+      "max_ms": 20568,
+      "limitation": "backend route log events, not comparable directly with HTTP totals"
+    }
+  },
+  "analysis_browser_groups": {
+    "f64dabf0a8": {
+      "before": {
+        "messages-by-id-matching-filters": 201,
+        "long-poll": 201,
+        "get-inbox-count": 112
+      },
+      "after": {
+        "get-inbox-count": 104,
+        "long-poll": 97,
+        "messages-by-id-matching-filters": 97
+      }
+    },
+    "8ea64f4d1f": {
+      "before": {
+        "get-inbox-count": 10,
+        "messages-by-id-matching-filters": 208,
+        "long-poll": 209
+      },
+      "after": {
+        "messages-by-id-matching-filters": 99,
+        "long-poll": 99,
+        "get-inbox-count": 10
+      }
+    },
+    "ca682c30d7": {
+      "before": {
+        "get-inbox-count": 10,
+        "long-poll": 204,
+        "messages-by-id-matching-filters": 204
+      },
+      "after": {
+        "long-poll": 97,
+        "get-inbox-count": 10,
+        "messages-by-id-matching-filters": 96
+      }
+    },
+    "597d30b05d": {
+      "before": {
+        "get-inbox-count": 110,
+        "long-poll": 206,
+        "messages-by-id-matching-filters": 205
+      },
+      "after": {
+        "long-poll": 99,
+        "get-inbox-count": 106,
+        "messages-by-id-matching-filters": 99
+      }
+    },
+    "4ebb218c37": {
+      "before": {
+        "messages-by-id-matching-filters": 205,
+        "long-poll": 205,
+        "get-inbox-count": 108
+      }
+    },
+    "d080fbd2b1": {
+      "after": {
+        "messages-by-id-matching-filters": 56,
+        "long-poll": 56,
+        "get-inbox-count": 6,
+        "comments-batch": 15
+      }
+    },
+    "504068afe6": {
+      "after": {
+        "long-poll": 94
+      },
+      "before": {
+        "long-poll": 191
+      }
+    },
+    "a7a91c5299": {
+      "after": {
+        "get-inbox-count": 4,
+        "messages-by-id-matching-filters": 42,
+        "long-poll": 43,
+        "comments-batch": 10
+      }
+    },
+    "a3947de7fc": {
+      "after": {
+        "long-poll": 50
+      },
+      "before": {
+        "long-poll": 50
+      }
+    },
+    "1aaf7f6db5": {
+      "after": {
+        "get-inbox-count": 2,
+        "comments-batch": 1
+      }
+    },
+    "2a59e8d835": {
+      "after": {
+        "messages-by-id-matching-filters": 99,
+        "get-inbox-count": 54,
+        "long-poll": 99
+      }
+    },
+    "2adaffc95b": {
+      "after": {
+        "comments-batch": 2,
+        "long-poll": 8,
+        "get-inbox-count": 2,
+        "messages-by-id-matching-filters": 8
+      }
+    },
+    "6a6f86b260": {
+      "before": {
+        "messages-by-id-matching-filters": 204,
+        "long-poll": 204,
+        "get-inbox-count": 62
+      }
+    },
+    "bd4b3e715d": {
+      "before": {
+        "get-inbox-count": 108,
+        "messages-by-id-matching-filters": 205,
+        "long-poll": 206
+      },
+      "after": {
+        "messages-by-id-matching-filters": 99,
+        "get-inbox-count": 102,
+        "long-poll": 99
+      }
+    },
+    "ade20ee6f6": {
+      "after": {
+        "long-poll": 47
+      },
+      "before": {
+        "long-poll": 266
+      }
+    },
+    "e54f244f3c": {
+      "after": {
+        "long-poll": 1
+      }
+    },
+    "af662276b0": {
+      "after": {
+        "long-poll": 22,
+        "get-inbox-count": 2,
+        "comments-batch": 2
+      }
+    },
+    "0dd2bc4752": {
+      "after": {
+        "messages-by-id-matching-filters": 99,
+        "get-inbox-count": 104,
+        "long-poll": 99
+      },
+      "before": {
+        "get-inbox-count": 106,
+        "messages-by-id-matching-filters": 206,
+        "long-poll": 207
+      }
+    },
+    "a4ca54900c": {
+      "before": {
+        "messages-by-id-matching-filters": 206,
+        "long-poll": 206
+      },
+      "after": {
+        "messages-by-id-matching-filters": 97,
+        "long-poll": 97
+      }
+    },
+    "9966f8e5d1": {
+      "before": {
+        "messages-by-id-matching-filters": 207,
+        "get-inbox-count": 56,
+        "long-poll": 206
+      },
+      "after": {
+        "get-inbox-count": 54,
+        "messages-by-id-matching-filters": 96,
+        "long-poll": 96
+      }
+    },
+    "8496e4ff9d": {
+      "after": {
+        "get-inbox-count": 2,
+        "comments-batch": 1
+      }
+    },
+    "47428c329b": {
+      "before": {
+        "long-poll": 205
+      }
+    },
+    "2aa49455df": {
+      "before": {
+        "long-poll": 50
+      },
+      "after": {
+        "long-poll": 49
+      }
+    },
+    "8e81d5b529": {
+      "after": {
+        "long-poll": 1
+      }
+    }
+  },
+  "analysis_count_start_spacing": {
+    "after": [
+      {
+        "group": "597d30b05d",
+        "requests": 106,
+        "distinct_start_seconds": 53,
+        "median_start_gap_seconds": 6.0,
+        "gap_histogram": {
+          "5.0": 16,
+          "6.0": 36
+        }
+      },
+      {
+        "group": "0dd2bc4752",
+        "requests": 104,
+        "distinct_start_seconds": 52,
+        "median_start_gap_seconds": 6.0,
+        "gap_histogram": {
+          "5.0": 8,
+          "6.0": 43
+        }
+      },
+      {
+        "group": "9966f8e5d1",
+        "requests": 54,
+        "distinct_start_seconds": 27,
+        "median_start_gap_seconds": 10.5,
+        "gap_histogram": {
+          "19.0": 1,
+          "6.0": 9,
+          "17.0": 1,
+          "18.0": 1,
+          "5.0": 4,
+          "15.0": 2,
+          "16.0": 8
+        }
+      },
+      {
+        "group": "f64dabf0a8",
+        "requests": 104,
+        "distinct_start_seconds": 52,
+        "median_start_gap_seconds": 6.0,
+        "gap_histogram": {
+          "5.0": 9,
+          "6.0": 42
+        }
+      },
+      {
+        "group": "bd4b3e715d",
+        "requests": 102,
+        "distinct_start_seconds": 51,
+        "median_start_gap_seconds": 6.0,
+        "gap_histogram": {
+          "6.0": 42,
+          "5.0": 8
+        }
+      },
+      {
+        "group": "2a59e8d835",
+        "requests": 54,
+        "distinct_start_seconds": 27,
+        "median_start_gap_seconds": 10.0,
+        "gap_histogram": {
+          "6.0": 9,
+          "18.0": 1,
+          "16.0": 5,
+          "5.0": 4,
+          "14.0": 1,
+          "15.0": 5,
+          "17.0": 1
+        }
+      },
+      {
+        "group": "d080fbd2b1",
+        "requests": 6,
+        "distinct_start_seconds": 6,
+        "median_start_gap_seconds": 31.0,
+        "gap_histogram": {
+          "30.0": 2,
+          "31.0": 3
+        }
+      },
+      {
+        "group": "ca682c30d7",
+        "requests": 10,
+        "distinct_start_seconds": 5,
+        "median_start_gap_seconds": 60.0,
+        "gap_histogram": {
+          "60.0": 4
+        }
+      },
+      {
+        "group": "8ea64f4d1f",
+        "requests": 10,
+        "distinct_start_seconds": 5,
+        "median_start_gap_seconds": 60.0,
+        "gap_histogram": {
+          "60.0": 4
+        }
+      },
+      {
+        "group": "8496e4ff9d",
+        "requests": 2,
+        "distinct_start_seconds": 1,
+        "median_start_gap_seconds": null,
+        "gap_histogram": {}
+      },
+      {
+        "group": "af662276b0",
+        "requests": 2,
+        "distinct_start_seconds": 1,
+        "median_start_gap_seconds": null,
+        "gap_histogram": {}
+      },
+      {
+        "group": "a7a91c5299",
+        "requests": 4,
+        "distinct_start_seconds": 4,
+        "median_start_gap_seconds": 30.0,
+        "gap_histogram": {
+          "30.0": 2,
+          "31.0": 1
+        }
+      },
+      {
+        "group": "1aaf7f6db5",
+        "requests": 2,
+        "distinct_start_seconds": 1,
+        "median_start_gap_seconds": null,
+        "gap_histogram": {}
+      },
+      {
+        "group": "2adaffc95b",
+        "requests": 2,
+        "distinct_start_seconds": 1,
+        "median_start_gap_seconds": null,
+        "gap_histogram": {}
+      }
+    ],
+    "latest": [
+      {
+        "group": "597d30b05d",
+        "requests": 104,
+        "distinct_start_seconds": 52,
+        "median_start_gap_seconds": 6.0,
+        "gap_histogram": {
+          "6.0": 35,
+          "5.0": 16
+        }
+      },
+      {
+        "group": "f64dabf0a8",
+        "requests": 102,
+        "distinct_start_seconds": 51,
+        "median_start_gap_seconds": 6.0,
+        "gap_histogram": {
+          "7.0": 1,
+          "5.0": 8,
+          "6.0": 41
+        }
+      },
+      {
+        "group": "0dd2bc4752",
+        "requests": 102,
+        "distinct_start_seconds": 51,
+        "median_start_gap_seconds": 6.0,
+        "gap_histogram": {
+          "6.0": 45,
+          "5.0": 5
+        }
+      },
+      {
+        "group": "bd4b3e715d",
+        "requests": 102,
+        "distinct_start_seconds": 51,
+        "median_start_gap_seconds": 6.0,
+        "gap_histogram": {
+          "6.0": 40,
+          "5.0": 10
+        }
+      },
+      {
+        "group": "2a59e8d835",
+        "requests": 56,
+        "distinct_start_seconds": 28,
+        "median_start_gap_seconds": 6.0,
+        "gap_histogram": {
+          "6.0": 10,
+          "16.0": 1,
+          "5.0": 4,
+          "15.0": 10,
+          "17.0": 2
+        }
+      },
+      {
+        "group": "b22f7e877d",
+        "requests": 20,
+        "distinct_start_seconds": 10,
+        "median_start_gap_seconds": 30.0,
+        "gap_histogram": {
+          "30.0": 9
+        }
+      },
+      {
+        "group": "ca682c30d7",
+        "requests": 10,
+        "distinct_start_seconds": 5,
+        "median_start_gap_seconds": 60.0,
+        "gap_histogram": {
+          "60.0": 4
+        }
+      },
+      {
+        "group": "8ea64f4d1f",
+        "requests": 10,
+        "distinct_start_seconds": 5,
+        "median_start_gap_seconds": 60.0,
+        "gap_histogram": {
+          "60.0": 4
+        }
+      },
+      {
+        "group": "c2f7263976",
+        "requests": 6,
+        "distinct_start_seconds": 6,
+        "median_start_gap_seconds": 31.0,
+        "gap_histogram": {
+          "31.0": 3,
+          "30.0": 2
+        }
+      },
+      {
+        "group": "0e328394cb",
+        "requests": 4,
+        "distinct_start_seconds": 4,
+        "median_start_gap_seconds": 31.0,
+        "gap_histogram": {
+          "31.0": 2,
+          "30.0": 1
+        }
+      },
+      {
+        "group": "7397ad67a0",
+        "requests": 2,
+        "distinct_start_seconds": 1,
+        "median_start_gap_seconds": null,
+        "gap_histogram": {}
+      },
+      {
+        "group": "6e1f8b4f9b",
+        "requests": 2,
+        "distinct_start_seconds": 1,
+        "median_start_gap_seconds": null,
+        "gap_histogram": {}
+      }
+    ],
+    "limitation": "timestamp seconds; referer/browser groups may include multiple tabs or immediate user-triggered counts"
+  },
+  "duty_identical_activity_repeat_spacing": [
+    {
+      "sample_window": "before",
+      "page": "rer-duty",
+      "records": 8857,
+      "accounts": 12,
+      "canonical_account_payload_groups": 101,
+      "repeat_intervals": 8756,
+      "less_than_1_second": 7669,
+      "less_than_4_seconds": 8448,
+      "share_repeat_intervals_less_than_1_second": 87.59,
+      "share_repeat_intervals_less_than_4_seconds": 96.48,
+      "largest_groups": [
+        {
+          "group": "a2c5bcc61e",
+          "records": 2100,
+          "repeat_intervals": 2099,
+          "less_than_1_second": 2098,
+          "less_than_4_seconds": 2099,
+          "median_gap_seconds": 0.13100004196166992
+        },
+        {
+          "group": "d89a4b6d65",
+          "records": 602,
+          "repeat_intervals": 601,
+          "less_than_1_second": 601,
+          "less_than_4_seconds": 601,
+          "median_gap_seconds": 0.12100005149841309
+        },
+        {
+          "group": "0fabedea41",
+          "records": 556,
+          "repeat_intervals": 555,
+          "less_than_1_second": 511,
+          "less_than_4_seconds": 549,
+          "median_gap_seconds": 0.3359999656677246
+        },
+        {
+          "group": "7551df0346",
+          "records": 387,
+          "repeat_intervals": 386,
+          "less_than_1_second": 386,
+          "less_than_4_seconds": 386,
+          "median_gap_seconds": 0.11299991607666016
+        },
+        {
+          "group": "14a32414bc",
+          "records": 317,
+          "repeat_intervals": 316,
+          "less_than_1_second": 316,
+          "less_than_4_seconds": 316,
+          "median_gap_seconds": 0.11700010299682617
+        },
+        {
+          "group": "e74af688e6",
+          "records": 301,
+          "repeat_intervals": 300,
+          "less_than_1_second": 300,
+          "less_than_4_seconds": 300,
+          "median_gap_seconds": 0.37150001525878906
+        },
+        {
+          "group": "6cd8720639",
+          "records": 266,
+          "repeat_intervals": 265,
+          "less_than_1_second": 156,
+          "less_than_4_seconds": 262,
+          "median_gap_seconds": 0.8199999332427979
+        },
+        {
+          "group": "6f1d87c36a",
+          "records": 247,
+          "repeat_intervals": 246,
+          "less_than_1_second": 246,
+          "less_than_4_seconds": 246,
+          "median_gap_seconds": 0.11899995803833008
+        }
+      ]
+    },
+    {
+      "sample_window": "before",
+      "page": "rer-duty-neo",
+      "records": 6241,
+      "accounts": 38,
+      "canonical_account_payload_groups": 392,
+      "repeat_intervals": 5849,
+      "less_than_1_second": 846,
+      "less_than_4_seconds": 2587,
+      "share_repeat_intervals_less_than_1_second": 14.46,
+      "share_repeat_intervals_less_than_4_seconds": 44.23,
+      "largest_groups": [
+        {
+          "group": "17e7cbfe6c",
+          "records": 198,
+          "repeat_intervals": 197,
+          "less_than_1_second": 125,
+          "less_than_4_seconds": 167,
+          "median_gap_seconds": 0.626000165939331
+        },
+        {
+          "group": "432990e29e",
+          "records": 137,
+          "repeat_intervals": 136,
+          "less_than_1_second": 76,
+          "less_than_4_seconds": 96,
+          "median_gap_seconds": 0.8165000677108765
+        },
+        {
+          "group": "b73fcf6631",
+          "records": 123,
+          "repeat_intervals": 122,
+          "less_than_1_second": 52,
+          "less_than_4_seconds": 88,
+          "median_gap_seconds": 1.8565000295639038
+        },
+        {
+          "group": "784ae7eed1",
+          "records": 109,
+          "repeat_intervals": 108,
+          "less_than_1_second": 13,
+          "less_than_4_seconds": 83,
+          "median_gap_seconds": 2.9555001258850098
+        },
+        {
+          "group": "0c8b237734",
+          "records": 109,
+          "repeat_intervals": 108,
+          "less_than_1_second": 18,
+          "less_than_4_seconds": 79,
+          "median_gap_seconds": 2.8609999418258667
+        },
+        {
+          "group": "d5af59627a",
+          "records": 109,
+          "repeat_intervals": 108,
+          "less_than_1_second": 12,
+          "less_than_4_seconds": 88,
+          "median_gap_seconds": 2.7674999237060547
+        },
+        {
+          "group": "6330d51c6b",
+          "records": 109,
+          "repeat_intervals": 108,
+          "less_than_1_second": 12,
+          "less_than_4_seconds": 88,
+          "median_gap_seconds": 2.7669999599456787
+        },
+        {
+          "group": "f86c3ae49a",
+          "records": 81,
+          "repeat_intervals": 80,
+          "less_than_1_second": 15,
+          "less_than_4_seconds": 58,
+          "median_gap_seconds": 2.750499963760376
+        }
+      ]
+    },
+    {
+      "sample_window": "latest",
+      "page": "rer-duty",
+      "records": 5640,
+      "accounts": 11,
+      "canonical_account_payload_groups": 76,
+      "repeat_intervals": 5564,
+      "less_than_1_second": 4497,
+      "less_than_4_seconds": 5318,
+      "share_repeat_intervals_less_than_1_second": 80.82,
+      "share_repeat_intervals_less_than_4_seconds": 95.58,
+      "largest_groups": [
+        {
+          "group": "b3ffe378ac",
+          "records": 721,
+          "repeat_intervals": 720,
+          "less_than_1_second": 718,
+          "less_than_4_seconds": 720,
+          "median_gap_seconds": 0.40550005435943604
+        },
+        {
+          "group": "02f056950a",
+          "records": 712,
+          "repeat_intervals": 711,
+          "less_than_1_second": 702,
+          "less_than_4_seconds": 704,
+          "median_gap_seconds": 0.19099998474121094
+        },
+        {
+          "group": "49647f63cf",
+          "records": 549,
+          "repeat_intervals": 548,
+          "less_than_1_second": 526,
+          "less_than_4_seconds": 548,
+          "median_gap_seconds": 0.4890000820159912
+        },
+        {
+          "group": "34e782b609",
+          "records": 416,
+          "repeat_intervals": 415,
+          "less_than_1_second": 415,
+          "less_than_4_seconds": 415,
+          "median_gap_seconds": 0.14400005340576172
+        },
+        {
+          "group": "9f281c3971",
+          "records": 383,
+          "repeat_intervals": 382,
+          "less_than_1_second": 379,
+          "less_than_4_seconds": 380,
+          "median_gap_seconds": 0.18800008296966553
+        },
+        {
+          "group": "6cd8720639",
+          "records": 356,
+          "repeat_intervals": 355,
+          "less_than_1_second": 241,
+          "less_than_4_seconds": 355,
+          "median_gap_seconds": 0.7120001316070557
+        },
+        {
+          "group": "f322f507b9",
+          "records": 159,
+          "repeat_intervals": 158,
+          "less_than_1_second": 158,
+          "less_than_4_seconds": 158,
+          "median_gap_seconds": 0.1510000228881836
+        },
+        {
+          "group": "115be19d21",
+          "records": 131,
+          "repeat_intervals": 130,
+          "less_than_1_second": 130,
+          "less_than_4_seconds": 130,
+          "median_gap_seconds": 0.1484999656677246
+        }
+      ]
+    },
+    {
+      "sample_window": "latest",
+      "page": "rer-duty-neo",
+      "records": 5898,
+      "accounts": 34,
+      "canonical_account_payload_groups": 313,
+      "repeat_intervals": 5585,
+      "less_than_1_second": 1054,
+      "less_than_4_seconds": 2663,
+      "share_repeat_intervals_less_than_1_second": 18.87,
+      "share_repeat_intervals_less_than_4_seconds": 47.68,
+      "largest_groups": [
+        {
+          "group": "17e7cbfe6c",
+          "records": 218,
+          "repeat_intervals": 217,
+          "less_than_1_second": 152,
+          "less_than_4_seconds": 179,
+          "median_gap_seconds": 0.47099995613098145
+        },
+        {
+          "group": "cd32e1222b",
+          "records": 167,
+          "repeat_intervals": 166,
+          "less_than_1_second": 65,
+          "less_than_4_seconds": 153,
+          "median_gap_seconds": 1.2664999961853027
+        },
+        {
+          "group": "3889af100c",
+          "records": 166,
+          "repeat_intervals": 165,
+          "less_than_1_second": 65,
+          "less_than_4_seconds": 149,
+          "median_gap_seconds": 1.380000114440918
+        },
+        {
+          "group": "432990e29e",
+          "records": 140,
+          "repeat_intervals": 139,
+          "less_than_1_second": 80,
+          "less_than_4_seconds": 100,
+          "median_gap_seconds": 0.7049999237060547
+        },
+        {
+          "group": "b73fcf6631",
+          "records": 120,
+          "repeat_intervals": 119,
+          "less_than_1_second": 49,
+          "less_than_4_seconds": 85,
+          "median_gap_seconds": 2.0260000228881836
+        },
+        {
+          "group": "1a42af2433",
+          "records": 108,
+          "repeat_intervals": 107,
+          "less_than_1_second": 23,
+          "less_than_4_seconds": 73,
+          "median_gap_seconds": 2.811999797821045
+        },
+        {
+          "group": "59e5073e96",
+          "records": 108,
+          "repeat_intervals": 107,
+          "less_than_1_second": 23,
+          "less_than_4_seconds": 73,
+          "median_gap_seconds": 2.8259999752044678
+        },
+        {
+          "group": "d5af59627a",
+          "records": 106,
+          "repeat_intervals": 105,
+          "less_than_1_second": 18,
+          "less_than_4_seconds": 73,
+          "median_gap_seconds": 2.7750000953674316
+        }
+      ]
+    }
+  ],
+  "duty_active_settings": [
+    {
+      "rer_duty_poll_interval_sec": 5,
+      "updated_at": "2026-10-13 08:10:27.586298"
+    }
+  ],
+  "redis_session_stream_snapshot": {
+    "sampled_utc": "2026-10-13T14:19:50.391163+00:00",
+    "registered_sessions": 125,
+    "samples": [
+      {
+        "sample_size": 1000,
+        "inbox_events": 1000,
+        "span_seconds": 297.229,
+        "inbox_events_per_minute": 201.86,
+        "unique_message_ids": 353,
+        "repeat_message_events": 647,
+        "null_origin_events": 1000,
+        "largest_same_message_event_counts": [
+          12,
+          10,
+          5,
+          5,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      {
+        "sample_size": 1000,
+        "inbox_events": 1000,
+        "span_seconds": 297.224,
+        "inbox_events_per_minute": 201.87,
+        "unique_message_ids": 353,
+        "repeat_message_events": 647,
+        "null_origin_events": 1000,
+        "largest_same_message_event_counts": [
+          12,
+          10,
+          5,
+          5,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      {
+        "sample_size": 1000,
+        "inbox_events": 1000,
+        "span_seconds": 297.225,
+        "inbox_events_per_minute": 201.87,
+        "unique_message_ids": 353,
+        "repeat_message_events": 647,
+        "null_origin_events": 1000,
+        "largest_same_message_event_counts": [
+          12,
+          10,
+          5,
+          5,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ]
+      }
+    ],
+    "telemetry_buffer_members": 122
+  },
+  "postgres_toplevel_statements_delta": {
+    "sampled_utc": "2026-10-13T14:23:36.272769+00:00",
+    "sample_seconds": 89.279,
+    "top_execution_time_queries": [
+      {
+        "queryid": "4140683912540189539",
+        "query_category": "inbox-count",
+        "calls": 4,
+        "total_exec_time": 64861.084,
+        "shared_blks_hit": 58342009.0,
+        "shared_blks_read": 1498.0,
+        "temp_blks_read": 0.0,
+        "temp_blks_written": 0.0,
+        "mean_exec_time_ms": 16215.271
+      },
+      {
+        "queryid": "1053316392732999605",
+        "query_category": "other",
+        "calls": 634,
+        "total_exec_time": 53494.572,
+        "shared_blks_hit": 72396813.0,
+        "shared_blks_read": 13.0,
+        "temp_blks_read": 0.0,
+        "temp_blks_written": 0.0,
+        "mean_exec_time_ms": 84.376
+      },
+      {
+        "queryid": "-3248399419679346841",
+        "query_category": "inbox-write",
+        "calls": 2,
+        "total_exec_time": 39243.792,
+        "shared_blks_hit": 555403.0,
+        "shared_blks_read": 272081.0,
+        "temp_blks_read": 0.0,
+        "temp_blks_written": 0.0,
+        "mean_exec_time_ms": 19621.896
+      },
+      {
+        "queryid": "3735437045196031626",
+        "query_category": "inbox-select",
+        "calls": 339,
+        "total_exec_time": 34535.835,
+        "shared_blks_hit": 9633481.0,
+        "shared_blks_read": 3366.0,
+        "temp_blks_read": 0.0,
+        "temp_blks_written": 0.0,
+        "mean_exec_time_ms": 101.876
+      },
+      {
+        "queryid": "311144201116218771",
+        "query_category": "inbox-select",
+        "calls": 338,
+        "total_exec_time": 33276.372,
+        "shared_blks_hit": 8028293.0,
+        "shared_blks_read": 25684.0,
+        "temp_blks_read": 0.0,
+        "temp_blks_written": 0.0,
+        "mean_exec_time_ms": 98.451
+      },
+      {
+        "queryid": "7450296989083107792",
+        "query_category": "inbox-write",
+        "calls": 4,
+        "total_exec_time": 28024.002,
+        "shared_blks_hit": 320894.0,
+        "shared_blks_read": 191423.0,
+        "temp_blks_read": 0.0,
+        "temp_blks_written": 0.0,
+        "mean_exec_time_ms": 7006.001
+      },
+      {
+        "queryid": "4677182215929232706",
+        "query_category": "other",
+        "calls": 284,
+        "total_exec_time": 23960.574,
+        "shared_blks_hit": 3716120.0,
+        "shared_blks_read": 13157.0,
+        "temp_blks_read": 0.0,
+        "temp_blks_written": 0.0,
+        "mean_exec_time_ms": 84.368
+      },
+      {
+        "queryid": "3572258331169442282",
+        "query_category": "other",
+        "calls": 803,
+        "total_exec_time": 20442.51,
+        "shared_blks_hit": 24688928.0,
+        "shared_blks_read": 18625.0,
+        "temp_blks_read": 0.0,
+        "temp_blks_written": 0.0,
+        "mean_exec_time_ms": 25.458
+      },
+      {
+        "queryid": "-3716218853564675930",
+        "query_category": "other",
+        "calls": 57,
+        "total_exec_time": 16319.232,
+        "shared_blks_hit": 23873140.0,
+        "shared_blks_read": 0.0,
+        "temp_blks_read": 0.0,
+        "temp_blks_written": 0.0,
+        "mean_exec_time_ms": 286.302
+      },
+      {
+        "queryid": "-2543732411149314714",
+        "query_category": "other",
+        "calls": 45,
+        "total_exec_time": 13583.987,
+        "shared_blks_hit": 56808.0,
+        "shared_blks_read": 0.0,
+        "temp_blks_read": 0.0,
+        "temp_blks_written": 0.0,
+        "mean_exec_time_ms": 301.866
+      },
+      {
+        "queryid": "-7688315865557839974",
+        "query_category": "inbox-count",
+        "calls": 366,
+        "total_exec_time": 13421.332,
+        "shared_blks_hit": 10537301.0,
+        "shared_blks_read": 1.0,
+        "temp_blks_read": 0.0,
+        "temp_blks_written": 0.0,
+        "mean_exec_time_ms": 36.67
+      },
+      {
+        "queryid": "-5793020850987179997",
+        "query_category": "other",
+        "calls": 8743,
+        "total_exec_time": 10473.54,
+        "shared_blks_hit": 9631793.0,
+        "shared_blks_read": 0.0,
+        "temp_blks_read": 0.0,
+        "temp_blks_written": 0.0,
+        "mean_exec_time_ms": 1.198
+      }
+    ],
+    "total_toplevel_delta_exec_time_ms": 505512.599,
+    "total_toplevel_delta_calls": 357753,
+    "matching": "userid, queryid, toplevel; top-level only; no statistics reset"
+  },
+  "postgres_identified_query_shapes": {
+    "4140683912540189539": "full-text search inbox count across message body, media and attachment search",
+    "-3248399419679346841": "network activity recalculation and metadata update",
+    "7450296989083107792": "network activity recalculation and metadata update"
+  },
+  "limitations": [
+    "served release does not establish the code running in every already-open browser tab",
+    "page activity with nolimit=true can include unlimited message fetches",
+    "historical journal retention insufficient for a slow-log comparison of the measurement windows",
+    "source SQL query costs not attributed to browser views; no matched pre/post query-cost or CPU measurement",
+    "browser-visible update and notification latency not tested",
+    "Redis stream samples repeat the same broadcast workload; do not sum across sessions",
+    "repeated message IDs do not establish no-op writes"
+  ]
+}

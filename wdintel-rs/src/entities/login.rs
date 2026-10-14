@@ -39,12 +39,24 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::ai_agent_conversation::Entity")]
     AiAgentConversation,
+    #[sea_orm(has_many = "super::ai_agent_map::Entity")]
+    AiAgentMap,
     #[sea_orm(has_many = "super::ai_agent_settings::Entity")]
     AiAgentSettings,
+    #[sea_orm(has_many = "super::ai_callsign_action::Entity")]
+    AiCallsignAction,
+    #[sea_orm(has_many = "super::ai_callsign_feedback::Entity")]
+    AiCallsignFeedback,
+    #[sea_orm(has_many = "super::ai_callsign_override::Entity")]
+    AiCallsignOverride,
+    #[sea_orm(has_many = "super::ai_callsign_reparse_run::Entity")]
+    AiCallsignReparseRun,
     #[sea_orm(has_many = "super::ai_chat::Entity")]
     AiChat,
     #[sea_orm(has_many = "super::ai_intel_report_attempt::Entity")]
     AiIntelReportAttempt,
+    #[sea_orm(has_many = "super::ai_position_feedback::Entity")]
+    AiPositionFeedback,
     #[sea_orm(has_many = "super::api_integration::Entity")]
     ApiIntegration,
     #[sea_orm(has_many = "super::api_integration_iggy_destination::Entity")]
@@ -99,6 +111,8 @@ pub enum Relation {
     PalitraAccessLogin,
     #[sea_orm(has_many = "super::palitra_highlight_blacklist::Entity")]
     PalitraHighlightBlacklist,
+    #[sea_orm(has_many = "super::report_download_history::Entity")]
+    ReportDownloadHistory,
     #[sea_orm(has_many = "super::report_history::Entity")]
     ReportHistory,
     #[sea_orm(has_one = "super::rer_report_access_login::Entity")]
@@ -113,10 +127,6 @@ pub enum Relation {
     SigintActivityDecisionChangelog,
     #[sea_orm(has_many = "super::sigint_bookmark::Entity")]
     SigintBookmark,
-    #[sea_orm(has_many = "super::signal_message::Entity")]
-    SignalMessage,
-    #[sea_orm(has_many = "super::signal_message_group::Entity")]
-    SignalMessageGroup,
     #[sea_orm(has_many = "super::sigint_callsign_changelog::Entity")]
     SigintCallsignChangelog,
     #[sea_orm(has_many = "super::sigint_comment::Entity")]
@@ -165,6 +175,10 @@ pub enum Relation {
     SigintZone,
     #[sea_orm(has_many = "super::signal_group_admin::Entity")]
     SignalGroupAdmin,
+    #[sea_orm(has_many = "super::signal_message::Entity")]
+    SignalMessage,
+    #[sea_orm(has_many = "super::signal_message_group::Entity")]
+    SignalMessageGroup,
     #[sea_orm(has_many = "super::system_settings::Entity")]
     SystemSettings,
     #[sea_orm(has_many = "super::tags_ordering::Entity")]
@@ -181,9 +195,39 @@ impl Related<super::ai_agent_conversation::Entity> for Entity {
     }
 }
 
+impl Related<super::ai_agent_map::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiAgentMap.def()
+    }
+}
+
 impl Related<super::ai_agent_settings::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiAgentSettings.def()
+    }
+}
+
+impl Related<super::ai_callsign_action::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignAction.def()
+    }
+}
+
+impl Related<super::ai_callsign_feedback::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignFeedback.def()
+    }
+}
+
+impl Related<super::ai_callsign_override::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignOverride.def()
+    }
+}
+
+impl Related<super::ai_callsign_reparse_run::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignReparseRun.def()
     }
 }
 
@@ -196,6 +240,12 @@ impl Related<super::ai_chat::Entity> for Entity {
 impl Related<super::ai_intel_report_attempt::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiIntelReportAttempt.def()
+    }
+}
+
+impl Related<super::ai_position_feedback::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiPositionFeedback.def()
     }
 }
 
@@ -322,6 +372,12 @@ impl Related<super::palitra_access_login::Entity> for Entity {
 impl Related<super::palitra_highlight_blacklist::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::PalitraHighlightBlacklist.def()
+    }
+}
+
+impl Related<super::report_download_history::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ReportDownloadHistory.def()
     }
 }
 
@@ -493,6 +549,18 @@ impl Related<super::signal_group_admin::Entity> for Entity {
     }
 }
 
+impl Related<super::signal_message::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessage.def()
+    }
+}
+
+impl Related<super::signal_message_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessageGroup.def()
+    }
+}
+
 impl Related<super::system_settings::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SystemSettings.def()
@@ -514,6 +582,29 @@ impl Related<super::url_visit_notification::Entity> for Entity {
 impl Related<super::user_settings::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::UserSettings.def()
+    }
+}
+
+impl Related<super::sigint_inbox_item::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::ai_callsign_override::Relation::SigintInboxItem.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(super::ai_callsign_override::Relation::Login.def().rev())
+    }
+}
+
+impl Related<super::sigint_network_freq::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::network_freq_last_datetime_in_aor::Relation::SigintNetworkFreq
+            .def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::network_freq_last_datetime_in_aor::Relation::Login
+                .def()
+                .rev(),
+        )
     }
 }
 

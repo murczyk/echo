@@ -2,6 +2,7 @@ module RerDutyRefreshRegressionTests exposing (suite)
 
 import Bindings as B
 import Dict
+import Effect as E
 import Expect
 import Http
 import Json.Decode
@@ -224,6 +225,139 @@ suite =
                             , \_ -> Expect.equal Set.empty ticked.networkIdsRequested
                             ]
                             ()
+        , test "#3780 fast count responses do not allow early automatic polls" <|
+            \_ ->
+                withPollingWaterfall <|
+                    \shared waterfall ->
+                        let
+                            ( started, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 5000)) waterfall
+
+                            ( settled, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.GotInboxMessagesDigest (Ok { quantity = 0, firstElementTs = Nothing })) started
+
+                            ( early, earlyEffect ) =
+                                Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 9999)) settled
+
+                            ( due, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 10000)) early
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal True started.loadingInboxDigest
+                            , \_ -> Expect.equal False early.loadingInboxDigest
+                            , \_ -> Expect.equal E.none earlyEffect
+                            , \_ -> Expect.equal (Just (Time.millisToPosix 5000)) early.lastInboxPollStartedAt
+                            , \_ -> Expect.equal True due.loadingInboxDigest
+                            , \_ -> Expect.equal (Just (Time.millisToPosix 10000)) due.lastInboxPollStartedAt
+                            ]
+                            ()
+        , test "#3780 active count and message requests prevent overlapping automatic polls" <|
+            \_ ->
+                withPollingWaterfall <|
+                    \shared waterfall ->
+                        let
+                            check active =
+                                let
+                                    ( blocked, effect ) =
+                                        Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 5000)) active
+                                in
+                                Expect.all
+                                    [ \_ -> Expect.equal Nothing blocked.lastInboxPollStartedAt
+                                    , \_ -> Expect.equal E.none effect
+                                    ]
+                                    ()
+                        in
+                        Expect.all
+                            [ \_ -> check { waterfall | loadingInboxDigest = True }
+                            , \_ -> check { waterfall | loadingInboxMessages = True }
+                            ]
+                            ()
+        , describe "#3780 blocked automatic polls resume after request completion"
+            (let
+                inboxResponse =
+                    Ok { inboxItems = [ ( 1, messageStub ) ], pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 }
+
+                failure =
+                    Err { httpError = Http.Timeout, formErrors = Dict.empty, errors = [] }
+
+                loadingMessages waterfall =
+                    { waterfall | loadingInboxMessages = True }
+
+                loadingDigest waterfall =
+                    { waterfall | loadingInboxDigest = True }
+             in
+             [ pendingInboxPollTest "initial messages succeed" loadingMessages (Waterfall.GotInitialInbox False inboxResponse)
+             , pendingInboxPollTest "initial messages fail" loadingMessages (Waterfall.GotInitialInbox False failure)
+             , pendingInboxPollTest "earlier messages succeed" loadingMessages (Waterfall.GotInboxEarlier inboxResponse)
+             , pendingInboxPollTest "earlier messages fail" loadingMessages (Waterfall.GotInboxEarlier failure)
+             , pendingInboxPollTest "newer messages succeed" loadingMessages
+                (Waterfall.InboxLoopGotMessages False
+                    (Ok { inboxItems = [], pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
+                )
+             , pendingInboxPollTest "newer messages fail" loadingMessages (Waterfall.InboxLoopGotMessages False failure)
+             , pendingInboxPollTest "digest succeeds" loadingDigest (Waterfall.GotInboxMessagesDigest (Ok { quantity = 0, firstElementTs = Nothing }))
+             , pendingInboxPollTest "digest fails" loadingDigest (Waterfall.GotInboxMessagesDigest failure)
+             ]
+            )
+        , test "#3780 pending polls wait for both message and digest requests" <|
+            \_ ->
+                withPollingWaterfall <|
+                    \shared waterfall ->
+                        let
+                            ( blocked, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 5000))
+                                    { waterfall | loadingInboxMessages = True, loadingInboxDigest = True }
+
+                            ( partiallySettled, effect ) =
+                                Waterfall.update shared anonymousUser (Waterfall.GotInboxMessagesDigest (Ok { quantity = 0, firstElementTs = Nothing })) blocked
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal True partiallySettled.inboxPollPending
+                            , \_ -> Expect.equal True partiallySettled.loadingInboxMessages
+                            , \_ -> Expect.equal E.none effect
+                            ]
+                            ()
+        , test "#3780 buffered messages finish rendering before pending polls resume" <|
+            \_ ->
+                withPollingWaterfall <|
+                    \shared waterfall ->
+                        let
+                            ( blocked, _ ) =
+                                Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 5000))
+                                    { waterfall | loadingInboxMessages = True }
+
+                            ( buffered, _ ) =
+                                Waterfall.update shared anonymousUser
+                                    (Waterfall.InboxLoopGotMessages False
+                                        (Ok { inboxItems = [ ( 2, messageStub ) ], pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
+                                    )
+                                    blocked
+
+                            ( rendered, effect ) =
+                                Waterfall.update shared anonymousUser
+                                    (Waterfall.GetVisibleMsgIdsRes { waterfallId = waterfall.id, msgIds = [ 1 ], firstVisibleHeight = 0 })
+                                    buffered
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal True buffered.inboxPollPending
+                            , \_ -> Expect.equal True buffered.loadingInboxMessages
+                            , \_ -> expectInboxPollRetry shared rendered effect
+                            ]
+                            ()
+        , test "#3780 scroll-to-latest keeps the previous automatic poll boundary" <|
+            \_ ->
+                withPollingWaterfall <|
+                    \shared waterfall ->
+                        let
+                            ( reloading, _ ) =
+                                Waterfall.update shared anonymousUser Waterfall.ScrollToLatestElement
+                                    { waterfall | lastInboxPollStartedAt = Just (Time.millisToPosix 5000) }
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal True reloading.loadingInboxMessages
+                            , \_ -> Expect.equal (Just (Time.millisToPosix 5000)) reloading.lastInboxPollStartedAt
+                            ]
+                            ()
         , test "#3780 refreshes buffered messages and keeps enrichment in the owning waterfall" <|
             \_ ->
                 case Url.fromString "http://localhost/rer-duty" of
@@ -245,7 +379,6 @@ suite =
                                 , duplicates = Set.empty
                                 , lastPushQuery = Dict.empty
                                 , datasources = []
-                                , eventLastId = Nothing
                                 , currentUser = Success anonymousUser
                                 }
 
@@ -461,6 +594,94 @@ dutyFilter compatibilityFields =
         , ( "highlight_keyword_set_id", Json.Encode.null )
         ]
             ++ compatibilityFields
+
+
+withPollingWaterfall : (Shared.Model -> Waterfall.Model -> Expect.Expectation) -> Expect.Expectation
+withPollingWaterfall check =
+    case Url.fromString "http://localhost/rer-duty" of
+        Nothing ->
+            Expect.fail "invalid test url"
+
+        Just url ->
+            let
+                ( shared, _ ) =
+                    Shared.init (Ok { isDark = False, now = 0 }) (Route.fromUrl () url)
+
+                ( waterfall, _ ) =
+                    Waterfall.init True "wf-polling" Nothing
+
+                ( initialized, _ ) =
+                    Waterfall.update shared anonymousUser (Waterfall.InitGotTime (Time.millisToPosix 0)) waterfall
+
+                ( loaded, _ ) =
+                    Waterfall.update shared anonymousUser
+                        (Waterfall.InboxLoopGotMessages True
+                            (Ok { inboxItems = [], pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
+                        )
+                        { initialized
+                            | messages = Messages.fromList [ ( 1, messageStub ) ]
+                        }
+            in
+            check shared loaded
+
+
+pendingInboxPollTest : String -> (Waterfall.Model -> Waterfall.Model) -> Waterfall.Msg -> Test
+pendingInboxPollTest name startRequest completion =
+    test name <|
+        \_ ->
+            withPollingWaterfall <|
+                \shared waterfall ->
+                    let
+                        ( early, _ ) =
+                            Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 9999))
+                                (startRequest { waterfall | lastInboxPollStartedAt = Just (Time.millisToPosix 5000) })
+
+                        ( blocked, _ ) =
+                            Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 10000)) early
+
+                        ( settled, effect ) =
+                            Waterfall.update shared anonymousUser completion blocked
+                    in
+                    Expect.all
+                        [ \_ -> Expect.equal True early.inboxPollPending
+                        , \_ -> Expect.equal True blocked.inboxPollPending
+                        , \_ -> expectInboxPollRetry shared settled effect
+                        ]
+                        ()
+
+
+expectInboxPollRetry : Shared.Model -> Waterfall.Model -> E.Effect Waterfall.Msg -> Expect.Expectation
+expectInboxPollRetry shared waterfall effect =
+    let
+        now =
+            Time.millisToPosix 12500
+
+        ( resumed, _ ) =
+            Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer now) waterfall
+
+        ( messagesSettled, _ ) =
+            Waterfall.update shared anonymousUser
+                (Waterfall.InboxLoopGotMessages False
+                    (Ok { inboxItems = [], pollCursorId = Nothing, callsigns = [], signalProfiles = Dict.empty, signalGroups = [], freqPelengsSummary = Nothing, pageLimit = Just 20 })
+                )
+                resumed
+
+        ( settled, _ ) =
+            Waterfall.update shared anonymousUser (Waterfall.GotInboxMessagesDigest (Ok { quantity = 0, firstElementTs = Nothing })) messagesSettled
+
+        ( early, earlyEffect ) =
+            Waterfall.update shared anonymousUser (Waterfall.InboxLoopLoadNewer (Time.millisToPosix 12501)) settled
+    in
+    Expect.all
+        [ \_ -> Expect.equal True (String.contains "GetCurrentTime" (Debug.toString effect))
+        , \_ -> Expect.equal False waterfall.inboxPollPending
+        , \_ -> Expect.equal True (resumed.loadingInboxMessages || resumed.loadingInboxDigest)
+        , \_ -> Expect.equal (Just now) resumed.lastInboxPollStartedAt
+        , \_ -> Expect.equal False early.loadingInboxDigest
+        , \_ -> Expect.equal False early.loadingInboxMessages
+        , \_ -> Expect.equal E.none earlyEffect
+        ]
+        ()
 
 
 callsignMessage : String -> B.InboxMessage
