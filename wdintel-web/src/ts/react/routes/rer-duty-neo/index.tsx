@@ -617,6 +617,7 @@ export function RerDutyNeoPage({
         >
           <ManageMessageDrawer
             ref={editorRef}
+            hideNetworks={hideNetworks || !networkVisibilityReady}
             open={editorOpen}
             intentKey={editorIntentKey ?? 'closed'}
             presentation={editorPresentation}

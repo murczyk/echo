@@ -272,6 +272,7 @@ export type AnalysisPageState = {
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
   hideNetworks: boolean;
+  networkVisibilityReady: boolean;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
   messageTextPreviewLines: 20 | 40 | null;

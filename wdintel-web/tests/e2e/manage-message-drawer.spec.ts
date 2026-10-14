@@ -132,18 +132,24 @@ async function openLinkedMessageEditDrawer(
   return { getCopyRequestCount: () => copyRequestCount };
 }
 
-async function openOverflowingMessageEditor(page: Page, host: ManageMessageDrawerHost) {
+async function openOverflowingMessageEditor(
+  page: Page,
+  host: ManageMessageDrawerHost,
+  hideNetworks = false,
+) {
   const inboxResponse = createOverflowingInboxResponse();
   const dutyMocks =
     host === 'duty'
       ? await installRerDutyShortStateMocks(page, {
           inboxResponse,
+          hideNetworks,
           signalGroups: ['analysis-summary-e2e-group'],
         })
       : null;
   if (host === 'analysis') {
     await installAnalysisNeoApiMocks(page, {
       inboxResponse,
+      hideNetworks,
       signalGroups: ['analysis-summary-e2e-group'],
     });
   }
@@ -211,6 +217,30 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
   });
 
   for (const host of ['duty', 'analysis'] as const satisfies ManageMessageDrawerHost[]) {
+    for (const hideNetworks of [true, false]) {
+      test(`#3598 ${host} editor network field follows hideNetworks=${hideNetworks}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width: 1920, height: 900 });
+        const networkSearches: string[] = [];
+        page.on('request', (request) => {
+          if (new URL(request.url()).pathname === '/api/sigint/network/search') {
+            networkSearches.push(request.url());
+          }
+        });
+        await openOverflowingMessageEditor(page, host, hideNetworks);
+        const editor = page.locator('[data-manage-message-presentation]');
+        await expect(editor.getByRole('combobox', { name: 'Мережа', exact: true })).toHaveCount(
+          hideNetworks ? 0 : 1,
+        );
+        await expect(
+          editor.getByRole('combobox', { name: 'Частота (МГц)', exact: true }),
+        ).toBeVisible();
+        if (hideNetworks) expect(networkSearches).toEqual([]);
+        else await expect.poll(() => networkSearches.length).toBeGreaterThan(0);
+      });
+    }
+
     test(`${host} restores focus to the report action after closing`, async ({ page }) => {
       await page.setViewportSize({ width: 1600, height: 900 });
       await openCreateEditorWithLinkedMessage(page, host);

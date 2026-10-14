@@ -436,6 +436,7 @@ export function RerAnalysisNeoPage({
                 editor={
                   <ManageMessageDrawer
                     ref={editorRef}
+                    hideNetworks={page.hideNetworks || !page.networkVisibilityReady}
                     open={editorOpen}
                     intentKey={editorIntentKey ?? 'closed'}
                     presentation={editorPresentation}

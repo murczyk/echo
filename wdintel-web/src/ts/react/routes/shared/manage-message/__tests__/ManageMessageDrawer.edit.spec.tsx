@@ -758,6 +758,74 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   } as InboxMessage;
 }
 describe('ManageMessageDrawer edit mode', () => {
+  it.each(['message-create', 'message-edit', 'report-create', 'report-edit'])(
+    '#3598 hides the network field and its option requests in %s while retaining frequency',
+    async (mode) => {
+      directSubmitMocks.copyDirectSubmit.mockResolvedValue({ payloads: [] });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      const message = buildMessage();
+
+      await act(async () => {
+        root.render(
+          <ManageMessageDrawer
+            open
+            hideNetworks
+            cyberEchoEnabled={false}
+            currentUser={{ roles: ['Rer'] } as User}
+            onClose={vi.fn()}
+            editTarget={mode.endsWith('edit') ? { id: 42, message } : null}
+            editAsReport={mode === 'report-edit'}
+            reportSource={mode === 'report-create' ? { id: 42, message } : null}
+          />,
+        );
+      });
+
+      expect(container.querySelector('[aria-label="Мережа"]')).toBeNull();
+      expect(container.querySelector('[aria-label="Частота (МГц)"]')).not.toBeNull();
+      expect(container.textContent).not.toContain('Мережа та радіо');
+      expect(directSubmitMocks.searchNetworkNames).not.toHaveBeenCalled();
+      root.unmount();
+    },
+  );
+
+  it('#3598 preserved an existing network when saving with the network field hidden', async () => {
+    const message = buildMessage({ networkIds: [7], networkName: 'Existing network' });
+    networkMocks.getNetworksByIds.mockResolvedValue([
+      { id: 7, name: 'Existing network', unitIds: [], freqs: [] },
+    ]);
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 42 });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          hideNetworks
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          editTarget={{ id: 42, message }}
+        />,
+      );
+    });
+    await act(async () => {
+      container
+        .querySelector('form')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ network: expect.objectContaining({ name: 'Existing network' }) }),
+    );
+    expect(container.querySelector('[aria-label="Мережа"]')).toBeNull();
+    root.unmount();
+  });
+
   afterEach(() => {
     textFieldPropsByLabel.clear();
     autocompleteOnChangeByLabel.clear();
