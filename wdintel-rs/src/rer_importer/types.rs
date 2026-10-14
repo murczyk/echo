@@ -860,50 +860,6 @@ pub struct UnreadCountersRsp {
 }
 
 #[derive(
-    Elm,
-    ElmEncode,
-    ElmDecode,
-    Debug,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Eq,
-    Clone,
-)]
-pub struct GroupFeedCursorDto {
-    pub created_at: i64,
-    pub message_id: i64,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct GroupFeedState {
-    pub master_key: String,
-    pub name: String,
-    pub ignore_operativny: bool,
-    pub unread_count: i64,
-    pub oldest_unread_message_ref: Option<String>,
-    pub last_activity_at: Option<i64>,
-    pub latest_cursor: Option<GroupFeedCursorDto>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct GroupFeedStatesRsp {
-    pub groups: Vec<GroupFeedState>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct AcknowledgeGroupFeedReq {
-    pub master_key: String,
-    pub cursor: GroupFeedCursorDto,
-}
-
-#[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct SignalGroupReq {
