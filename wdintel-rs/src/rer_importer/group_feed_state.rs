@@ -1,5 +1,14 @@
+use super::types::{
+    AcknowledgeGroupFeedReq, GroupFeedCursorDto, GroupFeedState,
+    GroupFeedStatesRsp,
+};
+use crate::error::AppError;
 use crate::messenger::group::get_identity_sigint_groups;
 use crate::types::*;
+use crate::users::{ensure_base_role_by_id, login_id_from_identity};
+use actix_identity::Identity;
+use actix_web::web::{Data, Json};
+use actix_web::{get, post};
 use chrono::NaiveDateTime;
 use sea_orm::*;
 use uuid::Uuid;
@@ -85,6 +94,14 @@ pub async fn list_group_feed_states(
         .into_iter()
         .map(GroupFeedStateRow::into_record)
         .collect())
+}
+
+pub async fn list_group_feed_states_authorized(
+    dbx: &DatabaseConnection,
+    login: Uuid,
+) -> Result<Vec<GroupFeedStateRecord>, AppError> {
+    ensure_base_role_by_id(dbx, &login).await.c(h!())?;
+    Ok(list_group_feed_states(dbx, login).await.c(h!())?)
 }
 
 async fn initialize_missing_states(
@@ -215,15 +232,34 @@ pub async fn acknowledge_group_feed_tail(
     cursor: GroupFeedCursor,
 ) -> anyhow::Result<GroupFeedStateRecord> {
     let txn = dbx.begin().await.c(h!())?;
-    let group_master_keys =
-        get_identity_sigint_groups(&txn, &login).await.c(h!())?;
-    if !group_master_keys
-        .iter()
-        .any(|master_key| master_key == group_master_key)
-    {
+    if !is_group_accessible(&txn, login, group_master_key).await? {
         anyhow::bail!("group is not accessible");
     }
 
+    upsert_read_state(&txn, login, group_master_key, &cursor).await?;
+    let state = load_group_state(&txn, login, group_master_key).await?;
+    txn.commit().await.c(h!())?;
+    Ok(state)
+}
+
+async fn is_group_accessible(
+    txn: &DatabaseTransaction,
+    login: Uuid,
+    group_master_key: &str,
+) -> anyhow::Result<bool> {
+    Ok(get_identity_sigint_groups(txn, &login)
+        .await
+        .c(h!())?
+        .iter()
+        .any(|master_key| master_key == group_master_key))
+}
+
+async fn upsert_read_state(
+    txn: &DatabaseTransaction,
+    login: Uuid,
+    group_master_key: &str,
+    cursor: &GroupFeedCursor,
+) -> anyhow::Result<()> {
     txn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
@@ -257,13 +293,176 @@ where user_group_feed_read_state.last_read_created_at is null
     ))
     .await
     .c(h!())?;
-    txn.commit().await.c(h!())?;
+    Ok(())
+}
 
-    list_group_feed_states(dbx, login)
+async fn load_group_state(
+    txn: &DatabaseTransaction,
+    login: Uuid,
+    group_master_key: &str,
+) -> anyhow::Result<GroupFeedStateRecord> {
+    let group_master_keys = [group_master_key.to_string()];
+    load_states(txn, login, &group_master_keys)
         .await?
         .into_iter()
-        .find(|state| state.group_master_key == group_master_key)
+        .next()
+        .map(GroupFeedStateRow::into_record)
         .c(h!())
+}
+
+#[derive(FromQueryResult)]
+struct LatestGroupCursorRow {
+    created_at: NaiveDateTime,
+    message_id: i64,
+}
+
+async fn load_latest_group_cursor(
+    txn: &DatabaseTransaction,
+    group_master_key: &str,
+) -> anyhow::Result<Option<GroupFeedCursor>> {
+    Ok(
+        LatestGroupCursorRow::find_by_statement(
+            Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+select messages.created_at, messages.id as message_id
+from (
+    select distinct
+        signal_message.created_at,
+        signal_message.id
+    from signal_message_group
+    join signal_message
+        on signal_message.id = signal_message_group.signal_message_id
+    join sigint_inbox_item
+        on sigint_inbox_item.id = signal_message.id
+    where signal_message_group.group_master_key = $1
+        and signal_message.deleted = false
+) messages
+order by messages.created_at desc, messages.id desc
+limit 1
+            "#,
+                [group_master_key.into()],
+            ),
+        )
+        .one(txn)
+        .await
+        .c(h!())?
+        .map(|row| GroupFeedCursor {
+            created_at: row.created_at,
+            message_id: row.message_id,
+        }),
+    )
+}
+
+pub async fn acknowledge_current_group_feed_tail(
+    dbx: &DatabaseConnection,
+    login: Uuid,
+    group_master_key: &str,
+    cursor: GroupFeedCursor,
+) -> Result<GroupFeedStateRecord, AppError> {
+    ensure_base_role_by_id(dbx, &login).await.c(h!())?;
+    let txn = dbx.begin().await.c(h!())?;
+    if !is_group_accessible(&txn, login, group_master_key)
+        .await
+        .c(h!())?
+    {
+        return Err(AppError::Forbidden("group is not accessible".to_string()));
+    }
+
+    let latest_cursor = load_latest_group_cursor(&txn, group_master_key)
+        .await
+        .c(h!())?;
+    if latest_cursor.as_ref() != Some(&cursor) {
+        return Err(AppError::ConflictJson {
+            body: serde_json::json!({
+                "message": "group feed tail has changed",
+                "latest_cursor": latest_cursor.map(cursor_to_dto),
+            }),
+        });
+    }
+
+    upsert_read_state(&txn, login, group_master_key, &cursor)
+        .await
+        .c(h!())?;
+    let state = load_group_state(&txn, login, group_master_key)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(state)
+}
+
+fn cursor_to_dto(cursor: GroupFeedCursor) -> GroupFeedCursorDto {
+    GroupFeedCursorDto {
+        created_at: cursor.created_at.and_utc().timestamp_millis(),
+        message_id: cursor.message_id,
+    }
+}
+
+fn cursor_from_dto(
+    cursor: GroupFeedCursorDto,
+) -> Result<GroupFeedCursor, AppError> {
+    let created_at = chrono::DateTime::from_timestamp_millis(cursor.created_at)
+        .map(|created_at| created_at.naive_utc())
+        .ok_or_else(|| AppError::BadRequestJson {
+            body: serde_json::json!({
+                "message": "invalid group feed cursor timestamp",
+            }),
+        })?;
+    Ok(GroupFeedCursor {
+        created_at,
+        message_id: cursor.message_id,
+    })
+}
+
+fn record_to_dto(record: GroupFeedStateRecord) -> GroupFeedState {
+    GroupFeedState {
+        name: record
+            .group_name
+            .unwrap_or_else(|| record.group_master_key.clone()),
+        master_key: record.group_master_key,
+        ignore_operativny: record.ignore_operativny,
+        unread_count: record.unread_count,
+        oldest_unread_message_ref: record
+            .oldest_unread_message_ref
+            .map(|reference| reference.to_string()),
+        last_activity_at: record
+            .last_activity_cursor
+            .as_ref()
+            .map(|cursor| cursor.created_at.and_utc().timestamp_millis()),
+        latest_cursor: record.last_activity_cursor.map(cursor_to_dto),
+    }
+}
+
+#[get("/api/rer-importer/group-feed-state")]
+pub async fn group_feed_states(
+    user: Identity,
+    env: Data<Env>,
+) -> Result<Json<GroupFeedStatesRsp>, AppError> {
+    let login = login_id_from_identity(&user).c(h!())?;
+    let groups = list_group_feed_states_authorized(&env.dbx, login)
+        .await?
+        .into_iter()
+        .map(record_to_dto)
+        .collect();
+    Ok(Json(GroupFeedStatesRsp { groups }))
+}
+
+#[post("/api/rer-importer/group-feed-state/acknowledge")]
+pub async fn acknowledge_group_feed_state(
+    user: Identity,
+    env: Data<Env>,
+    request: Json<AcknowledgeGroupFeedReq>,
+) -> Result<Json<GroupFeedState>, AppError> {
+    let login = login_id_from_identity(&user).c(h!())?;
+    let cursor = cursor_from_dto(request.cursor.clone())?;
+    let state = acknowledge_current_group_feed_tail(
+        &env.dbx,
+        login,
+        &request.master_key,
+        cursor,
+    )
+    .await?;
+    Ok(Json(record_to_dto(state)))
 }
 
 #[cfg(test)]
@@ -503,5 +702,123 @@ where login_id = $1
         .unwrap()
         .unwrap();
         assert_eq!(counts.rows, counts.groups);
+    }
+
+    #[tokio::test]
+    async fn group_feed_state_excludes_inaccessible_groups() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let inaccessible_group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                name: Set(Some("Недоступна".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let states = list_group_feed_states_authorized(&env.dbx, login.id)
+            .await
+            .unwrap();
+
+        assert!(!states.iter().any(|state| {
+            state.group_master_key == inaccessible_group.master_key
+        }));
+    }
+
+    #[tokio::test]
+    async fn group_feed_state_requires_base_role() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                roles: Set(serde_json::json!([])),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(list_group_feed_states_authorized(&env.dbx, login.id)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn acknowledge_rejects_inaccessible_group() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let inaccessible_group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(acknowledge_current_group_feed_tail(
+            &env.dbx,
+            login.id,
+            &inaccessible_group.master_key,
+            GroupFeedCursor {
+                created_at: at(8),
+                message_id: 1,
+            },
+        )
+        .await
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn acknowledge_rejects_a_stale_or_non_tail_cursor() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        list_group_feed_states(&env.dbx, login.id).await.unwrap();
+        let first = add_message(&env.dbx, &group.master_key, at(9)).await;
+        add_message(&env.dbx, &group.master_key, at(10)).await;
+
+        let result = acknowledge_current_group_feed_tail(
+            &env.dbx,
+            login.id,
+            &group.master_key,
+            GroupFeedCursor {
+                created_at: first.created_at,
+                message_id: first.id,
+            },
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(crate::error::AppError::ConflictJson { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn acknowledge_returns_the_committed_count() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        list_group_feed_states(&env.dbx, login.id).await.unwrap();
+        add_message(&env.dbx, &group.master_key, at(11)).await;
+        let latest = add_message(&env.dbx, &group.master_key, at(12)).await;
+
+        let state = acknowledge_current_group_feed_tail(
+            &env.dbx,
+            login.id,
+            &group.master_key,
+            GroupFeedCursor {
+                created_at: latest.created_at,
+                message_id: latest.id,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(state.unread_count, 0);
+        assert_eq!(state.last_read_cursor.unwrap().message_id, latest.id);
     }
 }

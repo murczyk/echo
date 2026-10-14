@@ -1050,6 +1050,10 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::rer_importer_callsigns)
             .service(crate::rer_importer::callsigns_alchemy)
             .service(crate::rer_importer::unread_counters)
+            .service(crate::rer_importer::group_feed_state::group_feed_states)
+            .service(
+                crate::rer_importer::group_feed_state::acknowledge_group_feed_state,
+            )
             .service(crate::rer_importer::signal_group_info)
             .service(crate::rer_importer::signal_group_info_batch)
             .service(crate::rer_importer::signal_groups)

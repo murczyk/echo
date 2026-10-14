@@ -1811,6 +1811,70 @@ unreadCountersRspEncoder struct =
         ]
 
 
+type alias GroupFeedCursorDto =
+    { createdAt : Int
+    , messageId : Int
+    }
+
+
+groupFeedCursorDtoEncoder : GroupFeedCursorDto -> Json.Encode.Value
+groupFeedCursorDtoEncoder struct =
+    Json.Encode.object
+        [ ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "message_id", (Json.Encode.int) struct.messageId )
+        ]
+
+
+type alias GroupFeedState =
+    { masterKey : String
+    , name : String
+    , ignoreOperativny : Bool
+    , unreadCount : Int
+    , oldestUnreadMessageRef : Maybe (String)
+    , lastActivityAt : Maybe (Int)
+    , latestCursor : Maybe (GroupFeedCursorDto)
+    }
+
+
+groupFeedStateEncoder : GroupFeedState -> Json.Encode.Value
+groupFeedStateEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
+        , ( "unread_count", (Json.Encode.int) struct.unreadCount )
+        , ( "oldest_unread_message_ref", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.oldestUnreadMessageRef )
+        , ( "last_activity_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastActivityAt )
+        , ( "latest_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (groupFeedCursorDtoEncoder)) struct.latestCursor )
+        ]
+
+
+type alias GroupFeedStatesRsp =
+    { groups : List (GroupFeedState)
+    }
+
+
+groupFeedStatesRspEncoder : GroupFeedStatesRsp -> Json.Encode.Value
+groupFeedStatesRspEncoder struct =
+    Json.Encode.object
+        [ ( "groups", (Json.Encode.list (groupFeedStateEncoder)) struct.groups )
+        ]
+
+
+type alias AcknowledgeGroupFeedReq =
+    { masterKey : String
+    , cursor : GroupFeedCursorDto
+    }
+
+
+acknowledgeGroupFeedReqEncoder : AcknowledgeGroupFeedReq -> Json.Encode.Value
+acknowledgeGroupFeedReqEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        , ( "cursor", (groupFeedCursorDtoEncoder) struct.cursor )
+        ]
+
+
 type alias SignalGroupReq =
     { masterKey : String
     }
@@ -19463,6 +19527,38 @@ unreadCountersRspDecoder : Json.Decode.Decoder UnreadCountersRsp
 unreadCountersRspDecoder =
     Json.Decode.succeed UnreadCountersRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newer_msg_count" (Json.Decode.int)))
+
+
+groupFeedCursorDtoDecoder : Json.Decode.Decoder GroupFeedCursorDto
+groupFeedCursorDtoDecoder =
+    Json.Decode.succeed GroupFeedCursorDto
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.int)))
+
+
+groupFeedStateDecoder : Json.Decode.Decoder GroupFeedState
+groupFeedStateDecoder =
+    Json.Decode.succeed GroupFeedState
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unread_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "oldest_unread_message_ref" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_activity_at" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "latest_cursor" (Json.Decode.nullable (groupFeedCursorDtoDecoder))))
+
+
+groupFeedStatesRspDecoder : Json.Decode.Decoder GroupFeedStatesRsp
+groupFeedStatesRspDecoder =
+    Json.Decode.succeed GroupFeedStatesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list (groupFeedStateDecoder))))
+
+
+acknowledgeGroupFeedReqDecoder : Json.Decode.Decoder AcknowledgeGroupFeedReq
+acknowledgeGroupFeedReqDecoder =
+    Json.Decode.succeed AcknowledgeGroupFeedReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (groupFeedCursorDtoDecoder)))
 
 
 signalGroupReqDecoder : Json.Decode.Decoder SignalGroupReq
