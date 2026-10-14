@@ -203,9 +203,9 @@ async fn load_report_125_messages(
     let linked_message_ids = intel_product::Entity::find()
         .select_only()
         .column(intel_product::Column::IntelMessageId)
-        .filter(intel_product::relation_kind_is_in([
-            intel_product::RELATION_KIND_COMMENT,
-            intel_product::RELATION_KIND_REPORT,
+        .filter(crate::rer_importer::intel_product_filter::relation_kind_is_in([
+            crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ]))
         .into_query();
     let rows = build_filtered_inbox_report_chunk_query(

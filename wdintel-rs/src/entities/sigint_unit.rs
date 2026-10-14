@@ -206,6 +206,12 @@ impl Related<super::sigint_unit_label::Entity> for Entity {
     }
 }
 
+impl Related<super::sigint_unit_orbit_combat_type::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintUnitOrbitCombatType.def()
+    }
+}
+
 impl Related<super::sigint_unit_rer_report_metadata::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintUnitRerReportMetadata.def()
@@ -222,12 +228,6 @@ impl Related<super::orbit_unit::Entity> for Entity {
                 .def()
                 .rev(),
         )
-    }
-}
-
-impl Related<super::sigint_unit_orbit_combat_type::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SigintUnitOrbitCombatType.def()
     }
 }
 

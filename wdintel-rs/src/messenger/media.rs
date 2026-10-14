@@ -6,6 +6,7 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::h;
 use crate::messenger::dedupe;
+use crate::rer_importer::intel_product_filter;
 use crate::sigint::sender::preferred_message_author_expr;
 use crate::storage;
 use crate::types::{error, warn};
@@ -1148,8 +1149,8 @@ pub(crate) async fn ensure_media_access(
             intel_product::Relation::SignalMessage1.def(),
         )
         .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
-        .filter(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
+        .filter(intel_product_filter::relation_kind_eq(
+            intel_product_filter::RELATION_KIND_REPORT,
         ))
         .filter(signal_message::Column::Deleted.eq(true))
         .select_only()
@@ -1183,8 +1184,8 @@ pub(crate) async fn ensure_media_access(
 
     let parent_signal_message_ids = intel_product::Entity::find()
         .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
-        .filter(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
+        .filter(intel_product_filter::relation_kind_eq(
+            intel_product_filter::RELATION_KIND_REPORT,
         ))
         .select_only()
         .column(intel_product::Column::SourceMessageId)
@@ -1228,8 +1229,8 @@ pub(crate) async fn ensure_media_access(
             crate::entities::intel_product::Column::IntelMessageId
                 .eq(signal_message_id),
         )
-        .filter(crate::entities::intel_product::relation_kind_eq(
-            crate::entities::intel_product::RELATION_KIND_REPORT,
+        .filter(intel_product_filter::relation_kind_eq(
+            intel_product_filter::RELATION_KIND_REPORT,
         ))
         .filter(
             signal_message_group::Column::GroupMasterKey.eq_any(allowed_groups),

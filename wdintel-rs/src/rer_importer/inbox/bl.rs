@@ -204,9 +204,9 @@ async fn load_intelligence_report_summaries(
         return Ok(IntelligenceReportSummaries::default());
     }
     let links = intel_product::Entity::find()
-        .filter(intel_product::relation_kind_is_in([
-            intel_product::RELATION_KIND_REPORT,
-            intel_product::RELATION_KIND_COMMENT,
+        .filter(crate::rer_importer::intel_product_filter::relation_kind_is_in([
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
+            crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
         ]))
         .filter(
             Condition::any()
@@ -375,7 +375,9 @@ async fn load_intelligence_report_summaries(
             .get(&link.intel_message_id)
             .is_none_or(|message| message.deleted);
 
-        if link.relation_kind == intel_product::RELATION_KIND_COMMENT {
+        if link.relation_kind
+            == crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT
+        {
             if requested_ids.contains(&link.intel_message_id) {
                 if let Some(parent) = inbox_message_summary(
                     link.source_message_id,
