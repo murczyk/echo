@@ -456,6 +456,66 @@ export type InboxMessage = {
   intelligenceReports: Array<InboxMessageSummary>;
 };
 
+export type NotificationListReq = {
+  cursor: string | null;
+  boundaryId: string | null;
+  panelId: string;
+  knownReceiptIds: Array<string>;
+};
+
+export type NotificationQuote = {
+  messageId: number;
+  messageUuid: string | null;
+  messageUid: string | null;
+  text: string;
+  attachmentsCount: number;
+  mediaFileNames: Array<string>;
+  coords: string | null;
+};
+
+export type NotificationItem = {
+  receiptId: string;
+  eventId: string;
+  actorId: string;
+  actorLogin: string | null;
+  groupName: string;
+  createdAt: number;
+  readAt: number | null;
+  quote: NotificationQuote;
+};
+
+export type NotificationListRsp = {
+  items: Array<NotificationItem>;
+  unreadCount: number;
+  nextCursor: string | null;
+  markAllBoundary: string | null;
+  removedReceiptIds: Array<string>;
+};
+
+export type NotificationUnreadCountRsp = {
+  unreadCount: number;
+};
+
+export type NotificationReadAllOutcome =
+  | 'NotificationReadAllApplied'
+  | 'NotificationReadAllAlreadyCompleted'
+  | 'NotificationReadAllBoundaryExpired'
+;
+
+export type NotificationReadAllRsp = {
+  outcome: NotificationReadAllOutcome;
+  unreadCount: number;
+  receiptIds: Array<string>;
+};
+
+export type NotificationReadReq = {
+  receiptId: string;
+};
+
+export type NotificationReadAllReq = {
+  boundaryReceiptId: string;
+};
+
 export type InboxMessageSummary = {
   id: number;
   isAccessible: boolean;
@@ -1615,6 +1675,9 @@ export type Bookmark = {
 
 export type ImportantAddReq = {
   messageId: number;
+  groupMasterKey: string | null;
+  notifyGroup: boolean;
+  operationId: string | null;
 };
 
 export type ImportantRmReq = {

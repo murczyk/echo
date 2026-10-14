@@ -2,6 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { act } from 'react';
+import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppNavbar } from '../AppNavbar';
@@ -11,6 +12,7 @@ const fetchUserSettingsMock = vi.hoisted(() => vi.fn());
 const configureDebugRecorderMock = vi.hoisted(() => vi.fn());
 const clearDebugRecorderMock = vi.hoisted(() => vi.fn());
 const mountDebugRecorderPanelMock = vi.hoisted(() => vi.fn());
+const notificationsInboxMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../services/api/system-settings', () => ({
   currentSystemSettings: currentSettingsMock,
@@ -24,6 +26,12 @@ vi.mock('../../../../debug-recorder', () => ({
   configureBrowserDebugRecorder: configureDebugRecorderMock,
   clearBrowserDebugRecording: clearDebugRecorderMock,
   mountDebugRecorderPanelIfNeeded: mountDebugRecorderPanelMock,
+}));
+
+vi.mock('../../../mui-theme', () => ({
+  NeoMuiThemeProvider: ({ children }: { children: ReactNode }) => (
+    <div data-testid="neo-mui-theme-provider">{children}</div>
+  ),
 }));
 
 type Rendered = {
@@ -68,6 +76,13 @@ vi.mock('../ProfileDropdown', () => ({
   ),
 }));
 
+vi.mock('../NotificationsInbox', () => ({
+  NotificationsInbox: ({ identity }: { identity: string }) => {
+    notificationsInboxMock(identity);
+    return <div data-testid="mock-notifications-inbox" />;
+  },
+}));
+
 function renderComponent(props: any) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -105,6 +120,47 @@ describe('AppNavbar', () => {
     onNavbarVisibilityChange: vi.fn(),
     onOpenChangelog: vi.fn(),
   };
+
+  it.each([
+    ['Basic', ['Basic']],
+    ['Bpla', ['Bpla']],
+  ])('does not mount Inbox for a %s-only user', (_name, roles) => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles },
+    });
+
+    expect(container.querySelector('[data-testid="mock-notifications-inbox"]')).toBeNull();
+    expect(notificationsInboxMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Rer', ['Rer']],
+    ['Cyber', ['Cyber']],
+    ['CyberViewer', ['CyberViewer']],
+    ['Full inherited Rer', ['Full']],
+    ['Admin inherited Rer/Cyber', ['Admin']],
+    ['mixed', ['Basic', 'Cyber']],
+  ])('mounts Inbox for %s access', (_name, roles) => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles },
+    });
+
+    expect(container.querySelector('[data-testid="mock-notifications-inbox"]')).not.toBeNull();
+    expect(notificationsInboxMock).toHaveBeenCalledWith('Test');
+  });
+
+  it('does not mount Inbox before the user is loaded', () => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Rer'] },
+      shared: { ...defaultProps.shared, userLoaded: false },
+    });
+
+    expect(container.querySelector('[data-testid="mock-notifications-inbox"]')).toBeNull();
+    expect(notificationsInboxMock).not.toHaveBeenCalled();
+  });
 
   it('renders the brand logo and title', () => {
     const { container } = renderComponent(defaultProps);
@@ -157,6 +213,19 @@ describe('AppNavbar', () => {
     const logout = host.querySelector<HTMLButtonElement>('[data-testid="mock-profile-dropdown"]');
     act(() => logout?.click());
     expect(order).toEqual(['clear', 'logout']);
+    act(() => host.remove());
+  });
+
+  it('#3610 mounts the navbar custom element inside the Neo MUI theme boundary', async () => {
+    await import('../../../app-navbar-element');
+    const host = document.createElement('app-navbar') as HTMLElement & { props: unknown };
+    act(() => {
+      document.body.append(host);
+      host.props = defaultProps;
+    });
+
+    expect(host.querySelector('[data-testid="neo-mui-theme-provider"]')).not.toBeNull();
+
     act(() => host.remove());
   });
 
@@ -575,7 +644,7 @@ describe('AppNavbar', () => {
     });
 
     // Find the fullscreen toggle button
-    const toggleButton = container.querySelector('button[title="Повноекранний режим"]');
+    const toggleButton = container.querySelector('button[aria-label="Повноекранний режим"]');
     expect(toggleButton).not.toBeNull();
     expect(toggleButton?.className).toContain('rounded');
 

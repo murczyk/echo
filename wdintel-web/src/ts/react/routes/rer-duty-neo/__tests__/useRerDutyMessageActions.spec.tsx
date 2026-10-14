@@ -51,6 +51,7 @@ const hoisted = vi.hoisted(() => ({
   clearExplicitScheduledWork: vi.fn(),
   getExplicitScrollNavigation: vi.fn(() => ({ onUnavailable: vi.fn() })),
   addPalitraHighlightBlacklistEntry: vi.fn(),
+  requestImportantMessage: vi.fn(),
 }));
 
 vi.mock('../../../services/api/inbox', () => ({
@@ -71,6 +72,11 @@ vi.mock('../../../services/api/inbox', () => ({
 
 vi.mock('../../../services/api/palitra', () => ({
   addPalitraHighlightBlacklistEntry: hoisted.addPalitraHighlightBlacklistEntry,
+}));
+
+vi.mock('../../../components/app-navbar/ImportantMessageDialog', () => ({
+  IMPORTANT_MESSAGE_UPDATED_EVENT: 'echo-important-message-updated',
+  requestImportantMessage: hoisted.requestImportantMessage,
 }));
 
 vi.mock('../../../../copy-to-clipboard', () => ({
@@ -354,6 +360,32 @@ describe('useRerDutyMessageActions', () => {
 
     expect(hoisted.importantRemove).toHaveBeenCalledWith({ messageId: 1 });
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].important).toBe(true);
+  });
+
+  it('#3610 opens the shared notification dialog for a new Duty importance mark', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({
+              items: [[1, buildMessage({ important: false, groupMasterKey: 'group-a' })]],
+            }),
+          ]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleMessageImportant('mf-0', 1, false);
+    });
+
+    expect(hoisted.requestImportantMessage).toHaveBeenCalledWith({
+      messageId: 1,
+      groupMasterKey: 'group-a',
+    });
+    expect(hoisted.importantAdd).not.toHaveBeenCalled();
   });
 
   it('uses the last message id cursor when loading newer mail from the arrow button', async () => {
@@ -1293,5 +1325,62 @@ describe('useRerDutyMessageActions', () => {
       { etalon: 'Альфа', text: 'Альфа', palitraIds: [12] },
     ]);
     expect(apiRef.current!.messageFeeds[1].items[1][1]).toBe(unrelated);
+  });
+
+  it('updates importance in every matching feed without replacing unaffected references', async () => {
+    const firstTarget = buildMessage({ important: false });
+    const secondTarget = buildMessage({ important: false });
+    const unchanged = buildMessage({ important: false });
+    const unrelated = buildMessage({ important: false });
+    const feeds = [
+      buildFeed({
+        id: 'mf-0',
+        items: [
+          [1, firstTarget],
+          [2, unchanged],
+        ],
+      }),
+      buildFeed({ id: 'mf-1', items: [[1, secondTarget]] }),
+      buildFeed({ id: 'mf-2', items: [[3, unrelated]] }),
+    ];
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} initialFeeds={feeds} />);
+    });
+    const stateBefore = apiRef.current!.messageFeeds;
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('echo-important-message-updated', {
+          detail: { messageId: 1, important: true },
+        }),
+      );
+    });
+
+    const stateAfter = apiRef.current!.messageFeeds;
+    expect(stateAfter[0].items[0][1].important).toBe(true);
+    expect(stateAfter[1].items[0][1].important).toBe(true);
+    expect(stateAfter[0].items[1]).toBe(stateBefore[0].items[1]);
+    expect(stateAfter[0].items[1][1]).toBe(unchanged);
+    expect(stateAfter[2]).toBe(stateBefore[2]);
+    expect(stateAfter[2].items).toBe(stateBefore[2].items);
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('echo-important-message-updated', {
+          detail: { messageId: 1, important: true },
+        }),
+      );
+    });
+    expect(apiRef.current!.messageFeeds).toBe(stateAfter);
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('echo-important-message-updated', {
+          detail: { messageId: 99, important: true },
+        }),
+      );
+    });
+    expect(apiRef.current!.messageFeeds).toBe(stateAfter);
   });
 });

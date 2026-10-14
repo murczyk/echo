@@ -1,5 +1,20 @@
 {
   "migrations": {
+    "echo:m20261012_120000_notification_inbox": {
+      "changes": [
+        { "table": "public.notification_event", "strategy": "excluded" },
+        { "table": "public.notification_receipt", "strategy": "excluded" },
+        { "table": "public.notification_read_boundary", "strategy": "excluded" },
+        { "table": "public.notification_read_boundary_receipt", "strategy": "excluded" },
+        { "table": "public.notification_read_boundary_completed", "strategy": "excluded" },
+        { "table": "public.importance_operation", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261013_090000_notification_read_boundary_completed_repair": {
+      "changes": [
+        { "table": "public.notification_read_boundary_completed", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261013_094137_inbox_unit_selection": {
       "changes": [{ "table": "public.sigint_inbox_item_unit_selection", "strategy": "excluded" }]
     },
