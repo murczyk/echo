@@ -573,6 +573,13 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(container.querySelectorAll('ul.message-feed-list > li')).toHaveLength(3);
     expect(container.querySelectorAll('[data-message-feed-skeleton-card]')).toHaveLength(2);
     expect(container.querySelectorAll('[data-message-feed-skeleton]')).toHaveLength(2);
+    for (const edge of ['above', 'below']) {
+      const skeleton = container.querySelector(`[data-message-feed-skeleton="${edge}"]`);
+      const placeholders = skeleton?.querySelectorAll('.MuiSkeleton-root');
+      expect(placeholders?.length).toBeGreaterThan(0);
+      expect(skeleton?.querySelectorAll('.MuiSkeleton-pulse')).toHaveLength(placeholders?.length);
+      expect(skeleton?.getAttribute('role')).toBeNull();
+    }
     expect(
       container
         .querySelector('ul.message-feed-list > li:first-child')

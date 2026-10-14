@@ -141,19 +141,10 @@ export function useWindowedFeedScroll({
     if (!serializeEdgeLoads && !loadingOlder) refs.loadOlderTriggeredRef.current = false;
   }, [loadingOlder, refs, serializeEdgeLoads]);
 
-  useEffect(() => {
-    if (!serializeEdgeLoads && !loadingNewer) refs.loadNewerTriggeredRef.current = false;
-  }, [loadingNewer, refs, serializeEdgeLoads]);
-
   const firstItemId = itemIds[0] ?? null;
   useEffect(() => {
     if (serializeEdgeLoads) refs.loadOlderTriggeredRef.current = false;
   }, [firstItemId, refs, serializeEdgeLoads]);
-
-  const lastItemId = itemIds.length > 0 ? itemIds[itemIds.length - 1] : null;
-  useEffect(() => {
-    refs.loadNewerTriggeredRef.current = false;
-  }, [lastItemId, refs]);
 
   const previousEdgeLoadRetryKeyRef = useRef(edgeLoadRetryKey);
   useEffect(() => {

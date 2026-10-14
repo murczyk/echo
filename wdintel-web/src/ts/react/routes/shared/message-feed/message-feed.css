@@ -58,6 +58,12 @@
   gap: 8px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .message-feed-skeletons .MuiSkeleton-pulse {
+    animation: none;
+  }
+}
+
 .message-feed-refresh-overlay {
   position: sticky;
   top: 0;

@@ -457,10 +457,10 @@ export function useWindowedFeedScrollTracking(args: {
       return;
     }
     if (!refs.enabledRef.current) return;
-    refs.loadNewerTriggeredRef.current = false;
     // Only re-evaluate when prefetch becomes needed again — not on the initial mount
     // (initial bottom pin intentionally suppresses load-newer).
     if (!wasNeeded) {
+      refs.loadNewerTriggeredRef.current = false;
       updateScrollState({ allowLoadOlder: false, allowTopReached: false });
     }
   }, [cancelLoadNewerIdle, refs, unreadPrefetchNeeded, updateScrollState]);

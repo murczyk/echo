@@ -103,6 +103,9 @@ test('a direct-linked Duty window loads newer history without unread badges @reg
   await expect(page.locator('[data-message-feed-skeleton="below"]')).toBeAttached();
   await expect(page.locator('[data-duty-scroll-unread-badge]')).toHaveCount(0);
 
+  await page.waitForTimeout(5_300);
+  expect(newerSinceIds).toEqual([60]);
+
   await scroller.press('End');
   await expect.poll(() => newerSinceIds).toContain(80);
   await expect(page.locator('[data-duty-message-id="100"]')).toBeAttached();

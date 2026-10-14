@@ -104,6 +104,21 @@ async function visibleAnchor(scroller: Locator) {
 
 // Regression: https://github.com/echoua/echo/issues/3689
 test.describe('Message feed unification @regression', () => {
+  test('edge skeleton pulse respects reduced motion', async ({ page }) => {
+    await installPages(page);
+    await page.goto('/rer-analysis-neo');
+    const skeleton = page.locator('[data-message-feed-skeleton="below"] .MuiSkeleton-root').first();
+    await expect(skeleton).toBeAttached();
+    await expect
+      .poll(() => skeleton.evaluate((element) => getComputedStyle(element).animationName))
+      .not.toBe('none');
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await expect
+      .poll(() => skeleton.evaluate((element) => getComputedStyle(element).animationName))
+      .toBe('none');
+  });
+
   for (const newestFirst of [true, false]) {
     test(`Analysis keeps a bounded window in both scroll directions (${newestFirst ? 'newest' : 'oldest'} first)`, async ({
       page,

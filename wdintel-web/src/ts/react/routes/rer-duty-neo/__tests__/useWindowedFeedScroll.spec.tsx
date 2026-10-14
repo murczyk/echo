@@ -1633,6 +1633,61 @@ describe('useWindowedFeedScroll', () => {
     expect(onLoadNewer).not.toHaveBeenCalled();
   });
 
+  it('does not request the same newer edge twice when loading finishes before the window changes', async () => {
+    const onLoadNewer = vi.fn();
+    await act(async () => root.render(<TestScroller ids={[]} />));
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 300 });
+    await act(async () =>
+      root.render(
+        <TestScroller ids={[1, 2, 3, 4]} onLoadNewer={onLoadNewer} unreadPrefetchNeeded />,
+      ),
+    );
+
+    scroller.scrollTop = 200;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+
+    await act(async () =>
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          loadingNewer
+          onLoadNewer={onLoadNewer}
+          unreadPrefetchNeeded
+        />,
+      ),
+    );
+    await act(async () =>
+      root.render(
+        <TestScroller ids={[1, 2, 3, 4]} onLoadNewer={onLoadNewer} unreadPrefetchNeeded />,
+      ),
+    );
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+
+    setScrollMetrics(scroller, { scrollTop: 200, clientHeight: 100, scrollHeight: 600 });
+    await act(async () => {
+      root.render(
+        <TestScroller ids={[3, 4, 5, 6]} onLoadNewer={onLoadNewer} unreadPrefetchNeeded />,
+      );
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    scroller.scrollTop = 500;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLoadNewer).toHaveBeenCalledTimes(2);
+  });
+
   it('scrolls to the bottom using the current scroll height', async () => {
     await act(async () => {
       root.render(<TestScroller ids={[1, 2, 3, 4]} />);
