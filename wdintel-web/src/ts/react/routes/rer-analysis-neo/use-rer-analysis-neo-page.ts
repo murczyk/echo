@@ -33,7 +33,7 @@ import {
   writeMessagesPageIndexToWindowUrl,
   getFirstLoadedMessagesPageIndex,
 } from './helpers';
-import { fetchInboxWindow } from '../../services/api/inbox-messages';
+import { fetchInboxItemContext, fetchInboxWindow } from '../../services/api/inbox-messages';
 import type {
   AnalysisCallsignFrequencyMatchesRsp,
   InboxMessage,
@@ -103,6 +103,9 @@ function inboxWindowMatchesMessages(
 type DeviceAccess =
   { status: 'loading' } | { status: 'allowed' } | { status: 'denied' } | { status: 'error' };
 
+type RerReportFilterAccess =
+  { status: 'loading' } | { status: 'allowed' } | { status: 'denied' } | { status: 'error' };
+
 export function useRerAnalysisNeoPage(
   authUserName: string | null,
   authUserRoles: readonly string[] = [],
@@ -135,6 +138,7 @@ export function useRerAnalysisNeoPage(
   const [showPelengDistanceToBattleline, setShowPelengDistanceToBattleline] = useState(false);
   const [analysisAorFilterEnabled, setAnalysisAorFilterEnabled] = useState(true);
   const [hideBotTags, setHideBotTags] = useState(false);
+  const [hideNetworks, setHideNetworks] = useState(false);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulUiFiltersBeyondDateRange(initialQueryState)
       ? createResetQueryState(initialNow, initialRadioFeaturesAllowed)
@@ -184,7 +188,7 @@ export function useRerAnalysisNeoPage(
     () => initialPanelQueryState.rightPanelOpen ?? false,
   );
   const [selectedSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(() =>
-    initialPanelQueryState.rightPanelOpen ? 'stats' : null,
+    initialPanelQueryState.rightPanelOpen ? 'callsigns' : null,
   );
   const [targetMessageUid] = useState(parseMessageUidFromWindow);
   const [targetMessageWindow, setTargetMessageWindow] = useState<InboxWindowRsp | null>(null);
@@ -214,6 +218,17 @@ export function useRerAnalysisNeoPage(
           ? { status: 'allowed' }
           : { status: 'denied' };
   const canUseDevices = deviceAccess.status === 'allowed';
+  const rerReportFilterAccess: RerReportFilterAccess =
+    currentUserStatus === 'error' || systemSettingsStatus === 'error'
+      ? { status: 'error' }
+      : currentUserStatus === 'loading' || systemSettingsStatus === 'loading'
+        ? { status: 'loading' }
+        : rerReportEnabled && currentUser?.rerReportEligible === true
+          ? { status: 'allowed' }
+          : { status: 'denied' };
+  const rerReportFilterEnabled = rerReportFilterAccess.status === 'allowed';
+  const rerReportFilterAccessPending =
+    rerReportFilterAccess.status === 'loading' || rerReportFilterAccess.status === 'error';
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles ?? authUserRoles);
   const directQueryBoundaryRef = useRef({
     fromDateTimeStr: initialQueryState.fromDateTimeStr,
@@ -252,16 +267,34 @@ export function useRerAnalysisNeoPage(
   const centerTab =
     !radioFeaturesAllowed && selectedCenterTab === 'summary' ? 'messages' : selectedCenterTab;
   const rightSidebarTab =
-    !radioFeaturesAllowed && selectedSidebarTab === 'frequencies' ? 'stats' : selectedSidebarTab;
+    !radioFeaturesAllowed && selectedSidebarTab === 'frequencies'
+      ? 'callsigns'
+      : selectedSidebarTab;
   const effectiveQueryState = useMemo(
     () =>
       effectiveRadioQuery(
-        deviceAccess.status === 'denied'
-          ? { ...queryStateWithResolvedRoleDate, deviceNamesSelected: [] }
-          : queryStateWithResolvedRoleDate,
+        {
+          ...queryStateWithResolvedRoleDate,
+          deviceNamesSelected:
+            deviceAccess.status === 'denied'
+              ? []
+              : queryStateWithResolvedRoleDate.deviceNamesSelected,
+          onlyWithNetwork:
+            rerReportFilterAccess.status === 'denied' || hideNetworks
+              ? false
+              : queryStateWithResolvedRoleDate.onlyWithNetwork,
+          networksSelected: hideNetworks ? [] : queryStateWithResolvedRoleDate.networksSelected,
+          withoutNetwork: hideNetworks ? false : queryStateWithResolvedRoleDate.withoutNetwork,
+        },
         radioFeaturesAllowed,
       ),
-    [deviceAccess.status, queryStateWithResolvedRoleDate, radioFeaturesAllowed],
+    [
+      deviceAccess.status,
+      queryStateWithResolvedRoleDate,
+      radioFeaturesAllowed,
+      rerReportFilterAccess.status,
+      hideNetworks,
+    ],
   );
   useEffect(() => {
     if (dutySettings.loadInProgress) return;
@@ -278,10 +311,14 @@ export function useRerAnalysisNeoPage(
           ...initialQueryState,
           deviceNamesSelected:
             deviceAccess.status === 'denied' ? [] : initialQueryState.deviceNamesSelected,
+          onlyWithNetwork:
+            rerReportFilterAccess.status === 'denied' || hideNetworks
+              ? false
+              : initialQueryState.onlyWithNetwork,
           groupsSelected: queryState.groupsSelected,
           freqsSelected: queryState.freqsSelected,
-          networksSelected: queryState.networksSelected,
-          withoutNetwork: queryState.withoutNetwork,
+          networksSelected: hideNetworks ? [] : queryState.networksSelected,
+          withoutNetwork: hideNetworks ? false : queryState.withoutNetwork,
           messageTimeBasis: dutySettings.messageSortBy,
         },
         radioFeaturesAllowed,
@@ -290,6 +327,8 @@ export function useRerAnalysisNeoPage(
       initialQueryState,
       radioFeaturesAllowed,
       deviceAccess.status,
+      rerReportFilterAccess.status,
+      hideNetworks,
       queryState.freqsSelected,
       queryState.groupsSelected,
       queryState.networksSelected,
@@ -300,6 +339,7 @@ export function useRerAnalysisNeoPage(
 
   const directMessageDefaultsPending =
     currentUserStatus === 'loading' ||
+    (rerReportFilterAccessPending && initialQueryState.onlyWithNetwork) ||
     queryStateWithResolvedRoleDate !== queryState ||
     queryState.messageTimeBasis !== dutySettings.messageSortBy;
 
@@ -326,13 +366,42 @@ export function useRerAnalysisNeoPage(
     } else {
       setTargetMessageLoading(true);
     }
-    void fetchInboxWindow({
-      messageRef: targetMessageUid,
-      inboxReq: buildInboxReq(directMessageWindowQueryState, [], true),
-    })
+    const requestQueryState = {
+      ...directMessageWindowQueryState,
+      ...directQueryBoundaryRef.current,
+    };
+    const publishPeriod = (period: AnalysisQueryState) => {
+      directQueryBoundaryRef.current = {
+        fromDateTimeStr: period.fromDateTimeStr,
+        toDateTimeStr: period.toDateTimeStr,
+        search: period.search,
+      };
+      setQueryState((current) => ({
+        ...current,
+        fromDateTimeStr: period.fromDateTimeStr,
+        toDateTimeStr: period.toDateTimeStr,
+      }));
+      pushQueryStateToUrl(period, newestFirst, { leftPanelOpen, rightPanelOpen });
+    };
+    let periodAdjusted = false;
+    const restorePeriod = () => {
+      if (periodAdjusted) publishPeriod(requestQueryState);
+    };
+    void fetchInboxItemContext({ messageUid: targetMessageUid })
+      .then((context) => {
+        if (!isCurrentRequest() || context.message == null) return null;
+        const next = adjustQueryDateRangeForDirectMessage(requestQueryState, context.message[1]);
+        periodAdjusted = next !== requestQueryState;
+        if (periodAdjusted) publishPeriod(next);
+        return fetchInboxWindow({
+          messageRef: targetMessageUid,
+          inboxReq: buildInboxReq(next, [], true),
+        });
+      })
       .then((res) => {
         if (!isCurrentRequest()) return;
         if (res == null) {
+          restorePeriod();
           if (isContextRefresh) {
             setTargetMessageWindow(null);
             setTargetMessageContextActive(false);
@@ -349,26 +418,12 @@ export function useRerAnalysisNeoPage(
         setDirectMessageError(null);
         targetMessageLoadedRef.current = true;
         targetMessageIdRef.current = res.targetMessageId;
-        const targetMessage = res.inbox.inboxItems.find(
-          ([messageId]) => messageId === res.targetMessageId,
-        )?.[1];
-        if (targetMessage != null) {
-          setQueryState((current) => {
-            const next = adjustQueryDateRangeForDirectMessage(current, targetMessage);
-            if (next === current) return current;
-            directQueryBoundaryRef.current = {
-              fromDateTimeStr: next.fromDateTimeStr,
-              toDateTimeStr: next.toDateTimeStr,
-              search: next.search,
-            };
-            return next;
-          });
-        }
         setTargetMessageWindow(res);
         if (isContextRefresh) setTargetMessageContextResponsePending(false);
       })
       .catch((err) => {
         if (!isCurrentRequest()) return;
+        restorePeriod();
         if (!targetMessageLoadedRef.current) {
           setTargetMessageContextActive(false);
         }
@@ -441,7 +496,9 @@ export function useRerAnalysisNeoPage(
     authUserName,
     currentUser,
     deferInitialLoad:
+      systemSettingsStatus === 'loading' ||
       deviceAccess.status === 'loading' ||
+      (rerReportFilterAccessPending && queryState.onlyWithNetwork) ||
       (deviceAccess.status === 'error' && queryState.deviceNamesSelected.length > 0) ||
       targetMessageContextResponsePending,
     focusedWindow: targetMessageWindow,
@@ -457,6 +514,7 @@ export function useRerAnalysisNeoPage(
     rightSidebarTab,
     shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
     queryState: effectiveQueryState,
+    hideNetworks,
   });
   const reload = useCallback(
     (options: Parameters<typeof data.reload>[0] = {}) => {
@@ -708,6 +766,7 @@ export function useRerAnalysisNeoPage(
     async (
       callsigns: string[],
       minMatches: number,
+      signal?: AbortSignal,
     ): Promise<AnalysisCallsignFrequencyMatchesRsp | null> => {
       if (isNullOrUndefined(analysisReq)) {
         setPageError('Перевірте дату та час перед пошуком частот.');
@@ -715,12 +774,16 @@ export function useRerAnalysisNeoPage(
       }
 
       try {
-        return await fetchAnalysisCallsignFrequencyMatches({
-          req: analysisReq,
-          callsigns,
-          minMatches,
-        });
+        return await fetchAnalysisCallsignFrequencyMatches(
+          {
+            req: analysisReq,
+            callsigns,
+            minMatches,
+          },
+          { signal },
+        );
       } catch (loadError) {
+        if (signal?.aborted) return null;
         if (!handleUnauthorized(loadError)) setPageError(toErrorMessage(loadError));
         return null;
       }
@@ -762,15 +825,11 @@ export function useRerAnalysisNeoPage(
         setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
         setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
         setRerReportEnabled(settings.rerReportEnabled);
-        if (!settings.rerReportEnabled) {
-          setQueryState((current) =>
-            current.onlyWithNetwork ? { ...current, onlyWithNetwork: false } : current,
-          );
-        }
         setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
         setShowPelengDistanceToBattleline(settings.showPelengDistanceToBattleline);
         setHideBotTags(settings.disableBotTags ?? false);
+        setHideNetworks(settings.hideNetworks ?? false);
         setAnalysisAorFilterEnabled(settings.analysisAorFilterEnabled ?? true);
         setSystemSettingsStatus('success');
       })
@@ -814,6 +873,13 @@ export function useRerAnalysisNeoPage(
   }, [deviceAccess.status, queryState.deviceNamesSelected]);
 
   useEffect(() => {
+    if (rerReportFilterAccess.status !== 'denied') return;
+    setQueryState((current) =>
+      current.onlyWithNetwork ? { ...current, onlyWithNetwork: false } : current,
+    );
+  }, [rerReportFilterAccess.status, queryState.onlyWithNetwork]);
+
+  useEffect(() => {
     if (rightPanelOpen && isNullOrUndefined(rightSidebarTab)) {
       setRightSidebarTab(getAnalysisSidebarTabs(dutySettings.analysisMapInSidebar)[0]);
     }
@@ -828,7 +894,7 @@ export function useRerAnalysisNeoPage(
     }
 
     if (rightSidebarTab === 'map') {
-      setRightSidebarTab('stats');
+      setRightSidebarTab('callsigns');
     }
   }, [
     centerTab,
@@ -1049,7 +1115,6 @@ export function useRerAnalysisNeoPage(
       (['tags', 'groups', 'senders'] as const).forEach((section) => sections.add(section));
     }
     if (rightPanelOpen && rightSidebarTab === 'stats') sections.add('groups');
-    if (rightPanelOpen && rightSidebarTab === 'callsigns') sections.add('callsigns');
     if (sections.size === 0) return;
     void Promise.all(Array.from(sections, (section) => data.loadFilterSection(section)));
   }, [data.loadFilterSection, leftPanelOpen, rightPanelOpen, rightSidebarTab]);
@@ -1241,6 +1306,7 @@ export function useRerAnalysisNeoPage(
     queryState: effectiveQueryState,
     tagsLayout: dutySettings.tagsLayout,
     hideBotTags,
+    hideNetworks,
     mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
     collapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
     messageTextPreviewLines: dutySettings.messageTextPreviewLines,
@@ -1259,6 +1325,7 @@ export function useRerAnalysisNeoPage(
     summaryLoaded: data.summaryLoaded,
     summaryHasLoadedOnce: data.summaryHasLoadedOnce,
     rightSidebarLoading: data.rightSidebarLoading,
+    rightSidebarOutdated: data.rightSidebarOutdated,
     summaryRows: data.summaryRows,
     summaryCallsignsInfo: data.summaryCallsignsInfo,
     unitsMap: data.unitsMap,
@@ -1321,6 +1388,7 @@ export function useRerAnalysisNeoPage(
     unitsExactMatchOnlyDefault,
     analysisAorFilterEnabled,
     rerReportEnabled,
+    rerReportFilterEnabled,
     supportNonRerInterceptions,
     cyberEchoEnabled: canUseDevices,
     updateReport: report.updateReport,

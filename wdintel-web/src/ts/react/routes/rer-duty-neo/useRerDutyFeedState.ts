@@ -49,6 +49,7 @@ import { useRerDutyInitialLoadTrigger } from './useRerDutyInitialLoadTrigger';
 import type { DeviceAccess } from './useRerDutyPageSettings';
 import { useRerDutyTailPollRequests } from './useRerDutyTailPollRequests';
 import { useRerDutyPollingCoordinator } from './useRerDutyPollingCoordinator';
+import { useRerDutyCountSchedule } from './useRerDutyCountSchedule';
 import { useRerDutyPollingFeedWork } from './useRerDutyPollingFeedWork';
 import {
   DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
@@ -66,6 +67,8 @@ export type FeedStateDeps = {
   disableAutoScroll: boolean;
   deviceAccess: DeviceAccess;
   radioFeaturesAllowed?: boolean;
+  hideNetworks?: boolean;
+  networkVisibilityReady?: boolean;
   onFeedRemoved?: (feedId: string) => void;
 };
 
@@ -120,6 +123,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const messageFeedsRef = useRef(messageFeeds);
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countPollRerunRequestedRef = useRef(false);
+  const lastCountStartedAtByFeedIdRef = useRef<Record<string, number>>({});
+  const automaticPollRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const pollLifecycleMountedRef = useRef(true);
   const pollLifecycleGenerationRef = useRef(0);
   const pollNotificationCyclesRef = useRef<Set<DutyNotificationPollCycle>>(new Set());
@@ -133,6 +138,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         cursorId: number | null;
         hasItems: boolean;
         requestSignature: string;
+        generation: number;
       } | null>
     >
   >({});
@@ -212,7 +218,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     mergeResolvedCallsigns,
     retainFeedIds,
   } = useRerDutyCallsignInfo();
-  const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(messageFeeds);
+  const { networkDisplayMap, networkMap, unitsMap } = useRerDutyReferenceData(
+    messageFeeds,
+    deps.hideNetworks === true || deps.networkVisibilityReady === false,
+  );
 
   const showArrowResult = useCallback((feedId: string, message: string) => {
     const key = feedId;
@@ -635,6 +644,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const cursor = unreadCursorByFeedIdRef.current[feedId] ?? null;
       const cursorId = cursor?.id ?? null;
       const requestSignature = buildFeedCountSignature(feed, freqs);
+      lastCountStartedAtByFeedIdRef.current[feedId] = performance.now();
       const requestPromise = (async () => {
         const finishDebugActivity = beginDutyScrollDebugActivity(
           feedId,
@@ -680,6 +690,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           cursorId,
           hasItems: feed.items.length > 0,
           requestSignature,
+          generation: requestGeneration,
         };
       })();
       countRequestPromiseByFeedIdRef.current[feedId] = requestPromise;
@@ -705,6 +716,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     getFeedLoadGeneration,
     buildReqForFeed,
     getFeedCountSignature: (feed) => buildFeedCountSignature(feed, freqs),
+  });
+  const getDueCountFeeds = useRerDutyCountSchedule({
+    intervalMs: pollIntervalMs,
+    lastCountStartedAtRef: lastCountStartedAtByFeedIdRef,
+    getActiveTailCount: tailPolling.getActiveTailCount,
+    poll: () => automaticPollRef.current(),
   });
   const { startFeedWork, forgetFeedWork } = useRerDutyPollingFeedWork();
   resetTailRequestsRef.current = tailPolling.resetTailRequests;
@@ -850,7 +867,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     retainFeedIds(messageFeeds.map((feed) => feed.id));
   }, [messageFeeds, retainFeedIds]);
 
-  const runPollCycle = useCallback(async () => {
+  const runPollCycle = async (automatic: boolean) => {
     if (authenticationFailedRef.current) return;
     const lifecycleGeneration = pollLifecycleGenerationRef.current;
     const isLifecycleCurrent = () =>
@@ -860,11 +877,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     const run = async () => {
       if (!isLifecycleCurrent()) return;
       const participatingFeeds = [...messageFeedsRef.current];
-      const eligibleFeeds = participatingFeeds.filter(
-        (feed) =>
-          !feed.loading &&
-          !pendingReloadFeedIdsRef.current.has(feed.id) &&
-          !countRequestPromiseByFeedIdRef.current[feed.id],
+      const eligibleFeeds = getDueCountFeeds(
+        participatingFeeds.filter(
+          (feed) =>
+            !feed.loading &&
+            !pendingReloadFeedIdsRef.current.has(feed.id) &&
+            !countRequestPromiseByFeedIdRef.current[feed.id],
+        ),
+        automatic,
       );
       if (!eligibleFeeds.length) return;
       const cycle = beginDutyNotificationPollCycle();
@@ -938,6 +958,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           if (
             !currentFeed ||
             currentFeed.loading ||
+            getFeedLoadGeneration(feedId) !== entry.generation ||
             pendingReloadFeedIdsRef.current.has(feedId) ||
             buildFeedCountSignature(currentFeed, freqs) !== entry.requestSignature
           ) {
@@ -954,6 +975,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
           const quantity = entry.quantity ?? 0;
           const loadedTailId = currentFeed.items.at(-1)?.[0] ?? null;
+          const sharedTailCount =
+            loadedTailId != null && entry.cursorId === loadedTailId ? quantity : null;
+          if (sharedTailCount !== null) {
+            tailPolling.tailPreviewGenerationByFeedIdRef.current[feedId] ??= 0;
+          }
           const hasUnloadedEvictedNewerTail = feedHasUnloadedEvictedNewerTail(currentFeed);
           const nearBottom = nearBottomByFeedIdRef.current[feedId] === true;
           // Inbox count is assist-only near the tail: never write the badge from it while
@@ -1013,7 +1039,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             }
             let preview: ConfirmedTailPreview | null;
             try {
-              preview = await tailPolling.requestValidatedTailPreview(feedId);
+              preview =
+                sharedTailCount !== null
+                  ? {
+                      tailId: loadedTailId!,
+                      count: sharedTailCount,
+                      generation: tailPolling.tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0,
+                    }
+                  : await tailPolling.requestValidatedTailPreview(feedId);
             } catch (error) {
               reportPollingFailure(`${feedId}:preview`, error);
               return;
@@ -1050,7 +1083,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               setTailAvailability(feedId, 'checking');
               let tailQuantity: number | null;
               try {
-                tailQuantity = await tailPolling.requestValidatedTailCount(feedId, loadedTailId!);
+                tailQuantity =
+                  sharedTailCount ??
+                  (await tailPolling.requestValidatedTailCount(feedId, loadedTailId!));
               } catch (error) {
                 reportPollingFailure(`${feedId}:tail-count`, error);
                 setTailAvailability(
@@ -1151,26 +1186,17 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       });
     };
     await run();
-  }, [
-    loadFeedNewerMessages,
-    deps.disableAutoScroll,
-    requestValidatedInboxCount,
-    tailPolling,
-    isFollowTailValid,
-    setConfirmedTailPreview,
-    invalidateTailPreview,
-    markFeedReloadRequested,
-    pollIntervalMs,
-    reportPollingFailure,
-    clearPollingFailure,
-    buildReqForFeed,
-    startFeedWork,
-  ]);
+  };
   const pollCountThenLoadNewerIfNeeded = useRerDutyPollingCoordinator({
     runCycle: runPollCycle,
     rerunRequestedRef: countPollRerunRequestedRef,
     canRerun: () => !authenticationFailedRef.current && messageFeedsRef.current.length > 0,
   });
+  const pollAutomatically = useCallback(
+    () => pollCountThenLoadNewerIfNeeded(true),
+    [pollCountThenLoadNewerIfNeeded],
+  );
+  automaticPollRef.current = pollAutomatically;
 
   useRerDutyInitialLoadTrigger({
     messageFeeds,
@@ -1187,7 +1213,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     ready: shortStateReady && deviceAccessAllowsRequests && effectiveFiltersReady,
     hasShortState: Boolean(shortStateIdRef.current),
     pollIntervalMs,
-    poll: pollCountThenLoadNewerIfNeeded,
+    poll: pollAutomatically,
     intervalRef: loadNewerRef,
     authenticationFailedRef,
     mountedRef: pollLifecycleMountedRef,
@@ -1218,6 +1244,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       removeFeedLoads(feedId);
       forgetFeedWork(feedId);
       clearFeedUnreadBaselines(feedId);
+      delete lastCountStartedAtByFeedIdRef.current[feedId];
       resetTailState(feedId);
       [
         followTailByFeedIdRef,

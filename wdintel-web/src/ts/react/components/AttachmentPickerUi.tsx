@@ -1,6 +1,7 @@
 import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
+import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import EditIcon from '@mui/icons-material/Edit';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -421,6 +422,14 @@ export function AttachmentFileRow({
               transformOrigin={{ horizontal: 'right', vertical: 'top' }}
               anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
             >
+              {onRename ? (
+                <MenuItem onClick={handleRenameClick}>
+                  <ListItemIcon>
+                    <DriveFileRenameOutlineIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Перейменувати</ListItemText>
+                </MenuItem>
+              ) : null}
               {onEdit ? (
                 <MenuItem onClick={handleEditClick}>
                   <ListItemIcon>
@@ -435,11 +444,6 @@ export function AttachmentFileRow({
                     <DownloadIcon fontSize="small" />
                   </ListItemIcon>
                   <ListItemText>Завантажити</ListItemText>
-                </MenuItem>
-              ) : null}
-              {onRename ? (
-                <MenuItem onClick={handleRenameClick}>
-                  <ListItemText>Перейменувати</ListItemText>
                 </MenuItem>
               ) : null}
             </Menu>

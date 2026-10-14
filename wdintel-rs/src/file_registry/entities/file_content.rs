@@ -47,6 +47,8 @@ pub enum Relation {
     FileDocument,
     #[sea_orm(has_many = "super::file_entry::Entity")]
     FileEntry,
+    #[sea_orm(has_many = "super::file_preview::Entity")]
+    FilePreview,
     #[sea_orm(
         belongs_to = "super::file_revision::Entity",
         from = "(Column::FileId, Column::Revision)",
@@ -72,6 +74,12 @@ impl Related<super::file_document::Entity> for Entity {
 impl Related<super::file_entry::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileEntry.def()
+    }
+}
+
+impl Related<super::file_preview::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FilePreview.def()
     }
 }
 

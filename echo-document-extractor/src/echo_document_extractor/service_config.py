@@ -31,6 +31,7 @@ class WorkerSettings(BaseModel):
     max_active_jobs: int = Field(default=1, ge=1, le=4)
     infrastructure_retries: int = Field(default=3, ge=0, le=10)
     retry_backoff_seconds: tuple[int, ...] = (30, 120, 600)
+    storage_retry_seconds: int = Field(default=60, ge=1)
 
     @model_validator(mode="after")
     def validate_heartbeat(self) -> WorkerSettings:

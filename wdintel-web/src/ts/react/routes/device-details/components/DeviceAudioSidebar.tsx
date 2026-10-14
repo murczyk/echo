@@ -1,3 +1,4 @@
+import type { DeviceAudioSettingsState } from '../use-device-audio-settings';
 import CheckIcon from '@mui/icons-material/Check';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import { ListItemIcon, Menu, MenuItem, Tooltip } from '@mui/material';
@@ -5,9 +6,35 @@ import { useState } from 'react';
 import { PowerIconButton } from '../../../components/PowerIconButton';
 import type { DeviceAudioState } from '../use-device-audio';
 import { DeviceAudioList } from './DeviceAudioList';
+import { DeviceAudioSettingsMenu } from './DeviceAudioSettingsMenu';
 
-export function DeviceAudioSidebar({ audio }: { audio: DeviceAudioState }) {
+const SHOW_RECORDING_START_KEY = 'device-audio.show-recording-start';
+
+function readShowRecordingStart() {
+  try {
+    return localStorage.getItem(SHOW_RECORDING_START_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function DeviceAudioSidebar({
+  audio,
+  settings,
+}: {
+  audio: DeviceAudioState;
+  settings: DeviceAudioSettingsState;
+}) {
   const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
+  const [showRecordingStart, setShowRecordingStart] = useState(readShowRecordingStart);
+  const updateShowRecordingStart = (show: boolean) => {
+    setShowRecordingStart(show);
+    try {
+      localStorage.setItem(SHOW_RECORDING_START_KEY, String(show));
+    } catch {
+      // Keep the setting for this view when browser storage is unavailable.
+    }
+  };
   const filterLabel = audio.unprocessedOnly ? 'Фільтри аудіо: тільки необроблені' : 'Фільтри аудіо';
   return (
     <aside
@@ -23,19 +50,26 @@ export function DeviceAudioSidebar({ audio }: { audio: DeviceAudioState }) {
         >
           Аудіо
         </h2>
-        <Tooltip title={filterLabel}>
-          <PowerIconButton
-            size="small"
-            aria-label={filterLabel}
-            aria-haspopup="menu"
-            aria-expanded={filterAnchor !== null}
-            aria-controls={filterAnchor !== null ? 'device-audio-filters-menu' : undefined}
-            color={audio.unprocessedOnly ? 'primary' : 'inherit'}
-            onClick={(event) => setFilterAnchor(event.currentTarget)}
-          >
-            <FilterAltOutlinedIcon fontSize="small" />
-          </PowerIconButton>
-        </Tooltip>
+        <div className="flex shrink-0 items-center gap-echo-xs">
+          <Tooltip title={filterLabel}>
+            <PowerIconButton
+              size="small"
+              aria-label={filterLabel}
+              aria-haspopup="menu"
+              aria-expanded={filterAnchor !== null}
+              aria-controls={filterAnchor !== null ? 'device-audio-filters-menu' : undefined}
+              color={audio.unprocessedOnly ? 'primary' : 'inherit'}
+              onClick={(event) => setFilterAnchor(event.currentTarget)}
+            >
+              <FilterAltOutlinedIcon fontSize="small" />
+            </PowerIconButton>
+          </Tooltip>
+          <DeviceAudioSettingsMenu
+            settings={settings}
+            showRecordingStart={showRecordingStart}
+            onShowRecordingStartChange={updateShowRecordingStart}
+          />
+        </div>
       </header>
       <Menu
         id="device-audio-filters-menu"
@@ -63,7 +97,7 @@ export function DeviceAudioSidebar({ audio }: { audio: DeviceAudioState }) {
         </MenuItem>
       </Menu>
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-echo-sm">
-        <DeviceAudioList audio={audio} />
+        <DeviceAudioList audio={audio} showRecordingStart={showRecordingStart} />
       </div>
     </aside>
   );

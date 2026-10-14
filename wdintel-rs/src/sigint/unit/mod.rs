@@ -22,13 +22,13 @@ use crate::users::{
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
-use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, OnConflict, SimpleExpr};
 use std::collections::{BTreeSet, HashMap};
 
 pub mod activity;
 pub mod attachment;
 pub mod changelog;
+pub mod combat_type;
 pub mod labels;
 mod merge_task;
 pub(crate) use merge_task::guard_capacity as unit_merge_guard_capacity;
@@ -260,7 +260,7 @@ pub async fn list_units(
     req: Json<ListUnitsReq>,
 ) -> Result<Json<ListUnitsRsp>, AppError> {
     let login_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login_id, vec!["Rer", "Cyber", "Api"])
+    has_any_role(&env.dbx, &login_id, vec!["Rer", "CyberViewer", "Api"])
         .await
         .c(h!())?;
     let can_view_orbit =
@@ -297,7 +297,7 @@ pub async fn unit_status_counts(
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<UnitStatusCountsRsp>, AppError> {
     let login_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login_id, vec!["Rer", "Cyber", "Api"])
+    has_any_role(&env.dbx, &login_id, vec!["Rer", "CyberViewer", "Api"])
         .await
         .c(h!())?;
     Ok(Json(read_unit_status_counts(&env.dbx).await?))
@@ -353,7 +353,8 @@ async fn read_units_with_orbit_visibility(
     req: &ListUnitsReq,
     can_view_orbit: bool,
 ) -> Result<ListUnitsRsp, AppError> {
-    let mut units = available_units_query(true);
+    let mut units = available_units_query(true)
+        .left_join(sigint_unit_orbit_combat_type::Entity);
     units = apply_unit_list_filters(units, req, can_view_orbit);
     let status_counts = count_unit_statuses(dbx, units.clone()).await?;
     if let Some(active) = req.filter_active {
@@ -383,10 +384,8 @@ async fn read_units_with_orbit_visibility(
                         find_unit(dbx, *before_unit_id).await.c(h!())?;
                     units = units.filter(
                         Expr::tuple([
-                            sigint_unit::Column::CreatedAt
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Id.into_column_ref().into(),
+                            sigint_unit::Column::CreatedAt.into_simple_expr(),
+                            sigint_unit::Column::Id.into_simple_expr(),
                         ])
                         .lt(SimpleExpr::Tuple(vec![
                             before_unit.created_at.into(),
@@ -404,10 +403,8 @@ async fn read_units_with_orbit_visibility(
                         find_unit(dbx, *after_unit_id).await.c(h!())?;
                     units = units.filter(
                         Expr::tuple([
-                            sigint_unit::Column::CreatedAt
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Id.into_column_ref().into(),
+                            sigint_unit::Column::CreatedAt.into_simple_expr(),
+                            sigint_unit::Column::Id.into_simple_expr(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
                             after_unit.created_at.into(),
@@ -425,41 +422,22 @@ async fn read_units_with_orbit_visibility(
                         find_unit(dbx, *after_unit_id).await.c(h!())?;
                     units = units.filter(
                         Expr::tuple([
-                            sigint_unit::Column::ArmyRegion
-                                .into_column_ref()
-                                .into(),
+                            sigint_unit::Column::ArmyRegion.into_simple_expr(),
                             sigint_unit::Column::MilitaryDistrict
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Army.into_column_ref().into(),
-                            sigint_unit::Column::Corps.into_column_ref().into(),
-                            sigint_unit::Column::Division
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Brigade
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Regiment
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Battalion
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Company
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Platoon
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Squad.into_column_ref().into(),
-                            sigint_unit::Column::Section
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::TeamOrCrew
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Other.into_column_ref().into(),
-                            sigint_unit::Column::Id.into_column_ref().into(),
+                                .into_simple_expr(),
+                            sigint_unit::Column::Army.into_simple_expr(),
+                            sigint_unit::Column::Corps.into_simple_expr(),
+                            sigint_unit::Column::Division.into_simple_expr(),
+                            sigint_unit::Column::Brigade.into_simple_expr(),
+                            sigint_unit::Column::Regiment.into_simple_expr(),
+                            sigint_unit::Column::Battalion.into_simple_expr(),
+                            sigint_unit::Column::Company.into_simple_expr(),
+                            sigint_unit::Column::Platoon.into_simple_expr(),
+                            sigint_unit::Column::Squad.into_simple_expr(),
+                            sigint_unit::Column::Section.into_simple_expr(),
+                            sigint_unit::Column::TeamOrCrew.into_simple_expr(),
+                            sigint_unit::Column::Other.into_simple_expr(),
+                            sigint_unit::Column::Id.into_simple_expr(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
                             after_unit.army_region.into(),
@@ -496,6 +474,18 @@ async fn read_units_with_orbit_visibility(
                 units = units.order_by_asc(sigint_unit::Column::TeamOrCrew);
                 units = units.order_by_asc(sigint_unit::Column::Other);
                 units = units.order_by_asc(sigint_unit::Column::Id);
+            }
+            ListUnitsSortBy::UnitCombatTypeAsc
+            | ListUnitsSortBy::UnitCombatTypeDesc => {
+                let order =
+                    if matches!(sort_by, ListUnitsSortBy::UnitCombatTypeAsc) {
+                        Order::Asc
+                    } else {
+                        Order::Desc
+                    };
+                units = combat_type::apply_sort(dbx, units, req, order)
+                    .await
+                    .c(h!())?;
             }
             ListUnitsSortBy::UnitNameLengthAsc => {
                 units = units
@@ -534,6 +524,7 @@ async fn read_units_with_orbit_visibility(
     for unit in units {
         res.push(render_unit(&unit)?);
     }
+    combat_type::populate_names(dbx, &mut res).await.c(h!())?;
     let show_load_more =
         if req.after_unit_id.is_some() || req.before_unit_id.is_some() {
             res.len() as u64 == limit
@@ -627,7 +618,9 @@ fn simple_unit_list_sort(
         | NaturalMilitarySortAsc
         | UnitNameLengthAsc
         | UnitOrbitLinkedAsc
-        | UnitOrbitLinkedDesc => return None,
+        | UnitOrbitLinkedDesc
+        | UnitCombatTypeAsc
+        | UnitCombatTypeDesc => return None,
     })
 }
 
@@ -743,6 +736,10 @@ fn apply_unit_list_filters(
         (
             r#""sigint_unit"."army_region""#,
             req.filter_army_region.as_deref(),
+        ),
+        (
+            r#"coalesce("sigint_unit_orbit_combat_type"."name", '')"#,
+            req.filter_combat_type.as_deref(),
         ),
         (r#""sigint_unit"."comment""#, req.filter_comment.as_deref()),
         (
@@ -925,23 +922,21 @@ fn unit_search_sort_expressions(
     }
     expressions.extend([
         Expr::cust(unit_echelon_sort_rank_sql()),
-        sigint_unit::Column::ArmyRegion.into_column_ref().into(),
-        sigint_unit::Column::MilitaryDistrict
-            .into_column_ref()
-            .into(),
-        sigint_unit::Column::Army.into_column_ref().into(),
-        sigint_unit::Column::Corps.into_column_ref().into(),
-        sigint_unit::Column::Division.into_column_ref().into(),
-        sigint_unit::Column::Brigade.into_column_ref().into(),
-        sigint_unit::Column::Regiment.into_column_ref().into(),
-        sigint_unit::Column::Battalion.into_column_ref().into(),
-        sigint_unit::Column::Company.into_column_ref().into(),
-        sigint_unit::Column::Platoon.into_column_ref().into(),
-        sigint_unit::Column::Squad.into_column_ref().into(),
-        sigint_unit::Column::Section.into_column_ref().into(),
-        sigint_unit::Column::TeamOrCrew.into_column_ref().into(),
-        sigint_unit::Column::Other.into_column_ref().into(),
-        sigint_unit::Column::Id.into_column_ref().into(),
+        sigint_unit::Column::ArmyRegion.into_simple_expr(),
+        sigint_unit::Column::MilitaryDistrict.into_simple_expr(),
+        sigint_unit::Column::Army.into_simple_expr(),
+        sigint_unit::Column::Corps.into_simple_expr(),
+        sigint_unit::Column::Division.into_simple_expr(),
+        sigint_unit::Column::Brigade.into_simple_expr(),
+        sigint_unit::Column::Regiment.into_simple_expr(),
+        sigint_unit::Column::Battalion.into_simple_expr(),
+        sigint_unit::Column::Company.into_simple_expr(),
+        sigint_unit::Column::Platoon.into_simple_expr(),
+        sigint_unit::Column::Squad.into_simple_expr(),
+        sigint_unit::Column::Section.into_simple_expr(),
+        sigint_unit::Column::TeamOrCrew.into_simple_expr(),
+        sigint_unit::Column::Other.into_simple_expr(),
+        sigint_unit::Column::Id.into_simple_expr(),
     ]);
     expressions
 }
@@ -1091,7 +1086,7 @@ pub async fn list_units_by_id(
     req: Json<ListUnitsByIdReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "Api"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
         .await
         .c(h!())?;
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
@@ -1108,6 +1103,9 @@ pub async fn list_units_by_id(
         }
         res.push(unit);
     }
+    combat_type::populate_names(&env.dbx, &mut res)
+        .await
+        .c(h!())?;
     Ok(Json(ListUnitsByIdRsp { units: res }))
 }
 
@@ -1433,7 +1431,7 @@ async fn render_created_unit_with_optional_network(
     Ok(CreateUnitWithAutoNetworkRsp { unit, network_id })
 }
 
-async fn insert_unit_with_changelog<'a, 'async_trait, C>(
+pub(crate) async fn insert_unit_with_changelog<'a, 'async_trait, C>(
     dbx: &'a C,
     login: &uuid::Uuid,
     req: &CreateUnitReq,
@@ -1458,6 +1456,12 @@ where
         army: Set(req.army.clone()),
         military_district: Set(req.military_district.clone()),
         army_region: Set(req.army_region.clone()),
+        combat_type_id: Set(combat_type::validate_id(
+            dbx,
+            req.combat_type_id.as_deref(),
+        )
+        .await
+        .c(h!())?),
         active: Set(req.active),
         is_deduplicate_candidate: Set(req.is_deduplicate_candidate),
         created_at: NotSet,
@@ -1777,6 +1781,14 @@ async fn update_unit_for_login(
     unit.army = Set(req.army.clone());
     unit.military_district = Set(military_district.clone());
     unit.army_region = Set(army_region.clone());
+    if let Some(combat_type_id) = &req.combat_type_id {
+        unit.combat_type_id = Set(combat_type::validate_id(
+            &transaction,
+            combat_type_id.as_deref(),
+        )
+        .await
+        .c(h!())?);
+    }
     unit.active = Set(req.active);
     unit.updated_at = Set(chrono::Utc::now().naive_utc());
     unit.name = Set(if req.name.trim().is_empty() {
@@ -2062,6 +2074,9 @@ pub async fn delete_unit(
     if !orbit::can_view_orbit_data(&env.dbx, &login).await? {
         redact_unit_orbit_data(&mut unit);
     }
+    combat_type::populate_names(&env.dbx, std::slice::from_mut(&mut unit))
+        .await
+        .c(h!())?;
     Ok(Json(unit))
 }
 
@@ -2539,6 +2554,8 @@ pub fn render_unit(unit: &sigint_unit::Model) -> Result<Unit, AppError> {
         army: unit.army.clone(),
         military_district: unit.military_district.clone(),
         army_region: unit.army_region.clone(),
+        combat_type_id: unit.combat_type_id.map(|id| id.to_string()),
+        combat_type_name: None,
         active: unit.active,
         is_deduplicate_candidate: unit.is_deduplicate_candidate,
         comment: unit.comment.clone(),
@@ -2577,6 +2594,9 @@ pub(crate) async fn apply_unit_orbit_visibility(
     unit: &mut Unit,
     can_view_orbit: bool,
 ) -> Result<(), AppError> {
+    combat_type::populate_names(dbx, std::slice::from_mut(unit))
+        .await
+        .c(h!())?;
     if !can_view_orbit {
         redact_unit_orbit_data(unit);
         return Ok(());
@@ -2606,20 +2626,24 @@ enum UnitReferenceStep {
     NetworkCallsigns,
     Attachments,
     Labels,
+    RerReportMetadata,
     InboxLinks,
+    InboxSelections,
     OrbitLinks,
     Devices,
 }
 
 impl UnitReferenceStep {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 11] = [
         Self::Callsigns,
         Self::Signals,
         Self::NetworkUnits,
         Self::NetworkCallsigns,
         Self::Attachments,
         Self::Labels,
+        Self::RerReportMetadata,
         Self::InboxLinks,
+        Self::InboxSelections,
         Self::OrbitLinks,
         Self::Devices,
     ];
@@ -2632,7 +2656,9 @@ impl UnitReferenceStep {
             Self::NetworkCallsigns => "Позивні мереж",
             Self::Attachments => "Файли",
             Self::Labels => "Мітки",
+            Self::RerReportMetadata => "Метадані звіту РЕР",
             Self::InboxLinks => "Прив’язки повідомлень",
+            Self::InboxSelections => "Вибрані підрозділи повідомлень",
             Self::OrbitLinks => "Прив’язки ORBIT",
             Self::Devices => "Пристрої",
         }
@@ -2709,6 +2735,15 @@ where
                 .await
                 .c(h!())?
         }
+        UnitReferenceStep::RerReportMetadata => {
+            crate::rer_report_admin::merge_unit_metadata(
+                dbx,
+                old_unit_id,
+                new_unit_id,
+            )
+            .await
+            .c(h!())?
+        }
         UnitReferenceStep::InboxLinks => move_inbox_item_unit_links(
             old_unit_id,
             new_unit_id,
@@ -2718,6 +2753,11 @@ where
         )
         .await
         .c(h!())?,
+        UnitReferenceStep::InboxSelections => {
+            move_inbox_unit_selections(old_unit_id, new_unit_id, dbx, limit)
+                .await
+                .c(h!())?
+        }
         UnitReferenceStep::OrbitLinks => {
             move_orbit_unit_links(old_unit_id, new_unit_id, dbx, limit)
                 .await
@@ -2730,6 +2770,45 @@ where
         }
     };
     Ok(moved)
+}
+
+async fn move_inbox_unit_selections<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    db: &C,
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    let mut selections = sigint_inbox_item_unit_selection::Entity::find()
+        .filter(
+            sigint_inbox_item_unit_selection::Column::UnitId.eq(old_unit_id),
+        )
+        .order_by_asc(sigint_inbox_item_unit_selection::Column::ItemId);
+    if let Some(limit) = limit {
+        selections = selections.limit(limit);
+    }
+    let ids = selections
+        .select_only()
+        .column(sigint_inbox_item_unit_selection::Column::ItemId)
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .c(h!())?;
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let result = sigint_inbox_item_unit_selection::Entity::update_many()
+        .col_expr(
+            sigint_inbox_item_unit_selection::Column::UnitId,
+            Expr::value(new_unit_id),
+        )
+        .filter(sigint_inbox_item_unit_selection::Column::ItemId.is_in(ids))
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(result.rows_affected)
 }
 
 async fn move_unit_callsigns<C>(
@@ -3418,43 +3497,116 @@ pub async fn units_search(
     env: actix_web::web::Data<Env>,
     req: Json<UnitSearchReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
-    let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber"])
+    let login = login_id_from_identity(&user).c(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer"])
         .await
         .c(h!())?;
-    let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
+    let can_view_orbit =
+        orbit::can_view_orbit_data(&env.dbx, &login).await.c(h!())?;
 
+    let units = find_search_units(&env.dbx, &req).await.c(h!())?;
+    let mut res = vec![];
+    for unit in units {
+        let mut unit = render_unit(&unit).c(h!())?;
+        if !can_view_orbit {
+            redact_unit_orbit_data(&mut unit);
+        }
+        res.push(unit);
+    }
+    combat_type::populate_names(&env.dbx, &mut res)
+        .await
+        .c(h!())?;
+    Ok(Json(ListUnitsByIdRsp { units: res }))
+}
+
+pub(crate) async fn find_search_units<C>(
+    db: &C,
+    req: &UnitSearchReq,
+) -> anyhow::Result<Vec<sigint_unit::Model>>
+where
+    C: ConnectionTrait,
+{
     let search_phrase = req.search.trim();
-    let mut q = available_units_query(false);
+    let mut q = available_units_query(req.include_inactive.unwrap_or(false));
 
-    if !search_phrase.is_empty() {
-        q = q.filter(Expr::cust_with_values(
-            "search_tsv::tsvector @@ websearch_to_tsquery('russian', $1) OR lower(\"sigint_unit\".\"name\") LIKE lower($2) ESCAPE '\\'",
-            vec![
-                search_phrase.to_string(),
-                format!("%{}%", search_phrase.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")),
-            ],
-        ));
+    if let Some(names) = &req.names {
+        let normalized_name = Expr::cust(
+            "lower(regexp_replace(btrim(name), '[[:space:]]+', ' ', 'g'))",
+        );
+        q = q
+            .filter(Expr::expr(normalized_name.clone()).is_in(
+                names.iter().map(|name| {
+                    crate::inbox::unit_resolution::normalize_unit_label(name)
+                }),
+            ))
+            .order_by_asc(normalized_name);
+    } else {
+        if !search_phrase.is_empty() {
+            q = q.filter(Expr::cust_with_values(
+                "search_tsv::tsvector @@ websearch_to_tsquery('russian', $1) OR lower(\"sigint_unit\".\"name\") LIKE lower($2) ESCAPE '\\'",
+                vec![
+                    search_phrase.to_string(),
+                    format!("%{}%", search_phrase.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")),
+                ],
+            ));
+        }
+        q = q.order_by_asc(sigint_unit::Column::Name);
     }
 
-    q = q.order_by_asc(sigint_unit::Column::Name).limit(50);
+    let limit = if req.include_inactive == Some(true)
+        && (!search_phrase.is_empty() || req.names.is_some())
+    {
+        crate::config::SIGINT_UNIT_SEARCH_INACTIVE_LIMIT
+    } else {
+        crate::config::SIGINT_UNIT_SEARCH_DEFAULT_LIMIT
+    };
+    q = q.order_by_asc(sigint_unit::Column::Id).limit(limit);
 
     // debug!(
     //     ">find units query: {}",
     //     q.build(DbBackend::Postgres).to_string()
     // );
 
-    let units = q.all(&env.dbx).await.context(h!())?;
+    search_units_with_exact_matches(db, req, q, limit)
+        .await
+        .c(h!())
+}
 
-    let mut res = vec![];
-    for unit in units {
-        let mut unit = render_unit(&unit)?;
-        if !can_view_orbit {
-            redact_unit_orbit_data(&mut unit);
-        }
-        res.push(unit);
+async fn search_units_with_exact_matches<C>(
+    db: &C,
+    req: &UnitSearchReq,
+    mut query: sea_orm::Select<sigint_unit::Entity>,
+    limit: u64,
+) -> anyhow::Result<Vec<sigint_unit::Model>>
+where
+    C: ConnectionTrait,
+{
+    let mut units = if req.include_inactive == Some(true)
+        && req.names.is_none()
+        && !req.search.trim().is_empty()
+    {
+        available_units_query(true)
+            .filter(Expr::cust_with_values(
+                "lower(regexp_replace(btrim(name), '[[:space:]]+', ' ', 'g')) = $1",
+                [crate::inbox::unit_resolution::normalize_unit_label(&req.search)],
+            ))
+            .order_by_asc(sigint_unit::Column::Id)
+            .limit(limit)
+            .all(db).await.c(h!())?
+    } else {
+        Vec::new()
+    };
+    let remaining = limit - units.len() as u64;
+    if remaining == 0 {
+        return Ok(units);
     }
-    Ok(Json(ListUnitsByIdRsp { units: res }))
+    if !units.is_empty() {
+        query = query.filter(
+            sigint_unit::Column::Id.is_not_in(units.iter().map(|unit| unit.id)),
+        );
+    }
+    units.extend(query.limit(remaining).all(db).await.c(h!())?);
+    Ok(units)
 }
 
 #[cfg(test)]
@@ -3701,6 +3853,7 @@ mod tests {
 
     fn unit_req() -> CreateUnitReq {
         CreateUnitReq {
+            combat_type_id: None,
             name: None,
             other: String::new(),
             team_or_crew: String::new(),
@@ -3780,8 +3933,12 @@ mod tests {
             show_peleng_distance_to_battleline: Set(false),
             hide_orbit_data: Set(false),
             disable_bot_tags: Set(None),
+            hide_networks: Set(None),
+            api_rate_limit_replenish_interval_ms: Set(None),
+            api_rate_limit_burst_size: Set(None),
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
+            ai_position_highlights_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),
             messenger_media_cache_enabled: Set(None),
@@ -4018,6 +4175,7 @@ mod tests {
         let active_units = read_units(
             &env.dbx,
             &ListUnitsReq {
+                filter_combat_type: None,
                 sort_by: None,
                 after_unit_id: None,
                 before_unit_id: None,
@@ -4071,6 +4229,7 @@ mod tests {
         let all_units = read_units(
             &env.dbx,
             &ListUnitsReq {
+                filter_combat_type: None,
                 sort_by: None,
                 after_unit_id: None,
                 before_unit_id: None,
@@ -4441,6 +4600,39 @@ mod tests {
             vec![suffixed_number.id]
         );
         assert!(!final_page.show_load_more);
+
+        for (after_unit_id, expected) in [
+            (None, vec![regiment.id, first_battalion.id]),
+            (
+                Some(first_battalion.id),
+                vec![second_battalion.id, prefixed_number.id],
+            ),
+            (Some(prefixed_number.id), vec![suffixed_number.id]),
+        ] {
+            let req = ListUnitsReq {
+                after_unit_id,
+                filter_text: Some("123 мсп".to_string()),
+                search_mode: Some(ListUnitsSearchMode::Relaxed),
+                ..Default::default()
+            };
+            let units = apply_unit_list_filters(
+                available_units_query(true).left_join(login::Entity),
+                &req,
+                true,
+            );
+            let units = apply_unit_search_cursor(&env.dbx, units, &req, true)
+                .await
+                .unwrap();
+            let units = apply_unit_search_order(units, &req, true)
+                .limit(2)
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            assert_eq!(
+                units.into_iter().map(|unit| unit.id).collect::<Vec<_>>(),
+                expected
+            );
+        }
 
         let misleading_division = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
@@ -5543,7 +5735,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn skips_unsupported_orbit_units_and_imports_later_units() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
             .await
@@ -6564,6 +6756,8 @@ mod tests {
     #[test]
     fn redact_unit_orbit_data_hides_orbit_fields() {
         let mut unit = Unit {
+            combat_type_id: None,
+            combat_type_name: None,
             id: 1,
             other: String::new(),
             team_or_crew: String::new(),

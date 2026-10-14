@@ -1,4 +1,4 @@
-module Pages.RerAnalysis exposing (Model, Msg, init, page, update)
+module Pages.RerAnalysis exposing (Model, Msg, getInboxReq, init, page, update)
 
 import Api
 import Auth
@@ -7,7 +7,6 @@ import Core.Auth
 import Bindings as B
 import Config
 import Core.Callsigns.MessageHint as MessageHint
-import Core.EventHelpers
 import Core.Types exposing (ApiError)
 import Date
 import Dict exposing (Dict)
@@ -33,7 +32,6 @@ import Pages_.RerAnalysis.Msg exposing (..)
 import Pages_.RerAnalysis.Query as Query exposing (emptyQueryState)
 import Pages_.RerAnalysis.Senders as RerAnalysisSenders
 import Pages_.RerAnalysis.Utils as RerAnalysisUtils
-import Process
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -46,7 +44,6 @@ import Shared.Components.RerMessage
 import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Toast
 import String
-import Task
 import Time exposing (Posix)
 import Utils.Api.ErrorHandling
 import Utils.Api.Temp exposing (leExpectJson)
@@ -278,6 +275,12 @@ init user route _ =
             , locations = NotAsked
             , units = NotAsked
             , counts = NotAsked
+            , statsCountGeneration = 0
+            , statsCountPending = []
+            , statsCountReady = []
+            , statsCountRemaining = 0
+            , statsCountPartial = emptyCountStatsRsp
+            , statsCountError = Nothing
             , networksStats = NotAsked
             , metadataStats = NotAsked
             , networkNames = []
@@ -305,9 +308,9 @@ init user route _ =
             , audioTranscriptionEnabled = False
             , analysisAudioTranscriptionCollapsed = False
             , disableBotTags = False
+            , hideNetworks = False
             , withoutModelTags = False
             , editSidebar = Nothing
-            , eventLastId = Nothing
             , palitras = NotAsked
             }
 
@@ -341,11 +344,9 @@ init user route _ =
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
         , E.map RowsMsg Shared.Components.RerMessage.init
-        , Core.EventHelpers.subscribeToInboxChanges route.path
         , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder initialQueryState)
         , E.sendCmd <| Api.aor_list GotAllAors { sortBy = Nothing }
         , palitrasEff
-        , pollEvents Nothing
         ]
     )
 
@@ -425,41 +426,17 @@ getInboxReq model =
             Just model.unitsExactMatchOnly
     , onlyWithMedia = Just False
     , selectedNetworks =
-        if model.withoutNetwork then
+        if model.hideNetworks || model.withoutNetwork then
             Nothing
 
         else
             model.networksSelected
                 |> List.filterMap String.toInt
                 |> emptyToNothing
-    , withoutNetwork = Just model.withoutNetwork
+    , withoutNetwork = Just (not model.hideNetworks && model.withoutNetwork)
     , onlyWithNetwork = Nothing
     , withoutModelTags = Just model.withoutModelTags
     }
-
-
-pollEventsDelayed : Float -> Maybe String -> Effect Msg
-pollEventsDelayed delayMs lastEventId =
-    E.sendCmd <| Task.perform (\_ -> EventPollTrigger lastEventId) (Process.sleep delayMs)
-
-
-pollEvents : Maybe String -> Effect Msg
-pollEvents lastEventId =
-    let
-        request : B.LongPollReq
-        request =
-            { sessionId = "current"
-            , lastEventId = lastEventId
-            , deploymentMaintenanceProtocol = Nothing
-            , knownDeploymentMaintenanceId = Nothing
-            }
-    in
-    E.sendCmd <|
-        Http.post
-            { url = "/api/event-stream/long-poll"
-            , body = Http.jsonBody (B.longPollReqEncoder request)
-            , expect = leExpectJson EventPollReceived B.longPollRspDecoder
-            }
 
 
 cmdLoadCallsignGraph : Model -> { dtFromPosix : Posix, dtToPosix : Posix } -> Effect Msg
@@ -517,7 +494,7 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
                 else
                     Nothing
             , selectedNetworks =
-                if model.withoutNetwork then
+                if model.hideNetworks || model.withoutNetwork then
                     Nothing
 
                 else
@@ -525,7 +502,7 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
                         |> List.filterMap String.toInt
                         |> emptyToNothing
             , withoutNetwork =
-                if model.withoutNetwork then
+                if not model.hideNetworks && model.withoutNetwork then
                     Just True
 
                 else
@@ -663,6 +640,366 @@ loadSumTableOnly model =
             ( model, E.none )
 
 
+emptyCountStatsRsp : B.CountStatsRsp
+emptyCountStatsRsp =
+    { countOverall = 0
+    , countSelected = 0
+    , groupsCount = 0
+    , sendersCount = 0
+    , freqsCount = 0
+    , postsCount = 0
+    , callsignsCount = 0
+    , unitsCount = 0
+    , unitsExactMatchesCount = 0
+    , unitsNonExactMatchesCount = 0
+    , locationsCount = 0
+    , tagsCount = 0
+    , aorsCount = 0
+    , networksCount = 0
+    }
+
+
+analysisCountMaxConcurrent : Int
+analysisCountMaxConcurrent =
+    4
+
+
+statsCountFieldName : StatsCountField -> String
+statsCountFieldName field =
+    case field of
+        GroupsCountField ->
+            "groups"
+
+        SendersCountField ->
+            "senders"
+
+        FreqsCountField ->
+            "freqs"
+
+        PostsCountField ->
+            "posts"
+
+        CallsignsCountField ->
+            "callsigns"
+
+        UnitsCountField ->
+            "units"
+
+        LocationsCountField ->
+            "locations"
+
+        TagsCountField ->
+            "tags"
+
+        AorsCountField ->
+            "aors"
+
+        NetworksCountField ->
+            "networks"
+
+
+analysisCountRequestName : StatsCountRequest -> String
+analysisCountRequestName request =
+    case request of
+        MessageStatsCountRequest ->
+            "messages"
+
+        UnitMatchStatsCountRequest ->
+            "unit-matches"
+
+        StatsCountFieldRequest field ->
+            statsCountFieldName field
+
+
+analysisCountTracker : Int -> StatsCountRequest -> String
+analysisCountTracker generation request =
+    "rer-analysis-counts-"
+        ++ String.fromInt generation
+        ++ "-"
+        ++ analysisCountRequestName request
+
+
+maybeListHasItems : Maybe (List a) -> Bool
+maybeListHasItems =
+    Maybe.map (not << List.isEmpty) >> Maybe.withDefault False
+
+
+hasSelectedAnalysisUnits : B.AnalysisStatsReq -> Bool
+hasSelectedAnalysisUnits req =
+    maybeListHasItems req.selectedUnits || maybeListHasItems req.selectedUnitIds
+
+
+isCurrentStatsCountRequest : B.AnalysisStatsReq -> Model -> Bool
+isCurrentStatsCountRequest req model =
+    case ( model.from.datePosix, model.to.datePosix ) of
+        ( Just dtFromPosix, Just dtToPosix ) ->
+            req == Query.analysisStatsParams dtFromPosix dtToPosix model
+
+        _ ->
+            False
+
+
+analysisStatsCountRequests : List StatsCountRequest
+analysisStatsCountRequests =
+    List.map StatsCountFieldRequest
+        [ GroupsCountField
+        , SendersCountField
+        , FreqsCountField
+        , PostsCountField
+        , CallsignsCountField
+        , UnitsCountField
+        , LocationsCountField
+        , TagsCountField
+        , AorsCountField
+        , NetworksCountField
+        ]
+
+
+allAnalysisCountRequests : List StatsCountRequest
+allAnalysisCountRequests =
+    [ MessageStatsCountRequest, UnitMatchStatsCountRequest ] ++ analysisStatsCountRequests
+
+
+analysisCountRequests : Bool -> B.AnalysisStatsReq -> List StatsCountRequest
+analysisCountRequests hideNetworks req =
+    [ MessageStatsCountRequest ]
+        ++ (if hasSelectedAnalysisUnits req then
+                [ UnitMatchStatsCountRequest ]
+
+            else
+                []
+           )
+        ++ List.filter
+            (\request ->
+                not hideNetworks || request /= StatsCountFieldRequest NetworksCountField
+            )
+            analysisStatsCountRequests
+
+
+analysisCountRequestEffect : Int -> B.AnalysisStatsReq -> StatsCountRequest -> Effect Msg
+analysisCountRequestEffect generation req request =
+    let
+        tracker =
+            analysisCountTracker generation request
+
+        statsCountEffect field endpoint =
+            endpoint tracker (GotStatsCount generation req field) req
+    in
+    case request of
+        MessageStatsCountRequest ->
+            E.getAnalysisMessageStatsCount tracker (GotMessageStatsCount generation req) req
+
+        UnitMatchStatsCountRequest ->
+            E.getAnalysisUnitMatchStatsCount tracker (GotUnitMatchStatsCount generation req) req
+
+        StatsCountFieldRequest field ->
+            case field of
+                GroupsCountField ->
+                    statsCountEffect field E.getAnalysisGroupsCount
+
+                SendersCountField ->
+                    statsCountEffect field E.getAnalysisSendersCount
+
+                FreqsCountField ->
+                    statsCountEffect field E.getAnalysisFreqsCount
+
+                PostsCountField ->
+                    statsCountEffect field E.getAnalysisPostsCount
+
+                CallsignsCountField ->
+                    statsCountEffect field E.getAnalysisCallsignsCount
+
+                UnitsCountField ->
+                    statsCountEffect field E.getAnalysisUnitsCount
+
+                LocationsCountField ->
+                    statsCountEffect field E.getAnalysisLocationsCount
+
+                TagsCountField ->
+                    statsCountEffect field E.getAnalysisTagsCount
+
+                AorsCountField ->
+                    statsCountEffect field E.getAnalysisAorsCount
+
+                NetworksCountField ->
+                    statsCountEffect field E.getAnalysisNetworksCount
+
+
+cancelPreviousAnalysisCountStats : Model -> Effect Msg
+cancelPreviousAnalysisCountStats model =
+    if model.statsCountGeneration == 0 then
+        E.none
+
+    else
+        E.batch <|
+            List.map
+                (analysisCountTracker model.statsCountGeneration
+                    >> Http.cancel
+                    >> E.sendCmd
+                )
+                allAnalysisCountRequests
+
+
+startAnalysisCountStats : B.AnalysisStatsReq -> Model -> ( Model, Effect Msg )
+startAnalysisCountStats req model =
+    let
+        generation =
+            model.statsCountGeneration + 1
+
+        requests =
+            analysisCountRequests model.hideNetworks req
+
+        activeRequests =
+            List.take analysisCountMaxConcurrent requests
+    in
+    ( { model
+        | counts = Loading
+        , statsCountGeneration = generation
+        , statsCountPending = List.drop analysisCountMaxConcurrent requests
+        , statsCountReady =
+            if hasSelectedAnalysisUnits req then
+                []
+
+            else
+                [ UnitMatchStatsCountRequest ]
+        , statsCountRemaining = List.length requests
+        , statsCountPartial = emptyCountStatsRsp
+        , statsCountError = Nothing
+      }
+    , E.batch
+        (cancelPreviousAnalysisCountStats model
+            :: List.map (analysisCountRequestEffect generation req) activeRequests
+        )
+    )
+
+
+cancelAnalysisCountStats : Model -> ( Model, Effect Msg )
+cancelAnalysisCountStats model =
+    ( { model
+        | counts = NotAsked
+        , statsCountGeneration = model.statsCountGeneration + 1
+        , statsCountPending = []
+        , statsCountReady = []
+        , statsCountRemaining = 0
+        , statsCountPartial = emptyCountStatsRsp
+        , statsCountError = Nothing
+      }
+    , cancelPreviousAnalysisCountStats model
+    )
+
+
+finishAnalysisCountRequest : Int -> B.AnalysisStatsReq -> StatsCountRequest -> Result ApiError (B.CountStatsRsp -> B.CountStatsRsp) -> Model -> ( Model, Effect Msg )
+finishAnalysisCountRequest generation req request result model =
+    if generation /= model.statsCountGeneration || not (isCurrentStatsCountRequest req model) then
+        ( model, E.none )
+
+    else
+        let
+            firstError =
+                case ( result, model.statsCountError ) of
+                    ( Err error, Nothing ) ->
+                        Just error
+
+                    _ ->
+                        model.statsCountError
+
+            partialCounts =
+                case result of
+                    Ok updateCounts ->
+                        updateCounts model.statsCountPartial
+
+                    Err _ ->
+                        model.statsCountPartial
+
+            remaining =
+                Basics.max 0 (model.statsCountRemaining - 1)
+
+            counts =
+                if remaining == 0 then
+                    case firstError of
+                        Just error ->
+                            Failure error
+
+                        Nothing ->
+                            Success partialCounts
+
+                else
+                    model.counts
+
+            finalModel =
+                { model
+                    | counts = counts
+                    , statsCountRemaining = remaining
+                    , statsCountPartial = partialCounts
+                    , statsCountReady =
+                        case result of
+                            Ok _ ->
+                                request :: model.statsCountReady
+
+                            Err _ ->
+                                model.statsCountReady
+                    , statsCountError = firstError
+                }
+
+            ( nextModel, nextEffect ) =
+                case finalModel.statsCountPending of
+                    nextRequest :: pending ->
+                        ( { finalModel | statsCountPending = pending }
+                        , analysisCountRequestEffect generation req nextRequest
+                        )
+
+                    [] ->
+                        ( finalModel, E.none )
+
+            errorEffect =
+                case result of
+                    Err error ->
+                        if error.httpError == Http.BadStatus 401 || model.statsCountError == Nothing then
+                            Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики" error
+
+                        else
+                            E.none
+
+                    Ok _ ->
+                        E.none
+        in
+        ( nextModel, E.batch [ nextEffect, errorEffect ] )
+
+
+updateStatsCountField : StatsCountField -> Int -> B.CountStatsRsp -> B.CountStatsRsp
+updateStatsCountField field count counts =
+    case field of
+        GroupsCountField ->
+            { counts | groupsCount = count }
+
+        SendersCountField ->
+            { counts | sendersCount = count }
+
+        FreqsCountField ->
+            { counts | freqsCount = count }
+
+        PostsCountField ->
+            { counts | postsCount = count }
+
+        CallsignsCountField ->
+            { counts | callsignsCount = count }
+
+        UnitsCountField ->
+            { counts | unitsCount = count }
+
+        LocationsCountField ->
+            { counts | locationsCount = count }
+
+        TagsCountField ->
+            { counts | tagsCount = count }
+
+        AorsCountField ->
+            { counts | aorsCount = count }
+
+        NetworksCountField ->
+            { counts | networksCount = count }
+
+
 loadCoreStats : Model -> ( Model, Effect Msg )
 loadCoreStats model =
     case ( model.from.datePosix, model.to.datePosix ) of
@@ -693,21 +1030,6 @@ loadCoreStats model =
 
                     else
                         NotAsked
-
-                counts =
-                    if loadingCounts then
-                        case model.counts of
-                            Success data ->
-                                NeedsReload data
-
-                            NeedsReload data ->
-                                NeedsReload data
-
-                            _ ->
-                                Loading
-
-                    else
-                        model.counts
 
                 ( m2, eff2 ) =
                     case model.mapPoints of
@@ -792,32 +1114,37 @@ loadCoreStats model =
 
                 ( m4, palitrasEff ) =
                     loadPalitrasIfNeeded m3
+
+                baseModel =
+                    { m4
+                        | loadingInboxMessages = True
+                        , loadingCallsignGraph =
+                            if model.unfoldCallsignGraph then
+                                True
+
+                            else
+                                model.loadingCallsignGraph
+                        , sumTable = sumTable
+                        , nolimitShown = False
+                        , correlatedFreqs = NotAsked
+                        , metadataStats =
+                            if model.unfoldMetadataFilter then
+                                Loading
+
+                            else
+                                m4.metadataStats
+                    }
+
+                ( m5, countEffect ) =
+                    if loadingCounts then
+                        startAnalysisCountStats analysisPs baseModel
+
+                    else
+                        cancelAnalysisCountStats baseModel
             in
-            ( { m4
-                | loadingInboxMessages = True
-                , loadingCallsignGraph =
-                    if model.unfoldCallsignGraph then
-                        True
-
-                    else
-                        model.loadingCallsignGraph
-                , sumTable = sumTable
-                , nolimitShown = False
-                , correlatedFreqs = NotAsked
-                , counts = counts
-                , metadataStats =
-                    if model.unfoldMetadataFilter then
-                        Loading
-
-                    else
-                        m4.metadataStats
-              }
+            ( m5
             , E.batch
-                [ if loadingCounts then
-                    E.getStatsCount GotStatsCount analysisPs
-
-                  else
-                    E.none
+                [ countEffect
                 , E.getTags2 GotStatsTags analysisPs
                 , E.getInboxMessages Nothing
                     GotInbox
@@ -832,7 +1159,7 @@ loadCoreStats model =
             )
 
         _ ->
-            ( model, E.none )
+            cancelAnalysisCountStats model
 
 
 loadCoreStatsAndPushUrl : Model -> ( Model, Effect Msg )
@@ -888,7 +1215,7 @@ loadInitialFilterStats model =
                     List.length model.groupsSelected > 0
 
                 NetworksFilter ->
-                    model.radioFeaturesAllowed && List.length model.networksSelected > 0
+                    model.radioFeaturesAllowed && not model.hideNetworks && List.length model.networksSelected > 0
 
         all =
             [ AorsFilter, LocationsFilter, PostsFilter, UnitsFilter, FreqsFilter, CallsignsFilter, SendersFilter, GroupsFilter, NetworksFilter ]
@@ -1155,7 +1482,7 @@ loadNetworksForMessages shared model messages =
         missingIds =
             missingNetworkIdsForMessages shared model messages
     in
-    if List.isEmpty missingIds then
+    if not model.systemSettingsLoaded || model.hideNetworks || List.isEmpty missingIds then
         E.none
 
     else
@@ -1167,33 +1494,6 @@ update user shared route msg model =
     case msg of
         NoOp ->
             ( model, E.none )
-
-        EventPollTrigger lastId ->
-            ( model, pollEvents lastId )
-
-        EventPollReceived (Err _) ->
-            ( model, pollEventsDelayed 1000 model.eventLastId )
-
-        EventPollReceived (Ok rsp) ->
-            let
-                inboxEvents =
-                    rsp.events
-                        |> List.filter
-                            (\event ->
-                                case event.eventType of
-                                    B.EtInboxChanged _ ->
-                                        True
-
-                                    _ ->
-                                        False
-                            )
-
-                effects =
-                    [ pollEvents rsp.lastEventId
-                    , E.sendMsg <| InboxEvents inboxEvents
-                    ]
-            in
-            ( { model | eventLastId = rsp.lastEventId }, E.batch effects )
 
         ToastMsg imsg ->
             let
@@ -1207,7 +1507,11 @@ update user shared route msg model =
         InitGotTime now_ ->
             let
                 m2 =
-                    { model | now = Just now_ }
+                    { model
+                        | now = Just now_
+                        , statsCountGeneration =
+                            Basics.max model.statsCountGeneration (Time.posixToMillis now_)
+                    }
                         |> resolveAnalysisDateRange shared
             in
             loadInitialStatsIfReady m2
@@ -1258,6 +1562,7 @@ update user shared route msg model =
                             | systemSettingsLoaded = True
                             , audioTranscriptionEnabled = rsp.enableAudioTranscription
                             , disableBotTags = rsp.disableBotTags
+                            , hideNetworks = rsp.hideNetworks
                             , analysisAorFilterEnabled = rsp.analysisAorFilterEnabled
                         }
 
@@ -1267,6 +1572,7 @@ update user shared route msg model =
                             , systemSettingsLoaded = True
                             , audioTranscriptionEnabled = rsp.enableAudioTranscription
                             , disableBotTags = rsp.disableBotTags
+                            , hideNetworks = rsp.hideNetworks
                             , analysisAorFilterEnabled = rsp.analysisAorFilterEnabled
                         }
 
@@ -1480,17 +1786,42 @@ update user shared route msg model =
             in
             ( { model | networksExtra = Dict.union newNetworks model.networksExtra }, E.none )
 
-        GotStatsCount (Err e) ->
-            ( { model | counts = Failure e }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики" e
-            )
+        GotStatsCount generation req field result ->
+            finishAnalysisCountRequest generation
+                req
+                (StatsCountFieldRequest field)
+                (Result.map (updateStatsCountField field) result)
+                model
 
-        GotStatsCount (Ok counts) ->
-            ( { model
-                | counts = Success counts
-              }
-            , E.none
-            )
+        GotMessageStatsCount generation req result ->
+            finishAnalysisCountRequest generation
+                req
+                MessageStatsCountRequest
+                (Result.map
+                    (\count counts ->
+                        { counts
+                            | countOverall = count.countOverall
+                            , countSelected = count.countSelected
+                        }
+                    )
+                    result
+                )
+                model
+
+        GotUnitMatchStatsCount generation req result ->
+            finishAnalysisCountRequest generation
+                req
+                UnitMatchStatsCountRequest
+                (Result.map
+                    (\count counts ->
+                        { counts
+                            | unitsExactMatchesCount = count.exactMatchesCount
+                            , unitsNonExactMatchesCount = count.nonExactMatchesCount
+                        }
+                    )
+                    result
+                )
+                model
 
         GotStatsFreqs (Err e) ->
             ( model
@@ -1704,40 +2035,48 @@ update user shared route msg model =
             )
 
         GotStatsNetworks (Err e) ->
-            ( model
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e
-            )
+            if model.hideNetworks then
+                ( model, E.none )
+
+            else
+                ( model
+                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e
+                )
 
         GotStatsNetworks (Ok rsp) ->
-            let
-                findNetworkName networkId =
-                    rsp.networkNames
-                        |> List.filter (\name -> name.id == networkId)
-                        |> List.head
-                        |> Maybe.map .name
-                        |> Maybe.withDefault ("Network " ++ String.fromInt networkId)
-            in
-            ( { model
-                | networksStats = Success rsp.networks
-                , networkNames = rsp.networkNames
-                , selNetworkMenu =
-                    rsp.networks
-                        |> List.sortBy (\network -> findNetworkName network.networkId)
-                        |> List.map
-                            (\network ->
-                                let
-                                    networkName =
-                                        findNetworkName network.networkId
-                                in
-                                Select.customMenuItem
-                                    { item = String.fromInt network.networkId
-                                    , label = networkName
-                                    , view = Html.Styled.fromUnstyled (menuItemWithCount networkName network.count)
-                                    }
-                            )
-              }
-            , E.none
-            )
+            if model.hideNetworks then
+                ( model, E.none )
+
+            else
+                let
+                    findNetworkName networkId =
+                        rsp.networkNames
+                            |> List.filter (\name -> name.id == networkId)
+                            |> List.head
+                            |> Maybe.map .name
+                            |> Maybe.withDefault ("Network " ++ String.fromInt networkId)
+                in
+                ( { model
+                    | networksStats = Success rsp.networks
+                    , networkNames = rsp.networkNames
+                    , selNetworkMenu =
+                        rsp.networks
+                            |> List.sortBy (\network -> findNetworkName network.networkId)
+                            |> List.map
+                                (\network ->
+                                    let
+                                        networkName =
+                                            findNetworkName network.networkId
+                                    in
+                                    Select.customMenuItem
+                                        { item = String.fromInt network.networkId
+                                        , label = networkName
+                                        , view = Html.Styled.fromUnstyled (menuItemWithCount networkName network.count)
+                                        }
+                                )
+                    }
+                , E.none
+                )
 
         GotStatsMetadata (Err e) ->
             ( { model | metadataStats = Failure e }
@@ -1932,6 +2271,7 @@ update user shared route msg model =
                     , audioTranscriptionEnabled = model.audioTranscriptionEnabled
                     , audioTranscriptionCollapsed = model.analysisAudioTranscriptionCollapsed
                     , disableBotTags = model.disableBotTags
+                    , hideNetworks = model.hideNetworks
                     }
 
                 res =
@@ -3637,65 +3977,69 @@ update user shared route msg model =
                     ( model, E.none )
 
         SelNetworkMsg imsg ->
-            case ( model.from.datePosix, model.to.datePosix ) of
-                ( Just dtFromPosix, Just dtToPosix ) ->
-                    let
-                        ( mAction, imodel2, icmd ) =
-                            Select.update imsg model.selNetworkState
+            if model.hideNetworks then
+                ( model, E.none )
 
-                        ( updatedSelectedItems, state ) =
-                            Utils.Select.multiUpdMenuOpen mAction model.networksSelected imodel2
+            else
+                case ( model.from.datePosix, model.to.datePosix ) of
+                    ( Just dtFromPosix, Just dtToPosix ) ->
+                        let
+                            ( mAction, imodel2, icmd ) =
+                                Select.update imsg model.selNetworkState
 
-                        m2 =
-                            { model
-                                | selNetworkState = state
-                                , networksSelected = updatedSelectedItems
-                                , withoutNetwork =
-                                    if List.isEmpty updatedSelectedItems then
-                                        model.withoutNetwork
+                            ( updatedSelectedItems, state ) =
+                                Utils.Select.multiUpdMenuOpen mAction model.networksSelected imodel2
 
-                                    else
-                                        False
-                            }
+                            m2 =
+                                { model
+                                    | selNetworkState = state
+                                    , networksSelected = updatedSelectedItems
+                                    , withoutNetwork =
+                                        if List.isEmpty updatedSelectedItems then
+                                            model.withoutNetwork
 
-                        result =
-                            FiltersReloading.handleFilterState "networks" m2.focusedFilterItemsBeforeChange mAction m2.networksSelected m2.networksStats
+                                        else
+                                            False
+                                }
 
-                        ( m3, eff3 ) =
-                            case result of
-                                BeforeInteraction Outdated ->
-                                    ( setFocusedFilterSnapshot "networks" model.networksSelected { m2 | networksStats = Loading }
-                                    , E.getNetworks GotStatsNetworks (Query.analysisStatsParams dtFromPosix dtToPosix m2)
-                                    )
+                            result =
+                                FiltersReloading.handleFilterState "networks" m2.focusedFilterItemsBeforeChange mAction m2.networksSelected m2.networksStats
 
-                                BeforeInteraction UpToDate ->
-                                    ( setFocusedFilterSnapshot "networks" model.networksSelected m2, E.none )
+                            ( m3, eff3 ) =
+                                case result of
+                                    BeforeInteraction Outdated ->
+                                        ( setFocusedFilterSnapshot "networks" model.networksSelected { m2 | networksStats = Loading }
+                                        , E.getNetworks GotStatsNetworks (Query.analysisStatsParams dtFromPosix dtToPosix m2)
+                                        )
 
-                                AfterInteraction Outdated ->
-                                    let
-                                        ( m_, eff_ ) =
-                                            loadCoreStatsAndPushUrl m2
+                                    BeforeInteraction UpToDate ->
+                                        ( setFocusedFilterSnapshot "networks" model.networksSelected m2, E.none )
 
-                                        m1_ =
-                                            invalidateFiltersState NetworksFilter m_
-                                    in
-                                    ( clearFocusedFilterSnapshot m1_, eff_ )
+                                    AfterInteraction Outdated ->
+                                        let
+                                            ( m_, eff_ ) =
+                                                loadCoreStatsAndPushUrl m2
 
-                                AfterInteraction UpToDate ->
-                                    ( clearFocusedFilterSnapshot m2, E.none )
+                                            m1_ =
+                                                invalidateFiltersState NetworksFilter m_
+                                        in
+                                        ( clearFocusedFilterSnapshot m1_, eff_ )
 
-                                _ ->
-                                    ( m2, E.none )
-                    in
-                    ( m3
-                    , E.batch <|
-                        [ E.sendCmd <| Cmd.map SelNetworkMsg icmd
-                        , eff3
-                        ]
-                    )
+                                    AfterInteraction UpToDate ->
+                                        ( clearFocusedFilterSnapshot m2, E.none )
 
-                _ ->
-                    ( model, E.none )
+                                    _ ->
+                                        ( m2, E.none )
+                        in
+                        ( m3
+                        , E.batch <|
+                            [ E.sendCmd <| Cmd.map SelNetworkMsg icmd
+                            , eff3
+                            ]
+                        )
+
+                    _ ->
+                        ( model, E.none )
 
         FilterUnitsInp s ->
             ( { model | filterUnits = s }, E.none )
@@ -4493,7 +4837,7 @@ getSinceDateForGroupsActivity period dtFromPosix dtToPosix =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Sub.none
+    Ports.rer_analysis_inboxChanged InboxEvents
 
 
 rerReportFilename : Time.Zone -> Posix -> String

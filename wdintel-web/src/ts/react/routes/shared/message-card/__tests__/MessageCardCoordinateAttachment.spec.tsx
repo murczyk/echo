@@ -164,6 +164,48 @@ describe('MessageCardCoordinateAttachment', () => {
     vi.unstubAllGlobals();
   });
 
+  it('#3714 reloads coordinates when the published revision changes without a summary change', async () => {
+    vi.mocked(resolveMessageCoordinatePreview)
+      .mockResolvedValueOnce({
+        points: [{ source: 'document', lat: 48.469429, lng: 37.31564, label: 'FIRST' }],
+        etalons: [],
+        lookupError: null,
+      })
+      .mockResolvedValueOnce({
+        points: [{ source: 'document', lat: 48.479429, lng: 37.32564, label: 'SECOND' }],
+        etalons: [],
+        lookupError: null,
+      })
+      .mockResolvedValueOnce(null);
+    const message = (revision: string, hasCoordinates = true) =>
+      ({
+        media: [{ id: 'scan', coordinateStatus: { revision, hasCoordinates }, summary: null }],
+      }) as InboxMessage;
+    await act(async () => {
+      root.render(<MessageCardCoordinateAttachment msg={message('first')} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(container.querySelector('button[aria-label="Open FIRST on map"]')).not.toBeNull();
+    await act(async () => {
+      root.render(<MessageCardCoordinateAttachment msg={message('second')} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(container.querySelector('button[aria-label="Open FIRST on map"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Open SECOND on map"]')).not.toBeNull();
+    await act(async () => {
+      root.render(<MessageCardCoordinateAttachment msg={message('empty', false)} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(container.querySelector('button[aria-label^="Open "]')).toBeNull();
+    expect(resolveMessageCoordinatePreview).toHaveBeenCalledTimes(3);
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3324
   it('shows a direct preview and opens the coordinate dialog', async () => {
     const msg = { pointTokens: [] } as InboxMessage;

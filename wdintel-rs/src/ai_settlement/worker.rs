@@ -1,10 +1,10 @@
-use super::{effective_prompt, parse_settlements};
+use super::{effective_prompt, groups::GroupFilter, parse_settlements};
 use crate::ai_engine::{request_ai_response, AiEngineMessage};
 use crate::config::{
     AI_CHAT_ROLE_SYSTEM, AI_CHAT_ROLE_USER, AI_SETTLEMENT_SETTINGS_ID,
     AI_SETTLEMENT_WORKER_IDLE_SLEEP_MS, AI_SETTLEMENT_WORKER_MAX_ATTEMPTS,
     AI_SETTLEMENT_WORKER_MAX_ERROR_CHARS, AI_SETTLEMENT_WORKER_RETRY_BASE_SECS,
-    AI_SETTLEMENT_WORKER_RETRY_MAX_SECS,
+    AI_SETTLEMENT_WORKER_RETRY_MAX_SECS, AI_SETTLEMENT_WORKER_SETTINGS_CHANNEL,
 };
 use crate::entities::{
     ai_engine, ai_settlement_settings, ai_settlement_worker_job,
@@ -18,7 +18,7 @@ use crate::types::{error, info, Env, ShortContext};
 use crate::utils::worker_watch;
 use anyhow::Context;
 use chrono::{Duration as ChronoDuration, Utc};
-use sea_orm::sea_query::OnConflict;
+use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::{NotSet, Set},
@@ -36,6 +36,7 @@ pub(crate) struct WorkerConfig {
     pub prompt: String,
     pub ai_engine: ai_engine::Model,
     settings_updated_at: chrono::NaiveDateTime,
+    group_filter: GroupFilter,
 }
 
 pub async fn enqueue_if_enabled<C>(
@@ -45,7 +46,7 @@ pub async fn enqueue_if_enabled<C>(
 where
     C: ConnectionTrait,
 {
-    let enabled =
+    let settings =
         ai_settlement_settings::Entity::find_by_id(AI_SETTLEMENT_SETTINGS_ID)
             .filter(ai_settlement_settings::Column::WorkerEnabled.eq(true))
             .filter(
@@ -53,9 +54,15 @@ where
             )
             .one(dbx)
             .await
-            .c(h!())?
-            .is_some();
-    if !enabled {
+            .c(h!())?;
+    let Some(settings) = settings else {
+        return Ok(());
+    };
+    if !GroupFilter::from_settings(&settings)
+        .allows(dbx, sigint_inbox_item_id)
+        .await
+        .c(h!())?
+    {
         return Ok(());
     }
     ai_settlement_worker_job::Entity::insert(
@@ -83,29 +90,61 @@ where
 }
 
 pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
-    let mut redis = env.redis.clone();
     info!("ai_settlement_worker started");
-    loop {
-        if cancellation_token.is_cancelled() {
-            info!("ai_settlement_worker received cancellation token");
-            break;
+    while !cancellation_token.is_cancelled() {
+        tokio::select! {
+            _ = cancellation_token.cancelled() => break,
+            result = run_with_settings_listener(&env, &cancellation_token) => {
+                if let Err(error) = result {
+                    error!("ai_settlement_worker listener failed: {error:#}");
+                }
+            }
         }
+        tokio::select! {
+            _ = cancellation_token.cancelled() => break,
+            _ = tokio::time::sleep(Duration::from_millis(AI_SETTLEMENT_WORKER_IDLE_SLEEP_MS)) => {}
+        }
+    }
+}
+
+async fn run_with_settings_listener(
+    env: &Env,
+    cancellation_token: &CancellationToken,
+) -> anyhow::Result<()> {
+    let mut listener = sqlx::postgres::PgListener::connect_with(
+        env.dbx.get_postgres_connection_pool(),
+    )
+    .await
+    .c(h!())?;
+    listener
+        .listen(AI_SETTLEMENT_WORKER_SETTINGS_CHANNEL)
+        .await
+        .c(h!())?;
+    let mut redis = env.redis.clone();
+    loop {
         let _loop_guard = worker_watch::loop_guard("ai_settlement_worker");
-        let processed =
-            match process_next(&env.ai_engine_client, &env.dbx, &mut redis)
-                .await
-            {
+        let processed = tokio::select! {
+            biased;
+            _ = cancellation_token.cancelled() => return Ok(()),
+            notification = listener.try_recv() => {
+                notification.c(h!())?;
+                info!("ai_settlement_worker restarted after settings change or listener reconnection");
+                continue;
+            }
+            result = process_next(&env.ai_engine_client, &env.dbx, &mut redis) => match result {
                 Ok(processed) => processed,
                 Err(error) => {
                     error!("ai_settlement_worker failed: {error:#?}");
                     false
                 }
-            };
+            }
+        };
         if processed {
             continue;
         }
         tokio::select! {
-            _ = cancellation_token.cancelled() => break,
+            _ = cancellation_token.cancelled() => return Ok(()),
+            notification = listener.try_recv() => { notification.c(h!())?; }
             _ = tokio::time::sleep(Duration::from_millis(
                 AI_SETTLEMENT_WORKER_IDLE_SLEEP_MS,
             )) => {}
@@ -121,7 +160,10 @@ async fn process_next(
     let Some(config) = load_worker_config(dbx).await.context(h!())? else {
         return Ok(false);
     };
-    let Some(job) = load_next_job(dbx).await.context(h!())? else {
+    let Some(job) = load_next_job(dbx, &config.group_filter)
+        .await
+        .context(h!())?
+    else {
         return Ok(false);
     };
     let message = signal_message::Entity::find_by_id(job.sigint_inbox_item_id)
@@ -254,17 +296,25 @@ pub(crate) async fn load_worker_config(
         prompt: effective_prompt(&settings.prompt).to_string(),
         ai_engine,
         settings_updated_at: settings.updated_at,
+        group_filter: GroupFilter::from_settings(&settings),
     }))
 }
 
 async fn load_next_job(
     dbx: &DatabaseConnection,
+    group_filter: &GroupFilter,
 ) -> Result<Option<ai_settlement_worker_job::Model>, AppError> {
-    Ok(ai_settlement_worker_job::Entity::find()
-        .filter(
-            ai_settlement_worker_job::Column::NextAttemptAt
-                .lte(Utc::now().naive_utc()),
-        )
+    let mut jobs = ai_settlement_worker_job::Entity::find().filter(
+        ai_settlement_worker_job::Column::NextAttemptAt
+            .lte(Utc::now().naive_utc()),
+    );
+    if let Some(condition) = group_filter.condition(Expr::col((
+        ai_settlement_worker_job::Entity,
+        ai_settlement_worker_job::Column::SigintInboxItemId,
+    ))) {
+        jobs = jobs.filter(condition);
+    }
+    Ok(jobs
         .order_by_asc(ai_settlement_worker_job::Column::NextAttemptAt)
         .order_by_asc(ai_settlement_worker_job::Column::CreatedAt)
         .order_by_asc(ai_settlement_worker_job::Column::SigintInboxItemId)
@@ -309,6 +359,15 @@ async fn complete_job(
         transaction.commit().await.c(h!())?;
         return Ok(false);
     }
+    if !expected_config
+        .group_filter
+        .allows(&transaction, sigint_inbox_item_id)
+        .await
+        .c(h!())?
+    {
+        transaction.commit().await.c(h!())?;
+        return Ok(false);
+    }
     let Some(inbox_item) = lock_inbox_item(&transaction, sigint_inbox_item_id)
         .await
         .context(h!())?
@@ -327,21 +386,26 @@ async fn complete_job(
     let settlements =
         merge_current_and_ai_settlements(current.clone(), ai_settlements);
     let changed = settlements != current;
+    let inbox_item_uuid = inbox_item.id_uuid;
+    let location_v2 = if changed {
+        Some(crate::location::utils::format_locations_list(settlements))
+    } else {
+        inbox_item.location_v2.clone()
+    };
     if changed {
-        let inbox_item_uuid = inbox_item.id_uuid;
-        let location_v2 =
-            crate::location::utils::format_locations_list(settlements);
         let mut inbox_item = inbox_item.into_active_model();
-        inbox_item.location_v2 = Set(Some(location_v2.clone()));
+        inbox_item.location_v2 = Set(location_v2.clone());
         inbox_item.update(&transaction).await.c(h!())?;
-        crate::battle_line::settlement_queue::reconcile_item_locations(
-            &transaction,
-            sigint_inbox_item_id,
-            inbox_item_uuid,
-            Some(&location_v2),
-        )
-        .await
-        .c(h!())?;
+    }
+    crate::battle_line::settlement_queue::reconcile_item_locations(
+        &transaction,
+        sigint_inbox_item_id,
+        inbox_item_uuid,
+        location_v2.as_deref(),
+    )
+    .await
+    .c(h!())?;
+    if changed {
         crate::stats::enqueue_group_stats_recalculation_for_message(
             &transaction,
             sigint_inbox_item_id,
@@ -460,6 +524,15 @@ async fn fail_job(
         transaction.commit().await.c(h!())?;
         return Ok(());
     }
+    if !expected_config
+        .group_filter
+        .allows(&transaction, sigint_inbox_item_id)
+        .await
+        .c(h!())?
+    {
+        transaction.commit().await.c(h!())?;
+        return Ok(());
+    }
     let attempts = job.attempts + 1;
     let error_text = truncate_error(error_text);
     if attempts >= AI_SETTLEMENT_WORKER_MAX_ATTEMPTS {
@@ -541,9 +614,13 @@ fn truncate_error(error: String) -> String {
 }
 
 #[cfg(test)]
+#[path = "worker_group_tests.rs"]
+mod group_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{
-        complete_job, fail_job, load_worker_config,
+        complete_job, enqueue_if_enabled, fail_job, load_worker_config,
         merge_current_and_ai_settlements, normalize_settlements,
         retry_delay_secs, WorkerConfig,
     };
@@ -590,7 +667,9 @@ mod tests {
         assert_eq!(retry_delay_secs(20), 300);
     }
 
-    async fn enable_worker(dbx: &sea_orm::DatabaseConnection) -> WorkerConfig {
+    pub(super) async fn enable_worker(
+        dbx: &sea_orm::DatabaseConnection,
+    ) -> WorkerConfig {
         let now = chrono::Utc::now().naive_utc();
         let ai_engine_id = uuid::Uuid::now_v7();
         ai_engine::ActiveModel {
@@ -618,6 +697,8 @@ mod tests {
             prompt: Set("test prompt".to_string()),
             worker_enabled: Set(true),
             worker_ai_engine_id: Set(Some(ai_engine_id)),
+            worker_groups_except: Set(None),
+            worker_group_master_keys: Set(None),
             updated_at: Set(now),
         }
         .insert(dbx)
@@ -683,7 +764,12 @@ mod tests {
             message.id,
             "message body",
             &config,
-            vec!["existing mixed".to_string(), "THIRD".to_string()],
+            vec![
+                "existing mixed".to_string(),
+                "THIRD".to_string(),
+                "ВЕРХНЄ ГОРІХОВЕ".to_string(),
+                "ЗАЛИВНИЙ".to_string(),
+            ],
         )
         .await
         .unwrap());
@@ -695,7 +781,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             inbox_item.location_v2.as_deref(),
-            Some("|Existing Mixed|SECOND|THIRD|")
+            Some("|Existing Mixed|SECOND|THIRD|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|")
         );
         let links = sigint_inbox_item_settlement::Entity::find()
             .filter(sigint_inbox_item_settlement::Column::ItemId.eq(message.id))
@@ -705,11 +791,27 @@ mod tests {
             .unwrap();
         assert_eq!(
             links
-                .into_iter()
-                .map(|link| link.settlement_text)
+                .iter()
+                .map(|link| link.settlement_text.as_str())
                 .collect::<Vec<_>>(),
-            vec!["Existing Mixed", "SECOND", "THIRD"]
+            vec![
+                "Existing Mixed",
+                "SECOND",
+                "THIRD",
+                "ВЕРХНЄ ГОРІХОВЕ",
+                "ЗАЛИВНИЙ"
+            ]
         );
+        assert!(links
+            .iter()
+            .filter(|link| {
+                matches!(
+                    link.settlement_text.as_str(),
+                    "ВЕРХНЄ ГОРІХОВЕ" | "ЗАЛИВНИЙ"
+                )
+            })
+            .all(|link| link.settlement_id.is_none()
+                && link.is_undefined.is_none()));
         assert!(ai_settlement_worker_job::Entity::find_by_id(message.id)
             .one(&env.dbx)
             .await
@@ -724,6 +826,92 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn reconciles_unchanged_settlement_result_3383() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let config = enable_worker(&env.dbx).await;
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("#3383 unchanged result".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let location_v2 = "|ІВАЩИНЕ|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|";
+        let inbox_item = sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            location_v2: Set(Some(location_v2.to_string())),
+            parsed_unit_v2: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let mut retained = vec![];
+        for (text, settlement_id, is_undefined) in [
+            ("ІВАЩИНЕ", Some(98911), None),
+            ("ВЕРХНЄ ГОРІХОВЕ", None, Some(true)),
+            ("OBSOLETE", Some(79948), None),
+        ] {
+            let row = sigint_inbox_item_settlement::ActiveModel {
+                item_id: Set(message.id),
+                item_uuid: Set(inbox_item.id_uuid),
+                settlement_text: Set(text.to_string()),
+                settlement_id: Set(settlement_id),
+                is_undefined: Set(is_undefined),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            if text != "OBSOLETE" {
+                retained.push(row);
+            }
+        }
+        for _ in 0..2 {
+            enqueue_if_enabled(&env.dbx, message.id).await.unwrap();
+            assert!(!complete_job(
+                &env.dbx,
+                message.id,
+                "#3383 unchanged result",
+                &config,
+                crate::location::utils::to_location_list(location_v2),
+            )
+            .await
+            .unwrap());
+            let rows = sigint_inbox_item_settlement::Entity::find()
+                .filter(
+                    sigint_inbox_item_settlement::Column::ItemId.eq(message.id),
+                )
+                .order_by_asc(sigint_inbox_item_settlement::Column::Id)
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            assert_eq!(rows.len(), 3);
+            assert_eq!(&rows[..retained.len()], retained.as_slice());
+            assert_eq!(rows[2].settlement_text, "ЗАЛИВНИЙ");
+            assert_eq!(rows[2].settlement_id, None);
+            assert_eq!(rows[2].is_undefined, None);
+            assert_eq!(rows[2].item_uuid, inbox_item.id_uuid);
+            retained = rows;
+        }
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.location_v2.as_deref(), Some(location_v2));
+        assert!(ai_settlement_worker_job::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]

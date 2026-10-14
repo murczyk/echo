@@ -26,6 +26,7 @@ import { ConversationMapsContext } from './map-documents';
 import { EchoChip } from '../../components/EchoChip';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { fetchMessagesByIdsWithMetadata } from '../../services/api/inbox-messages';
+import { HttpRequestError } from '../../services/api/client';
 import { APP_TIME_ZONE } from '../../utils/misc';
 import { summarizeIntelligenceMessage } from '../shared/intelligence-reports';
 import { MessageSummaryPreview } from '../shared/message-card/MessageSummaryPreview';
@@ -35,7 +36,7 @@ import { buildMessageLinkHref } from '../shared/message-card/message-card.utils'
 // строки") without Markdown list syntax; keep those single newlines visible.
 const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks];
 
-type ResolvedCitation = { message: InboxMessage; groupName: string } | null;
+type ResolvedCitation = { message: InboxMessage; groupName: string } | null | 'error';
 const EMPTY_CITATIONS: AiAgentMessageCitation[] = [];
 const CITATION_BATCH_SIZE = 100;
 
@@ -77,18 +78,28 @@ function resolveMessages(
   return result;
 }
 
+async function loadCitations(ids: number[], signal?: AbortSignal) {
+  const response = await fetchMessagesByIdsWithMetadata(ids, { skipGroupStats: true }, { signal });
+  return resolveMessages(ids, response.inboxItems, response.signalGroups);
+}
+
+function failedCitations(ids: number[], error: unknown): Map<number, ResolvedCitation> {
+  const unavailable =
+    error instanceof HttpRequestError && (error.status === 403 || error.status === 404);
+  return new Map(ids.map((id) => [id, unavailable ? null : 'error']));
+}
+
 const CitationContext = createContext<{
   registered: Map<string, AiAgentMessageCitation>;
   files: Map<string, AiAgentFileCitation>;
   maps: Map<string, AiAgentMapSummary>;
   resolved: Map<number, ResolvedCitation>;
-  failed: boolean;
   refresh: (id: number) => Promise<boolean>;
 } | null>(null);
 
 function CitationAnchor({ href, children: label }: ComponentProps<'a'>) {
   const context = useContext(CitationContext)!;
-  const { registered, resolved, failed, refresh } = context;
+  const { registered, resolved, refresh } = context;
 
   if (href?.startsWith('echo-map:')) {
     const summary = context.maps.get(href);
@@ -113,8 +124,8 @@ function CitationAnchor({ href, children: label }: ComponentProps<'a'>) {
     );
   }
   const source = resolved.get(citation.messageId);
-  if (source === undefined)
-    return <EchoChip label={failed ? 'Джерело недоступне' : 'Завантаження джерела…'} />;
+  if (source === undefined) return <EchoChip label="Завантаження джерела…" />;
+  if (source === 'error') return <EchoChip label="Не вдалося завантажити джерело" />;
   if (source === null) return <EchoChip label="Джерело недоступне" />;
   const time = citationTime(source.message);
   return (
@@ -153,7 +164,6 @@ export function CitationMarkdown({
   const [resolved, setResolved] = useState(new Map<number, ResolvedCitation>());
   const resolvedRef = useRef(resolved);
   resolvedRef.current = resolved;
-  const [failed, setFailed] = useState(false);
   const [retry, setRetry] = useState(0);
   const pending = useRef(new Map<number, Promise<boolean>>());
   const alive = useRef(true);
@@ -165,6 +175,7 @@ export function CitationMarkdown({
     .filter(([href]) => children.includes(`](${href})`))
     .map(([, citation]) => citation.messageId);
   const neededKey = [...new Set(needed)].sort((a, b) => a - b).join(',');
+  const failed = needed.some((id) => resolved.get(id) === 'error');
 
   useEffect(() => {
     alive.current = true;
@@ -180,28 +191,26 @@ export function CitationMarkdown({
       .filter(Boolean)
       .map(Number)
       .filter((id) => !resolvedRef.current.has(id));
-    setFailed(false);
     void (async () => {
-      try {
-        for (let offset = 0; offset < ids.length; offset += CITATION_BATCH_SIZE) {
-          const batch = ids.slice(offset, offset + CITATION_BATCH_SIZE);
-          const response = await fetchMessagesByIdsWithMetadata(
-            batch,
-            { skipGroupStats: true },
-            { signal: controller.signal },
-          );
+      let notified = false;
+      for (let offset = 0; offset < ids.length; offset += CITATION_BATCH_SIZE) {
+        const batch = ids.slice(offset, offset + CITATION_BATCH_SIZE);
+        try {
+          const values = await loadCitations(batch, controller.signal);
           if (controller.signal.aborted) return;
-          const values = resolveMessages(batch, response.inboxItems, response.signalGroups);
           setResolved((previous) => new Map([...previous, ...values]));
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          const values = failedCitations(batch, error);
+          setResolved((previous) => new Map([...previous, ...values]));
+          if (!notified) {
+            notify({
+              severity: 'error',
+              message: 'Не вдалося завантажити джерела відповіді. Спробуйте ще раз.',
+            });
+            notified = true;
+          }
         }
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        setResolved(new Map());
-        setFailed(true);
-        notify({
-          severity: 'error',
-          message: 'Не вдалося завантажити джерела відповіді. Спробуйте ще раз.',
-        });
       }
     })();
     return () => controller.abort();
@@ -210,17 +219,16 @@ export function CitationMarkdown({
   const refresh = (id: number) => {
     const existing = pending.current.get(id);
     if (existing) return existing;
-    const request = fetchMessagesByIdsWithMetadata([id], { skipGroupStats: true })
-      .then((response) => {
+    const request = loadCitations([id])
+      .then((values) => {
         if (!alive.current) return false;
-        const values = resolveMessages([id], response.inboxItems, response.signalGroups);
         setResolved((previous) => new Map([...previous, ...values]));
         return values.get(id) != null;
       })
-      .catch(() => {
+      .catch((error) => {
         if (alive.current) {
-          setResolved((previous) => new Map(previous).set(id, null));
-          setFailed(true);
+          const values = failedCitations([id], error);
+          setResolved((previous) => new Map([...previous, ...values]));
           notify({
             severity: 'error',
             message: 'Не вдалося завантажити попередній перегляд повідомлення.',
@@ -242,7 +250,6 @@ export function CitationMarkdown({
           registered,
           files: new Map(fileCitations.map((source) => [fileCitationHref(source), source])),
           resolved,
-          failed,
           refresh,
           maps: new Map(
             [...conversationMaps, ...maps].map((summary) => [`echo-map:${summary.id}`, summary]),
@@ -263,7 +270,9 @@ export function CitationMarkdown({
         <button
           type="button"
           onClick={() => {
-            setResolved(new Map());
+            setResolved(
+              (previous) => new Map([...previous].filter(([, source]) => source !== 'error')),
+            );
             setRetry((value) => value + 1);
           }}
         >

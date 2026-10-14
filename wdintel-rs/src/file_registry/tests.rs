@@ -19,6 +19,7 @@ use sqlx::migrate::MigrateDatabase;
 use std::{collections::BTreeMap, error::Error as StdError, future::Future};
 
 mod device_audio;
+mod file_preview;
 
 #[tokio::test]
 async fn missing_configuration_skips_connection_and_migrations() {
@@ -658,6 +659,11 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20261003_152726_create_device_audio".to_string(),
             "m20261006_082251_device_documents".to_string(),
             "m20261006_082252_file_history_search".to_string(),
+            "m20261007_162050_file_preview".to_string(),
+            "m20261008_124822_device_audio_preparation".to_string(),
+            "m20261008_183827_file_preview_archive_members".to_string(),
+            "m20261010_130006_device_audio_asr".to_string(),
+            "m20261012_094502_device_audio_asr_scan_indexes".to_string(),
         ]
     );
 }

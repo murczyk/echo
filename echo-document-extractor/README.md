@@ -63,11 +63,15 @@ inside the worker. Infrastructure failures receive three backoff retries.
 Terminal data is retained for seven days.
 
 The service accepts at most 250 MiB and 200 pages/files per job, holds at most
-25 active queue records, and runs up to two jobs at a time. Admission stops at 70 GiB
+25 active queue records, and runs up to two jobs at a time. Admission stops at 200 GiB
 of spool data or below 20 GiB free; unexpired jobs are never evicted to admit a
 new request. Rasterization and extraction are page-serial, duplicate rasters
 are processed once, and large artifacts spill to private disk before atomic
 package creation.
+
+The GPU container has a 300 GiB root quota; CBR's native spool cap remains
+50 GiB. See [storage recovery](STORAGE_RECOVERY.md) for admission deferrals,
+checkpointed recovery and capacity alerts.
 
 ## Development and checks
 

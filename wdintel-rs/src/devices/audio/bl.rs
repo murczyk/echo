@@ -155,11 +155,26 @@ pub(super) async fn detail(
     let row = query::audio_detail(runtime.file_database().c(h!())?, &command)
         .await
         .c(h!())?;
-    let device =
-        authorize(runtime, actor, command.device_id, AudioAccess::Read)
-            .await
-            .c(h!())?;
-    Ok(row.details(!device.archived))
+    let status = super::transcription::status(
+        runtime,
+        super::transcription::StatusCommand {
+            audio: super::transcription::ActorAudioCommand {
+                actor_id: actor,
+                target: super::transcription::AudioTarget {
+                    device_id: command.device_id,
+                    audio_id: command.audio_id,
+                },
+            },
+            known_version: None,
+        },
+    )
+    .await
+    .c(h!())?;
+    let snapshot = status
+        .snapshot
+        .ok_or_else(|| anyhow::anyhow!("initial ASR snapshot missing"))
+        .c(h!())?;
+    Ok(row.details(snapshot, status.availability))
 }
 
 #[derive(Clone, Copy)]

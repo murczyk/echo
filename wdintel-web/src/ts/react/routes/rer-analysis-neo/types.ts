@@ -182,8 +182,8 @@ export function getAnalysisSidebarTabs(
   radioFeaturesAllowed = true,
 ): AnalysisSidebarTab[] {
   const tabs: AnalysisSidebarTab[] = analysisMapInSidebar
-    ? ['map', 'stats', 'frequencies', 'callsigns', 'graph', 'newCallsigns']
-    : ['stats', 'frequencies', 'callsigns', 'graph', 'newCallsigns'];
+    ? ['callsigns', 'map', 'stats', 'frequencies', 'graph', 'newCallsigns']
+    : ['callsigns', 'stats', 'frequencies', 'graph', 'newCallsigns'];
   return tabs.filter((tab) => radioFeaturesAllowed || tab !== 'frequencies');
 }
 
@@ -196,7 +196,7 @@ export type AnalysisPageState = {
   showAnalysisCallsignAddForm: boolean;
   centerTab: AnalysisCenterTab;
   centerTabPending: boolean;
-  counts: CountStatsRsp | null;
+  counts: Partial<CountStatsRsp> | null;
   copiedFeedbackId: string | null;
   directMessageError: string | null;
   error: string | null;
@@ -263,6 +263,7 @@ export type AnalysisPageState = {
   unitsExactMatchOnlyDefault: boolean | null;
   analysisAorFilterEnabled: boolean;
   rerReportEnabled: boolean;
+  rerReportFilterEnabled: boolean;
   supportNonRerInterceptions: boolean;
   cyberEchoEnabled: boolean;
   options: AnalysisFilterOptions;
@@ -270,6 +271,7 @@ export type AnalysisPageState = {
   queryState: AnalysisQueryState;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
   messageTextPreviewLines: 20 | 40 | null;
@@ -288,6 +290,7 @@ export type AnalysisPageState = {
   summaryLoaded: boolean;
   summaryHasLoadedOnce: boolean;
   rightSidebarLoading: boolean;
+  rightSidebarOutdated?: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;
@@ -307,6 +310,7 @@ export type AnalysisPageActions = {
   findCallsignFrequencyMatches: (
     callsigns: string[],
     minMatches: number,
+    signal?: AbortSignal,
   ) => Promise<AnalysisCallsignFrequencyMatchesRsp | null>;
   loadCallsignGraph: () => void;
   loadCorrelatedFreqs: () => void;

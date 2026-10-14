@@ -34,6 +34,8 @@ import type { AnalysisDirectMessageNavigation } from '../types';
 import { ANALYSIS_MESSAGES_PAGE_SIZE, getFirstLoadedMessagesPageIndex } from '../helpers';
 import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../../hooks/duty-settings-defaults';
 import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
+import { DEBUG_SCROLL_HEARTBEAT_MS } from '../../../../debug-recorder/config';
+import { recordAnalysisDebugScrollSnapshot, useAnalysisDebugEnabled } from '../analysis-debug';
 
 type BotTagAction = {
   messageId: number;
@@ -129,6 +131,7 @@ type Props = {
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   messageTimeBasis?: MessageTimeBasis;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
@@ -372,6 +375,7 @@ type AnalysisMessageCardItemProps = {
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   messageTimeBasis?: MessageTimeBasis;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
@@ -413,6 +417,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   tagsLoading,
   tagsLayout,
   hideBotTags,
+  hideNetworks,
   messageTimeBasis,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   collapseMediaPreviews,
@@ -451,6 +456,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       tagsLoading={tagsLoading}
       tagsLayout={tagsLayout}
       hideBotTags={hideBotTags}
+      hideNetworks={hideNetworks}
       messageTimeBasis={messageTimeBasis}
       collapseMediaPreviews={collapseMediaPreviews}
       messageTextPreviewLines={messageTextPreviewLines}
@@ -511,25 +517,19 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
             }
           : undefined
       }
-      onCopyEtalon={
-        etalonDisplayModel.copyEtalonValue == null
-          ? undefined
-          : () => {
-              void copyMessageValue(etalonDisplayModel.copyEtalonValue).then(() => {
-                onCopyFeedback(`etalon-${id}`);
-              });
-            }
+      onCopyEtalon={(value) => {
+        void copyMessageValue(value).then(() => {
+          onCopyFeedback(`etalon-${id}`);
+        });
+      }}
+      onCopyLocation={(value) => {
+        void copyMessageValue(value).then(() => {
+          onCopyFeedback(`location-${id}`);
+        });
+      }}
+      onCreateReport={(visibleEtalonDisplayModel, focusTarget) =>
+        onCreateReport(id, visibleEtalonDisplayModel, focusTarget)
       }
-      onCopyLocation={
-        etalonDisplayModel.copyLocationValue == null
-          ? undefined
-          : () => {
-              void copyMessageValue(etalonDisplayModel.copyLocationValue).then(() => {
-                onCopyFeedback(`location-${id}`);
-              });
-            }
-      }
-      onCreateReport={(focusTarget) => onCreateReport(id, etalonDisplayModel, focusTarget)}
       onEditReport={onEditReport}
       onDelete={() => onDeleteOpen(id)}
       onEditDetails={(focusTarget) => onOpenEditor(id, focusTarget)}
@@ -599,6 +599,7 @@ function AnalysisMessagesPaneComponent({
   tagsLoading,
   tagsLayout,
   hideBotTags,
+  hideNetworks,
   messageTimeBasis,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   collapseMediaPreviews,
@@ -612,6 +613,7 @@ function AnalysisMessagesPaneComponent({
 }: Props) {
   const theme = useTheme();
   const { notify } = useOptionalPowerSnackbar();
+  const analysisDebugEnabled = useAnalysisDebugEnabled();
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(copiedFeedbackIdProp);
   const [deleteMessageId, setDeleteMessageId] = useState<number | null>(null);
   const [bottomAnchorSpacerPx, setBottomAnchorSpacerPx] = useState(0);
@@ -632,7 +634,55 @@ function AnalysisMessagesPaneComponent({
   const refreshViewportAnchorActiveRef = useRef(false);
   const viewportPreservationKeyRef = useRef(viewportPreservationKey);
   const clearTargetHighlightRef = useRef<(() => void) | null>(null);
+  const debugSnapshotTimerRef = useRef<number | null>(null);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
+
+  const recordDebugScrollSnapshot = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!analysisDebugEnabled || container == null) return;
+    recordAnalysisDebugScrollSnapshot(container, {
+      pageIndex,
+      paginationLoading,
+      noMoreToLoad,
+      directMessageActive: directMessageNavigation != null,
+      directMessageFocusActive: directMessageNavigation?.focusActive === true,
+      viewportAnchorActive:
+        preserveViewportAnchorRef.current || refreshViewportAnchorActiveRef.current,
+      targetAnchorPreserved: preserveTargetAnchorRef.current,
+      bottomAnchorSpacerPx,
+    });
+  }, [
+    analysisDebugEnabled,
+    bottomAnchorSpacerPx,
+    directMessageNavigation,
+    noMoreToLoad,
+    pageIndex,
+    paginationLoading,
+  ]);
+
+  const scheduleDebugScrollSnapshot = useCallback(() => {
+    if (!analysisDebugEnabled) return;
+    if (debugSnapshotTimerRef.current !== null) {
+      window.clearTimeout(debugSnapshotTimerRef.current);
+    }
+    debugSnapshotTimerRef.current = window.setTimeout(() => {
+      debugSnapshotTimerRef.current = null;
+      recordDebugScrollSnapshot();
+    }, DEBUG_SCROLL_HEARTBEAT_MS);
+  }, [analysisDebugEnabled, recordDebugScrollSnapshot]);
+
+  useEffect(
+    () => () => {
+      if (debugSnapshotTimerRef.current !== null) {
+        window.clearTimeout(debugSnapshotTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  useLayoutEffect(() => {
+    recordDebugScrollSnapshot();
+  }, [messages, recordDebugScrollSnapshot]);
 
   const updateVisiblePageIndex = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -1059,12 +1109,14 @@ function AnalysisMessagesPaneComponent({
       captureTargetAnchor();
     }
     loadMessagesNearScrollBoundary();
+    scheduleDebugScrollSnapshot();
   }, [
     captureTargetAnchor,
     captureViewportAnchor,
     directMessageNavigation,
     loadMessagesNearScrollBoundary,
     reconcileBottomAnchorSpacer,
+    scheduleDebugScrollSnapshot,
     updateVisiblePageIndex,
   ]);
 
@@ -1264,6 +1316,7 @@ function AnalysisMessagesPaneComponent({
               tagsLoading={tagsLoading}
               tagsLayout={tagsLayout}
               hideBotTags={hideBotTags}
+              hideNetworks={hideNetworks}
               messageTimeBasis={messageTimeBasis}
               mediaSummaryEnabled={mediaSummaryEnabled}
               collapseMediaPreviews={collapseMediaPreviews}

@@ -2,7 +2,7 @@ use super::{
     error::{FilesystemError, FilesystemFieldError},
     types::{DomainFileEntryKind, FileSearchFilters, RawFileSearchFilters},
 };
-use crate::config::{
+use crate::devices::config::{
     DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES, DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS,
     DEVICE_FILE_PATH_COMPONENTS_MAX_CHARS,
     DEVICE_FILE_PATH_COMPONENT_MAX_CHARS, DEVICE_FILE_PATH_COMPONENT_MAX_COUNT,

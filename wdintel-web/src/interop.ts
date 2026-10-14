@@ -87,6 +87,10 @@ import './ts/react/unit-edit-dialog-element';
 import './ts/react/unit-admin-tab-element';
 import './ts/react/importer-beta-element';
 import './ts/react/updates-neo-element';
+import {
+  initializeBrowserDebugRecorder,
+  mountDebugRecorderPanelIfNeeded,
+} from './ts/debug-recorder';
 import { saveLegacyRerAnalysisQueryState } from './ts/rer-analysis-query-state-legacy';
 import { setupCommentDraftTracker } from './ts/comment-draft-tracker';
 import './ts/logo-coin';
@@ -435,6 +439,7 @@ import('../static/js-search').then((module) => {
 // into your `Shared.init` function.
 export const flags = ({ env }) => {
   installNavigationGuard();
+  initializeBrowserDebugRecorder();
   const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   const now = dayjs().tz('Europe/Kiev').valueOf();
   return {
@@ -449,6 +454,7 @@ export const flags = ({ env }) => {
 // to your Elm application, or subscribe to incoming
 // messages from Elm
 export const onReady = ({ app, env }) => {
+  mountDebugRecorderPanelIfNeeded();
   app.ports?.shared_requestNavigation?.subscribe(
     (intent: { kind: string; url: string; forced: boolean }) => {
       if (intent.kind === 'back') void requestTraversal(-1);
@@ -843,6 +849,8 @@ export const onReady = ({ app, env }) => {
           intelligenceReport: boolean;
         }>,
       ) => {
+        app.ports.rer_analysis_inboxChanged?.send(events.map(({ messageId }) => messageId));
+        app.ports.rer_duty_inboxChanged?.send(events.map(({ messageId }) => messageId));
         window.dispatchEvent(
           new CustomEvent('echo-inbox-changed', {
             detail: { events },

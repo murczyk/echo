@@ -28,7 +28,7 @@ export function AnalysisFullscreenPanelDrawer({
       onClose={onClose}
       slotProps={{
         paper: {
-          sx: {
+          sx: (theme) => ({
             width: maxPanelWidth ? { xs: '100vw', sm: maxPanelWidth } : '100vw',
             maxWidth: '100vw',
             height: '100dvh',
@@ -36,8 +36,9 @@ export function AnalysisFullscreenPanelDrawer({
             flexDirection: 'column',
             overflow: 'hidden',
             bgcolor: 'background.default',
+            '--analysis-panel-background': theme.palette.background.default,
             backgroundImage: 'none',
-          },
+          }),
         },
       }}
     >

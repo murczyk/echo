@@ -22,9 +22,10 @@ type TextDocumentPreviewProps = {
   renderText: (text: string) => ReactNode;
   sizeBytes?: number | null;
   onError?: (error: unknown) => void;
+  signal?: AbortSignal;
 };
 
-function formatTextPreviewErrorMessage(
+export function formatTextPreviewErrorMessage(
   kindLabel: 'TXT' | 'Markdown',
   error: string | null,
 ): string {
@@ -264,6 +265,7 @@ export function TextDocumentPreview({
   renderText,
   sizeBytes,
   onError,
+  signal,
 }: TextDocumentPreviewProps) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [text, setText] = useState('');
@@ -271,12 +273,16 @@ export function TextDocumentPreview({
 
   useEffect(() => {
     const abortController = new AbortController();
+    const abort = () => abortController.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     let disposed = false;
 
     const load = async () => {
       setStatus('loading');
       setText('');
       setError(null);
+      if (abortController.signal.aborted) return;
 
       try {
         if (sizeBytes != null && sizeBytes > MAX_TEXT_PREVIEW_BYTES) {
@@ -305,7 +311,7 @@ export function TextDocumentPreview({
         }
         const decoded = decoder.decode(bytes.subarray(bomLength));
         const nextText = decoded.startsWith(UTF8_BOM) ? decoded.slice(1) : decoded;
-        if (disposed) return;
+        if (disposed || abortController.signal.aborted) return;
         setText(nextText);
         setStatus('ready');
       } catch (loadError) {
@@ -320,9 +326,10 @@ export function TextDocumentPreview({
 
     return () => {
       disposed = true;
+      signal?.removeEventListener('abort', abort);
       abortController.abort();
     };
-  }, [href, sizeBytes, onError]);
+  }, [href, sizeBytes, onError, signal]);
 
   if (status === 'error') {
     return (
@@ -371,16 +378,19 @@ export function TxtDocumentPreview({
   href,
   sizeBytes,
   onError,
+  signal,
 }: {
   href: string;
   sizeBytes?: number | null;
   onError?: (error: unknown) => void;
+  signal?: AbortSignal;
 }) {
   return (
     <TextDocumentPreview
       href={href}
       sizeBytes={sizeBytes}
       onError={onError}
+      signal={signal}
       kindLabel="TXT"
       renderText={(text) => (
         <Box
@@ -407,14 +417,20 @@ export function TxtDocumentPreview({
 export function MarkdownDocumentPreview({
   href,
   sizeBytes,
+  onError,
+  signal,
 }: {
   href: string;
   sizeBytes?: number | null;
+  onError?: (error: unknown) => void;
+  signal?: AbortSignal;
 }) {
   return (
     <TextDocumentPreview
       href={href}
       sizeBytes={sizeBytes}
+      onError={onError}
+      signal={signal}
       kindLabel="Markdown"
       renderText={(text) => (
         <Box sx={{ px: 3, py: 2.5, color: 'text.primary', '& > *:first-of-type': { mt: 0 } }}>

@@ -42,6 +42,7 @@ pub mod import_csv;
 pub mod import_kmz;
 pub mod important;
 pub mod inbox;
+pub mod intel_product_filter;
 pub mod location;
 pub mod meow_format;
 pub mod multimessage;
@@ -212,6 +213,37 @@ async fn messenger_media_playback(
     let media = load_authorized_messenger_media(env.as_ref(), &user, path.0)
         .await
         .c(h!())?;
+    match crate::messenger::media_preview::recommended(&env, &media).await {
+        Ok(true) => {
+            return Ok(HttpResponse::TemporaryRedirect()
+                .insert_header((
+                    header::LOCATION,
+                    format!(
+                        "/api/messenger/media/{}/playback/preview.m3u8",
+                        media.id
+                    ),
+                ))
+                .insert_header((header::CACHE_CONTROL, "private, no-store"))
+                .finish());
+        }
+        Ok(false) => {}
+        Err(error)
+            if error
+                .downcast_ref::<crate::messenger::media_preview::Busy>()
+                .is_some() =>
+        {
+            return Err(AppError::ServiceUnavailable {
+                msg: "video preview is being prepared".to_string(),
+                retry_after_secs: 1,
+            });
+        }
+        Err(error) => {
+            warn!(
+                "video preview inspection failed media_id={}: {error:#}",
+                media.id
+            );
+        }
+    }
     match crate::messenger::media_local_cache::playback_status(
         env.into_inner(),
         &media,
@@ -244,6 +276,62 @@ async fn messenger_media_playback(
         PlaybackStatus::Failed => Ok(HttpResponse::UnprocessableEntity()
             .insert_header((header::CACHE_CONTROL, "private, no-store"))
             .finish()),
+    }
+}
+
+#[get("/api/messenger/media/{media_id}/playback/preview.m3u8")]
+async fn messenger_media_preview_playlist(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<(Uuid,)>,
+) -> Result<HttpResponse, AppError> {
+    let media = load_authorized_messenger_media(&env, &user, path.0)
+        .await
+        .c(h!())?;
+    if !crate::messenger::media_preview::eligible(&media) {
+        return Err(AppError::NotFound);
+    }
+    let playlist = crate::messenger::media_preview::playlist(&env, &media)
+        .await
+        .c(h!())?;
+    Ok(HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/vnd.apple.mpegurl"))
+        .insert_header((header::CACHE_CONTROL, "private, no-store"))
+        .body(playlist))
+}
+
+#[get("/api/messenger/media/{media_id}/playback/segments/{segment}.ts")]
+async fn messenger_media_preview_segment(
+    user: actix_identity::Identity,
+    req: HttpRequest,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<(Uuid, u32)>,
+) -> Result<HttpResponse, AppError> {
+    let media = load_authorized_messenger_media(&env, &user, path.0)
+        .await
+        .c(h!())?;
+    if !crate::messenger::media_preview::eligible(&media) {
+        return Err(AppError::NotFound);
+    }
+    match crate::messenger::media_preview::segment(&env, &media, path.1).await {
+        Ok(Some(file)) => Ok(local_messenger_media_response(
+            &req,
+            &media,
+            file,
+            "video/mp2t",
+        )),
+        Ok(None) => Err(AppError::NotFound),
+        Err(error)
+            if error
+                .downcast_ref::<crate::messenger::media_preview::Busy>()
+                .is_some() =>
+        {
+            Err(AppError::ServiceUnavailable {
+                msg: "video preview is being prepared".to_string(),
+                retry_after_secs: 1,
+            })
+        }
+        Err(error) => Err(error).c(h!())?,
     }
 }
 
@@ -1250,7 +1338,7 @@ pub async fn signal_group_info_batch(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await?;
     let is_admin = has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
@@ -1279,7 +1367,7 @@ pub async fn signal_groups(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await
     .c(h!())?;
@@ -1857,7 +1945,7 @@ pub async fn senders(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", "CyberViewer", "Api"],
     )
     .await
     .c(h!())?;

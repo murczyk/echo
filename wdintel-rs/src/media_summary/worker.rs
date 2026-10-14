@@ -566,6 +566,18 @@ async fn normalize_coordinate_value(
     coordinate_system: &str,
     value: &str,
 ) -> Result<String, CoordinateDropReason> {
+    if coordinate_system == "wgs84" {
+        if let Some(value) = normalize_decimal_wgs84(value) {
+            return Ok(value);
+        }
+        static COMPACT: std::sync::LazyLock<regex::Regex> =
+            std::sync::LazyLock::new(|| {
+                regex::Regex::new(r"^\d{5,16}N[,;/\s]*0?\d{5,16}E$").unwrap()
+            });
+        if !COMPACT.is_match(value) {
+            return Err(CoordinateDropReason::InvalidWgs84Format);
+        }
+    }
     let parsed_v2 = milgeo_rs::coordinates::parser_v2::collect_coords(value)
         .unwrap_or_default();
     let parsed_v1 = milgeo_rs::coordinates::parser_v1::collect_coords(value)
@@ -583,6 +595,55 @@ async fn normalize_coordinate_value(
         "mgrs" => normalize_milgeo_mgrs(&coordinate.mgrs),
         _ => Err(CoordinateDropReason::UnsupportedSystem),
     }
+}
+
+pub(crate) fn normalize_decimal_wgs84(value: &str) -> Option<String> {
+    static PAIR: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(
+        || {
+            regex::Regex::new(
+            r"(?ix)^\s*([+-]?\d{1,3}[.,]\d+)\s*[°º˚]?\s*([NS])?\s*(?:[,;/]\s*|\s+)([+-]?\d{1,3}[.,]\d+)\s*[°º˚]?\s*([EW])?\s*$",
+        ).unwrap()
+        },
+    );
+    static PREFIX_PAIR: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| {
+            regex::Regex::new(r"(?ix)^\s*([NS])\s*(\d{1,3}[.,]\d+)\s*[°º˚]?\s*[,;/\s]+\s*([EW])\s*(\d{1,3}[.,]\d+)\s*[°º˚]?\s*$").unwrap()
+        });
+    if let Some(pair) = PREFIX_PAIR.captures(value) {
+        return normalize_decimal_wgs84(&format!(
+            "{} {} {} {}",
+            &pair[2], &pair[1], &pair[4], &pair[3]
+        ));
+    }
+    let pair = PAIR.captures(value)?;
+    if pair.get(2).is_some() != pair.get(4).is_some() {
+        return None;
+    }
+    let component = |index, hemisphere, limit: f64| -> Option<String> {
+        let text = pair.get(index)?.as_str().replace(',', ".");
+        let number: f64 = text.parse().ok()?;
+        if !number.is_finite() || number.abs() > limit {
+            return None;
+        }
+        let direction = pair
+            .get(hemisphere)
+            .map(|value| value.as_str().to_uppercase());
+        if direction.is_some()
+            && (text.starts_with('-') || text.starts_with('+'))
+        {
+            return None;
+        }
+        Some(if matches!(direction.as_deref(), Some("S" | "W")) {
+            format!("-{text}")
+        } else {
+            text
+        })
+    };
+    Some(format!(
+        "{}, {}",
+        component(1, 2, 90.0)?,
+        component(3, 4, 180.0)?
+    ))
 }
 
 fn matching_milgeo_coordinate(
@@ -702,7 +763,8 @@ pub(crate) async fn summarize_attachment_text(
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_response, response_format, summary_messages, CoordinateDropReason,
+        normalize_coordinate_value, parse_response, response_format,
+        summary_messages, CoordinateDropReason,
     };
     use crate::config::MEDIA_SUMMARY_SYSTEM_PROMPT;
     use serde_json::json;
@@ -820,6 +882,46 @@ mod tests {
             parsed.coordinate_drops,
             vec![CoordinateDropReason::InvalidGridFormat]
         );
+    }
+
+    #[tokio::test]
+    async fn wgs84_degree_hemisphere_3714() {
+        for (input, expected) in [
+            ("48.469429° N 37.315640° E", "48.469429, 37.315640"),
+            ("48.469429°N, 37.315640°E", "48.469429, 37.315640"),
+            ("48.469429 n 37.315640 e", "48.469429, 37.315640"),
+            ("N48.469429 E37.315640", "48.469429, 37.315640"),
+            ("48.469429ºN / 37.315640ºE", "48.469429, 37.315640"),
+            ("475919N0374810E", "47.5919, 37.4810"),
+            ("475919N,0374810E", "47.5919, 37.4810"),
+            ("48,469429; 37,315640", "48.469429, 37.315640"),
+            ("-48.469429, -37.315640", "-48.469429, -37.315640"),
+            ("48.469429 S 37.315640 W", "-48.469429, -37.315640"),
+            (
+                "48.46942912345, 37.31564012345",
+                "48.46942912345, 37.31564012345",
+            ),
+        ] {
+            assert_eq!(
+                normalize_coordinate_value("wgs84", input).await.unwrap(),
+                expected
+            );
+        }
+        for input in [
+            "48.469429° N",
+            "48.469429 N 37.315640",
+            "91.1, 37.315640",
+            "48.469429, 181.1",
+            "48.469429, 37.315640 text",
+            "48.469429, 37.315640, 49.123456",
+            "-48.469429 N 37.315640 E",
+            "48.469429 E 37.315640 N",
+        ] {
+            assert!(
+                normalize_coordinate_value("wgs84", input).await.is_err(),
+                "{input}"
+            );
+        }
     }
 
     #[tokio::test]

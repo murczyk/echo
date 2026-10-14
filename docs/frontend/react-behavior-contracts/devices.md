@@ -124,6 +124,19 @@
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as user-visible operational safeguards.
 
+## Device file preview format precedence
+
+- **Behavior ID:** `device-file-preview-format-precedence`
+- **Affected route/component:** Devices Files and shared document/image/media/map previews.
+- **Preconditions:** an accessible content-backed revision is selected. Classification identifies an eligible viewer; successful decoding still depends on actual bytes, parser limits, browser codecs and converter availability.
+- **Expected observable result:** trim the filename and normalize the last suffix case-insensitively; use stored extension metadata only when the filename has no suffix. Never infer a format from the original download URL. Converted-map admission uses the same immutable revision filename and metadata fallback as the UI.
+- **MIME and container compatibility:** native KML/KMZ and their known MIME types retain map rendering; GPX/GeoJSON/LDK/TRK/ARE/RTE/WPT/SET/FIT select optional preparation. Explicit audio/video/image MIME determines the corresponding media category before audio/video extension fallbacks. Generic or absent MIME permits recognized image suffixes; an unrelated explicit MIME does not imply an image. DOCX/XLSX/KMZ keep specialized rendering with ZIP MIME; a PDF filename with ZIP MIME selects the archive viewer. Document formats use the existing reference document precedence.
+- **Loading/empty/error/success behavior:** missing content never starts a viewer. Unsupported, corrupt, oversized and unavailable-codec/converter results remain distinct from successful preview; an accessible original retains its exact filename and bytes.
+- **Known race/idempotency constraints:** recognition and preparation concern the selected device/file/revision; conflicting metadata cannot silently substitute a different revision or mutate the stored source snapshot.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/attachment-preview/file-preview-source.ts`, `wdintel-web/src/ts/react/routes/shared/message-card/file-preview-kind.ts`, `wdintel-web/src/ts/react/routes/shared/message-card/document-file-kind.ts`, `wdintel-rs/src/devices/files/preview/bl.rs`, `wdintel-rs/src/devices/files/preview/query.rs`.
+- **Default-suite classifier coverage:** No direct default-suite test; behavior is preserved by this contract.
+- **Operational coverage:** `wdintel-web/tests/e2e/device-file-preview-interactions.spec.ts`, `wdintel-web/tests/e2e/device-file-preview-images.spec.ts`, `wdintel-web/tests/e2e/device-file-preview-documents.spec.ts`, `wdintel-web/tests/e2e/device-file-preview-media.spec.ts`, `wdintel-rs/src/devices/files/preview/tests.rs`. These consume actual file bytes or exercise database/API admission rather than count classifier outputs as format support.
+
 ## Retired manual Device Files synchronization
 
 - **Status:** retired historical behavior
@@ -138,7 +151,7 @@
 - **Status:** inferred characterization
 - **Behavior ID:** `device-form-mutation-safeguards`
 - **Affected route/component:** device create and update form request helpers
-- **Expected observable result:** create requests include the source fields used by the create workflow; the analytical name is included only with analytical-data permission. Update requests gate `externalUrl` and `customFields` behind source-data permission, and gate `name`, `aorIds`, and `unitId` behind analytical-data permission. `Cyber` and `Admin` have read, create, source-data, and analytical-data permissions. Cyber users can edit the name, unit, and AORs from both the device list and device details, within existing organization visibility and active-device restrictions. Blank external URLs become explicit `null` clears; removed custom-field keys become `null`, while changed and new keys retain their values. Unchanged and unauthorized fields are omitted. Recognized backend snake-case field errors map to editable fields; malformed and unknown errors remain generic.
+- **Expected observable result:** create requests include the source fields used by the create workflow; the analytical name is included only with analytical-data permission. Update requests gate `externalUrl` and `customFields` behind source-data permission, and gate `name`, `aorIds`, and `unitId` behind analytical-data permission. `Cyber` and `Admin` have read, create, source-data, and analytical-data permissions. `CyberViewer` retains read, create, source-data, and file-sync access, but cannot change analytical fields (`name`, `aorIds`, `unitId`); it can listen to audio without uploading audio or editing its text/status. Cyber users can edit the name, unit, and AORs from both the device list and device details, within existing organization visibility and active-device restrictions. Blank external URLs become explicit `null` clears; removed custom-field keys become `null`, while changed and new keys retain their values. Unchanged and unauthorized fields are omitted. Recognized backend snake-case field errors map to editable fields; malformed and unknown errors remain generic.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/devices/device-form.ts`, `wdintel-web/src/ts/react/routes/devices/use-devices-page.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/devices/__tests__/device-form.spec.ts`, `wdintel-web/tests/e2e/device-details.spec.ts`
 
@@ -158,6 +171,15 @@
 - **Expected observable result:** browse and search requests preserve scope/cursor and literal query semantics, normalize filter lists, and reject invalid local query/date input before submission.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/device-files/helpers.ts`
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+
+## Device file tree content filter
+
+- **Behavior ID:** `device-file-tree-content-filter`
+- **Expected observable result:** the Files tree offers “Усі файли”, “З контентом”, and “Без контенту”. Folders remain when a descendant file matches; content and tag filters must match the same file. Root drives remain available for navigation. Folder counters show the total number of files, independent of this filter.
+- **Scope:** applies to the tree, including subsequent pages and refreshes; the separate search and journal retain their own filters. Session views use content belonging to the selected session's revision; the current tree uses the current revision.
+- **Loading and concurrency:** changing the filter clears branch pages and cursors, cancels pending requests, and reloads the roots. Late responses and file-link expansion must not inject files excluded by the current filter.
+- **Persistence and accessibility:** defaults to all files and remains in memory while viewing the device. On desktop and mobile, the tree header's “Фільтри файлів” button opens a menu with mutually exclusive, checked options. Selecting an option closes the menu; an active content filter highlights the button and is included in its accessible label. The button is hidden in search mode.
+- **Existing tests:** `wdintel-web/src/ts/react/routes/device-files/__tests__/use-device-file-tree.spec.tsx`, `wdintel-web/tests/e2e/device-details.spec.ts`, `wdintel-rs/src/devices/files/sync/tests/session_reads.rs`.
 
 ## Device list local query behavior
 

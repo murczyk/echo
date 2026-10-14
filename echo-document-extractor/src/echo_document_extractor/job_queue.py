@@ -283,6 +283,35 @@ class JobQueue:
             )
             return _job(connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone())
 
+    def defer_storage(self, job_id: str, owner: str, summary: str, delay: int) -> Job:
+        now = time.time()
+        with self.transaction() as connection:
+            row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            if (
+                not row
+                or row["state"] != "running"
+                or row["lease_owner"] != owner
+                or row["lease_expires_at"] is None
+                or row["lease_expires_at"] <= now
+            ):
+                raise RuntimeError("job lease was lost before storage deferral")
+            cancelled = bool(row["cancel_requested"])
+            connection.execute(
+                """UPDATE jobs SET state = ?, attempts = MAX(attempts - 1, 0),
+                    retry_at = ?, completed_at = ?, updated_at = ?,
+                    lease_owner = NULL, lease_expires_at = NULL, heartbeat_at = NULL,
+                    error_summary = ? WHERE id = ?""",
+                (
+                    "cancelled" if cancelled else "retry_wait",
+                    None if cancelled else now + delay,
+                    now if cancelled else None,
+                    now,
+                    summary[:500],
+                    job_id,
+                ),
+            )
+            return _job(connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone())
+
     def cancel(self, job_id: str) -> Job | None:
         now = time.time()
         with self.transaction() as connection:

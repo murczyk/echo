@@ -1,4 +1,4 @@
-import { DeviceDocumentDeepLink } from '../device-files/components/DeviceDocumentPreview';
+import { useDeviceFileLink } from '../device-files/use-device-file-link';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
 import { Box, Skeleton, Tooltip } from '@mui/material';
@@ -25,6 +25,7 @@ import { DeviceMobileHeader } from './components/DeviceMobileHeader';
 import { DeviceMobileSheet } from '../devices/components/DeviceMobileSheet';
 import { DeviceMobileFilesPanel } from '../device-files/components/DeviceMobileFilesPanel';
 import { useDeviceDetailsPage } from './use-device-details-page';
+import { useDeviceAudioSettings } from './use-device-audio-settings';
 import { useDeviceAudio } from './use-device-audio';
 import { useDeviceAudioEditor } from './use-device-audio-editor';
 import { useDeviceAudioDraftGuard } from './use-device-audio-draft-guard';
@@ -104,7 +105,11 @@ export function DeviceDetailsPage({
   const isMobileLayout = useDeviceMobileLayout();
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<DeviceDetailsTab>('analytical');
+  const linkedFile = useDeviceFileLink();
+  const [activeTab, setActiveTab] = useState<DeviceDetailsTab>(linkedFile ? 'files' : 'analytical');
+  useEffect(() => {
+    if (linkedFile) setActiveTab('files');
+  }, [deviceId, linkedFile?.fileId, linkedFile?.revision]);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(syncId !== null);
   const [tagFilter, setTagFilter] = useState<DeviceAnalyticsTagFilter>({
@@ -114,6 +119,10 @@ export function DeviceDetailsPage({
   });
   const device = page.device;
   const audio = useDeviceAudio(deviceId, page.permissions.canRead && device?.id === deviceId);
+  const audioSettings = useDeviceAudioSettings(
+    deviceId,
+    activeTab === 'audio' && page.permissions.canRead && device?.id === deviceId,
+  );
   const editorSelection = useRef({ deviceId, audioId: audio.selectedAudioId });
   if (editorSelection.current.deviceId !== deviceId)
     editorSelection.current = { deviceId, audioId: null };
@@ -121,12 +130,16 @@ export function DeviceDetailsPage({
   const audioEditor = useDeviceAudioEditor(
     deviceId,
     editorSelection.current.audioId,
-    page.permissions.canRead &&
+    page.permissions.fieldPermissions.analyticalData &&
       device?.archived === false &&
       (editorSelection.current.audioId === null ||
         audio.processing[editorSelection.current.audioId]?.canEdit !== false),
     audio,
   );
+  useEffect(() => {
+    if (activeTab === 'audio' && audio.selectedAudioId !== null)
+      audioEditor.setAutomaticView(false);
+  }, [activeTab, audio.selectedAudioId, audioEditor.setAutomaticView]);
   const audioGuard = useDeviceAudioDraftGuard(audioEditor);
   const guardedAudio = {
     ...audio,
@@ -144,6 +157,11 @@ export function DeviceDetailsPage({
         await audioGuard.requestIntent(() => audio.setProcessed(id, target));
       else await audio.setProcessed(id, target);
     },
+    reconcileProcessing: async (id: string) => {
+      await audio.reconcileProcessing(id);
+      if (audioEditor.accessDenied && audioEditor.detail?.audio.id === id)
+        await audioEditor.reload();
+    },
   };
   const sessions = useDeviceSyncSessions({
     deviceId,
@@ -159,8 +177,13 @@ export function DeviceDetailsPage({
     deviceId,
     syncId,
     enabled: activeTab === 'files' && sessions.ready,
+    linkedFile,
     tagFilter,
   });
+  const fileCitation =
+    linkedFile?.revision && files.revisionPinned
+      ? { ...linkedFile, deviceId, revision: linkedFile.revision }
+      : undefined;
   const journal = useDeviceFileJournal({
     deviceId,
     syncId,
@@ -177,6 +200,7 @@ export function DeviceDetailsPage({
     if (sessions.refreshVersion > 0) refreshRef.current();
   }, [sessions.refreshVersion]);
   const fileError = [
+    files.linkError,
     files.rootsError?.message,
     files.searchError?.message,
     files.searchLoadMoreError?.message,
@@ -303,7 +327,6 @@ export function DeviceDetailsPage({
         />
       )}
 
-      {device && <DeviceDocumentDeepLink key={deviceId} deviceId={deviceId} />}
       <DeviceAudioLeaveDialog guard={audioGuard} editor={audioEditor} />
       {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
       {device?.archived ? (
@@ -347,7 +370,7 @@ export function DeviceDetailsPage({
                 />
               </div>
             ) : !isMobileLayout && activeTab === 'audio' && leftPanelVisible ? (
-              <DeviceAudioSidebar audio={guardedAudio} />
+              <DeviceAudioSidebar audio={guardedAudio} settings={audioSettings} />
             ) : !isMobileLayout && leftPanelVisible ? (
               <Box sx={{ minHeight: 0, overflow: 'hidden' }}>
                 <DeviceDetailsLeftPanel device={device} loading={page.loading} />
@@ -363,6 +386,7 @@ export function DeviceDetailsPage({
               <DeviceDetailsTabPanel
                 audio={guardedAudio}
                 audioEditor={audioEditor}
+                audioSettings={audioSettings}
                 mobile={isMobileLayout}
                 mobileFiles={
                   isMobileLayout ? (
@@ -371,6 +395,7 @@ export function DeviceDetailsPage({
                       deviceId={deviceId}
                       syncId={syncId}
                       files={files}
+                      citation={fileCitation}
                       tagsState={tagsState}
                       tagFilter={tagFilter}
                       onTagFilterChange={setTagFilter}
@@ -379,6 +404,8 @@ export function DeviceDetailsPage({
                 }
                 activeTab={activeTab}
                 selectedFile={files.selectedFile}
+                revisionPinned={files.revisionPinned}
+                citation={fileCitation}
                 journal={journal}
                 deviceId={deviceId}
                 syncId={syncId}

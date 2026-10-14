@@ -95,6 +95,8 @@ export function RerDutyNeoPage({
     audioTranscriptionCollapsed,
     audioTranscriptionEnabled,
     hideBotTags,
+    hideNetworks,
+    networkVisibilityReady,
     dutyExcludeMenuEnabled,
     collapseMediaPreviews,
     mediaSummaryEnabled,
@@ -219,6 +221,8 @@ export function RerDutyNeoPage({
     currentUser?.organismId ?? null,
     deviceAccess,
     radioFeaturesAllowed,
+    hideNetworks,
+    networkVisibilityReady,
   );
   const {
     messageFeeds,
@@ -378,6 +382,7 @@ export function RerDutyNeoPage({
     canUseMessageDevices: cyberEchoEnabled,
     tagsLayout,
     hideBotTags,
+    hideNetworks: hideNetworks || !networkVisibilityReady,
     collapseMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,

@@ -49,6 +49,7 @@ suite =
                                     , goiHost = Nothing
                                     , goiIntegrations = []
                                     , lastReleaseSeen = Nothing
+                                    , rerReportEligible = False
                                     }
                                     shared.user
 
@@ -72,6 +73,41 @@ suite =
                             , \_ -> successModel.mapOpenMessagesLoadRequestId |> Expect.equal 1
                             , \_ -> successModel.mapOpenMessagesRequestId |> Expect.equal 1
                             , \_ -> successModel.mapOpenMessages |> Expect.equal (Success [ ( 7, messageStub ) ])
+                            ]
+                            ()
+        , test "#3598 ignores restored network filters while network hiding is enabled" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-analysis" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            user =
+                                { id = "cyber", name = "cyber", roles = [ "Cyber" ], sigintZoneId = Nothing, organismId = Nothing, deltaLogin = Nothing, displayName = Nothing, goiConfiguredForOrganism = False, goiFullAccessForOrganism = False, goiHost = Nothing, goiIntegrations = [], lastReleaseSeen = Nothing, rerReportEligible = False }
+
+                            ( model, _ ) =
+                                RerAnalysis.init user (Route.fromUrl () url) ()
+
+                            hidden =
+                                { model | hideNetworks = True, networksSelected = [ "7" ], withoutNetwork = True }
+
+                            request =
+                                Query.analysisStatsParams (Time.millisToPosix 0) (Time.millisToPosix 1000) hidden
+
+                            inboxRequest =
+                                RerAnalysis.getInboxReq hidden
+
+                            queryState =
+                                Query.modelQueryState hidden
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal Nothing request.selectedNetworks
+                            , \_ -> Expect.equal (Just False) request.withoutNetwork
+                            , \_ -> Expect.equal Nothing inboxRequest.selectedNetworks
+                            , \_ -> Expect.equal (Just False) inboxRequest.withoutNetwork
+                            , \_ -> Expect.equal [] queryState.networksSelected
+                            , \_ -> Expect.equal False queryState.withoutNetwork
                             ]
                             ()
         , test "empty success does not advance the popup serial" <|
@@ -102,6 +138,7 @@ suite =
                                     , goiHost = Nothing
                                     , goiIntegrations = []
                                     , lastReleaseSeen = Nothing
+                                    , rerReportEligible = False
                                     }
                                     shared.user
 
@@ -134,7 +171,7 @@ suite =
                     Just url ->
                         let
                             user =
-                                { id = "cyber", name = "cyber", roles = [ "Cyber", "UnitsEditor" ], sigintZoneId = Nothing, organismId = Nothing, deltaLogin = Nothing, displayName = Nothing, goiConfiguredForOrganism = False, goiFullAccessForOrganism = False, goiHost = Nothing, goiIntegrations = [], lastReleaseSeen = Nothing }
+                                { id = "cyber", name = "cyber", roles = [ "Cyber", "UnitsEditor" ], sigintZoneId = Nothing, organismId = Nothing, deltaLogin = Nothing, displayName = Nothing, goiConfiguredForOrganism = False, goiFullAccessForOrganism = False, goiHost = Nothing, goiIntegrations = [], lastReleaseSeen = Nothing, rerReportEligible = False }
 
                             ( initial, _ ) =
                                 RerAnalysis.init user (Route.fromUrl () url) ()
@@ -179,11 +216,7 @@ suite =
                     { messagesRendered = True
                     , renderedMessageIds = [ 7, 8 ]
                     }
-                    [ inboxChangedEvent 9
-                    , inboxChangedEvent 7
-                    , inboxChangedEvent 7
-                    , genericEvent
-                    ]
+                    [ 9, 7, 7 ]
                     |> Expect.equal [ 7 ]
         , test "does not refresh list messages while the map is rendered" <|
             \_ ->
@@ -191,7 +224,7 @@ suite =
                     { messagesRendered = False
                     , renderedMessageIds = [ 7 ]
                     }
-                    [ inboxChangedEvent 7 ]
+                    [ 7 ]
                     |> Expect.equal []
         , test "refresh replacement requests new marked callsigns without duplicating requested keys" <|
             \_ ->
@@ -338,24 +371,5 @@ anonymousUser =
     , goiHost = Nothing
     , goiIntegrations = []
     , lastReleaseSeen = Nothing
-    }
-
-
-inboxChangedEvent : Int -> B.EventMsg
-inboxChangedEvent messageId =
-    { id = String.fromInt messageId
-    , eventType = B.EtInboxChanged messageId
-    , createdAt = 0
-    , origin = Nothing
-    , intelligenceReport = False
-    }
-
-
-genericEvent : B.EventMsg
-genericEvent =
-    { id = "generic"
-    , eventType = B.EtGeneric
-    , createdAt = 0
-    , origin = Nothing
-    , intelligenceReport = False
+    , rerReportEligible = False
     }

@@ -1,5 +1,6 @@
 use self::schema::device_active_model;
 use crate::config::{IDENTITY_DURATION_HOURS, ROLE_ADMIN};
+use crate::devices::config as device_config;
 use crate::devices::ROLE_CYBER;
 use crate::entities::{
     area_of_responsibility, device_settings, login, organism, sigint_unit,
@@ -227,7 +228,7 @@ async fn target_api_smoke_covers_all_routes() {
     .await
     .unwrap();
     let mut settings =
-        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+        device_settings::Entity::find_by_id(device_config::DEVICE_SETTINGS_ID)
             .one(&env.dbx)
             .await
             .unwrap()
@@ -1596,7 +1597,7 @@ async fn device_file_content_rejections_are_tus_compliant_and_side_effect_free()
 async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let mut settings =
-        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+        device_settings::Entity::find_by_id(device_config::DEVICE_SETTINGS_ID)
             .one(&env.dbx)
             .await
             .unwrap()
@@ -1710,7 +1711,7 @@ async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
         json!({"hasMattermostWebhook": true})
     );
     let stored =
-        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+        device_settings::Entity::find_by_id(device_config::DEVICE_SETTINGS_ID)
             .one(&env.dbx)
             .await
             .unwrap()
@@ -1734,7 +1735,7 @@ async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
     );
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let stored =
-        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+        device_settings::Entity::find_by_id(device_config::DEVICE_SETTINGS_ID)
             .one(&env.dbx)
             .await
             .unwrap()
@@ -1748,7 +1749,7 @@ async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
         json!({"hasMattermostWebhook": false})
     );
     let stored =
-        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+        device_settings::Entity::find_by_id(device_config::DEVICE_SETTINGS_ID)
             .one(&env.dbx)
             .await
             .unwrap()
@@ -2626,11 +2627,33 @@ mod access_tests {
     }
 
     #[test]
+    fn cyber_viewer_preserves_device_source_access_without_analytical_writes() {
+        let roles = roles(&[crate::config::ROLE_CYBER_VIEWER]);
+        assert_eq!(capabilities(&roles), (true, true, true, false));
+        require_file_sync(&roles).unwrap();
+        require_audio_read(&roles).unwrap();
+        assert_device_operation_forbidden(
+            require_audio_source(&roles).unwrap_err(),
+        );
+        assert_device_operation_forbidden(
+            require_audio_edit(&roles).unwrap_err(),
+        );
+        assert_device_operation_forbidden(
+            require_field_groups(
+                &roles,
+                DeviceFieldGroups {
+                    source_data: true,
+                    analytical_data: true,
+                },
+            )
+            .unwrap_err(),
+        );
+    }
+
+    #[test]
     fn access_ignores_obsolete_unrelated_and_miscased_roles() {
         let cases = vec![
             vec!["DeviceSource"],
-            vec!["CyberViewer"],
-            vec!["DeviceSource", "CyberViewer"],
             vec!["DevicesEditor"],
             vec!["Unrelated"],
             vec!["cyber"],
@@ -2739,7 +2762,6 @@ mod access_tests {
             vec!["Api"],
             vec!["ApiAgent"],
             vec!["DeviceSource"],
-            vec!["CyberViewer"],
             vec![],
         ] {
             let mut denied_login = login.clone().into_active_model();
@@ -2753,6 +2775,13 @@ mod access_tests {
                 "{denied_roles:?}"
             );
         }
+
+        let mut login = login.into_active_model();
+        login.roles = Set(json!([crate::config::ROLE_CYBER_VIEWER]));
+        let login = login.update(&env.dbx).await.unwrap();
+        let viewer = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
+        assert_eq!(capabilities(&viewer.roles), (true, true, true, false));
+        require_message_devices(&env.dbx, &login_id).await.unwrap();
 
         let mut login = login.into_active_model();
         login.roles = Set(json!([ROLE_CYBER]));

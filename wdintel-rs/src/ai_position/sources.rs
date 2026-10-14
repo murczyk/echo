@@ -16,6 +16,9 @@ struct SourceRow {
     message_uuid: Uuid,
     group_name: Option<String>,
     message_at: NaiveDateTime,
+    evidence: String,
+    certainty: String,
+    coordinate_text: String,
 }
 
 async fn load_sources(
@@ -39,6 +42,9 @@ async fn load_sources(
                 message_uuid: row.message_uuid.to_string(),
                 group_name: row.group_name.unwrap_or_default(),
                 message_at: row.message_at.and_utc().timestamp_millis(),
+                evidence: row.evidence,
+                certainty: row.certainty,
+                coordinate_text: row.coordinate_text,
             },
         );
     }
@@ -56,7 +62,8 @@ pub(super) async fn mention_sources(
     load_sources(
         dbx,
         "select distinct on (m.id, c.mgrs) m.id as owner_id, c.mgrs,
-                message.id_uuid as message_uuid, sg.name as group_name, c.message_at
+                message.id_uuid as message_uuid, sg.name as group_name, c.message_at,
+                c.evidence, c.certainty, c.coordinate_text
          from ai_position_mention m
          join ai_position_coordinate c on c.mention_id = m.id
          join signal_group sg on sg.master_key = m.group_master_key
@@ -92,7 +99,8 @@ pub(super) async fn knowledge_sources(
     load_sources(
         dbx,
         "select distinct on (k.id) k.id as owner_id, c.mgrs,
-                message.id_uuid as message_uuid, sg.name as group_name, c.message_at
+                message.id_uuid as message_uuid, sg.name as group_name, c.message_at,
+                c.evidence, c.certainty, c.coordinate_text
          from ai_position_knowledge k
          join ai_position_mention m on m.name_key = k.name_key
          join ai_position_coordinate c on c.mention_id = m.id and c.mgrs = k.mgrs

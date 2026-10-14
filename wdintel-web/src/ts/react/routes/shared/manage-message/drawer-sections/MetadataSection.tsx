@@ -1,13 +1,19 @@
 import { useRadioFeatures } from '../../RadioFeatures';
 import React from 'react';
 import { Box, TextField, Autocomplete, Stack } from '@mui/material';
-import { useFormContext, Controller } from 'react-hook-form';
+import { useFormContext, Controller, useWatch } from 'react-hook-form';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { PowerDatePicker } from '../../../../components/PowerDateTimePicker';
 import { FormSectionWrapper } from './FormSectionWrapper';
 import { ParserFieldFeedback } from '../MessageParserFeedback';
+import { MessageUnitAutocomplete } from '../MessageUnitAutocomplete';
+import type { UnitResponse } from '../../../../services/api/direct-submit';
+import {
+  isMessageUnitSelectionValid,
+  MESSAGE_UNIT_SELECTION_ERROR,
+} from '../message-unit-selection';
 import {
   normalizeCallsign,
   normalizeMultiValue,
@@ -17,6 +23,7 @@ import {
 type Props = {
   showAdvanced: boolean;
   busy: boolean;
+  isEditMode: boolean;
   recentValues: any;
   callsignOptions: string[];
   callsignLoading: boolean;
@@ -26,15 +33,17 @@ type Props = {
   postOptions: string[];
   postLoading: boolean;
   setPostInput: (val: string) => void;
-  unitOptions: string[];
+  unitOptions: UnitResponse[];
   unitLoading: boolean;
-  setUnitInput: (val: string) => void;
+  unitAllowCreate: boolean;
+  onUnitFocus: () => void;
   unitLocked: boolean;
 };
 
 export function MetadataSection({
   showAdvanced,
   busy,
+  isEditMode,
   recentValues,
   callsignOptions,
   callsignLoading,
@@ -46,14 +55,19 @@ export function MetadataSection({
   setPostInput,
   unitOptions,
   unitLoading,
-  setUnitInput,
+  unitAllowCreate,
+  onUnitFocus,
   unitLocked,
 }: Props) {
   const radioFeaturesAllowed = useRadioFeatures();
   const {
     control,
+    setValue,
+    trigger,
     formState: { errors },
   } = useFormContext<MessageFormData>();
+  const unitSelection = useWatch({ control, name: 'unitSelection' });
+  const unitNetworkSelection = useWatch({ control, name: 'unitNetworkSelection' });
 
   return (
     <>
@@ -160,30 +174,25 @@ export function MetadataSection({
               name="unit"
               control={control}
               render={({ field }) => (
-                <Autocomplete
-                  freeSolo
-                  forcePopupIcon
-                  noOptionsText="Немає варіантів"
-                  options={Array.from(new Set([...(recentValues?.unit || []), ...unitOptions]))}
+                <MessageUnitAutocomplete
+                  options={unitOptions}
                   value={field.value ?? ''}
+                  selection={unitSelection}
+                  errorMessage={
+                    !isEditMode &&
+                    !isMessageUnitSelectionValid(field.value, unitSelection, unitNetworkSelection)
+                      ? MESSAGE_UNIT_SELECTION_ERROR
+                      : undefined
+                  }
                   loading={unitLoading}
+                  allowCreate={unitAllowCreate}
+                  onFocus={onUnitFocus}
                   disabled={busy || unitLocked}
-                  onInputChange={(_, newValue, reason) => {
-                    if (reason === 'input') {
-                      setUnitInput(newValue);
-                      field.onChange(newValue);
-                    }
+                  onChange={(name, selection) => {
+                    field.onChange(name);
+                    setValue('unitSelection', selection, { shouldDirty: true });
+                    void trigger('unit');
                   }}
-                  onChange={(_, newValue) => field.onChange(newValue || '')}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Підрозділ"
-                      size="small"
-                      fullWidth
-                      disabled={busy || unitLocked}
-                    />
-                  )}
                 />
               )}
             />

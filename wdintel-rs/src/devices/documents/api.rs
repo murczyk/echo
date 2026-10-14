@@ -11,7 +11,7 @@ use actix_web::{
 };
 use uuid::Uuid;
 
-pub(super) async fn authorize(
+pub(in crate::devices) async fn authorize(
     env: &Env,
     user: &Identity,
     device: &str,

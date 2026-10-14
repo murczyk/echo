@@ -634,12 +634,14 @@ async fn content_upload_terminal_transitions_are_recorded() {
     )
     .await;
     super::super::content::worker::cleanup_one_for_test(
+        &env,
         &content_runtime,
         expired_upload_id,
     )
     .await
     .unwrap();
     super::super::content::worker::cleanup_one_for_test(
+        &env,
         &content_runtime,
         expired_upload_id,
     )
@@ -817,7 +819,7 @@ async fn explicit_sync_recovers_persisted_batches_and_completes_idempotently() {
         &actor,
         sync_id,
         0,
-        (0..=crate::config::DEVICE_FILE_SYNC_BATCH_MAX_COUNT)
+        (0..=crate::devices::config::DEVICE_FILE_SYNC_BATCH_MAX_COUNT)
             .map(|index| raw_item(&format!("C:\\ignored\\{index}.log")))
             .collect(),
     )
@@ -932,7 +934,8 @@ async fn explicit_sync_preserves_duplicate_detection_at_batch_limit() {
         .await
         .unwrap();
     let sync_id = Uuid::parse_str(&started.response.sync.sync_id).unwrap();
-    let unique_count = crate::config::DEVICE_FILE_SYNC_BATCH_MAX_COUNT - 1;
+    let unique_count =
+        crate::devices::config::DEVICE_FILE_SYNC_BATCH_MAX_COUNT - 1;
     let mut files = (0..unique_count)
         .map(|index| {
             raw_item(&format!(
@@ -949,7 +952,7 @@ async fn explicit_sync_preserves_duplicate_detection_at_batch_limit() {
 
     assert_eq!(
         applied.batch.counts.received,
-        crate::config::DEVICE_FILE_SYNC_BATCH_MAX_COUNT as u64
+        crate::devices::config::DEVICE_FILE_SYNC_BATCH_MAX_COUNT as u64
     );
     assert_eq!(applied.batch.counts.accepted, unique_count as u64);
     assert_eq!(applied.batch.counts.rejected, 1);

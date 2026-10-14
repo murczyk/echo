@@ -18,9 +18,7 @@ type Msg
     | InitGotTime Posix
     | GotCurrentUser (Result ApiError B.User)
     | DateRangePickerMsg Shared.Components.DateRangePicker.Msg
-    | EventPollTrigger (Maybe String)
-    | EventPollReceived (Result ApiError B.LongPollRsp)
-    | InboxEvents (List B.EventMsg)
+    | InboxEvents (List Int)
     | InboxMessagesUpdated (Result ApiError B.MessageIdsRsp)
     | GotInbox (Result ApiError B.InboxMessagesRsp)
     | GotInboxMore (Result ApiError B.InboxMessagesRsp)
@@ -145,7 +143,9 @@ type Msg
     | DeleteMessageConfirm
     | DeleteMessageCancel
     | DeleteMessageDone Int (Result ApiError ())
-    | GotStatsCount (Result ApiError B.CountStatsRsp)
+    | GotStatsCount Int B.AnalysisStatsReq StatsCountField (Result ApiError Int)
+    | GotMessageStatsCount Int B.AnalysisStatsReq (Result ApiError B.MessageStatsCountRsp)
+    | GotUnitMatchStatsCount Int B.AnalysisStatsReq (Result ApiError B.UnitMatchStatsCountRsp)
     | GotSystemSettings (Result ApiError B.SystemSettingsCurrentRsp)
     | GotUserDutySettings (Result ApiError B.UserDutySettingsDto)
     | GotStatsAors (Result ApiError B.AreaOfResponsibilityStatsRsp)

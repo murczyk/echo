@@ -1,7 +1,8 @@
+import type { DeviceAudioSettingsState } from '../use-device-audio-settings';
 import { Box, Paper, Tab, Tabs, CircularProgress } from '@mui/material';
 import type { ReactNode } from 'react';
 
-import type { DeviceFileTreeEntry } from '../../../../../Bindings';
+import type { AiAgentFileCitation, DeviceFileTreeEntry } from '../../../../../Bindings';
 import { DeviceFileContentPane } from '../../device-files';
 import { DeviceFileJournal } from '../../device-files/components/DeviceFileJournal';
 import type { DeviceAnalyticsTagFilter } from '../../device-files/types';
@@ -19,10 +20,13 @@ export type DeviceDetailsTab = 'analytical' | 'files' | 'journal' | 'audio';
 export function DeviceDetailsTabPanel({
   audio,
   audioEditor,
+  audioSettings,
   mobileFiles,
   mobile = false,
   activeTab,
   selectedFile,
+  revisionPinned = false,
+  citation,
   journal,
   deviceId,
   syncId = null,
@@ -38,10 +42,13 @@ export function DeviceDetailsTabPanel({
 }: {
   audio: DeviceAudioState;
   audioEditor: DeviceAudioEditorState;
+  audioSettings: DeviceAudioSettingsState;
   mobileFiles?: ReactNode;
   mobile?: boolean;
   activeTab: DeviceDetailsTab;
   selectedFile: DeviceFileTreeEntry | null;
+  revisionPinned?: boolean;
+  citation?: AiAgentFileCitation;
   journal: DeviceFileJournalState;
   deviceId: string;
   syncId?: string | null;
@@ -111,7 +118,12 @@ export function DeviceDetailsTabPanel({
 
       <Box sx={{ minHeight: 0, flex: 1, overflow: 'hidden' }}>
         {activeTab === 'audio' ? (
-          <DeviceAudioTab audio={audio} editor={audioEditor} mobile={mobile} />
+          <DeviceAudioTab
+            audio={audio}
+            editor={audioEditor}
+            settings={audioSettings}
+            mobile={mobile}
+          />
         ) : null}
         {!dataReady && activeTab !== 'audio' ? (
           <div className="p-echo-lg" role={sessionError ? 'alert' : 'status'}>
@@ -159,6 +171,8 @@ export function DeviceDetailsTabPanel({
               <DeviceFileContentPane
                 deviceId={deviceId}
                 file={selectedFile ?? null}
+                revisionPinned={revisionPinned}
+                citation={citation}
                 sessionScoped={syncId !== null}
               />
             )}

@@ -8,7 +8,9 @@ use crate::file_registry::{
     entities::{file_analysis_run, file_sync_session},
     FileRegistryDb,
 };
-use crate::{config, entities::login, error::AppError, h, types::ShortContext};
+use crate::{
+    devices::config, entities::login, error::AppError, h, types::ShortContext,
+};
 use chrono::{DateTime, FixedOffset};
 use sea_orm::sea_query::Expr;
 use sea_orm::{

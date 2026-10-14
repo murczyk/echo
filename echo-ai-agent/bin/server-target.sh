@@ -9,6 +9,9 @@ source "$SCRIPT_DIR/lib.sh"
 connection_mode=${1:?connection mode is required}
 server=${2:?server is required}
 
+case "$server" in
+  echo-ai-agents-ua) export ECHO_AI_AGENT_HOST_PROFILE=ua ;;
+esac
 load_bundle
 [[ "$server" == "$EXPECTED_HOSTNAME" ]] \
   || die "unsupported --server: $server; expected $EXPECTED_HOSTNAME"

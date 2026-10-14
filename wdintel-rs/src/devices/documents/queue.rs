@@ -1,6 +1,7 @@
 use crate::{
     attachments::store::{execute, rows},
-    config::*,
+    config::OCR_MAX_ERROR_CHARS,
+    devices::config::*,
     h,
     types::{Env, ShortContext},
 };

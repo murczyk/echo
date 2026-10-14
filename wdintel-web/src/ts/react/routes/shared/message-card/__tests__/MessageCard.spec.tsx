@@ -21,7 +21,10 @@ import {
 import { MessageDeviceAccessProvider } from '../MessageDeviceAccess.tsx';
 import { DutyExcludeMenuContext } from '../DutyExcludeMenu.ts';
 import { MessageDeleteAccessContext, MessageWriteAccessContext } from '../MessageWriteAccess.tsx';
-import { resolveMessageCardEtalonDisplayModel } from '../message-card.utils.ts';
+import {
+  hideMessageCardNetworks,
+  resolveMessageCardEtalonDisplayModel,
+} from '../message-card.utils.ts';
 
 const observedPopoverAnchors: Array<HTMLElement | null> = [];
 
@@ -220,6 +223,220 @@ afterEach(() => {
 });
 
 describe('MessageCard', () => {
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('hides cold-loaded network metadata and copies the independently displayed unit', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);
+    const onCopyEtalon = vi.fn();
+    const view = await renderCard({
+      hideNetworks: true,
+      featureStrictNetworks: true,
+      msg: buildMessage({ unit: 'Підрозділ 42', location: 'ЛОКАЦІЯ' }),
+      networkDisplayMap: {},
+      networkMap: {},
+      onCopyEtalon,
+    });
+
+    expect(view.container.textContent).not.toContain('Alpha');
+    expect(view.container.textContent).toContain('Підрозділ 42');
+    expect(view.container.textContent).toContain('Локація');
+
+    await openOverflowMenu(view.container);
+    const copySection = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Копіювати…');
+    if (copySection == null) throw new Error('missing copy section');
+    await click(copySection);
+    const copyEtalon = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === "Копіювати прив'язку");
+    if (copyEtalon == null) throw new Error('missing etalon copy action');
+    await click(copyEtalon);
+
+    expect(onCopyEtalon).toHaveBeenCalledWith('Підрозділ 42');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('passes the hidden-network presentation to report creation', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1024);
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);
+    const onCreateReport = vi.fn();
+    const view = await renderCard({
+      hideNetworks: true,
+      msg: buildMessage({ unit: 'Підрозділ 42', location: 'ЛОКАЦІЯ' }),
+      onCreateReport,
+    });
+
+    const report = view.container.querySelector<HTMLElement>('[title="Створити розвіддонесення"]');
+    if (report == null) throw new Error('missing report action');
+    await click(report);
+
+    expect(onCreateReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        primaryKind: 'unit',
+        displayValue: 'Підрозділ 42',
+        copyEtalonValue: 'Підрозділ 42',
+        renderedNetworks: [],
+      }),
+      report,
+    );
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('keeps independent unit and location copy actions when hiding hydrated networks', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);
+    const onCopyEtalon = vi.fn();
+    const onCopyLocation = vi.fn();
+    const view = await renderCard({
+      hideNetworks: true,
+      msg: buildMessage({ unit: 'Підрозділ 42', location: 'ЛОКАЦІЯ' }),
+      onCopyEtalon,
+      onCopyLocation,
+    });
+
+    expect(view.container.textContent).not.toContain('Alpha');
+    expect(view.container.textContent).toContain('Підрозділ 42');
+    expect(view.container.textContent).toContain('Локація');
+
+    await openOverflowMenu(view.container);
+    const copySection = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Копіювати…');
+    if (copySection == null) throw new Error('missing copy section');
+    await click(copySection);
+    const copyEtalon = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === "Копіювати прив'язку");
+    if (copyEtalon == null) throw new Error('missing etalon copy action');
+    await click(copyEtalon);
+
+    await openOverflowMenu(view.container);
+    const secondCopySection = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Копіювати…');
+    if (secondCopySection == null) throw new Error('missing second copy section');
+    await click(secondCopySection);
+    const copyLocation = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Копіювати локацію');
+    if (copyLocation == null) throw new Error('missing location copy action');
+    await click(copyLocation);
+
+    expect(onCopyEtalon).toHaveBeenCalledWith('Підрозділ 42');
+    expect(onCopyLocation).toHaveBeenCalledWith('Локація');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it.each([
+    { unit: undefined, location: 'ЛОКАЦІЯ', primaryKind: 'location' as const, value: 'Локація' },
+    { unit: undefined, location: null, primaryKind: 'empty' as const, value: '—' },
+  ])(
+    'uses the $primaryKind fallback on hidden cold-loaded networks',
+    ({ unit, location, primaryKind, value }) => {
+      const raw = resolveMessageCardEtalonDisplayModel(buildMessage({ unit, location }), {
+        featureStrictNetworks: true,
+        networkDisplayMap: {},
+        networkMap: {},
+      });
+      const hidden = hideMessageCardNetworks(raw, unit);
+
+      expect(hidden).toMatchObject({
+        primaryKind,
+        displayValue: value,
+        copyEtalonValue: null,
+        renderedNetworks: [],
+      });
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('retains hydrated network metadata and copying when network hiding is disabled', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(40);
+    const onCopyEtalon = vi.fn();
+    const view = await renderCard({ onCopyEtalon });
+
+    expect(view.container.textContent).toContain('Alpha');
+
+    await openOverflowMenu(view.container);
+    const copySection = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === 'Копіювати…');
+    if (copySection == null) throw new Error('missing copy section');
+    await click(copySection);
+    const copyEtalon = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
+    ).find((item) => item.textContent?.trim() === "Копіювати прив'язку");
+    if (copyEtalon == null) throw new Error('missing etalon copy action');
+    await click(copyEtalon);
+
+    expect(onCopyEtalon).toHaveBeenCalledWith('р/м Alpha');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('opens a catalog-only callsign tooltip when networks are hidden', async () => {
+    const view = await renderCard({
+      hideNetworks: true,
+      msg: buildMessage({
+        text: 'WOLF',
+        textMarked: [
+          {
+            CNCallsignC: { text: 'WOLF', begin: 0, end: 4, etalon: 'WOLF' },
+          },
+        ],
+      }),
+      networks: [
+        {
+          id: 7,
+          name: 'МЕРЕЖА, ЯКУ НЕ МОЖНА ПОКАЗУВАТИ',
+          freqs: [],
+          unitIds: [],
+        } as Network,
+      ],
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'КАТАЛОГОВА ПОЗИЦІЯ',
+              comment: '',
+              unit1: 'Каталоговий підрозділ',
+              unit2: '',
+              unitId: null,
+              networkIdsReportedIn: [7],
+            },
+          ],
+          networkHints: [
+            {
+              id: 1,
+              networkId: 7,
+              position: 'МЕРЕЖЕВА ПОЗИЦІЯ',
+              formation: 'МЕРЕЖЕВЕ З’ЄДНАННЯ',
+            },
+          ],
+        },
+      },
+    });
+
+    const hint = view.container.querySelector<HTMLElement>(
+      'button[aria-label="Підказка з каталогу"]',
+    );
+    if (hint == null) throw new Error('missing catalog callsign hint');
+    await act(async () => {
+      hint.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+    });
+
+    const tooltip = document.body.querySelector<HTMLElement>('[role="tooltip"]');
+    expect(tooltip?.textContent).toContain('Позивні з каталогу:');
+    expect(tooltip?.textContent).toContain('КАТАЛОГОВА ПОЗИЦІЯ');
+    expect(tooltip?.textContent).not.toContain('МЕРЕЖЕВА ПОЗИЦІЯ');
+    expect(tooltip?.textContent).not.toContain('МЕРЕЖА, ЯКУ НЕ МОЖНА ПОКАЗУВАТИ');
+  });
+
   it.each([
     { displayMode: 'duty' as const, hasExcludeSection: true },
     { displayMode: 'analysis' as const, hasExcludeSection: false },

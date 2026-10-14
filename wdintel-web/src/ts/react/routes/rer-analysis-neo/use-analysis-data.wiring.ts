@@ -68,6 +68,7 @@ export function buildAnalysisActionsParams({
     reconcileTagMutation,
     registerLocalInboxChangeOrigin,
     refreshTagFacet,
+    refreshMessageCounts: messageList.refreshMessageCounts,
     reload: (options?: AnalysisReloadOptions) => reloadRef.current(options),
     setMapOpenMessages: mapData.setMapOpenMessages,
     setMessages: messageList.setMessages,
@@ -114,6 +115,7 @@ export function buildAnalysisActionsParams({
 type BuildReloadParamsInput = {
   centerTab: UseAnalysisDataProps['centerTab'];
   deferInitialLoad: boolean;
+  hideNetworks: boolean;
   focusedWindow: InboxWindowRsp | null;
   focusedMessageActive: boolean;
   leftPanelOpen: boolean;
@@ -195,6 +197,7 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
   return {
     centerTab: input.centerTab,
     deferInitialLoad: input.deferInitialLoad,
+    hideNetworks: input.hideNetworks,
     focusedWindow: input.focusedWindow,
     focusedMessageActive: input.focusedMessageActive,
     leftPanelOpen: input.leftPanelOpen,

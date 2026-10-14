@@ -451,6 +451,7 @@ function CallsignWithHint({
   networks,
   unitsMap,
   freq,
+  hideNetworks = false,
   networkIds,
   searchHighlighted = false,
 }: {
@@ -459,6 +460,7 @@ function CallsignWithHint({
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
   freq?: string | null;
+  hideNetworks?: boolean;
   networkIds?: number[] | null;
   searchHighlighted?: boolean;
 }) {
@@ -467,9 +469,10 @@ function CallsignWithHint({
     searchHighlighted ? <SearchHighlightedCallsign>{node}</SearchHighlightedCallsign> : node;
 
   const hintResult = getMessageCallsignHintResult({
-    networkIds,
-    networks: networks ?? [],
-    unitsMap: unitsMap ?? {},
+    hideNetworks,
+    networkIds: hideNetworks ? undefined : networkIds,
+    networks: hideNetworks ? [] : (networks ?? []),
+    unitsMap: hideNetworks ? {} : (unitsMap ?? {}),
     callsignInfoMap,
     callsign: displayText,
   });
@@ -620,6 +623,7 @@ export function renderMarkedText(
     unitsMap?: Record<number, Unit>;
     messageLinkGroupInfos?: Record<string, SignalGroupEntry>;
     freq?: string | null;
+    hideNetworks?: boolean;
     networkIds?: number[] | null;
     searchText?: string | null;
   },
@@ -673,6 +677,7 @@ export function renderMarkedText(
           networks={options?.networks}
           unitsMap={options?.unitsMap}
           freq={options?.freq}
+          hideNetworks={options?.hideNetworks}
           networkIds={options?.networkIds}
           searchHighlighted={searchHighlighted}
         />,
@@ -717,6 +722,7 @@ export function renderMarkedText(
             networks={options?.networks}
             unitsMap={options?.unitsMap}
             freq={options?.freq}
+            hideNetworks={options?.hideNetworks}
             networkIds={options?.networkIds}
           />
           {callsignAt >= 0 ? text.slice(callsignAt + (callsign?.length ?? 0)) : null}

@@ -70,6 +70,11 @@ pub mod tests {
                 .execute_unprepared(
                     r#"
                     truncate table
+                        public.device_audio_asr_backfill_item,
+                        public.device_audio_asr_backfill,
+                        public.device_audio_asr_scheduler,
+                        public.device_audio_asr_job,
+                        public.device_audio_asr_setting,
                         public.device_audio,
                         public.device_audio_ingest,
                         public.file_analysis_run_item,
@@ -84,6 +89,7 @@ pub mod tests {
                         public.file_document_job,
                         public.file_document_generation,
                         public.file_document,
+                        public.file_preview,
                         public.file_content,
                         public.file_content_upload,
                         public.file_revision,
@@ -92,6 +98,7 @@ pub mod tests {
                         public.analytics_tag_test_file,
                         public.analytics_tag,
                         public.file_entry;
+                    insert into public.device_audio_asr_scheduler (id, turn) values (1, 0);
                     "#,
                 )
                 .await

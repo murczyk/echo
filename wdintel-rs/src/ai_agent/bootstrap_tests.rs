@@ -1,5 +1,7 @@
 use super::*;
-use crate::entities::{ai_agent_conversation, organism};
+use crate::entities::{
+    ai_agent_allowed_engine, ai_agent_conversation, ai_agent_settings, organism,
+};
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use actix_identity::IdentityMiddleware;
 use actix_session::{storage::RedisSessionStore, SessionMiddleware};
@@ -408,6 +410,391 @@ async fn running_request(
     .insert(&env.dbx)
     .await
     .unwrap()
+}
+
+async fn checkpoint_request_fixture(
+    env: &Env,
+    fixture: &AgentFixture,
+    correlation_id: Uuid,
+) -> (ai_agent_request::Model, ai_engine::Model) {
+    let request = running_request(env, fixture).await;
+    let mut ai_engine = ai_engine::Entity::find_by_id(request.ai_engine_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    let url = format!("https://{}/v1", crate::config::AI_GOV_UA_API_HOST);
+    ai_engine.url = Set(url.clone());
+    ai_engine.model_name = Set(crate::config::AI_AGENT_GLM_5_3.to_string());
+    ai_engine.enabled = Set(true);
+    ai_engine.update(&env.dbx).await.unwrap();
+    let checkpoint = ai_engine::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        name: Set(format!("checkpoint-test-{}", Uuid::now_v7())),
+        url: Set(url),
+        model_name: Set(crate::config::AI_AGENT_OPENAI_GPT_6_LUNA.to_string()),
+        enabled: Set(true),
+        ..Default::default()
+    }
+    .insert(&env.dbx)
+    .await
+    .unwrap();
+    for ai_engine_id in [request.ai_engine_id, checkpoint.id] {
+        ai_agent_allowed_engine::ActiveModel {
+            ai_engine_id: Set(ai_engine_id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+    }
+    let mut request = request.into_active_model();
+    request.correlation_id = Set(Some(correlation_id));
+    (request.update(&env.dbx).await.unwrap(), checkpoint)
+}
+
+async fn checkpoint_test_settings(env: &Env) -> ai_agent_settings::Model {
+    let settings = ai_agent_settings::Entity::find_by_id(1_i16)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut enabled = settings.clone().into_active_model();
+    enabled.feature_enabled = Set(true);
+    enabled.update(&env.dbx).await.unwrap();
+    settings
+}
+
+async fn restore_checkpoint_test_settings(
+    env: &Env,
+    settings: ai_agent_settings::Model,
+) {
+    let feature_enabled = settings.feature_enabled;
+    let mut settings = settings.into_active_model();
+    settings.feature_enabled = Set(feature_enabled);
+    settings.update(&env.dbx).await.unwrap();
+}
+
+async fn issue_test_provider(
+    env: &Env,
+    request: &ai_agent_request::Model,
+    checkpoint: Option<&ai_engine::Model>,
+) -> String {
+    issue_provider_capability(
+        env,
+        request.agent_login_id.unwrap(),
+        request.id,
+        request.correlation_id.unwrap(),
+        request.ai_engine_id,
+        crate::config::AI_AGENT_GLM_5_3.to_string(),
+        checkpoint.map(|checkpoint| CheckpointProviderGrant {
+            ai_engine_id: checkpoint.id,
+            model_name: checkpoint.model_name.clone(),
+            max_output_tokens: 8_192,
+        }),
+    )
+    .await
+    .unwrap()
+}
+
+async fn authorize_test_provider(
+    env: &Env,
+    token: &str,
+    model_name: &str,
+) -> Option<AuthorizedProvider> {
+    authorize_provider_capability(env, token, model_name)
+        .await
+        .unwrap()
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3724_checkpoint_capability_shared_limits_and_revocation() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let settings = checkpoint_test_settings(&env).await;
+    let correlation_id = Uuid::now_v7();
+    let (request, checkpoint) =
+        checkpoint_request_fixture(&env, &fixture, correlation_id).await;
+    let token = issue_test_provider(&env, &request, None).await;
+    assert!(
+        authorize_test_provider(&env, &token, &checkpoint.model_name)
+            .await
+            .is_none()
+    );
+    assert!(authorize_test_provider(
+        &env,
+        &token,
+        crate::config::AI_AGENT_GLM_5_3
+    )
+    .await
+    .is_some());
+    revoke_correlation(&env, Some(fixture.agent.id), correlation_id)
+        .await
+        .unwrap();
+    let token = issue_test_provider(&env, &request, Some(&checkpoint)).await;
+    for (model_name, ai_engine_id, checkpoint_max_tokens) in [
+        (checkpoint.model_name.as_str(), checkpoint.id, Some(8_192)),
+        (crate::config::AI_AGENT_GLM_5_3, request.ai_engine_id, None),
+    ] {
+        let authorization = authorize_test_provider(&env, &token, model_name)
+            .await
+            .unwrap();
+        assert_eq!(authorization.ai_engine.id, ai_engine_id);
+        assert_eq!(authorization.checkpoint_max_tokens, checkpoint_max_tokens);
+    }
+    assert!(authorize_test_provider(&env, &token, "ungranted-provider")
+        .await
+        .is_none());
+    let digest = sha256::digest(token.as_bytes());
+    let calls_key = provider_capability_calls_key(&digest);
+    let mut redis = env.redis.clone();
+    let calls: i64 = redis.get(&calls_key).await.unwrap();
+    redis
+        .incr::<_, _, i64>(
+            &calls_key,
+            AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT - 1 - calls,
+        )
+        .await
+        .unwrap();
+    assert!(
+        authorize_test_provider(&env, &token, &checkpoint.model_name)
+            .await
+            .is_some()
+    );
+    assert!(authorize_test_provider(
+        &env,
+        &token,
+        crate::config::AI_AGENT_GLM_5_3
+    )
+    .await
+    .is_none());
+    revoke_correlation(&env, Some(fixture.agent.id), correlation_id)
+        .await
+        .unwrap();
+    assert!(!redis.exists::<_, bool>(&calls_key).await.unwrap());
+    for model_name in [
+        checkpoint.model_name.as_str(),
+        crate::config::AI_AGENT_GLM_5_3,
+    ] {
+        assert!(authorize_test_provider(&env, &token, model_name)
+            .await
+            .is_none());
+    }
+    restore_checkpoint_test_settings(&env, settings).await;
+    fixture.cleanup(&env).await;
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
+{
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let settings = checkpoint_test_settings(&env).await;
+    let correlation_id = Uuid::now_v7();
+    let (request, _) =
+        checkpoint_request_fixture(&env, &fixture, correlation_id).await;
+    let engine = ai_engine::Entity::find_by_id(request.ai_engine_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut config = env.config.clone();
+    config.ai_agent_reasoning_presets_enabled = Some(true);
+    config.ai_agent_reasoning_verified_engine_ids = Some(vec![engine.id]);
+    let policy = reasoning::resolve(
+        &config,
+        &engine,
+        crate::ai_agent::types::AiAgentReasoningPreset::Balanced,
+    );
+    let mut request = request.into_active_model();
+    request.started_at = Set(Some(chrono::Utc::now().naive_utc()));
+    request.execution_policy =
+        Set(Some(serde_json::to_value(&policy).unwrap()));
+    let request = request.update(&env.dbx).await.unwrap();
+    let token = issue_test_provider(&env, &request, Some(&engine)).await;
+    let authorization = authorize_provider_call(
+        &env,
+        &token,
+        &engine.model_name,
+        ProviderPurpose::Checkpoint,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        authorization
+            .execution_policy
+            .as_ref()
+            .unwrap()
+            .checkpoint_effort
+            .as_deref(),
+        Some("low")
+    );
+    assert_eq!(authorization.checkpoint_max_tokens, Some(8192));
+    let deadline = authorization.deadline_at;
+    let calls_key =
+        provider_capability_calls_key(&sha256::digest(token.as_bytes()));
+    env.redis
+        .clone()
+        .set::<_, _, ()>(
+            &calls_key,
+            AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT - 1,
+        )
+        .await
+        .unwrap();
+    let research = authorize_provider_call(
+        &env,
+        &token,
+        &engine.model_name,
+        ProviderPurpose::Research,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(research.research_limit_reached);
+    let synthesis = authorize_provider_call(
+        &env,
+        &token,
+        &engine.model_name,
+        ProviderPurpose::Synthesis,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(synthesis.deadline_at, deadline);
+    assert!(!synthesis.research_limit_reached);
+    assert!(authorize_provider_call(
+        &env,
+        &token,
+        &engine.model_name,
+        ProviderPurpose::Synthesis
+    )
+    .await
+    .unwrap()
+    .is_none());
+    revoke_correlation(&env, Some(fixture.agent.id), correlation_id)
+        .await
+        .unwrap();
+    let mut request = request.into_active_model();
+    request.started_at = Set(Some(
+        (chrono::Utc::now() - chrono::Duration::seconds(241)).naive_utc(),
+    ));
+    let request = request.update(&env.dbx).await.unwrap();
+    let limited = issue_test_provider(&env, &request, Some(&engine)).await;
+    for purpose in [ProviderPurpose::Research, ProviderPurpose::Checkpoint] {
+        assert!(
+            authorize_provider_call(
+                &env,
+                &limited,
+                &engine.model_name,
+                purpose
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .research_limit_reached
+        );
+    }
+    assert!(
+        !authorize_provider_call(
+            &env,
+            &limited,
+            &engine.model_name,
+            ProviderPurpose::Synthesis,
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .research_limit_reached
+    );
+    revoke_correlation(&env, Some(fixture.agent.id), correlation_id)
+        .await
+        .unwrap();
+    let mut request = request.into_active_model();
+    request.started_at = Set(Some(
+        (chrono::Utc::now() - chrono::Duration::seconds(301)).naive_utc(),
+    ));
+    let request = request.update(&env.dbx).await.unwrap();
+    let expired = issue_test_provider(&env, &request, Some(&engine)).await;
+    assert!(authorize_provider_call(
+        &env,
+        &expired,
+        &engine.model_name,
+        ProviderPurpose::Synthesis
+    )
+    .await
+    .unwrap()
+    .is_none());
+    revoke_correlation(&env, Some(fixture.agent.id), correlation_id)
+        .await
+        .unwrap();
+    restore_checkpoint_test_settings(&env, settings).await;
+    fixture.cleanup(&env).await;
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3724_checkpoint_capability_checked_live_request_and_access() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let settings = checkpoint_test_settings(&env).await;
+    let correlation_id = Uuid::now_v7();
+    let (request, checkpoint) =
+        checkpoint_request_fixture(&env, &fixture, correlation_id).await;
+    let token = issue_test_provider(&env, &request, Some(&checkpoint)).await;
+    let mut cancelled = request.clone().into_active_model();
+    cancelled.cancellation_requested = Set(true);
+    cancelled.update(&env.dbx).await.unwrap();
+    for model_name in [
+        checkpoint.model_name.as_str(),
+        crate::config::AI_AGENT_GLM_5_3,
+    ] {
+        assert!(authorize_test_provider(&env, &token, model_name)
+            .await
+            .is_none());
+    }
+    let mut running = request.into_active_model();
+    running.cancellation_requested = Set(false);
+    running.update(&env.dbx).await.unwrap();
+    ai_agent_allowed_engine::Entity::delete_by_id(checkpoint.id)
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    assert!(authorize_provider_capability(
+        &env,
+        &token,
+        &checkpoint.model_name
+    )
+    .await
+    .is_err());
+    assert!(authorize_test_provider(
+        &env,
+        &token,
+        crate::config::AI_AGENT_GLM_5_3
+    )
+    .await
+    .is_some());
+    ai_agent_allowed_engine::ActiveModel {
+        ai_engine_id: Set(checkpoint.id),
+        ..Default::default()
+    }
+    .insert(&env.dbx)
+    .await
+    .unwrap();
+    fixture.invalidate(&env, "human_blocked").await;
+    for model_name in [
+        checkpoint.model_name.as_str(),
+        crate::config::AI_AGENT_GLM_5_3,
+    ] {
+        assert!(authorize_test_provider(&env, &token, model_name)
+            .await
+            .is_none());
+    }
+    restore_checkpoint_test_settings(&env, settings).await;
+    fixture.cleanup(&env).await;
 }
 
 #[actix_web::test]
@@ -1168,4 +1555,443 @@ async fn map_revisions_edit_undo_redo_and_replay_without_side_effects() {
     .await;
     let second: AiAgentMapDocument = test::read_body_json(response).await;
     assert_eq!(&second.records[0].sidc[3..4], "3");
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3770_interrupted_history_and_completion_metadata_survive_storage(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let request = running_request(&env, &fixture).await;
+    for (kind, payload) in [
+        (
+            "assistant_delta",
+            serde_json::json!({"delta":"discarded draft"}),
+        ),
+        (
+            "assistant_snapshot",
+            serde_json::json!({"text":"saved evidence"}),
+        ),
+        (
+            "assistant_delta",
+            serde_json::json!({"delta":" with source"}),
+        ),
+        (
+            "completion_metadata",
+            serde_json::json!({"coverageLimited":true,"reason":"time_limit"}),
+        ),
+    ] {
+        assert!(crate::ai_agent::events::append_runner(
+            &env.dbx, request.id, kind, payload
+        )
+        .await
+        .unwrap());
+    }
+    for _ in 0..4 {
+        crate::ai_agent::events::append_runner(
+            &env.dbx,
+            request.id,
+            "assistant_delta",
+            serde_json::json!({"delta":"🧭\n".repeat(35_000)}),
+        )
+        .await
+        .unwrap();
+    }
+    let mut failed = request.clone().into_active_model();
+    failed.state = Set("failed".to_string());
+    failed.prompt = Set("Original subjects and search scope".to_string());
+    failed.update(&env.dbx).await.unwrap();
+    let mut cancelled = request.clone().into_active_model();
+    cancelled.id = Set(Uuid::now_v7());
+    cancelled.state = Set("cancelled".to_string());
+    cancelled.prompt = Set("Also search device files".to_string());
+    cancelled.queued_at = Set(request.queued_at + chrono::Duration::seconds(1));
+    cancelled.insert(&env.dbx).await.unwrap();
+    let mut followup = request.clone();
+    followup.id = Uuid::now_v7();
+    followup.queued_at = request.queued_at + chrono::Duration::seconds(2);
+    let history = crate::ai_agent::worker::load_history(&env, &followup)
+        .await
+        .unwrap();
+    assert_eq!(history.len(), 4);
+    assert_eq!(history[0]["content"], "Original subjects and search scope");
+    let draft = history[1]["content"].as_str().unwrap();
+    assert!(draft.contains("failed") && draft.contains("incomplete"));
+    assert!(draft.contains("saved evidence with source"));
+    assert!(!draft.contains("discarded draft"));
+    assert!(draft.contains("truncated to fit context"));
+    let payload = crate::ai_agent::worker::bounded_runner_payload(
+        serde_json::json!({"prompt":"Also search files","skills":[]}),
+        history.clone(),
+    )
+    .unwrap();
+    assert_eq!(
+        payload["history"][0]["content"],
+        "Original subjects and search scope"
+    );
+    assert!(
+        serde_json::to_vec(&payload).unwrap().len()
+            <= crate::config::AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES
+    );
+    assert_eq!(history[2]["content"], "Also search device files");
+    assert!(history[3]["content"]
+        .as_str()
+        .unwrap()
+        .contains("cancelled"));
+    let mut running = request.clone().into_active_model();
+    running.id = Set(Uuid::now_v7());
+    running.insert(&env.dbx).await.unwrap();
+    assert_eq!(
+        crate::ai_agent::worker::load_history(&env, &followup)
+            .await
+            .unwrap()
+            .len(),
+        4
+    );
+    let zone =
+        crate::functest::tests::mk_sigint_zone(&env.dbx, Default::default())
+            .await
+            .unwrap();
+    let mut human = fixture.human.clone().into_active_model();
+    human.sigint_zone_id = Set(Some(zone.id));
+    human.update(&env.dbx).await.unwrap();
+    let source = crate::functest::tests::mk_signal_message(
+        &env.dbx,
+        crate::entities::signal_message::ActiveModel {
+            id_uuid: Set(Some(Uuid::new_v4())),
+            datasource_group_id: Set(None),
+            login_id: Set(Some(fixture.human.id)),
+            sender: Set(Some(fixture.human.id.to_string())),
+            body: Set(Some("saved evidence".to_string())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    crate::ai_agent::events::append_in_transaction(&txn, request.id, "message_citations", serde_json::json!({"citations":[{"messageId":source.id,"messageIdentifier":source.id_uuid.unwrap().to_string()}]})).await.unwrap();
+    txn.commit().await.unwrap();
+    assert!(crate::ai_agent::worker::load_history(&env, &followup)
+        .await
+        .unwrap()[1]["content"]
+        .as_str()
+        .unwrap()
+        .contains("saved evidence"));
+    let mut source = source.into_active_model();
+    source.deleted = Set(true);
+    let source = source.update(&env.dbx).await.unwrap();
+    let revoked = crate::ai_agent::worker::load_history(&env, &followup)
+        .await
+        .unwrap();
+    assert_eq!(revoked[0]["content"], "Original subjects and search scope");
+    assert!(!revoked[1]["content"]
+        .as_str()
+        .unwrap()
+        .contains("saved evidence"));
+    assert_eq!(revoked[1]["citations"], serde_json::json!([]));
+    let mut source = source.into_active_model();
+    source.deleted = Set(false);
+    source.update(&env.dbx).await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    crate::ai_agent::events::append_in_transaction(&txn, request.id, "file_citations", serde_json::json!({
+        "citations": [{"deviceId":Uuid::new_v4(),"fileId":Uuid::new_v4(),"revision":1,"extractionRevision":null,"section":null}]
+    })).await.unwrap();
+    txn.commit().await.unwrap();
+    let history = crate::ai_agent::worker::load_history(&env, &followup)
+        .await
+        .unwrap();
+    assert_eq!(history[0]["content"], "Original subjects and search scope");
+    let hidden = history[1]["content"].as_str().unwrap();
+    assert!(
+        hidden.contains("unavailable") && !hidden.contains("saved evidence")
+    );
+    assert_eq!(history[1]["fileCitations"], serde_json::json!([]));
+    followup.queued_at = request.queued_at;
+    followup.id = request.id;
+    assert!(crate::ai_agent::worker::load_history(&env, &followup)
+        .await
+        .unwrap()
+        .is_empty());
+    fixture.cleanup(&env).await;
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3770_work_survives_cancellation_with_pagination_and_source_revalidation(
+) {
+    use crate::ai_agent::types::AiAgentMessageCitation;
+    use crate::ai_agent::work_memory::{self, ReadWork, WorkRecord};
+    use crate::entities::signal_message;
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let request = running_request(&env, &fixture).await;
+    let zone =
+        crate::functest::tests::mk_sigint_zone(&env.dbx, Default::default())
+            .await
+            .unwrap();
+    let mut human = fixture.human.clone().into_active_model();
+    human.sigint_zone_id = Set(Some(zone.id));
+    human.update(&env.dbx).await.unwrap();
+    let source = crate::functest::tests::mk_signal_message(
+        &env.dbx,
+        signal_message::ActiveModel {
+            id_uuid: Set(Some(Uuid::new_v4())),
+            datasource_group_id: Set(None),
+            login_id: Set(Some(fixture.human.id)),
+            sender: Set(Some(fixture.human.id.to_string())),
+            body: Set(Some("Retained evidence".to_string())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let record = WorkRecord {
+        version: 1,
+        sequence: 1,
+        kind: "tool".to_string(),
+        tool: Some("echo_inbox_messages".to_string()),
+        query: serde_json::json!({"cursor":"next-page"}),
+        content: "Доказ ".repeat(5_000),
+        citations: vec![AiAgentMessageCitation {
+            message_id: source.id,
+            message_identifier: source.id_uuid.unwrap().to_string(),
+        }],
+        file_citations: vec![],
+        covers_through: None,
+    };
+    let (first, retry) = tokio::join!(
+        work_memory::append_record(&env, &request, &record),
+        work_memory::append_record(&env, &request, &record)
+    );
+    first.unwrap();
+    retry.unwrap();
+    let mut conflicting = record.clone();
+    conflicting.content = "different".to_string();
+    assert!(work_memory::append_record(&env, &request, &conflicting)
+        .await
+        .is_err());
+    let checkpoint = WorkRecord {
+        sequence: 2,
+        kind: "checkpoint".to_string(),
+        tool: None,
+        content: "Saved findings; next-page remains unread".to_string(),
+        covers_through: Some(1),
+        citations: vec![],
+        ..record.clone()
+    };
+    work_memory::append_record(&env, &request, &checkpoint)
+        .await
+        .unwrap();
+    let newest = WorkRecord {
+        sequence: 3,
+        content: "Newest evidence".to_string(),
+        ..record.clone()
+    };
+    work_memory::append_record(&env, &request, &newest)
+        .await
+        .unwrap();
+    let oversized = WorkRecord {
+        sequence: 4,
+        content: "x".repeat(crate::config::AI_AGENT_WORK_RECORD_MAX_BYTES),
+        ..record.clone()
+    };
+    assert!(work_memory::append_record(&env, &request, &oversized)
+        .await
+        .is_err());
+    let out_of_order = WorkRecord {
+        sequence: 5,
+        ..record.clone()
+    };
+    assert!(work_memory::append_record(&env, &request, &out_of_order)
+        .await
+        .is_err());
+    let mut cancelled = request.clone().into_active_model();
+    cancelled.state = Set("cancelled".to_string());
+    cancelled.cancellation_requested = Set(true);
+    cancelled.update(&env.dbx).await.unwrap();
+    assert!(work_memory::append_record(&env, &request, &checkpoint)
+        .await
+        .is_err());
+    let mut followup = request.clone();
+    followup.id = Uuid::now_v7();
+    followup.queued_at += chrono::Duration::seconds(1);
+    let query = ReadWork {
+        request_id: request.id,
+        after: 0,
+        offset: 0,
+    };
+    let first = work_memory::read_records(&env, &followup, &query)
+        .await
+        .unwrap();
+    assert_eq!(
+        first["records"][0]["content"]
+            .as_str()
+            .unwrap()
+            .chars()
+            .count(),
+        crate::config::AI_AGENT_WORK_READ_CHARS
+    );
+    assert_eq!(first["nextAfter"], 0);
+    let second = work_memory::read_records(
+        &env,
+        &followup,
+        &ReadWork {
+            request_id: request.id,
+            after: 0,
+            offset: crate::config::AI_AGENT_WORK_READ_CHARS,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        format!(
+            "{}{}",
+            first["records"][0]["content"].as_str().unwrap(),
+            second["records"][0]["content"].as_str().unwrap()
+        ),
+        record.content
+    );
+    let recap = work_memory::initial_context(&env, &followup).await.unwrap();
+    assert!(recap["recap"].as_str().unwrap().contains("Saved findings"));
+    assert!(recap["recap"].as_str().unwrap().contains("Newest evidence"));
+    let last = work_memory::read_records(
+        &env,
+        &followup,
+        &ReadWork {
+            request_id: request.id,
+            after: 2,
+            offset: 0,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(last["nextAfter"].is_null());
+    let mut outsider = followup.clone();
+    outsider.human_login_id = Uuid::new_v4();
+    assert!(work_memory::read_records(&env, &outsider, &query)
+        .await
+        .is_err());
+    outsider = followup.clone();
+    outsider.conversation_id = Uuid::new_v4();
+    assert!(work_memory::read_records(&env, &outsider, &query)
+        .await
+        .is_err());
+    assert!(work_memory::read_records(&env, &request, &query)
+        .await
+        .is_err());
+    let mut revoked = source.into_active_model();
+    revoked.deleted = Set(true);
+    revoked.update(&env.dbx).await.unwrap();
+    let hidden = work_memory::read_records(&env, &followup, &query)
+        .await
+        .unwrap();
+    assert_eq!(hidden["records"][0]["unavailable"], true);
+    let hidden = work_memory::read_records(
+        &env,
+        &followup,
+        &ReadWork {
+            request_id: request.id,
+            after: 1,
+            offset: 0,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(hidden["records"][0]["unavailable"], true);
+    assert!(
+        !work_memory::initial_context(&env, &followup).await.unwrap()["recap"]
+            .as_str()
+            .unwrap()
+            .contains("Saved findings")
+    );
+    let mut conversation =
+        ai_agent_conversation::Entity::find_by_id(request.conversation_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+    conversation.deleted_at = Set(Some(chrono::Utc::now().naive_utc()));
+    conversation.update(&env.dbx).await.unwrap();
+    assert!(work_memory::read_records(&env, &followup, &query)
+        .await
+        .is_err());
+    fixture.cleanup(&env).await;
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3770_internal_work_append_requires_live_binding_without_spending_tool_calls(
+) {
+    use crate::ai_agent::work_memory;
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    Arc::get_mut(&mut env)
+        .unwrap()
+        .config
+        .ai_agent_work_memory_enabled = Some(true);
+    let fixture = AgentFixture::new(&env).await;
+    let request = running_request(&env, &fixture).await;
+    let (token, correlation) =
+        issue_bootstrap(&env, fixture.agent.id, Some(request.id), false)
+            .await
+            .unwrap();
+    let mut agent = fixture.agent.clone().into_active_model();
+    agent.deleted = Set(false);
+    agent.update(&env.dbx).await.unwrap();
+    let mut bound = request.clone().into_active_model();
+    bound.correlation_id = Set(Some(correlation));
+    bound.update(&env.dbx).await.unwrap();
+    let app = test::init_service(
+        bootstrap_app(env.clone())
+            .await
+            .service(work_memory::append)
+            .service(work_memory::list)
+            .service(work_memory::read),
+    )
+    .await;
+    let response =
+        test::call_service(&app, exchange(&token).to_request()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let record = serde_json::json!({"version":1,"sequence":1,"kind":"tool","tool":"echo_current_user","query":null,"content":"profile checked","citations":[],"fileCitations":[],"coversThrough":null});
+    let response = test::call_service(
+        &app,
+        identity(cookie.clone(), correlation)
+            .method(actix_web::http::Method::POST)
+            .uri(crate::config::AI_AGENT_WORK_APPEND_PATH)
+            .set_json(&record)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    use redis::AsyncCommands;
+    let calls: Option<i64> = env
+        .redis
+        .clone()
+        .get(api_call_count_key(correlation))
+        .await
+        .unwrap();
+    assert_eq!(calls, None);
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(crate::config::AI_AGENT_WORK_APPEND_PATH)
+            .set_json(&record)
+            .to_request(),
+    )
+    .await;
+    assert_ne!(response.status(), StatusCode::OK);
+    revoke_request(&env, request.id).await.unwrap();
+    assert!(test::try_call_service(
+        &app,
+        identity(cookie, correlation)
+            .method(actix_web::http::Method::POST)
+            .uri(crate::config::AI_AGENT_WORK_APPEND_PATH)
+            .set_json(&record)
+            .to_request()
+    )
+    .await
+    .is_err());
+    fixture.cleanup(&env).await;
 }

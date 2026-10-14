@@ -62,3 +62,16 @@ test('#3064 position compaction retains valid evidence references and canonical 
   assert.equal(collectFileCitations(result).length, 1);
   assert.equal(result.truncated, true);
 });
+
+
+test('#3757 final citation cleanup retains registered file source links', async () => {
+  const { chooseCitedAnswer } = await import('./citations.ts');
+  const source = { deviceId: '01999999-1111-7111-8111-111111111111', fileId: '01999999-2222-7222-8222-222222222222', revision: 1 };
+  const href = fileCitationHref(source);
+  const draft = `Found losses.xlsx [джерело](${href}).`;
+  assert.equal(chooseCitedAnswer(draft, null, [], [], [href]), draft);
+  const message = { messageId: 7, messageIdentifier: 'message-seven' };
+  const repair = `${draft} [джерело](/rer-analysis-neo?m=message-seven)`;
+  assert.equal(chooseCitedAnswer(draft, repair, [message], [message], [href]), repair);
+  assert.equal(chooseCitedAnswer('[джерело](/devices/forged?file=forged)', null, [], [], [href]), '');
+});

@@ -1,6 +1,7 @@
 import { Box, FormControlLabel, Stack, Switch, Tab, Tabs } from '@mui/material';
 
 import { PowerChip } from '../../components/PowerChip';
+import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import { AnalysisMapPane } from './components/AnalysisMapPane';
 import { AnalysisMessagesPane } from './components/AnalysisMessagesPane';
@@ -224,6 +225,7 @@ export function AnalysisCenterPanel({
             pt: { xs: 0.5, lg: 1 },
             display: centerTab === 'messages' ? 'flex' : 'none',
             overflow: 'hidden',
+            position: 'relative',
           }}
         >
           <AnalysisMessagesPane
@@ -263,6 +265,7 @@ export function AnalysisCenterPanel({
             tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
             tagsLayout={page.tagsLayout}
             hideBotTags={page.hideBotTags}
+            hideNetworks={page.hideNetworks}
             messageTimeBasis={page.queryState.messageTimeBasis}
             collapseMediaPreviews={page.collapseMediaPreviews}
             mediaSummaryEnabled={page.mediaSummaryEnabled}
@@ -273,6 +276,10 @@ export function AnalysisCenterPanel({
             networks={page.networks}
             unitsMap={page.unitsMap}
             directMessageNavigation={page.directMessageNavigation}
+          />
+          <SectionLoadingOverlay
+            open={page.hasLoadedInitialMessages && page.messagesLoading}
+            ariaLabel="Оновлення повідомлень"
           />
         </Box>
 

@@ -120,6 +120,9 @@ export type SettingsMessageCardProps = {
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
+  aiPositionHighlightsEnabled: boolean;
+  aiPositionHighlightsEnabledGlobally: boolean;
+  onAiPositionHighlightsEnabledChange: (value: boolean) => void;
   mediaSummaryEnabled: boolean;
   onMediaSummaryEnabledChange: (value: boolean) => void;
   collapseMediaPreviews: boolean;
@@ -134,6 +137,9 @@ export function SettingsMessageCard({
   onMessageTextPreviewLinesChange,
   mediaSummaryEnabled,
   onMediaSummaryEnabledChange,
+  aiPositionHighlightsEnabled,
+  aiPositionHighlightsEnabledGlobally,
+  onAiPositionHighlightsEnabledChange,
   collapseMediaPreviews,
   onCollapseMediaPreviewsChange,
   loadInProgress,
@@ -176,6 +182,25 @@ export function SettingsMessageCard({
             </ToggleButtonGroup>
           </Box>
         </Stack>
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={aiPositionHighlightsEnabledGlobally || aiPositionHighlightsEnabled}
+              onChange={(_, checked) => onAiPositionHighlightsEnabledChange(checked)}
+              disabled={loadInProgress || aiPositionHighlightsEnabledGlobally}
+            />
+          }
+          label={
+            <div>
+              <Typography variant="body1">Показувати ШІ-позиції (експериментально)</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Підсвічування позицій та їхні координати у картках оперативного й аналізу.
+                {aiPositionHighlightsEnabledGlobally && ' Увімкнено адміністратором для всіх.'}
+              </Typography>
+            </div>
+          }
+        />
 
         <FormControlLabel
           sx={{

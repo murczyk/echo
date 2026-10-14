@@ -198,11 +198,19 @@ setup-dev:
 gen-seaorm:
     #!/bin/bash
     set -euo pipefail
-    [[ "$(sea-orm-cli --version)" == "sea-orm-cli 2.0.1" ]]
-    sea-orm-cli generate entity --help | grep -q -- "--include-generated-columns"
+    NEED_CLI=0
+    [[ "$(sea-orm-cli --version)" == "sea-orm-cli 2.0.1" ]] || NEED_CLI=1
+    sea-orm-cli generate entity --help | grep -q -- "--include-generated-columns" || NEED_CLI=1
+
+    if [[ $NEED_CLI -ne 0 ]]; then
+        echo "wrong sea-orm-cli version, please install 2.0.1 (fork) with this command: " 1>&2
+        echo 'cargo install --git https://github.com/k-bx/sea-orm.git --branch echo-im-seaorm-2.0.1-fixes-cli sea-orm-cli' 1>&2
+        exit 1
+    fi
     entity_db="${TEST_DB_NAME:-wd}"
     rm -rf wdintel-rs/src/entities
-    (cd wdintel-rs && sea-orm-cli generate entity --entity-format compact --with-serde both --include-generated-columns -u "postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/${entity_db}" -o src/entities)
+    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --entity-format compact --with-serde both --include-generated-columns -u "postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/${entity_db}" -o src/entities)
+    git apply patches/gen-seaorm/*.patch
     just fmt
 
 [arg('mode', long='mode')]
@@ -239,7 +247,7 @@ gen-seaorm-files mode="debug":
     fi
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     rm -rf wdintel-rs/src/file_registry/entities
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
+    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_asr_job,device_audio_asr_scheduler,device_audio_asr_backfill,device_audio_asr_backfill_item,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
     python3 deploy/patch_seaorm_files.py
     rustfmt --config-path wdintel-rs wdintel-rs/src/file_registry/entities/*.rs
 
@@ -265,7 +273,7 @@ check-seaorm-files mode="debug":
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     entity_dir="$(mktemp -d)"
     trap 'rm -rf "$entity_dir"' EXIT
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
+    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_asr_job,device_audio_asr_scheduler,device_audio_asr_backfill,device_audio_asr_backfill_item,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
     python3 deploy/patch_seaorm_files.py --entity-dir "$entity_dir"
     rustfmt --config-path wdintel-rs "$entity_dir"/*.rs
     diff -ru "$entity_dir" wdintel-rs/src/file_registry/entities

@@ -52,7 +52,7 @@ pub async fn list_callsigns(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "ApiAgent"],
+        vec!["Rer", "CyberViewer", "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -1405,7 +1405,7 @@ pub async fn callsign_name_search(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber"],
+        vec!["Rer", "CyberViewer"],
     )
     .await
     .c(h!())?;

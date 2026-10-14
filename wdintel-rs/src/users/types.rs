@@ -27,6 +27,8 @@ pub struct User {
     pub goi_host: Option<String>,
     pub goi_integrations: Vec<crate::organism::goi::types::GoiUserIntegration>,
     pub last_release_seen: Option<String>,
+    #[serde(default)]
+    pub rer_report_eligible: bool,
 }
 
 #[derive(

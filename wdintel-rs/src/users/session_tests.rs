@@ -440,13 +440,17 @@ async fn blocked_login_and_totp_keep_form_errors() {
 
 #[tokio::test]
 #[serial]
-async fn obsolete_device_roles_do_not_grant_base_or_message_write_access() {
+async fn issue_3569_cyber_viewer_permissions_are_additive() {
     let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
-    for roles in [
-        vec!["DeviceSource"],
-        vec!["CyberViewer"],
-        vec!["DeviceSource", "CyberViewer"],
+    for extra in [
+        None,
+        Some("Cyber"),
+        Some("Rer"),
+        Some("Full"),
+        Some("Admin"),
     ] {
+        let mut roles = vec!["CyberViewer"];
+        roles.extend(extra);
         let login = mk_login(
             &env.dbx,
             login::ActiveModel {
@@ -456,30 +460,58 @@ async fn obsolete_device_roles_do_not_grant_base_or_message_write_access() {
         )
         .await
         .unwrap();
-        assert!(matches!(
-            ensure_base_role_by_id(&env.dbx, &login.id).await,
-            Err(AppError::Forbidden(_))
-        ));
-        assert!(matches!(
-            has_role(&env.dbx, &login.id, "Basic").await,
-            Err(AppError::Forbidden(_))
-        ));
-        assert!(matches!(
-            has_any_role(&env.dbx, &login.id, vec!["Rer", "Cyber"]).await,
-            Err(AppError::Forbidden(_))
-        ));
+        ensure_base_role_by_id(&env.dbx, &login.id).await.unwrap();
+        has_role(&env.dbx, &login.id, "Basic").await.unwrap();
+        let write =
+            has_any_role(&env.dbx, &login.id, vec!["Rer", "Cyber"]).await;
+        assert_eq!(write.is_ok(), extra.is_some());
+        if extra.is_none() {
+            assert!(matches!(write, Err(AppError::Forbidden(_))));
+            assert!(!role_matches(
+                &roles.iter().map(|r| String::from(*r)).collect::<Vec<_>>(),
+                "Rer"
+            )
+            .unwrap());
+        }
     }
+}
+
+#[tokio::test]
+#[serial]
+async fn obsolete_device_roles_do_not_grant_base_or_message_write_access() {
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    let login = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            roles: Set(serde_json::json!(["DeviceSource"])),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        ensure_base_role_by_id(&env.dbx, &login.id).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(matches!(
+        has_role(&env.dbx, &login.id, "Basic").await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(matches!(
+        has_any_role(&env.dbx, &login.id, vec!["Rer", "Cyber"]).await,
+        Err(AppError::Forbidden(_))
+    ));
 }
 
 #[actix_web::test]
 #[serial]
-async fn issue_3569_basic_cannot_create_or_edit_messages_or_reports() {
+async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
     use crate::entities::{bgtask, signal_message};
     use crate::sigint::direct_submit::{edit_message, submit_direct};
     let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
     let login = find_test_login(&env.dbx).await.unwrap();
     let mut login = login.into_active_model();
-    login.roles = Set(serde_json::json!(["Basic"]));
+    login.roles = Set(serde_json::json!(["CyberViewer"]));
     login.update(&env.dbx).await.unwrap();
     let store =
         RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
@@ -621,9 +653,11 @@ async fn issue_3569_message_deletion_requires_delete_role() {
     let cookie = response.response().cookies().next().unwrap().into_owned();
     for (roles, allowed) in [
         (vec!["Basic"], false),
+        (vec!["CyberViewer"], false),
         (vec!["Cyber"], false),
         (vec!["Rer"], false),
         (vec!["Cyber", "DeleteMsg"], true),
+        (vec!["CyberViewer", "DeleteMsg"], true),
         (vec!["Full"], true),
         (vec!["Admin"], true),
     ] {

@@ -31,10 +31,11 @@ and document coordinates. Clicking a position opens that complete map focused
 on its location; hovering shows the shared overview/detail map preview. Recognized
 document positions also join the message map, using their own or known coordinates.
 Clicking the map thumbnail fits all points. Positions without
-coordinates keep their tooltip without opening a map.
+coordinates, own or known, are not highlighted at all.
 
 The map's coordinate card links to the message supporting those coordinates,
-with the same hover preview as AI citations. Sources must belong to a current,
+with the same hover preview as AI citations, and shows the model's evidence
+quote, certainty and coordinate text for it. Sources must belong to a current,
 accessible group and an undeleted message; knowledge sources must also match
 the displayed MGRS, scope and fact window. The message preview rechecks access.
 
@@ -113,6 +114,15 @@ conflict indication; this does not claim a newly confirmed position. The card on
 entirely from groups the viewer can read. The admin page hides mentions and
 knowledge of private groups the admin cannot read.
 
+Message and attachment previews deduplicate knowledge lookups by scope and
+name, then load at most `AI_POSITION_KNOWLEDGE_LOOKUP_BATCH_SIZE` keys per
+query. This bounds SQL expression depth even for documents with thousands of
+position mentions. All batches retain the same source-group access checks.
+The subprocess regression in
+`wdintel-rs/src/ai_position/knowledge_lookup_tests.rs` exercises 20,000 repeated
+and distinct names with a normal 2 MiB thread stack, including inaccessible
+knowledge and exact scope matching.
+
 Changing a group's AORs, or deleting or restoring an AOR, recomputes the
 affected positions in the old and new AORs.
 
@@ -144,6 +154,20 @@ The admin page can re-run extraction for one source, or for every source with
 feedback not re-run yet («Перепарсити відгуки»). The evaluation set and the
 improve–replay–reparse loop are in
 [`ai-eval/2026-10-03-position-feedback`](../../../ai-eval/2026-10-03-position-feedback/README.md).
+
+## Display rollout
+
+Admin → System settings → Основні → «Показувати ШІ-позиції всім користувачам»
+controls display in Duty and Analysis. It defaults to off, including existing
+installations. Settings → Оперативний or Аналіз → Картка повідомлення →
+«Показувати ШІ-позиції (експериментально)» lets individual users opt in while
+that global flag is off. Enabling the global flag shows positions for everyone.
+
+The flags apply when messages are loaded; reload an open feed after changing
+them. When display is off, message responses omit AI position highlights and
+AI coordinates from both body and attachments. Ordinary coordinates and palette
+points remain available. Extraction, knowledge/link workers, admin review,
+position lookup and AI-agent tools continue working independently.
 
 ## Operating
 

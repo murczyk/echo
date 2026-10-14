@@ -41,6 +41,7 @@ function Harness() {
 const row: DeviceAudio = {
   id: 'one',
   deviceId: 'device',
+  name: 'recording.wav',
   recordingStartedAt: '2026-10-03T00:00:00Z',
   recordingEndedAt: '2026-10-03T00:00:01Z',
   durationSeconds: 1,
@@ -50,6 +51,21 @@ const row: DeviceAudio = {
 const detail: DeviceAudioDetails = {
   audio: row,
   transcription: { text: 'saved', textVersion: 'text-one' },
+  automaticTranscription: {
+    version: 'auto-empty',
+    text: null,
+    state: 'not_requested',
+    retryAt: null,
+    message: null,
+  },
+  transcriptionAvailability: {
+    deviceEnabled: true,
+    globalEnabled: true,
+    canEditManual: true,
+    canManageSetting: true,
+    canRetry: false,
+    blockedReason: null,
+  },
   canEdit: true,
 };
 function deferred<T>() {

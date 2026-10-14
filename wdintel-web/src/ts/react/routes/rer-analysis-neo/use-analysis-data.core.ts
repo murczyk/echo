@@ -25,6 +25,7 @@ import {
 } from '../shared/useInboxChangedMessageIds';
 import { useLocalInboxChangeOrigins } from './use-local-inbox-change-origins';
 import { useTargetedInboxReconciliation } from './use-targeted-inbox-reconciliation';
+import { inboxMessagesEqual } from '../shared/message-card/message-card-message-updates';
 
 export { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-data.support';
 
@@ -358,18 +359,27 @@ function mergeRefreshedMessages(
   shouldKeepRefreshedMessage: (messageId: number, message: InboxMessage) => boolean,
 ): Array<[number, InboxMessage]> {
   const nextMessages: Array<[number, InboxMessage]> = [];
-  for (const [messageId, currentMessage] of currentMessages) {
+  let changed = false;
+  for (const currentItem of currentMessages) {
+    const [messageId, currentMessage] = currentItem;
     const refreshedMessage = refreshedMessages.get(messageId);
     if (refreshedMessage == null) {
-      if (!changedMessageIds.has(messageId)) nextMessages.push([messageId, currentMessage]);
+      if (!changedMessageIds.has(messageId)) nextMessages.push(currentItem);
+      else changed = true;
     } else {
       const nextMessage = mergeRefreshedMessage(refreshedMessage, withoutModelTags);
       if (shouldKeepRefreshedMessage(messageId, nextMessage)) {
-        nextMessages.push([messageId, nextMessage]);
+        if (inboxMessagesEqual(currentMessage, nextMessage)) nextMessages.push(currentItem);
+        else {
+          changed = true;
+          nextMessages.push([messageId, nextMessage]);
+        }
+      } else {
+        changed = true;
       }
     }
   }
-  return nextMessages;
+  return changed ? nextMessages : currentMessages;
 }
 
 function messageRealtimeOrderValue(
@@ -509,10 +519,20 @@ function sameMessageItems(
   );
 }
 
+function sameMessageMembership(
+  left: Array<[number, InboxMessage]>,
+  right: Array<[number, InboxMessage]>,
+): boolean {
+  if (left.length !== right.length) return false;
+  const rightMessageIds = new Set(right.map(([messageId]) => messageId));
+  return left.every(([messageId]) => rightMessageIds.has(messageId));
+}
+
 export function useAnalysisData({
   authUserName,
   currentUser,
   deferInitialLoad = false,
+  hideNetworks = false,
   focusedWindow = null,
   focusedMessageActive = false,
   centerTab,
@@ -552,7 +572,7 @@ export function useAnalysisData({
   );
   const localInboxChangeOrigins = useLocalInboxChangeOrigins();
 
-  const loadMissingNetworksForMessages = useLoadMissingNetworksForMessages({
+  const hydrateNetworksForMessages = useLoadMissingNetworksForMessages({
     networksRef: referenceState.networksRef,
     onError,
     onUnauthorized,
@@ -560,6 +580,13 @@ export function useAnalysisData({
     setNetworks: referenceState.setNetworks,
     unitsMap: referenceState.unitsMap,
   });
+  const loadMissingNetworksForMessages = useCallback(
+    async (messageItems: Array<[number, InboxMessage]>) => {
+      if (hideNetworks) return;
+      await hydrateNetworksForMessages(messageItems);
+    },
+    [hideNetworks, hydrateNetworksForMessages],
+  );
 
   const messageList = useAnalysisMessageList({
     deferInitialLoad,
@@ -612,6 +639,7 @@ export function useAnalysisData({
     refreshTagFacet,
   } = useAnalysisFilterSections({
     queryState,
+    hideNetworks,
     optionsFreqValues,
     unitsMapRef: referenceState.unitsMapRef,
     onError,
@@ -725,9 +753,7 @@ export function useAnalysisData({
           (needsServerFilter && visibleMessageIdSet.has(messageId)),
       );
       const exactMapFilterMessageIds = mapNeedsServerFilter ? visibleMapMessageIds : [];
-      let shouldRefreshMessageCounts =
-        visibleMessageIds.length > 0 || visibleMapMessageIds.length > 0;
-
+      let messageMembershipChanged = false;
       try {
         const inboxReq = buildLiveRefreshInboxReq(queryState, optionsFreqValues, true);
         const mapInboxReq = applyMapDateRangeToInboxReq(
@@ -746,17 +772,19 @@ export function useAnalysisData({
           const matchingItems =
             exactMessageIds.length === 0
               ? []
-              : await fetchMessagesByIdsMatchingFilters(exactMessageIds, inboxReq);
+              : await fetchMessagesByIdsMatchingFilters(exactMessageIds, inboxReq, { signal });
           matchingMessageItems = matchingItems;
           matchingMapMessageItems = matchingItems;
         } else {
           [matchingMessageItems, matchingMapMessageItems] = await Promise.all([
             exactFilterMessageIds.length === 0
               ? []
-              : fetchMessagesByIdsMatchingFilters(exactFilterMessageIds, inboxReq),
+              : fetchMessagesByIdsMatchingFilters(exactFilterMessageIds, inboxReq, { signal }),
             exactMapFilterMessageIds.length === 0
               ? []
-              : fetchMessagesByIdsMatchingFilters(exactMapFilterMessageIds, mapInboxReq),
+              : fetchMessagesByIdsMatchingFilters(exactMapFilterMessageIds, mapInboxReq, {
+                  signal,
+                }),
           ]);
         }
         if (isScopeStale() || retryForLatestMessageWindow()) return;
@@ -775,7 +803,6 @@ export function useAnalysisData({
               (messageId) => exactMapFilterMessageIds.includes(messageId) && shouldApply(messageId),
             ),
         );
-        shouldRefreshMessageCounts ||= matchingMessageIdSet.size > 0;
         const discoverUnseenMessages = canDiscoverUnseenMessages({
           focusedMessageActive,
           messages: requestMessageWindow.messages,
@@ -935,6 +962,7 @@ export function useAnalysisData({
         };
         const currentMessageItems = requestMessageWindow.messages;
         const nextMessageItems = reconcileListMessages(currentMessageItems);
+        messageMembershipChanged = !sameMessageMembership(currentMessageItems, nextMessageItems);
         if (!sameMessageItems(currentMessageItems, nextMessageItems)) {
           onBeforeRealtimeMessageListChange?.();
           messageList.setMessages((currentMessages) =>
@@ -971,10 +999,12 @@ export function useAnalysisData({
         if (signal.aborted) return;
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
       } finally {
-        if (!isScopeStale() && shouldRefreshMessageCounts) {
-          messageList.refreshMessageCounts();
-        } else if (!isScopeStale()) {
-          messageList.scheduleOverallMessageCountRefresh();
+        if (!isScopeStale()) {
+          if (messageMembershipChanged) {
+            messageList.scheduleOverallMessageCountRefresh();
+          } else if (undisplayedMessageIds.length > 0) {
+            messageList.scheduleOverallMessageCountRefresh('deferred');
+          }
         }
       }
     },
@@ -994,6 +1024,7 @@ export function useAnalysisData({
   );
   const refreshChangedMessagesTargeted = useTargetedInboxReconciliation(
     reconcileChangedMessagesBatch,
+    reloadTriggerKey,
   );
   refreshChangedMessagesTargetedRef.current = refreshChangedMessagesTargeted;
 
@@ -1035,7 +1066,8 @@ export function useAnalysisData({
       queryState,
       completeLocalInboxChangeOrigin: localInboxChangeOrigins.completeOrigin,
       failLocalInboxChangeOrigin: localInboxChangeOrigins.failOrigin,
-      reconcileTagMutation: (messageId) => refreshChangedMessagesTargeted([messageId]),
+      reconcileTagMutation: (messageId) =>
+        refreshChangedMessagesTargeted([messageId], { immediate: true }),
       registerLocalInboxChangeOrigin: localInboxChangeOrigins.registerOrigin,
       refreshTagFacet,
       reloadRef,
@@ -1050,6 +1082,7 @@ export function useAnalysisData({
     buildReloadOrchestratorParams({
       centerTab,
       deferInitialLoad,
+      hideNetworks,
       focusedWindow,
       focusedMessageActive,
       leftPanelOpen,
@@ -1123,7 +1156,7 @@ export function useAnalysisData({
       if (event.origin == null) return false;
       const disposition = localInboxChangeOrigins.classifyOrigin(event.origin);
       if (disposition === 'reconcile') {
-        void refreshChangedMessagesTargeted([event.messageId]);
+        void refreshChangedMessagesTargeted([event.messageId], { immediate: true });
       }
       return disposition !== 'unmatched';
     },
@@ -1221,6 +1254,7 @@ export function useAnalysisData({
     summaryLoaded: sidebarData.summaryLoaded,
     summaryHasLoadedOnce: sidebarData.summaryHasLoadedOnce,
     rightSidebarLoading: sidebarData.rightSidebarLoading,
+    rightSidebarOutdated: sidebarData.rightSidebarOutdated,
     summaryRows: sidebarData.summaryRows,
     summaryCallsignsInfo: referenceState.summaryCallsignsInfo,
     unitsMap: referenceState.unitsMap,

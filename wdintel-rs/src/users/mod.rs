@@ -203,7 +203,7 @@ pub async fn ensure_base_role_by_id<T>(
 where
     T: ToString + ?Sized,
 {
-    has_any_role(dbx, user_id, vec!["Rer", "Cyber"]).await
+    has_any_role(dbx, user_id, vec!["Rer", "CyberViewer"]).await
 }
 
 pub async fn ensure_message_write(
@@ -290,6 +290,7 @@ pub(crate) fn role_matches(
                 || roles.contains(&"Bpla".to_string())
                 || roles.contains(&"Rer".to_string())
                 || roles.contains(&"Cyber".to_string())
+                || roles.contains(&crate::config::ROLE_CYBER_VIEWER.to_string())
                 || roles.contains(&"Basic".to_string())
         }
         "UnitsEditor" => {
@@ -307,6 +308,11 @@ pub(crate) fn role_matches(
         "Cyber" => {
             roles.contains(&"Admin".to_string())
                 || roles.contains(&"Cyber".to_string())
+        }
+        "CyberViewer" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Cyber".to_string())
+                || roles.contains(&crate::config::ROLE_CYBER_VIEWER.to_string())
         }
         "AdvancedReports" => {
             roles.contains(&"Admin".to_string())
@@ -815,6 +821,10 @@ async fn api_user(
     let goi = user_goi_state(&env.dbx, login_obj.organism_id, &user_id)
         .await
         .c(h!())?;
+    let rer_report_eligible =
+        crate::rer_report_admin::user_is_eligible(&env.dbx, &user_id)
+            .await
+            .c(h!())?;
     Ok(Json(User {
         id: login_obj.id.to_string(),
         delta_login,
@@ -828,6 +838,7 @@ async fn api_user(
         goi_host: goi.host,
         goi_integrations: goi.integrations,
         last_release_seen: login_obj.last_release_seen,
+        rer_report_eligible,
     }))
 }
 
@@ -896,6 +907,10 @@ async fn api_user_info(
     let goi = user_goi_state(&env.dbx, login_obj.organism_id, &login_obj.id)
         .await
         .c(h!())?;
+    let rer_report_eligible =
+        crate::rer_report_admin::user_is_eligible(&env.dbx, &login_obj.id)
+            .await
+            .c(h!())?;
     Ok(Json(User {
         id: login_obj.id.to_string(),
         delta_login,
@@ -909,6 +924,7 @@ async fn api_user_info(
         goi_host: goi.host,
         goi_integrations: goi.integrations,
         last_release_seen: login_obj.last_release_seen,
+        rer_report_eligible,
     }))
 }
 
@@ -1571,7 +1587,7 @@ pub async fn user_sigint_groups_detailed(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Admin", "Api"],
+        vec!["Rer", "CyberViewer", "Admin", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
@@ -2999,11 +3015,16 @@ mod tests {
         assert!(role_matches(&roles(&["Admin"]), "Cyber").unwrap());
         assert!(!role_matches(&roles(&["Api"]), "Cyber").unwrap());
         assert!(!role_matches(&roles(&["Full"]), "Cyber").unwrap());
-        for removed_role in ["DeviceSource", "CyberViewer"] {
-            assert!(!role_matches(&roles(&[removed_role]), "Cyber").unwrap());
-            assert!(!role_matches(&roles(&[removed_role]), "Basic").unwrap());
-            assert!(role_matches(&roles(&["Admin"]), removed_role).is_err());
-        }
+        assert!(role_matches(&roles(&["CyberViewer"]), "Basic").unwrap());
+        assert!(role_matches(&roles(&["CyberViewer"]), "CyberViewer").unwrap());
+        assert!(role_matches(&roles(&["Cyber"]), "CyberViewer").unwrap());
+        assert!(role_matches(&roles(&["Admin"]), "CyberViewer").unwrap());
+        assert!(!role_matches(&roles(&["CyberViewer"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["CyberViewer"]), "Rer").unwrap());
+        assert!(!role_matches(&roles(&["CyberViewer"]), "DeleteMsg").unwrap());
+        assert!(!role_matches(&roles(&["DeviceSource"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["DeviceSource"]), "Basic").unwrap());
+        assert!(role_matches(&roles(&["Admin"]), "DeviceSource").is_err());
     }
 
     #[test]

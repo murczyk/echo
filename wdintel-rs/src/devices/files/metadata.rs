@@ -2,7 +2,7 @@ use super::{
     error::{FilesystemError, FilesystemFieldError},
     types::NormalizedFileMetadata,
 };
-use crate::config::{
+use crate::devices::config::{
     DEVICE_FILE_EXTENSION_MAX_CHARS, DEVICE_FILE_MIME_TYPE_MAX_CHARS,
 };
 use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};

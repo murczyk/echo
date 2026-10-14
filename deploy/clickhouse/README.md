@@ -682,6 +682,15 @@ The analysis result, facet, and dedicated facet-count endpoints use this path:
 - `/api/rer/analysis/stats/count`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks,metadata}`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}/count`
+- `/api/rer/analysis/stats/messages/count` and `/api/rer/analysis/stats/units/matches/count`
+
+Split counters share the analytics retry circuit. During analytics incidents,
+PostgreSQL fallback runs one counter at a time per authenticated user and filter
+request, releasing global capacity after each query. Normal PostgreSQL reads
+remain independent. Unit-label resolution is shared for up to five
+seconds in a bounded cache; reconciliation changes become visible after that
+cache expires. No schema migration or mirror resync is required for these
+endpoints.
 
 The expensive replicated-data reads for the interception, sender, posts, REO,
 digest, RER, Sposob, active-network, network-frequency, 1.2.5, and 1.2.13

@@ -245,6 +245,9 @@ pub struct MessageMediaInfo {
     #[serde(default)]
     pub summary: Option<crate::media_summary::types::MediaSummaryStatus>,
     #[serde(default)]
+    pub coordinate_status:
+        Option<crate::attachments::types::AttachmentCoordinateStatus>,
+    #[serde(default)]
     pub kmz_conversion_status: Option<String>,
     #[serde(default)]
     pub positions: Vec<crate::rer_importer::highlight::CNPosition>,
@@ -704,7 +707,9 @@ pub struct GeoCoordinates {
     pub lon: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 #[serde(deny_unknown_fields)]
 pub struct SubmitNetwork {
     #[serde(default)]
@@ -715,7 +720,9 @@ pub struct SubmitNetwork {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 #[serde(deny_unknown_fields)]
 pub struct SubmitDmrMetadata {
     #[serde(deserialize_with = "deserialize_rfc3339_string")]
@@ -1177,6 +1184,45 @@ pub struct CallsignStatsRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+#[serde(rename_all = "snake_case")]
+pub enum AnalysisCallsignPageOrder {
+    CountDesc,
+    MatchThenName,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignPageReq {
+    pub req: AnalysisStatsReq,
+    pub query: String,
+    pub page_size: Option<u64>,
+    pub cursor: Option<String>,
+    pub order: AnalysisCallsignPageOrder,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignPageEntry {
+    pub value: String,
+    pub label: String,
+    pub values: Vec<String>,
+    pub count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignPageRsp {
+    pub entries: Vec<AnalysisCallsignPageEntry>,
+    pub has_more: bool,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct AnalysisStatsMetadataValue {
     pub value: String,
     pub count: i64,
@@ -1271,6 +1317,22 @@ pub struct CountStatsRsp {
     pub tags_count: i64,
     pub aors_count: i64,
     pub networks_count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessageStatsCountRsp {
+    pub count_overall: i64,
+    pub count_selected: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitMatchStatsCountRsp {
+    pub exact_matches_count: i64,
+    pub non_exact_matches_count: i64,
 }
 
 #[derive(

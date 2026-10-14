@@ -66,9 +66,11 @@ pub mod organism;
 pub mod palitra;
 pub mod report_history;
 pub mod rer_importer;
+pub mod rer_report_admin;
 pub mod secret;
 pub mod server;
 pub mod session;
+pub mod settlement;
 pub mod sigint;
 mod stats;
 pub mod storage;
@@ -1012,6 +1014,30 @@ pub struct OneoffBackfillAudioTranscriberPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+pub struct OneoffBackfillDeviceAudioTranscriberPs {
+    #[arg(long, conflicts_with = "resume")]
+    pub device_id: Option<Uuid>,
+    #[arg(long, conflicts_with = "resume")]
+    pub dry_run: bool,
+    #[arg(long)]
+    pub yes: bool,
+    #[arg(long)]
+    pub resume: Option<Uuid>,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffRecoverDeviceAudioTranscriptionPs {
+    #[arg(long)]
+    pub audio_id: Uuid,
+    #[arg(long)]
+    pub expected_attempt_id: Uuid,
+    #[arg(long)]
+    pub verification_note: String,
+    #[arg(long, action)]
+    pub yes: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct OneoffReprocessAudioTranscriberPs {
     #[arg(long)]
     pub source_id: Uuid,
@@ -1019,6 +1045,16 @@ pub struct OneoffReprocessAudioTranscriberPs {
     pub requester: String,
     #[arg(long)]
     pub reason: String,
+    #[arg(long, action)]
+    pub yes: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffReindexStoredOcrPs {
+    #[arg(long)]
+    pub media_id: Uuid,
+    #[arg(long, action)]
+    pub dry_run: bool,
     #[arg(long, action)]
     pub yes: bool,
 }
@@ -1216,9 +1252,16 @@ enum Cmd {
     OneoffMigrateLargeMediaToPlaintext(OneoffMigrateLargeMediaToPlaintextPs),
     OneoffAuditMediaStorage(OneoffAuditMediaStoragePs),
     OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
+    OneoffBackfillDeviceAudioTranscriber(
+        OneoffBackfillDeviceAudioTranscriberPs,
+    ),
+    OneoffRecoverDeviceAudioTranscription(
+        OneoffRecoverDeviceAudioTranscriptionPs,
+    ),
     OneoffRequeueAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffRetranscribeAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffReprocessMediaSummaries(OneoffReprocessMediaSummariesPs),
+    OneoffReindexStoredOcr(OneoffReindexStoredOcrPs),
     OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
     OneoffCompactDatasourceGroup,
     OneoffEnsureApiIntegrationIggyTopics,
@@ -1715,10 +1758,19 @@ async fn async_main(
             .map_err(Into::into);
     }
 
+    if let Cmd::OneoffBackfillDeviceAudioTranscriber(options) = action {
+        let exit =
+            devices::audio::transcription::backfill_oneoff(mode, options)
+                .await
+                .c(h!())?;
+        std::process::exit(exit);
+    }
+
     utils::worker_watch::spawn_metrics_logger();
 
     match action {
-        Cmd::AiControlPanel(_) | Cmd::AiEvalSearchQuery | Cmd::AiEvalMaps => unreachable!(),
+        Cmd::AiControlPanel(_) | Cmd::AiEvalSearchQuery | Cmd::AiEvalMaps
+        | Cmd::OneoffBackfillDeviceAudioTranscriber(_) => unreachable!(),
         Cmd::Server(ps) => {
             server::main_server(mode, ps, token, shutdown_handle.clone()).await
         }
@@ -2130,12 +2182,16 @@ async fn async_main(
         Cmd::OneoffBackfillAudioTranscriber(ps) => {
             transcriber::backfill::run(mode, ps).await
         }
+        Cmd::OneoffRecoverDeviceAudioTranscription(ps) => {
+            devices::audio::transcription::recover_oneoff(mode, ps).await
+        }
         Cmd::OneoffRequeueAudioTranscriber(ps) => {
             transcriber::backfill::requeue_terminal(mode, ps).await
         }
         Cmd::OneoffRetranscribeAudioTranscriber(ps) => {
             transcriber::backfill::retranscribe_completed(mode, ps).await
         }
+        Cmd::OneoffReindexStoredOcr(ps) => attachments::recovery::run(mode, ps).await,
         Cmd::OneoffReprocessMediaSummaries(ps) => {
             media_summary::reprocess::run(mode, ps).await
         }

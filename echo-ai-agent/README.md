@@ -21,7 +21,7 @@ every selected template must match its pinned release and isolation metadata.
 
 ## Topology and limits
 
-- Host: Debian 13 `amd64`, hostname `echo-ai-agent-vm`.
+- Hosts: Debian 13 `amd64`; the default profile targets `echo-ai-agent-vm`, and the `ua` profile targets `echo-ai-agents-ua` with a dedicated agent disk. See [Kharkiv rollout](../docs/ai/kharkiv-canary.md).
 - Storage: Incus LVM-thin pool `ai-agents` on `/dev/sda2`.
 - Network: `incusbr0`, `10.43.74.1/24`, NAT enabled, IPv6 disabled.
 - Profile: 2 vCPU, 4 GiB RAM, 20 GiB thin root disk, 512 processes,
@@ -130,7 +130,7 @@ host mutation.
 Run these commands from the operator checkout, not inside the VM. The required
 `--server=echo-ai-agent-vm` parameter is the logical target: bootstrap resolves
 it to the existing local SSH alias on port 22031, while post-setup operations
-resolve it to `echo@echo-ai-agent-vm.eagle-atria.ts.net` on port 22. Any other
+resolve it to `echo@echo-ai-agent-vm.eagle-atria.ts.net` on port 22. Any unregistered
 server value is rejected.
 
 ## Deploy and build the template
@@ -287,8 +287,25 @@ Echo remains canonical for history. The runner restores the supplied user and
 assistant messages into an in-memory Pi session. Echo supplies each provider's
 `contextWindow`, `maxTokens`, `compactionReserveTokens`, and
 `compactionKeepRecentTokens` runtime profile. Pi compacts restored or active
-context at that provider-specific threshold, while each tool response and the
-aggregate tool context are bounded before they enter the session. The runner
+context before generation and between complete tool rounds, accounting for the
+system prompt, tool schemas and provider output allowance. Checkpoints preserve
+evidence, citations and pagination; empty or truncated checkpoints are rejected.
+Interrupted checkpoint streams are retried once with the same input and output
+cap. Partial checkpoints never replace evidence; cancellation, content filters,
+and other provider failures end the checkpoint without this retry.
+A non-reducing prefix checkpoint can fall back once to all completed evidence,
+including the latest tool batch, within the same input and output guards.
+An optional gateway checkpoint engine keeps the primary report engine unchanged;
+it can also reuse the primary engine without replacing its runtime profile.
+Both use the same request-scoped capability.
+With this engine, an output-limit failure triggers one fresh evidence checkpoint
+and one primary-engine retry with tools disabled within the existing request
+deadline and limits. Its focused synthesis prompt preserves tenant instructions,
+request time, scope and citation rules without the tool workflow guidance.
+Checkpoint generation has a separate `checkpointMaxTokens` output cap, defaulting
+to the normal answer cap. Its failure cause survives SDK error conversion.
+Each tool response and retained tool context remain bounded, with discarded
+allowance released after compaction. The runner
 also emits normalized
 `assistant_delta`, `progress`, `tool_start`, `tool_update`, `tool_end`, and
 `source` events. Progress-tool lifecycle events are suppressed because the tool
@@ -362,3 +379,10 @@ access-checked message bodies and group metadata in batches; previews revalidate
 access on hover/focus. Dates use event time in Europe/Kyiv, omit unknown times,
 and omit the year only when it is current. Full preview bodies are independent
 of the compacted tool context. See the [citation rollout](DEPLOYMENT.md#message-citations-release-202609271).
+
+Failed message lookups show “Не вдалося завантажити джерело” and allow a manual
+retry of failed sources while preserving successful batches. Missing messages
+and denied access show “Джерело недоступне”. A failed preview revalidation hides
+the cached preview until a new lookup succeeds. Regression coverage lives in
+`wdintel-web/src/ts/react/routes/ai-agent-chat/__tests__/CitationMarkdown.spec.tsx`
+and `wdintel-web/tests/e2e/ai-agent-citations.spec.ts`.

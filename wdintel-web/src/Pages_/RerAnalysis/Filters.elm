@@ -10,6 +10,7 @@ import Html.Styled
 import Json.Decode
 import List.Extra as ListX
 import Maybe.Extra as MaybeX
+import Pages_.RerAnalysis.Counts as Counts
 import Pages_.RerAnalysis.Model exposing (..)
 import Pages_.RerAnalysis.Msg exposing (..)
 import Pages_.RerAnalysis.Query
@@ -139,16 +140,13 @@ rerAnalysisCheckboxLabel content =
 
 unitsExactMatchCheckboxChipLabel : Model -> Maybe String
 unitsExactMatchCheckboxChipLabel model =
-    case model.counts of
-        RD.Success counts ->
-            if model.unitsExactMatchOnly then
-                Just ("неточних збігів: " ++ fromInt counts.unitsNonExactMatchesCount)
+    if model.unitsExactMatchOnly then
+        Counts.get UnitMatchStatsCountRequest .unitsNonExactMatchesCount model
+            |> Maybe.map (\count -> "неточних збігів: " ++ fromInt count)
 
-            else
-                Just ("точних збігів: " ++ fromInt counts.unitsExactMatchesCount)
-
-        _ ->
-            Nothing
+    else
+        Counts.get UnitMatchStatsCountRequest .unitsExactMatchesCount model
+            |> Maybe.map (\count -> "точних збігів: " ++ fromInt count)
 
 
 unitsExactMatchCheckboxContent : Model -> List (Html msg)
@@ -337,12 +335,11 @@ view isDark _ model =
                             ]
                         ]
 
-                getOverallOptionsCount fieldAccessor remoteData =
+                getOverallOptionsCount field fieldAccessor =
                     case ( model.from.datePosix, model.to.datePosix ) of
                         ( Just dtFromPosix, Just dtToPosix ) ->
                             if not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix) then
-                                extractMRecordField fieldAccessor (List.length <| RD.withDefault [] remoteData) (RD.toMaybe model.counts)
-                                    |> String.fromInt
+                                Counts.label (StatsCountFieldRequest field) fieldAccessor model
 
                             else
                                 "10+"
@@ -422,7 +419,7 @@ view isDark _ model =
                 , toggleMsg = ToggleUnfoldAorsFilter
                 , label = "смуги"
                 , mCountLabel = List.length model.aorsSelected |> zeroToNothing |> mmap String.fromInt
-                , overallLabel = getOverallOptionsCount (\r -> r.aorsCount) model.aors
+                , overallLabel = getOverallOptionsCount AorsCountField .aorsCount
                 , withGreenCircle = False
                 }
                 tabFiltersAors
@@ -431,7 +428,7 @@ view isDark _ model =
                 , toggleMsg = ToggleUnfoldGroupsFilter
                 , label = "група"
                 , mCountLabel = List.length model.groupsSelected |> zeroToNothing |> mmap String.fromInt
-                , overallLabel = getOverallOptionsCount (\r -> r.groupsCount) model.groups
+                , overallLabel = getOverallOptionsCount GroupsCountField .groupsCount
                 , withGreenCircle = False
                 }
                 tabFiltersGroups
@@ -440,7 +437,7 @@ view isDark _ model =
                 , toggleMsg = ToggleUnfoldSendersFilter
                 , label = "відправник"
                 , mCountLabel = model.sendersSelected |> List.length |> zeroToNothing |> mmap String.fromInt
-                , overallLabel = getOverallOptionsCount (\r -> r.sendersCount) model.senders
+                , overallLabel = getOverallOptionsCount SendersCountField .sendersCount
                 , withGreenCircle = False
                 }
                 tabFiltersSenders
@@ -450,7 +447,7 @@ view isDark _ model =
                 , toggleMsg = ToggleUnfoldFreqsFilter
                 , label = "частоти"
                 , mCountLabel = List.length model.freqsSelected |> zeroToNothing |> mmap String.fromInt
-                , overallLabel = getOverallOptionsCount (\r -> r.freqsCount) model.freqs
+                , overallLabel = getOverallOptionsCount FreqsCountField .freqsCount
                 , withGreenCircle = model.includeOnlyNewFreqs
                 }
                 tabFiltersFreqs
@@ -459,7 +456,7 @@ view isDark _ model =
                 , toggleMsg = ToggleUnfoldCallsignsFilter
                 , label = "позивні"
                 , mCountLabel = List.length model.callsignsSelected |> zeroToNothing |> mmap String.fromInt
-                , overallLabel = getOverallOptionsCount (\r -> r.callsignsCount) model.callsigns
+                , overallLabel = getOverallOptionsCount CallsignsCountField .callsignsCount
                 , withGreenCircle = False
                 }
                 tabFiltersCallsigns
@@ -468,7 +465,7 @@ view isDark _ model =
                 , toggleMsg = ToggleUnfoldUnitsFilter
                 , label = "підрозділи"
                 , mCountLabel = List.length model.unitsSelected |> zeroToNothing |> mmap String.fromInt
-                , overallLabel = getOverallOptionsCount (\r -> r.unitsCount) model.units
+                , overallLabel = getOverallOptionsCount UnitsCountField .unitsCount
                 , withGreenCircle = False
                 }
                 tabFiltersUnits
@@ -477,7 +474,7 @@ view isDark _ model =
                 , toggleMsg = ToggleUnfoldLocationsFilter
                 , label = "локації"
                 , mCountLabel = List.length model.locationsSelected |> zeroToNothing |> mmap String.fromInt
-                , overallLabel = getOverallOptionsCount (\r -> r.locationsCount) model.locations
+                , overallLabel = getOverallOptionsCount LocationsCountField .locationsCount
                 , withGreenCircle = not model.includePelengLocations
                 }
                 tabFiltersLocations
@@ -487,17 +484,17 @@ view isDark _ model =
                 , toggleMsg = ToggleUnfoldPostsFilter
                 , label = "пости"
                 , mCountLabel = List.length model.postsSelected |> zeroToNothing |> mmap String.fromInt
-                , overallLabel = getOverallOptionsCount (\r -> r.postsCount) model.posts
+                , overallLabel = getOverallOptionsCount PostsCountField .postsCount
                 , withGreenCircle = False
                 }
                 tabFiltersPosts
-            , HtmlX.viewIf model.radioFeaturesAllowed <|
+            , HtmlX.viewIf (model.radioFeaturesAllowed && not model.hideNetworks) <|
                 filterMenuBlockCountOutOf
                     { unfold = model.unfoldNetworksFilter
                     , toggleMsg = ToggleUnfoldNetworksFilter
                     , label = "мережі"
                     , mCountLabel = List.length model.networksSelected |> zeroToNothing |> mmap String.fromInt
-                    , overallLabel = getOverallOptionsCount (\r -> r.networksCount) model.networksStats
+                    , overallLabel = getOverallOptionsCount NetworksCountField .networksCount
                     , withGreenCircle = False
                     }
                     tabFiltersNetworks
@@ -524,8 +521,7 @@ view isDark _ model =
                         |> zeroToNothing
                         |> mmap String.fromInt
                 , overallLabel =
-                    extractMRecordField (\r -> r.tagsCount) (List.length model.tags) (RD.toMaybe model.counts)
-                        |> String.fromInt
+                    getOverallOptionsCount TagsCountField .tagsCount
                 , withGreenCircle = model.reportTagsOnlyThisUnit
                 }
                 tagListBlock

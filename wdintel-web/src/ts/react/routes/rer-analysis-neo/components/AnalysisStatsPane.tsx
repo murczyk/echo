@@ -1,5 +1,5 @@
 import { useRadioFeatures } from '../../shared/RadioFeatures';
-import { Box, Stack } from '@mui/material';
+import { Alert, Box, Stack } from '@mui/material';
 
 import type { AnalysisCountItem } from '../types';
 import { AnalysisCountBlock } from './AnalysisCountBlock';
@@ -7,7 +7,9 @@ import { normalizeUnknownUnitDisplayValue } from '../../shared/analysis-unit-fil
 
 type Props = {
   groupsLoading: boolean;
+  hideNetworks: boolean;
   rightSidebarLoading: boolean;
+  rightSidebarOutdated?: boolean;
   onClearFreq: () => void;
   onClearGroup: () => void;
   onClearLocation: () => void;
@@ -37,6 +39,7 @@ type Props = {
 
 export function AnalysisStatsPane({
   groupsLoading,
+  hideNetworks,
   onClearFreq,
   onClearGroup,
   onClearLocation,
@@ -58,6 +61,7 @@ export function AnalysisStatsPane({
   selectedNetworks,
   selectedUnits,
   rightSidebarLoading,
+  rightSidebarOutdated = false,
   topFreqs,
   topGroups,
   topLocations,
@@ -69,6 +73,15 @@ export function AnalysisStatsPane({
 
   return (
     <Stack spacing={0}>
+      {rightSidebarLoading ? (
+        <Alert severity="info" sx={{ borderRadius: 0 }}>
+          Дані зведення оновлюються для поточних фільтрів.
+        </Alert>
+      ) : rightSidebarOutdated ? (
+        <Alert severity="info" sx={{ borderRadius: 0 }}>
+          Дані зведення відповідають попереднім фільтрам.
+        </Alert>
+      ) : null}
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
         <AnalysisCountBlock
           title="Групи"
@@ -93,17 +106,19 @@ export function AnalysisStatsPane({
           />
         ) : null}
       </Box>
-      <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCountBlock
-          title="Мережі"
-          items={topNetworks}
-          loading={rightSidebarLoading}
-          onClearSelection={onClearNetwork}
-          onItemAdd={onAddNetwork}
-          onItemToggle={onToggleNetwork}
-          selectedItemKeys={selectedNetworks}
-        />
-      </Box>
+      {!hideNetworks ? (
+        <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+          <AnalysisCountBlock
+            title="Мережі"
+            items={topNetworks}
+            loading={rightSidebarLoading}
+            onClearSelection={onClearNetwork}
+            onItemAdd={onAddNetwork}
+            onItemToggle={onToggleNetwork}
+            selectedItemKeys={selectedNetworks}
+          />
+        </Box>
+      ) : null}
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
         <AnalysisCountBlock
           title="Підрозділи"

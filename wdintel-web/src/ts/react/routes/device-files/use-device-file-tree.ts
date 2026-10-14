@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { DeviceFileRoot, DeviceFileTreeEntry } from '../../../../Bindings';
+import type {
+  BrowseDeviceFilesReq,
+  DeviceFileRoot,
+  DeviceFileTreeEntry,
+  LocateDeviceFileRsp,
+} from '../../../../Bindings';
 import { redirectToLogin } from '../../auth-redirect';
 import { isAbortError, isUnauthorizedError } from '../../services/api/client';
 import { browseDeviceFiles } from '../../services/api/devices';
@@ -49,6 +54,7 @@ export function useDeviceFileTree({
   enabled,
   roots,
   tagFilter,
+  hasContent = null,
   onDirectoryMissing,
   onDirectoriesLoaded,
 }: {
@@ -57,10 +63,11 @@ export function useDeviceFileTree({
   enabled: boolean;
   roots: DeviceFileRoot[];
   tagFilter: DeviceAnalyticsTagFilter;
+  hasContent?: BrowseDeviceFilesReq['hasContent'];
   onDirectoryMissing: (entryId: string) => void;
   onDirectoriesLoaded: (parentEntryId: string, directoryEntryIds: string[]) => void;
 }) {
-  const dataScope = `${deviceId}:${syncId ?? 'all'}`;
+  const dataScope = `${deviceId}:${syncId ?? 'all'}:${hasContent}`;
   const [resultScope, setResultScope] = useState(dataScope);
   const [branches, setBranches] = useState<Record<string, DeviceFileTreeBranch>>({});
   const [expandedEntryIds, setExpandedEntryIds] = useState<Set<string>>(new Set());
@@ -127,6 +134,7 @@ export function useDeviceFileTree({
             syncId,
             parentEntryId,
             cursor,
+            hasContent,
             tagFilter: tagFilterRef.current,
           }),
           { signal: controller.signal },
@@ -172,7 +180,7 @@ export function useDeviceFileTree({
         }
       }
     },
-    [deviceId, syncId, enabled, tagFilterKey, updateBranch],
+    [deviceId, syncId, enabled, tagFilterKey, hasContent, updateBranch],
   );
 
   const toggleDirectory = useCallback(
@@ -189,6 +197,28 @@ export function useDeviceFileTree({
       setExpandedEntryIds(nextExpandedEntryIds);
     },
     [loadBranch],
+  );
+
+  const revealFile = useCallback(
+    async (located: LocateDeviceFileRsp, signal: AbortSignal) => {
+      if (hasContent !== null && located.file.hasContent !== hasContent) return;
+      const path = [...located.ancestors, located.file];
+      const parentIds = [located.rootEntryId, ...located.ancestors.map((entry) => entry.entryId)];
+      const expanded = new Set([...expandedEntryIdsRef.current, ...parentIds]);
+      expandedEntryIdsRef.current = expanded;
+      setExpandedEntryIds(expanded);
+      await Promise.all(
+        parentIds.map(async (parentId, index) => {
+          await loadBranch(parentId, { preserve: true });
+          if (signal.aborted) return;
+          updateBranch(parentId, (branch) => ({
+            ...branch,
+            entries: appendDeviceFileEntries(branch.entries, [path[index]]),
+          }));
+        }),
+      );
+    },
+    [hasContent, loadBranch, updateBranch],
   );
 
   const refreshExpanded = useCallback(async () => {
@@ -241,5 +271,6 @@ export function useDeviceFileTree({
     retryBranch: (entryId: string) => loadBranch(entryId, { preserve: true }),
     loadMoreBranch: (entryId: string) => loadBranch(entryId, { append: true }),
     refreshExpanded,
+    revealFile,
   };
 }

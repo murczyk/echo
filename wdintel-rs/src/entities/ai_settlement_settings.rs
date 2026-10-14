@@ -15,6 +15,8 @@ pub struct Model {
     pub worker_enabled: bool,
     pub worker_ai_engine_id: Option<Uuid>,
     pub updated_at: DateTime,
+    pub worker_groups_except: Option<bool>,
+    pub worker_group_master_keys: Option<Vec<String>>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -151,7 +151,7 @@ describe('AttachmentsSection media previews', () => {
       Array.from(document.body.querySelectorAll('li[role="menuitem"]')).map(
         (item) => item.textContent,
       ),
-    ).toEqual(['Редагувати', 'Завантажити', 'Перейменувати']);
+    ).toEqual(['Перейменувати', 'Редагувати', 'Завантажити']);
     act(() => image.root.unmount());
 
     const documentRow = await renderSection([
@@ -519,7 +519,9 @@ describe('AttachmentsSection media previews', () => {
       (moreBtn as HTMLElement).click();
     });
 
-    const downloadMenuItem = document.body.querySelector('li[role="menuitem"]');
+    const downloadMenuItem = Array.from(document.body.querySelectorAll('li[role="menuitem"]')).find(
+      (item) => item.textContent === 'Завантажити',
+    );
     expect(downloadMenuItem).not.toBeNull();
 
     await act(async () => {

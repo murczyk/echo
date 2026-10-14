@@ -23,6 +23,7 @@ user roles =
     , goiHost = Nothing
     , goiIntegrations = []
     , lastReleaseSeen = Nothing
+    , rerReportEligible = False
     }
 
 
@@ -106,7 +107,7 @@ suite =
                     ()
         , test "removed roles grant no application access" <|
             \_ ->
-                [ [ "DeviceSource" ], [ "CyberViewer" ], [ "DeviceSource", "CyberViewer" ] ]
+                [ [ "DeviceSource" ] ]
                     |> List.map user
                     |> List.any
                         (\account ->
@@ -119,4 +120,20 @@ suite =
                                 || Core.Auth.hasRole "CyberViewer" account
                         )
                     |> Expect.equal False
+        , test "#3569 CyberViewer can read without message writes or radio access" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Expect.equal True (Core.Auth.hasRole "Basic" (user [ "CyberViewer" ]))
+                    , \_ -> Expect.equal True (Core.Auth.hasRerOrCyber (user [ "CyberViewer" ]))
+                    , \_ -> Expect.equal True (Core.Auth.canReadDevices (user [ "CyberViewer" ]))
+                    , \_ -> Expect.equal True (Core.Auth.hasRole "CyberViewer" (user [ "Cyber" ]))
+                    , \_ -> Expect.equal False (Core.Auth.hasRole "Cyber" (user [ "CyberViewer" ]))
+                    , \_ -> Expect.equal False (Core.Auth.canWriteMessages (user [ "CyberViewer" ]))
+                    , \_ -> Expect.equal False (Core.Auth.canUseRadioFeatures (user [ "CyberViewer" ]))
+                    , \_ ->
+                        [ "Cyber", "Rer", "Full", "Admin" ]
+                            |> List.all (\role -> Core.Auth.canWriteMessages (user [ "CyberViewer", role ]))
+                            |> Expect.equal True
+                    ]
+                    ()
         ]

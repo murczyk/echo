@@ -80,6 +80,15 @@ hash are retained; judge errors are recorded, and judge scores never override a
 failed hard check. Human reviewers should read representative answers against
 their traces and record disagreements before trusting judge scores.
 
+## Unit search suite
+
+`2026-10-10-unit-search` covers unit/formation questions where the unit lives in
+message metadata, not in the text. Fixture messages may carry `unit` (header
+string) and `unitIds`; cases may list `units` for the unit lookup route. The
+`unitSearch` expectation requires a unit-only inbox request. The private
+`raw/cases-v1.json` is captured by `capture.py` (read-only over ssh). To score a
+runner that predates `unit_lookup`, pass `--exclude-skill unit_lookup`.
+
 ## Local integration
 
 Local mode accepts only captured real cases and a loopback HTTP backend. Add

@@ -92,9 +92,13 @@
 ## Analysis direct-link dates
 
 Opening `/rer-analysis-neo?m=<message-reference>` resolves an accessible message
-through the existing inbox window lookup, independently of the date filter.
-Other filters and access restrictions still apply. Missing or inaccessible
-messages retain the normal range and show the existing error notification.
+through `/api/rer-importer/inbox-item-context`, independently of the date filter.
+Access restrictions still apply. The selected period is set before requesting
+surrounding messages through `/api/rer-importer/get-inbox` with `around_message_ref`.
+That request retains all filters and requires valid, ordered date boundaries. Missing or inaccessible
+messages retain the normal range and show the existing error notification. If
+the bounded window is unavailable or fails, restore the previous period; a stale
+response must never restore dates after user navigation.
 
 The initial range uses the resolved role defaults (one day with Rer access,
 90 days otherwise), or explicit URL dates, and the saved Analysis time basis.
@@ -116,7 +120,10 @@ Otherwise the range moves around the message while preserving its size:
 Adjusted dates are persisted in the URL with the message reference and other
 filters. Role/settings initialization and automatic adjustment preserve focus.
 User date or search edits leave direct-message navigation and invalidate a
-pending lookup. Existing context pagination is unchanged.
+pending lookup or surrounding-message response. Earlier/later pages keep the same
+date boundaries. The before/after counts and pagination totals describe only that
+period; widening the date selection explicitly loads and counts the wider period.
+No direct-link request counts all history.
 
 Regression coverage:
 
@@ -184,10 +191,11 @@ Regression coverage:
 - **Status:** inferred characterization
 - **Behavior ID:** `react-analysis-filter-and-map-loading`
 - **Affected route/component:** RER Analysis lazy filter sections and map message loading.
-- **Expected observable result:** initial loads include required filter facets and selected lazy facets; later loads reuse loaded or targeted facets. An opened lazy section shows loading rather than a false empty state. Filter labels retain returned statistics and hydrated network/unit names; duplicate group labels merge without losing selected master keys, callsign labels are displayed in uppercase without changing submitted values, and networks use their statistics labels and ordering. The device filter appears only when Cyber Echo is enabled, while frequency bulk input accepts comma and newline separators. While facets are loading, counters use an em dash; once loaded, they show section-specific selected and total counts. Exact-match controls appear only for applicable selected values, reflect an explicit query value or the loaded default, and map their checked state to the corresponding query mode without changing while counts load. Disabling peleng also clears the dependent without-coordinates option. Map message IDs are filtered before fetches, and messages absent from a map response are not rendered as map points. A backend page shorter than its supplied limit ends pagination; no exhaustion is inferred when that limit is absent.
+- **Expected observable result:** initial loads include required filter facets and selected lazy facets; later loads reuse loaded or targeted facets. An opened lazy section shows loading rather than a false empty state. Filter labels retain returned statistics and hydrated network/unit names; duplicate group labels merge without losing selected master keys, callsign labels are displayed in uppercase without changing submitted values, and networks use their statistics labels and ordering. The device filter appears only when Cyber Echo is enabled, while frequency bulk input accepts comma and newline separators. Each counter reload clears previous totals. Unfinished or failed dimensions use an em dash; successful dimensions independently show their selected and total counts, including genuine zeroes. Exact-match controls appear only for applicable selected values, reflect an explicit query value or the loaded default, and map their checked state to the corresponding query mode without changing while counts load. Disabling peleng also clears the dependent without-coordinates option. Map message IDs are filtered before fetches, and messages absent from a map response are not rendered as map points. A backend page shorter than its supplied limit ends pagination; no exhaustion is inferred when that limit is absent.
 - **Known race/idempotency constraints:** invalidated or stale filter and map responses cannot replace current state.
+- **Authorization errors:** every current counter error is checked for session expiry before ordinary error notifications are deduplicated. Message-count failures are reported immediately; the cycle waits for both selected/overall requests to settle before releasing pending automatic work.
 - **Source implementation:** `routes/rer-analysis-neo/use-analysis-data-filter-sections.ts`, `use-analysis-data.loaders.ts`, and `use-analysis-data.shared.ts`.
-- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-data.reload.spec.ts`, `wdintel-web/src/ts/react/routes/rer-analysis-neo/components/__tests__/AnalysisFiltersPanel.spec.tsx`.
 
 ## Analysis message-list stale-response safety
 
@@ -255,14 +263,14 @@ Regression coverage:
 - **User role or permission:** users viewing analysis messages
 - **Preconditions:** one or more message updates require reconciliation while an earlier batch is still active
 - **User action or external event:** another update for the same message arrives, or the analysis page unmounts before the batch settles
-- **Expected observable result:** repeated IDs coalesce into one current follow-up batch; only the newest response may apply; unmount aborts the request and prevents post-unmount state application.
+- **Expected observable result:** repeated IDs coalesce into one current follow-up batch; only the newest response may apply; unmount aborts the request and prevents post-unmount state application. Identical hydrated payloads preserve list/map message references while comments and other enrichment still refresh.
 - **Loading/empty/error/success behavior:** no obsolete response is displayed after a newer reconciliation request.
 - **URL, localStorage, or user-settings persistence:** none.
 - **API endpoint and compatibility requirements:** reconciliation receives the established abort signal without changing API payloads.
 - **Responsive and keyboard requirements:** none at the reconciliation boundary.
 - **Known race/idempotency constraints:** per-message version ownership wins over earlier batches.
 - **Source implementation:** `routes/rer-analysis-neo/use-targeted-inbox-reconciliation.ts`
-- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-targeted-inbox-reconciliation.spec.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-targeted-inbox-reconciliation.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-data.core.inbox-refresh.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as concurrency safeguards.
 
 ## Analysis comment hydration ordering

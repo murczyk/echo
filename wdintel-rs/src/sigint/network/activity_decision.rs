@@ -234,7 +234,7 @@ pub async fn list_network_activity_decisions(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user).context(h!())?,
-        vec!["Rer", "Cyber", "Api", "ApiAgent"],
+        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
     )
     .await
     .c(h!())?;

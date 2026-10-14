@@ -2,6 +2,9 @@ use super::{
     expand_unit_filter_values, selected_unit_network_ids_query,
     AnalyticsMessageIdScope,
 };
+use crate::config::{
+    ANALYTICS_UNIT_FILTER_CACHE_MAX_ENTRIES, ANALYTICS_UNIT_FILTER_CACHE_TTL_MS,
+};
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::h;
@@ -10,6 +13,53 @@ use sea_orm::*;
 use sea_query::{
     Alias, Condition, Expr, SelectStatement, SimpleExpr, UnionType,
 };
+use std::collections::HashMap;
+use std::sync::Arc;
+
+type UnitFilterVariants = (
+    Option<ResolvedAnalyticsUnitFilters>,
+    Option<ResolvedAnalyticsUnitFilters>,
+);
+
+#[derive(Hash, PartialEq, Eq)]
+struct UnitFilterCacheKey {
+    pool_identity: usize,
+    selected_units: Vec<String>,
+}
+
+struct UnitFilterCacheEntry {
+    created_at: std::time::Instant,
+    variants: tokio::sync::OnceCell<UnitFilterVariants>,
+}
+
+static UNIT_FILTER_CACHE: once_cell::sync::Lazy<
+    std::sync::Mutex<HashMap<UnitFilterCacheKey, Arc<UnitFilterCacheEntry>>>,
+> = once_cell::sync::Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
+
+fn unit_filter_cache_entry(
+    key: UnitFilterCacheKey,
+) -> Arc<UnitFilterCacheEntry> {
+    let mut cache = UNIT_FILTER_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let ttl =
+        std::time::Duration::from_millis(ANALYTICS_UNIT_FILTER_CACHE_TTL_MS);
+    cache.retain(|_, entry| {
+        entry.created_at.elapsed() < ttl
+            || (entry.variants.get().is_none() && Arc::strong_count(entry) > 1)
+    });
+    if let Some(entry) = cache.get(&key) {
+        return entry.clone();
+    }
+    let entry = Arc::new(UnitFilterCacheEntry {
+        created_at: std::time::Instant::now(),
+        variants: tokio::sync::OnceCell::new(),
+    });
+    if cache.len() < ANALYTICS_UNIT_FILTER_CACHE_MAX_ENTRIES {
+        cache.insert(key, entry.clone());
+    }
+    entry
+}
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::rer_importer) struct ResolvedAnalyticsUnitFilter {
@@ -129,16 +179,19 @@ pub(in crate::rer_importer) async fn resolve_analysis_unit_filters_for_analytics
     if scope.is_none() || selected_units.as_ref().is_none_or(Vec::is_empty) {
         return Ok(None);
     }
-    Ok(Some(
-        resolve_analytics_unit_filters(
+    let (exact, combined) =
+        resolve_analysis_unit_filter_variants_for_analytics(
             source_db,
             selected_units,
-            &None,
-            units_exact_match_only,
+            scope,
         )
         .await
-        .context(h!())?,
-    ))
+        .context(h!())?;
+    Ok(if units_exact_match_only.unwrap_or(false) {
+        exact
+    } else {
+        combined
+    })
 }
 
 pub(in crate::rer_importer) async fn resolve_analysis_unit_filter_variants_for_analytics(
@@ -156,6 +209,27 @@ pub(in crate::rer_importer) async fn resolve_analysis_unit_filter_variants_for_a
         return Ok((None, None));
     }
 
+    let entry = unit_filter_cache_entry(UnitFilterCacheKey {
+        pool_identity: super::postgres_pool_identity(source_db),
+        selected_units: selected_units.clone().unwrap_or_default(),
+    });
+    Ok(entry
+        .variants
+        .get_or_try_init(|| {
+            resolve_analysis_unit_filter_variants_uncached(
+                source_db,
+                selected_units,
+            )
+        })
+        .await
+        .context(h!())?
+        .clone())
+}
+
+async fn resolve_analysis_unit_filter_variants_uncached(
+    source_db: &DatabaseConnection,
+    selected_units: &Option<Vec<String>>,
+) -> anyhow::Result<UnitFilterVariants> {
     let split = split_analytics_unit_filter(selected_units);
     let mut queries = Vec::new();
     if !split.ordinary_names.is_empty() {
@@ -600,4 +674,102 @@ fn analytics_unit_frequency_join_condition(
             ))
             .gte(message_datetime)),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::*;
+    use sea_orm::ActiveValue::Set;
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_filter_cache_refreshed_after_network_unit_reconciliation() {
+        let env = cleanup().await.unwrap();
+        let db = &env.dbx;
+        let login = crate::users::login_id_by_name(db, "Tester").await.unwrap();
+        let unit = mk_sigint_unit(
+            db,
+            sigint_unit::ActiveModel {
+                name: Set("ECHO-3001 cached unit".to_string()),
+                created_by_login_id: Set(login),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        let network = mk_sigint_network(
+            db,
+            sigint_network::ActiveModel {
+                name: Set("ECHO-3001 cached network".to_string()),
+                location: Set(String::new()),
+                created_at: Set(now),
+                updated_at: Set(now),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_unit(
+            db,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(network.id),
+                unit_id: Set(unit.id),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let selected = Some(vec![unit.name.clone()]);
+        let scope = Some(super::super::AnalyticsMessageIdScope::From(1));
+        let _inflight_cache_entry =
+            unit_filter_cache_entry(UnitFilterCacheKey {
+                pool_identity: super::super::postgres_pool_identity(db),
+                selected_units: selected.clone().unwrap(),
+            });
+        let (exact, _) = resolve_analysis_unit_filter_variants_for_analytics(
+            db,
+            &selected,
+            scope.as_ref(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            exact.unwrap().selected.linked_network_ids,
+            vec![network.id]
+        );
+        sigint_network_unit::Entity::delete_many()
+            .filter(sigint_network_unit::Column::UnitId.eq(unit.id))
+            .exec(db)
+            .await
+            .unwrap();
+        let cached = resolve_analysis_unit_filters_for_analytics(
+            db,
+            &selected,
+            Some(true),
+            scope.as_ref(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(cached.selected.linked_network_ids, vec![network.id]);
+        tokio::time::sleep(std::time::Duration::from_millis(
+            ANALYTICS_UNIT_FILTER_CACHE_TTL_MS + 10,
+        ))
+        .await;
+        let refreshed = resolve_analysis_unit_filters_for_analytics(
+            db,
+            &selected,
+            Some(true),
+            scope.as_ref(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(refreshed.selected.linked_network_ids.is_empty());
+    }
 }

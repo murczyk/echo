@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, InboxWindowRsp, SavedFilter, User } from '../../../../../Bindings';
 import type { AnalysisPageViewModel } from '../types';
-import { createResetQueryState } from '../helpers';
+import { buildInboxReq, createResetQueryState } from '../helpers';
 import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
 
 const userSettingsMock = vi.hoisted(() => ({
@@ -19,6 +19,7 @@ const systemSettingsMock = vi.hoisted(() => ({
 const currentUserMock = vi.hoisted(() => ({ fetchCurrentUser: vi.fn() }));
 const inboxMessagesMock = vi.hoisted(() => ({
   fetchInboxWindow: vi.fn(),
+  fetchInboxItemContext: vi.fn(),
 }));
 
 const useAnalysisDataMock = vi.hoisted(() => vi.fn());
@@ -69,6 +70,7 @@ vi.mock('../../../services/api/system-settings', () => ({
 
 vi.mock('../../../services/api/inbox-messages', () => ({
   fetchInboxWindow: inboxMessagesMock.fetchInboxWindow,
+  fetchInboxItemContext: inboxMessagesMock.fetchInboxItemContext,
 }));
 
 vi.mock('../use-analysis-data', () => ({
@@ -345,6 +347,10 @@ describe('useRerAnalysisNeoPage', () => {
     });
     currentUserMock.fetchCurrentUser.mockReset();
     currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester' } as User);
+    inboxMessagesMock.fetchInboxItemContext.mockReset();
+    inboxMessagesMock.fetchInboxItemContext.mockResolvedValue({
+      message: [50, { ...buildDirectLinkWindow().inbox.inboxItems[0][1], date: '2026-08-20' }],
+    });
     inboxMessagesMock.fetchInboxWindow.mockReset();
     inboxMessagesMock.fetchInboxWindow.mockResolvedValue(null);
 
@@ -404,6 +410,88 @@ describe('useRerAnalysisNeoPage', () => {
     );
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it.each([
+    { request: 'user', directLink: false },
+    { request: 'settings', directLink: false },
+    { request: 'user', directLink: true },
+    { request: 'settings', directLink: true },
+  ])(
+    'preserves report filters while $request access is pending or fails (direct link: $directLink)',
+    async ({ request, directLink }) => {
+      currentUserMock.fetchCurrentUser.mockResolvedValue({
+        name: 'tester',
+        roles: ['Rer'],
+        rerReportEligible: true,
+      } as User);
+      systemSettingsMock.currentSystemSettings.mockResolvedValue({ rerReportEnabled: true });
+      const accessRequest = deferred<never>();
+      const lookup =
+        request === 'user'
+          ? currentUserMock.fetchCurrentUser
+          : systemSettingsMock.currentSystemSettings;
+      lookup.mockReturnValueOnce(accessRequest.promise);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?onlyWithNetwork=true${directLink ? '&m=target-uid' : ''}`,
+      );
+      renderHook(['Rer']);
+      await flushEffects();
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+        queryState: { onlyWithNetwork: true },
+        deferInitialLoad: true,
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      await act(async () => accessRequest.reject(new Error('access unavailable')));
+      await flushEffects();
+      expect(latest?.queryState.onlyWithNetwork).toBe(true);
+      expect(new URLSearchParams(window.location.search).get('onlyWithNetwork')).toBe('true');
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+        queryState: { onlyWithNetwork: true },
+        deferInitialLoad: true,
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      expect(latest?.error).not.toBeNull();
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it.each([
+    { eligible: true, globallyEnabled: true, expected: true },
+    { eligible: false, globallyEnabled: true, expected: false },
+    { eligible: true, globallyEnabled: false, expected: false },
+  ])(
+    'gates the RER report filter for $eligible eligibility and $globallyEnabled global setting',
+    async ({ eligible, globallyEnabled, expected }) => {
+      window.history.replaceState({}, '', `${window.location.pathname}?onlyWithNetwork=true`);
+      currentUserMock.fetchCurrentUser.mockResolvedValue({
+        name: 'tester',
+        roles: ['Rer'],
+        rerReportEligible: eligible,
+      } as User);
+      systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
+        id: 7,
+        rerAnalysisUnitsExactMatchOnlyDefault: false,
+        rerDutyTestEnabled: false,
+        rerDutyInsertHistoricalInterceptions: false,
+        rerDutyTestSinceMs: 0,
+        rerDutyTestLimit: 1,
+        rerDutyPollIntervalSec: 1,
+        rerShortUrlEnabled: false,
+        enableAudioTranscription: true,
+        rerReportEnabled: globallyEnabled,
+      });
+
+      renderHook(['Rer']);
+      await flushEffects();
+
+      expect(latest?.rerReportFilterEnabled).toBe(expected);
+      expect(latest?.queryState.onlyWithNetwork).toBe(expected);
+      expect(new URLSearchParams(window.location.search).has('onlyWithNetwork')).toBe(expected);
+    },
+  );
+
   // Regression: https://github.com/echoua/echo/issues/3568
   it.each([['Cyber'], ['Cyber', 'UnitsEditor', 'NetworkEditor', 'CallsignsEditor']])(
     'ignores restored radio filters and hidden tabs for %j',
@@ -439,7 +527,7 @@ describe('useRerAnalysisNeoPage', () => {
         onlyWithMetadata: false,
       });
       expect(latest?.centerTab).toBe('messages');
-      expect(latest?.rightSidebarTab).toBe('stats');
+      expect(latest?.rightSidebarTab).toBe('callsigns');
     },
   );
   it('opens the first available sidebar tab when the right panel is toggled while map stays in the center', async () => {
@@ -460,7 +548,7 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
   });
 
   // Regression: https://github.com/echoua/echo/issues/3461
@@ -598,12 +686,12 @@ describe('useRerAnalysisNeoPage', () => {
     await act(async () => latest?.toggleRightPanel());
     await flushEffects();
     expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
-    expect(currentAnalysisData?.loadFilterSection).toHaveBeenCalledWith('groups');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
+    expect(currentAnalysisData?.loadFilterSection).not.toHaveBeenCalledWith('callsigns');
 
     await act(async () => latest?.setRightSidebarTab('callsigns'));
     await flushEffects();
-    expect(currentAnalysisData?.loadFilterSection).toHaveBeenCalledWith('callsigns');
+    expect(currentAnalysisData?.loadFilterSection).not.toHaveBeenCalledWith('callsigns');
     await act(async () => latest?.toggleRightPanel());
     await flushEffects();
 
@@ -653,7 +741,7 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.leftPanelOpen).toBe(false);
     expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
     window.history.replaceState({}, '', originalUrl);
   });
   it('writes panel visibility to query parameters', async () => {
@@ -908,6 +996,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.hideBotTags).toBe(true);
   });
   it('keeps the direct-link error when the regular message list clears its error', async () => {
+    inboxMessagesMock.fetchInboxItemContext.mockResolvedValueOnce({ message: null });
     window.history.replaceState({}, '', `${window.location.pathname}?m=missing-uid`);
 
     renderHook();
@@ -918,6 +1007,7 @@ describe('useRerAnalysisNeoPage', () => {
     );
     expect(latest?.directMessageLoading).toBe(false);
 
+    expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
     const clearRegularListError = useAnalysisDataMock.mock.calls.at(-1)?.[0].onError;
     await act(async () => {
       clearRegularListError('');
@@ -964,6 +1054,11 @@ describe('useRerAnalysisNeoPage', () => {
           'IMSCreatedAt',
         );
         expect(latest?.queryState).toMatchObject({ fromDateTimeStr: from, toDateTimeStr: to });
+        const period = buildInboxReq(latest!.queryState, [], true);
+        expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0][0].inboxReq).toMatchObject({
+          sinceDateInclusiveMs: period.sinceDateInclusiveMs,
+          tillDateInclusiveMs: period.tillDateInclusiveMs,
+        });
         expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
         expect(new URL(window.location.href).searchParams.get('m')).toBe('target-uid');
         expect(new URL(window.location.href).searchParams.get('fromDateTime')).toBe(from);
@@ -994,14 +1089,80 @@ describe('useRerAnalysisNeoPage', () => {
       });
       await flushEffects();
       expect(latest?.queryState).toMatchObject({
-        fromDateTimeStr: '2026-08-28T00:00',
-        toDateTimeStr: '2026-08-29T00:00',
+        fromDateTimeStr: '2026-08-20T00:00',
+        toDateTimeStr: '2026-08-21T00:00',
         ...patch,
       });
       expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].focusedWindow).toBeNull();
       expect(latest?.directMessageNavigation).toBeNull();
       expect(latest?.messagesLoading).toBe(false);
       expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/2726
+  it.each([{ fromDateTimeStr: '2026-08-27T00:00' }, { search: 'user search' }])(
+    'ignores a late UUID lookup after a user edit: %j',
+    async (patch) => {
+      const request = deferred<{ message: [number, InboxMessage] }>();
+      inboxMessagesMock.fetchInboxItemContext.mockReturnValueOnce(request.promise);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?m=target-uid&fromDateTime=2026-08-28T00%3A00&toDateTime=2026-08-29T00%3A00`,
+      );
+      renderHook();
+      await flushEffects();
+      expect(inboxMessagesMock.fetchInboxItemContext).toHaveBeenCalledWith({
+        messageUid: 'target-uid',
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      await act(async () => {
+        latest?.updateQueryState(patch);
+        request.resolve({ message: buildDirectLinkWindow().inbox.inboxItems[0] });
+      });
+      await flushEffects();
+      expect(latest?.queryState).toMatchObject({
+        fromDateTimeStr: '2026-08-28T00:00',
+        toDateTimeStr: '2026-08-29T00:00',
+        ...patch,
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      expect(latest?.directMessageLoading).toBe(false);
+      expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/pull/3754
+  it.each(['missing', 'error'])(
+    'restores the original period when the bounded window is %s',
+    async (outcome) => {
+      const request = deferred<InboxWindowRsp | null>();
+      inboxMessagesMock.fetchInboxWindow.mockReturnValueOnce(request.promise);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?m=target-uid&fromDateTime=2026-08-28T00%3A00&toDateTime=2026-08-29T00%3A00`,
+      );
+      renderHook();
+      await flushEffects();
+      expect(latest?.queryState.fromDateTimeStr).toBe('2026-08-20T00:00');
+      await act(async () => {
+        if (outcome === 'missing') request.resolve(null);
+        else request.reject(new Error('window failed'));
+      });
+      await flushEffects();
+      expect(latest?.queryState).toMatchObject({
+        fromDateTimeStr: '2026-08-28T00:00',
+        toDateTimeStr: '2026-08-29T00:00',
+      });
+      expect(new URL(window.location.href).searchParams.get('fromDateTime')).toBe(
+        '2026-08-28T00:00',
+      );
+      expect(new URL(window.location.href).searchParams.get('toDateTime')).toBe('2026-08-29T00:00');
+      expect(latest?.directMessageError).toBeTruthy();
+      expect(latest?.directMessageNavigation).toBeNull();
+      expect(latest?.directMessageLoading).toBe(false);
     },
   );
 
@@ -1407,7 +1568,7 @@ describe('useRerAnalysisNeoPage', () => {
     });
     await flushEffects();
 
-    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
     expect(latest?.rightPanelOpen).toBe(true);
   });
 });

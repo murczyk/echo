@@ -1,7 +1,10 @@
 mod finalizer;
+pub(in crate::devices) mod local_cache;
+mod preview;
+mod preview_cache;
 mod protocol;
-mod read;
-mod repository;
+pub(in crate::devices) mod read;
+pub(in crate::devices) mod repository;
 mod reuse;
 mod spool;
 pub(crate) mod worker;
@@ -16,7 +19,6 @@ use actix_identity::Identity;
 use actix_web::dev::HttpServiceFactory;
 use actix_web::http::{header, Method};
 use actix_web::{web, HttpRequest, HttpResponse};
-use anyhow::Context;
 use chrono::Utc;
 use futures_util::StreamExt;
 use opendal::Operator;
@@ -30,10 +32,8 @@ use self::repository::{
     CreateOutcome, NewUpload, RevalidateOutcome, Upload, UploadStatus,
 };
 use self::spool::{AcquireError, AppendError, LockedSpool, Spool};
-use crate::config::{
-    Config, DeviceFileContentConfig, DEVICE_FILE_CONTENT_BUSY_RETRY_AFTER_SECS,
-    DEVICE_FILE_CONTENT_STORAGE_RETRY_AFTER_SECS,
-};
+use crate::config::Config;
+use crate::devices::config::*;
 use crate::error::AppError;
 use crate::file_registry::FileRegistryDb;
 use crate::h;
@@ -48,8 +48,50 @@ pub(crate) const COMPLETE_PATH: &str =
     "/api/device/file-content-uploads/{upload_id}/complete";
 
 #[derive(Clone)]
+struct ContentLimits {
+    upload_max_bytes: u64,
+    max_reserved_bytes: u64,
+    max_reserved_per_login: u64,
+    max_reserved_count: usize,
+    max_count_per_login: usize,
+    spool_min_free_bytes: u64,
+    probe_size_bytes: usize,
+    upload_idle_ttl_secs: u64,
+    upload_max_lifetime_secs: u64,
+    finalization_max_concurrent: usize,
+    cleanup_batch_size: usize,
+    cleanup_poll_interval_secs: u64,
+    cleanup_retry_delay_secs: u64,
+}
+
+impl Default for ContentLimits {
+    fn default() -> Self {
+        Self {
+            upload_max_bytes: DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES,
+            max_reserved_bytes: DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_BYTES,
+            max_reserved_per_login:
+                DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_PER_LOGIN,
+            max_reserved_count: DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_COUNT,
+            max_count_per_login: DEVICE_FILE_CONTENT_UPLOAD_MAX_COUNT_PER_LOGIN,
+            spool_min_free_bytes: DEVICE_FILE_CONTENT_SPOOL_MIN_FREE_BYTES,
+            probe_size_bytes: DEVICE_FILE_CONTENT_PROBE_SIZE_BYTES,
+            upload_idle_ttl_secs: DEVICE_FILE_CONTENT_UPLOAD_IDLE_TTL_SECS,
+            upload_max_lifetime_secs:
+                DEVICE_FILE_CONTENT_UPLOAD_MAX_LIFETIME_SECS,
+            finalization_max_concurrent:
+                DEVICE_FILE_CONTENT_FINALIZATION_MAX_CONCURRENT,
+            cleanup_batch_size: DEVICE_FILE_CONTENT_CLEANUP_BATCH_SIZE,
+            cleanup_poll_interval_secs:
+                DEVICE_FILE_CONTENT_CLEANUP_POLL_INTERVAL_SECS,
+            cleanup_retry_delay_secs:
+                DEVICE_FILE_CONTENT_CLEANUP_RETRY_DELAY_SECS,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct DeviceFileContentRuntime {
-    config: DeviceFileContentConfig,
+    config: ContentLimits,
     spool: Spool,
     storage: Operator,
     storage_config: S3Config,
@@ -83,17 +125,13 @@ async fn try_build_runtime(
     metrics: Option<crate::telemetry::Metrics>,
     mode: Mode,
 ) -> Result<Option<Arc<DeviceFileContentRuntime>>, AppError> {
+    let limits = ContentLimits::default();
     let Some(file_registry_db) = file_registry_db else {
         return Ok(None);
     };
     if mode == Mode::Test {
         return Ok(None);
     }
-    config
-        .device_file_content
-        .validate()
-        .map_err(AppError::from)
-        .map_err(|error| error.c(h!()))?;
     if config.storage_dir.trim().is_empty() {
         return Err(AppError::BL {
             msg:
@@ -123,10 +161,9 @@ async fn try_build_runtime(
     crate::storage::key_from_b64(&raw_s3.strongbox_key)
         .map_err(|error| error.c(h!()))?;
     let storage_config = S3Config::with_prefix(raw_s3, String::new());
-    let required_capacity = config
-        .device_file_content
+    let required_capacity = limits
         .max_reserved_bytes
-        .checked_add(config.device_file_content.spool_min_free_bytes)
+        .checked_add(limits.spool_min_free_bytes)
         .ok_or_else(|| AppError::BL {
             msg: "device content spool capacity requirement overflowed"
                 .to_string(),
@@ -139,17 +176,17 @@ async fn try_build_runtime(
     .await
     .map_err(|error| AppError::from(error.context(h!())))?;
     Ok(Some(Arc::new(DeviceFileContentRuntime {
-        config: config.device_file_content.clone(),
+        config: limits.clone(),
         spool,
         storage: s3,
         storage_config,
         strongbox_key: raw_s3.strongbox_key.clone(),
         file_registry_db: file_registry_db.clone(),
         finalization_permits: Arc::new(Semaphore::new(
-            config.device_file_content.finalization_max_concurrent,
+            limits.finalization_max_concurrent,
         )),
         finalization_waiters: Arc::new(Semaphore::new(
-            crate::config::DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING,
+            DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING,
         )),
         metrics,
     })))
@@ -163,7 +200,7 @@ pub(crate) async fn runtime_for_test(
     metrics: Option<crate::telemetry::Metrics>,
 ) -> Arc<DeviceFileContentRuntime> {
     Arc::new(DeviceFileContentRuntime {
-        config: DeviceFileContentConfig::default(),
+        config: ContentLimits::default(),
         spool: Spool::for_test(spool_root).await.unwrap(),
         storage,
         storage_config: S3Config {
@@ -177,10 +214,10 @@ pub(crate) async fn runtime_for_test(
         strongbox_key: crate::storage::generate_strongbox_key_b64(),
         file_registry_db,
         finalization_permits: Arc::new(Semaphore::new(
-            crate::config::DEVICE_FILE_CONTENT_FINALIZATION_MAX_CONCURRENT,
+            DEVICE_FILE_CONTENT_FINALIZATION_MAX_CONCURRENT,
         )),
         finalization_waiters: Arc::new(Semaphore::new(
-            crate::config::DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING,
+            DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING,
         )),
         metrics,
     })
@@ -189,6 +226,7 @@ pub(crate) async fn runtime_for_test(
 pub(crate) fn routes() -> impl HttpServiceFactory {
     (
         read::download_content,
+        preview::media_content,
         reuse::routes(),
         web::resource(COMPLETE_PATH).route(web::route().to(complete)),
         web::resource(COLLECTION_PATH).route(web::route().to(collection)),
@@ -204,9 +242,7 @@ async fn collection(
     payload: web::Payload,
 ) -> HttpResponse {
     if request.method() == Method::OPTIONS {
-        return protocol::options(
-            env.config.device_file_content.upload_max_bytes,
-        );
+        return protocol::options(DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES);
     }
     let response =
         collection_inner(env, identity, request, path, payload).await;
@@ -296,9 +332,7 @@ async fn resource(
     payload: web::Payload,
 ) -> HttpResponse {
     if request.method() == Method::OPTIONS {
-        return protocol::options(
-            env.config.device_file_content.upload_max_bytes,
-        );
+        return protocol::options(DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES);
     }
     let is_head = request.method() == Method::HEAD;
     let response = resource_inner(env, identity, request, path, payload).await;
@@ -731,17 +765,6 @@ fn runtime(env: &Env) -> Result<&DeviceFileContentRuntime, ContentError> {
 fn runtime_preflight(
     runtime: &DeviceFileContentRuntime,
 ) -> Result<(), ContentError> {
-    runtime
-        .config
-        .validate()
-        .map_err(anyhow::Error::msg)
-        .context(h!())
-        .map_err(|_| {
-            ContentError::unavailable(
-                "device_content_unavailable",
-                DEVICE_FILE_CONTENT_STORAGE_RETRY_AFTER_SECS,
-            )
-        })?;
     runtime
         .spool
         .preflight()

@@ -4,10 +4,41 @@
 import { act, forwardRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ELLIPSIS } from '../../../../utils/misc';
 
 import type { InboxMessage, SignalGroupEntry } from '../../../../../../Bindings';
+
+const debugRuntime = vi.hoisted(() => {
+  let recording = false;
+  let recordingId: string | null = null;
+  const aliases = new Map<string, string>();
+  return {
+    record: vi.fn(),
+    alias: vi.fn((scope: string, value: string | number) => {
+      const key = `${scope}:${value}`;
+      if (!aliases.has(key)) aliases.set(key, `{${scope}_${aliases.size + 1}}`);
+      return aliases.get(key)!;
+    }),
+    isRecording: vi.fn(() => recording),
+    subscribe: vi.fn(() => () => {}),
+    snapshot: vi.fn(() => ({ state: recording ? 'recording' : 'idle', recordingId })),
+    start() {
+      recording = true;
+      recordingId = 'recording-1';
+    },
+    reset() {
+      recording = false;
+      recordingId = null;
+      aliases.clear();
+      this.record.mockReset();
+      this.alias.mockClear();
+      this.isRecording.mockClear();
+      this.subscribe.mockClear();
+      this.snapshot.mockClear();
+    },
+  };
+});
 
 vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -20,14 +51,12 @@ vi.mock('@mui/material', () => ({
       role?: string;
       'aria-label'?: string;
       'aria-live'?: string;
-    }
-  >(({ children, component, role, 'aria-label': ariaLabel, 'aria-live': ariaLive }, ref) =>
+    } & Record<string, unknown>
+  >(({ children, component, sx: _sx, ...props }, ref) =>
     component === 'ul' ? (
-      <ul role={role} aria-label={ariaLabel} aria-live={ariaLive}>
-        {children}
-      </ul>
+      <ul {...props}>{children}</ul>
     ) : (
-      <div ref={ref} role={role} aria-label={ariaLabel} aria-live={ariaLive}>
+      <div {...props} ref={ref}>
         {children}
       </div>
     ),
@@ -49,7 +78,7 @@ vi.mock('@mui/material', () => ({
 vi.mock('../../../shared/message-card/MessageCard', () => ({
   AnalysisMessageCard: (props: {
     id: number;
-    onCreateReport: (focusTarget: HTMLElement) => void;
+    onCreateReport: (etalonDisplayModel: unknown, focusTarget: HTMLElement) => void;
     onEditReport?: (id: number) => void;
     onDelete: () => void;
     onEditDetails: (focusTarget: HTMLElement) => void;
@@ -70,7 +99,23 @@ vi.mock('../../../shared/message-card/MessageCard', () => ({
           .map((comment) => `${comment.login}:${comment.comment}`)
           .join('|')}
       </span>
-      <button type="button" onClick={(event) => props.onCreateReport(event.currentTarget)}>
+      <button
+        type="button"
+        onClick={(event) =>
+          props.onCreateReport(
+            {
+              primaryKind: 'network',
+              displayValue: 'р/м Актуальна мережа',
+              copyEtalonValue: 'р/м Актуальна мережа',
+              copyLocationValue: null,
+              renderedNetworks: [{ networkId: 3, label: 'р/м Актуальна мережа', badge: false }],
+              showInlineLocationTooltip: false,
+              locationDisplayValue: null,
+            },
+            event.currentTarget,
+          )
+        }
+      >
         report-{props.id}
       </button>
       <button type="button" onClick={() => props.onEditReport?.(91)}>
@@ -126,6 +171,14 @@ vi.mock('../../message-utils', async () => {
     copyMessageValue: vi.fn().mockResolvedValue(undefined),
   };
 });
+
+vi.mock('../../../../../debug-recorder', () => ({
+  recordDebugEvent: debugRuntime.record,
+  aliasDebugIdentifier: debugRuntime.alias,
+  isBrowserDebugRecording: debugRuntime.isRecording,
+  subscribeBrowserDebugRecorder: debugRuntime.subscribe,
+  getBrowserDebugRecorderSnapshot: debugRuntime.snapshot,
+}));
 
 import { AnalysisMessagesPane } from '.././AnalysisMessagesPane';
 
@@ -263,6 +316,8 @@ async function flushAnimationFrames(count = 4): Promise<void> {
 describe('AnalysisMessagesPane', () => {
   const rendered: Rendered[] = [];
 
+  beforeEach(() => debugRuntime.reset());
+
   afterEach(() => {
     for (const item of rendered.splice(0)) {
       act(() => {
@@ -270,6 +325,42 @@ describe('AnalysisMessagesPane', () => {
       });
       item.container.remove();
     }
+    vi.useRealTimers();
+  });
+
+  it('records a trailing scroll snapshot during a debug session', async () => {
+    vi.useFakeTimers();
+    debugRuntime.start();
+    const renderedPane = await renderComponent(
+      buildProps({ messages: [[771111, buildMessage()]], pageIndex: 2 }),
+    );
+    rendered.push(renderedPane);
+    const scrollBox = renderedPane.container.querySelector<HTMLElement>(
+      '[data-analysis-message-scroller]',
+    );
+    const message = renderedPane.container.querySelector<HTMLElement>('[data-message-id="771111"]');
+    if (scrollBox == null || message == null) throw new Error('Analysis scroll fixture is missing');
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 2_000, scrollTop: 400 });
+    scrollBox.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    message.getBoundingClientRect = () => ({ top: 100, bottom: 300 }) as DOMRect;
+
+    await act(async () => {
+      scrollBox.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    expect(debugRuntime.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'analysis.scroll.snapshot',
+        details: expect.objectContaining({
+          scrollTop: 400,
+          pageIndex: 2,
+          visibleCount: 1,
+          firstVisibleId: expect.stringMatching(/^\{message_/),
+        }),
+      }),
+    );
+    expect(JSON.stringify(debugRuntime.record.mock.calls)).not.toContain('771111');
   });
 
   it('highlights a direct-link target without scrolling the message viewport', async () => {

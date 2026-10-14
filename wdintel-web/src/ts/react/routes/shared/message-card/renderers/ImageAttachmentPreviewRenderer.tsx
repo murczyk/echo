@@ -1,4 +1,3 @@
-import type { SyntheticEvent } from 'react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -20,8 +19,8 @@ import {
   derivePreviewFileName,
   formatSizeBytes,
   type MessageCardImage,
-  type Point,
 } from '../message-card-image-utils';
+import { ImageFilePreview } from './ImageFilePreview';
 import { ZOOM_MIN } from '../message-card-image-preview-utils';
 import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPreviewZoomBadge';
 import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
@@ -63,68 +62,6 @@ const ImageEditor = lazy(() =>
 );
 
 const COPY_SUCCESS_FEEDBACK_MS = 1500;
-
-function ImagePreview({
-  image,
-  href,
-  carouselIndex,
-  previewFileName,
-  zoom,
-  pan,
-  failedHref,
-  imageSize,
-  onLoad,
-  onError,
-}: {
-  image: MessageCardImage;
-  href: string;
-  carouselIndex: number;
-  previewFileName: string;
-  zoom: number;
-  pan: Point;
-  failedHref: string | null;
-  imageSize: { width: number; height: number } | null;
-  onLoad: (image: HTMLImageElement) => void;
-  onError: () => void;
-}) {
-  return (
-    <>
-      {failedHref === href ? (
-        <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center' }}>
-          Зображення недоступне
-        </Typography>
-      ) : null}
-      <Box
-        component="img"
-        src={href}
-        alt={`Зображення ${carouselIndex + 1}`}
-        data-image-preview-image
-        data-image-preview-zoom={zoom}
-        data-image-preview-pan-x={pan.x}
-        data-image-preview-pan-y={pan.y}
-        data-image-preview-file-name={previewFileName}
-        data-image-preview-size-bytes={image.sizeBytes ?? ''}
-        data-image-preview-natural-width={imageSize?.width ?? ''}
-        data-image-preview-natural-height={imageSize?.height ?? ''}
-        draggable={false}
-        onLoad={(event: SyntheticEvent<HTMLImageElement>) => onLoad(event.currentTarget)}
-        onError={onError}
-        decoding="async"
-        sx={{
-          display: failedHref === href ? 'none' : 'block',
-          maxWidth: '100%',
-          maxHeight: '100%',
-          objectFit: 'contain',
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})`,
-          transformOrigin: 'center center',
-          transition: zoom === ZOOM_MIN ? 'transform 120ms ease-out' : 'none',
-          willChange: 'transform',
-          pointerEvents: 'none',
-        }}
-      />
-    </>
-  );
-}
 
 function ImageCopyAction({
   status,
@@ -354,8 +291,8 @@ export function ImageAttachmentPreviewRenderer({
       activationEnabled={!editor.isLocked}
       activationKey={key}
     >
-      <ImagePreview
-        image={image}
+      <ImageFilePreview
+        sizeBytes={image.sizeBytes ?? null}
         href={href}
         carouselIndex={navigation.index}
         previewFileName={previewFileName}

@@ -1572,9 +1572,9 @@ async fn load_babak_candidate_page_for_groups(
     let linked_message_ids = intel_product::Entity::find()
         .select_only()
         .column(intel_product::Column::IntelMessageId)
-        .filter(intel_product::relation_kind_is_in([
-            intel_product::RELATION_KIND_COMMENT,
-            intel_product::RELATION_KIND_REPORT,
+        .filter(crate::rer_importer::intel_product_filter::relation_kind_is_in([
+            crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ]))
         .into_query();
     query = query
@@ -1823,9 +1823,9 @@ fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
         Query::select()
             .expr(Expr::value(1))
             .from(intel_product::Entity)
-            .and_where(intel_product::relation_kind_is_in([
-                intel_product::RELATION_KIND_COMMENT,
-                intel_product::RELATION_KIND_REPORT,
+            .and_where(crate::rer_importer::intel_product_filter::relation_kind_is_in([
+                crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
+                crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
             ]))
             .and_where(
                 Expr::col((
@@ -3153,7 +3153,7 @@ mod tests {
         intel_product::ActiveModel {
             intel_message_id: Set(linked_comment),
             source_message_id: Set(creation_inside),
-            relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+            relation_kind: Set(crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -3404,7 +3404,7 @@ mod tests {
         intel_product::ActiveModel {
             intel_message_id: Set(linked_comment.id),
             source_message_id: Set(message.id),
-            relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+            relation_kind: Set(crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -3425,7 +3425,9 @@ mod tests {
         intel_product::ActiveModel {
             intel_message_id: Set(linked_report.id),
             source_message_id: Set(message.id),
-            relation_kind: Set(intel_product::RELATION_KIND_REPORT),
+            relation_kind: Set(
+                crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
+            ),
             ..Default::default()
         }
         .insert(&env.dbx)

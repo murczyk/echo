@@ -8,6 +8,9 @@ import { AppNavbar } from '../AppNavbar';
 
 const currentSettingsMock = vi.hoisted(() => vi.fn());
 const fetchUserSettingsMock = vi.hoisted(() => vi.fn());
+const configureDebugRecorderMock = vi.hoisted(() => vi.fn());
+const clearDebugRecorderMock = vi.hoisted(() => vi.fn());
+const mountDebugRecorderPanelMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../services/api/system-settings', () => ({
   currentSystemSettings: currentSettingsMock,
@@ -15,6 +18,12 @@ vi.mock('../../../services/api/system-settings', () => ({
 vi.mock('../../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   fetchUserSettings: fetchUserSettingsMock,
+}));
+vi.mock('../../../../debug-recorder', () => ({
+  DEBUG_RECORDER_SLOT_ID: 'echo-debug-recorder-slot',
+  configureBrowserDebugRecorder: configureDebugRecorderMock,
+  clearBrowserDebugRecording: clearDebugRecorderMock,
+  mountDebugRecorderPanelIfNeeded: mountDebugRecorderPanelMock,
 }));
 
 type Rendered = {
@@ -54,7 +63,9 @@ vi.mock('../ChangelogDropdown', () => ({
 }));
 
 vi.mock('../ProfileDropdown', () => ({
-  ProfileDropdown: () => <div data-testid="mock-profile-dropdown" />,
+  ProfileDropdown: ({ onLogout }: { onLogout: () => void }) => (
+    <button data-testid="mock-profile-dropdown" onClick={onLogout} />
+  ),
 }));
 
 function renderComponent(props: any) {
@@ -80,7 +91,7 @@ describe('AppNavbar', () => {
     },
     shared: {
       themeMode: 'light',
-      serverInfo: { mode: 'live' },
+      serverInfo: { mode: 'live', version: '2026.10.8' },
       changelogPreview: null,
       userLoaded: true,
       changelogLastSeenLoaded: true,
@@ -107,8 +118,50 @@ describe('AppNavbar', () => {
     expect(hoverLogoImg).not.toBeUndefined();
   });
 
+  it('reserves a debug recorder slot immediately before the toolbar', async () => {
+    const { container } = renderComponent(defaultProps);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const slot = container.querySelector('#echo-debug-recorder-slot');
+
+    expect(slot).not.toBeNull();
+    expect(slot?.nextElementSibling?.classList.contains('app-navbar-toolbar')).toBe(true);
+  });
+
+  it.each([
+    ['live', 'Live'],
+    ['debug', 'Debug'],
+  ])('configures debug recorder metadata in %s mode', (mode, deploymentMode) => {
+    renderComponent({
+      ...defaultProps,
+      shared: { ...defaultProps.shared, serverInfo: { mode, version: '2026.10.8' } },
+    });
+    expect(configureDebugRecorderMock).toHaveBeenCalledWith({
+      deploymentMode,
+      echoVersion: '2026.10.8',
+    });
+  });
+
+  it('clears debug recording before dispatching navbar logout', async () => {
+    await import('../../../app-navbar-element');
+    const order: string[] = [];
+    clearDebugRecorderMock.mockImplementation(() => order.push('clear'));
+    const host = document.createElement('app-navbar') as HTMLElement & { props: unknown };
+    host.addEventListener('navbar-logout', () => order.push('logout'));
+    act(() => {
+      document.body.append(host);
+      host.props = defaultProps;
+    });
+
+    const logout = host.querySelector<HTMLButtonElement>('[data-testid="mock-profile-dropdown"]');
+    act(() => logout?.click());
+    expect(order).toEqual(['clear', 'logout']);
+    act(() => host.remove());
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3568
-  it.each(['Rer', 'Cyber'])('#3568 renders main navigation for %s', (role) => {
+  it.each(['Rer', 'Cyber', 'CyberViewer'])('#3568 renders main navigation for %s', (role) => {
     const { container } = renderComponent({
       ...defaultProps,
       user: { ...defaultProps.user, roles: [role] },
@@ -125,6 +178,7 @@ describe('AppNavbar', () => {
   // Regression: https://github.com/echoua/echo/issues/3568
   it.each([
     ['Cyber'],
+    ['CyberViewer'],
     ['Cyber', 'UnitsEditor'],
     ['Rer'],
     ['Rer', 'Cyber'],
@@ -236,21 +290,24 @@ describe('AppNavbar', () => {
   });
 
   // Regression: https://github.com/echoua/echo/issues/3568
-  it.each(['Rer', 'Cyber'])('#3568 keeps ApiAgent excluded from %s AI chat access', (role) => {
-    const { container } = renderComponent({
-      ...defaultProps,
-      user: { ...defaultProps.user, roles: [role, 'ApiAgent'] },
-    });
+  it.each(['Rer', 'Cyber', 'CyberViewer'])(
+    '#3568 keeps ApiAgent excluded from %s AI chat access',
+    (role) => {
+      const { container } = renderComponent({
+        ...defaultProps,
+        user: { ...defaultProps.user, roles: [role, 'ApiAgent'] },
+      });
 
-    act(() => {
-      window.dispatchEvent(
-        new CustomEvent('ai-agent-availability', { detail: { enabled: false } }),
-      );
-    });
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent('ai-agent-availability', { detail: { enabled: false } }),
+        );
+      });
 
-    expect(container.textContent).toContain('Документація');
-    expect(container.textContent).toContain('Статистика');
-  });
+      expect(container.textContent).toContain('Документація');
+      expect(container.textContent).toContain('Статистика');
+    },
+  );
 
   it('renders Admin menu when user has Admin role', () => {
     const { container } = renderComponent({

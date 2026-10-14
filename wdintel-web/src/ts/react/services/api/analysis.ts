@@ -1,6 +1,8 @@
 import type {
   AnalysisCallsignFrequencyMatchesReq,
   AnalysisCallsignFrequencyMatchesRsp,
+  AnalysisCallsignPageReq,
+  AnalysisCallsignPageRsp,
   AnalysisStatsReq,
   EditFreqUnitNameReq,
   BatchMessageCommentsReq,
@@ -21,7 +23,6 @@ import type {
   AnalysisStatsUnit,
   AreaOfResponsibilityEntry,
   CallsignInfoRes,
-  CountStatsRsp,
   CorrelatedFreqsRsp,
   FreqDetailedPoint,
   FreqDailyActivityCount,
@@ -49,6 +50,7 @@ import type {
   SignalProfileRsp,
   SummaryTableFreq,
   UnitStatsRsp,
+  UnitMatchStatsCountRsp,
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 import { emptyArrToNull, isNullOrUndefined } from '../../utils/misc';
@@ -91,6 +93,17 @@ type AreaOfResponsibilityStatsRsp = {
   aorNames: AreaOfResponsibilityEntry[];
 };
 type CallsignInfoBatchRaw = Array<CallsignInfoRes>;
+export type AnalysisStatsCountDimension =
+  | 'groups'
+  | 'senders'
+  | 'freqs'
+  | 'posts'
+  | 'callsigns'
+  | 'units'
+  | 'locations'
+  | 'tags'
+  | 'aors'
+  | 'networks';
 const CONTENT_NODE_VARIANT_KEY_MAP: Record<string, string> = {
   _c_n_text_c: 'CNTextC',
   _c_n_newline_c: 'CNNewlineC',
@@ -218,11 +231,23 @@ export async function deleteAnalysisSavedFilter(id: number): Promise<void> {
   await postVoid('/api/rer/analysis/saved-filter-delete', id);
 }
 
-export async function fetchAnalysisCount(
+export async function fetchAnalysisStatsCount(
+  dimension: AnalysisStatsCountDimension,
   req: AnalysisStatsReq,
   options?: RequestOptions,
-): Promise<CountStatsRsp> {
-  return postAnalysisStats<CountStatsRsp>('/api/rer/analysis/stats/count', req, options);
+): Promise<number> {
+  return postAnalysisStats<number>(`/api/rer/analysis/stats/${dimension}/count`, req, options);
+}
+
+export async function fetchAnalysisUnitMatchStatsCount(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<UnitMatchStatsCountRsp> {
+  return postAnalysisStats<UnitMatchStatsCountRsp>(
+    '/api/rer/analysis/stats/units/matches/count',
+    req,
+    options,
+  );
 }
 
 export async function fetchAnalysisGroups(
@@ -258,6 +283,25 @@ export async function fetchAnalysisCallsigns(
   options?: RequestOptions,
 ): Promise<CallsignStatsRsp> {
   return postAnalysisStats<CallsignStatsRsp>('/api/rer/analysis/stats/callsigns', req, options);
+}
+
+export async function fetchAnalysisCallsignPage(
+  req: AnalysisCallsignPageReq,
+  options?: RequestOptions,
+): Promise<AnalysisCallsignPageRsp> {
+  const body = {
+    req: analysisStatsReqBody(req.req),
+    query: req.query,
+    page_size: req.pageSize,
+    cursor: req.cursor,
+    order: req.order,
+  };
+  const raw = await postJson<unknown>(
+    '/api/rer/analysis/callsigns-page',
+    body as JsonValue,
+    options,
+  );
+  return transformSnakeToCamel<AnalysisCallsignPageRsp>(raw);
 }
 
 export async function fetchAnalysisUnits(

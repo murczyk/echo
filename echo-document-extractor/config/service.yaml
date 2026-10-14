@@ -13,7 +13,7 @@ service:
     max_input_bytes: 262144000
     max_pages: 200
     max_queue_depth: 25
-    max_spool_bytes: 75161927680
+    max_spool_bytes: 214748364800
     min_free_bytes: 21474836480
     retention_seconds: 604800
   worker:
@@ -23,6 +23,7 @@ service:
     max_active_jobs: 2
     infrastructure_retries: 3
     retry_backoff_seconds: [30, 120, 600]
+    storage_retry_seconds: 60
 
 extraction:
   hardware_profile: split_gpu

@@ -674,7 +674,7 @@ function useUnitColumns(
         size: 180,
       },
       {
-        header: 'Група армій/Фронт/Види та роди ЗС',
+        header: 'Група армій/Фронт',
         accessorKey: 'militaryDistrict',
         Filter: buildTextColumnFilter({
           searchMode,
@@ -694,6 +694,17 @@ function useUnitColumns(
           menuIdPrefix: 'army-region',
         }),
         size: 220,
+      },
+      {
+        header: 'Види та роди ЗС',
+        accessorKey: 'combatTypeName',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'combat-type',
+        }),
+        size: 240,
       },
       {
         header: 'Створено',

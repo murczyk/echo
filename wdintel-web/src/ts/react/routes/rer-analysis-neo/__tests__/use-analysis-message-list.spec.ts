@@ -5,7 +5,7 @@ import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAnalysisMessageList } from '../use-analysis-message-list';
-import { emptyQueryState } from '../helpers';
+import { buildInboxReq, emptyQueryState } from '../helpers';
 import type { CallsignInfoRes, InboxMessage } from '../../../../../Bindings';
 
 const fetchAnalysisCallsignInfosMock = vi.hoisted(() => vi.fn());
@@ -77,6 +77,7 @@ function renderHook(
   newestFirst = true,
   initialDeferInitialLoad = false,
   initialSummaryCallsignsInfo: Record<string, CallsignInfoRes> = {},
+  focusedMessageId: number | null = null,
 ): Harness {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -98,6 +99,10 @@ function renderHook(
     harness.summaryCallsignsInfo = summaryCallsignsInfo;
     harness.latest = useAnalysisMessageList({
       deferInitialLoad,
+      focusedMessageId,
+      focusedMessageActive: focusedMessageId != null,
+      focusedHasMoreEarlier: true,
+      focusedHasMoreLater: true,
       loadMissingNetworksForMessages,
       newestFirst,
       onError: harness.onError,
@@ -126,6 +131,53 @@ describe('useAnalysisMessageList pagination', () => {
     fetchAnalysisCallsignInfosMock.mockResolvedValue([]);
     fetchInboxCountMock.mockReset();
     fetchInboxCountMock.mockResolvedValue({ quantity: 42, firstElementTs: null });
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/2726
+  it('keeps the selected period on both sides of a linked message', async () => {
+    const queryState = buildQueryState();
+    const h = renderHook(queryState, undefined, true, true, {}, 50);
+    harnesses.push(h);
+    act(() => h.latest.setMessages(page(50)));
+    fetchInboxMessagesMock.mockResolvedValue({
+      inboxItems: [],
+      callsigns: [],
+      signalGroups: [],
+      signalProfiles: {},
+      pageLimit: 20,
+    });
+    await act(async () => {
+      await h.latest.loadFocusedEarlier();
+    });
+    await act(async () => {
+      await h.latest.loadFocusedLater();
+    });
+    const period = buildInboxReq(queryState, [], true);
+    expect(fetchInboxMessagesMock).toHaveBeenCalledTimes(2);
+    expect(
+      fetchInboxMessagesMock.mock.calls.map(([request]) => ({
+        since: request.sinceDateInclusiveMs,
+        till: request.tillDateInclusiveMs,
+        before: request.beforeIdNoninclusive,
+        after: request.sinceIdNoninclusive,
+      })),
+    ).toEqual([
+      {
+        since: period.sinceDateInclusiveMs,
+        till: period.tillDateInclusiveMs,
+        before: 50,
+        after: null,
+      },
+      {
+        since: period.sinceDateInclusiveMs,
+        till: period.tillDateInclusiveMs,
+        before: null,
+        after: 50,
+      },
+    ]);
+    expect(h.latest.focusedHasMoreEarlier).toBe(false);
+    expect(h.latest.focusedHasMoreLater).toBe(false);
+    expect(fetchInboxCountMock).not.toHaveBeenCalled();
   });
 
   it('enriches visible callsigns from marked content without blocking messages', async () => {
@@ -410,7 +462,7 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesOverallCount).toBe(137);
   });
 
-  it('coalesces ambiguous rejected realtime events into one selected and overall count refresh', async () => {
+  it('defers and coalesces ambiguous realtime events', async () => {
     vi.useFakeTimers();
     fetchInboxCountMock
       .mockResolvedValueOnce({ quantity: 42, firstElementTs: null })
@@ -424,18 +476,23 @@ describe('useAnalysisMessageList pagination', () => {
     fetchInboxCountMock.mockClear();
     fetchInboxCountMock
       .mockResolvedValueOnce({ quantity: 43, firstElementTs: null })
-      .mockResolvedValueOnce({ quantity: 138, firstElementTs: null });
+      .mockResolvedValueOnce({ quantity: 138, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 47, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 142, firstElementTs: null });
 
     for (let eventIndex = 0; eventIndex < 5; eventIndex += 1) {
-      act(() => h.latest.scheduleOverallMessageCountRefresh());
+      act(() => h.latest.scheduleOverallMessageCountRefresh('deferred'));
       await act(async () => {
         await vi.advanceTimersByTimeAsync(550);
       });
     }
     expect(fetchInboxCountMock).not.toHaveBeenCalled();
+    expect(h.latest.messagesTotalCount).toBe(42);
+    expect(h.latest.messagesOverallCount).toBe(137);
+    expect(h.latest.messagesTotalLoading).toBe(false);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_200);
+      await vi.advanceTimersByTimeAsync(30_200);
     });
 
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
@@ -451,7 +508,7 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesOverallCount).toBe(138);
   });
 
-  it('refreshes the shared selected and overall count once when no filters are active', async () => {
+  it('#3780 shares one coalesced system count when no filters are active', async () => {
     vi.useFakeTimers();
     const h = renderHook();
     harnesses.push(h);
@@ -460,14 +517,16 @@ describe('useAnalysisMessageList pagination', () => {
       await vi.advanceTimersByTimeAsync(200);
     });
     fetchInboxCountMock.mockClear();
-    fetchInboxCountMock.mockResolvedValue({ quantity: 43, firstElementTs: null });
+    fetchInboxCountMock
+      .mockResolvedValueOnce({ quantity: 43, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 44, firstElementTs: null });
 
     act(() => {
       h.latest.scheduleOverallMessageCountRefresh();
       h.latest.scheduleOverallMessageCountRefresh();
     });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_200);
+      await vi.advanceTimersByTimeAsync(30_200);
     });
 
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
@@ -475,40 +534,40 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesOverallCount).toBe(43);
   });
 
-  it('keeps newer background counts when an older filtered request resolves later', async () => {
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it('waits for both slow counts before draining a pending system refresh', async () => {
     vi.useFakeTimers();
-    const selectedCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
-    const overallCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
-    fetchInboxCountMock
-      .mockReturnValueOnce(selectedCountRequest.promise)
-      .mockReturnValueOnce(overallCountRequest.promise);
+    const selected = deferred<{ quantity: number; firstElementTs: null }>();
+    const overall = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock.mockReturnValueOnce(selected.promise).mockReturnValueOnce(overall.promise);
     const h = renderHook({ ...buildQueryState(), search: 'filtered' });
     harnesses.push(h);
-
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    const signals = fetchInboxCountMock.mock.calls.map(([, options]) => options?.signal);
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    await act(async () => vi.advanceTimersByTimeAsync(35_000));
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
+    expect(signals.every((signal) => signal?.aborted === false)).toBe(true);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(200);
+      selected.resolve({ quantity: 42, firstElementTs: null });
+      await Promise.resolve();
     });
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
+    expect(h.latest.messagesTotalLoading).toBe(true);
     fetchInboxCountMock
       .mockResolvedValueOnce({ quantity: 43, firstElementTs: null })
       .mockResolvedValueOnce({ quantity: 138, firstElementTs: null });
-    act(() => h.latest.scheduleOverallMessageCountRefresh());
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_000);
-    });
-    expect(h.latest.messagesTotalCount).toBe(43);
-    expect(h.latest.messagesOverallCount).toBe(138);
-
-    await act(async () => {
-      selectedCountRequest.resolve({ quantity: 42, firstElementTs: null });
-      overallCountRequest.resolve({ quantity: 137, firstElementTs: null });
+      overall.resolve({ quantity: 137, firstElementTs: null });
       await Promise.resolve();
     });
-
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(4);
     expect(h.latest.messagesTotalCount).toBe(43);
     expect(h.latest.messagesOverallCount).toBe(138);
+    expect(h.latest.messagesTotalLoading).toBe(false);
   });
 
-  it('keeps a newer shared count when an older shared request resolves later', async () => {
+  it('#3780 keeps user counts when an obsolete shared request resolves later', async () => {
     vi.useFakeTimers();
     const initialCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
     fetchInboxCountMock.mockReturnValueOnce(initialCountRequest.promise);
@@ -519,9 +578,9 @@ describe('useAnalysisMessageList pagination', () => {
       await vi.advanceTimersByTimeAsync(200);
     });
     fetchInboxCountMock.mockResolvedValueOnce({ quantity: 43, firstElementTs: null });
-    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    act(() => h.latest.refreshMessageCounts());
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(200);
     });
     expect(h.latest.messagesTotalCount).toBe(43);
     expect(h.latest.messagesOverallCount).toBe(43);
@@ -533,6 +592,190 @@ describe('useAnalysisMessageList pagination', () => {
 
     expect(h.latest.messagesTotalCount).toBe(43);
     expect(h.latest.messagesOverallCount).toBe(43);
+  });
+
+  it('ignores a stale initial count failure while a newer user request is pending', async () => {
+    vi.useFakeTimers();
+    let rejectInitialCountRequest!: (reason?: unknown) => void;
+    const initialCountRequest = new Promise<{ quantity: number; firstElementTs: null }>(
+      (_, reject) => {
+        rejectInitialCountRequest = reject;
+      },
+    );
+    const backgroundCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock
+      .mockReturnValueOnce(initialCountRequest)
+      .mockReturnValueOnce(backgroundCountRequest.promise);
+    const h = renderHook();
+    harnesses.push(h);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    act(() => h.latest.refreshMessageCounts());
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+
+    await act(async () => {
+      rejectInitialCountRequest(new Error('stale failure'));
+      await Promise.resolve();
+    });
+
+    expect(h.onError).not.toHaveBeenCalled();
+    expect(h.latest.messagesTotalLoading).toBe(true);
+
+    await act(async () => {
+      backgroundCountRequest.resolve({ quantity: 43, firstElementTs: null });
+      await Promise.resolve();
+    });
+
+    expect(h.latest.messagesTotalCount).toBe(43);
+    expect(h.latest.messagesOverallCount).toBe(43);
+    expect(h.latest.messagesTotalLoading).toBe(false);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it('queues an event during the initial debounce without racing initial counts', async () => {
+    vi.useFakeTimers();
+    const h = renderHook();
+    harnesses.push(h);
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    expect(fetchInboxCountMock).not.toHaveBeenCalled();
+    expect(h.latest.messagesTotalLoading).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
+    expect(h.latest.messagesTotalCount).toBe(42);
+    expect(h.latest.messagesTotalLoading).toBe(false);
+    fetchInboxCountMock.mockResolvedValueOnce({ quantity: 43, firstElementTs: null });
+    await act(async () => vi.advanceTimersByTimeAsync(29_999));
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
+    expect(h.latest.messagesTotalCount).toBe(43);
+  });
+
+  it('#3780 ignores a stale system count failure after a user refresh starts', async () => {
+    vi.useFakeTimers();
+    let rejectBackgroundCountRequest!: (reason?: unknown) => void;
+    const backgroundCountRequest = new Promise<{ quantity: number; firstElementTs: null }>(
+      (_, reject) => {
+        rejectBackgroundCountRequest = reject;
+      },
+    );
+    const initialCountRequest = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock
+      .mockResolvedValueOnce({ quantity: 42, firstElementTs: null })
+      .mockReturnValueOnce(backgroundCountRequest)
+      .mockReturnValueOnce(initialCountRequest.promise);
+    const h = renderHook();
+    harnesses.push(h);
+
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    act(() => h.latest.refreshMessageCounts());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+      initialCountRequest.resolve({ quantity: 44, firstElementTs: null });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      rejectBackgroundCountRequest(new Error('stale background failure'));
+      await Promise.resolve();
+    });
+
+    expect(h.onError).not.toHaveBeenCalled();
+    expect(h.latest.messagesTotalCount).toBe(44);
+    expect(h.latest.messagesOverallCount).toBe(44);
+    expect(h.latest.messagesTotalLoading).toBe(false);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it('keeps a quiet pending event until thirty seconds after a two-second count start', async () => {
+    vi.useFakeTimers();
+    const initial = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock.mockReturnValueOnce(initial.promise);
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    await act(async () => {
+      initial.resolve({ quantity: 41, firstElementTs: null });
+      await Promise.resolve();
+    });
+    expect(h.latest.messagesTotalCount).toBe(41);
+    await act(async () => vi.advanceTimersByTimeAsync(27_999));
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
+    expect(h.latest.messagesTotalCount).toBe(42);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it('releases a failed cycle only after its peer count settles', async () => {
+    vi.useFakeTimers();
+    const peer = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock
+      .mockRejectedValueOnce(new Error('count failed'))
+      .mockReturnValueOnce(peer.promise);
+    const h = renderHook({ ...buildQueryState(), search: 'filtered' });
+    harnesses.push(h);
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    await act(async () => vi.advanceTimersByTimeAsync(35_000));
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
+    expect(h.onError).toHaveBeenCalledOnce();
+    expect(h.onError).toHaveBeenCalledWith('count failed');
+    await act(async () => {
+      peer.resolve({ quantity: 41, firstElementTs: null });
+      await Promise.resolve();
+    });
+    expect(h.onError).toHaveBeenCalledWith('count failed');
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(4);
+    expect(h.latest.messagesTotalCount).toBe(42);
+  });
+
+  it('#3780 handles an unauthorized peer immediately without waiting for a stuck count', async () => {
+    vi.useFakeTimers();
+    const peer = deferred<{ quantity: number; firstElementTs: null }>();
+    const unauthorized = new Error('unauthorized');
+    fetchInboxCountMock.mockReturnValueOnce(peer.promise).mockRejectedValueOnce(unauthorized);
+    const h = renderHook({ ...buildQueryState(), search: 'filtered' });
+    harnesses.push(h);
+    h.onUnauthorized.mockReturnValue(true);
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(h.onUnauthorized).toHaveBeenCalledWith(unauthorized);
+    expect(h.onError).not.toHaveBeenCalled();
+    expect(h.latest.messagesTotalLoading).toBe(true);
+    await act(async () => {
+      peer.resolve({ quantity: 41, firstElementTs: null });
+      await Promise.resolve();
+    });
+    expect(h.latest.messagesTotalLoading).toBe(false);
+    expect(h.onUnauthorized).toHaveBeenCalledOnce();
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it('reports a stuck count deadline and drains pending events without accepting late data', async () => {
+    vi.useFakeTimers();
+    const stuck = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock.mockReturnValueOnce(stuck.promise);
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    const signal = fetchInboxCountMock.mock.calls[0][1]?.signal;
+    act(() => h.latest.scheduleOverallMessageCountRefresh());
+    await act(async () => vi.advanceTimersByTimeAsync(65_000));
+    expect(signal?.aborted).toBe(true);
+    expect(h.onError).toHaveBeenCalledWith('Сервер не відповів вчасно. Спробуйте ще раз.');
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
+    expect(h.latest.messagesTotalCount).toBe(42);
+    await act(async () => {
+      stuck.resolve({ quantity: 999, firstElementTs: null });
+      await Promise.resolve();
+    });
+    expect(h.latest.messagesTotalCount).toBe(42);
+    expect(h.latest.messagesTotalLoading).toBe(false);
   });
 
   it('marks counts as loading synchronously when the date range changes', async () => {

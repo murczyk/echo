@@ -25,8 +25,12 @@ type SystemSettingsItemRaw = {
   show_classic_analysis?: boolean;
   show_peleng_distance_to_battleline?: boolean;
   disable_bot_tags?: boolean | null;
+  hide_networks?: boolean | null;
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
+  ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
+  api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
+  api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   two_factor_auth_enabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'] | null;
   exclude_orbit_other_units?: boolean | null;
   messenger_media_cache_min_free_gib?: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -67,8 +71,12 @@ type SystemSettingsCurrentRspRaw = {
   show_peleng_distance_to_battleline?: boolean;
   hide_orbit_data?: boolean;
   disable_bot_tags?: boolean | null;
+  hide_networks?: boolean | null;
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
+  ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
+  api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
+  api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   two_factor_auth_enabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'] | null;
   exclude_orbit_other_units?: boolean | null;
   autofix_echoim_missing_messages?: boolean;
@@ -106,8 +114,12 @@ type CreateSystemSettingsReqRaw = {
   show_classic_analysis: boolean;
   show_peleng_distance_to_battleline: boolean;
   disable_bot_tags: boolean;
+  hide_networks: boolean;
   duty_exclude_menu_enabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysis_aor_filter_enabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
+  ai_position_highlights_enabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
+  api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
+  api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   two_factor_auth_enabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   exclude_orbit_other_units: boolean;
   messenger_media_cache_min_free_gib: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -155,8 +167,12 @@ export type SystemSettingsItem = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
+  hideNetworks: boolean;
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
+  aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
+  apiRateLimitReplenishIntervalMs: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
+  apiRateLimitBurstSize: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   twoFactorAuthEnabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheMinFreeGib: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -197,8 +213,12 @@ export type SystemSettingsCurrent = {
   showPelengDistanceToBattleline: boolean;
   hideOrbitData: boolean;
   disableBotTags: boolean;
+  hideNetworks: boolean;
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
+  aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
+  apiRateLimitReplenishIntervalMs: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
+  apiRateLimitBurstSize: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   twoFactorAuthEnabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   excludeOrbitOtherUnits: boolean;
   autofixEchoimMissingMessages: boolean;
@@ -232,8 +252,12 @@ export type CreateSystemSettingsInput = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline?: boolean;
   disableBotTags: boolean;
+  hideNetworks: boolean;
   dutyExcludeMenuEnabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
+  aiPositionHighlightsEnabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
+  apiRateLimitReplenishIntervalMs?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
+  apiRateLimitBurstSize?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   twoFactorAuthEnabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
   excludeOrbitOtherUnits?: boolean;
   messengerMediaCacheMinFreeGib?: BackendSystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -278,8 +302,12 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     showClassicAnalysis: raw.show_classic_analysis ?? true,
     showPelengDistanceToBattleline: raw.show_peleng_distance_to_battleline ?? false,
     disableBotTags: raw.disable_bot_tags ?? false,
+    hideNetworks: raw.hide_networks ?? false,
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
+    aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
+    apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
+    apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
     twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
     excludeOrbitOtherUnits: raw.exclude_orbit_other_units ?? true,
     messengerMediaCacheMinFreeGib: raw.messenger_media_cache_min_free_gib ?? 10,
@@ -322,8 +350,12 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     showPelengDistanceToBattleline: raw.show_peleng_distance_to_battleline ?? false,
     hideOrbitData: raw.hide_orbit_data ?? false,
     disableBotTags: raw.disable_bot_tags ?? false,
+    hideNetworks: raw.hide_networks ?? false,
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
+    aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
+    apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
+    apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
     twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
     excludeOrbitOtherUnits: raw.exclude_orbit_other_units ?? true,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
@@ -366,8 +398,12 @@ export async function createSystemSettings(
     show_classic_analysis: input.showClassicAnalysis,
     show_peleng_distance_to_battleline: input.showPelengDistanceToBattleline ?? false,
     disable_bot_tags: input.disableBotTags,
+    hide_networks: input.hideNetworks,
     duty_exclude_menu_enabled: input.dutyExcludeMenuEnabled ?? true,
     analysis_aor_filter_enabled: input.analysisAorFilterEnabled ?? true,
+    ai_position_highlights_enabled: input.aiPositionHighlightsEnabled ?? false,
+    api_rate_limit_replenish_interval_ms: input.apiRateLimitReplenishIntervalMs,
+    api_rate_limit_burst_size: input.apiRateLimitBurstSize,
     two_factor_auth_enabled: input.twoFactorAuthEnabled ?? true,
     exclude_orbit_other_units: input.excludeOrbitOtherUnits ?? true,
     messenger_media_cache_min_free_gib: input.messengerMediaCacheMinFreeGib ?? 10,

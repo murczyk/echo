@@ -35,6 +35,7 @@ async fn audio_list_keyset_scopes_and_preserves_microseconds() {
         else {
             panic!("new audio must be accepted")
         };
+        assert_eq!(response.audio.name, format!("ordered-{index}"));
         let audio = device_audio::Entity::find_by_id(
             Uuid::parse_str(&response.audio.id).unwrap(),
         )
@@ -70,6 +71,7 @@ async fn audio_list_keyset_scopes_and_preserves_microseconds() {
     };
     let first = list(&no_s3, actor_id, command.clone()).await.unwrap();
     assert_eq!(first.audio.len(), 50);
+    assert_eq!(first.audio[0].name, expected[0].name);
     assert!(first.next_cursor.is_some());
     assert_eq!(
         first.audio[0].recording_started_at,
@@ -279,6 +281,7 @@ async fn audio_detail_keeps_manual_metadata_during_storage_outage() {
         audio_id,
     };
     let response = detail(&no_s3, actor_id, command.clone()).await.unwrap();
+    assert_eq!(response.audio.name, audio.name);
     assert_eq!(response.transcription.text, audio.transcription);
     assert_eq!(
         response.transcription.text_version,
@@ -378,7 +381,7 @@ async fn audio_access_role_org_archive_matrix() {
         (vec!["Basic"], false, false, false),
         (vec!["ApiAgent"], false, false, false),
         (vec!["DeviceSource"], false, false, false),
-        (vec!["CyberViewer"], false, false, false),
+        (vec!["CyberViewer"], false, true, false),
         (vec!["Api"], false, false, false),
         (vec![], false, false, false),
     ] {

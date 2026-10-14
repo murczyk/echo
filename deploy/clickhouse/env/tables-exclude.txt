@@ -37,12 +37,15 @@ public.api_integration_iggy_event
 public.api_integration_iggy_destination
 
 # PostgreSQL-only parsing configuration.
+public.settlement_alias
 public.sigint_comment_blacklist
 public.failed_inbox_unit
 public.failed_unit_label
 public.sigint_inbox_item_failed_unit_label
 public.sigint_unit_label
 public.sigint_unit_change
+public.sigint_unit_rer_report_metadata
+public.rer_report_access_login
 public.battle_line_version
 public.battle_line_aor_geometry
 
@@ -93,6 +96,7 @@ public.ai_agent_container
 public.ai_agent_conversation
 public.ai_agent_request
 public.ai_agent_request_event
+public.ai_agent_work_record
 public.ai_agent_map
 public.ai_agent_map_revision
 public.ai_agent_request_map_target
@@ -134,3 +138,8 @@ public.device_document_settings
 
 # messengers ingest
 public.messenger_account
+# Admin CSV import recovery state.
+public.rer_csv_import_message
+
+# Explicit inbox unit selection; analytics consumes the reconciled unit links.
+public.sigint_inbox_item_unit_selection

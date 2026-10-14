@@ -2,16 +2,50 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, FixedOffset};
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DatabaseTransaction,
-    QueryResult, Statement, TransactionTrait,
+    FromQueryResult, QueryResult, Statement, TransactionTrait,
 };
 use std::time::Instant;
 use uuid::Uuid;
 
-use crate::config::DeviceFileContentConfig;
+use super::ContentLimits;
 use crate::h;
+use crate::types::ShortContext;
 
 const RESERVATION_LOCK_SQL: &str =
     "select pg_advisory_xact_lock(hashtextextended('echo:device-file-content-reservation', 0))";
+
+#[derive(FromQueryResult)]
+pub(in crate::devices) struct PublishedContent {
+    pub name: String,
+    pub extension: Option<String>,
+    pub mime_type: Option<String>,
+    pub object_key: String,
+    pub source_sha256: Vec<u8>,
+    pub source_size_bytes: i64,
+    pub is_encrypted: bool,
+}
+
+pub(in crate::devices) async fn find_published_content(
+    db: &DatabaseConnection,
+    device_id: Uuid,
+    file_id: Uuid,
+    revision: i64,
+) -> Result<Option<PublishedContent>> {
+    PublishedContent::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select entry.name, entry.extension, entry.mime_type, content.object_key,
+                content.source_sha256, content.source_size_bytes, content.is_encrypted
+         from file_revision entry
+         join file_content content on content.file_id = entry.id
+             and content.revision = entry.revision
+         where entry.device_id = $1 and entry.id = $2
+             and entry.revision = $3",
+        [device_id.into(), file_id.into(), revision.into()],
+    ))
+    .one(db)
+    .await
+    .c(h!())
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum UploadStatus {
@@ -141,10 +175,10 @@ pub(crate) async fn load_upload(
     load_upload_on(db, upload_id, false).await.context(h!())
 }
 
-pub(crate) async fn create_or_replay(
+pub(super) async fn create_or_replay(
     db: &DatabaseConnection,
     request: NewUpload,
-    config: &DeviceFileContentConfig,
+    config: &ContentLimits,
 ) -> Result<CreateOutcome> {
     let started = Instant::now();
     let transaction = db
@@ -173,7 +207,7 @@ pub(crate) async fn create_or_replay(
 async fn create_or_replay_in(
     transaction: &DatabaseTransaction,
     mut request: NewUpload,
-    config: &DeviceFileContentConfig,
+    config: &ContentLimits,
     started: Instant,
 ) -> Result<CreateOutcome> {
     let requested_at = request.now;
@@ -400,12 +434,12 @@ async fn revalidate_open_in(
     Ok((RevalidateOutcome::Open(upload), None))
 }
 
-pub(crate) async fn refresh_open(
+pub(super) async fn refresh_open(
     db: &DatabaseConnection,
     known: &Upload,
     now: DateTime<FixedOffset>,
     touch_activity: bool,
-    config: &DeviceFileContentConfig,
+    config: &ContentLimits,
     metrics: Option<&crate::telemetry::Metrics>,
 ) -> Result<RevalidateOutcome> {
     let started = Instant::now();
@@ -1048,7 +1082,7 @@ where spool_removed_at is null or status <> 'completed'
 fn quota_accepts(
     quota: &QuotaUsage,
     request: &NewUpload,
-    config: &DeviceFileContentConfig,
+    config: &ContentLimits,
 ) -> bool {
     let Some(reserved_bytes) =
         quota.reserved_bytes.checked_add(request.upload_length)

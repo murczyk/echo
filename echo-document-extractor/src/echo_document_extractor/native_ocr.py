@@ -14,6 +14,10 @@ from pathlib import Path
 import httpx
 
 
+class StorageAdmissionFailure(RuntimeError):
+    pass
+
+
 async def extract(path: Path, key: str, manifest: dict) -> tuple[str, str] | None:
     base = os.environ.get("ECHO_NATIVE_OCR_BASE_URL", "").rstrip("/")
     if not base:
@@ -33,6 +37,8 @@ async def extract(path: Path, key: str, manifest: dict) -> tuple[str, str] | Non
                 files={"files": (path.name, source, "application/octet-stream")},
                 data=data,
             )
+        if response.status_code == 507:
+            raise StorageAdmissionFailure("embedded OCR submission rejected: HTTP 507")
         response.raise_for_status()
         identifier = response.json()["id"]
         deadline = time.monotonic() + 3600

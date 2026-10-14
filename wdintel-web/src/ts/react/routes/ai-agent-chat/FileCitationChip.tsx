@@ -1,38 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { AiAgentFileCitation } from '../../../../Bindings';
-import { EchoChip } from '../../components/EchoChip';
-import { usePowerSnackbar } from '../../components/PowerSnackbar';
-import { isAbortError } from '../../services/api/client';
-import {
-  deviceDocumentRequest,
-  fileCitationHref,
-  readDeviceDocument,
-} from '../../services/api/device-documents';
-import { DeviceDocumentDialog } from '../device-files/components/DeviceDocumentPreview';
+import { CircularProgress } from '@mui/material';
+import { PowerAlert } from '../../components/PowerAlert';
+import { PowerButton } from '../../components/PowerButton';
+import { fileCitationHref } from '../../services/api/device-documents';
+import { DeviceFileContentPane } from '../device-files/components/DeviceFileContentPane';
+import { useLocatedDeviceFile } from '../device-files/use-located-device-file';
+import { FilePreviewDialog } from '../shared/message-card/attachment-preview/FilePreviewDialog';
 
 export function FileCitationChip({ source }: { source: AiAgentFileCitation }) {
-  const [name, setName] = useState<string | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
   const [open, setOpen] = useState(false);
-  const { notify } = usePowerSnackbar();
+  const { result, error, retry } = useLocatedDeviceFile({
+    deviceId: source.deviceId,
+    fileId: source.fileId,
+    revision: source.revision,
+  });
   const href = fileCitationHref(source);
-  useEffect(() => {
-    const controller = new AbortController();
-    setName(null);
-    setUnavailable(false);
-    void readDeviceDocument({ ...deviceDocumentRequest(source), limit: 0 }, controller.signal)
-      .then((result) => {
-        if (!controller.signal.aborted) setName(result.document.fileName);
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted && !isAbortError(error)) {
-          setUnavailable(true);
-          notify({ severity: 'error', message: 'Джерело файлу недоступне' });
-        }
-      });
-    return () => controller.abort();
-  }, [href, notify]);
-  if (!name) return <EchoChip label={unavailable ? 'Джерело недоступне' : 'Завантаження файлу…'} />;
+  const name = result?.file.name ?? 'Файл';
   return (
     <>
       <a
@@ -42,6 +26,7 @@ export function FileCitationChip({ source }: { source: AiAgentFileCitation }) {
         onClick={(event) => {
           if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
+          retry();
           setOpen(true);
         }}
       >
@@ -49,7 +34,34 @@ export function FileCitationChip({ source }: { source: AiAgentFileCitation }) {
           {name} · рев. {source.revision}
         </span>
       </a>
-      {open && <DeviceDocumentDialog source={source} onClose={() => setOpen(false)} />}
+      <FilePreviewDialog
+        open={open}
+        title={name}
+        onClose={() => setOpen(false)}
+        actions={
+          <a href={href} target="_blank" rel="noopener noreferrer">
+            Відкрити у дереві файлів
+          </a>
+        }
+      >
+        {result ? (
+          <DeviceFileContentPane
+            deviceId={source.deviceId}
+            file={result.file}
+            revisionPinned
+            citation={source}
+          />
+        ) : error ? (
+          <PowerAlert
+            severity="error"
+            action={<PowerButton onClick={retry}>Повторити</PowerButton>}
+          >
+            {error}
+          </PowerAlert>
+        ) : (
+          <CircularProgress aria-label="Завантаження файлу" />
+        )}
+      </FilePreviewDialog>
     </>
   );
 }

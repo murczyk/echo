@@ -1,3 +1,5 @@
+import type { DeviceAudioSettingsState } from '../use-device-audio-settings';
+import { useDeviceAudioTranscription } from '../use-device-audio-transcription';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { PowerButton } from '../../../components/PowerButton';
 import type { DeviceAudioState } from '../use-device-audio';
@@ -10,14 +12,26 @@ import { DeviceAudioProcessing } from './DeviceAudioProcessing';
 export function DeviceAudioTab({
   audio,
   editor,
+  settings,
   mobile = false,
 }: {
   audio: DeviceAudioState;
   editor: DeviceAudioEditorState;
+  settings: DeviceAudioSettingsState;
   mobile?: boolean;
 }) {
   const selected = audio.rows.find((row) => row.id === audio.selectedAudioId);
   const bound = audio.selectedAudioId ? audio.processingAudio(audio.selectedAudioId) : undefined;
+  const transcription = useDeviceAudioTranscription(
+    selected?.deviceId ?? '',
+    selected?.id ?? null,
+    Boolean(selected) &&
+      !editor.accessDenied &&
+      !audio.processing[selected?.id ?? '']?.accessDenied,
+    editor.detail?.audio.id === selected?.id && editor.confirmed !== null,
+    editor.mergeAutomatic,
+    editor.denyAccess,
+  );
   return (
     <div
       id="device-details-audio-panel"
@@ -28,7 +42,7 @@ export function DeviceAudioTab({
     >
       {mobile ? (
         <div className={audio.selectedAudioId === null ? 'h-full min-h-0' : 'hidden'}>
-          <DeviceAudioSidebar audio={audio} />
+          <DeviceAudioSidebar audio={audio} settings={settings} />
         </div>
       ) : null}
       {!mobile || audio.selectedAudioId !== null ? (
@@ -50,7 +64,12 @@ export function DeviceAudioTab({
                 <DeviceAudioPlayer
                   deviceId={selected.deviceId}
                   audioId={selected.id}
-                  active={!editor.accessDenied && !audio.processing[selected.id]?.accessDenied}
+                  active={
+                    !editor.accessDenied &&
+                    !transcription.accessDenied &&
+                    !audio.processing[selected.id]?.accessDenied
+                  }
+                  onPrepared={transcription.refresh}
                 />
               </>
             ) : (
@@ -65,7 +84,12 @@ export function DeviceAudioTab({
             {bound ? (
               <DeviceAudioProcessing audio={audio} selected={bound} canEdit={editor.canEdit} />
             ) : null}
-            {audio.selectedAudioId !== null ? <DeviceAudioEditor editor={editor} /> : null}
+            {audio.selectedAudioId !== null ? (
+              <DeviceAudioEditor
+                editor={editor}
+                transcription={selected ? transcription : undefined}
+              />
+            ) : null}
           </div>
         </>
       ) : null}

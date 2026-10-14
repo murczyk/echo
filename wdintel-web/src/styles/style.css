@@ -13,6 +13,7 @@
 @import 'tooltip/_tooltip.css';
 @import 'dialog/_dialog.css';
 @import 'logo-coin.css';
+@import 'login.css';
 
 @import 'scrollbar/_scrollbar.css';
 @import 'highlight/_highlight.css';
@@ -959,55 +960,6 @@ sl-tooltip {
   background-color: var(--bs-success);
 }
 
-.login-creds-link-wrap {
-  display: grid;
-  grid-template-rows: 1fr;
-  width: 100%;
-  opacity: 1;
-  transition:
-    grid-template-rows 0.28s ease,
-    opacity 0.2s ease;
-}
-
-.login-creds-link-wrap.is-hidden {
-  grid-template-rows: 0fr;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.login-creds-link-wrap__inner,
-.login-creds-panel__inner {
-  overflow: hidden;
-  min-height: 0;
-}
-
-.login-creds-panel {
-  display: grid;
-  grid-template-rows: 0fr;
-  width: 100%;
-  pointer-events: none;
-  transition: grid-template-rows 0.32s ease;
-}
-
-.login-creds-panel.is-open {
-  grid-template-rows: 1fr;
-  pointer-events: auto;
-}
-
-.login-creds-panel__inner {
-  opacity: 0;
-  transform: translateY(-6px);
-  transition:
-    opacity 0.24s ease,
-    transform 0.24s ease;
-}
-
-.login-creds-panel.is-open .login-creds-panel__inner {
-  opacity: 1;
-  transform: translateY(0);
-  transition-delay: 0.06s;
-}
-
 .grid-container {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -1164,6 +1116,10 @@ sl-tooltip {
   width: 100%;
 }
 
+.app-navbar-row > .app-navbar-debug-recorder-slot {
+  display: contents;
+}
+
 .app-navbar-row > .app-navbar-toolbar {
   order: 2;
   margin-left: auto;
@@ -1296,6 +1252,23 @@ sl-tooltip {
     justify-self: stretch;
     align-items: flex-start;
     margin-left: calc(80px - 0.75rem);
+  }
+
+  .app-navbar-row > .app-navbar-debug-recorder-slot {
+    grid-area: recorder;
+    display: none;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: center;
+  }
+
+  .app-navbar-row:has(> .app-navbar-debug-recorder-slot:not(:empty)) {
+    grid-template-columns: auto minmax(0, max-content) minmax(13.5rem, 1fr) auto;
+    grid-template-areas: 'brand links recorder toolbar';
+  }
+
+  .app-navbar-row > .app-navbar-debug-recorder-slot:not(:empty) {
+    display: flex;
   }
 
   .app-navbar-row > .app-navbar-toolbar {

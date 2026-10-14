@@ -93,9 +93,10 @@ pub(super) async fn verified_content(
     validate_size(expected.size_bytes).c(h!())?;
     runtime.byte_store().c(h!())?;
     let permit = runtime
-        .decrypt_permits
+        .playback_decrypt_permits
         .clone()
-        .try_acquire_owned()
+        .acquire_owned()
+        .await
         .map_err(|_| unavailable("audio decryption is busy"))
         .c(h!())?;
     verified_content_with_permit(runtime, key, expected, permit)
@@ -103,7 +104,7 @@ pub(super) async fn verified_content(
         .c(h!())
 }
 
-async fn verified_content_with_permit(
+pub(super) async fn verified_content_with_permit(
     runtime: Arc<DeviceAudioRuntime>,
     key: String,
     expected: SourceFingerprint,
@@ -111,25 +112,35 @@ async fn verified_content_with_permit(
 ) -> anyhow::Result<Vec<u8>> {
     tokio::spawn(async move {
         let store = runtime.byte_store().c(h!())?;
-        let plaintext = crate::storage::download_and_decrypt_messenger_media_from_s3_with_operator_timeout_and_size_limit(
-            &Some(store.operator.clone()),
-            &Some(store.config.clone()),
+        let permit = Arc::new(permit);
+        let plaintext = crate::storage::download_and_decrypt_with_admission(
+            &store.operator,
+            &store.config,
             &store.strongbox_key,
             &key,
             DEVICE_AUDIO_DOWNLOAD_TIMEOUT,
             DEVICE_AUDIO_MAX_CIPHERTEXT_BYTES,
-        ).await.c(h!())?;
+            permit.clone(),
+        )
+        .await
+        .c(h!())?;
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             let sha256: [u8; 32] = Sha256::digest(&plaintext).into();
             if plaintext.len() as u64 != expected.size_bytes
                 || sha256 != expected.sha256
             {
-                anyhow::bail!("authenticated audio does not match the original source");
+                anyhow::bail!(
+                    "authenticated audio does not match the original source"
+                );
             }
             Ok(plaintext)
-        }).await.c(h!())?
-    }).await.c(h!())?
+        })
+        .await
+        .c(h!())?
+    })
+    .await
+    .c(h!())?
 }
 
 fn validate_size(size: u64) -> anyhow::Result<()> {

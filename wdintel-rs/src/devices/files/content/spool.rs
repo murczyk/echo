@@ -9,7 +9,7 @@ use anyhow::{anyhow, Context, Result};
 use futures_util::{Stream, StreamExt};
 use uuid::Uuid;
 
-use crate::config::{
+use crate::devices::config::{
     DEVICE_FILE_CONTENT_LOCK_RETRY_MILLIS, DEVICE_FILE_CONTENT_LOCK_WAIT_MILLIS,
 };
 use crate::h;
@@ -324,6 +324,10 @@ impl LockedSpool {
             Err(error) if is_not_found(&error) => Ok(None),
             Err(error) => Err(error.context(h!())),
         }
+    }
+
+    pub(super) fn source_path(&self) -> &Path {
+        &self.data_path
     }
 
     pub(crate) async fn truncate(&self, offset: u64) -> Result<()> {

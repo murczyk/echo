@@ -11,6 +11,7 @@ module Shared exposing
 import Api
 import Bindings as B
 import Char
+import Config
 import Core.Auth
 import Core.EventService
 import Core.EventTypes
@@ -77,6 +78,7 @@ loadSharedLookupData path =
             , filterArmy = Nothing
             , filterMilitaryDistrict = Nothing
             , filterArmyRegion = Nothing
+            , filterCombatType = Nothing
             , filterComment = Nothing
             , filterOrbitNote = Nothing
             , filterIsDeduplicateCandidate = Nothing
@@ -168,6 +170,7 @@ init flagsResult route =
                 , goiHost = Nothing
                 , goiIntegrations = []
                 , lastReleaseSeen = Nothing
+                , rerReportEligible = False
                 }
       , userLoaded = False
       , themeMode =
@@ -179,12 +182,14 @@ init flagsResult route =
       , rerNetworkDetailsPreferredView = Shared.Model.Neo
       , location = Nothing
       , serverInfo = Nothing
+      , serverInfoLoaded = False
       , changelogPreview = Nothing
       , changelogLastSeenLoaded = False
       , changelogLastSeen = Nothing
       , masterUnits = NotAsked
       , now = flags.now
       , systemSettings = Nothing
+      , systemSettingsLoaded = False
       , timeZone = TimeZone.europe__kyiv ()
       , callsignsInfo = Dict.empty
       , posts = NotAsked
@@ -217,6 +222,7 @@ update req msg model =
             ( { model
                 | user = Just user
                 , userLoaded = True
+                , systemSettingsLoaded = False
                 , changelogLastSeenLoaded = True
                 , changelogLastSeen = user.lastReleaseSeen
               }
@@ -230,7 +236,7 @@ update req msg model =
             if e.httpError == Http.BadStatus 401 then
                 let
                     stoppedModel =
-                        { model | user = Nothing, userLoaded = False, eventService = Core.EventService.init }
+                        { model | user = Nothing, userLoaded = False, eventService = Core.EventService.stop model.eventService }
                 in
                 if req.path == Route.Path.Login then
                     ( stoppedModel, E.none )
@@ -266,10 +272,10 @@ update req msg model =
             )
 
         GotSystemSettings (Ok settings) ->
-            ( { model | systemSettings = Just settings }, E.none )
+            ( { model | systemSettings = Just settings, systemSettingsLoaded = True }, E.none )
 
         GotSystemSettings (Err err) ->
-            ( { model | systemSettings = Nothing }
+            ( { model | systemSettingsLoaded = True }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження системних налаштувань" err
             )
 
@@ -378,7 +384,7 @@ update req msg model =
             )
 
         SignOut ->
-            ( { model | user = Nothing, userLoaded = False, eventService = Core.EventService.init }
+            ( { model | user = Nothing, userLoaded = False, eventService = Core.EventService.stop model.eventService }
             , if model.user == Nothing then
                 E.none
 
@@ -402,10 +408,10 @@ update req msg model =
             )
 
         GotServerInfo (Err _) ->
-            ( model, E.none )
+            ( { model | serverInfoLoaded = True }, E.none )
 
         GotServerInfo (Ok v) ->
-            ( { model | serverInfo = Just v }, E.none )
+            ( { model | serverInfo = Just v, serverInfoLoaded = True }, E.none )
 
         GotChangelogIndex (Err err) ->
             ( model
@@ -595,6 +601,8 @@ update req msg model =
                     newEventService =
                         { eventService
                             | isPolling = True
+                            , requestInFlight = False
+                            , generation = eventService.generation + 1
                             , error = Nothing
                             , retryCount = 0
                             , retryDelay = 1000
@@ -603,20 +611,35 @@ update req msg model =
                         }
                 in
                 ( { model | eventService = newEventService }
-                , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Task.succeed ())
+                , E.sendCmd <|
+                    Cmd.batch
+                        [ Http.cancel Config.eventServicePollTracker
+                        , Task.perform (\_ -> EventServicePollEvents newEventService.generation) (Task.succeed ())
+                        ]
                 )
 
         EventServiceStopPolling ->
-            ( { model | eventService = Core.EventService.init }, E.none )
+            ( { model | eventService = Core.EventService.stop model.eventService }
+            , E.sendCmd <| Http.cancel Config.eventServicePollTracker
+            )
 
-        EventServicePollEvents ->
-            if model.eventService.isPolling then
-                ( model, E.sendCmd <| pollEvents model.eventService.lastEventId model.deploymentMaintenance )
+        EventServicePollEvents generation ->
+            if model.eventService.isPolling && not model.eventService.requestInFlight && generation == model.eventService.generation then
+                let
+                    eventService =
+                        model.eventService
+
+                    newEventService =
+                        { eventService | requestInFlight = True, generation = generation + 1 }
+                in
+                ( { model | eventService = newEventService }
+                , E.sendCmd <| pollEvents newEventService.generation newEventService.lastEventId model.deploymentMaintenance
+                )
 
             else
                 ( model, E.none )
 
-        EventServiceEventsReceived (Ok response) ->
+        EventServiceEventsReceived generation (Ok response) ->
             let
                 eventService =
                     model.eventService
@@ -627,6 +650,7 @@ update req msg model =
                 newEventService =
                     { eventService
                         | lastEventId = response.lastEventId
+                        , requestInFlight = False
                         , error = Nothing
                         , connectionInterrupted = False
                         , persistentErrorReported = False
@@ -640,7 +664,7 @@ update req msg model =
                         |> List.map (\eventMsg -> E.sendCmd <| Task.perform (\_ -> eventMsg) (Task.succeed ()))
                         |> E.batch
             in
-            if not model.eventService.isPolling then
+            if not model.eventService.isPolling || generation /= model.eventService.generation then
                 ( model, E.none )
 
             else
@@ -655,11 +679,11 @@ update req msg model =
 
                       else
                         E.sendCmd <| Ports.shared_dispatchInboxChanged inboxChangedEvents
-                    , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Process.sleep 100.0)
+                    , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents generation) (Process.sleep 100.0)
                     ]
                 )
 
-        EventServiceEventsReceived (Err error) ->
+        EventServiceEventsReceived generation (Err error) ->
             let
                 newRetryCount =
                     model.eventService.retryCount + 1
@@ -673,6 +697,7 @@ update req msg model =
                 newEventService =
                     { eventService
                         | error = Just (formatError error)
+                        , requestInFlight = False
                         , connectionInterrupted = Utils.Api.ErrorHandling.isTemporaryConnectionError error
                         , persistentErrorReported = eventService.persistentErrorReported || shouldNotifyAboutPersistentFailure
                         , retryCount = newRetryCount
@@ -680,14 +705,14 @@ update req msg model =
                     }
 
                 retryEffect =
-                    E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling) (Process.sleep (toFloat newRetryDelay))
+                    E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling generation) (Process.sleep (toFloat newRetryDelay))
 
                 shouldNotifyAboutPersistentFailure =
                     newRetryCount >= 6
                         && not eventService.persistentErrorReported
                         && not (Utils.Api.ErrorHandling.isTemporaryConnectionError error)
             in
-            if not model.eventService.isPolling then
+            if not model.eventService.isPolling || generation /= model.eventService.generation then
                 ( model, E.none )
 
             else if error.httpError == Http.BadStatus 401 then
@@ -705,12 +730,8 @@ update req msg model =
                     retryEffect
                 )
 
-        EventServiceRetryPolling ->
-            if model.eventService.isPolling then
-                ( model, E.sendCmd <| pollEvents model.eventService.lastEventId model.deploymentMaintenance )
-
-            else
-                ( model, E.none )
+        EventServiceRetryPolling generation ->
+            update req (EventServicePollEvents generation) model
 
         EventServiceResetRetryCount ->
             let
@@ -748,6 +769,7 @@ update req msg model =
                         , filterArmy = Nothing
                         , filterMilitaryDistrict = Nothing
                         , filterArmyRegion = Nothing
+                        , filterCombatType = Nothing
                         , filterComment = Nothing
                         , filterOrbitNote = Nothing
                         , filterIsDeduplicateCandidate = Nothing
@@ -874,8 +896,8 @@ subscriptions _ _ =
 -- HTTP REQUESTS
 
 
-pollEvents : Maybe String -> Maybe B.DeploymentMaintenance -> Cmd Msg
-pollEvents lastEventId deploymentMaintenance =
+pollEvents : Int -> Maybe String -> Maybe B.DeploymentMaintenance -> Cmd Msg
+pollEvents generation lastEventId deploymentMaintenance =
     let
         request : B.LongPollReq
         request =
@@ -885,10 +907,14 @@ pollEvents lastEventId deploymentMaintenance =
             , knownDeploymentMaintenanceId = Maybe.map .id deploymentMaintenance
             }
     in
-    Http.post
-        { url = "/api/event-stream/long-poll"
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/event-stream/long-poll"
         , body = Http.jsonBody (B.longPollReqEncoder request)
-        , expect = leExpectJson EventServiceEventsReceived B.longPollRspDecoder
+        , expect = leExpectJson (EventServiceEventsReceived generation) B.longPollRspDecoder
+        , timeout = Nothing
+        , tracker = Just Config.eventServicePollTracker
         }
 
 
