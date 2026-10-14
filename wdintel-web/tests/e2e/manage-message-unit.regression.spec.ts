@@ -2,16 +2,53 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 import { openCreateReportDrawer } from './image-editor-drawer.fixtures';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
+import { systemSettingsCurrentResponse } from './fixture-responses';
 
 const existingUnit = { id: 35351, name: '1 рота 3535 полк', active: true };
 const inactiveChild = { id: 35352, name: '2 рота 3535 полк', active: false };
 const unknownLabel = 'Невідомий текстовий лейбл';
 const newUnitName = 'Новий підрозділ 3535';
+const createdUnitId = 35353;
 
 test.use({ viewport: { width: 1600, height: 900 } });
 test.setTimeout(60_000);
 
+async function installUnitCreationApi(page: Page) {
+  const creations: Record<string, unknown>[] = [];
+  await page.route('**/api/sigint/unit/combat-types', (route) =>
+    route.fulfill({
+      json: { combat_types: [{ id: 'combat-3535', name: 'Мотострілецькі війська' }] },
+    }),
+  );
+  await page.route('**/api/sigint/unit/create-duplicate-candidates', (route) =>
+    route.fulfill({ json: { units: [] } }),
+  );
+  for (const endpoint of ['create', 'create-with-auto-network', 'create-for-message']) {
+    await page.route(`**/api/sigint/unit/${endpoint}`, async (route) => {
+      const request = route.request().postDataJSON();
+      creations.push(request);
+      const details = endpoint === 'create' ? request : request.unit;
+      const unit = { ...details, id: createdUnitId, name: details.name || details.battalion };
+      await route.fulfill({
+        json:
+          endpoint !== 'create-with-auto-network'
+            ? unit
+            : { unit, network_id: request.skip_network_creation ? null : 3535 },
+      });
+    });
+  }
+  return creations;
+}
+
+async function saveNewUnit(page: Page, name = newUnitName) {
+  await expect(page.getByText('Новий підрозділ', { exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Назва', exact: true })).toHaveValue(name);
+  await page.getByRole('button', { name: 'Створити', exact: true }).click();
+  await expect(page.getByText('Новий підрозділ', { exact: true })).toHaveCount(0);
+}
+
 async function installUnitApi(page: Page) {
+  await installUnitCreationApi(page);
   await page.route('**/api/sigint/unit/search', async (route) => {
     const request = route.request().postDataJSON();
     expect(request.include_inactive).toBe(true);
@@ -52,6 +89,224 @@ async function openDutyUnitEditor(
   await page.getByRole('button', { name: 'Додати повідомлення' }).click();
   return submissions;
 }
+
+for (const entry of ['message', 'units'] as const) {
+  for (const hideNetworks of [true, false]) {
+    test(`@regression #3535 ${entry} unit popup respected hideNetworks=${hideNetworks} and saved immediately`, async ({
+      page,
+    }) => {
+      let submissions: Record<string, unknown>[] = [];
+      if (entry === 'message') {
+        submissions = await openDutyUnitEditor(page);
+        await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('3535 full unit form');
+      } else {
+        await installAnalysisNeoApiMocks(page, { userRoles: ['Rer', 'UnitsEditor'] });
+        await page.route('**/api/sigint/units', (route) =>
+          route.fulfill({
+            json: {
+              units: [],
+              total_count: 0,
+              show_load_more: false,
+              status_counts: { active: 0, inactive: 0 },
+            },
+          }),
+        );
+        await page.route('**/api/sigint/unit/attachment-unit-ids', (route) =>
+          route.fulfill({ json: { unit_ids: [] } }),
+        );
+      }
+      const creations = await installUnitCreationApi(page);
+      await page.route('**/api/system-settings/current', (route) =>
+        route.fulfill({
+          json: {
+            ...systemSettingsCurrentResponse({ hideNetworks }),
+            devices_section_enabled: true,
+            default_neo_analysis: true,
+          },
+        }),
+      );
+      if (entry === 'message') {
+        await page.getByRole('combobox', { name: 'Підрозділ' }).fill(newUnitName);
+        await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
+        await expect(page.getByRole('textbox', { name: 'Назва', exact: true })).toHaveValue(
+          newUnitName,
+        );
+      } else {
+        await page.goto('/rer-units-neo');
+        await page.getByRole('button', { name: 'Додати підрозділ', exact: true }).click();
+      }
+      await page.getByRole('textbox', { name: 'Батальйон', exact: true }).fill('1 батальйон');
+      await page.getByRole('textbox', { name: 'Бригада', exact: true }).fill('3535 бригада');
+      await page.getByRole('textbox', { name: 'Коментар', exact: true }).fill('Повні відомості');
+      await page.getByRole('combobox', { name: 'Види та роди ЗС' }).click();
+      await page.getByRole('option', { name: 'Мотострілецькі війська', exact: true }).click();
+      expect(creations).toHaveLength(0);
+      if (!hideNetworks) {
+        await page.getByRole('button', { name: 'Далі', exact: true }).click();
+        await expect(page.getByText('Налаштування радіомережі', { exact: true })).toBeVisible();
+        const location = page.getByRole('combobox', { name: 'Локації' });
+        await location.fill('Київ');
+        await location.press('Enter');
+      } else {
+        await expect(page.getByRole('button', { name: 'Далі', exact: true })).toHaveCount(0);
+      }
+      await page.getByRole('button', { name: 'Створити', exact: true }).click();
+      await expect.poll(() => creations.length).toBe(1);
+      const details = entry === 'units' && hideNetworks ? creations[0] : creations[0].unit;
+      if (!hideNetworks) {
+        expect(creations[0]).toMatchObject({ skip_network_creation: false, locations: ['Київ'] });
+      }
+      expect(details).toMatchObject({
+        name: entry === 'message' ? newUnitName : null,
+        battalion: '1 батальйон',
+        brigade: '3535 бригада',
+        combat_type_id: 'combat-3535',
+        comment: 'Повні відомості',
+      });
+      await expect(page.getByText('Новий підрозділ', { exact: true })).toHaveCount(0);
+      expect(submissions).toHaveLength(0);
+      if (entry === 'message') {
+        await expect(page.getByRole('combobox', { name: 'Підрозділ' })).toHaveValue(newUnitName);
+        await page.getByRole('button', { name: 'Створити', exact: true }).click();
+        await expect.poll(() => submissions.length).toBe(1);
+        expect(submissions[0]).toMatchObject({ unit: newUnitName, unit_id: createdUnitId });
+        expect(submissions[0].create_unit).toBeUndefined();
+      }
+    });
+  }
+}
+
+test('@regression #3535 cancelled unit form kept the message unresolved and reopened cleanly', async ({
+  page,
+}) => {
+  const submissions = await openDutyUnitEditor(page);
+  const creations = await installUnitCreationApi(page);
+  await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('3535 cancelled unit');
+  const input = page.getByRole('combobox', { name: 'Підрозділ' });
+  await input.fill(newUnitName);
+  await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
+  await expect(page.getByRole('textbox', { name: 'Назва', exact: true })).toHaveValue(newUnitName);
+  await page.getByRole('button', { name: 'Скасувати', exact: true }).click();
+  await expect(input).toHaveValue(newUnitName);
+  await expect(input).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByRole('button', { name: 'Створити', exact: true })).toBeDisabled();
+  expect(creations).toHaveLength(0);
+  expect(submissions).toHaveLength(0);
+  await input.click();
+  await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
+  await saveNewUnit(page);
+  await expect.poll(() => creations.length).toBe(1);
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Закрити', exact: true }).click();
+  expect(creations).toHaveLength(1);
+  expect(submissions).toHaveLength(0);
+});
+
+test('@regression #3535 unit save failure preserved fields and keyboard input did not submit the message', async ({
+  page,
+}) => {
+  const submissions = await openDutyUnitEditor(page);
+  let attempts = 0;
+  await page.route('**/api/sigint/unit/create-for-message', async (route) => {
+    attempts += 1;
+    await route.fulfill(
+      attempts === 1
+        ? { status: 500, json: { error: 'Не вдалося зберегти підрозділ' } }
+        : { json: { ...route.request().postDataJSON().unit, id: createdUnitId } },
+    );
+  });
+  await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('3535 unit retry');
+  await page.getByRole('combobox', { name: 'Підрозділ' }).fill(newUnitName);
+  await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
+  const comment = page.getByRole('textbox', { name: 'Коментар', exact: true });
+  const renamedUnit = `${newUnitName} уточнений`;
+  await page.getByRole('textbox', { name: 'Назва', exact: true }).fill(renamedUnit);
+  await comment.fill('Збережіть ці дані');
+  await comment.press('Control+Enter');
+  expect(submissions).toHaveLength(0);
+  await page.getByRole('button', { name: 'Створити', exact: true }).click();
+  await expect(page.getByText('Не вдалося зберегти підрозділ', { exact: true })).toBeVisible();
+  await expect(comment).toHaveValue('Збережіть ці дані');
+  expect(submissions).toHaveLength(0);
+  await expect(page.getByRole('textbox', { name: 'Назва', exact: true })).toHaveValue(renamedUnit);
+  await expect
+    .poll(async () => {
+      if (attempts < 2) await page.getByRole('button', { name: 'Створити', exact: true }).click();
+      return attempts;
+    })
+    .toBe(2);
+  await expect(page.getByText('Новий підрозділ', { exact: true })).toHaveCount(0);
+  expect(attempts).toBe(2);
+  await expect(page.getByRole('combobox', { name: 'Підрозділ' })).toHaveValue(renamedUnit);
+});
+
+for (const rename of [false, true]) {
+  test(`@regression #3535 message unit reused the server exact match with rename=${rename}`, async ({
+    page,
+  }) => {
+    const submissions = await openDutyUnitEditor(page);
+    await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('3535 reused unit');
+    await page.getByRole('combobox', { name: 'Підрозділ' }).fill(newUnitName);
+    await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
+    const name = rename ? existingUnit.name : newUnitName;
+    await page.getByRole('textbox', { name: 'Назва', exact: true }).fill(name);
+    const reused = { ...existingUnit, name };
+    await page.route('**/api/sigint/unit/create-for-message', (route) => {
+      expect(route.request().postDataJSON().unit.name).toBe(name);
+      return route.fulfill({ json: reused });
+    });
+    await saveNewUnit(page, name);
+    await expect(page.getByRole('combobox', { name: 'Підрозділ' })).toHaveValue(name);
+    await page.getByRole('button', { name: 'Створити', exact: true }).click();
+    await expect.poll(() => submissions.length).toBe(1);
+    expect(submissions[0]).toMatchObject({ unit: name, unit_id: existingUnit.id });
+  });
+}
+
+test('@regression #3535 ambiguous unit names preserved the form and displayed the server error', async ({
+  page,
+}) => {
+  const submissions = await openDutyUnitEditor(page);
+  await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('3535 ambiguous unit');
+  await page.getByRole('combobox', { name: 'Підрозділ' }).fill(newUnitName);
+  await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
+  await page.getByRole('textbox', { name: 'Коментар', exact: true }).fill('Збережені дані');
+  await page.route('**/api/sigint/unit/create-for-message', (route) =>
+    route.fulfill({ status: 400, json: { error: 'Оберіть підрозділ зі списку.' } }),
+  );
+  await page.getByRole('button', { name: 'Створити', exact: true }).click();
+  await expect(page.getByText('Оберіть підрозділ зі списку.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Назва', exact: true })).toHaveValue(newUnitName);
+  await expect(page.getByRole('textbox', { name: 'Коментар', exact: true })).toHaveValue(
+    'Збережені дані',
+  );
+  expect(submissions).toHaveLength(0);
+});
+
+test('@regression #3535 message writers created full units without unit editing permissions', async ({
+  page,
+}) => {
+  await installAnalysisNeoApiMocks(page, {
+    signalGroups: ['editor-e2e-group'],
+    userRoles: ['Rer'],
+  });
+  await installUnitApi(page);
+  let duplicateChecks = 0;
+  await page.route('**/api/sigint/unit/create-duplicate-candidates', (route) => {
+    duplicateChecks += 1;
+    return route.fulfill({ status: 403, json: { error: 'UnitsEditor required' } });
+  });
+  await page.goto('/rer-analysis-neo');
+  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  await page.getByRole('combobox', { name: 'Група', exact: true }).click();
+  await page.getByRole('option', { name: 'editor-e2e-group', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('3535 writer-created unit');
+  await page.getByRole('combobox', { name: 'Підрозділ' }).fill(newUnitName);
+  await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
+  await saveNewUnit(page);
+  expect(duplicateChecks).toBe(0);
+  await expect(page.getByRole('button', { name: 'Створити', exact: true })).toBeEnabled();
+});
 
 test('@regression #3535 echelon ordering kept brigades before recent subordinate units', async ({
   page,
@@ -250,7 +505,10 @@ for (const host of ['duty', 'analysis', 'report'] as const) {
         if (host === 'duty') {
           await installRerDutyShortStateMocks(page, { signalGroups: ['editor-e2e-group'] });
         } else {
-          await installAnalysisNeoApiMocks(page, { signalGroups: ['editor-e2e-group'] });
+          await installAnalysisNeoApiMocks(page, {
+            signalGroups: ['editor-e2e-group'],
+            userRoles: ['Rer', 'UnitsEditor'],
+          });
         }
         submissions = await installUnitApi(page);
         await page.goto(host === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo');
@@ -281,14 +539,17 @@ for (const host of ['duty', 'analysis', 'report'] as const) {
         await page.getByRole('option', { name: inactiveChild.name, exact: true }).click();
       } else {
         await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
+        await saveNewUnit(page);
+        expect(submissions).toHaveLength(0);
       }
       await page.getByRole('button', { name: 'Створити', exact: true }).click();
       await expect.poll(() => submissions.length).toBe(1);
       expect(submissions[0]).toMatchObject(
         selection === 'existing'
           ? { unit: inactiveChild.name, unit_id: inactiveChild.id }
-          : { unit: newUnitName, create_unit: true },
+          : { unit: newUnitName, unit_id: createdUnitId },
       );
+      expect(submissions[0].create_unit).toBeUndefined();
       if (host === 'report') expect(submissions[0].parent_signal_message_ids).toHaveLength(1);
     });
   }
@@ -308,9 +569,11 @@ for (const width of [390, 768]) {
     ).toBeVisible();
     await input.press('ArrowDown');
     await input.press('Enter');
+    await saveNewUnit(page);
     await page.getByRole('button', { name: 'Створити', exact: true }).click();
     await expect.poll(() => submissions.length).toBe(1);
-    expect(submissions[0]).toMatchObject({ unit: newUnitName, create_unit: true });
+    expect(submissions[0]).toMatchObject({ unit: newUnitName, unit_id: createdUnitId });
+    expect(submissions[0].create_unit).toBeUndefined();
   });
 }
 
@@ -368,6 +631,7 @@ test('@regression #3535 typed partial names blocked creation and offered Add onl
   ).toBeVisible();
   await expect(create).toBeDisabled();
   await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
+  await saveNewUnit(page);
   await expect(input).toHaveAttribute('aria-invalid', 'false');
   await expect(create).toBeEnabled();
   await input.fill('3535 полк');
@@ -414,7 +678,7 @@ test('@regression #3535 accepted parser suggestions replaced manually selected u
   expect(submissions[0]).toMatchObject({ unit_id: inactiveChild.id });
 });
 
-test('@regression #3535 stale exact searches could not replace newer creation intent', async ({
+test('@regression #3535 stale exact searches could not replace a newly saved unit', async ({
   page,
 }) => {
   let release!: () => void;
@@ -442,11 +706,12 @@ test('@regression #3535 stale exact searches could not replace newer creation in
   await input.fill(newUnitName);
   await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
   release();
+  await saveNewUnit(page);
   await expect(input).toHaveValue(newUnitName);
   await page.getByRole('button', { name: 'Створити', exact: true }).click();
   await expect.poll(() => submissions.length).toBe(1);
-  expect(submissions[0]).toMatchObject({ unit: newUnitName, create_unit: true });
-  expect(submissions[0].unit_id).toBeUndefined();
+  expect(submissions[0]).toMatchObject({ unit: newUnitName, unit_id: createdUnitId });
+  expect(submissions[0].create_unit).toBeUndefined();
 });
 
 test('@regression #3535 report destination handling could not bypass unresolved unit validation', async ({

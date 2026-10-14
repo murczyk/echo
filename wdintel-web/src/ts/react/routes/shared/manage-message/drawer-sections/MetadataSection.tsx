@@ -1,5 +1,4 @@
 import { useRadioFeatures } from '../../RadioFeatures';
-import React from 'react';
 import { Box, TextField, Autocomplete, Stack } from '@mui/material';
 import { useFormContext, Controller, useWatch } from 'react-hook-form';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
@@ -36,6 +35,7 @@ type Props = {
   unitOptions: UnitResponse[];
   unitLoading: boolean;
   unitAllowCreate: boolean;
+  canMergeUnitDuplicates?: boolean;
   onUnitFocus: () => void;
   unitLocked: boolean;
 };
@@ -56,6 +56,7 @@ export function MetadataSection({
   unitOptions,
   unitLoading,
   unitAllowCreate,
+  canMergeUnitDuplicates = false,
   onUnitFocus,
   unitLocked,
 }: Props) {
@@ -186,6 +187,7 @@ export function MetadataSection({
                   }
                   loading={unitLoading}
                   allowCreate={unitAllowCreate}
+                  canMergeDuplicates={canMergeUnitDuplicates}
                   onFocus={onUnitFocus}
                   disabled={busy || unitLocked}
                   onChange={(name, selection) => {

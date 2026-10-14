@@ -57,7 +57,10 @@ type Props = {
   open: boolean;
   suspended?: boolean;
   unit: Unit | null;
+  initialName?: string;
   devicesSectionEnabled: boolean;
+  hideNetworks?: boolean;
+  canMergeDuplicates?: boolean;
   submitting: boolean;
   error: string | null;
   orbitUnits: OrbitUnitDetails[];
@@ -158,7 +161,7 @@ function UnitDetailsFields({
     <>
       <Typography color="text.secondary">Заповніть відомі рівні підпорядкування.</Typography>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {editing ? (
+        {editing || form.name !== null ? (
           <TextField
             label="Назва"
             placeholder="Назва підрозділу"
@@ -433,7 +436,10 @@ export function UnitFormDrawer({
   open,
   suspended = false,
   unit,
+  initialName = '',
   devicesSectionEnabled,
+  hideNetworks = false,
+  canMergeDuplicates = true,
   submitting,
   error,
   orbitUnits,
@@ -499,7 +505,8 @@ export function UnitFormDrawer({
         previousSession.editSection !== editSection);
     sessionRef.current = { open, unitId, editSection };
     if (!isNewSession) return;
-    const initialForm = unit === null ? EMPTY_UNIT_FORM : unitToForm(unit);
+    const initialForm =
+      unit === null ? { ...EMPTY_UNIT_FORM, name: initialName || null } : unitToForm(unit);
     initialFormRef.current = initialForm;
     setForm(initialForm);
     setNetworkStep(false);
@@ -511,18 +518,19 @@ export function UnitFormDrawer({
     setSelectedDuplicateUnitIds(new Set());
     setCheckingDuplicates(false);
     setDuplicateCheckError(null);
-  }, [editSection, open, unit]);
+  }, [editSection, initialName, open, unit]);
 
   function continueFromDetails() {
     if (editing) {
       onSubmit({ unit: trimUnitForm(form), autoNetwork: undefined });
       return;
     }
-    if (!devicesSectionEnabled) {
+    if (!devicesSectionEnabled || hideNetworks) {
       void checkDuplicates({ unit: trimUnitForm(form), autoNetwork: undefined });
       return;
     }
-    setUnitMask(defaultUnitMasks(form));
+    const masks = defaultUnitMasks(form);
+    setUnitMask(uniqueTrimmed([...masks, form.name ?? '']));
     setNetworkStep(true);
   }
 
@@ -538,6 +546,10 @@ export function UnitFormDrawer({
   }
 
   async function checkDuplicates(value: UnitFormSubmit) {
+    if (!canMergeDuplicates) {
+      onSubmit(value);
+      return;
+    }
     setCheckingDuplicates(true);
     setDuplicateCheckError(null);
     try {
@@ -611,6 +623,7 @@ export function UnitFormDrawer({
       anchor="right"
       open={open && !suspended}
       onClose={busy ? undefined : requestClose}
+      onKeyDown={(event) => event.stopPropagation()}
       ModalProps={{ BackdropProps: { sx: (theme) => pageDrawerBackdropSx(theme) } }}
       slotProps={{
         paper: {
@@ -661,7 +674,7 @@ export function UnitFormDrawer({
             />
           ) : networkStep ? (
             <AutoNetworkFields
-              unitName={unitName(form)}
+              unitName={form.name?.trim() || unitName(form)}
               skipNetworkCreation={skipNetworkCreation}
               allowSkip
               locations={locations}
@@ -749,7 +762,7 @@ export function UnitFormDrawer({
           >
             {duplicateStep
               ? 'Створити'
-              : !editing && devicesSectionEnabled && !networkStep
+              : !editing && devicesSectionEnabled && !hideNetworks && !networkStep
                 ? 'Далі'
                 : editing
                   ? 'Зберегти'

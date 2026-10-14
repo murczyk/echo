@@ -7,6 +7,7 @@ type Props = {
   pageSize: number;
   totalCount: number;
   loading: boolean;
+  hasNextPage?: boolean;
   onPrevPage: () => void;
   onNextPage: () => void;
 };
@@ -16,10 +17,11 @@ export function UnitsPaginationControl({
   pageSize,
   totalCount,
   loading,
+  hasNextPage,
   onPrevPage,
   onNextPage,
 }: Props) {
-  const start = totalCount === 0 ? 0 : pageIndex * pageSize + 1;
+  const start = totalCount === 0 ? 0 : Math.min(pageIndex * pageSize + 1, totalCount);
   const end = Math.min((pageIndex + 1) * pageSize, totalCount);
   const rangeText = loading
     ? '— з —'
@@ -42,7 +44,7 @@ export function UnitsPaginationControl({
       </IconButton>
       <IconButton
         onClick={onNextPage}
-        disabled={loading || end >= totalCount}
+        disabled={loading || !(hasNextPage ?? end < totalCount)}
         aria-label="Наступна сторінка"
         size="small"
       >
