@@ -20161,7 +20161,7 @@ rerDutyQueryStateDecoder : Json.Decode.Decoder RerDutyQueryState
 rerDutyQueryStateDecoder =
     Json.Decode.succeed RerDutyQueryState
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "waterfalls" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (rerDutyQueryStateWfDecoder)))))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string)))))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string))))), Json.Decode.succeed Nothing ]))
 
 
 rerDutyQueryStateWfDecoder : Json.Decode.Decoder RerDutyQueryStateWf

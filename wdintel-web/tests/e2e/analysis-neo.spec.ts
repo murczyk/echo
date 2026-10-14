@@ -839,7 +839,7 @@ test.describe('@smoke @regression', () => {
       container.dispatchEvent(new Event('scroll', { bubbles: true }));
     });
     await page.getByRole('button', { name: 'Додати повідомлення' }).click();
-    await page.getByRole('button', { name: 'Закрити ліву панель' }).click();
+    await expect(page.getByRole('button', { name: 'Закрити ліву панель' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toBeVisible();
     const offsetBefore = await anchor.evaluate((element) => {
       const container = element.closest('ul')?.parentElement;

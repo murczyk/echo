@@ -1,10 +1,10 @@
 type Props = {
-  name: string;
+  name?: string;
   size?: 'small' | 'medium';
 };
 
-export function firstVisibleGrapheme(name: string): string {
-  const visibleName = name.trim();
+export function firstVisibleGrapheme(name?: string): string {
+  const visibleName = name?.trim() ?? '';
   if (visibleName === '') return '—';
   if (typeof Intl.Segmenter === 'function') {
     const segments = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(

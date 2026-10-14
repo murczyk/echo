@@ -4,7 +4,7 @@ import { dutyEditorLayoutColumns, shouldUseActiveFeedLayout } from '../duty-edit
 
 describe('dutyEditorLayoutColumns', () => {
   it('matches the Analysis right dock width and collapses its closed track', () => {
-    expect(dutyEditorLayoutColumns(true)).toBe('minmax(0, 1fr) minmax(0, 1fr)');
+    expect(dutyEditorLayoutColumns(true)).toBe('minmax(0, 1fr) clamp(640px, 48%, 800px)');
     expect(dutyEditorLayoutColumns(false)).toBe('minmax(0, 1fr) minmax(0, 0fr)');
   });
 });

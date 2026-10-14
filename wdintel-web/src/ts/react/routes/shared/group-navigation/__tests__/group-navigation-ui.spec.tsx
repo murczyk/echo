@@ -6,7 +6,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { GroupAvatar } from '../GroupAvatar';
+import { firstVisibleGrapheme, GroupAvatar } from '../GroupAvatar';
 import { GroupIsland } from '../GroupIsland';
 import { GroupList } from '../GroupList';
 import { GroupPanel } from '../GroupPanel';
@@ -54,6 +54,10 @@ describe('group navigation UI', () => {
 
     expect(container.querySelector('[data-group-avatar]')?.textContent).toBe('🇺🇦');
     expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('uses a neutral glyph while a group name is temporarily unavailable', () => {
+    expect(firstVisibleGrapheme(undefined)).toBe('—');
   });
 
   it('keeps all groups first and renders 99+ overflow', async () => {

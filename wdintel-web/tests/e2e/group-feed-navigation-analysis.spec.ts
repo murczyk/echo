@@ -83,13 +83,13 @@ test.describe('Analysis group feed navigation', () => {
     await expect(page.locator('[data-group-island] [data-group-name]')).toHaveText('Group Beta');
 
     await page.getByRole('button', { name: 'Додати повідомлення' }).click();
-    await page.getByRole('button', { name: 'Закрити ліву панель' }).click();
+    await expect(page.getByRole('button', { name: 'Закрити ліву панель' })).toHaveCount(0);
     await expect(page.getByRole('combobox', { name: /Група/ })).toHaveValue('group-b');
     await expect(page).toHaveURL(/(?:\?|&)group=group-b(?:&|$)/);
 
     await page.reload();
     await expect(page).toHaveURL(/(?:\?|&)group=group-b(?:&|$)/);
-    await expect(page.locator('[data-group-island] [data-group-name]')).toHaveText('group-b');
+    await expect(page.locator('[data-group-island] [data-group-name]')).toHaveText('Group Beta');
     await expect(page.getByText('Analysis Beta message')).toBeVisible();
 
     await page.locator('[data-group-island]').click();

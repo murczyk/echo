@@ -662,7 +662,11 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                 borderColor: 'divider',
               }}
             >
-              <Typography id={titleId} variant={adaptiveEmbeddedForm ? 'subtitle2' : 'h6'}>
+              <Typography
+                id={titleId}
+                component="h2"
+                variant={adaptiveEmbeddedForm ? 'subtitle2' : 'h6'}
+              >
                 {isReportMode
                   ? isReportEditIntent
                     ? 'Редагувати розвіддонесення'

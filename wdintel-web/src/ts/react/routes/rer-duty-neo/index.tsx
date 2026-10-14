@@ -31,6 +31,7 @@ import {
   ManageMessageDrawer,
   type ManageMessageEditorHandle,
 } from '../shared/manage-message/ManageMessageDrawer';
+import { focusAfterEditorSurfacesClose } from '../shared/manage-message/focus-restoration';
 import {
   MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
   MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
@@ -587,7 +588,6 @@ export function RerDutyNeoPage({
     setEditTarget(null);
     setEditAsReport(false);
     setReportSource(null);
-    setEditorSourceFeedId(null);
     setEditorSourceMessageId(null);
   }, [cancelReportEditLoad]);
   const editorIntentKey = createMessageOpen
@@ -606,6 +606,19 @@ export function RerDutyNeoPage({
   const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const editorEmbeddedOpen = editorOpen && editorPresentation === 'embedded';
   const previousCanWriteRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    if (editorOpen || editorSourceFeedId == null) return;
+    return focusAfterEditorSurfacesClose(() => {
+      const sourceColumn = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-duty-feed-column]'),
+      ).find((column) => column.dataset.dutyFeedId === editorSourceFeedId);
+      const createMessageButton =
+        sourceColumn?.querySelector<HTMLElement>('[aria-label="Додати повідомлення"]') ?? null;
+      createMessageFabRef.current = createMessageButton;
+      return document.activeElement === document.body ? createMessageButton : null;
+    });
+  }, [editorOpen, editorSourceFeedId]);
 
   useEffect(() => {
     if (deviceAccess.status === 'loading') return;

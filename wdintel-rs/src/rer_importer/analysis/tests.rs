@@ -346,6 +346,7 @@ fn short_state_filter(
 
 fn short_state(groups_selected: Option<Vec<String>>) -> RerDutyQueryState {
     RerDutyQueryState {
+        group_scopes: None,
         waterfalls: Some(vec![(
             "mf-0".to_string(),
             short_state_filter(groups_selected),

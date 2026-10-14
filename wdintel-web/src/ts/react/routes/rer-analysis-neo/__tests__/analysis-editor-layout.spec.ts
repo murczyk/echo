@@ -7,8 +7,8 @@ import {
 } from '../analysis-editor-layout';
 
 describe('analysisRightDockColumn', () => {
-  it('keeps the right dock width stable between editor and Analytics', () => {
-    expect(analysisRightDockColumn(true)).toBe('minmax(0, 1fr)');
+  it('caps the editor while allowing Analytics to use the available width', () => {
+    expect(analysisRightDockColumn(true)).toBe('clamp(640px, 48%, 800px)');
     expect(analysisRightDockColumn(false)).toBe('minmax(0, 1fr)');
   });
 });
@@ -52,7 +52,7 @@ describe('analysisWorkspaceColumns', () => {
         inlineRightDockVisible: true,
         editorOpen: true,
       }),
-    ).toBe('0px minmax(0, 1fr) minmax(0, 1fr)');
+    ).toBe('0px minmax(0, 1fr) clamp(640px, 48%, 800px)');
   });
 });
 

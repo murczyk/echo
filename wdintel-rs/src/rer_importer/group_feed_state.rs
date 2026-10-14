@@ -128,8 +128,10 @@ pub async fn list_group_feed_states(
         return Ok(vec![]);
     }
 
-    initialize_missing_states(&txn, login, &group_master_keys).await?;
-    let rows = load_states(&txn, login, &group_master_keys).await?;
+    initialize_missing_states(&txn, login, &group_master_keys)
+        .await
+        .c(h!())?;
+    let rows = load_states(&txn, login, &group_master_keys).await.c(h!())?;
     txn.commit().await.c(h!())?;
 
     Ok(rows
@@ -274,12 +276,19 @@ pub async fn acknowledge_group_feed_tail(
     cursor: GroupFeedCursor,
 ) -> anyhow::Result<GroupFeedStateRecord> {
     let txn = dbx.begin().await.c(h!())?;
-    if !is_group_accessible(&txn, login, group_master_key).await? {
+    if !is_group_accessible(&txn, login, group_master_key)
+        .await
+        .c(h!())?
+    {
         anyhow::bail!("group is not accessible");
     }
 
-    upsert_read_state(&txn, login, group_master_key, &cursor).await?;
-    let state = load_group_state(&txn, login, group_master_key).await?;
+    upsert_read_state(&txn, login, group_master_key, &cursor)
+        .await
+        .c(h!())?;
+    let state = load_group_state(&txn, login, group_master_key)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(state)
 }
@@ -345,7 +354,8 @@ async fn load_group_state(
 ) -> anyhow::Result<GroupFeedStateRecord> {
     let group_master_keys = [group_master_key.to_string()];
     load_states(txn, login, &group_master_keys)
-        .await?
+        .await
+        .c(h!())?
         .into_iter()
         .next()
         .map(GroupFeedStateRow::into_record)
@@ -449,7 +459,8 @@ fn cursor_from_dto(
             body: serde_json::json!({
                 "message": "invalid group feed cursor timestamp",
             }),
-        })?;
+        })
+        .c(h!())?;
     Ok(GroupFeedCursor {
         created_at,
         message_id: cursor.message_id,
@@ -482,7 +493,8 @@ pub async fn group_feed_states(
 ) -> Result<Json<GroupFeedStatesRsp>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
     let groups = list_group_feed_states_authorized(&env.dbx, login)
-        .await?
+        .await
+        .c(h!())?
         .into_iter()
         .map(record_to_dto)
         .collect();
@@ -496,14 +508,15 @@ pub async fn acknowledge_group_feed_state(
     request: Json<AcknowledgeGroupFeedReq>,
 ) -> Result<Json<GroupFeedState>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    let cursor = cursor_from_dto(request.cursor.clone())?;
+    let cursor = cursor_from_dto(request.cursor.clone()).c(h!())?;
     let state = acknowledge_current_group_feed_tail(
         &env.dbx,
         login,
         &request.master_key,
         cursor,
     )
-    .await?;
+    .await
+    .c(h!())?;
     Ok(Json(record_to_dto(state)))
 }
 

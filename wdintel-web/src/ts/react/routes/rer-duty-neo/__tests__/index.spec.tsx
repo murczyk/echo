@@ -800,7 +800,7 @@ describe('RerDutyNeoPage creation workflow', () => {
 
     await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
 
-    expect(layout?.style.gridTemplateColumns).toBe('minmax(0, 1fr) minmax(0, 1fr)');
+    expect(layout?.style.gridTemplateColumns).toBe('minmax(0, 1fr) clamp(640px, 48%, 800px)');
     expect(layout?.style.columnGap).toBe('8px');
     await act(async () => root.unmount());
   });

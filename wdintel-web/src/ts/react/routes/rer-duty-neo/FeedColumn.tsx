@@ -403,6 +403,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     <Box
       ref={columnRef}
       data-duty-feed-column
+      data-duty-feed-id={feed.id}
       className={[
         'flex flex-col min-w-0 gap-0 min-h-0 h-full',
         narrowScreen ? 'shrink-0 grow-0 basis-full' : 'shrink-0',

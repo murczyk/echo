@@ -824,7 +824,9 @@ describe('RerAnalysisNeoPage', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
     });
 
-    expect(workspace?.style.gridTemplateColumns).toBe('0px minmax(0, 1fr) minmax(0, 1fr)');
+    expect(workspace?.style.gridTemplateColumns).toBe(
+      '0px minmax(0, 1fr) clamp(640px, 48%, 800px)',
+    );
     await act(async () => root.unmount());
   });
 
@@ -1378,7 +1380,7 @@ describe('RerAnalysisNeoPage', () => {
     root.unmount();
   });
 
-  it('keeps filters in the drawer while editing until the 1600px fit threshold', async () => {
+  it('hides overlay filters while editing until the 1600px fit threshold', async () => {
     const page = buildPage();
     page.editorMessage = { id: 42, message: { messageUid: 'm-42' } as never };
     useRerAnalysisNeoPageMock.mockReturnValue(page);
@@ -1405,7 +1407,7 @@ describe('RerAnalysisNeoPage', () => {
     const root = createRoot(container);
 
     await act(async () => root.render(<RerAnalysisNeoPage />));
-    expect(container.querySelector('[data-testid="analysis-drawer-left"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="analysis-drawer-left"]')).toBeNull();
 
     root.unmount();
     width = 1600;
@@ -1418,7 +1420,7 @@ describe('RerAnalysisNeoPage', () => {
     wideRoot.unmount();
   });
 
-  it('moves inline filters into the drawer without closing them', async () => {
+  it('temporarily hides overlay filters without closing them', async () => {
     const page = buildPage();
     useRerAnalysisNeoPageMock.mockReturnValue(page);
     useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
@@ -1448,7 +1450,7 @@ describe('RerAnalysisNeoPage', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
     });
 
-    expect(container.querySelector('[data-testid="analysis-drawer-left"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="analysis-drawer-left"]')).toBeNull();
     expect(page.toggleLeftPanel).not.toHaveBeenCalled();
     root.unmount();
   });

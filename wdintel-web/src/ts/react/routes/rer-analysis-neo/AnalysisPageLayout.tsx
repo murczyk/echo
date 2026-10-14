@@ -24,6 +24,7 @@ import {
   ManageMessageDrawer,
   type ManageMessageEditorHandle,
 } from '../shared/manage-message/ManageMessageDrawer';
+import { focusAfterEditorSurfacesClose } from '../shared/manage-message/focus-restoration';
 import {
   MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
   MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
@@ -283,7 +284,6 @@ export function RerAnalysisNeoPage({
     openReportEditor,
   };
   const closeMessageEditor = useCallback(() => {
-    setEditorSourceMessageId(null);
     if (
       isPresent(page.editorMessage) ||
       isPresent(page.reportSource) ||
@@ -294,6 +294,20 @@ export function RerAnalysisNeoPage({
       setCreateMessageOpen(false);
     }
   }, [page.closeEditor, page.editTargetLoadState.status, page.editorMessage, page.reportSource]);
+
+  useEffect(() => {
+    if (editorOpen || editorSourceMessageId == null) return;
+    return focusAfterEditorSurfacesClose(() => {
+      const sourceItem = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-message-id]'),
+      ).find((item) => item.dataset.messageId === String(editorSourceMessageId));
+      const returnLabel = editorInitialFocusTargetRef.current?.getAttribute('aria-label');
+      const returnControl = Array.from(
+        sourceItem?.querySelectorAll<HTMLElement>('button') ?? [],
+      ).find((button) => button.getAttribute('aria-label') === returnLabel);
+      return returnControl ?? null;
+    });
+  }, [editorOpen, editorSourceMessageId]);
 
   const toggleRightPanel = useCallback(() => {
     if (!editorOpen) {
@@ -553,7 +567,7 @@ export function RerAnalysisNeoPage({
         <AnalysisFullscreenPanelDrawer
           anchor="left"
           title="Фільтри"
-          open={!inlineLeftPanelVisible && leftPanelVisible && !modalEditorOpen}
+          open={!inlineLeftPanelVisible && leftPanelVisible && !editorOpen}
           onClose={page.toggleLeftPanel}
           maxPanelWidth={400}
         >
