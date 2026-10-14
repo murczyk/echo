@@ -3548,7 +3548,7 @@ where
                     search_phrase.to_string(),
                     format!("%{}%", search_phrase.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")),
                 ],
-            ));
+            )).order_by_asc(Expr::cust(unit_echelon_sort_rank_sql()));
         }
         q = q.order_by_asc(sigint_unit::Column::Name);
     }
@@ -3567,9 +3567,13 @@ where
     //     q.build(DbBackend::Postgres).to_string()
     // );
 
-    search_units_with_exact_matches(db, req, q, limit)
+    let mut units = search_units_with_exact_matches(db, req, q, limit)
         .await
-        .c(h!())
+        .c(h!())?;
+    if req.names.is_none() {
+        units.sort_by_key(unit_echelon_sort_rank);
+    }
+    Ok(units)
 }
 
 async fn search_units_with_exact_matches<C>(

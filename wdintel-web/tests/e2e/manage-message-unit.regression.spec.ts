@@ -53,6 +53,42 @@ async function openDutyUnitEditor(
   return submissions;
 }
 
+test('@regression #3535 echelon ordering kept brigades before recent subordinate units', async ({
+  page,
+}) => {
+  const brigade = { id: 35360, name: '123 омбр', brigade: '123 омбр' };
+  const battalion = {
+    ...brigade,
+    id: 35361,
+    name: '1 мб 123 омбр',
+    battalion: '1 мб',
+  };
+  const company = { ...battalion, id: 35362, name: '1 мр 1 мб 123 омбр', company: '1 мр' };
+  const crew = {
+    ...company,
+    id: 35363,
+    name: '1 екіпаж 1 мр 1 мб 123 омбр',
+    team_or_crew: '1 екіпаж',
+    other: '   ',
+  };
+  const unclassified = { id: 35364, name: 'Невідомий ешелон 123 омбр' };
+  const units = [brigade, battalion, company, crew, unclassified];
+  await openDutyUnitEditor(page, { unit: [crew.name] }, async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ units: route.request().postDataJSON().names ? [crew] : units }),
+    });
+  });
+  const input = page.getByRole('combobox', { name: 'Підрозділ' });
+  await expect(input).toHaveValue(crew.name);
+  await input.fill('123 омб');
+  await expect(page.getByRole('option')).toHaveText(units.map((unit) => unit.name));
+  await input.press('ArrowDown');
+  await input.press('Enter');
+  await expect(input).toHaveValue(brigade.name);
+  await expect(input).toHaveAttribute('aria-invalid', 'false');
+});
+
 test('@regression #3535 late unit prefilling preserved text and its unsaved-change baseline', async ({
   page,
 }) => {

@@ -32,13 +32,18 @@ removes explicit selections; the previous application resolves message text.
 
 `POST /api/sigint/unit/search` retains the active-only default and supports
 `include_inactive: true` and exact-name `names` lookup. Ordinary searches return
-at most 50 units; searches including inactive units return at most 250, ordered
-by name and ID, with exact-name matches first when inactive units are included.
+at most 50 units; searches including inactive units return at most 250. Nonempty
+searches order candidates by echelon from highest to lowest before applying the
+limit, then by name and ID, with exact-name matches first within their echelon
+when inactive units are included. Empty searches fetch the first 50 units by
+name and ID. Returned options follow echelon order; units without hierarchy
+follow classified units.
 Narrow the search to find further children. Exact-name lookup
 uses the existing normalized-name index.
 
 The editor validates saved history, removes unresolved names only after a
-successful lookup, and prefills only an unambiguous first recent name.
+successful lookup, and prefills only an unambiguous first recent name. Recent
+choices follow the same echelon ordering in the dropdown.
 Identically named options show their unit IDs. Late
 responses cannot overwrite manual input. A search failure remains visible and
 withholds the creation option until a successful retry. Pasted-text parsing
