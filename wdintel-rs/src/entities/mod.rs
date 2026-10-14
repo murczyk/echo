@@ -57,6 +57,7 @@ pub mod area_of_responsibility_report_order;
 pub mod attachment_chunk;
 pub mod attachment_document;
 pub mod attachment_job;
+pub mod attachment_search_change;
 pub mod attachment_settings;
 pub mod battle_line_aor_geometry;
 pub mod battle_line_version;

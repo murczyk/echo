@@ -1119,6 +1119,8 @@ enum Cmd {
     #[command(visible_alias = "migration")]
     Migrate,
     OneoffCreateFileRegistryDatabase,
+    /// Copy historical attachment documents and chunks into analytics.
+    OneoffReplicateHistoricalAttachments,
     NetworkInvalidationTui,
     /// Import ORBIT units from the latest snapshot in an interactive TUI.
     TuiImportOrbitUnits,
@@ -1751,6 +1753,11 @@ async fn async_main(
     if matches!(action, Cmd::AiEvalMaps) {
         return ai_agent::evaluation::maps().map_err(Into::into);
     }
+    if matches!(action, Cmd::OneoffReplicateHistoricalAttachments) {
+        return Ok(attachments::analytics::replicate_history(mode)
+            .await
+            .c(h!())?);
+    }
 
     if let Cmd::AiControlPanel(options) = action {
         return ai_control_panel::run(mode, options)
@@ -1770,6 +1777,7 @@ async fn async_main(
 
     match action {
         Cmd::AiControlPanel(_) | Cmd::AiEvalSearchQuery | Cmd::AiEvalMaps
+        | Cmd::OneoffReplicateHistoricalAttachments
         | Cmd::OneoffBackfillDeviceAudioTranscriber(_) => unreachable!(),
         Cmd::Server(ps) => {
             server::main_server(mode, ps, token, shutdown_handle.clone()).await
