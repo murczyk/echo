@@ -756,7 +756,7 @@ update vps msg model =
 
         ImportantAdd id_ ->
             { model = model
-            , cmds = E.sendCmd <| Api.rer_important_add ImportantAddDone { messageId = id_ }
+            , cmds = E.sendCmd <| Api.rer_important_add ImportantAddDone { messageId = id_, groupMasterKey = Nothing, notifyGroup = False, operationId = Nothing }
             , sigs = []
             , messages =
                 updateV id_

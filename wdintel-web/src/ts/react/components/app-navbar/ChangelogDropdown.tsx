@@ -1,12 +1,17 @@
-import React from 'react';
+import CampaignOutlinedIcon from '@mui/icons-material/CampaignOutlined';
+import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
+import ConstructionOutlinedIcon from '@mui/icons-material/ConstructionOutlined';
+import { IconButton, Tooltip } from '@mui/material';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { registerBrowserDebugRecorderPress } from '../../../debug-recorder';
+import { NavbarToolbarIconButton } from './NavbarToolbarIconButton';
 
 const CONSTRUCTION_EMOJIS = ['🚧', '👷', '🔨', '🔧'];
 
 function MaintenanceNotice({ onClose }: { onClose: () => void }) {
-  const [emojiIndex, setEmojiIndex] = React.useState(0);
+  const [emojiIndex, setEmojiIndex] = useState(0);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const intervalId = window.setInterval(() => {
       setEmojiIndex((currentIndex) => (currentIndex + 1) % CONSTRUCTION_EMOJIS.length);
     }, 900);
@@ -27,9 +32,9 @@ function MaintenanceNotice({ onClose }: { onClose: () => void }) {
           </span>
           Оновлення системи
         </span>
-        <button
-          type="button"
-          className="flex appearance-none items-center rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-black/10 hover:text-[var(--color-text)] dark:hover:bg-white/10"
+        <IconButton
+          size="small"
+          className="text-[var(--color-text-muted)] hover:bg-black/10 hover:text-[var(--color-text)] dark:hover:bg-white/10"
           onClick={(e) => {
             e.stopPropagation();
             onClose();
@@ -37,8 +42,8 @@ function MaintenanceNotice({ onClose }: { onClose: () => void }) {
           aria-label="Закрити сповіщення"
           title="Закрити"
         >
-          <i className="bi bi-x-lg" aria-hidden="true" />
-        </button>
+          <CloseOutlinedIcon fontSize="small" />
+        </IconButton>
       </div>
       <p className="m-0 text-sm text-[var(--color-text)]">відбувається оновлення системи...</p>
     </div>
@@ -60,7 +65,7 @@ export function ChangelogDropdown({
 }: ChangelogDropdownProps) {
   const dropdownKey = 'changelog';
   const deploymentMaintenanceId = shared?.deploymentMaintenance?.id ?? null;
-  const previousDeploymentMaintenanceId = React.useRef<string | null>(null);
+  const previousDeploymentMaintenanceId = useRef<string | null>(null);
   let changelogData: {
     preview: string[];
     version: string;
@@ -85,7 +90,7 @@ export function ChangelogDropdown({
     };
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     const previousId = previousDeploymentMaintenanceId.current;
     previousDeploymentMaintenanceId.current = deploymentMaintenanceId;
 
@@ -99,7 +104,7 @@ export function ChangelogDropdown({
   const isOpen = openDropdown === dropdownKey;
   const hasDropdownContent = Boolean(deploymentMaintenanceId || changelogData);
 
-  const toggleMsg = (e: React.MouseEvent) => {
+  const toggleMsg = (e: MouseEvent) => {
     e.stopPropagation();
     if (registerBrowserDebugRecorderPress()) {
       setOpenDropdown(null);
@@ -117,25 +122,34 @@ export function ChangelogDropdown({
 
   return (
     <div className="relative">
-      <button
-        className="block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200 border-0 appearance-none flex items-center"
-        onClick={toggleMsg}
-        aria-haspopup="true"
-        aria-expanded={isOpen ? 'true' : 'false'}
-        aria-label={deploymentMaintenanceId ? 'Оновлення системи' : 'Останні зміни'}
-        title={deploymentMaintenanceId ? 'Оновлення системи' : 'Останні зміни'}
-        type="button"
-      >
-        <div className="relative">
-          <i
-            className={`bi ${deploymentMaintenanceId ? 'bi-cone-striped' : 'bi-megaphone'} text-lg leading-none`}
-            aria-hidden="true"
-          />
-          {!deploymentMaintenanceId && changelogData?.unseen && (
-            <span className="absolute -top-[1px] -right-[4px] h-2 w-2 rounded-full bg-orange-400" />
-          )}
-        </div>
-      </button>
+      <Tooltip title={deploymentMaintenanceId ? 'Оновлення системи' : 'Останні зміни'}>
+        <NavbarToolbarIconButton
+          onClick={toggleMsg}
+          aria-haspopup="true"
+          aria-expanded={isOpen ? 'true' : 'false'}
+          aria-label={deploymentMaintenanceId ? 'Оновлення системи' : 'Останні зміни'}
+          type="button"
+        >
+          <span className="relative flex size-6 items-center justify-center">
+            {deploymentMaintenanceId ? (
+              <ConstructionOutlinedIcon
+                data-testid="changelog-maintenance-icon"
+                sx={{ fontSize: 24 }}
+                aria-hidden="true"
+              />
+            ) : (
+              <CampaignOutlinedIcon
+                data-testid="changelog-campaign-icon"
+                sx={{ fontSize: 24 }}
+                aria-hidden="true"
+              />
+            )}
+            {!deploymentMaintenanceId && changelogData?.unseen && (
+              <span className="absolute -top-[1px] -right-[4px] h-2 w-2 rounded-full bg-orange-400" />
+            )}
+          </span>
+        </NavbarToolbarIconButton>
+      </Tooltip>
       {hasDropdownContent && (
         <div
           data-testid="changelog-dropdown-body"

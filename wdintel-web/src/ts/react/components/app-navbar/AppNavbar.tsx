@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { CircularProgress, Tooltip } from '@mui/material';
+import CheckIcon from '@mui/icons-material/Check';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import CloseIcon from '@mui/icons-material/Close';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import WifiOffIcon from '@mui/icons-material/WifiOff';
+import FullscreenExitOutlinedIcon from '@mui/icons-material/FullscreenExitOutlined';
+import FullscreenOutlinedIcon from '@mui/icons-material/FullscreenOutlined';
+import MenuIcon from '@mui/icons-material/Menu';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import {
   Link,
   Menu,
@@ -22,11 +30,16 @@ import { shouldHandleAsSpaClick } from '../../utils/browser';
 import { requestNavigation } from '../../../browser/navigation-guard';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../../routes/ai-agent-chat/conversation-url';
 import { mountLogoCoin } from '../../../logo-coin';
+import { ImportantMessageDialog } from './ImportantMessageDialog';
+import { NotificationsInbox } from './NotificationsInbox';
+import { NavbarToolbarIconButton } from './NavbarToolbarIconButton';
 import {
   DEBUG_RECORDER_SLOT_ID,
   configureBrowserDebugRecorder,
   mountDebugRecorderPanelIfNeeded,
 } from '../../../debug-recorder';
+
+const MENU_ICON_SX = { fontSize: 16, width: 16, height: 16, flexShrink: 0 } as const;
 
 function filterTranscriptionSettings(items: Menu[], enabled: boolean): Menu[] {
   return items.flatMap<Menu>((item): Menu[] => {
@@ -397,20 +410,22 @@ export function AppNavbar({
       return (
         <a
           key={index}
-          className={`flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200 whitespace-nowrap ${active ? 'font-medium' : ''}`}
+          className={`flex min-h-[40px] items-center justify-between rounded p-[8px] text-[var(--color-text)] transition-all duration-200 hover:bg-black/10 dark:hover:bg-white/10 whitespace-nowrap ${active ? 'font-medium' : ''}`}
           role="menuitem"
           href={item.link.path}
           onClick={(e) => handleInternalLinkClick(e, (item.link as any).path)}
         >
           {renderLabel(item)}
-          {active && <i className="bi bi-check ml-2" />}
+          <span className="ml-[8px] flex h-[16px] w-[16px] shrink-0 items-center justify-center">
+            {active && <CheckIcon sx={MENU_ICON_SX} aria-hidden="true" />}
+          </span>
         </a>
       );
     } else {
       return (
         <a
           key={index}
-          className={`flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200 whitespace-nowrap ${active ? 'font-medium' : ''}`}
+          className={`flex min-h-[40px] items-center justify-between rounded p-[8px] text-[var(--color-text)] transition-all duration-200 hover:bg-black/10 dark:hover:bg-white/10 whitespace-nowrap ${active ? 'font-medium' : ''}`}
           role="menuitem"
           href={item.link.link}
           target="_blank"
@@ -421,7 +436,13 @@ export function AppNavbar({
           }}
         >
           {renderLabel(item)}
-          <i className="bi bi-box-arrow-up-right text-[var(--color-icons)] ml-2 group-hover:text-[var(--color-text)]" />
+          <span className="ml-[8px] flex h-[16px] w-[16px] shrink-0 items-center justify-center">
+            <OpenInNewIcon
+              className="text-[var(--color-icons)] group-hover:text-[var(--color-text)]"
+              sx={MENU_ICON_SX}
+              aria-hidden="true"
+            />
+          </span>
         </a>
       );
     }
@@ -438,13 +459,17 @@ export function AppNavbar({
             type="button"
             role="menuitem"
             aria-haspopup="menu"
-            className={`flex w-full items-center justify-between rounded px-4 py-2 text-[var(--color-text)] transition-all duration-200 hover:bg-black/10 dark:hover:bg-white/10 ${active ? 'font-medium' : ''}`}
+            className={`flex min-h-[40px] w-full items-center justify-between rounded p-[8px] text-[var(--color-text)] transition-all duration-200 hover:bg-black/10 dark:hover:bg-white/10 ${active ? 'font-medium' : ''}`}
           >
             <span>{sub.label}</span>
-            <i className="bi bi-chevron-right ml-3 text-xs text-[var(--color-icons)]" />
+            <ChevronRightIcon
+              className="ml-[8px] text-[var(--color-icons)]"
+              sx={MENU_ICON_SX}
+              aria-hidden="true"
+            />
           </button>
           <ul
-            className="app-navbar-flyout rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-2 shadow-lg"
+            className="app-navbar-flyout rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] !p-[8px] shadow-lg"
             role="menu"
           >
             {sub.subs.map((s, i) => renderDropdownItem(s, i))}
@@ -455,7 +480,7 @@ export function AppNavbar({
       return (
         <li
           key={index}
-          className="mx-2 my-2 border-t border-[var(--color-border)]"
+          className="my-[8px] border-t border-[var(--color-border)]"
           role="separator"
         />
       );
@@ -496,8 +521,10 @@ export function AppNavbar({
               aria-expanded={isOpen ? 'true' : 'false'}
               type="button"
             >
-              <i
-                className={`bi bi-chevron-down text-xs transition-transform ${isOpen ? 'rotate-180' : ''}`}
+              <ExpandMoreIcon
+                className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                sx={MENU_ICON_SX}
+                aria-hidden="true"
               />
             </button>
           </div>
@@ -511,15 +538,17 @@ export function AppNavbar({
             type="button"
           >
             <span>{nameText}</span>
-            <i
-              className={`bi bi-chevron-down ml-1 text-xs transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            <ExpandMoreIcon
+              className={`ml-[8px] transition-transform ${isOpen ? 'rotate-180' : ''}`}
+              sx={MENU_ICON_SX}
+              aria-hidden="true"
             />
           </button>
         )}
         <div className="app-navbar-submenu-wrap">
           <ul
             id={dropdownMenuId}
-            className={`app-navbar-submenu-list min-w-0 w-full max-w-[min(100vw-2rem,16rem)] rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-2 shadow-lg transition-all duration-200 lg:w-max lg:min-w-64 lg:max-w-none ${isOpen ? 'block' : 'hidden'}`}
+            className={`app-navbar-submenu-list min-w-0 w-full max-w-[min(100vw-2rem,16rem)] rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] !p-[8px] shadow-lg transition-all duration-200 lg:w-max lg:min-w-64 lg:max-w-none ${isOpen ? 'block' : 'hidden'}`}
             role="menu"
           >
             {subs.map((sub, idx) => renderDropdownItem(sub, idx))}
@@ -593,9 +622,11 @@ export function AppNavbar({
               aria-expanded={mobileNavOpen ? 'true' : 'false'}
               aria-label={mobileNavOpen ? 'Закрити меню' : 'Відкрити меню'}
             >
-              <i
-                className={`app-navbar-mobile-menu-icon bi ${mobileNavOpen ? 'bi-x-lg' : 'bi-list'}`}
-              ></i>
+              {mobileNavOpen ? (
+                <CloseIcon className="app-navbar-mobile-menu-icon" aria-hidden="true" />
+              ) : (
+                <MenuIcon className="app-navbar-mobile-menu-icon" aria-hidden="true" />
+              )}
             </button>
           </div>
 
@@ -642,6 +673,28 @@ export function AppNavbar({
           />
 
           <div className="app-navbar-toolbar ml-auto flex shrink-0 items-center gap-2">
+            {supportsFullscreenToggle && (
+              <Tooltip title={isNavbarVisible ? 'Повноекранний режим' : 'Звичайний режим'}>
+                <NavbarToolbarIconButton
+                  onClick={onNavbarVisibilityChange}
+                  aria-label={isNavbarVisible ? 'Повноекранний режим' : 'Звичайний режим'}
+                  aria-pressed={isNavbarVisible ? 'false' : 'true'}
+                >
+                  {isNavbarVisible ? (
+                    <FullscreenOutlinedIcon sx={{ fontSize: 24 }} />
+                  ) : (
+                    <FullscreenExitOutlinedIcon sx={{ fontSize: 24 }} />
+                  )}
+                </NavbarToolbarIconButton>
+              </Tooltip>
+            )}
+            <ChangelogDropdown
+              shared={shared}
+              openDropdown={openDropdown}
+              setOpenDropdown={setOpenDropdown}
+              onOpenChangelog={onOpenChangelog}
+            />
+            {shared.userLoaded && isRerOrCyber ? <NotificationsInbox identity={user.name} /> : null}
             {isReconnecting && (
               <Tooltip title="Відновлення з’єднання…">
                 <span
@@ -653,24 +706,6 @@ export function AppNavbar({
                   <WifiOffIcon sx={{ fontSize: 'var(--echo-size-icon-sm)' }} />
                 </span>
               </Tooltip>
-            )}
-            <ChangelogDropdown
-              shared={shared}
-              openDropdown={openDropdown}
-              setOpenDropdown={setOpenDropdown}
-              onOpenChangelog={onOpenChangelog}
-            />
-
-            {supportsFullscreenToggle && (
-              <button
-                className="flex appearance-none items-center rounded border-0 px-2 py-2 text-white transition-all duration-200 hover:bg-black/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1"
-                onClick={onNavbarVisibilityChange}
-                title={isNavbarVisible ? 'Повноекранний режим' : 'Звичайний режим'}
-                aria-label={isNavbarVisible ? 'Повноекранний режим' : 'Звичайний режим'}
-                aria-pressed={isNavbarVisible ? 'false' : 'true'}
-              >
-                <i className="bi bi-arrows-fullscreen cursor-pointer text-white transition-colors duration-200 hover:text-white"></i>
-              </button>
             )}
 
             {shared.userLoaded ? (
@@ -697,6 +732,7 @@ export function AppNavbar({
           </div>
         </div>
       </nav>
+      <ImportantMessageDialog />
     </header>
   );
 }

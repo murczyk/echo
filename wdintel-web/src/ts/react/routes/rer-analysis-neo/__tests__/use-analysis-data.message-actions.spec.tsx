@@ -240,6 +240,7 @@ describe('useAnalysisDataMessageActions', () => {
       currentUser?: User | null;
       reload?: ReturnType<typeof vi.fn>;
       refreshTagFacet?: ReturnType<typeof vi.fn>;
+      refreshMessageCounts?: ReturnType<typeof vi.fn>;
       completeLocalInboxChangeOrigin?: ReturnType<typeof vi.fn>;
       failLocalInboxChangeOrigin?: ReturnType<typeof vi.fn>;
       reconcileTagMutation?: ReturnType<typeof vi.fn>;
@@ -258,6 +259,7 @@ describe('useAnalysisDataMessageActions', () => {
           currentUser={options.currentUser}
           reload={options.reload}
           refreshTagFacet={options.refreshTagFacet}
+          refreshMessageCounts={options.refreshMessageCounts}
           completeLocalInboxChangeOrigin={options.completeLocalInboxChangeOrigin}
           failLocalInboxChangeOrigin={options.failLocalInboxChangeOrigin}
           reconcileTagMutation={options.reconcileTagMutation}
@@ -316,7 +318,9 @@ describe('useAnalysisDataMessageActions', () => {
             initialMessages={
               action === 'botTag'
                 ? [[1, buildMessage({ inboxTags: [buildTag(3, { model: 'bot' })] })]]
-                : undefined
+                : action === 'important'
+                  ? [[1, buildMessage({ important: true })]]
+                  : undefined
             }
             queryState={queryState}
             refreshMessageCounts={refreshMessageCounts}
@@ -341,7 +345,9 @@ describe('useAnalysisDataMessageActions', () => {
         await act(async () => vi.advanceTimersByTimeAsync(200));
       }
 
-      expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(recount ? 4 : 0);
+      expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(
+        recount ? (action === 'important' ? 2 : 4) : 0,
+      );
       expect(apiRef.current!.messageActionCount).toBe(0);
     },
   );
@@ -358,6 +364,28 @@ describe('useAnalysisDataMessageActions', () => {
     expect(apiRef.current!.messages[0]?.[1].important).toBe(true);
     expect(apiRef.current!.mapOpenMessages[0]?.[1].important).toBe(true);
   });
+
+  it.each([true, false])(
+    'refreshes message counts after an importance dialog success only with the important filter: %s',
+    async (orImportant) => {
+      const refreshMessageCounts = vi.fn();
+      const apiRef = await renderHarness(undefined, {
+        queryState: { ...emptyQueryState(), orImportant },
+        refreshMessageCounts,
+      });
+
+      await act(async () => {
+        window.dispatchEvent(
+          new CustomEvent('echo-important-message-updated', {
+            detail: { messageId: 1, important: true },
+          }),
+        );
+      });
+
+      expect(apiRef.current!.messages[0]?.[1].important).toBe(true);
+      expect(refreshMessageCounts).toHaveBeenCalledTimes(orImportant ? 1 : 0);
+    },
+  );
 
   it('removes only the human contribution, keeps bot rows, and opens the prompt', async () => {
     const apiRef = await renderHarness([

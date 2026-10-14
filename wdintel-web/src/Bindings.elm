@@ -1219,6 +1219,162 @@ inboxMessageEncoder struct =
         ]
 
 
+type alias NotificationListReq =
+    { cursor : Maybe (String)
+    , boundaryId : Maybe (String)
+    , panelId : String
+    , knownReceiptIds : List (String)
+    }
+
+
+notificationListReqEncoder : NotificationListReq -> Json.Encode.Value
+notificationListReqEncoder struct =
+    Json.Encode.object
+        [ ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        , ( "boundary_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.boundaryId )
+        , ( "panel_id", (Json.Encode.string) struct.panelId )
+        , ( "known_receipt_ids", (Json.Encode.list (Json.Encode.string)) struct.knownReceiptIds )
+        ]
+
+
+type alias NotificationQuote =
+    { messageId : Int
+    , messageUuid : Maybe (String)
+    , messageUid : Maybe (String)
+    , text : String
+    , attachmentsCount : Int
+    , mediaFileNames : List (String)
+    , coords : Maybe (String)
+    }
+
+
+notificationQuoteEncoder : NotificationQuote -> Json.Encode.Value
+notificationQuoteEncoder struct =
+    Json.Encode.object
+        [ ( "message_id", (Json.Encode.int) struct.messageId )
+        , ( "message_uuid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUuid )
+        , ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUid )
+        , ( "text", (Json.Encode.string) struct.text )
+        , ( "attachments_count", (Json.Encode.int) struct.attachmentsCount )
+        , ( "media_file_names", (Json.Encode.list (Json.Encode.string)) struct.mediaFileNames )
+        , ( "coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.coords )
+        ]
+
+
+type alias NotificationItem =
+    { receiptId : String
+    , eventId : String
+    , actorId : String
+    , actorLogin : Maybe (String)
+    , groupName : String
+    , createdAt : Int
+    , readAt : Maybe (Int)
+    , quote : NotificationQuote
+    }
+
+
+notificationItemEncoder : NotificationItem -> Json.Encode.Value
+notificationItemEncoder struct =
+    Json.Encode.object
+        [ ( "receipt_id", (Json.Encode.string) struct.receiptId )
+        , ( "event_id", (Json.Encode.string) struct.eventId )
+        , ( "actor_id", (Json.Encode.string) struct.actorId )
+        , ( "actor_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.actorLogin )
+        , ( "group_name", (Json.Encode.string) struct.groupName )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "read_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.readAt )
+        , ( "quote", (notificationQuoteEncoder) struct.quote )
+        ]
+
+
+type alias NotificationListRsp =
+    { items : List (NotificationItem)
+    , unreadCount : Int
+    , nextCursor : Maybe (String)
+    , markAllBoundary : Maybe (String)
+    , removedReceiptIds : List (String)
+    }
+
+
+notificationListRspEncoder : NotificationListRsp -> Json.Encode.Value
+notificationListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (notificationItemEncoder)) struct.items )
+        , ( "unread_count", (Json.Encode.int) struct.unreadCount )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        , ( "mark_all_boundary", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.markAllBoundary )
+        , ( "removed_receipt_ids", (Json.Encode.list (Json.Encode.string)) struct.removedReceiptIds )
+        ]
+
+
+type alias NotificationUnreadCountRsp =
+    { unreadCount : Int
+    }
+
+
+notificationUnreadCountRspEncoder : NotificationUnreadCountRsp -> Json.Encode.Value
+notificationUnreadCountRspEncoder struct =
+    Json.Encode.object
+        [ ( "unread_count", (Json.Encode.int) struct.unreadCount )
+        ]
+
+
+type NotificationReadAllOutcome
+    = NotificationReadAllApplied
+    | NotificationReadAllAlreadyCompleted
+    | NotificationReadAllBoundaryExpired
+
+
+notificationReadAllOutcomeEncoder : NotificationReadAllOutcome -> Json.Encode.Value
+notificationReadAllOutcomeEncoder enum =
+    case enum of
+        NotificationReadAllApplied ->
+            Json.Encode.string "NotificationReadAllApplied"
+        NotificationReadAllAlreadyCompleted ->
+            Json.Encode.string "NotificationReadAllAlreadyCompleted"
+        NotificationReadAllBoundaryExpired ->
+            Json.Encode.string "NotificationReadAllBoundaryExpired"
+
+type alias NotificationReadAllRsp =
+    { outcome : NotificationReadAllOutcome
+    , unreadCount : Int
+    , receiptIds : List (String)
+    }
+
+
+notificationReadAllRspEncoder : NotificationReadAllRsp -> Json.Encode.Value
+notificationReadAllRspEncoder struct =
+    Json.Encode.object
+        [ ( "outcome", (notificationReadAllOutcomeEncoder) struct.outcome )
+        , ( "unread_count", (Json.Encode.int) struct.unreadCount )
+        , ( "receipt_ids", (Json.Encode.list (Json.Encode.string)) struct.receiptIds )
+        ]
+
+
+type alias NotificationReadReq =
+    { receiptId : String
+    }
+
+
+notificationReadReqEncoder : NotificationReadReq -> Json.Encode.Value
+notificationReadReqEncoder struct =
+    Json.Encode.object
+        [ ( "receipt_id", (Json.Encode.string) struct.receiptId )
+        ]
+
+
+type alias NotificationReadAllReq =
+    { boundaryReceiptId : String
+    }
+
+
+notificationReadAllReqEncoder : NotificationReadAllReq -> Json.Encode.Value
+notificationReadAllReqEncoder struct =
+    Json.Encode.object
+        [ ( "boundary_receipt_id", (Json.Encode.string) struct.boundaryReceiptId )
+        ]
+
+
 type alias InboxMessageSummary =
     { id : Int
     , isAccessible : Bool
@@ -4188,6 +4344,9 @@ bookmarkEncoder struct =
 
 type alias ImportantAddReq =
     { messageId : Int
+    , groupMasterKey : Maybe (String)
+    , notifyGroup : Bool
+    , operationId : Maybe (String)
     }
 
 
@@ -4195,6 +4354,9 @@ importantAddReqEncoder : ImportantAddReq -> Json.Encode.Value
 importantAddReqEncoder struct =
     Json.Encode.object
         [ ( "message_id", (Json.Encode.int) struct.messageId )
+        , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupMasterKey )
+        , ( "notify_group", (Json.Encode.bool) struct.notifyGroup )
+        , ( "operation_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationId )
         ]
 
 
@@ -20599,6 +20761,9 @@ importantAddReqDecoder : Json.Decode.Decoder ImportantAddReq
 importantAddReqDecoder =
     Json.Decode.succeed ImportantAddReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "notify_group" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_id" (Json.Decode.nullable (Json.Decode.string))))
 
 
 importantRmReqDecoder : Json.Decode.Decoder ImportantRmReq
