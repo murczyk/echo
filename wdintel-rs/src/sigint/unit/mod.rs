@@ -1112,10 +1112,14 @@ pub async fn list_units_by_id(
 pub(super) async fn ensure_unit_creation(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
+    req: &CreateUnitReq,
 ) -> Result<(), AppError> {
     has_any_role(dbx, login, vec!["UnitsEditor", "Rer", "Cyber"])
         .await
         .c(h!())?;
+    if !req.duplicate_unit_ids.is_empty() {
+        has_role(dbx, login, "UnitsEditor").await.c(h!())?;
+    }
     Ok(())
 }
 
@@ -1127,14 +1131,16 @@ pub async fn create_unit(
 ) -> Result<Json<Unit>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
-    ensure_unit_creation(&env.dbx, &login).await.c(h!())?;
+    ensure_unit_creation(&env.dbx, &login, &req).await.c(h!())?;
 
     let (unit, can_view_orbit) =
-        create_unit_for_login(&login, &env, req.into_inner()).await?;
+        create_unit_for_login(&login, &env, req.into_inner())
+            .await
+            .context(h!())?;
 
-    fanout_unit_changed(&env).await?;
+    fanout_unit_changed(&env).await.context(h!())?;
 
-    let mut unit = render_unit(&unit)?;
+    let mut unit = render_unit(&unit).context(h!())?;
     apply_unit_orbit_visibility(&env.dbx, &mut unit, can_view_orbit)
         .await
         .context(h!())?;
@@ -1148,9 +1154,14 @@ async fn create_unit_for_login(
 ) -> Result<(sigint_unit::Model, bool), AppError> {
     let can_view_orbit =
         clear_create_unit_orbit_note_if_hidden(&env.dbx, login, &mut req)
-            .await?;
-    let transaction = begin_unit_creation_transaction(&env.dbx, &req).await?;
-    let unit = insert_merge_link_unit(&transaction, login, &req).await?;
+            .await
+            .context(h!())?;
+    let transaction = begin_unit_creation_transaction(&env.dbx, &req)
+        .await
+        .context(h!())?;
+    let unit = insert_merge_link_unit(&transaction, login, &req)
+        .await
+        .context(h!())?;
     transaction.commit().await.context(h!())?;
     Ok((unit, can_view_orbit))
 }
@@ -1163,7 +1174,9 @@ pub async fn create_unit_with_auto_network(
 ) -> Result<Json<CreateUnitWithAutoNetworkRsp>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
-    ensure_unit_creation(&env.dbx, &login).await.c(h!())?;
+    ensure_unit_creation(&env.dbx, &login, &req.unit)
+        .await
+        .c(h!())?;
 
     Ok(Json(
         create_unit_with_auto_network_for_login(&login, &env, req.into_inner())
@@ -3917,7 +3930,8 @@ mod tests {
             .unwrap();
             let base_access =
                 crate::users::ensure_base_role_by_id(&env.dbx, &login.id).await;
-            let create_access = ensure_unit_creation(&env.dbx, &login.id).await;
+            let create_access =
+                ensure_unit_creation(&env.dbx, &login.id, &unit_req()).await;
             if allowed {
                 base_access.unwrap();
                 create_access.unwrap();
@@ -3935,6 +3949,17 @@ mod tests {
                 assert_eq!(Some(saved.name), req.name);
                 assert_eq!(saved.battalion, req.battalion);
                 assert_eq!(saved.comment, req.comment);
+                req.duplicate_unit_ids = vec![saved.id];
+                let merge_access =
+                    ensure_unit_creation(&env.dbx, &login.id, &req).await;
+                if roles.contains(&"Admin") || roles.contains(&"UnitsEditor") {
+                    merge_access.unwrap();
+                } else {
+                    assert!(matches!(
+                        merge_access,
+                        Err(AppError::Forbidden(_))
+                    ));
+                }
             } else {
                 assert!(
                     matches!(base_access, Err(AppError::Forbidden(_)))

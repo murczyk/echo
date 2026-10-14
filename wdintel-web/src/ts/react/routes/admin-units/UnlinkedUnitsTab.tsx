@@ -181,7 +181,14 @@ function UnlinkedUnitsTabBody({ authUserRoles }: { authUserRoles: string[] }) {
         <PowerAlert severity={page.status.severity}>{page.status.text}</PowerAlert>
       ) : null}
       <div className="min-h-0 flex-1">
-        {page.orbitDataHidden ? (
+        {page.settingsError !== null ? (
+          <PageErrorState
+            message={`Не вдалося завантажити налаштування: ${page.settingsError}`}
+            actionLabel="Повторити"
+            onAction={page.retrySettings}
+            minHeight={0}
+          />
+        ) : page.orbitDataHidden ? (
           <PowerAlert severity="info">Дані Orbit приховано в налаштуваннях системи.</PowerAlert>
         ) : page.loadError !== null ? (
           <PageErrorState

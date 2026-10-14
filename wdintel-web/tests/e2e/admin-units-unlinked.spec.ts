@@ -38,6 +38,8 @@ test('#3113 administers all unlinked units through the default first tab @regres
   page,
 }) => {
   await installAnalysisNeoApiMocks(page, { userRoles: ['Admin'] });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
   let units = Array.from({ length: 21 }, (_, index) => sigintUnit(index + 1, index !== 20));
   units.push(sigintUnit(22, true, true));
   const listRequests: Record<string, unknown>[] = [];
@@ -162,4 +164,45 @@ test('#3113 administers all unlinked units through the default first tab @regres
   await page.goto('/admin/units?tab=invalid');
   await expect(page).toHaveURL(/\/admin\/units\?tab=unlinked$/);
   await expect(unlinkedTab).toHaveAttribute('aria-selected', 'true');
+  await page.goto('/admin/units?tab=unlinked&globalFilter=3113');
+  await expect(page.getByRole('textbox', { name: 'Пошук', exact: true })).toHaveValue('3113');
+  await expect.poll(() => listRequests.at(-1)?.filter_text).toBe('3113');
+  await expect(page).toHaveURL(/globalFilter=3113/);
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: 'Пошук', exact: true })).toHaveValue('3113');
+  expect(errors).toEqual([]);
+});
+
+test('#3535 retries settings failures before showing reconciliation actions @regression', async ({
+  page,
+}) => {
+  await installAnalysisNeoApiMocks(page, { userRoles: ['Admin'] });
+  let settingsAvailable = false;
+  await page.route('**/api/system-settings/current', async (route) => {
+    if (settingsAvailable) return route.fallback();
+    return route.fulfill({ status: 500, json: { error: 'Settings unavailable' } });
+  });
+  await page.route('**/api/sigint/units', (route) =>
+    route.fulfill({
+      json: {
+        units: [sigintUnit(1)],
+        total_count: 1,
+        status_counts: { active: 1, inactive: 0 },
+      },
+    }),
+  );
+  await page.route('**/api/sigint/unit/attachment-unit-ids', (route) =>
+    route.fulfill({ json: { unit_ids: [] } }),
+  );
+
+  await page.goto('/admin/units');
+  await expect(page.getByRole('button', { name: 'Повторити', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Прив’язати до Orbit', exact: true })).toHaveCount(
+    0,
+  );
+  settingsAvailable = true;
+  await page.getByRole('button', { name: 'Повторити', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Прив’язати до Orbit', exact: true }),
+  ).toBeEnabled();
 });

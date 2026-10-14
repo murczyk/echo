@@ -60,6 +60,7 @@ type Props = {
   initialName?: string;
   devicesSectionEnabled: boolean;
   hideNetworks?: boolean;
+  canMergeDuplicates?: boolean;
   submitting: boolean;
   error: string | null;
   orbitUnits: OrbitUnitDetails[];
@@ -438,6 +439,7 @@ export function UnitFormDrawer({
   initialName = '',
   devicesSectionEnabled,
   hideNetworks = false,
+  canMergeDuplicates = true,
   submitting,
   error,
   orbitUnits,
@@ -544,6 +546,10 @@ export function UnitFormDrawer({
   }
 
   async function checkDuplicates(value: UnitFormSubmit) {
+    if (!canMergeDuplicates) {
+      onSubmit(value);
+      return;
+    }
     setCheckingDuplicates(true);
     setDuplicateCheckError(null);
     try {

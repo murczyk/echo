@@ -42,8 +42,16 @@
 - **Status:** normative
 - **Behavior ID:** `react-units-orbit-presence-and-duplicate-selection`
 - **Affected route/component:** RER Unit form drawer.
-- **Expected observable result:** a unit can be absent from ORBIT, present but unlinked, or linked to an ORBIT record. Creating an ORBIT-linked unit waits for the operator to explicitly select an offered duplicate association, so the resulting unit retains that relationship.
+- **Expected observable result:** a unit can be absent from ORBIT, present but unlinked, or linked to an ORBIT record. For `UnitsEditor`, creating an ORBIT-linked unit waits for the operator to explicitly select an offered duplicate association, so the resulting unit retains that relationship. Message writers without `UnitsEditor` can create full units but cannot select or submit destructive duplicate merges.
 - **Source implementation:** `src/ts/react/routes/rer-units-neo/components/UnitFormDrawer.tsx`.
+
+## Unlinked-unit reconciliation
+
+- **Status:** normative
+- **Affected route/component:** `/admin/units`, default tab `unlinked` («Відсутні в Orbit»).
+- **Expected observable result:** all non-deleted units without an active Orbit link, including inactive units, are searchable and paginated. Editors can link Orbit units and merge duplicates. Completion refreshes the current page and counts, clamping an emptied last page; attachment-metadata failures do not retain removed rows. Settings and list failures provide retry actions. Query filters survive reload and tab selection follows browser history.
+- **Existing test(s):** `wdintel-web/tests/e2e/admin-units-unlinked.spec.ts`, `wdintel-web/src/ts/react/routes/rer-units-neo/__tests__/use-rer-units-page.spec.tsx`, `wdintel-web/tests/e2e/manage-message-unit.regression.spec.ts`.
+- **Original Echo issue/PR:** [#3535](https://github.com/echoua/echo/issues/3535).
 
 ## SIGINT combat types
 

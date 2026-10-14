@@ -68,6 +68,8 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [settingsReady, setSettingsReady] = useState(!canEdit);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsRetryAttempt, setSettingsRetryAttempt] = useState(0);
   const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
   const [hideNetworks, setHideNetworks] = useState(false);
   const [orbitDataHidden, setOrbitDataHidden] = useState(false);
@@ -90,6 +92,8 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   const mutationRefreshController = useRef<AbortController | null>(null);
   const mergePollController = useRef<AbortController | null>(null);
   const unitsLoadVersion = useRef(0);
+  const currentListReq = useRef(listReq);
+  currentListReq.current = listReq;
 
   const loadUnits = useCallback(
     async (options?: RequestOptions) => {
@@ -174,6 +178,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
 
     let active = true;
     setSettingsReady(false);
+    setSettingsError(null);
     void currentSystemSettings()
       .then((settings) => {
         if (!active) return;
@@ -184,6 +189,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
       })
       .catch((error) => {
         if (!active) return;
+        setSettingsError(formatUnitError(error));
         setStatus({
           severity: 'error',
           text: `Не вдалося завантажити налаштування створення підрозділу: ${formatUnitError(error)}`,
@@ -193,7 +199,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     return () => {
       active = false;
     };
-  }, [canEdit]);
+  }, [canEdit, settingsRetryAttempt]);
 
   useEffect(() => {
     if (kmzTask === null || !kmzTask.running) return;
@@ -257,6 +263,11 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   function openCreateDialog() {
     setDialogError(null);
     setCreateOpen(true);
+  }
+
+  function retrySettings() {
+    setStatus(null);
+    setSettingsRetryAttempt((current) => current + 1);
   }
 
   function openEditDialog(unit: Unit) {
@@ -340,21 +351,31 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     const isCurrent = () => version === unitsLoadVersion.current && !controller.signal.aborted;
     const options = { signal: controller.signal };
     setLoading(true);
+    setLoadError(null);
     try {
-      const response = await getUnitsPage(listReq, options);
-      if (!isCurrent()) return;
-      const attachmentIds = await getUnitIdsWithVisibleAttachments(
-        response.units.map((unit) => unit.id),
-        options,
-      );
+      const response = await getUnitsPage(currentListReq.current, options);
       if (!isCurrent()) return;
       setUnits(response.units);
       setTotalCount(response.totalCount);
       setStatusCounts(response.statusCounts);
-      setAttachmentUnitIds(new Set(attachmentIds));
+      setAttachmentUnitIds(new Set());
       setStatus({ severity: 'success', text: successText });
+      try {
+        const attachmentIds = await getUnitIdsWithVisibleAttachments(
+          response.units.map((unit) => unit.id),
+          options,
+        );
+        if (isCurrent()) setAttachmentUnitIds(new Set(attachmentIds));
+      } catch (error) {
+        if (!isCurrent()) return;
+        setStatus({
+          severity: 'warning',
+          text: `${successText} Не вдалося завантажити ознаки наявності файлів: ${formatUnitError(error)}`,
+        });
+      }
     } catch (error) {
       if (!isCurrent()) return;
+      setLoadError(formatUnitError(error));
       setStatus({
         severity: 'warning',
         text: `${successText} Не вдалося оновити список: ${formatUnitError(error)}`,
@@ -554,6 +575,8 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     canImportOrbit: canEdit && !orbitDataHidden,
     orbitDataHidden,
     settingsReady,
+    settingsError,
+    retrySettings,
     devicesSectionEnabled,
     hideNetworks,
     status,
@@ -579,6 +602,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     closeDialogs,
     unlinkEditOrbitUnit,
     refreshLinkedEditOrbitUnit,
+    refreshUnitsAfterMutation,
     submitUnit,
     addImportedOrbitUnit,
     confirmDelete,

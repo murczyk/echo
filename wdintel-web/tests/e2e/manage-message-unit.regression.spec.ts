@@ -248,6 +248,11 @@ test('@regression #3535 message writers created full units without unit editing 
     userRoles: ['Rer'],
   });
   await installUnitApi(page);
+  let duplicateChecks = 0;
+  await page.route('**/api/sigint/unit/create-duplicate-candidates', (route) => {
+    duplicateChecks += 1;
+    return route.fulfill({ status: 403, json: { error: 'UnitsEditor required' } });
+  });
   await page.goto('/rer-analysis-neo');
   await page.getByRole('button', { name: 'Додати повідомлення' }).click();
   await page.getByRole('combobox', { name: 'Група', exact: true }).click();
@@ -256,6 +261,7 @@ test('@regression #3535 message writers created full units without unit editing 
   await page.getByRole('combobox', { name: 'Підрозділ' }).fill(newUnitName);
   await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
   await saveNewUnit(page);
+  expect(duplicateChecks).toBe(0);
   await expect(page.getByRole('button', { name: 'Створити', exact: true })).toBeEnabled();
 });
 

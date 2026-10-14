@@ -17,6 +17,7 @@ type Props = {
   options: UnitResponse[];
   loading: boolean;
   allowCreate: boolean;
+  canMergeDuplicates?: boolean;
   disabled: boolean;
   onFocus: () => void;
   onChange: (value: string, selection?: MessageFormData['unitSelection']) => void;
@@ -29,6 +30,7 @@ export function MessageUnitAutocomplete({
   options,
   loading,
   allowCreate,
+  canMergeDuplicates = false,
   disabled,
   onFocus,
   onChange,
@@ -122,6 +124,7 @@ export function MessageUnitAutocomplete({
           initialName={creation.form.initialName}
           devicesSectionEnabled={creation.form.devicesSectionEnabled}
           hideNetworks={creation.form.hideNetworks}
+          canMergeDuplicates={canMergeDuplicates}
           submitting={creation.submitting}
           error={creation.error}
           orbitUnits={[]}

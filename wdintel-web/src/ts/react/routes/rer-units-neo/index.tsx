@@ -419,7 +419,17 @@ function RerUnitsNeoPageBody({
         />
 
         {page.status ? (
-          <PowerAlert severity={page.status.severity}>{page.status.text}</PowerAlert>
+          <PowerAlert
+            severity={page.status.severity}
+            autoHideDuration={page.settingsError ? null : undefined}
+            action={
+              page.settingsError ? (
+                <PowerButton onClick={page.retrySettings}>Повторити</PowerButton>
+              ) : undefined
+            }
+          >
+            {page.status.text}
+          </PowerAlert>
         ) : null}
         {page.kmzTask ? <KmzTaskStatus task={page.kmzTask} /> : null}
 

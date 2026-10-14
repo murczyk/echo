@@ -1329,14 +1329,13 @@ pub async fn create_unit_duplicate_candidates(
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
-    super::ensure_unit_creation(&env.dbx, &login)
-        .await
-        .c(h!())?;
-    if !can_view_orbit_data(&env.dbx, &login).await? {
+    has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
+    if !can_view_orbit_data(&env.dbx, &login).await.c(h!())? {
         return Ok(Json(ListUnitsByIdRsp { units: Vec::new() }));
     }
-    let units =
-        create_unit_duplicate_candidates_for_req(&env.dbx, &req).await?;
+    let units = create_unit_duplicate_candidates_for_req(&env.dbx, &req)
+        .await
+        .c(h!())?;
     Ok(Json(ListUnitsByIdRsp { units }))
 }
 
