@@ -1,0 +1,153 @@
+import { expect, test } from '@playwright/test';
+import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
+
+const login = {
+  id: 'd2e7f61e-1e15-447d-8e5f-1e4880f1b2b4',
+  login: 'local-login',
+  roles: ['Rer'],
+  createdAt: 0,
+  deleted: false,
+  sigintZoneId: 1,
+  sigintZoneName: 'Зона',
+  organismId: 2,
+  organismName: 'Організм',
+  organismEnabled: true,
+  deltaLogin: 'delta-login',
+  lastActiveAt: null,
+  deactivationReason: null,
+  description: null,
+  passwordAuthEnabled: false,
+  hasPassword: false,
+  totpEnabled: false,
+};
+const inactiveLogin = {
+  ...login,
+  deleted: true,
+  deactivationReason: 'Inactive',
+  lastActiveAt: 1_700_000_000_000,
+  organismEnabled: false,
+};
+
+for (const width of [1280, 390]) {
+  test(`Admin Users dialogs follow visual keyboard order at ${width}px @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installAnalysisNeoApiMocks(page, { userRoles: ['Admin', 'Rer'] });
+    let createRequests = 0;
+    await page.route('**/api/logins', (route) =>
+      route.fulfill({ json: { users: [inactiveLogin] } }),
+    );
+    await page.route('**/api/login/create', (route) => {
+      createRequests += 1;
+      return route.fulfill({ json: { ...login, id: 'created-login' } });
+    });
+    await page.route('**/api/sigint/zones/list', (route) =>
+      route.fulfill({ json: [[1, { id: 1, name: 'Зона' }]] }),
+    );
+    await page.route('**/api/organisms', (route) =>
+      route.fulfill({ json: [{ id: 2, name: 'Організм', enabled: true }] }),
+    );
+
+    await page.goto('/admin/users-neo');
+    const users = page.locator('users-neo');
+    const status = users.locator('.admin-user-status');
+    await expect(status).toContainText('Деактивовано через неактивність');
+    expect(await status.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+    await status.evaluate((element) => {
+      const cell = element.parentElement;
+      if (cell) cell.style.width = '120px';
+    });
+    expect(await status.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+    await users.getByRole('button', { name: 'Додати користувача' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Додати користувача' });
+    await expect(dialog.getByRole('heading', { name: 'Вхід' })).toHaveCount(0);
+    const localLogin = dialog.getByRole('textbox', { name: 'Логін', exact: true });
+    const deltaLogin = dialog.getByRole('textbox', { name: 'Delta логін', exact: true });
+    await expect(localLogin).toBeFocused();
+    await expect(deltaLogin).toBeVisible();
+    await page.keyboard.press('Tab');
+    await expect(deltaLogin).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(dialog.getByLabel('Вхід за паролем')).toBeFocused();
+
+    const localBox = await localLogin.boundingBox();
+    const deltaBox = await deltaLogin.boundingBox();
+    expect(localBox).not.toBeNull();
+    expect(deltaBox).not.toBeNull();
+    if (width >= 768) {
+      expect(Math.abs(localBox!.y - deltaBox!.y)).toBeLessThan(2);
+      expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(768);
+    } else {
+      expect(deltaBox!.y).toBeGreaterThan(localBox!.y);
+      expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(width - 32);
+    }
+    const dialogContent = dialog.locator('.MuiDialogContent-root');
+    expect(
+      await dialogContent.evaluate((element) => element.scrollHeight <= element.clientHeight),
+    ).toBe(true);
+
+    await dialog.getByLabel('Вхід за паролем').check();
+    const password = dialog.getByRole('textbox', { name: 'Пароль', exact: true });
+    await expect(password).toBeVisible();
+    await dialog.getByLabel('Вхід за паролем').uncheck();
+    await expect(password).toBeHidden();
+    await page.keyboard.press('Shift+Tab');
+    await expect(deltaLogin).toBeFocused();
+
+    await localLogin.fill('created-local-login');
+    await deltaLogin.fill('created-delta-login');
+    await localLogin.focus();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => createRequests).toBe(1);
+    await expect(dialog).toBeHidden();
+
+    await users.getByRole('button', { name: 'Редагувати' }).first().click();
+
+    const editDialog = page.getByRole('dialog', { name: 'Редагувати користувача' });
+    const editLocalLogin = editDialog.getByRole('textbox', { name: 'Логін', exact: true });
+    const editDeltaLogin = editDialog.getByRole('textbox', { name: 'Delta логін', exact: true });
+    await expect(editLocalLogin).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(editDeltaLogin).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(editDialog.getByLabel('Вхід за паролем')).toBeFocused();
+    await expect(editDialog.getByRole('heading', { name: 'Вхід' })).toHaveCount(0);
+
+    const organism = editDialog.getByRole('combobox', { name: 'Організм', exact: true });
+    const roles = editDialog.getByRole('combobox', { name: /^Ролі/ });
+    const zone = editDialog.getByRole('combobox', { name: 'Зона', exact: true });
+    const organismBox = await organism.boundingBox();
+    const rolesBox = await roles.boundingBox();
+    const zoneBox = await zone.boundingBox();
+    expect(organismBox).not.toBeNull();
+    expect(rolesBox).not.toBeNull();
+    expect(zoneBox).not.toBeNull();
+    expect(rolesBox!.y).toBeGreaterThan(organismBox!.y);
+    if (width >= 768) {
+      expect(Math.abs(rolesBox!.y - zoneBox!.y)).toBeLessThan(12);
+    } else {
+      expect(zoneBox!.y).toBeGreaterThan(rolesBox!.y);
+    }
+
+    await organism.click();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await expect(editDialog).toBeVisible();
+
+    const notes = editDialog.getByRole('textbox', { name: 'Нотатка', exact: true });
+    await notes.fill('first line');
+    await notes.press('Enter');
+    await expect(notes).toHaveValue('first line\n');
+
+    const activeLabel = editDialog.getByText('Активний', { exact: true });
+    const activeHelper = editDialog.getByText('Вимкнення блокує доступ після збереження.');
+    expect((await activeHelper.boundingBox())!.y).toBeGreaterThan(
+      (await activeLabel.boundingBox())!.y,
+    );
+  });
+}

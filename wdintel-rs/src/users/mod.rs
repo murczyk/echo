@@ -158,6 +158,70 @@ fn normalize_login_description(description: Option<String>) -> Option<String> {
         .filter(|description| !description.is_empty())
 }
 
+fn normalize_login_value(login: &str) -> String {
+    login.trim().to_string()
+}
+
+fn normalize_optional_login_value(login: Option<String>) -> Option<String> {
+    login
+        .map(|login| normalize_login_value(&login))
+        .filter(|login| !login.is_empty())
+}
+
+fn optional_login_values_equal(
+    left: Option<&str>,
+    right: Option<&str>,
+) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => left.eq_ignore_ascii_case(right),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn validate_active_sign_in_methods(
+    deleted: bool,
+    password_auth_enabled: bool,
+    has_password: bool,
+    has_delta_login: bool,
+) -> Result<(), AppError> {
+    if deleted || (password_auth_enabled && has_password) || has_delta_login {
+        return Ok(());
+    }
+
+    Err(AppError::Form(BTreeMap::from_iter([(
+        "password_auth_enabled".to_string(),
+        "Для активного користувача налаштуйте вхід за паролем або Delta"
+            .to_string(),
+    )])))
+}
+
+fn validate_password_authentication(
+    password_auth_enabled: bool,
+    has_password: bool,
+) -> Result<(), AppError> {
+    if !password_auth_enabled || has_password {
+        return Ok(());
+    }
+
+    Err(AppError::Form(BTreeMap::from_iter([(
+        "password".to_string(),
+        "Для входу за паролем вкажіть пароль".to_string(),
+    )])))
+}
+
+fn validate_supplied_password(password: Option<&str>) -> Result<(), AppError> {
+    if password.is_some_and(|password| password.trim().is_empty()) {
+        return Err(AppError::Form(BTreeMap::from_iter([(
+            "password".to_string(),
+            "Пароль не може бути пустим або складатися лише з пробілів"
+                .to_string(),
+        )])));
+    }
+
+    Ok(())
+}
+
 fn login_skips_totp(login_obj: &login::Model) -> Result<bool, AppError> {
     let roles: Vec<String> =
         serde_json::from_value(login_obj.roles.clone()).c(h!())?;
@@ -169,6 +233,10 @@ fn login_skips_totp(login_obj: &login::Model) -> Result<bool, AppError> {
 fn has_update_login_description(req: &serde_json::Value) -> bool {
     req.as_object()
         .is_some_and(|req| req.contains_key("description"))
+}
+
+fn has_update_login_field(req: &serde_json::Value, field: &str) -> bool {
+    req.as_object().is_some_and(|req| req.contains_key(field))
 }
 
 pub async fn has_role<T>(
@@ -359,6 +427,7 @@ pub async fn update_login(
 
     let req = req.into_inner();
     let update_description = has_update_login_description(&req);
+    let update_delta_login = has_update_login_field(&req, "delta_login");
     let req: UpdateLoginReq = serde_json::from_value(req).c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
 
@@ -372,7 +441,7 @@ pub async fn update_login(
         .c(h!())?
         .ok_or(AppError::NotFound)?;
 
-    let login_name = req.login.trim();
+    let login_name = normalize_login_value(&req.login);
     if login_name.is_empty() {
         return Err(AppError::Form(BTreeMap::from_iter([(
             "login".to_string(),
@@ -381,7 +450,7 @@ pub async fn update_login(
     }
     if login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
-        .filter(login::Column::Login.eq(login_name))
+        .filter(login::Column::Login.eq(&login_name))
         .filter(login::Column::Id.ne(login_id))
         .one(&txn)
         .await
@@ -394,27 +463,79 @@ pub async fn update_login(
         )])));
     }
 
-    let delta_id = assign_delta_login(
-        &txn,
-        &login_obj.login,
-        req.delta_login.as_deref(),
-        login_obj.delta_login_id,
-    )
-    .await
-    .c(h!())?;
+    let original_delta_login =
+        load_delta_login_value(&txn, login_obj.delta_login_id)
+            .await
+            .context(h!())?;
+    let requested_delta_login =
+        normalize_optional_login_value(req.delta_login.clone());
+    let effective_delta_login = if update_delta_login {
+        requested_delta_login.clone()
+    } else {
+        original_delta_login.clone()
+    };
+    let delta_changed = !optional_login_values_equal(
+        original_delta_login.as_deref(),
+        effective_delta_login.as_deref(),
+    );
+    let delta_id = if delta_changed {
+        assign_delta_login(
+            &txn,
+            &login_obj.login,
+            effective_delta_login.as_deref(),
+            login_obj.delta_login_id,
+        )
+        .await
+        .c(h!())?
+    } else {
+        login_obj.delta_login_id
+    };
+
+    let password_auth_enabled = req
+        .password_auth_enabled
+        .unwrap_or(login_obj.password_auth_enabled);
+    let password_auth_changed =
+        password_auth_enabled != login_obj.password_auth_enabled;
+    if password_auth_enabled {
+        validate_supplied_password(req.password.as_deref()).context(h!())?;
+    }
+    let password_changed = req.password.is_some() && password_auth_enabled;
+    let has_password = password_changed || login_obj.password.is_some();
+    let deleted = req.deleted.unwrap_or(login_obj.deleted);
+    let authentication_changed =
+        delta_changed || password_auth_changed || password_changed;
+    let changes_account_state =
+        req.deleted.is_some_and(|value| value != login_obj.deleted);
+    if password_auth_changed && password_auth_enabled {
+        validate_password_authentication(password_auth_enabled, has_password)
+            .context(h!())?;
+    }
+    if (authentication_changed && !deleted)
+        || (changes_account_state && !deleted)
+    {
+        validate_active_sign_in_methods(
+            deleted,
+            password_auth_enabled,
+            has_password,
+            delta_id.is_some(),
+        )
+        .context(h!())?;
+    }
 
     let mut login_obj: login::ActiveModel = login_obj.into();
-    login_obj.login = Set(login_name.to_string());
+    login_obj.login = Set(login_name.clone());
     login_obj.delta_login_id = Set(delta_id);
     if let Some(deleted) = req.deleted {
         login_obj.deleted = Set(deleted);
-        if !deleted {
-            // If user is being re-activated, clear deactivation_reason and update last_active_at
+        if !deleted && changes_account_state {
             login_obj.deactivation_reason = Set(None);
             login_obj.last_active_at = Set(Some(Utc::now().naive_utc()));
+        } else if deleted && changes_account_state {
+            login_obj.deactivation_reason =
+                Set(Some(DeactivationReasonEnum::Admin));
         }
     }
-    if req.password.is_some() {
+    if password_changed {
         let salt_s = format!("{}{}", crate::config::IDENTITY_SALT, login_name);
         let salt = salt_s.as_bytes();
         let config = argon2::Config::original();
@@ -433,22 +554,16 @@ pub async fn update_login(
         login_obj.sigint_zone_id = Set(req.sigint_zone_id);
     }
     login_obj.organism_id = Set(Some(req.organism_id));
-    if req.deactivation_reason.is_some() {
-        login_obj.deactivation_reason = Set(req
-            .deactivation_reason
-            .clone()
-            .map(DeactivationReasonEnum::from));
-    }
     if update_description {
         login_obj.description =
             Set(normalize_login_description(req.description.clone()));
     }
-    if let Some(password_auth_enabled) = req.password_auth_enabled {
+    if password_auth_changed {
         login_obj.password_auth_enabled = Set(password_auth_enabled);
     }
     let clear_totp = req.clear_totp == Some(true);
-    let password_changed = req.password.is_some();
-    let password_auth_disabled = req.password_auth_enabled == Some(false);
+    let password_auth_disabled =
+        password_auth_changed && !password_auth_enabled;
     let invalidate_totp_challenges =
         clear_totp || password_changed || password_auth_disabled;
     if invalidate_totp_challenges {
@@ -476,30 +591,30 @@ pub async fn update_login(
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
         .await
         .c(h!())?;
-    txn.commit().await.c(h!())?;
-    if invalidate_totp_challenges {
-        totp_challenge::invalidate_login_challenges(
-            &mut env.redis.clone(),
-            login_id,
-        )
+    let res = login::Entity::find_by_id(res.id)
+        .one(&txn)
         .await
-        .c(h!())?;
-    }
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(organism::Column::Id.eq(res.organism_id))
-        .one(&env.dbx)
+        .one(&txn)
         .await
         .c(h!())?
     {
         None => (None, None),
         Some(organism) => (Some(organism.name.clone()), Some(organism.enabled)),
     };
-    Ok(Json(Login {
+    let delta_login = load_delta_login_value(&txn, res.delta_login_id)
+        .await
+        .context(h!())?;
+    let result = Login {
         id: res.id.to_string(),
         organism_name,
         organism_enabled,
-        delta_login: req.delta_login.clone(),
+        delta_login,
         login: res.login,
         roles: serde_json::from_value(res.roles).c(h!())?,
         created_at: res.created_at.and_utc().timestamp_millis(),
@@ -507,7 +622,7 @@ pub async fn update_login(
         sigint_zone_id: res.sigint_zone_id,
         sigint_zone_name: sigint_zone::Entity::find()
             .filter(sigint_zone::Column::Id.eq(res.sigint_zone_id))
-            .one(&env.dbx)
+            .one(&txn)
             .await
             .c(h!())?
             .map(|sz| sz.name),
@@ -520,8 +635,19 @@ pub async fn update_login(
             .map(DeactivationReasonType::from),
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
-        totp_enabled: login_totp::is_enabled(&env.dbx, res.id).await.c(h!())?,
-    }))
+        has_password: res.password.is_some(),
+        totp_enabled: login_totp::is_enabled(&txn, res.id).await.c(h!())?,
+    };
+    txn.commit().await.c(h!())?;
+    if invalidate_totp_challenges {
+        totp_challenge::invalidate_login_challenges(
+            &mut env.redis.clone(),
+            login_id,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(Json(result))
 }
 
 #[post("/api/login/delete")]
@@ -559,22 +685,57 @@ pub async fn create_login(
     req: Json<CreateLoginReq>,
 ) -> Result<Json<Login>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let salt_s =
-        format!("{}{}", crate::config::IDENTITY_SALT, req.login.clone());
-    let salt = salt_s.as_bytes();
-    let config = argon2::Config::original();
-    let hash =
-        argon2::hash_encoded(req.password.as_bytes(), salt, &config).c(h!())?;
+    Ok(Json(
+        create_login_1(&env.dbx, req.into_inner()).await.c(h!())?,
+    ))
+}
 
-    let txn = env.dbx.begin().await.c(h!())?;
+async fn create_login_1(
+    dbx: &DatabaseConnection,
+    req: CreateLoginReq,
+) -> Result<Login, AppError> {
+    let login_name = normalize_login_value(&req.login);
+    if login_name.is_empty() {
+        return Err(AppError::Form(BTreeMap::from_iter([(
+            "login".to_string(),
+            "Логін не може бути пустим".to_string(),
+        )])));
+    }
+    let delta_login = normalize_optional_login_value(req.delta_login.clone());
+    let password_auth_enabled = req.password_auth_enabled.unwrap_or(true);
+    let password = password_auth_enabled.then_some(req.password).flatten();
+    validate_supplied_password(password.as_deref()).context(h!())?;
+    validate_password_authentication(password_auth_enabled, password.is_some())
+        .context(h!())?;
+    validate_active_sign_in_methods(
+        false,
+        password_auth_enabled,
+        password.is_some(),
+        delta_login.is_some(),
+    )
+    .context(h!())?;
+    let password = password
+        .map(|password| {
+            let salt =
+                format!("{}{}", crate::config::IDENTITY_SALT, login_name);
+            argon2::hash_encoded(
+                password.as_bytes(),
+                salt.as_bytes(),
+                &argon2::Config::original(),
+            )
+            .c(h!())
+        })
+        .transpose()
+        .context(h!())?;
+
+    let txn = dbx.begin().await.c(h!())?;
     let res = insert_login(
         &txn,
         login::ActiveModel {
             id: Set(Uuid::now_v7()),
-            // Make sure delta link is cleared for regular accounts
             delta_login_id: Set(None),
-            login: Set(req.login.trim().to_string()),
-            password: Set(Some(hash.to_string())),
+            login: Set(login_name.clone()),
+            password: Set(password),
             roles: Set(serde_json::to_value(req.roles.clone()).c(h!())?),
             created_at: NotSet,
             sigint_zone_id: Set(req.sigint_zone_id),
@@ -587,13 +748,29 @@ pub async fn create_login(
             description: Set(normalize_login_description(
                 req.description.clone(),
             )),
-            password_auth_enabled: Set(true),
+            password_auth_enabled: Set(password_auth_enabled),
             totp_epoch: Set(None),
             display_name: NotSet,
         },
     )
     .await
     .c(h!())?;
+
+    let delta_login_id =
+        assign_delta_login(&txn, &res.login, delta_login.as_deref(), None)
+            .await
+            .c(h!())?;
+    let mut res = res.into_active_model();
+    res.delta_login_id = Set(delta_login_id);
+    let res = res.update(&txn).await.c(h!())?;
+    if let Some(delta_login_id) = delta_login_id {
+        unlink_deleted_logins_from_shared_delta_login(&txn, delta_login_id)
+            .await
+            .c(h!())?;
+    }
+    let delta_login = load_delta_login_value(&txn, res.delta_login_id)
+        .await
+        .context(h!())?;
 
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::Id.eq(res.organism_id))
@@ -608,7 +785,7 @@ pub async fn create_login(
 
     let result = Login {
         id: res.id.to_string(),
-        delta_login: None,
+        delta_login,
         organism_name,
         organism_enabled,
         login: res.login,
@@ -631,13 +808,14 @@ pub async fn create_login(
             .map(DeactivationReasonType::from),
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
+        has_password: res.password.is_some(),
         totp_enabled: false,
     };
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
-    Ok(Json(result))
+    Ok(result)
 }
 
 #[post("/api/login/create-delta")]
@@ -692,6 +870,7 @@ pub async fn list_logins(
         organism_enabled: Option<bool>,
         delta_login: Option<String>,
         description: Option<String>,
+        password: Option<String>,
         password_auth_enabled: bool,
         totp_enabled: bool,
     }
@@ -720,6 +899,7 @@ pub async fn list_logins(
             login::Column::LastActiveAt,
             login::Column::DeactivationReason,
             login::Column::Description,
+            login::Column::Password,
             login::Column::PasswordAuthEnabled,
         ])
         .column_as(sigint_zone::Column::Name, "sigint_zone_name")
@@ -781,6 +961,7 @@ pub async fn list_logins(
                 .map(DeactivationReasonType::from),
             description: login.description,
             password_auth_enabled: login.password_auth_enabled,
+            has_password: login.password.is_some(),
             totp_enabled: login.totp_enabled,
         };
         users.push(user);
@@ -2000,6 +2181,7 @@ async fn register_delta_user(
             .map(DeactivationReasonType::from),
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
+        has_password: res.password.is_some(),
         totp_enabled: login_totp::is_enabled(&txn, res.id).await.c(h!())?,
     };
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
@@ -2071,6 +2253,24 @@ where
     Ok(Some(
         create_delta_login_row(dbx, delta_login).await.c(h!())?,
     ))
+}
+
+async fn load_delta_login_value<C>(
+    dbx: &C,
+    delta_login_id: Option<i32>,
+) -> Result<Option<String>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let Some(delta_login_id) = delta_login_id else {
+        return Ok(None);
+    };
+
+    Ok(delta_login::Entity::find_by_id(delta_login_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .map(|delta_login| delta_login.login))
 }
 
 async fn find_delta_login_by_login<C>(
@@ -2568,7 +2768,7 @@ mod tests {
             &app,
             actix_test::TestRequest::get()
                 .uri("/test/get-user-session")
-                .cookie(cookie)
+                .cookie(cookie.clone())
                 .to_request(),
         )
         .await;
@@ -2672,6 +2872,608 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(delta_login.login, "kolya");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_login_persists_each_supported_authentication_configuration()
+    {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let organism = mk_organism(&env.dbx, Default::default()).await.unwrap();
+
+        let cases = [
+            ("delta-only", None, Some("delta-only"), false),
+            ("password-only", Some("secret"), None, true),
+            ("local-login", Some("secret"), Some("delta-login"), true),
+        ];
+        for (login, password, delta_login, password_auth_enabled) in cases {
+            let created = create_login_1(
+                &env.dbx,
+                CreateLoginReq {
+                    login: format!("{login}-account"),
+                    password: password.map(str::to_string),
+                    roles: vec!["Rer".to_string()],
+                    sigint_zone_id: None,
+                    organism_id: organism.id,
+                    description: None,
+                    delta_login: delta_login.map(str::to_string),
+                    password_auth_enabled: Some(password_auth_enabled),
+                },
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(created.password_auth_enabled, password_auth_enabled);
+            assert_eq!(created.has_password, password.is_some());
+            assert_eq!(created.delta_login.as_deref(), delta_login);
+            assert!(!created.deleted);
+        }
+
+        let disabled_password = create_login_1(
+            &env.dbx,
+            CreateLoginReq {
+                login: "disabled-password-account".to_string(),
+                password: Some("must-not-be-stored".to_string()),
+                roles: vec!["Rer".to_string()],
+                sigint_zone_id: None,
+                organism_id: organism.id,
+                description: None,
+                delta_login: Some("disabled-password-delta".to_string()),
+                password_auth_enabled: Some(false),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(!disabled_password.has_password);
+
+        let spaced_password = "  exact password  ";
+        let spaced_login = create_login_1(
+            &env.dbx,
+            CreateLoginReq {
+                login: "spaced-password-account".to_string(),
+                password: Some(spaced_password.to_string()),
+                roles: vec!["Rer".to_string()],
+                sigint_zone_id: None,
+                organism_id: organism.id,
+                description: None,
+                delta_login: None,
+                password_auth_enabled: Some(true),
+            },
+        )
+        .await
+        .unwrap();
+        let stored = login::Entity::find_by_id(
+            Uuid::parse_str(&spaced_login.id).unwrap(),
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(argon2::verify_encoded(
+            stored.password.as_deref().unwrap(),
+            spaced_password.as_bytes()
+        )
+        .unwrap());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn delta_assignment_side_effects_roll_back_with_failed_creation() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let shared_delta = delta_login::ActiveModel {
+            id: NotSet,
+            login: Set("Alpha".to_string()),
+            created_at: NotSet,
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        insert_login(
+            &env.dbx,
+            login::ActiveModel {
+                id: Set(Uuid::now_v7()),
+                login: Set("existing-owner".to_string()),
+                password: Set(None),
+                roles: Set(serde_json::json!(["Rer"])),
+                created_at: NotSet,
+                sigint_zone_id: Set(None),
+                organism_id: Set(None),
+                deleted: Set(false),
+                delta_login_id: Set(Some(shared_delta.id)),
+                last_active_at: Set(Some(Utc::now().naive_utc())),
+                deactivation_reason: Set(None),
+                deleted_permanently: Set(false),
+                last_release_seen: Default::default(),
+                description: Default::default(),
+                password_auth_enabled: Set(false),
+                totp_epoch: Set(None),
+                display_name: NotSet,
+            },
+        )
+        .await
+        .unwrap();
+
+        let organism = mk_organism(&env.dbx, Default::default()).await.unwrap();
+        env.dbx
+            .execute_unprepared(
+                "CREATE FUNCTION fail_admin_user_creation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.login = 'rolled-back-account' THEN RAISE EXCEPTION 'injected login update failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_admin_user_creation BEFORE UPDATE ON login FOR EACH ROW EXECUTE FUNCTION fail_admin_user_creation();",
+            )
+            .await
+            .unwrap();
+
+        let result = create_login_1(
+            &env.dbx,
+            CreateLoginReq {
+                login: "rolled-back-account".to_string(),
+                password: None,
+                roles: vec!["Rer".to_string()],
+                sigint_zone_id: None,
+                organism_id: organism.id,
+                description: None,
+                delta_login: Some("ALPHA".to_string()),
+                password_auth_enabled: Some(false),
+            },
+        )
+        .await;
+        env.dbx
+            .execute_unprepared(
+                "DROP TRIGGER fail_admin_user_creation ON login; DROP FUNCTION fail_admin_user_creation();",
+            )
+            .await
+            .unwrap();
+        assert!(result.is_err());
+
+        let owner = login::Entity::find()
+            .filter(login::Column::Login.eq("existing-owner"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(owner.delta_login_id, Some(shared_delta.id));
+        assert!(login::Entity::find()
+            .filter(login::Column::Login.eq("rolled-back-account"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn update_login_preserves_authentication_and_activation_boundaries() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let mut admin =
+            find_test_login(&env.dbx).await.unwrap().into_active_model();
+        admin.roles = Set(serde_json::json!(["Admin"]));
+        admin.update(&env.dbx).await.unwrap();
+        let organism = mk_organism(&env.dbx, Default::default()).await.unwrap();
+        let target = create_login_1(
+            &env.dbx,
+            CreateLoginReq {
+                login: "update-target".to_string(),
+                password: Some("existing password".to_string()),
+                roles: vec!["Rer".to_string()],
+                sigint_zone_id: None,
+                organism_id: organism.id,
+                description: Some("before".to_string()),
+                delta_login: Some("original-delta".to_string()),
+                password_auth_enabled: Some(true),
+            },
+        )
+        .await
+        .unwrap();
+        let session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(session_store, Key::generate()))
+                .app_data(web::Data::from(env.clone()))
+                .route("/test/login", web::post().to(start_test_user_session))
+                .service(update_login),
+        )
+        .await;
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/test/login")
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let cookie = response.response().cookies().next().unwrap().into_owned();
+        let base = serde_json::json!({
+            "id": target.id,
+            "login": target.login,
+            "organism_id": organism.id,
+            "roles": ["Rer"],
+        });
+
+        let mut omit_delta = base.clone();
+        omit_delta["description"] = serde_json::json!("omitted delta");
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(omit_delta)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let response: Login = actix_test::read_body_json(response).await;
+        assert_eq!(response.delta_login.as_deref(), Some("original-delta"));
+
+        let mut clear_delta = base.clone();
+        clear_delta["delta_login"] = serde_json::Value::Null;
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(clear_delta)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let response: Login = actix_test::read_body_json(response).await;
+        assert_eq!(response.delta_login, None);
+
+        let mut whitespace_password = base.clone();
+        whitespace_password["password"] = serde_json::json!("   ");
+        whitespace_password["description"] =
+            serde_json::json!("must not persist");
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(whitespace_password)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_client_error());
+        let persisted =
+            login::Entity::find_by_id(Uuid::parse_str(&target.id).unwrap())
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(persisted.description.as_deref(), Some("omitted delta"));
+        assert!(argon2::verify_encoded(
+            persisted.password.as_deref().unwrap(),
+            b"existing password"
+        )
+        .unwrap());
+
+        let mut deactivate = base.clone();
+        deactivate["deleted"] = serde_json::json!(true);
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(deactivate)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let deactivated: Login = actix_test::read_body_json(response).await;
+        assert!(deactivated.deleted);
+        assert_eq!(
+            deactivated.deactivation_reason,
+            Some(DeactivationReasonType::Admin)
+        );
+
+        let mut reactivate = base.clone();
+        reactivate["deleted"] = serde_json::json!(false);
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(reactivate)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let reactivated: Login = actix_test::read_body_json(response).await;
+        assert!(!reactivated.deleted);
+        assert_eq!(reactivated.deactivation_reason, None);
+        assert!(reactivated.last_active_at.is_some());
+
+        let spaced_password = "  replacement password  ";
+        let mut replace_password = base.clone();
+        replace_password["password"] = serde_json::json!(spaced_password);
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(replace_password)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let persisted =
+            login::Entity::find_by_id(Uuid::parse_str(&target.id).unwrap())
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(argon2::verify_encoded(
+            persisted.password.as_deref().unwrap(),
+            spaced_password.as_bytes()
+        )
+        .unwrap());
+        assert!(!argon2::verify_encoded(
+            persisted.password.as_deref().unwrap(),
+            spaced_password.trim().as_bytes()
+        )
+        .unwrap());
+
+        let mut disable_password = base.clone();
+        disable_password["password_auth_enabled"] = serde_json::json!(false);
+        disable_password["delta_login"] =
+            serde_json::json!("enabled-password-delta");
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(disable_password)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let mut enable_password = base.clone();
+        enable_password["password_auth_enabled"] = serde_json::json!(true);
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(enable_password)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let reenabled: Login = actix_test::read_body_json(response).await;
+        assert!(reenabled.password_auth_enabled && reenabled.has_password);
+
+        let delta_only = create_login_1(
+            &env.dbx,
+            CreateLoginReq {
+                login: "delta-only-update".to_string(),
+                password: None,
+                roles: vec!["Rer".to_string()],
+                sigint_zone_id: None,
+                organism_id: organism.id,
+                description: Some("before".to_string()),
+                delta_login: Some("delta-only-update".to_string()),
+                password_auth_enabled: Some(false),
+            },
+        )
+        .await
+        .unwrap();
+        let invalid_enable = serde_json::json!({
+            "id": delta_only.id,
+            "login": delta_only.login,
+            "organism_id": organism.id,
+            "password_auth_enabled": true,
+            "description": "must not persist",
+        });
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(invalid_enable)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_client_error());
+        let delta_only_persisted =
+            login::Entity::find_by_id(Uuid::parse_str(&delta_only.id).unwrap())
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(!delta_only_persisted.password_auth_enabled);
+        assert_eq!(delta_only_persisted.description.as_deref(), Some("before"));
+
+        let inactive_at = Utc::now().naive_utc() - Duration::days(3);
+        let mut inactive =
+            login::Entity::find_by_id(Uuid::parse_str(&target.id).unwrap())
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .into_active_model();
+        inactive.deleted = Set(true);
+        inactive.deactivation_reason =
+            Set(Some(DeactivationReasonEnum::Inactive));
+        inactive.last_active_at = Set(Some(inactive_at));
+        inactive.update(&env.dbx).await.unwrap();
+        let mut unrelated_edit = base.clone();
+        unrelated_edit["description"] = serde_json::json!("inactive note");
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(unrelated_edit)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let inactive: Login = actix_test::read_body_json(response).await;
+        assert!(inactive.deleted);
+        assert_eq!(
+            inactive.deactivation_reason,
+            Some(DeactivationReasonType::Inactive)
+        );
+        assert_eq!(
+            inactive.last_active_at,
+            Some(inactive_at.and_utc().timestamp_millis())
+        );
+
+        let legacy = insert_login(
+            &env.dbx,
+            login::ActiveModel {
+                id: NotSet,
+                login: Set("legacy-authentication".to_string()),
+                password: Set(None),
+                roles: Set(serde_json::json!(["Rer"])),
+                created_at: NotSet,
+                sigint_zone_id: Set(None),
+                organism_id: Set(Some(organism.id)),
+                deleted: Set(false),
+                delta_login_id: Set(None),
+                last_active_at: Set(None),
+                deactivation_reason: Set(None),
+                deleted_permanently: Set(false),
+                last_release_seen: NotSet,
+                description: Set(Some("before".to_string())),
+                password_auth_enabled: Set(false),
+                totp_epoch: Set(None),
+                display_name: NotSet,
+            },
+        )
+        .await
+        .unwrap();
+        let legacy_update = serde_json::json!({
+            "id": legacy.id,
+            "login": legacy.login,
+            "organism_id": organism.id,
+            "password_auth_enabled": false,
+            "delta_login": null,
+            "description": "ordinary legacy edit",
+        });
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(legacy_update)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+
+        let unusable = insert_login(
+            &env.dbx,
+            login::ActiveModel {
+                id: NotSet,
+                login: Set("unusable-reactivation".to_string()),
+                password: Set(None),
+                roles: Set(serde_json::json!(["Rer"])),
+                created_at: NotSet,
+                sigint_zone_id: Set(None),
+                organism_id: Set(Some(organism.id)),
+                deleted: Set(true),
+                delta_login_id: Set(None),
+                last_active_at: Set(None),
+                deactivation_reason: Set(Some(DeactivationReasonEnum::Admin)),
+                deleted_permanently: Set(false),
+                last_release_seen: NotSet,
+                description: Set(Some("before".to_string())),
+                password_auth_enabled: Set(false),
+                totp_epoch: Set(None),
+                display_name: NotSet,
+            },
+        )
+        .await
+        .unwrap();
+        let invalid_reactivation = serde_json::json!({
+            "id": unusable.id,
+            "login": unusable.login,
+            "organism_id": organism.id,
+            "deleted": false,
+            "description": "must not persist",
+        });
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(invalid_reactivation)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_client_error());
+        let unusable = login::Entity::find_by_id(unusable.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(unusable.deleted);
+        assert_eq!(unusable.description.as_deref(), Some("before"));
+
+        let shared_delta = delta_login::ActiveModel {
+            id: NotSet,
+            login: Set("shared-final-response".to_string()),
+            created_at: NotSet,
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let target_id = Uuid::parse_str(&target.id).unwrap();
+        let mut shared_target = login::Entity::find_by_id(target_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        shared_target.deleted = Set(false);
+        shared_target.deactivation_reason = Set(None);
+        shared_target.delta_login_id = Set(Some(shared_delta.id));
+        shared_target.update(&env.dbx).await.unwrap();
+        insert_login(
+            &env.dbx,
+            login::ActiveModel {
+                id: NotSet,
+                login: Set("shared-delta-owner".to_string()),
+                password: Set(None),
+                roles: Set(serde_json::json!(["Rer"])),
+                created_at: NotSet,
+                sigint_zone_id: Set(None),
+                organism_id: Set(Some(organism.id)),
+                deleted: Set(false),
+                delta_login_id: Set(Some(shared_delta.id)),
+                last_active_at: Set(None),
+                deactivation_reason: Set(None),
+                deleted_permanently: Set(false),
+                last_release_seen: NotSet,
+                description: Set(None),
+                password_auth_enabled: Set(false),
+                totp_epoch: Set(None),
+                display_name: NotSet,
+            },
+        )
+        .await
+        .unwrap();
+        let mut shared_cleanup = base;
+        shared_cleanup["deleted"] = serde_json::json!(true);
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie)
+                .set_json(shared_cleanup)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let cleaned: Login = actix_test::read_body_json(response).await;
+        assert!(cleaned.deleted);
+        assert_eq!(cleaned.delta_login, None);
     }
 
     #[tokio::test]

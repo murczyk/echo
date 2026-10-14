@@ -102,6 +102,7 @@ pub struct Login {
     pub deactivation_reason: Option<DeactivationReasonType>,
     pub description: Option<String>,
     pub password_auth_enabled: bool,
+    pub has_password: bool,
     pub totp_enabled: bool,
 }
 
@@ -133,11 +134,16 @@ pub struct ListLoginsRsp {
 )]
 pub struct CreateLoginReq {
     pub login: String,
-    pub password: String,
+    #[serde(default)]
+    pub password: Option<String>,
     pub roles: Vec<String>,
     pub sigint_zone_id: Option<i64>,
     pub organism_id: i64,
     pub description: Option<String>,
+    #[serde(default)]
+    pub delta_login: Option<String>,
+    #[serde(default)]
+    pub password_auth_enabled: Option<bool>,
 }
 
 #[derive(
