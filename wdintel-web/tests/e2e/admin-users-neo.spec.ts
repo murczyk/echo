@@ -40,13 +40,25 @@ for (const width of [1280, 390]) {
     );
     await page.route('**/api/login/create', (route) => {
       createRequests += 1;
+      if (createRequests === 1) {
+        return route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify([['login', 'Логін зайнятий']]),
+        });
+      }
       return route.fulfill({ json: { ...login, id: 'created-login' } });
     });
     await page.route('**/api/sigint/zones/list', (route) =>
       route.fulfill({ json: [[1, { id: 1, name: 'Зона' }]] }),
     );
     await page.route('**/api/organisms', (route) =>
-      route.fulfill({ json: [{ id: 2, name: 'Організм', enabled: true }] }),
+      route.fulfill({
+        json: [
+          { id: 2, name: 'Організм', enabled: true },
+          { id: 3, name: 'Інший організм', enabled: true },
+        ],
+      }),
     );
 
     await page.goto('/admin/users-neo');
@@ -65,6 +77,9 @@ for (const width of [1280, 390]) {
     );
     await users.getByRole('button', { name: 'Додати користувача' }).click();
     const dialog = page.getByRole('dialog', { name: 'Додати користувача' });
+    expect(
+      await dialog.evaluate((element) => element instanceof HTMLFormElement && element.noValidate),
+    ).toBe(true);
     await expect(dialog.getByRole('heading', { name: 'Вхід' })).toHaveCount(0);
     const localLogin = dialog.getByRole('textbox', { name: 'Логін', exact: true });
     const deltaLogin = dialog.getByRole('textbox', { name: 'Delta логін', exact: true });
@@ -101,9 +116,31 @@ for (const width of [1280, 390]) {
 
     await localLogin.fill('created-local-login');
     await deltaLogin.fill('created-delta-login');
+    await dialog.evaluate((form) => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await expect.poll(() => createRequests).toBe(0);
+    await expect(dialog.getByText('Виберіть організм')).toBeVisible();
+    const createOrganism = dialog.getByRole('combobox', { name: 'Організм', exact: true });
+    await createOrganism.click();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
     await localLogin.focus();
     await page.keyboard.press('Enter');
     await expect.poll(() => createRequests).toBe(1);
+    await expect(localLogin).toHaveAttribute('aria-invalid', 'true');
+    expect(
+      await localLogin.evaluate((element) =>
+        element
+          .getAttribute('aria-describedby')
+          ?.split(' ')
+          .map((id) => document.getElementById(id)?.textContent)
+          .join(' '),
+      ),
+    ).toContain('Логін зайнятий');
+    await localLogin.fill('created-local-login-retry');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => createRequests).toBe(2);
     await expect(dialog).toBeHidden();
 
     await users.getByRole('button', { name: 'Редагувати' }).first().click();

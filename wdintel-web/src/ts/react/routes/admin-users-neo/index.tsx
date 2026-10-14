@@ -197,6 +197,16 @@ type EditUserErrors = {
   organism?: string;
 };
 
+type UserField = keyof AddUserErrors;
+type UserFieldState = Partial<Record<UserField, true>>;
+type UserServerErrors = AddUserErrors & { passwordAuthEnabled?: string };
+type ParsedServerFieldErrors = {
+  fields: UserServerErrors;
+  fallbackMessages: string[];
+  hasDiscardedEntries: boolean;
+  isJson: boolean;
+};
+
 const EMPTY_ADD_FORM: AddUserForm = {
   login: '',
   deltaLogin: '',
@@ -363,6 +373,114 @@ function buildAddUserErrors(form: AddUserForm): AddUserErrors {
 
 function hasFormErrors(errors: AddUserErrors | EditUserErrors): boolean {
   return Object.values(errors).some(Boolean);
+}
+
+function visibleFieldError(
+  field: UserField,
+  validationErrors: AddUserErrors | EditUserErrors,
+  serverErrors: AddUserErrors | EditUserErrors,
+  touched: UserFieldState,
+  submitAttempted: boolean,
+): string | undefined {
+  if (serverErrors[field]) return serverErrors[field];
+  return submitAttempted || touched[field] ? validationErrors[field] : undefined;
+}
+
+function parseServerFieldErrors(error: unknown): ParsedServerFieldErrors {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : null;
+  if (!message)
+    return { fields: {}, fallbackMessages: [], hasDiscardedEntries: true, isJson: false };
+
+  try {
+    const value = JSON.parse(message) as Record<string, unknown>;
+    const wrappedFields =
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? (value.fields ?? value.fieldErrors ?? value.field_errors ?? value.errors)
+        : undefined;
+    const entries: unknown[] = Array.isArray(value)
+      ? value
+      : wrappedFields && typeof wrappedFields === 'object' && !Array.isArray(wrappedFields)
+        ? Object.entries(wrappedFields)
+        : [];
+    if (entries.length === 0) {
+      return { fields: {}, fallbackMessages: [], hasDiscardedEntries: true, isJson: true };
+    }
+
+    const fields: UserServerErrors = {};
+    const fallbackMessages: string[] = [];
+    let hasDiscardedEntries = false;
+    const fieldByBackendKey: Record<string, keyof UserServerErrors> = {
+      login: 'login',
+      deltaLogin: 'deltaLogin',
+      delta_login: 'deltaLogin',
+      password: 'password',
+      roles: 'roles',
+      zone: 'zone',
+      sigintZoneId: 'zone',
+      sigint_zone_id: 'zone',
+      organism: 'organism',
+      organismId: 'organism',
+      organism_id: 'organism',
+      passwordAuthEnabled: 'passwordAuthEnabled',
+      password_auth_enabled: 'passwordAuthEnabled',
+    };
+    for (const entry of entries) {
+      if (!Array.isArray(entry) || entry.length !== 2) {
+        hasDiscardedEntries = true;
+        continue;
+      }
+      const [key, value] = entry;
+      if (typeof key !== 'string' || !key.trim() || typeof value !== 'string' || !value.trim()) {
+        hasDiscardedEntries = true;
+        continue;
+      }
+      const field = fieldByBackendKey[key];
+      if (field) {
+        fields[field] ??= value;
+      } else {
+        fallbackMessages.push(`${key}: ${value}`);
+      }
+    }
+    return { fields, fallbackMessages, hasDiscardedEntries, isJson: true };
+  } catch (_) {
+    return { fields: {}, fallbackMessages: [], hasDiscardedEntries: true, isJson: false };
+  }
+}
+
+function formatServerValidationFallback(
+  error: unknown,
+  parsedErrors: ParsedServerFieldErrors,
+): string {
+  if (!parsedErrors.isJson) {
+    const message = formatErrorMessage(error);
+    return /^[\[{]/.test(message.trim()) ? 'Не вдалося зберегти користувача' : message;
+  }
+  const messages = [...parsedErrors.fallbackMessages];
+  if (
+    parsedErrors.hasDiscardedEntries ||
+    (messages.length === 0 && Object.keys(parsedErrors.fields).length === 0)
+  ) {
+    messages.push('Не вдалося зберегти користувача');
+  }
+  return messages.join('\n');
+}
+
+function clearAuthenticationGroupServerError(
+  current: UserServerErrors,
+  field: 'deltaLogin' | 'password',
+): UserServerErrors {
+  if (!current[field] && !current.passwordAuthEnabled) return current;
+  return { ...current, [field]: undefined, passwordAuthEnabled: undefined };
+}
+
+function clearAuthenticationServerErrors(current: UserServerErrors): UserServerErrors {
+  if (!current.password && !current.deltaLogin && !current.passwordAuthEnabled) return current;
+  return {
+    ...current,
+    password: undefined,
+    deltaLogin: undefined,
+    passwordAuthEnabled: undefined,
+  };
 }
 
 function toCreateLoginReq(form: AddUserForm): CreateLoginReq {
@@ -692,16 +810,21 @@ export function AddUserDialog(props: {
   const { open, onClose, onUserCreated, lookups } = props;
   const [form, setForm] = useState<AddUserForm>(EMPTY_ADD_FORM);
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState<AddUserErrors>({});
+  const [touched, setTouched] = useState<UserFieldState>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [serverErrors, setServerErrors] = useState<UserServerErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
+  const focusInvalidField = useRef(false);
 
   const zonesReady = lookups.zonesStatus === 'success';
   const zonesLoading = lookups.zonesStatus === 'loading';
   const organismsReady = lookups.organismsStatus === 'success';
   const organismsLoading = lookups.organismsStatus === 'loading';
-  const canSubmit = zonesReady && organismsReady && !isSubmitting;
+  const validationErrors = buildAddUserErrors(form);
+  const canSubmit =
+    zonesReady && organismsReady && !isSubmitting && !hasFormErrors(validationErrors);
 
   const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(
     ([zoneId, zone]) => ({
@@ -755,15 +878,30 @@ export function AddUserDialog(props: {
     if (open) return;
     setForm(EMPTY_ADD_FORM);
     setShowPassword(false);
-    setErrors({});
+    setTouched({});
+    setSubmitAttempted(false);
+    setServerErrors({});
     setSubmitError(null);
     setIsSubmitting(false);
   }, [open]);
 
   useEffect(() => {
-    if (!hasFormErrors(errors)) return;
+    if (!focusInvalidField.current) return;
     formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
-  }, [errors]);
+    focusInvalidField.current = false;
+  }, [submitAttempted, validationErrors]);
+
+  function touch(field: UserField) {
+    setTouched((current) => (current[field] ? current : { ...current, [field]: true }));
+  }
+
+  function changeServerField(field: UserField) {
+    setServerErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
+  }
+
+  function fieldError(field: UserField) {
+    return visibleFieldError(field, validationErrors, serverErrors, touched, submitAttempted);
+  }
 
   function handleClose() {
     if (isSubmitting) return;
@@ -773,8 +911,11 @@ export function AddUserDialog(props: {
   async function handleCreateUser() {
     if (isSubmitting || !zonesReady || !organismsReady) return;
     const nextErrors = buildAddUserErrors(form);
-    setErrors(nextErrors);
-    if (hasFormErrors(nextErrors)) return;
+    setSubmitAttempted(true);
+    if (hasFormErrors(nextErrors)) {
+      focusInvalidField.current = true;
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -784,10 +925,14 @@ export function AddUserDialog(props: {
       const created = await createLogin(payload);
       onUserCreated(created);
       setForm(EMPTY_ADD_FORM);
-      setErrors({});
+      setTouched({});
+      setSubmitAttempted(false);
+      setServerErrors({});
       onClose();
     } catch (err) {
-      setSubmitError(formatErrorMessage(err));
+      const parsedErrors = parseServerFieldErrors(err);
+      setServerErrors(parsedErrors.fields);
+      setSubmitError(formatServerValidationFallback(err, parsedErrors));
     } finally {
       setIsSubmitting(false);
     }
@@ -803,6 +948,7 @@ export function AddUserDialog(props: {
         paper: {
           sx: { width: 'calc(100% - 32px)', maxWidth: '768px', m: 2 },
           component: 'form',
+          ...{ noValidate: true },
           onSubmit: (event) => {
             event.preventDefault();
             void handleCreateUser();
@@ -826,10 +972,12 @@ export function AddUserDialog(props: {
             value={form.login}
             onChange={(event) => {
               setForm((prev) => ({ ...prev, login: event.target.value }));
-              setErrors((prev) => ({ ...prev, login: undefined }));
+              changeServerField('login');
             }}
-            error={Boolean(errors.login)}
-            helperText={errors.login}
+            onBlur={() => touch('login')}
+            required
+            error={Boolean(fieldError('login'))}
+            helperText={fieldError('login')}
             fullWidth
             disabled={isSubmitting}
             autoFocus
@@ -840,10 +988,14 @@ export function AddUserDialog(props: {
             value={form.deltaLogin}
             onChange={(event) => {
               setForm((prev) => ({ ...prev, deltaLogin: event.target.value }));
-              setErrors((prev) => ({ ...prev, deltaLogin: undefined }));
+              setServerErrors((current) =>
+                clearAuthenticationGroupServerError(current, 'deltaLogin'),
+              );
             }}
-            error={Boolean(errors.deltaLogin)}
-            helperText={errors.deltaLogin}
+            onBlur={() => touch('deltaLogin')}
+            required={!form.passwordAuthEnabled}
+            error={Boolean(fieldError('deltaLogin'))}
+            helperText={fieldError('deltaLogin')}
             fullWidth
             disabled={isSubmitting}
           />
@@ -860,13 +1012,23 @@ export function AddUserDialog(props: {
                       password: event.target.checked ? prev.password : '',
                     }));
                     setShowPassword(false);
-                    setErrors((prev) => ({ ...prev, password: undefined, deltaLogin: undefined }));
+                    setServerErrors(clearAuthenticationServerErrors);
                   }}
                   disabled={isSubmitting}
+                  inputProps={
+                    serverErrors.passwordAuthEnabled
+                      ? { 'aria-describedby': 'add-password-authentication-error' }
+                      : undefined
+                  }
                 />
               }
               label="Вхід за паролем"
             />
+            {serverErrors.passwordAuthEnabled ? (
+              <p id="add-password-authentication-error" className="text-xs text-error" role="alert">
+                {serverErrors.passwordAuthEnabled}
+              </p>
+            ) : null}
           </div>
 
           {form.passwordAuthEnabled ? (
@@ -877,10 +1039,14 @@ export function AddUserDialog(props: {
               value={form.password}
               onChange={(event) => {
                 setForm((prev) => ({ ...prev, password: event.target.value }));
-                setErrors((prev) => ({ ...prev, password: undefined }));
+                setServerErrors((current) =>
+                  clearAuthenticationGroupServerError(current, 'password'),
+                );
               }}
-              error={Boolean(errors.password)}
-              helperText={errors.password}
+              onBlur={() => touch('password')}
+              required
+              error={Boolean(fieldError('password'))}
+              helperText={fieldError('password')}
               fullWidth
               disabled={isSubmitting}
               className="md:col-span-2"
@@ -910,7 +1076,7 @@ export function AddUserDialog(props: {
               const value = newValue?.id ?? null;
               debugLog('add:organism change', { newValue, parsed: value });
               setForm((prev) => ({ ...prev, organismId: value }));
-              setErrors((prev) => ({ ...prev, organism: undefined }));
+              changeServerField('organism');
             }}
             loading={organismsLoading}
             disabled={isSubmitting}
@@ -925,8 +1091,9 @@ export function AddUserDialog(props: {
                 {...params}
                 label="Організм"
                 required
-                error={Boolean(errors.organism)}
-                helperText={errors.organism}
+                onBlur={() => touch('organism')}
+                error={Boolean(fieldError('organism'))}
+                helperText={fieldError('organism')}
               />
             )}
           />
@@ -937,15 +1104,17 @@ export function AddUserDialog(props: {
             value={form.roles}
             onChange={(event) => {
               setForm((prev) => ({ ...prev, roles: asStringArray(event.target.value) }));
-              setErrors((prev) => ({ ...prev, roles: undefined }));
+              changeServerField('roles');
             }}
+            onBlur={() => touch('roles')}
+            required
             fullWidth
             SelectProps={{
               multiple: true,
               renderValue: (selected) => (selected as string[]).join(', ') || '—',
             }}
-            error={Boolean(errors.roles)}
-            helperText={errors.roles}
+            error={Boolean(fieldError('roles'))}
+            helperText={fieldError('roles')}
             disabled={isSubmitting}
           >
             {ROLE_OPTIONS.map((role) => (
@@ -962,7 +1131,7 @@ export function AddUserDialog(props: {
               const value = newValue?.id ?? null;
               debugLog('add:zone change', { newValue, parsed: value });
               setForm((prev) => ({ ...prev, sigintZoneId: value }));
-              setErrors((prev) => ({ ...prev, zone: undefined }));
+              changeServerField('zone');
             }}
             loading={zonesLoading}
             disabled={isSubmitting}
@@ -975,8 +1144,10 @@ export function AddUserDialog(props: {
               <TextField
                 {...params}
                 label="Зона"
-                error={Boolean(errors.zone)}
-                helperText={errors.zone}
+                required
+                onBlur={() => touch('zone')}
+                error={Boolean(fieldError('zone'))}
+                helperText={fieldError('zone')}
               />
             )}
           />
@@ -1018,20 +1189,38 @@ export function EditUserDialog(props: {
   const { open, login, onClose, onUserUpdated, lookups, disableRestoreFocus = false } = props;
   const [form, setForm] = useState<EditUserForm | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState<EditUserErrors>({});
+  const [touched, setTouched] = useState<UserFieldState>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [serverErrors, setServerErrors] = useState<UserServerErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
+  const focusInvalidField = useRef(false);
 
   const zonesReady = lookups.zonesStatus === 'success';
   const zonesLoading = lookups.zonesStatus === 'loading';
   const organismsReady = lookups.organismsStatus === 'success';
   const organismsLoading = lookups.organismsStatus === 'loading';
+  const validationErrors = form && login ? buildEditUserErrors(form, login) : {};
   const canSubmit =
     (zonesReady || Boolean(form?.sigintZoneId)) &&
     (organismsReady || Boolean(form?.organismId)) &&
     !isSubmitting &&
-    Boolean(form);
+    Boolean(form) &&
+    !hasFormErrors(validationErrors);
+  const deltaLoginRequired = Boolean(
+    form &&
+    login &&
+    !form.deleted &&
+    !form.passwordAuthEnabled &&
+    (form.deltaLogin.trim() !== (login.deltaLogin ?? '').trim() ||
+      form.passwordAuthEnabled !== login.passwordAuthEnabled ||
+      form.password.length > 0 ||
+      (login.deleted && !form.deleted)),
+  );
+  const passwordRequired = Boolean(
+    form && login && !login.passwordAuthEnabled && form.passwordAuthEnabled && !form.hasPassword,
+  );
 
   const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(
     ([zoneId, zone]) => ({
@@ -1053,7 +1242,9 @@ export function EditUserDialog(props: {
   useEffect(() => {
     if (!open || !login) {
       setForm(null);
-      setErrors({});
+      setTouched({});
+      setSubmitAttempted(false);
+      setServerErrors({});
       setSubmitError(null);
       setIsSubmitting(false);
       return;
@@ -1072,7 +1263,9 @@ export function EditUserDialog(props: {
       passwordAuthEnabled: login.passwordAuthEnabled,
       hasPassword: login.hasPassword,
     });
-    setErrors({});
+    setTouched({});
+    setSubmitAttempted(false);
+    setServerErrors({});
     setShowPassword(false);
     setSubmitError(null);
     setIsSubmitting(false);
@@ -1102,9 +1295,22 @@ export function EditUserDialog(props: {
   ]);
 
   useEffect(() => {
-    if (!hasFormErrors(errors)) return;
+    if (!focusInvalidField.current) return;
     formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
-  }, [errors]);
+    focusInvalidField.current = false;
+  }, [submitAttempted, validationErrors]);
+
+  function touch(field: UserField) {
+    setTouched((current) => (current[field] ? current : { ...current, [field]: true }));
+  }
+
+  function changeServerField(field: UserField) {
+    setServerErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
+  }
+
+  function fieldError(field: UserField) {
+    return visibleFieldError(field, validationErrors, serverErrors, touched, submitAttempted);
+  }
 
   function handleClose() {
     if (isSubmitting) return;
@@ -1121,8 +1327,11 @@ export function EditUserDialog(props: {
       return;
     }
     const nextErrors = buildEditUserErrors(form, login!);
-    setErrors(nextErrors);
-    if (Object.values(nextErrors).some(Boolean)) return;
+    setSubmitAttempted(true);
+    if (hasFormErrors(nextErrors)) {
+      focusInvalidField.current = true;
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -1132,7 +1341,9 @@ export function EditUserDialog(props: {
       onUserUpdated(updated);
       onClose();
     } catch (err) {
-      setSubmitError(formatErrorMessage(err));
+      const parsedErrors = parseServerFieldErrors(err);
+      setServerErrors(parsedErrors.fields);
+      setSubmitError(formatServerValidationFallback(err, parsedErrors));
     } finally {
       setIsSubmitting(false);
     }
@@ -1149,6 +1360,7 @@ export function EditUserDialog(props: {
         paper: {
           sx: { width: 'calc(100% - 32px)', maxWidth: '768px', m: 2 },
           component: 'form',
+          ...{ noValidate: true },
           onSubmit: (event) => {
             event.preventDefault();
             void handleSave();
@@ -1179,11 +1391,13 @@ export function EditUserDialog(props: {
               value={form.login}
               onChange={(event) => {
                 setForm((prev) => (prev ? { ...prev, login: event.target.value } : prev));
-                setErrors((prev) => ({ ...prev, login: undefined }));
+                changeServerField('login');
               }}
+              onBlur={() => touch('login')}
+              required
               fullWidth
-              error={Boolean(errors.login)}
-              helperText={errors.login}
+              error={Boolean(fieldError('login'))}
+              helperText={fieldError('login')}
               disabled={isSubmitting}
               autoFocus
             />
@@ -1193,10 +1407,14 @@ export function EditUserDialog(props: {
               value={form.deltaLogin}
               onChange={(event) => {
                 setForm((prev) => (prev ? { ...prev, deltaLogin: event.target.value } : prev));
-                setErrors((prev) => ({ ...prev, deltaLogin: undefined }));
+                setServerErrors((current) =>
+                  clearAuthenticationGroupServerError(current, 'deltaLogin'),
+                );
               }}
-              error={Boolean(errors.deltaLogin)}
-              helperText={errors.deltaLogin}
+              onBlur={() => touch('deltaLogin')}
+              required={deltaLoginRequired}
+              error={Boolean(fieldError('deltaLogin'))}
+              helperText={fieldError('deltaLogin')}
               fullWidth
               disabled={isSubmitting}
             />
@@ -1216,17 +1434,29 @@ export function EditUserDialog(props: {
                         };
                       });
                       setShowPassword(false);
-                      setErrors((prev) => ({
-                        ...prev,
-                        password: undefined,
-                        deltaLogin: undefined,
-                      }));
+                      setServerErrors(clearAuthenticationServerErrors);
                     }}
                     disabled={isSubmitting}
+                    inputProps={
+                      serverErrors.passwordAuthEnabled
+                        ? {
+                            'aria-describedby': `edit-password-authentication-error-${form.id}`,
+                          }
+                        : undefined
+                    }
                   />
                 }
                 label="Вхід за паролем"
               />
+              {serverErrors.passwordAuthEnabled ? (
+                <p
+                  id={`edit-password-authentication-error-${form.id}`}
+                  className="text-xs text-error"
+                  role="alert"
+                >
+                  {serverErrors.passwordAuthEnabled}
+                </p>
+              ) : null}
             </div>
 
             {form.passwordAuthEnabled ? (
@@ -1237,10 +1467,14 @@ export function EditUserDialog(props: {
                 value={form.password}
                 onChange={(event) => {
                   setForm((prev) => (prev ? { ...prev, password: event.target.value } : prev));
-                  setErrors((prev) => ({ ...prev, password: undefined, deltaLogin: undefined }));
+                  setServerErrors((current) =>
+                    clearAuthenticationGroupServerError(current, 'password'),
+                  );
                 }}
-                helperText={errors.password || 'Залиште порожнім, щоб не змінювати'}
-                error={Boolean(errors.password)}
+                onBlur={() => touch('password')}
+                required={passwordRequired}
+                helperText={fieldError('password') || 'Залиште порожнім, щоб не змінювати'}
+                error={Boolean(fieldError('password'))}
                 fullWidth
                 disabled={isSubmitting || !form.passwordAuthEnabled}
                 className="md:col-span-2"
@@ -1270,7 +1504,7 @@ export function EditUserDialog(props: {
                 const value = newValue?.id ?? null;
                 debugLog('edit:organism change', { newValue, parsed: value });
                 setForm((prev) => (prev ? { ...prev, organismId: value } : prev));
-                setErrors((prev) => ({ ...prev, organism: undefined }));
+                changeServerField('organism');
               }}
               loading={organismsLoading}
               disabled={isSubmitting}
@@ -1285,8 +1519,9 @@ export function EditUserDialog(props: {
                   {...params}
                   label="Організм"
                   required
-                  error={Boolean(errors.organism)}
-                  helperText={errors.organism}
+                  onBlur={() => touch('organism')}
+                  error={Boolean(fieldError('organism'))}
+                  helperText={fieldError('organism')}
                 />
               )}
             />
@@ -1299,15 +1534,17 @@ export function EditUserDialog(props: {
                 setForm((prev) =>
                   prev ? { ...prev, roles: asStringArray(event.target.value) } : prev,
                 );
-                setErrors((prev) => ({ ...prev, roles: undefined }));
+                changeServerField('roles');
               }}
+              onBlur={() => touch('roles')}
+              required
               fullWidth
               SelectProps={{
                 multiple: true,
                 renderValue: (selected) => (selected as string[]).join(', ') || '—',
               }}
-              error={Boolean(errors.roles)}
-              helperText={errors.roles}
+              error={Boolean(fieldError('roles'))}
+              helperText={fieldError('roles')}
               disabled={isSubmitting}
             >
               {ROLE_OPTIONS.map((role) => (
@@ -1324,7 +1561,7 @@ export function EditUserDialog(props: {
                 const value = newValue?.id ?? null;
                 debugLog('edit:zone change', { newValue, parsed: value });
                 setForm((prev) => (prev ? { ...prev, sigintZoneId: value } : prev));
-                setErrors((prev) => ({ ...prev, zone: undefined }));
+                changeServerField('zone');
               }}
               loading={zonesLoading}
               disabled={isSubmitting}
@@ -1337,8 +1574,10 @@ export function EditUserDialog(props: {
                 <TextField
                   {...params}
                   label="Зона"
-                  error={Boolean(errors.zone)}
-                  helperText={errors.zone}
+                  required
+                  onBlur={() => touch('zone')}
+                  error={Boolean(fieldError('zone'))}
+                  helperText={fieldError('zone')}
                 />
               )}
             />

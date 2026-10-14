@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { CircularProgress, Tooltip } from '@mui/material';
+import { Tooltip } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloseIcon from '@mui/icons-material/Close';
@@ -722,11 +722,11 @@ export function AppNavbar({
               />
             ) : (
               <span
-                className="flex min-w-20 items-center justify-center px-2 py-2"
+                className="flex min-w-20 items-center justify-center px-2 py-2 text-white/60"
                 role="status"
                 aria-label="Завантаження користувача"
               >
-                <CircularProgress color="inherit" size={18} thickness={5} />
+                <span aria-hidden="true">—</span>
               </span>
             )}
           </div>

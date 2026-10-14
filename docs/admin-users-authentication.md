@@ -1,18 +1,18 @@
-# Адміністрування користувачів
+# User administration
 
-Обліковий запис має обов'язковий локальний логін і може використовувати вхід
-за паролем, Delta або обидва способи. Локальний і Delta логіни незалежні.
-Активний обліковий запис завжди повинен мати хоча б один налаштований спосіб
-входу.
+An account requires a local login and can use password authentication, Delta,
+or both. Local and Delta logins are independent. An active account must always
+have at least one configured sign-in method.
 
-Символи пароля зберігаються без змін, зокрема початкові й кінцеві пробіли;
-явно наданий пароль, що складається лише з пробілів, відхиляється. Створення
-облікового запису з вимкненим входом за паролем не зберігає наданий пароль.
-Вимкнення цього способу для наявного облікового запису зберігає його вже
-збережений пароль. Застарілі неповні облікові записи можна редагувати в інших
-полях, але активація або зміна способів входу знову перевіряє вимоги до входу.
+Password characters are preserved exactly, including leading and trailing
+spaces; an explicitly supplied password consisting only of whitespace is
+rejected. Creating an account with password authentication disabled does not
+store a supplied password. Disabling password authentication for an existing
+account preserves its stored password. Unrelated fields on legacy accounts
+with incomplete authentication configuration can still be edited, but
+activation or changes to sign-in methods revalidate sign-in requirements.
 
-Деактивація облікового запису є зворотною: вона блокує доступ і зберігає
-причину (адміністратор або неактивність). Повторна активація очищує причину й
-оновлює час активності. Вимкнений організм також блокує доступ незалежно від
-стану самого облікового запису.
+Account deactivation is reversible: it blocks access and records the reason
+(administrator action or inactivity). Reactivation clears the reason and
+updates the activity timestamp. A disabled organism also blocks access,
+regardless of the account's own state.
