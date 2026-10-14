@@ -99,6 +99,7 @@ export type UseManageMessageDrawerProps = {
   interactionActive?: boolean;
   keepOpenAfterCreate?: boolean;
   intentKey?: string;
+  initialGroupMasterKey?: string | null;
 };
 
 export function useManageMessageDrawer({
@@ -117,6 +118,7 @@ export function useManageMessageDrawer({
   interactionActive = true,
   keepOpenAfterCreate = false,
   intentKey,
+  initialGroupMasterKey = null,
 }: UseManageMessageDrawerProps) {
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
@@ -384,7 +386,7 @@ export function useManageMessageDrawer({
     defaultValues: EMPTY_FORM_VALUES,
   });
 
-  const { control, formState, getValues, setValue, reset, watch } = methods;
+  const { control, formState, getValues, setValue, reset, resetField, watch } = methods;
   const explicitUnitSelectionRef = useRef(false);
   useEffect(() => {
     const subscription = watch((_values, { name, type }) => {
@@ -462,12 +464,12 @@ export function useManageMessageDrawer({
       ...EMPTY_FORM_VALUES,
       date: dayjs(),
       time: null,
-      signalGroupMasterKey: recentValuesRef.current.group[0] ?? '',
+      signalGroupMasterKey: initialGroupMasterKey ? '' : (recentValuesRef.current.group[0] ?? ''),
       deviceName: cyberEchoEnabled ? (recentValuesRef.current.deviceName[0] ?? '') : '',
       unit: defaultRecentUnitRef.current?.name ?? '',
       unitSelection: defaultRecentUnitRef.current,
     }),
-    [cyberEchoEnabled],
+    [cyberEchoEnabled, initialGroupMasterKey],
   );
 
   const existingMedia: MessageMediaInfo[] = useMemo(() => {
@@ -741,6 +743,15 @@ export function useManageMessageDrawer({
           return !adminData?.deleted;
         });
         setSignalGroups(available);
+        if (!isEditMode && !isReportMode && initialGroupMasterKey) {
+          if (available.some((group) => group.masterKey === initialGroupMasterKey)) {
+            resetField('signalGroupMasterKey', { defaultValue: initialGroupMasterKey });
+          } else {
+            resetField('signalGroupMasterKey', { defaultValue: '' });
+            setReferenceDataError('Обрана група більше недоступна.');
+          }
+          return;
+        }
         // The MRU-seeded group is set synchronously on open, before this async list
         // arrives. If that remembered key is no longer available (account switch,
         // revoked access, deleted group), SystemSection renders it as an empty
@@ -750,7 +761,7 @@ export function useManageMessageDrawer({
         if (!isEditMode && !isReportMode && getValues('signalGroupMasterKey')) {
           const seededKey = getValues('signalGroupMasterKey');
           if (!available.some((g) => g.masterKey === seededKey)) {
-            setValue('signalGroupMasterKey', '', { shouldValidate: true });
+            resetField('signalGroupMasterKey', { defaultValue: '' });
           }
         }
       } catch (e) {
@@ -779,7 +790,16 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [formReady, handleReferenceDataError, referenceDataRetryAttempt]);
+  }, [
+    formReady,
+    handleReferenceDataError,
+    initialGroupMasterKey,
+    intentKey,
+    isEditMode,
+    isReportMode,
+    referenceDataRetryAttempt,
+    resetField,
+  ]);
 
   useEffect(() => {
     if (!formReady) return;
@@ -843,6 +863,7 @@ export function useManageMessageDrawer({
     reportSource?.id,
     cyberEchoEnabled,
     getInitialCreateFormValues,
+    intentKey,
   ]);
 
   useEffect(() => {

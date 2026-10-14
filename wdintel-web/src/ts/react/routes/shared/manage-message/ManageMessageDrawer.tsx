@@ -97,6 +97,7 @@ export type Props = {
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
   intentKey?: string;
+  initialGroupMasterKey?: string | null;
   presentation?: ManageMessageEditorPresentation;
   interactionActive?: boolean;
   adaptiveEmbeddedForm?: boolean;
