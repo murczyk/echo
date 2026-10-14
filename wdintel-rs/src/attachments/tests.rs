@@ -383,6 +383,7 @@ async fn attachment_search_preserves_cdc_only_history_and_recent_changes_3780()
     .await
     .is_err());
     assert_media_mutations_require_source(source, job.media_id).await;
+    assert_media_insert_requires_source(&env, message).await;
     execute(
         source,
         "DROP TABLE public.echo_analytics_attachment_search",
@@ -462,6 +463,7 @@ async fn assert_mutation_search_falls_back(
 ) {
     for query in [
         "history",
+        "inserted",
         "renamed",
         "-renamed",
         "Береза",
@@ -481,6 +483,22 @@ async fn assert_mutation_search_falls_back(
             .any(|error| error
                 .is::<super::analytics::AttachmentSearchCoverageError>()));
     }
+}
+
+async fn assert_media_insert_requires_source(env: &Env, message: i64) {
+    let source = &env.dbx;
+    execute(source, "UPDATE signal_message SET created_at=(now() AT TIME ZONE 'UTC')-interval '1 day' WHERE id=$1", vec![message.into()]).await.unwrap();
+    execute(source, "UPDATE attachment_search_change SET changed_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE singleton", vec![]).await.unwrap();
+    super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("inserted".into()),
+        90_000,
+    )
+    .await
+    .unwrap();
+    attachment(env, message, "inserted.txt").await;
+    assert_mutation_search_falls_back(source).await;
 }
 
 #[tokio::test]
