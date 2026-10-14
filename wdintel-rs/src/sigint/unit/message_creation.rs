@@ -1,5 +1,9 @@
 use super::*;
-use crate::config::SIGINT_DIRECT_SUBMIT_UNIT_LOCK_NAMESPACE;
+use crate::config::{
+    SIGINT_DIRECT_SUBMIT_UNIT_LOCK_NAMESPACE,
+    SIGINT_MESSAGE_UNIT_PENDING_NETWORK_REDIS_PREFIX,
+};
+use redis::AsyncCommands;
 
 #[post("/api/sigint/unit/create-for-message")]
 pub async fn create_unit_for_message(
@@ -41,7 +45,6 @@ async fn create_unit_for_message_for_login(
         .await
         .c(h!())?;
     let units = find_exact_named_units(&transaction, &name).await.c(h!())?;
-    let reused_unit = units.len() == 1;
     let (unit, network_id, created_network) = match units.len() {
         0 => insert_message_unit(&transaction, login, env, &req)
             .await
@@ -54,28 +57,51 @@ async fn create_unit_for_message_for_login(
             .c(h!());
         }
     };
+    let retry_key = message_unit_network_retry_key(login, unit.id);
+    if let Some(network) = created_network {
+        env.redis
+            .clone()
+            .set::<_, _, ()>(&retry_key, network.id)
+            .await
+            .c(h!())?;
+    }
     transaction.commit().await.c(h!())?;
     let unit = render_created_unit_with_optional_network(
-        login,
-        env,
-        unit,
-        network_id,
-        created_network,
+        login, env, unit, network_id, None,
     )
     .await
     .c(h!())?
     .unit;
-    if reused_unit && !req.skip_network_creation {
-        replay_message_unit_networks(env, unit.id).await.c(h!())?;
+    if !req.skip_network_creation {
+        replay_message_unit_network(env, &name, &retry_key, unit.id)
+            .await
+            .c(h!())?;
     }
     Ok(unit)
 }
 
-async fn replay_message_unit_networks(
+fn message_unit_network_retry_key(login: &uuid::Uuid, unit_id: i64) -> String {
+    format!(
+        "{SIGINT_MESSAGE_UNIT_PENDING_NETWORK_REDIS_PREFIX}{login}:{unit_id}"
+    )
+}
+
+async fn replay_message_unit_network(
     env: &Env,
+    name: &str,
+    retry_key: &str,
     unit_id: i64,
 ) -> anyhow::Result<()> {
-    let networks = sigint_network::Entity::find()
+    let transaction = env.dbx.begin().await.c(h!())?;
+    lock_unit_name_for_creation(&transaction, name)
+        .await
+        .c(h!())?;
+    let mut redis = env.redis.clone();
+    let network_id: Option<i64> = redis.get(retry_key).await.c(h!())?;
+    let Some(network_id) = network_id else {
+        return Ok(());
+    };
+    let network = sigint_network::Entity::find_by_id(network_id)
         .join(
             JoinType::InnerJoin,
             sigint_network::Relation::SigintNetworkUnit.def(),
@@ -83,12 +109,14 @@ async fn replay_message_unit_networks(
         .filter(sigint_network_unit::Column::UnitId.eq(unit_id))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network::Column::ActiveTo.is_null())
-        .all(&env.dbx)
+        .one(&transaction)
         .await
         .c(h!())?;
-    for network in networks {
+    if let Some(network) = network {
         fanout_created_network(env, network).await.c(h!())?;
     }
+    redis.del::<_, ()>(retry_key).await.c(h!())?;
+    transaction.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -177,8 +205,8 @@ where
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, cleanup_locked, mk_sigint_inbox_item, mk_signal_group,
-        mk_signal_message_group,
+        cleanup, cleanup_locked, mk_sigint_inbox_item, mk_sigint_network,
+        mk_sigint_network_unit, mk_signal_group, mk_signal_message_group,
     };
     use redis::{streams::StreamRangeReply, AsyncCommands};
     use serial_test::serial;
@@ -294,18 +322,38 @@ mod tests {
                 .unwrap(),
             0
         );
-        let retried = create_unit_for_message_for_login(&login, &env, req)
+        mk_sigint_network_unit(
+            &env.dbx,
+            sigint_network_unit::ActiveModel {
+                unit_id: Set(units[0].id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let retried =
+            create_unit_for_message_for_login(&login, &env, req.clone())
+                .await
+                .unwrap();
+        let repeated = create_unit_for_message_for_login(&login, &env, req)
             .await
             .unwrap();
         let events = take_session_events(&mut redis, session_id).await;
         assert_eq!(retried.id, units[0].id);
-        assert!(events.contains(&EventType::ETNetworkChanged));
+        assert_eq!(repeated.id, retried.id);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| **event == EventType::ETNetworkChanged)
+                .count(),
+            1
+        );
         assert_eq!(
             sigint_network::Entity::find()
                 .count(&env.dbx)
                 .await
                 .unwrap(),
-            1
+            2
         );
         assert_eq!(
             network_invalidation_task::Entity::find()
@@ -330,27 +378,46 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn message_unit_3535_reused_concurrent_normalized_names() {
-        let env = cleanup().await.unwrap();
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        super::super::tests::insert_settings(&env.dbx, true).await;
         let login = crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap();
+        let mut first_req = request("Новий підрозділ 3535");
+        first_req.skip_network_creation = false;
+        first_req.locations = vec!["Київ".to_string()];
+        first_req.unit_mask = vec!["Новий підрозділ 3535".to_string()];
+        let mut second_req = first_req.clone();
+        second_req.unit.name = Some("  НОВИЙ   ПІДРОЗДІЛ 3535  ".to_string());
+        let session_id = uuid::Uuid::new_v4();
+        let mut redis = env.redis.clone();
+        crate::session::add_session(&mut redis, session_id, &login)
+            .await
+            .unwrap();
         let (first, second) = tokio::join!(
-            create_unit_for_message_for_login(
-                &login,
-                &env,
-                request("Новий підрозділ 3535")
-            ),
-            create_unit_for_message_for_login(
-                &login,
-                &env,
-                request("  НОВИЙ   ПІДРОЗДІЛ 3535  ")
-            ),
+            create_unit_for_message_for_login(&login, &env, first_req),
+            create_unit_for_message_for_login(&login, &env, second_req),
         );
         let first = first.unwrap();
         let second = second.unwrap();
         assert_eq!(first.id, second.id);
         assert_eq!(first.battalion, "3535 бат");
         assert_eq!(first.comment, "#3535 full message unit");
+        let events = take_session_events(&mut redis, session_id).await;
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| **event == EventType::ETNetworkChanged)
+                .count(),
+            1
+        );
+        assert_eq!(
+            network_invalidation_task::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
         assert_eq!(
             sigint_unit::Entity::find().count(&env.dbx).await.unwrap(),
             1
@@ -368,7 +435,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn message_unit_3535_reused_existing_without_overwriting_details() {
-        let env = cleanup().await.unwrap();
+        let (env, _guard) = cleanup_locked().await.unwrap();
         let login = crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap();
@@ -377,12 +444,43 @@ mod tests {
         existing.comment = "Збережений коментар".to_string();
         let (existing, _) =
             create_unit_for_login(&login, &env, existing).await.unwrap();
+        non_rer_inbox_item(&env.dbx).await;
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                unit_mask: Set(serde_json::json!([existing.name])),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_unit(
+            &env.dbx,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(network.id),
+                unit_id: Set(existing.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let session_id = uuid::Uuid::new_v4();
+        let mut redis = env.redis.clone();
+        crate::session::add_session(&mut redis, session_id, &login)
+            .await
+            .unwrap();
         let mut req = request("  ІСНУЮЧИЙ   ПІДРОЗДІЛ 3535 ");
         req.skip_network_creation = false;
         req.locations = vec!["Київ".to_string()];
-        let reused = create_unit_for_message_for_login(&login, &env, req)
+        let reused =
+            create_unit_for_message_for_login(&login, &env, req.clone())
+                .await
+                .unwrap();
+        create_unit_for_message_for_login(&login, &env, req)
             .await
             .unwrap();
+        let events = take_session_events(&mut redis, session_id).await;
+        assert!(!events.contains(&EventType::ETNetworkChanged));
         assert_eq!(reused.id, existing.id);
         assert!(!reused.active);
         assert_eq!(reused.comment, "Збережений коментар");
@@ -392,6 +490,20 @@ mod tests {
         );
         assert_eq!(
             sigint_network::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            network_invalidation_task::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            sigint_inbox_item_unit_tag_queue::Entity::find()
                 .count(&env.dbx)
                 .await
                 .unwrap(),

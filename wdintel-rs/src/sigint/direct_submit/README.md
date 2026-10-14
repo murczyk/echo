@@ -65,7 +65,10 @@ exact match without changing its fields or networks, and rejects ambiguous
 matches before inserting. Newly created units and their optional network are
 saved in one transaction. Retrying a network-enabled creation after a post-commit
 failure replays network-change notifications, inbox invalidation, and unit-tag
-recalculation for the reused unit's active networks without creating duplicates.
+recalculation only for the network recorded as pending for that creator and unit
+in Redis before commit. Recovery shares the normalized-name lock and clears the
+pending record after success; ordinary exact-name reuse and completed retries
+leave existing networks untouched.
 Both unit creation entry points skip the network step when `hide_networks` is
 enabled, even when the devices section is enabled. Nonempty unresolved unit text displays
 `Підрозділ не обрано` and blocks creation, including keyboard submission.
