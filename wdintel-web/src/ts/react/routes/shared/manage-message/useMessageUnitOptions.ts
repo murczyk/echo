@@ -17,6 +17,25 @@ type Props = {
   retryAttempt: number;
 };
 
+function unitEchelonRank(unit: UnitResponse): number {
+  return [
+    unit.other,
+    unit.teamOrCrew,
+    unit.section,
+    unit.squad,
+    unit.platoon,
+    unit.company,
+    unit.battalion,
+    unit.regiment,
+    unit.brigade,
+    unit.division,
+    unit.corps,
+    unit.army,
+    unit.militaryDistrict,
+    unit.armyRegion,
+  ].findIndex((value) => value?.trim());
+}
+
 export function useMessageUnitOptions({
   active,
   search,
@@ -121,7 +140,7 @@ export function useMessageUnitOptions({
             ...(results?.search === search ? results.units : []),
           ].map((unit) => [unit.id, unit]),
         ).values(),
-      ),
+      ).sort((a, b) => unitEchelonRank(b) - unitEchelonRank(a)),
     [recentUnitOptions, results, search],
   );
 
