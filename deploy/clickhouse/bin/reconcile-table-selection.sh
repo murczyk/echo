@@ -70,6 +70,27 @@ append_mapping_json() {
     <<<"$json"
 }
 
+apply_mapping_batch() {
+  local additional=$1 removed=$2 skip_snapshot=$3 payload response
+  pause_mirror
+  payload=$(jq -cn \
+    --arg mirror "$MIRROR_NAME" \
+    --argjson additional "$additional" \
+    --argjson removed "$removed" \
+    --argjson skip_snapshot "$skip_snapshot" \
+    '{flowJobName: $mirror, requestedFlowState: "STATUS_RUNNING",
+      flowConfigUpdate: {cdcFlowConfigUpdate: ({
+        additionalTables: $additional, removedTables: $removed
+      } + if $skip_snapshot then {skipInitialSnapshotForTableAdditions: true} else {} end)}}')
+  response=$(curl --silent --show-error --fail-with-body \
+    --connect-timeout 5 --max-time 30 \
+    --header 'Content-Type: application/json' --data "$payload" \
+    "http://127.0.0.1:${PEERDB_FLOW_HTTP_PORT:-8113}/v1/mirrors/state_change")
+  [[ -z "$response" || "$response" == '{}' ]] \
+    || die "unexpected PeerDB table-edit response: $response"
+  wait_for_mirror_status 1
+}
+
 apply_selection() {
   ensure_yes "${1:-}"
   [[ $(mirror_status) == 2 ]] \
@@ -143,40 +164,30 @@ SQL
   fi
 
   if ((${#added_sources[@]} > 0 || ${#removed_sources[@]} > 0)); then
-    local additional_json='[]' removed_json='[]' payload response
+    local additional_json='[]' cdc_only_json='[]' removed_json='[]'
     for index in "${!added_sources[@]}"; do
-      additional_json=$(append_mapping_json \
-        "$additional_json" "${added_sources[$index]}" "${added_targets[$index]}")
+      if source_table_cdc_only "${added_sources[$index]}"; then
+        cdc_only_json=$(append_mapping_json \
+          "$cdc_only_json" "${added_sources[$index]}" "${added_targets[$index]}")
+      else
+        additional_json=$(append_mapping_json \
+          "$additional_json" "${added_sources[$index]}" "${added_targets[$index]}")
+      fi
     done
     for index in "${!removed_sources[@]}"; do
       removed_json=$(append_mapping_json \
         "$removed_json" "${removed_sources[$index]}" "${removed_targets[$index]}")
     done
-    payload=$(jq -cn \
-      --arg mirror "$MIRROR_NAME" \
-      --argjson additional "$additional_json" \
-      --argjson removed "$removed_json" \
-      '{
-        flowJobName: $mirror,
-        requestedFlowState: "STATUS_RUNNING",
-        flowConfigUpdate: {
-          cdcFlowConfigUpdate: {
-            additionalTables: $additional,
-            removedTables: $removed
-          }
-        }
-      }')
-    response=$(curl \
-      --silent \
-      --show-error \
-      --fail-with-body \
-      --connect-timeout 5 \
-      --max-time 30 \
-      --header 'Content-Type: application/json' \
-      --data "$payload" \
-      "http://127.0.0.1:${PEERDB_FLOW_HTTP_PORT:-8113}/v1/mirrors/state_change")
-    [[ -z "$response" || "$response" == '{}' ]] \
-      || die "unexpected PeerDB table-edit response: $response"
+    if [[ "$cdc_only_json" != '[]' ]]; then
+      require_peerdb_cdc_only_table_additions
+    fi
+    if [[ "$additional_json" != '[]' || "$removed_json" != '[]' ]]; then
+      apply_mapping_batch "$additional_json" "$removed_json" false
+    fi
+    if [[ "$cdc_only_json" != '[]' ]]; then
+      apply_mapping_batch "$cdc_only_json" '[]' true
+      record_attachment_search_cutover
+    fi
   else
     peerdb_psql -q -v ON_ERROR_STOP=1 \
       -c "RESUME MIRROR IF EXISTS $MIRROR_NAME"
@@ -205,6 +216,15 @@ SQL
     clickhouse_admin_http \
       "DROP TABLE IF EXISTS \`$CLICKHOUSE_RAW_DB\`.\`$target\` SYNC"
   done
+
+  if [[ -n "${selected_source_by_target[attachment_document]:-}" \
+    && -n "${selected_source_by_target[attachment_chunk]:-}" ]]; then
+    ensure_attachment_search_coverage_table
+    if [[ $(postgres_psql --dbname "$GATEWAY_DB" -Atq -v ON_ERROR_STOP=1 \
+      -c 'SELECT EXISTS(SELECT 1 FROM public.echo_analytics_attachment_search WHERE singleton)') != t ]]; then
+      record_attachment_search_cutover
+    fi
+  fi
 
   reconcile_analytics_schema_with_retry "$SCRIPT_DIR"
   log "Mirror table selection is reconciled"

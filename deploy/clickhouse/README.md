@@ -511,7 +511,15 @@ bin/table-status.sh
 
 Bootstrap creates the dedicated MinIO bucket and a 14-day safety lifecycle,
 enables WAL heartbeat and nullable-column preservation, keeps source JSON/JSONB
-string-backed in ClickHouse, and submits an all-selected-tables initial snapshot.
+string-backed in ClickHouse, and submits an initial snapshot excluding CDC-only
+tables. Once the mirror is running, register those tables before refreshing
+the gateway:
+
+```bash
+bin/reconcile-table-selection.sh --pause
+bin/reconcile-table-selection.sh --yes
+```
+
 The dedicated `echo_analytics.heartbeat` table is always selected and is exposed
 through the gateway as `public.echo_analytics__heartbeat`.
 Native ClickHouse JSON
@@ -721,6 +729,14 @@ prepared search parameters become constants that `pg_clickhouse` can safely
 translate. Serialized `tsvector` matching, String-backed JSON/JSONB body
 extraction, and Cyrillic `ILIKE` execute in ClickHouse; unsupported request
 shapes retain their existing PostgreSQL routing or whole-operation fallback.
+
+Attachment documents and chunks use CDC-only additions, declared in
+[env/tables-cdc-only.txt](env/tables-cdc-only.txt). Normal reconciliation uses
+PeerDB's `skipInitialSnapshotForTableAdditions` for those tables. Searches with
+possible unreplicated historical or recent attachment matches fall back to
+PostgreSQL. The explicit `oneoff-replicate-historical-attachments` command copies
+their history and verifies coverage; rollout and recovery are documented in
+[#3780 search performance](../../docs/performance/3780-search.md).
 
 `/api/rer-importer/get-inbox` merges analytics candidates with a source
 PostgreSQL tail covering `max(2 * freshness_max_age_ms, 5 minutes)`, including
@@ -976,8 +992,10 @@ versioned file as
 `/etc/echo-peerdb/tables-exclude.txt`, pauses the existing mirror, reconciles
 the restricted source role and custom PostgreSQL publication, and asks PeerDB
 to edit its table mappings.
-Newly included tables receive their own initial snapshot; existing selected
-tables are not resnapshotted. Newly excluded tables stop receiving CDC, their
+Newly included tables receive their own initial snapshot, except tables listed
+in [env/tables-cdc-only.txt](env/tables-cdc-only.txt), which receive only CDC.
+Existing selected tables are not resnapshotted. Newly excluded tables stop
+receiving CDC, their
 raw and current ClickHouse objects are dropped, and the gateway compatibility
 views are rebuilt. Source PostgreSQL tables and their data are never dropped.
 After PeerDB confirms the change, excluded tables no longer needed by this

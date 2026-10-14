@@ -2702,6 +2702,14 @@ analytics-reconcile-derived-schema:
     bash deploy/clickhouse/bin/source-reconcile-derived-schema.sh
 
 [arg('server', long='server')]
+oneoff-replicate-attachment-history server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "{{ server }}" =~ ^[A-Za-z0-9._-]+$ ]] \
+        || { echo "invalid server" >&2; exit 1; }
+    ssh "{{ server }}" 'wdintel-rs --mode=live oneoff-replicate-historical-attachments'
+
+[arg('server', long='server')]
 [arg('table', long='table')]
 analytics-resnapshot-table server table:
     #!/usr/bin/env bash

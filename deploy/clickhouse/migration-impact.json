@@ -804,8 +804,8 @@
     "echo:m20261005_050621_attachment_documents": {
       "changes": [
         { "table": "public.attachment_settings", "strategy": "excluded" },
-        { "table": "public.attachment_document", "strategy": "excluded" },
-        { "table": "public.attachment_chunk", "strategy": "excluded" },
+        { "table": "public.attachment_document", "strategy": "replicated_snapshot" },
+        { "table": "public.attachment_chunk", "strategy": "replicated_snapshot" },
         { "table": "public.attachment_job", "strategy": "excluded" },
         { "table": "public.ai_position_mention", "strategy": "excluded" }
       ]

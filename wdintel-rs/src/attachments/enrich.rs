@@ -90,6 +90,13 @@ pub async fn summarize(
         )
         .await
         .c(h!())?;
+        execute(
+            &tx,
+            "update attachment_document set updated_at=now() at time zone 'utc' where media_id=$1 and generation=$2",
+            vec![job.media_id.into(), job.generation.into()],
+        )
+        .await
+        .c(h!())?;
         tx.commit().await.c(h!())?;
         return Ok(false);
     }

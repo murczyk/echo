@@ -14,6 +14,7 @@ table_resnapshot_state_dir=${ECHO_ANALYTICS_RESNAPSHOT_STATE_DIR:-/var/lib/echo-
 analytics_bin_dir=${ECHO_ANALYTICS_BIN_DIR:-$(dirname "$ANALYTICS_LIB")}
 batch_mode=false
 preflight_only=false
+force_resnapshot=false
 mutation_started=false
 repair_complete=false
 
@@ -505,7 +506,7 @@ resnapshot_table() {
     return 0
   fi
 
-  if [[ -z "$state_mapping" && -z "$source_only" ]]; then
+  if [[ -z "$state_mapping" && -z "$source_only" && "$force_resnapshot" == false ]]; then
     log "$source_table already matches raw ClickHouse; no resnapshot needed"
     [[ "$batch_mode" == true ]] || repair_complete=true
     return 0
@@ -531,7 +532,7 @@ resnapshot_table() {
   fi
   mutation_started=true
 
-  if [[ -n "$current_mapping" && -n "$raw_schema" && -z "$source_only" ]]; then
+  if [[ -n "$current_mapping" && -n "$raw_schema" && -z "$source_only" && "$force_resnapshot" == false ]]; then
     finish_repair "$source_table"
     return 0
   fi
@@ -661,11 +662,19 @@ resnapshot_batch() {
 
 main() {
   local strategy=${2:-} source_table=${3:-}
+  if [[ $# -eq 4 && ${4:-} == --force ]]; then
+    [[ "$strategy" == replicated_snapshot ]] \
+      || die "--force requires replicated_snapshot"
+    source_table_cdc_only "$source_table" \
+      || die "--force is limited to explicitly configured CDC-only tables"
+    force_resnapshot=true
+    set -- "$1" "$2" "$3"
+  fi
   if [[ ${1:-} == --batch && $# -eq 1 ]]; then
     batch_mode=true
   else
     [[ ${1:-} == --strategy && -n "$strategy" && -n "$source_table" && $# -eq 3 ]] \
-      || die "usage: $0 --batch | --strategy empty_table_resnapshot|replicated_snapshot|cdc_additive SCHEMA.TABLE"
+      || die "usage: $0 --batch | --strategy empty_table_resnapshot|replicated_snapshot|cdc_additive SCHEMA.TABLE [--force]"
     [[ "$strategy" == empty_table_resnapshot || "$strategy" == replicated_snapshot || "$strategy" == cdc_additive ]] \
       || die "invalid resnapshot strategy: $strategy"
     [[ "$source_table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \

@@ -45,6 +45,7 @@ if [[ $# -eq 0 ]]; then
   run_case cdc_empty success
   run_case cdc_race failure
   run_case no_drift success
+  run_case forced_history success
   run_case additive_empty success
   run_case additive_nonempty success
   run_case nonempty failure
@@ -248,6 +249,17 @@ refresh_analytics() {
 }
 
 case $scenario in
+  forced_history)
+    mock_raw_columns=$mock_source_columns
+    mock_has_rows=true
+    force_resnapshot=true
+    resnapshot_table replicated_snapshot public.echo_automation
+    grep -q '^remove' "$operations_file"
+    grep -q '^drop' "$operations_file"
+    grep -q '^add' "$operations_file"
+    grep -q '^snapshot$' "$operations_file"
+    grep -q '^refresh$' "$operations_file"
+    ;;
   no_drift)
     mock_raw_columns=$mock_source_columns
     mock_has_rows=true

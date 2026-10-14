@@ -9,12 +9,89 @@ fn bind(values: &mut Vec<Value>, value: impl Into<Value>) -> String {
     format!("${}", values.len())
 }
 
+fn term_tsquery(
+    token: &str,
+    prefixes: bool,
+    values: &mut Vec<Value>,
+) -> String {
+    let parameter = bind(values, token);
+    if prefixes {
+        format!("(plainto_tsquery('russian',{parameter}) || to_tsquery('russian', quote_literal({parameter}) || ':*'))")
+    } else {
+        format!("plainto_tsquery('russian',{parameter})")
+    }
+}
+
+pub(crate) fn chunk_terms_predicate(
+    query: &str,
+    values: &mut Vec<Value>,
+) -> anyhow::Result<String> {
+    anyhow::ensure!(
+        query.chars().count() <= crate::config::ATTACHMENT_MAX_QUERY_CHARS,
+        "search query too long"
+    );
+    let parts =
+        crate::rer_importer::analysis::search::parse_search_parts(query)
+            .c(h!())?;
+    let prefixes =
+        crate::rer_importer::analysis::search::ts_prefix_query(&parts.ts_query)
+            .is_some();
+    let mut predicates = Vec::new();
+    for token in parts.ts_query.split_whitespace() {
+        if token.eq_ignore_ascii_case("or") || token.eq_ignore_ascii_case("and")
+        {
+            continue;
+        }
+        let token = token.strip_prefix('-').unwrap_or(token);
+        if !token.is_empty() {
+            let tsquery = term_tsquery(token, prefixes, values);
+            predicates.push(format!("chunk.search_tsv @@ {tsquery}"));
+        }
+    }
+    for pattern in parts.ilike.into_iter().chain(parts.not_ilike) {
+        let parameter = bind(values, pattern);
+        predicates.push(format!("(chunk.text ilike {parameter} escape '\\' or chunk.member ilike {parameter} escape '\\' or chunk.summary ilike {parameter} escape '\\')"));
+    }
+    Ok(if predicates.is_empty() {
+        "false".into()
+    } else {
+        predicates.join(" or ")
+    })
+}
+
 pub fn text_predicate(
     query: &str,
     message: &str,
     scope: &str,
     structured: bool,
     values: &mut Vec<Value>,
+) -> anyhow::Result<String> {
+    text_predicate_with_correlation(
+        query, message, scope, structured, values, false,
+    )
+}
+
+pub(crate) fn recent_message_predicate(
+    query: &str,
+    values: &mut Vec<Value>,
+) -> anyhow::Result<String> {
+    text_predicate_with_correlation(
+        query,
+        "signal_message.id",
+        "all",
+        true,
+        values,
+        true,
+    )
+}
+
+fn text_predicate_with_correlation(
+    query: &str,
+    message: &str,
+    scope: &str,
+    structured: bool,
+    values: &mut Vec<Value>,
+    correlated: bool,
 ) -> anyhow::Result<String> {
     anyhow::ensure!(
         query.chars().count() <= crate::config::ATTACHMENT_MAX_QUERY_CHARS,
@@ -59,12 +136,7 @@ pub fn text_predicate(
         if token.is_empty() {
             continue;
         }
-        let parameter = bind(values, token);
-        let tsquery = if prefixes {
-            format!("(plainto_tsquery('russian',{parameter}) || to_tsquery('russian', quote_literal({parameter}) || ':*'))")
-        } else {
-            format!("plainto_tsquery('russian',{parameter})")
-        };
+        let tsquery = term_tsquery(token, prefixes, values);
         let name_pattern = bind(
             values,
             format!(
@@ -81,6 +153,7 @@ pub fn text_predicate(
             &format!("chunk.search_tsv @@ {tsquery}"),
             &format!("media.file_name ilike {name_pattern} escape '\\'"),
             &format!("body_search.search_tsv @@ {tsquery}"),
+            correlated,
         );
         alternatives.last_mut().unwrap().push(if negative {
             format!("not ({predicate})")
@@ -132,11 +205,13 @@ fn exists_term(
     chunk: &str,
     filename: &str,
     body: &str,
+    correlated: bool,
 ) -> String {
     let mut sources = Vec::new();
     if !matches!(scope, "attachments" | "document") {
         sources.push(format!(
-            "select body_search.id from sigint_search body_search where {body}"
+            "select body_search.id from sigint_search body_search where {}{body}",
+            if correlated { format!("body_search.id={message} and ") } else { String::new() }
         ));
     }
     if scope != "body" {
@@ -146,11 +221,27 @@ fn exists_term(
             "media.signal_message_id"
         };
         sources.push(format!(
-            "select {key} from signal_message_media media where {filename}"
+            "select {key} from signal_message_media media where {}{filename}",
+            if correlated {
+                format!("{key}={message} and ")
+            } else {
+                String::new()
+            }
         ));
-        sources.push(format!("select {key} from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision join signal_message_media media on media.id=chunk.media_id where {chunk}"));
+        sources.push(format!("select {key} from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision join signal_message_media media on media.id=chunk.media_id where {}{chunk}", if correlated { format!("{key}={message} and ") } else { String::new() }));
     }
-    format!("{message} in ({})", sources.join(" union "))
+    if correlated {
+        format!(
+            "({})",
+            sources
+                .into_iter()
+                .map(|source| format!("exists({source})"))
+                .collect::<Vec<_>>()
+                .join(" or ")
+        )
+    } else {
+        format!("{message} in ({})", sources.join(" union "))
+    }
 }
 
 pub fn message_filter(query: &str, scope: &str) -> anyhow::Result<SimpleExpr> {
@@ -158,6 +249,22 @@ pub fn message_filter(query: &str, scope: &str) -> anyhow::Result<SimpleExpr> {
     let sql =
         text_predicate(query, "signal_message.id", scope, true, &mut values)
             .c(h!())?;
+    Ok(Expr::cust_with_values(sql, values))
+}
+
+pub(crate) fn correlated_message_filter(
+    query: &str,
+) -> anyhow::Result<SimpleExpr> {
+    let mut values = Vec::new();
+    let sql = text_predicate_with_correlation(
+        query,
+        "signal_message.id",
+        "all",
+        true,
+        &mut values,
+        true,
+    )
+    .c(h!())?;
     Ok(Expr::cust_with_values(sql, values))
 }
 
