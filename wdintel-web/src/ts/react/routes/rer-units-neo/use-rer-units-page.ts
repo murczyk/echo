@@ -69,6 +69,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [settingsReady, setSettingsReady] = useState(!canEdit);
   const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
+  const [hideNetworks, setHideNetworks] = useState(false);
   const [orbitDataHidden, setOrbitDataHidden] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -177,6 +178,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
       .then((settings) => {
         if (!active) return;
         setDevicesSectionEnabled(settings.devicesSectionEnabled);
+        setHideNetworks(settings.hideNetworks);
         setOrbitDataHidden(settings.hideOrbitData);
         setSettingsReady(true);
       })
@@ -553,6 +555,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     orbitDataHidden,
     settingsReady,
     devicesSectionEnabled,
+    hideNetworks,
     status,
     createOpen,
     editUnit,

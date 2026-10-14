@@ -1109,6 +1109,16 @@ pub async fn list_units_by_id(
     Ok(Json(ListUnitsByIdRsp { units: res }))
 }
 
+pub(super) async fn ensure_unit_creation(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+) -> Result<(), AppError> {
+    has_any_role(dbx, login, vec!["UnitsEditor", "Rer", "Cyber"])
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
 #[post("/api/sigint/unit/create")]
 pub async fn create_unit(
     user: actix_identity::Identity,
@@ -1116,8 +1126,8 @@ pub async fn create_unit(
     req: Json<CreateUnitReq>,
 ) -> Result<Json<Unit>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
-    has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    ensure_unit_creation(&env.dbx, &login).await.c(h!())?;
 
     let (unit, can_view_orbit) =
         create_unit_for_login(&login, &env, req.into_inner()).await?;
@@ -1152,10 +1162,8 @@ pub async fn create_unit_with_auto_network(
     req: Json<CreateUnitWithAutoNetworkReq>,
 ) -> Result<Json<CreateUnitWithAutoNetworkRsp>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
-        .await
-        .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    ensure_unit_creation(&env.dbx, &login).await.c(h!())?;
 
     Ok(Json(
         create_unit_with_auto_network_for_login(&login, &env, req.into_inner())
@@ -3879,6 +3887,61 @@ mod tests {
             orbit_note: None,
             present_in_orbit: None,
             duplicate_unit_ids: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3535_unit_creation_preserved_write_role_boundaries() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        for (roles, allowed) in [
+            (vec!["Rer"], true),
+            (vec!["Cyber"], true),
+            (vec!["Full"], true),
+            (vec!["Admin"], true),
+            (vec!["CyberViewer", "UnitsEditor"], true),
+            (vec!["CyberViewer"], false),
+            (vec!["Basic"], false),
+            (vec!["UnitsEditor"], false),
+            (vec!["Api"], false),
+            (vec!["ApiAgent"], false),
+        ] {
+            let login = crate::functest::tests::mk_login(
+                &env.dbx,
+                login::ActiveModel {
+                    roles: Set(serde_json::json!(roles)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            let base_access =
+                crate::users::ensure_base_role_by_id(&env.dbx, &login.id).await;
+            let create_access = ensure_unit_creation(&env.dbx, &login.id).await;
+            if allowed {
+                base_access.unwrap();
+                create_access.unwrap();
+                let mut req = unit_req();
+                req.name = Some(format!("3535 {}", roles.join(" ")));
+                let (unit, _) =
+                    create_unit_for_login(&login.id, &env, req.clone())
+                        .await
+                        .unwrap();
+                let saved = sigint_unit::Entity::find_by_id(unit.id)
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(Some(saved.name), req.name);
+                assert_eq!(saved.battalion, req.battalion);
+                assert_eq!(saved.comment, req.comment);
+            } else {
+                assert!(
+                    matches!(base_access, Err(AppError::Forbidden(_)))
+                        || matches!(create_access, Err(AppError::Forbidden(_))),
+                    "{roles:?}"
+                );
+            }
         }
     }
 

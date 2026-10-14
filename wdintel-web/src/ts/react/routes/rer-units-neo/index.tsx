@@ -455,6 +455,7 @@ function RerUnitsNeoPageBody({
         open={page.createOpen}
         unit={null}
         devicesSectionEnabled={page.devicesSectionEnabled}
+        hideNetworks={page.hideNetworks}
         submitting={page.submitting}
         error={page.dialogError}
         orbitUnits={[]}

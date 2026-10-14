@@ -52,8 +52,13 @@ can replace a recent-unit default because prefilling is not a manual edit.
 Creation forms automatically select a unique exact unit name after a successful
 search, including names supplied by the parser. Partial matches and duplicate
 names require an explicit choice. The inline creation option appears only when
-the current search succeeds without any candidates; choosing it records creation
-intent until the message is saved. Nonempty unresolved unit text displays
+the current search succeeds without any candidates. Choosing it opens the shared
+unit form from `/rer-units-neo` with the typed text in `name`. Message writers can
+create full units without requiring `UnitsEditor`. Saving this form immediately
+creates the unit and selects its ID in the message; cancelling leaves the text
+unresolved. Cancelling the message afterwards does not remove the saved unit.
+Both unit creation entry points skip the network step when `hide_networks` is
+enabled, even when the devices section is enabled. Nonempty unresolved unit text displays
 `Підрозділ не обрано` and blocks creation, including keyboard submission.
 Whitespace-only unit text remains optional. Existing editors continue accepting
 legacy labels. Network assignments retain all verified unit IDs and the locked
