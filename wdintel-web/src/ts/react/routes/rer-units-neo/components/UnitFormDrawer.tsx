@@ -530,7 +530,7 @@ export function UnitFormDrawer({
       return;
     }
     const masks = defaultUnitMasks(form);
-    setUnitMask(masks.length > 0 ? masks : uniqueTrimmed([form.name ?? '']));
+    setUnitMask(uniqueTrimmed([...masks, form.name ?? '']));
     setNetworkStep(true);
   }
 
