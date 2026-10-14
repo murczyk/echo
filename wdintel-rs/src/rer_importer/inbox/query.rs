@@ -248,6 +248,8 @@ where
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum InboxQueryPurpose {
     Messages,
+    Candidates,
+    Hydration,
     Map,
     Digest,
     IndexedDigest,
@@ -318,7 +320,10 @@ fn build_inbox_query_base(
         JoinType::LeftJoin,
         signal_message::Relation::SigintInboxItem.def(),
     );
-    if purpose == InboxQueryPurpose::Messages {
+    if matches!(
+        purpose,
+        InboxQueryPurpose::Messages | InboxQueryPurpose::Hydration
+    ) {
         return query
             .join(
                 JoinType::LeftJoin,
@@ -632,13 +637,14 @@ where
 
     if req.ignore_imported_coords.unwrap_or(false) {
         q = match purpose {
-            InboxQueryPurpose::Messages => {
+            InboxQueryPurpose::Messages | InboxQueryPurpose::Hydration => {
                 q.filter(signal_group::Column::IgnoreOperativny.eq(Some(false)))
             }
             InboxQueryPurpose::Analytics => {
                 apply_flat_analytics_imported_coords_filter(q)
             }
             InboxQueryPurpose::Map
+            | InboxQueryPurpose::Candidates
             | InboxQueryPurpose::Digest
             | InboxQueryPurpose::IndexedDigest => {
                 q.filter(message_source_group_is_not_ignored_exists())
@@ -675,7 +681,15 @@ where
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_denied_posts(q, &req.denied_posts)?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
-    let q = filter_search(q, &req.search)?;
+    let q = filter_search_with_correlated_terms(
+        q,
+        &req.search,
+        matches!(
+            purpose,
+            InboxQueryPurpose::Analytics | InboxQueryPurpose::Hydration
+        ),
+    )
+    .c(h!())?;
     let q = filter_selected_device_names(q, &req.selected_device_names)?;
     let q = filter_denied_device_names(q, &req.denied_device_names).c(h!())?;
     let q = match unit_lookup_strategy {
@@ -1363,6 +1377,14 @@ async fn build_analytics_filtered_inbox_query(
     analytics_db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<Option<(Select<signal_message::Entity>, bool)>, AppError> {
+    crate::attachments::analytics::ensure_search_coverage(
+        &env.dbx,
+        analytics_db,
+        &req.search,
+        freshness_max_age_ms,
+    )
+    .await
+    .c(h!())?;
     let Some(scope) = resolve_analytics_inbox_message_id_scope(
         req,
         &env.dbx,
@@ -2046,6 +2068,54 @@ where
     finish_inbox_query(dbx, login, req, q, true).await
 }
 
+pub(crate) async fn load_postgres_inbox_page_ids<C: ConnectionTrait>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    internal_lower_bound: Option<NaiveDateTime>,
+) -> anyhow::Result<Vec<i64>> {
+    let query = build_filtered_inbox_query_with_scope(
+        dbx,
+        login,
+        env,
+        req,
+        None,
+        internal_lower_bound,
+        InboxQueryPurpose::Candidates,
+        InboxUnitLookupStrategy::Default,
+    )
+    .await
+    .c(h!())?;
+    let query = get_bl_ordering_select(
+        req,
+        query.select_only().column(signal_message::Column::Id),
+    )
+    .await
+    .c(h!())?
+    .limit(INBOX_MESSAGES_PAGE_LIMIT as u64);
+    query.into_tuple::<i64>().all(dbx).await.c(h!())
+}
+
+pub(crate) async fn build_inbox_page_details_query<C: ConnectionTrait>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    ids: &[i64],
+) -> anyhow::Result<String> {
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(dbx, login)
+            .await
+            .c(h!())?;
+    let query = build_inbox_query_base(req, InboxQueryPurpose::Messages)
+        .filter(signal_message::Column::Id.is_in(ids.to_vec()))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(message_is_accessible_exists(groups, None, false));
+    finish_inbox_query(dbx, login, req, query, false)
+        .await
+        .c(h!())
+}
+
 pub(crate) async fn load_postgres_fresh_tail_inbox_candidates(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
@@ -2060,7 +2130,7 @@ pub(crate) async fn load_postgres_fresh_tail_inbox_candidates(
         req,
         None,
         None,
-        InboxQueryPurpose::Messages,
+        InboxQueryPurpose::Candidates,
         InboxUnitLookupStrategy::Default,
     )
     .await
@@ -2086,7 +2156,7 @@ pub(crate) async fn build_inbox_query_for_candidate_ids(
         req,
         None,
         None,
-        InboxQueryPurpose::Messages,
+        InboxQueryPurpose::Hydration,
         InboxUnitLookupStrategy::Default,
     )
     .await

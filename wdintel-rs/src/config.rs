@@ -1579,6 +1579,8 @@ pub const ANALYTICS_LOCAL_EXCLUSIONS_PATH: &str = concat!(
 );
 pub const ANALYTICS_TABLE_RECONCILE_SERVICE: &str =
     "echo-peerdb-table-reconcile.service";
+pub const ANALYTICS_ATTACHMENT_HISTORY_SCRIPT: &str =
+    "/opt/echo-peerdb/current/bin/oneoff-replicate-attachment-history.sh";
 pub const SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_DEFAULT: u64 = 500;
 pub const SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_MAX: u64 = 1_000;
 pub const SIGNAL_MESSAGE_UUID_BACKFILL_PAUSE_MS_DEFAULT: u64 = 250;

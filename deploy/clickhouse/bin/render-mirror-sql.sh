@@ -16,6 +16,7 @@ clickhouse_password=$(sql_literal "$CLICKHOUSE_PEERDB_PASSWORD")
 
 declare -a mappings=()
 for table in "${SOURCE_TABLES[@]}"; do
+  source_table_cdc_only "$table" && continue
   schema=${table%%.*}
   relation=${table##*.}
   if [[ "$schema" == public ]]; then
