@@ -9,7 +9,7 @@ import {
   type DutyFeedColumnActionsDeps,
   useDutyFeedColumnActions,
 } from '../useDutyFeedColumnActions';
-import { ScrollNavigationIntent } from '../windowed-feed-scroll-shared';
+import { ScrollNavigationIntent } from '../../shared/message-feed';
 import type { FeedColumnModel } from '../types';
 import type { MessageFeedState } from '../utils';
 
@@ -126,6 +126,17 @@ describe('useDutyFeedColumnActions', () => {
       'mf-0',
       expect.objectContaining({ scrollToEndAfterLoad: true }),
     );
+
+    vi.clearAllMocks();
+    feed.pendingNewerItems = [];
+    feed.evictedNewerTailId = null;
+    feed.historicalReadThrough = { id: 141, timestamp: 1_720_000_141_000 };
+    expect(actions!.onReachedBottom?.({ hasSeenNotAtBottom: true, navigationIntent: null })).toBe(
+      false,
+    );
+    expect(cancelFollowTail).toHaveBeenCalledWith('mf-0');
+    expect(ensureFollowTail).not.toHaveBeenCalled();
+    expect(loadFeedNewerMessages).not.toHaveBeenCalled();
   });
 
   it('keeps the card display data when opening the report composer', async () => {

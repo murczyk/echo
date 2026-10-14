@@ -7,6 +7,8 @@ type ShortStateFixtureOptions = {
   enableAudioTranscription?: boolean;
   dutyExcludeMenuEnabled?: boolean;
   analysisAorFilterEnabled?: boolean;
+  rerReportEligible?: boolean;
+  rerReportEnabled?: boolean;
   hideNetworks?: boolean;
   shortStateId?: string;
   shortState?: unknown;
@@ -24,6 +26,8 @@ type ShortStateFixtureOptions = {
   tagsResponse?: unknown[];
   networkInfoResponse?: unknown[];
   disableAutoScroll?: boolean;
+  keywordSets?: unknown[];
+  latestFrequencies?: string[];
   userSettingsResponse?:
     | { tagsLayout: string; disableAutoScroll: boolean; messageSortBy?: MessageTimeBasis }
     | Promise<{ tagsLayout: string; disableAutoScroll: boolean; messageSortBy?: MessageTimeBasis }>;
@@ -32,6 +36,7 @@ type ShortStateFixtureOptions = {
 
 type ShortStateFixtureHandle = {
   getLastInboxRequest: () => unknown | null;
+  getSavedFilters: () => Array<{ id: number; name: string; req: unknown }>;
   systemSettingsReady: Promise<void>;
 };
 
@@ -46,7 +51,7 @@ async function fulfillJson(route: Route, body: unknown): Promise<void> {
   });
 }
 
-function emptyUserResponse() {
+function emptyUserResponse(rerReportEligible = false) {
   return {
     id: 'operator',
     name: 'operator',
@@ -59,7 +64,7 @@ function emptyUserResponse() {
     goi_host: null,
     goi_integrations: [],
     last_release_seen: null,
-    rer_report_eligible: false,
+    rer_report_eligible: rerReportEligible,
   };
 }
 
@@ -110,10 +115,6 @@ function emptyDutyTagsResponse() {
   return [];
 }
 
-function emptyDutySavedFiltersResponse() {
-  return [];
-}
-
 function emptyDutyPostStatsResponse() {
   return {
     posts: [],
@@ -158,7 +159,8 @@ export async function installRerDutyShortStateMocks(
   options: ShortStateFixtureOptions = {},
 ): Promise<ShortStateFixtureHandle> {
   const shortStateId = options.shortStateId ?? 'short-1';
-  const shortState = options.shortState ?? defaultShortState();
+  let currentShortState = options.shortState ?? defaultShortState();
+  let currentSavedFilters: Array<{ id: number; name: string; req: unknown }> = [];
   let lastInboxRequest: unknown | null = null;
   let resolveSystemSettingsReady!: () => void;
   const systemSettingsReady = new Promise<void>((resolve) => {
@@ -177,7 +179,7 @@ export async function installRerDutyShortStateMocks(
     const { pathname } = url;
 
     if (pathname === '/api/user') {
-      await fulfillJson(route, emptyUserResponse());
+      await fulfillJson(route, emptyUserResponse(options.rerReportEligible));
       return;
     }
 
@@ -207,6 +209,7 @@ export async function installRerDutyShortStateMocks(
           shortUrlEnabled: true,
           dutyExcludeMenuEnabled: options.dutyExcludeMenuEnabled,
           analysisAorFilterEnabled: options.analysisAorFilterEnabled,
+          rerReportEnabled: options.rerReportEnabled,
           hideNetworks: options.hideNetworks,
         }),
       );
@@ -225,7 +228,7 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/sigint/latest-frequencies') {
-      await fulfillJson(route, []);
+      await fulfillJson(route, options.latestFrequencies ?? []);
       return;
     }
 
@@ -256,8 +259,62 @@ export async function installRerDutyShortStateMocks(
       return;
     }
 
+    if (pathname === '/api/organism/keyword-sets') {
+      await fulfillJson(route, options.keywordSets ?? []);
+      return;
+    }
+
     if (pathname === '/api/rer/duty/saved-filters') {
-      await fulfillJson(route, emptyDutySavedFiltersResponse());
+      await fulfillJson(route, currentSavedFilters);
+      return;
+    }
+
+    if (pathname === '/api/rer/duty/saved-filter-upsert') {
+      const data = request.postDataJSON() as { name: string; req: unknown };
+      const existing = currentSavedFilters.find((savedFilter) => savedFilter.name === data.name);
+      if (existing) {
+        currentSavedFilters = currentSavedFilters.map((savedFilter) =>
+          savedFilter.id === existing.id ? { ...savedFilter, req: data.req } : savedFilter,
+        );
+      } else {
+        const nextId = Math.max(0, ...currentSavedFilters.map(({ id }) => id)) + 1;
+        currentSavedFilters = [
+          ...currentSavedFilters,
+          { id: nextId, name: data.name, req: data.req },
+        ];
+      }
+      await fulfillJson(route, currentSavedFilters);
+      return;
+    }
+
+    if (pathname === '/api/rer/duty/saved-filter-rename') {
+      const data = request.postDataJSON() as { id: number; name: string };
+      currentSavedFilters = currentSavedFilters.map((savedFilter) =>
+        savedFilter.id === data.id ? { ...savedFilter, name: data.name } : savedFilter,
+      );
+      await fulfillJson(route, {});
+      return;
+    }
+
+    if (pathname === '/api/rer/duty/saved-filter-delete') {
+      const id = Number(request.postDataJSON());
+      currentSavedFilters = currentSavedFilters.filter((f) => f.id !== id);
+      await fulfillJson(route, {});
+      return;
+    }
+
+    if (pathname === '/api/rer/important/add') {
+      await fulfillJson(route, { important: true });
+      return;
+    }
+
+    if (pathname === '/api/rer/important/delete') {
+      await fulfillJson(route, { important: false });
+      return;
+    }
+
+    if (pathname === '/api/rer-importer/delete-message') {
+      await fulfillJson(route, {});
       return;
     }
 
@@ -267,11 +324,15 @@ export async function installRerDutyShortStateMocks(
         await route.fulfill({ status: 404, body: 'Not found' });
         return;
       }
-      await fulfillJson(route, { state: shortState });
+      await fulfillJson(route, { state: currentShortState });
       return;
     }
 
     if (pathname === '/api/rer-duty/filters/create') {
+      const payload = request.postDataJSON() as { state?: unknown } | null;
+      if (payload?.state) {
+        currentShortState = payload.state;
+      }
       await fulfillJson(route, { id: shortStateId });
       return;
     }
@@ -307,6 +368,7 @@ export async function installRerDutyShortStateMocks(
 
   return {
     getLastInboxRequest: () => lastInboxRequest,
+    getSavedFilters: () => currentSavedFilters,
     systemSettingsReady,
   };
 }

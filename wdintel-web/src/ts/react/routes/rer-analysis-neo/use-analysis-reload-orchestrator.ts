@@ -68,8 +68,9 @@ type Params = {
   ) => Promise<void>;
   invalidateMessagePaging: () => void;
   invalidateMessagePageRequests: () => void;
-  getCurrentMessagePageCursor: () => import('./types').AnalysisMessagePageCursor;
-  replaceCurrentMessagePage: (messages: Array<[number, InboxMessage]>) => void;
+  currentMessagePageIndex: number;
+  getCurrentMessagePageCursor: (pageIndex?: number) => import('./types').AnalysisMessagePageCursor;
+  replaceCurrentMessagePage: (messages: Array<[number, InboxMessage]>, pageIndex?: number) => void;
   refreshMessageCounts: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<Partial<import('../../../../Bindings').CountStatsRsp> | null>;
@@ -96,7 +97,6 @@ type Params = {
   newCallsignsLoadedKeyRef: React.MutableRefObject<string | null>;
   newCallsignsPendingKeyRef: React.MutableRefObject<string | null>;
   setNoMoreToLoad: Setter<boolean>;
-  setNolimitShown: Setter<boolean>;
   setOptions: Setter<AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, import('../../../../Bindings').CallsignInfoRes>>;
@@ -123,6 +123,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     hideNetworks,
     focusedWindow = null,
     focusedMessageActive = false,
+    currentMessagePageIndex,
     getLoadedFilterSections,
     getCurrentMessagePageCursor,
     getReloadFilterSections,
@@ -173,7 +174,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     setNewCallsignsLoading,
     setNewCallsignsLoadedKey,
     setNoMoreToLoad,
-    setNolimitShown,
     setOptions,
     setProfiles,
     setSummaryCallsignsInfo,
@@ -203,10 +203,16 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       reloadAbortControllerRef.current = abortController;
       const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
       const preserveMessagePage = options.preserveMessagePage === true;
-      const messagePageCursor = preserveMessagePage ? getCurrentMessagePageCursor() : undefined;
+      const messagePageIndex = options.messagePageIndex;
+      const messagePageCursor = preserveMessagePage
+        ? getCurrentMessagePageCursor(messagePageIndex)
+        : undefined;
       const setReloadedMessages =
         preserveMessagePage && !focusedMessageActive
-          ? replaceCurrentMessagePage
+          ? messagePageIndex === undefined
+            ? replaceCurrentMessagePage
+            : (messages: Array<[number, InboxMessage]>) =>
+                replaceCurrentMessagePage(messages, messagePageIndex)
           : (messages: Array<[number, InboxMessage]>) => setMessages(messages);
 
       if (shouldRefreshMessageCounts) refreshMessageCounts();
@@ -224,6 +230,11 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
             : invalidateMessagePaging,
           includeDefaultFilterSections: leftPanelOpen,
           messagePageCursor,
+          preserveMessageTailExhaustion:
+            preserveMessagePage &&
+            !focusedMessageActive &&
+            messagePageIndex !== undefined &&
+            messagePageIndex !== currentMessagePageIndex,
           newestFirst,
           onError,
           onUnauthorized,
@@ -254,7 +265,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           setNewCallsignsLoadedKey,
           shouldLoadNewCallsigns,
           setNoMoreToLoad,
-          setNolimitShown,
           setOptions,
           setProfiles,
           setSummaryCallsignsInfo,
@@ -306,6 +316,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       leftPanelOpen,
       loadInitialFilterSections,
       loadMessageComments,
+      currentMessagePageIndex,
       newestFirst,
       newCallsignsLoadedKeyRef,
       newCallsignsPendingKeyRef,
@@ -337,7 +348,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       setNewCallsignsLoading,
       setNewCallsignsLoadedKey,
       setNoMoreToLoad,
-      setNolimitShown,
       setOptions,
       setProfiles,
       setSummaryCallsignsInfo,

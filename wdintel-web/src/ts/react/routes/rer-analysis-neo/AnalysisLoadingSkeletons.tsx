@@ -1,16 +1,10 @@
 import { Box, Skeleton, Stack } from '@mui/material';
+import { MessageFeedSkeletons } from '../shared/message-feed';
 
 type Props = {
   rightPanelVisible: boolean;
   centerVisible?: boolean;
 };
-
-const messageCardSkeletons = [
-  { lines: [320, 180, 140], bodyHeight: 92 },
-  { lines: [240, 160], bodyHeight: 76 },
-  { lines: [280, 200, 160], bodyHeight: 88 },
-  { lines: [220, 180], bodyHeight: 76 },
-];
 
 export function getAnalysisLoadingSkeletonCount(viewportWidth: number): number {
   return viewportWidth < 600 ? 2 : 3;
@@ -23,10 +17,14 @@ export const analysisLoadingSkeletonTabsSx = {
   flexWrap: 'nowrap',
 } as const;
 
-export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = true }: Props) {
+export function AnalysisMessageCardSkeletons() {
   const skeletonCount = getAnalysisLoadingSkeletonCount(
     typeof window === 'undefined' ? 1024 : window.innerWidth,
   );
+  return <MessageFeedSkeletons count={skeletonCount} />;
+}
+
+export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = true }: Props) {
   return (
     <>
       {centerVisible ? (
@@ -68,43 +66,7 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = tr
               overflow: 'hidden',
             }}
           >
-            <Stack spacing={1.25}>
-              {messageCardSkeletons.slice(0, skeletonCount).map((card, index) => (
-                <Box
-                  key={index}
-                  sx={{
-                    p: 1.5,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    borderRadius: 1,
-                  }}
-                >
-                  <Stack spacing={1}>
-                    <Stack spacing={0.75}>
-                      <Skeleton variant="rounded" width={card.lines[0]} height={20} />
-                      <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
-                        <Skeleton variant="rounded" width={88} height={24} />
-                        <Skeleton variant="rounded" width={72} height={24} />
-                        <Skeleton variant="rounded" width={96} height={24} />
-                      </Stack>
-                    </Stack>
-                    <Stack spacing={0.75}>
-                      <Skeleton variant="rounded" height={card.bodyHeight} />
-                      <Stack direction="row" spacing={1} flexWrap="wrap">
-                        {card.lines.slice(1).map((lineWidth, lineIndex) => (
-                          <Skeleton
-                            key={lineIndex}
-                            variant="rounded"
-                            width={lineWidth}
-                            height={16}
-                          />
-                        ))}
-                      </Stack>
-                    </Stack>
-                  </Stack>
-                </Box>
-              ))}
-            </Stack>
+            <AnalysisMessageCardSkeletons />
           </Box>
         </Box>
       ) : null}

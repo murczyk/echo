@@ -5,12 +5,16 @@ export type FeedColumnFabState = {
   bottomUnreadCount: number;
   arrowResultMessage: string | null;
   tailAvailability: TailAvailability;
+  hasUnrenderedNewerMessages: boolean;
+  explicitNavigationLoading: boolean;
 };
 
 const EMPTY_FAB_STATE: FeedColumnFabState = {
   bottomUnreadCount: 0,
   arrowResultMessage: null,
   tailAvailability: 'unknown',
+  hasUnrenderedNewerMessages: false,
+  explicitNavigationLoading: false,
 };
 
 const fabByFeedId = new Map<string, FeedColumnFabState>();
@@ -26,7 +30,9 @@ export function publishFeedColumnFab(feedId: string, fab: FeedColumnFabState): v
     previous &&
     previous.bottomUnreadCount === fab.bottomUnreadCount &&
     previous.arrowResultMessage === fab.arrowResultMessage &&
-    previous.tailAvailability === fab.tailAvailability
+    previous.tailAvailability === fab.tailAvailability &&
+    previous.hasUnrenderedNewerMessages === fab.hasUnrenderedNewerMessages &&
+    previous.explicitNavigationLoading === fab.explicitNavigationLoading
   ) {
     return;
   }

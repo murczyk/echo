@@ -92,7 +92,6 @@ export function buildAnalysisActionsParams({
     setNetworks: referenceState.setNetworks,
     setNewCallsigns: sidebarData.setNewCallsigns,
     setNoMoreToLoad: messageList.setNoMoreToLoad,
-    setNolimitShown: messageList.setNolimitShown,
     setOptions: referenceState.setOptions,
     setProfiles: referenceState.setProfiles,
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
@@ -154,6 +153,7 @@ type BuildReloadParamsInput = {
   ) => Promise<void>;
   invalidateMessagePaging: () => void;
   invalidateMessagePageRequests: () => void;
+  currentMessagePageIndex: number;
   getCurrentMessagePageCursor: MessageList['getCurrentMessagePageCursor'];
   replaceCurrentMessagePage: MessageList['replaceCurrentMessagePage'];
   refreshMessageCounts: MessageList['refreshMessageCounts'];
@@ -179,7 +179,6 @@ type BuildReloadParamsInput = {
   newCallsignsLoadedKeyRef: SidebarData['newCallsignsLoadedKeyRef'];
   newCallsignsPendingKeyRef: SidebarData['newCallsignsPendingKeyRef'];
   setNoMoreToLoad: MessageList['setNoMoreToLoad'];
-  setNolimitShown: MessageList['setNolimitShown'];
   setOptions: ReferenceState['setOptions'];
   setProfiles: ReferenceState['setProfiles'];
   setSummaryCallsignsInfo: ReferenceState['setSummaryCallsignsInfo'];
@@ -226,6 +225,7 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     loadMessageComments: input.loadMessageComments,
     invalidateMessagePaging: input.invalidateMessagePaging,
     invalidateMessagePageRequests: input.invalidateMessagePageRequests,
+    currentMessagePageIndex: input.currentMessagePageIndex,
     getCurrentMessagePageCursor: input.getCurrentMessagePageCursor,
     replaceCurrentMessagePage: input.replaceCurrentMessagePage,
     refreshMessageCounts: input.refreshMessageCounts,
@@ -251,7 +251,6 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     newCallsignsLoadedKeyRef: input.newCallsignsLoadedKeyRef,
     newCallsignsPendingKeyRef: input.newCallsignsPendingKeyRef,
     setNoMoreToLoad: input.setNoMoreToLoad,
-    setNolimitShown: input.setNolimitShown,
     setOptions: input.setOptions,
     setProfiles: input.setProfiles,
     setSummaryCallsignsInfo: input.setSummaryCallsignsInfo,

@@ -68,6 +68,11 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
       <output data-testid="card-network-visibility">
         {String(buildFeedColumnModel(messageFeeds[0]).messageCard.hideNetworks)}
       </output>
+      {messageFeeds.map((feed) => (
+        <output key={feed.id} data-testid={`editor-highlight-${feed.id}`}>
+          {buildFeedColumnModel(feed).view.editorHighlightedMessageId ?? 'none'}
+        </output>
+      ))}
       <button type="button" aria-label="Додати повідомлення" onClick={openCreateMessageComposer}>
         Додати повідомлення
       </button>
@@ -130,7 +135,12 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
           <button
             type="button"
             aria-label="Редагувати розвіддонесення"
-            onClick={() => buildFeedColumnModel(messageFeeds[0]).actions.onMessageEditReport(91)}
+            onClick={() =>
+              buildFeedColumnModel(messageFeeds[0]).actions.onMessageEditReport(
+                91,
+                messageFeeds[0].items[0][0],
+              )
+            }
           />
           <button
             type="button"
@@ -396,6 +406,7 @@ function buildFeedsState() {
     reloadEditedFeeds: vi.fn(),
     loadFeedOlderMessages: vi.fn(),
     applyFilter: vi.fn(),
+    setFeedInitialTarget: vi.fn(),
     addFrequencyToFilter: vi.fn(),
     toggleGroup: vi.fn(),
     selectAllGroups: vi.fn(),
@@ -450,12 +461,14 @@ function buildFeedsState() {
     watchModeByFeedId: {},
     setWatchModeByFeedId: vi.fn(),
     loadingNewerFeedIds: new Set<string>(),
+    isExplicitNavigationLoading: () => false,
     loadingNewerFeedId: null,
     arrowResultByFeedId: {},
     copiedFeedbackId: null,
     keywordSets: [],
     reloadKeywordSets: vi.fn(),
-    error: null,
+    error: null as string | null,
+    errorNotificationVersion: 0,
     clearDutyError: vi.fn(),
     authUserName: 'tester',
     columnRefsRef: { current: {} },
@@ -518,6 +531,7 @@ describe('RerDutyNeoPage creation workflow', () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     document.body.innerHTML = '';
+    window.history.replaceState({}, '', '/rer-duty-neo');
   });
 
   // Regression: https://github.com/echoua/echo/issues/3598
@@ -614,12 +628,21 @@ describe('RerDutyNeoPage creation workflow', () => {
 
     await click(container.querySelector('button[aria-label="Редагувати повідомлення"]'));
     expect(container.querySelector('[data-testid="composer"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="editor-highlight-feed-1"]')?.textContent).toBe(
+      '42',
+    );
+    expect(container.querySelector('[data-testid="editor-highlight-feed-2"]')?.textContent).toBe(
+      'none',
+    );
 
     await click(container.querySelector('button[aria-label="Зберегти редагування"]'));
 
     expect(state.handleEditedMessage).toHaveBeenCalledTimes(1);
     expect(state.reloadEditedFeeds).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="composer"]')).toBeNull();
+    expect(container.querySelector('[data-testid="editor-highlight-feed-1"]')?.textContent).toBe(
+      'none',
+    );
 
     await act(async () => {
       root.unmount();
@@ -891,6 +914,9 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(drawer?.getAttribute('data-edit-target-load-status')).toBe('loading');
     expect(drawer?.getAttribute('data-edit-as-report')).toBe('true');
     expect(drawer?.getAttribute('data-edit-target-id')).toBe('');
+    expect(container.querySelector('[data-testid="editor-highlight-feed-1"]')?.textContent).toBe(
+      '42',
+    );
     const signal = fetchMessagesByIdsMock.mock.calls[0]?.[2]?.signal as AbortSignal;
     expect(signal).toBeInstanceOf(AbortSignal);
 
@@ -937,6 +963,12 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(
       container.querySelector('[data-testid="composer"]')?.getAttribute('data-edit-target-id'),
     ).toBe('42');
+    expect(container.querySelector('[data-testid="editor-highlight-feed-1"]')?.textContent).toBe(
+      '42',
+    );
+    expect(container.querySelector('[data-testid="editor-highlight-feed-2"]')?.textContent).toBe(
+      'none',
+    );
 
     editorGuardMocks.dirty = true;
     await click(container.querySelector('button[aria-label="Редагувати повідомлення стрічки 2"]'));
@@ -962,6 +994,12 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(
       container.querySelector('[data-testid="composer"]')?.getAttribute('data-edit-target-id'),
     ).toBe('84');
+    expect(container.querySelector('[data-testid="editor-highlight-feed-1"]')?.textContent).toBe(
+      'none',
+    );
+    expect(container.querySelector('[data-testid="editor-highlight-feed-2"]')?.textContent).toBe(
+      '84',
+    );
     root.unmount();
   });
 
@@ -990,6 +1028,185 @@ describe('RerDutyNeoPage creation workflow', () => {
         ?.getAttribute('data-edit-target-load-status'),
     ).toBe('loading');
 
+    await act(async () => root.unmount());
+  });
+
+  it('shows one privacy-safe error when a linked target is unavailable', async () => {
+    window.history.replaceState({}, '', '/rer-duty-neo?m=hidden-41');
+    fetchInboxItemContextMock.mockResolvedValueOnce({
+      message: null,
+      groupMasterKeys: [],
+      sigintInboxItemIds: [],
+      sinceTs: null,
+      tillTs: null,
+    });
+    const { root, state } = await renderPage((feeds) => {
+      feeds.messageFeeds = [feeds.messageFeeds[0]];
+    });
+
+    await act(async () => Promise.resolve());
+
+    expect(state.applyFilter).not.toHaveBeenCalled();
+    expect(notifyMock).toHaveBeenCalledExactlyOnceWith({
+      message: 'Повідомлення за посиланням не знайдено або воно недоступне.',
+      severity: 'error',
+    });
+    await act(async () => root.unmount());
+  });
+
+  it('does not reload a linked target after the user changes its feed filter', async () => {
+    window.history.replaceState({}, '', '/rer-duty-neo?m=target-41');
+    const request = deferred<{
+      message: [number, ReturnType<typeof minimalInboxMessage>];
+      groupMasterKeys: string[];
+      sigintInboxItemIds: number[];
+      sinceTs: null;
+      tillTs: null;
+    }>();
+    fetchInboxItemContextMock.mockReturnValueOnce(request.promise);
+    const { root, state } = await renderPage((feeds) => {
+      feeds.messageFeeds = [feeds.messageFeeds[0]];
+    });
+
+    state.messageFeeds = [
+      {
+        ...state.messageFeeds[0],
+        filter: { ...state.messageFeeds[0].filter, groupsSelected: ['different-group'] },
+      },
+    ];
+    await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
+    await act(async () => {
+      request.resolve({
+        message: [41, minimalInboxMessage({ messageUid: 'target-41' })],
+        groupMasterKeys: [],
+        sigintInboxItemIds: [41],
+        sinceTs: null,
+        tillTs: null,
+      });
+      await Promise.resolve();
+    });
+
+    expect(state.applyFilter).not.toHaveBeenCalled();
+    expect(notifyMock).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
+  it('does not mistake an earlier error version for the linked feed reload error', async () => {
+    window.history.replaceState({}, '', '/rer-duty-neo?m=target-41');
+    const contextRequest = deferred<{
+      message: [number, ReturnType<typeof minimalInboxMessage>];
+      groupMasterKeys: string[];
+      sigintInboxItemIds: number[];
+      sinceTs: null;
+      tillTs: null;
+    }>();
+    fetchInboxItemContextMock.mockReturnValueOnce(contextRequest.promise);
+    const { root, state } = await renderPage((feeds) => {
+      feeds.messageFeeds = [feeds.messageFeeds[0]];
+    });
+    state.errorNotificationVersion = 1;
+    await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
+    await act(async () => {
+      contextRequest.resolve({
+        message: [41, minimalInboxMessage({ messageUid: 'target-41' })],
+        groupMasterKeys: [],
+        sigintInboxItemIds: [41],
+        sinceTs: null,
+        tillTs: null,
+      });
+      await Promise.resolve();
+    });
+    expect(state.applyFilter).toHaveBeenCalledOnce();
+    state.messageFeeds = [{ ...state.messageFeeds[0], loading: true }];
+    await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
+    state.error = 'earlier unrelated error';
+    await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
+
+    expect(notifyMock).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
+  it('lands the exact numeric linked message after the focused feed reload', async () => {
+    window.history.replaceState({}, '', '/rer-duty-neo?m=41');
+    fetchInboxItemContextMock.mockResolvedValueOnce({
+      message: [41, minimalInboxMessage({ messageUid: 'target-41' })],
+      groupMasterKeys: [],
+      sigintInboxItemIds: [40, 41, 42],
+      sinceTs: null,
+      tillTs: null,
+    });
+    const { root, state } = await renderPage((feeds) => {
+      feeds.messageFeeds = [feeds.messageFeeds[0]];
+    });
+    const target = document.createElement('article');
+    const scrollToMessage = vi.fn(() => target);
+    const highlightLinkedMessage = vi.fn(() => true);
+    Object.assign(state.columnRefsRef.current, {
+      'feed-1': { scrollToMessage, highlightLinkedMessage },
+    });
+
+    expect(state.setFeedInitialTarget).toHaveBeenCalledWith('feed-1', {
+      beforeIdNoninclusive: 41,
+      messageIds: [41],
+    });
+    state.messageFeeds = [{ ...state.messageFeeds[0], loading: true }];
+    await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
+    state.messageFeeds = [{ ...state.messageFeeds[0], loading: false }];
+    await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
+
+    expect(scrollToMessage).toHaveBeenCalledOnce();
+    expect(highlightLinkedMessage).toHaveBeenCalledExactlyOnceWith(41);
+    expect(notifyMock).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
+  it('reports one landing error when the loaded feed has no target card', async () => {
+    window.history.replaceState({}, '', '/rer-duty-neo?m=target-41');
+    fetchInboxItemContextMock.mockResolvedValueOnce({
+      message: [41, minimalInboxMessage({ messageUid: 'target-41' })],
+      groupMasterKeys: [],
+      sigintInboxItemIds: [41],
+      sinceTs: null,
+      tillTs: null,
+    });
+    const { root, state } = await renderPage((feeds) => {
+      feeds.messageFeeds = [feeds.messageFeeds[0]];
+    });
+    state.messageFeeds = [{ ...state.messageFeeds[0], loading: true }];
+    await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
+    state.messageFeeds = [{ ...state.messageFeeds[0], loading: false }];
+    await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
+
+    expect(notifyMock).toHaveBeenCalledExactlyOnceWith({
+      message: 'Повідомлення за посиланням відсутнє у стрічці.',
+      severity: 'error',
+    });
+    await act(async () => root.unmount());
+  });
+
+  it('reports the focused feed reload error once', async () => {
+    window.history.replaceState({}, '', '/rer-duty-neo?m=target-41');
+    fetchInboxItemContextMock.mockResolvedValueOnce({
+      message: [41, minimalInboxMessage({ messageUid: 'target-41' })],
+      groupMasterKeys: [],
+      sigintInboxItemIds: [41],
+      sinceTs: null,
+      tillTs: null,
+    });
+    const { root, state } = await renderPage((feeds) => {
+      feeds.messageFeeds = [feeds.messageFeeds[0]];
+    });
+    state.messageFeeds = [{ ...state.messageFeeds[0], loading: true }];
+    await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
+    state.error = 'raw network error';
+    state.errorNotificationVersion = 1;
+    state.messageFeeds = [{ ...state.messageFeeds[0], loading: false }];
+    await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
+
+    expect(notifyMock).toHaveBeenCalledExactlyOnceWith({
+      message: 'Не вдалося відкрити повідомлення за посиланням. Спробуйте ще раз.',
+      severity: 'error',
+    });
     await act(async () => root.unmount());
   });
 });
