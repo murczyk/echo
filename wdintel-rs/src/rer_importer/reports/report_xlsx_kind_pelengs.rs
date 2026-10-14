@@ -339,9 +339,9 @@ async fn get_inbox_messages_report_chunk_postgres(
                             signal_message::Column::Id,
                         )),
                     )
-                    .filter(intel_product::relation_kind_is_in([
-                        intel_product::RELATION_KIND_REPORT,
-                        intel_product::RELATION_KIND_COMMENT,
+                    .filter(crate::rer_importer::intel_product_filter::relation_kind_is_in([
+                        crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
+                        crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
                     ]))
                     .select_only()
                     .column(intel_product::Column::IntelMessageId)

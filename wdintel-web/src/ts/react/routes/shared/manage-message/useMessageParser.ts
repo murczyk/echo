@@ -140,6 +140,8 @@ export function useMessageParser(
         } else if (
           name !== 'full_body' &&
           name !== 'signalGroupMasterKey' &&
+          name !== 'unitSelection' &&
+          name !== 'unitNetworkSelection' &&
           getFieldState(name as keyof MessageFormData).isDirty
         ) {
           hasManualFormChangesRef.current = true;

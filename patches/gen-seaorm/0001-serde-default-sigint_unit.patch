@@ -1,0 +1,38 @@
+diff --git b/wdintel-rs/src/entities/sigint_unit.rs a/wdintel-rs/src/entities/sigint_unit.rs
+index ec658ccd5..2f4ccf644 100644
+--- b/wdintel-rs/src/entities/sigint_unit.rs
++++ a/wdintel-rs/src/entities/sigint_unit.rs
+@@ -41,23 +41,33 @@ pub struct Model {
+     #[sea_orm(column_type = "Text", nullable)]
+     pub orbit_note: Option<String>,
+     #[sea_orm(column_type = "Text")]
++    #[serde(default)]
+     pub army_region: String,
+     #[sea_orm(column_type = "Text")]
++    #[serde(default)]
+     pub military_district: String,
+     #[sea_orm(column_type = "Text")]
++    #[serde(default)]
+     pub other: String,
+     #[sea_orm(column_type = "Text")]
++    #[serde(default)]
+     pub team_or_crew: String,
+     #[sea_orm(column_type = "Text")]
++    #[serde(default)]
+     pub section: String,
+     #[sea_orm(column_type = "Text")]
++    #[serde(default)]
+     pub squad: String,
+     #[sea_orm(column_type = "Text")]
++    #[serde(default)]
+     pub platoon: String,
+     #[sea_orm(column_type = "Text")]
++    #[serde(default)]
+     pub brigade: String,
+     #[sea_orm(column_type = "Text")]
++    #[serde(default)]
+     pub corps: String,
++    #[serde(default)]
+     pub is_inconsistent: bool,
+     pub updated_at: DateTime,
+     pub present_in_orbit: Option<bool>,

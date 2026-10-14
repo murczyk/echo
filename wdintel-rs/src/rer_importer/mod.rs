@@ -42,6 +42,7 @@ pub mod import_csv;
 pub mod import_kmz;
 pub mod important;
 pub mod inbox;
+pub mod intel_product_filter;
 pub mod location;
 pub mod meow_format;
 pub mod multimessage;

@@ -7,6 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, Unit } from '../../../../../Bindings';
 import { minimalInboxMessage } from '../../rer-duty-neo/inbox-message-mocks';
+import {
+  ANALYSIS_MESSAGE_RECONCILIATION_INTERVAL_MS,
+  ANALYSIS_SYSTEM_COUNT_INTERVAL_MS,
+} from '../config';
 import { emptyQueryState } from '../helpers';
 import { useAnalysisData } from '../use-analysis-data.core';
 
@@ -599,6 +603,7 @@ describe('useAnalysisData tag pagination', () => {
   });
 
   it('retries a realtime insertion after appending another loaded page', async () => {
+    vi.useFakeTimers();
     const firstPage = Array.from({ length: 20 }, (_, index) => message(index + 1, 7));
     const secondPage = Array.from({ length: 20 }, (_, index) => message(index + 21, 7));
     api.fetchInboxMessages
@@ -613,17 +618,16 @@ describe('useAnalysisData tag pagination', () => {
       .mockResolvedValueOnce([message(999, 7)]);
 
     await renderAnalysisData();
-    await act(async () => {
-      await vi.waitFor(() => expect(current!.messages).toHaveLength(20));
-    });
+    expect(current!.messages).toHaveLength(20);
     await act(async () => {
       window.dispatchEvent(
         new CustomEvent('echo-inbox-changed', {
           detail: { events: [{ messageId: 999, origin: 'foreign-tab.origin' }] },
         }),
       );
-      await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(0);
     });
+    expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce();
 
     await act(async () => await current!.loadMoreMessages());
     expect(current!.pageIndex).toBe(1);
@@ -632,12 +636,13 @@ describe('useAnalysisData tag pagination', () => {
     await act(async () => {
       resolveFilterProbe?.([message(999, 7)]);
       await filterProbe;
-      await vi.waitFor(() => expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledTimes(2), {
-        timeout: 3_000,
-      });
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(ANALYSIS_MESSAGE_RECONCILIATION_INTERVAL_MS - 1);
     });
+    expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce();
+    expect(current!.messages).toHaveLength(40);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
 
+    expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledTimes(2);
     expect(current!.pageIndex).toBe(1);
     expect(current!.messages).toHaveLength(40);
     expect(current!.messages[0]?.[0]).toBe(999);
@@ -677,7 +682,7 @@ describe('useAnalysisData tag pagination', () => {
     });
     expect(api.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(ANALYSIS_SYSTEM_COUNT_INTERVAL_MS - 1);
     });
 
     expect(current!.messagesTotalCount).toBe(2);
@@ -694,10 +699,6 @@ describe('useAnalysisData tag pagination', () => {
     expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(api.fetchInboxMessages).not.toHaveBeenCalled();
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(29_749);
-    });
-    expect(api.fetchInboxCount).not.toHaveBeenCalled();
     await act(async () => vi.advanceTimersByTimeAsync(1));
 
     expect(api.fetchInboxCount).toHaveBeenCalledTimes(2);

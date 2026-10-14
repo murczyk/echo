@@ -850,6 +850,7 @@ export const onReady = ({ app, env }) => {
         }>,
       ) => {
         app.ports.rer_analysis_inboxChanged?.send(events.map(({ messageId }) => messageId));
+        app.ports.rer_duty_inboxChanged?.send(events.map(({ messageId }) => messageId));
         window.dispatchEvent(
           new CustomEvent('echo-inbox-changed', {
             detail: { events },

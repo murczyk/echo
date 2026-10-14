@@ -62,7 +62,9 @@ where
     find_linked_message_comments_with_filter(
         dbx,
         parent_signal_message_ids,
-        intel_product::relation_kind_eq(intel_product::RELATION_KIND_COMMENT),
+        crate::rer_importer::intel_product_filter::relation_kind_eq(
+            crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
+        ),
     )
     .await
 }
@@ -82,10 +84,13 @@ pub fn rer_report_comment_filter() -> SimpleExpr {
             )),
         )
         .into_query();
-    intel_product::relation_kind_eq(intel_product::RELATION_KIND_COMMENT).or(
-        intel_product::relation_kind_eq(intel_product::RELATION_KIND_REPORT)
-            .and(Expr::exists(group_links).not()),
+    crate::rer_importer::intel_product_filter::relation_kind_eq(
+        crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
     )
+    .or(crate::rer_importer::intel_product_filter::relation_kind_eq(
+        crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
+    )
+    .and(Expr::exists(group_links).not()))
 }
 
 pub async fn find_rer_report_comments<C>(
@@ -219,9 +224,9 @@ where
     let comments = find_linked_message_comments_with_filter(
         dbx,
         parent_signal_message_ids,
-        intel_product::relation_kind_is_in([
-            intel_product::RELATION_KIND_COMMENT,
-            intel_product::RELATION_KIND_REPORT,
+        crate::rer_importer::intel_product_filter::relation_kind_is_in([
+            crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ]),
     )
     .await
@@ -336,7 +341,9 @@ pub async fn create_linked_message_comment_with_context(
         intel_message_uuid: Set(signal_message.id_uuid),
         source_message_id: Set(parent_signal_message_id),
         source_message_uuid: Set(parent_signal_message_uuid),
-        relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+        relation_kind: Set(
+            crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
+        ),
         created_at: NotSet,
     }
     .insert(txn)
@@ -485,7 +492,9 @@ where
         intel_message_uuid: Set(signal_message.id_uuid),
         source_message_id: Set(parent_signal_message_id),
         source_message_uuid: Set(parent_signal_message_uuid),
-        relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+        relation_kind: Set(
+            crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
+        ),
         created_at: NotSet,
     }
     .insert(dbx)
@@ -739,7 +748,7 @@ async fn migrate_comment_batch(
                     .get(parent_signal_message_id)
                     .copied()
                     .flatten()),
-                relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+                relation_kind: Set(crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT),
                 created_at: NotSet,
             }
         })
@@ -1083,8 +1092,8 @@ async fn load_echo_commented_message_rows(
             JoinType::InnerJoin,
             intel_product::Relation::SignalMessage1.def(),
         )
-        .filter(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_COMMENT,
+        .filter(crate::rer_importer::intel_product_filter::relation_kind_eq(
+            crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
         ))
         .filter(signal_message::Column::CreatedAt.gte(since_ts))
         .filter(signal_message::Column::CreatedAt.lt(till_ts))
