@@ -1,0 +1,105 @@
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+
+import type { AcknowledgeGroupFeedReq } from '../../../../../Bindings';
+import { useInboxChangedMessageIds } from '../useInboxChangedMessageIds';
+import { groupFeedStateStore, type GroupFeedStateStore } from './group-feed-state-store';
+import type {
+  GroupFeedNavigationModel,
+  GroupNavigationItem,
+  GroupScope,
+} from './group-navigation.types';
+
+type Options = {
+  enabled: boolean;
+  scope: GroupScope;
+  allUnreadCount: number;
+  onSelect: (scope: GroupScope) => void;
+  onError: (error: unknown) => void;
+  store?: GroupFeedStateStore;
+};
+
+export function useGroupFeedNavigation({
+  enabled,
+  scope,
+  allUnreadCount,
+  onSelect,
+  onError,
+  store = groupFeedStateStore,
+}: Options): GroupFeedNavigationModel {
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const lastReportedError = useRef<unknown>(null);
+
+  useEffect(() => {
+    if (!enabled) return;
+    return store.addVisibleConsumer();
+  }, [enabled, store]);
+
+  useInboxChangedMessageIds({
+    onMessageIds: useCallback(() => {
+      store.invalidate();
+    }, [store]),
+  });
+
+  useEffect(() => {
+    if (!enabled) return;
+    const revalidate = () => {
+      if (document.visibilityState === 'visible') void store.revalidateIfStale();
+    };
+    window.addEventListener('focus', revalidate);
+    document.addEventListener('visibilitychange', revalidate);
+    return () => {
+      window.removeEventListener('focus', revalidate);
+      document.removeEventListener('visibilitychange', revalidate);
+    };
+  }, [enabled, store]);
+
+  useEffect(() => {
+    if (snapshot.error == null || snapshot.error === lastReportedError.current) return;
+    lastReportedError.current = snapshot.error;
+    onError(snapshot.error);
+  }, [onError, snapshot.error]);
+
+  const groups = useMemo<GroupNavigationItem[]>(
+    () => [
+      {
+        kind: 'all',
+        masterKey: null,
+        name: 'Всі групи',
+        unreadCount: allUnreadCount,
+        oldestUnreadMessageRef: null,
+        latestCursor: null,
+      },
+      ...snapshot.groups.map((group) => ({ kind: 'group' as const, ...group })),
+    ],
+    [allUnreadCount, snapshot.groups],
+  );
+  const selectedGroup =
+    scope.kind === 'group'
+      ? (groups.find((group) => group.kind === 'group' && group.masterKey === scope.masterKey) ??
+        groups[0])
+      : groups[0];
+
+  const acknowledge = useCallback(
+    async (request: AcknowledgeGroupFeedReq, signal?: AbortSignal) => {
+      try {
+        return await store.acknowledge(request, signal);
+      } catch (error) {
+        onError(error);
+        throw error;
+      }
+    },
+    [onError, store],
+  );
+
+  return {
+    groups,
+    scope,
+    loading: snapshot.loading,
+    error: snapshot.error,
+    select: onSelect,
+    refresh: store.refresh,
+    acknowledge,
+    selectedGroup,
+    selectedCursor: selectedGroup.latestCursor,
+  };
+}
