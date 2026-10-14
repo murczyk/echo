@@ -63,7 +63,9 @@ network fields using `CreateUnitWithAutoNetworkReq` and returns a `Unit`.
 It shares the direct-submit normalized-name lock, reuses a unique non-deleted
 exact match without changing its fields or networks, and rejects ambiguous
 matches before inserting. Newly created units and their optional network are
-saved in one transaction.
+saved in one transaction. Retrying a network-enabled creation after a post-commit
+failure replays network-change notifications, inbox invalidation, and unit-tag
+recalculation for the reused unit's active networks without creating duplicates.
 Both unit creation entry points skip the network step when `hide_networks` is
 enabled, even when the devices section is enabled. Nonempty unresolved unit text displays
 `Підрозділ не обрано` and blocks creation, including keyboard submission.

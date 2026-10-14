@@ -4003,7 +4003,10 @@ mod tests {
         }
     }
 
-    async fn insert_settings(dbx: &DatabaseConnection, enabled: bool) {
+    pub(super) async fn insert_settings(
+        dbx: &DatabaseConnection,
+        enabled: bool,
+    ) {
         let now = Utc::now().naive_utc();
         system_settings::ActiveModel {
             id: NotSet,

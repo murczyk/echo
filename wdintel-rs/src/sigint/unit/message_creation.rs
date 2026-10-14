@@ -41,6 +41,7 @@ async fn create_unit_for_message_for_login(
         .await
         .c(h!())?;
     let units = find_exact_named_units(&transaction, &name).await.c(h!())?;
+    let reused_unit = units.len() == 1;
     let (unit, network_id, created_network) = match units.len() {
         0 => insert_message_unit(&transaction, login, env, &req)
             .await
@@ -54,7 +55,7 @@ async fn create_unit_for_message_for_login(
         }
     };
     transaction.commit().await.c(h!())?;
-    Ok(render_created_unit_with_optional_network(
+    let unit = render_created_unit_with_optional_network(
         login,
         env,
         unit,
@@ -63,7 +64,32 @@ async fn create_unit_for_message_for_login(
     )
     .await
     .c(h!())?
-    .unit)
+    .unit;
+    if reused_unit && !req.skip_network_creation {
+        replay_message_unit_networks(env, unit.id).await.c(h!())?;
+    }
+    Ok(unit)
+}
+
+async fn replay_message_unit_networks(
+    env: &Env,
+    unit_id: i64,
+) -> anyhow::Result<()> {
+    let networks = sigint_network::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network::Relation::SigintNetworkUnit.def(),
+        )
+        .filter(sigint_network_unit::Column::UnitId.eq(unit_id))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::ActiveTo.is_null())
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    for network in networks {
+        fanout_created_network(env, network).await.c(h!())?;
+    }
+    Ok(())
 }
 
 async fn insert_message_unit(
@@ -150,7 +176,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functest::tests::cleanup;
+    use crate::functest::tests::{
+        cleanup, cleanup_locked, mk_sigint_inbox_item, mk_signal_group,
+        mk_signal_message_group,
+    };
+    use redis::{streams::StreamRangeReply, AsyncCommands};
     use serial_test::serial;
 
     fn request(name: &str) -> CreateUnitWithAutoNetworkReq {
@@ -166,6 +196,135 @@ mod tests {
             locations: vec![],
             unit_mask: vec![],
         }
+    }
+
+    async fn non_rer_inbox_item(dbx: &DatabaseConnection) -> i64 {
+        let group = mk_signal_group(
+            dbx,
+            signal_group::ActiveModel {
+                interseption_kind: Set(
+                    sea_orm_active_enums::InterseptionKind::Other,
+                ),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let item = mk_sigint_inbox_item(
+            dbx,
+            sigint_inbox_item::ActiveModel {
+                datetime: Set(Some(chrono::Utc::now().naive_utc())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(item.id),
+                group_master_key: Set(Some(group.master_key)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        item.id
+    }
+
+    async fn take_session_events(
+        redis: &mut redis::aio::ConnectionManager,
+        session_id: uuid::Uuid,
+    ) -> Vec<EventType> {
+        let stream_id = crate::event_stream::session_stream_id(session_id);
+        let reply: StreamRangeReply =
+            redis.xrange_all(&stream_id).await.unwrap();
+        redis::pipe()
+            .del(&stream_id)
+            .del(crate::event_stream::get_sess_key(session_id))
+            .srem(crate::config::REDIS_SESSIONS_KEY, session_id.to_string())
+            .query_async::<()>(redis)
+            .await
+            .unwrap();
+        reply
+            .ids
+            .into_iter()
+            .map(|entry| {
+                let event: String = entry.get("v").unwrap();
+                serde_json::from_str::<EventMsg>(&event).unwrap().event_type
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn message_unit_3535_replayed_network_effects_after_commit_failure() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        super::super::tests::insert_settings(&env.dbx, true).await;
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let item_id = non_rer_inbox_item(&env.dbx).await;
+        let mut req = request("Підрозділ повторного створення 3535");
+        req.skip_network_creation = false;
+        req.locations = vec!["Київ".to_string()];
+        req.unit_mask = vec![req.unit.name.clone().unwrap()];
+        let session_id = uuid::Uuid::new_v4();
+        let mut redis = env.redis.clone();
+        crate::session::add_session(&mut redis, session_id, &login)
+            .await
+            .unwrap();
+        let stream_id = crate::event_stream::session_stream_id(session_id);
+        redis
+            .set_ex::<_, _, ()>(&stream_id, "wrong stream type", 30)
+            .await
+            .unwrap();
+        let failed =
+            create_unit_for_message_for_login(&login, &env, req.clone()).await;
+        redis.del::<_, ()>(&stream_id).await.unwrap();
+        assert!(failed.is_err());
+        let units = find_exact_named_units(&env.dbx, &unit_name_req(&req.unit))
+            .await
+            .unwrap();
+        assert_eq!(units.len(), 1);
+        assert_eq!(
+            network_invalidation_task::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+        let retried = create_unit_for_message_for_login(&login, &env, req)
+            .await
+            .unwrap();
+        let events = take_session_events(&mut redis, session_id).await;
+        assert_eq!(retried.id, units[0].id);
+        assert!(events.contains(&EventType::ETNetworkChanged));
+        assert_eq!(
+            sigint_network::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            network_invalidation_task::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            sigint_inbox_item_unit_tag_queue::Entity::find()
+                .filter(
+                    sigint_inbox_item_unit_tag_queue::Column::SigintInboxItemId
+                        .eq(item_id),
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
     }
 
     #[tokio::test]
