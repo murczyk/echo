@@ -9343,6 +9343,7 @@ fn fallback_capacity_only_limits_analytics_incident_routes() {
         "analytics_saturated",
         "analytics_unhealthy",
         "analytics_unavailable",
+        "attachment_history_incomplete",
         "candidate_ordering_incomplete",
         "candidate_revalidation_incomplete",
         "circuit_open",

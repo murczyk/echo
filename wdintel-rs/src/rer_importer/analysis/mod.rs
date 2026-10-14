@@ -9030,6 +9030,7 @@ pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
             | "analytics_saturated"
             | "analytics_unhealthy"
             | "analytics_unavailable"
+            | "attachment_history_incomplete"
             | "circuit_open"
             | "candidate_ordering_incomplete"
             | "candidate_revalidation_incomplete"
