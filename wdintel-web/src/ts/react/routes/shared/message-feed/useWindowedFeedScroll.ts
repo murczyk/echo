@@ -442,6 +442,7 @@ export function useWindowedFeedScroll({
     });
   }, [
     navigationTarget,
+    itemIds,
     enabled,
     resetKey,
     anchors,
