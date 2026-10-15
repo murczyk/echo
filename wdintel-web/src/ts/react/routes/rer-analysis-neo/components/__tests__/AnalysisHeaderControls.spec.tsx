@@ -7,6 +7,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mui/material', () => ({
+  Autocomplete: (props: { renderInput: (params: object) => ReactNode }) =>
+    props.renderInput({ InputProps: {}, inputProps: {} }),
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Button: (props: { children: ReactNode; onClick?: () => void }) => (
     <button type="button" onClick={props.onClick}>
@@ -44,6 +46,8 @@ vi.mock('@mui/material', () => ({
     value?: string;
     onClick?: () => void;
     onChange?: (event: { target: { value: string } }) => void;
+    inputProps?: { 'aria-label'?: string };
+    InputProps?: { startAdornment?: ReactNode; endAdornment?: ReactNode };
     slotProps?: {
       input?: {
         startAdornment?: ReactNode;
@@ -53,13 +57,14 @@ vi.mock('@mui/material', () => ({
   }) => (
     <label onClick={props.onClick}>
       <span>{props.label ?? props.placeholder}</span>
-      {props.slotProps?.input?.startAdornment}
+      {props.InputProps?.startAdornment ?? props.slotProps?.input?.startAdornment}
       <input
+        aria-label={props.inputProps?.['aria-label']}
         type={props.type ?? 'text'}
         value={props.value ?? ''}
         onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })}
       />
-      {props.slotProps?.input?.endAdornment}
+      {props.InputProps?.endAdornment ?? props.slotProps?.input?.endAdornment}
     </label>
   ),
 }));

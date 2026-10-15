@@ -171,6 +171,8 @@ init user route _ =
             , savedFilterEditInp = Dict.empty
             , savedFilterMenuOpen = Nothing
             , searchInput = ""
+            , searchSuggestionsOpen = False
+            , searchSuggestionIndex = Nothing
             , searchMode = Nothing
             , metadataCc = []
             , metadataSender = []
@@ -3260,7 +3262,12 @@ update user shared route msg model =
                     loadCoreStatsAndPushUrl (invalidateOptionFilters m2)
 
         SearchInput str ->
-            ( { model | searchInput = str }
+            ( { model | searchInput = str, searchSuggestionsOpen = True, searchSuggestionIndex = Nothing }
+            , E.none
+            )
+
+        SearchFocusChanged focused ->
+            ( { model | searchSuggestionsOpen = focused, searchSuggestionIndex = Nothing }
             , E.none
             )
 
@@ -3512,14 +3519,51 @@ update user shared route msg model =
                     ( model, E.none )
 
         SearchModeChanged searchMode ->
-            loadCoreStatsAndPushUrl (invalidateOptionFilters { model | searchMode = Just searchMode })
+            loadCoreStatsAndPushUrl (invalidateOptionFilters { model | searchMode = Just searchMode, searchSuggestionsOpen = False, searchSuggestionIndex = Nothing })
 
         SearchDo ->
-            loadCoreStatsAndPushUrl (invalidateOptionFilters model)
+            loadCoreStatsAndPushUrl (invalidateOptionFilters { model | searchSuggestionsOpen = False, searchSuggestionIndex = Nothing })
 
         SearchInputKeyDown key ->
             if key == 13 then
-                loadCoreStatsAndPushUrl model
+                let
+                    searchMode =
+                        if model.searchSuggestionsOpen then
+                            model.searchSuggestionIndex
+                                |> Maybe.andThen (\index -> List.head (List.drop index analysisSearchModes))
+                                |> Maybe.map (Tuple.first >> Just)
+                                |> Maybe.withDefault model.searchMode
+
+                        else
+                            model.searchMode
+                in
+                loadCoreStatsAndPushUrl (invalidateOptionFilters { model | searchMode = searchMode, searchSuggestionsOpen = False, searchSuggestionIndex = Nothing })
+
+            else if (key == 38 || key == 40) && String.trim model.searchInput /= "" then
+                let
+                    step =
+                        if key == 40 then
+                            1
+
+                        else
+                            -1
+
+                    index =
+                        model.searchSuggestionIndex
+                            |> Maybe.map ((+) step)
+                            |> Maybe.withDefault
+                                (if key == 40 then
+                                    0
+
+                                 else
+                                    List.length analysisSearchModes - 1
+                                )
+                            |> modBy (List.length analysisSearchModes)
+                in
+                ( { model | searchSuggestionsOpen = True, searchSuggestionIndex = Just index }, E.none )
+
+            else if key == 27 then
+                ( { model | searchSuggestionsOpen = False, searchSuggestionIndex = Nothing }, E.none )
 
             else
                 ( model, E.none )
@@ -3527,7 +3571,7 @@ update user shared route msg model =
         SearchReset ->
             let
                 m2 =
-                    { model | searchInput = "" }
+                    { model | searchInput = "", searchSuggestionsOpen = False, searchSuggestionIndex = Nothing }
             in
             loadCoreStatsAndPushUrl (invalidateOptionFilters m2)
 
