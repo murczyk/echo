@@ -469,7 +469,7 @@ export function RerDutyNeoPage({
           ? `edit-report:${editTargetLoadState.reportId}`
           : null;
   const editorOpen = editorIntentKey !== null;
-  const editorPresentation = useManageMessageEditorPresentation(editorOpen);
+  const editorPresentation = useManageMessageEditorPresentation();
   const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const editorEmbeddedOpen = editorOpen && editorPresentation === 'embedded';
   const previousCanWriteRef = useRef<boolean | null>(null);

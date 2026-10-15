@@ -30,8 +30,15 @@ async function expectEmbeddedEditor(page: Page) {
 }
 
 async function expectModalEditor(page: Page) {
-  await expect(page.locator('[data-manage-message-presentation="modal"]')).toBeVisible();
+  const editor = page.locator('[data-manage-message-presentation="modal"]');
+  await expect(editor).toBeVisible();
   await expect(page.locator('.MuiBackdrop-root:visible')).toHaveCount(1);
+  await expect(page.locator('[data-manage-message-presentation="embedded"]:visible')).toHaveCount(
+    0,
+  );
+  expect(await editor.evaluate((element) => element.getBoundingClientRect().width)).toBe(
+    await page.evaluate(() => window.innerWidth),
+  );
 }
 
 async function scrollEditorContent(source: ReturnType<Page['getByRole']>) {
@@ -373,6 +380,20 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await page.getByRole('button', { name: 'Відхилити зміни' }).click();
       await expect(page.locator('[data-manage-message-presentation]')).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Додати повідомлення' })).toBeFocused();
+    });
+    // Regression: https://github.com/echoua/echo/issues/3701
+    test(`${host} restores embedded presentation after opening a mobile draft #3701 @regression`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 360, height: 800 });
+      await openCreateMessageDrawer(page, host);
+      await expectModalEditor(page);
+      const source = page.getByRole('textbox', { name: 'Текст повідомлення' });
+      await source.fill(`${host} mobile draft`);
+
+      await page.setViewportSize({ width: 1024, height: 800 });
+      await expectEmbeddedEditor(page);
+      await expect(source).toHaveValue(`${host} mobile draft`);
     });
     test(`${host} edits a message with an intelligence report as a message`, async ({ page }) => {
       await openLinkedMessageEditDrawer(page, host, 'with-report');

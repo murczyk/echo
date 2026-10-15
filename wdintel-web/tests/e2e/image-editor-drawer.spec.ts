@@ -84,6 +84,17 @@ async function selectedTextState(
   });
 }
 
+async function hasTextAnnotation(editor: import('@playwright/test').Locator, text: string) {
+  return editor.locator('canvas.lower-canvas').evaluate((element, expectedText) => {
+    const canvas = (
+      element as HTMLCanvasElement & {
+        __imageEditorTestCanvas?: { getObjects: () => Array<{ text?: string }> };
+      }
+    ).__imageEditorTestCanvas;
+    return canvas?.getObjects().some((object) => object.text === expectedText) ?? false;
+  }, text);
+}
+
 function documentPointToScreen(
   surface: { x: number; y: number; width: number; height: number },
   state: TextAnnotationState,
@@ -603,32 +614,58 @@ test('TUS preserves a busy upload while resuming after a lost accepted chunk res
   });
 });
 
-// Regression: https://github.com/echoua/echo/issues/3448
-test('keeps editor actions reachable at representative viewports @regression', async ({ page }) => {
-  const { editor } = await openPendingImageEditor(page, 'duty');
-  await editor.getByRole('button', { name: 'Текст', exact: true }).click();
-  const canvas = await editor.locator('canvas').last().boundingBox();
-  if (!canvas) throw new Error('Canvas редактора не має розмірів');
-  await page.mouse.click(canvas.x + 30, canvas.y + 30);
-  await expect(editor.locator('textarea')).toBeFocused();
-  await page.keyboard.type('resize-preserved');
-  await page.mouse.click(canvas.x + canvas.width * 0.8, canvas.y + canvas.height * 0.8);
-  for (const viewport of [
-    { width: 1440, height: 900 },
-    { width: 768, height: 900 },
-    { width: 360, height: 800 },
-  ]) {
-    await page.setViewportSize(viewport);
-    await expect(editor.locator('canvas[data-fabric="top"]')).toBeVisible();
-    expect((await selectedTextState(editor)).text).toBe('resize-preserved');
-    await expect(page.getByText('Вкладення (1)')).toBeVisible();
-    await expect(editor.getByRole('button', { name: 'Текст', exact: true })).toBeVisible();
-    await expect(editor.locator('footer').getByRole('button', { name: 'Скасувати' })).toBeVisible();
-    await expect(
-      editor.locator('footer').getByRole('button', { name: 'Зберегти', exact: true }),
-    ).toBeVisible();
-  }
-});
+for (const host of ['duty', 'analysis'] as const satisfies ImageEditorDrawerHost[]) {
+  // Regression: https://github.com/echoua/echo/issues/3701
+  test(`${host} keeps editor edits through responsive presentation changes #3701 @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const { editor } = await openPendingImageEditor(page, host);
+    await editor.getByRole('button', { name: 'Текст', exact: true }).click();
+    const canvas = await editor.locator('canvas').last().boundingBox();
+    if (!canvas) throw new Error('Canvas редактора не має розмірів');
+    await page.mouse.click(canvas.x + 30, canvas.y + 30);
+    await expect(editor.locator('textarea')).toBeFocused();
+    await page.keyboard.type('resize-preserved');
+    await page.mouse.click(canvas.x + canvas.width * 0.8, canvas.y + canvas.height * 0.8);
+    await editor.getByRole('button', { name: 'Розмиття', exact: true }).click();
+    await page.mouse.move(canvas.x + canvas.width * 0.35, canvas.y + canvas.height * 0.35);
+    await page.mouse.down();
+    await page.mouse.move(canvas.x + canvas.width * 0.55, canvas.y + canvas.height * 0.55);
+    await page.mouse.up();
+    const undo = editor.getByRole('button', { name: 'Скасувати останню дію' }).first();
+    await expect(undo).toBeEnabled();
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 768, height: 900 },
+      { width: 360, height: 800 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await expect(editor.locator('canvas[data-fabric="top"]')).toBeVisible();
+      await expect.poll(() => hasTextAnnotation(editor, 'resize-preserved')).toBe(true);
+      await expect(page.getByText('Вкладення (1)')).toBeVisible();
+      if (viewport.width === 360) {
+        const modalSurface = page.locator('[data-manage-message-presentation="modal"]');
+        await expect(modalSurface).toBeVisible();
+        await expect(
+          page.locator('[data-manage-message-presentation="embedded"]:visible'),
+        ).toHaveCount(0);
+        expect(
+          await modalSurface.evaluate((element) => element.getBoundingClientRect().width),
+        ).toBe(viewport.width);
+        await page.locator('#image-editor-more-button').click();
+        await expect(page.getByRole('menuitem', { name: 'Обрізати' })).toBeVisible();
+        await page.keyboard.press('Escape');
+      } else if (viewport.width >= 1280) {
+        await expect(page.locator('[data-manage-message-presentation="embedded"]')).toBeVisible();
+        await expect(editor.getByRole('button', { name: 'Текст', exact: true })).toBeVisible();
+      }
+      await expect(page.locator('footer').last()).toBeVisible();
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(undo).toBeEnabled();
+  });
+}
 
 for (const viewport of [
   { width: 1440, height: 900 },

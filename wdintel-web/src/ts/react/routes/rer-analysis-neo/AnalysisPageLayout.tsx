@@ -103,7 +103,7 @@ export function RerAnalysisNeoPage({
           ? `edit-report:${page.editTargetLoadState.reportId}`
           : null;
   const editorOpen = editorIntentKey !== null;
-  const editorPresentation = useManageMessageEditorPresentation(editorOpen);
+  const editorPresentation = useManageMessageEditorPresentation();
   const editorHighlightedMessageId = editorOpen
     ? (editorSourceMessageId ??
       page.reportSource?.id ??
