@@ -1,6 +1,14 @@
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import { ButtonGroup, CircularProgress, Menu, MenuItem } from '@mui/material';
-import { useCallback, useEffect, useId, useState, type MutableRefObject, type Ref } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type Ref,
+} from 'react';
 
 import { PowerButton } from '../../../components/PowerButton';
 
@@ -36,6 +44,7 @@ export function ImageEditorFooter({
   onCancel,
   onSaveReplacement,
   onSaveAsNew,
+  onSaveAsNewHandoffChange,
   onMenuOpenChange,
   dismissMenu,
   saveOptionsButtonRef,
@@ -48,6 +57,7 @@ export function ImageEditorFooter({
   onCancel: () => void;
   onSaveReplacement: () => void;
   onSaveAsNew: () => void;
+  onSaveAsNewHandoffChange: (active: boolean) => void;
   onMenuOpenChange: (open: boolean) => void;
   dismissMenu: number;
   saveOptionsButtonRef: Ref<HTMLButtonElement>;
@@ -55,7 +65,7 @@ export function ImageEditorFooter({
 }) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState<SaveMenuPosition | null>(null);
-  const [openSaveAsNewAfterClose, setOpenSaveAsNewAfterClose] = useState(false);
+  const openSaveAsNewAfterCloseRef = useRef(false);
   const [saveOptionsButton, setSaveOptionsButton] = useState<HTMLButtonElement | null>(null);
   const menuId = useId();
   const open = Boolean(menuAnchor);
@@ -66,16 +76,21 @@ export function ImageEditorFooter({
     onMenuOpenChange(false);
   };
   const openSaveAsNew = () => {
-    setOpenSaveAsNewAfterClose(true);
+    openSaveAsNewAfterCloseRef.current = true;
+    onSaveAsNewHandoffChange(true);
     closeMenu();
   };
   const handleMenuExited = () => {
-    if (openSaveAsNewAfterClose) {
-      setOpenSaveAsNewAfterClose(false);
+    if (openSaveAsNewAfterCloseRef.current) {
+      openSaveAsNewAfterCloseRef.current = false;
       onSaveAsNew();
       return;
     }
     saveOptionsButton?.focus();
+  };
+  const cancelSaveAsNewHandoff = () => {
+    openSaveAsNewAfterCloseRef.current = false;
+    onSaveAsNewHandoffChange(false);
   };
   const setSaveOptionsRef = useCallback(
     (button: HTMLButtonElement | null) => {
@@ -87,12 +102,26 @@ export function ImageEditorFooter({
   );
 
   useEffect(() => {
-    if (dismissMenu > 0) closeMenu();
+    if (dismissMenu > 0) {
+      cancelSaveAsNewHandoff();
+      closeMenu();
+    }
   }, [dismissMenu]);
 
   useEffect(() => {
-    if (!saveAvailable) closeMenu();
+    if (!saveAvailable) {
+      cancelSaveAsNewHandoff();
+      closeMenu();
+    }
   }, [saveAvailable]);
+
+  useEffect(
+    () => () => {
+      openSaveAsNewAfterCloseRef.current = false;
+      onSaveAsNewHandoffChange(false);
+    },
+    [onSaveAsNewHandoffChange],
+  );
 
   useEffect(() => {
     if (!menuAnchor) return;

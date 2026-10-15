@@ -147,6 +147,21 @@ async function openSettledSaveMenu(
   return menu;
 }
 
+async function addUnsavedText(
+  page: import('@playwright/test').Page,
+  editor: import('@playwright/test').Locator,
+) {
+  await editor.getByRole('button', { name: 'Текст', exact: true }).click();
+  const surface = editor.locator('canvas').last();
+  const box = await surface.boundingBox();
+  if (!box) throw new Error('Canvas редактора не має розмірів');
+  await page.mouse.click(box.x + box.width * 0.25, box.y + box.height * 0.25);
+  await expect(editor.locator('textarea')).toBeFocused();
+  await page.keyboard.type('Незбережена позначка');
+  await page.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.8);
+  await expect(editor.getByRole('button', { name: 'Скасувати останню дію' })).toBeEnabled();
+}
+
 function expectNonintersecting(
   first: { x: number; y: number; width: number; height: number },
   second: { x: number; y: number; width: number; height: number },
@@ -678,30 +693,45 @@ test('opens the save menu below the split button when there is room #3701 @regre
   });
 });
 
-// Regression: https://github.com/echoua/echo/issues/3701
-test('opens save-as-new from the compact arrow with the keyboard and restores its focus after cancellation #3701 @regression', async ({
-  page,
-}) => {
-  const { editor } = await openPendingImageEditor(page, 'duty');
-  const arrow = editor.locator('footer').getByRole('button', { name: 'Додаткові дії збереження' });
-  await arrow.focus();
-  await page.keyboard.press('Enter');
-  const menuItem = page.getByRole('menuitem', { name: 'Зберегти як...' });
-  await expect(menuItem).toBeVisible();
-  await expect(menuItem).toBeFocused();
-  await page.screenshot({
-    path: test.info().outputPath('image-editor-save-menu-above-settled.png'),
+for (const dirty of [false, true]) {
+  // Regression: https://github.com/echoua/echo/issues/3701
+  test(`keeps Escape inside the save-as-new handoff for a ${dirty ? 'dirty' : 'clean'} editor #3701 @regression`, async ({
+    page,
+  }) => {
+    const { editor } = await openPendingImageEditor(page, 'duty');
+    if (dirty) await addUnsavedText(page, editor);
+    const arrow = editor
+      .locator('footer')
+      .getByRole('button', { name: 'Додаткові дії збереження' });
+    await arrow.focus();
+    await arrow.press('Enter');
+    const menu = page.getByRole('menu', { name: 'Додаткові дії збереження' });
+    const menuItem = page.getByRole('menuitem', { name: 'Зберегти як...' });
+    await expect(menuItem).toBeVisible();
+    await expect(menuItem).toBeFocused();
+    await menuItem.press('Enter');
+    await expect(menu).toBeAttached();
+
+    const dialog = page.getByRole('dialog', { name: 'Зберегти як нове зображення' });
+    await page.keyboard.press('Escape');
+    await expect(editor).toBeVisible();
+    await expect(page.getByText('Відкинути зміни зображення?')).toBeHidden();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel('Назва файлу')).toBeFocused();
+    await expect(dialog.getByRole('button', { name: 'Зберегти', exact: true })).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(arrow).toBeFocused();
+
+    if (dirty) {
+      await editor.locator('footer').getByRole('button', { name: 'Скасувати' }).click();
+      await expect(page.getByText('Відкинути зміни зображення?')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByText('Відкинути зміни зображення?')).toBeHidden();
+    }
   });
-  await page.keyboard.press('Enter');
-  const dialog = page.getByRole('dialog', { name: 'Зберегти як нове зображення' });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel('Назва файлу')).toBeFocused();
-  await expect(dialog.getByRole('button', { name: 'Зберегти', exact: true })).toBeVisible();
-  await page.screenshot({ path: test.info().outputPath('image-editor-save-as-dialog.png') });
-  await dialog.getByRole('button', { name: 'Скасувати', exact: true }).click();
-  await expect(dialog).toBeHidden();
-  await expect(arrow).toBeFocused();
-});
+}
 
 // Regression: https://github.com/echoua/echo/issues/3448
 test('presents shortcut help across desktop and mobile controls #3448 @regression', async ({
