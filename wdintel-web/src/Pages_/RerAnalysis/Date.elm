@@ -211,7 +211,10 @@ searchSuggestions model =
                             , preventDefaultOn "mousedown" (Decode.succeed ( SearchFocusChanged True, True ))
                             , onClick (SearchModeChanged mode)
                             ]
-                            [ text (model.searchInput ++ " - " ++ label) ]
+                            [ em [] [ text model.searchInput ]
+                            , text " - "
+                            , strong [] [ text label ]
+                            ]
                         ]
                 )
                 analysisSearchModes

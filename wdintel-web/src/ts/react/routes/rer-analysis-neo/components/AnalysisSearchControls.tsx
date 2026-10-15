@@ -46,7 +46,9 @@ export function AnalysisSearchControls({
             {...props}
             aria-selected={option.mode === (queryState.searchMode ?? 'Fuzzy')}
           >
-            {search} - {option.label}
+            <span>
+              <em>{search}</em> - <strong>{option.label}</strong>
+            </span>
           </li>
         )}
         onInputChange={(_event, value, reason) => {
