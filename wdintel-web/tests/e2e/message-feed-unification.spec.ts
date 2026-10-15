@@ -476,6 +476,26 @@ test.describe('Message feed unification @regression', () => {
     expect(requests.at(-1)).toMatchObject({ before_id_noninclusive: 141, newest_first: true });
   });
 
+  test('Analysis returns to the start of the first page after replacing a loaded page', async ({
+    page,
+  }) => {
+    await installPages(page);
+    await page.goto('/rer-analysis-neo');
+    const scroller = page.locator('[data-analysis-message-scroller]');
+    await expect(scroller.locator('[data-message-id]')).toHaveCount(20);
+
+    await page.getByRole('button', { name: 'Наступна сторінка', exact: true }).click();
+    await expect(scroller.locator('[data-message-id="140"]')).toBeAttached();
+    await expect.poll(() => new URL(page.url()).searchParams.get('messagesPage')).toBe('2');
+
+    await page.getByRole('button', { name: 'Попередня сторінка', exact: true }).click();
+    await expect(scroller.locator('[data-message-id="160"]')).toBeAttached();
+    await expect.poll(() => new URL(page.url()).searchParams.has('messagesPage')).toBe(false);
+    await expect
+      .poll(() => scroller.evaluate((element) => element.scrollTop))
+      .toBeLessThanOrEqual(1);
+  });
+
   test('Analysis centers an exhausted context boundary with shared scroll space', async ({
     page,
   }) => {
