@@ -684,6 +684,7 @@ where
     let q = filter_search_with_correlated_terms(
         q,
         &req.search,
+        req.search_mode,
         matches!(
             purpose,
             InboxQueryPurpose::Analytics | InboxQueryPurpose::Hydration
@@ -1377,10 +1378,11 @@ async fn build_analytics_filtered_inbox_query(
     analytics_db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<Option<(Select<signal_message::Entity>, bool)>, AppError> {
-    crate::attachments::analytics::ensure_search_coverage(
+    crate::attachments::analytics::ensure_search_coverage_with_mode(
         &env.dbx,
         analytics_db,
         &req.search,
+        req.search_mode,
         freshness_max_age_ms,
     )
     .await

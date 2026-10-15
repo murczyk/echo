@@ -98,6 +98,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::InboxMessageMetadata,
             crate::rer_importer::types::InboxMessageTag,
             crate::rer_importer::types::InboxMessagesSortBy,
+            crate::rer_importer::types::AnalysisSearchMode,
             crate::rer_importer::types::TagFilterOption,
             crate::rer_importer::types::TagPresenceFilter,
             crate::rer_importer::types::InboxMessagesReq,
@@ -120,6 +121,12 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::messenger::group::types::SignalGroupStatsTimelineRsp,
             crate::messenger::group::types::SignalGroupArchiveReq,
             crate::rer_importer::types::SignalGroupRsp,
+            crate::users::messenger_profile::MessengerProfileSearchReq,
+            crate::messenger::alerts::types::MessengerAlertSettings,
+            crate::messenger::alerts::types::MessengerAlertPreference,
+            crate::messenger::alerts::types::MessengerAlertHistoryReq,
+            crate::messenger::alerts::types::MessengerAlertHistoryEntry,
+            crate::messenger::alerts::types::MessengerAlertHistoryRsp,
             crate::rer_importer::types::SignalProfileReq,
             crate::rer_importer::types::SignalProfileRsp,
             crate::rer_importer::types::SignalProfilesRsp,
@@ -1050,6 +1057,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::InboxMessageMetadata,
             crate::rer_importer::types::InboxMessageTag,
             crate::rer_importer::types::InboxMessagesSortBy,
+            crate::rer_importer::types::AnalysisSearchMode,
             crate::rer_importer::types::TagFilterOption,
             crate::rer_importer::types::TagPresenceFilter,
             crate::rer_importer::types::InboxMessagesReq,
@@ -1072,6 +1080,12 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::messenger::group::types::SignalGroupStatsTimelineRsp,
             crate::messenger::group::types::SignalGroupArchiveReq,
             crate::rer_importer::types::SignalGroupRsp,
+            crate::users::messenger_profile::MessengerProfileSearchReq,
+            crate::messenger::alerts::types::MessengerAlertSettings,
+            crate::messenger::alerts::types::MessengerAlertPreference,
+            crate::messenger::alerts::types::MessengerAlertHistoryReq,
+            crate::messenger::alerts::types::MessengerAlertHistoryEntry,
+            crate::messenger::alerts::types::MessengerAlertHistoryRsp,
             crate::rer_importer::types::SignalProfileReq,
             crate::rer_importer::types::SignalProfileRsp,
             crate::rer_importer::types::SignalProfilesRsp,
@@ -2106,6 +2120,10 @@ fn patch_backward_compatible_decoders(
 ) -> Result<String, AppError> {
     let output = patch_rer_duty_query_state_wf_decoder(output).context(h!())?;
     Ok(output
+        .replace(
+            r#"Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder)), Json.Decode.succeed Nothing ]"#,
+        )
         .replace(
             r#"Json.Decode.field "coordinate_status" (Json.Decode.nullable (attachmentCoordinateStatusDecoder))"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "coordinate_status" (Json.Decode.nullable (attachmentCoordinateStatusDecoder)), Json.Decode.succeed Nothing ]"#,

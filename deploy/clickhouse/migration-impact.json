@@ -1,5 +1,14 @@
 {
   "migrations": {
+    "echo:m20261015_092940_messenger_alerts": {
+      "changes": [
+        { "table": "public.login", "strategy": "replicated_snapshot", "targeted_resnapshot": true },
+        { "table": "public.datasource", "strategy": "replicated_snapshot", "targeted_resnapshot": true },
+        { "table": "public.user_settings", "strategy": "replicated_snapshot", "targeted_resnapshot": true },
+        { "table": "public.messenger_alert_settings", "strategy": "excluded" },
+        { "table": "public.messenger_alert_delivery", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261014_144721_attachment_search_change": {
       "changes": [{ "table": "public.attachment_search_change", "strategy": "excluded" }]
     },
@@ -817,6 +826,7 @@
     }
   },
   "dependencies": {
+    "echo-im:06ac23803f4dbc7bc5e9db471609e89703870125": { "changes": [] },
     "echo-im:80589feab5a9afbe6e474f76b39cc563506c9262": { "changes": [] },
     "echo-im:f9b21242397b9cb04c9c98213f1c5217f1f1e273": {
       "changes": [

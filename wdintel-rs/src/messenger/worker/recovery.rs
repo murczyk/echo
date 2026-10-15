@@ -2618,6 +2618,8 @@ mod tests {
         .await
         .unwrap();
         let datasource = datasource::ActiveModel {
+            can_read_messages: sea_orm::ActiveValue::NotSet,
+            can_send_messages: sea_orm::ActiveValue::NotSet,
             id: NotSet,
             kind: Set("signal".to_string()),
             display_name: Set(format!("test datasource {}", Uuid::new_v4())),

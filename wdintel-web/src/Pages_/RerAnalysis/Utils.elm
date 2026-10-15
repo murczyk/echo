@@ -301,6 +301,7 @@ metadataHref dateFromStr dateToStr metadataFilter =
             , orWithCoords = False
             , orWithoutCoords = False
             , search = ""
+            , searchMode = Nothing
             , metadataCc = []
             , metadataSender = []
             , metadataReceiver = []

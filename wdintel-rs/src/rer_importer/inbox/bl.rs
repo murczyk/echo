@@ -27,7 +27,6 @@ use geoconvert::{LatLon, Mgrs};
 use itertools::Itertools;
 use sea_orm::*;
 use sea_query::Expr;
-use sqlx::Row;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InboxLocationSubmitMode {
@@ -734,6 +733,32 @@ limit ${limit_parameter}
     )
 }
 
+fn search_headline_query(
+    req: &InboxMessagesReq,
+) -> anyhow::Result<Option<(&'static str, String)>> {
+    if req.highlight_searchres != Some(true) {
+        return Ok(None);
+    }
+    let Some(search) = m_str_trim(&req.search) else {
+        return Ok(None);
+    };
+    Ok(match req.search_mode.unwrap_or_default() {
+        AnalysisSearchMode::Fuzzy => Some((
+            "select ts_headline('russian', $1, websearch_to_tsquery('russian', $2), 'HighlightAll=true')",
+            search,
+        )),
+        search_mode => crate::attachments::search::message_headline_pattern(
+            &search,
+            search_mode,
+        )
+        .c(h!())?
+        .map(|pattern| (
+            r"select regexp_replace($1, $2, '<b>\&</b>', 'gi')",
+            pattern,
+        )),
+    })
+}
+
 pub async fn aggregate_to_inbox_messages(
     login: &uuid::Uuid,
     messages: Vec<InboxMessageDesc>,
@@ -749,6 +774,7 @@ pub async fn aggregate_to_inbox_messages(
         )
         .c(h!())?;
     let dbx_raw = env.dbx.get_postgres_connection_pool();
+    let search_headline_query = search_headline_query(req).c(h!())?;
 
     let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
     let mut coords_with_locality =
@@ -1079,21 +1105,16 @@ pub async fn aggregate_to_inbox_messages(
             Some(set) => extract_keywords_with_set(&body, set)?,
             None => vec![],
         };
-        let ts_headline = match m_str_trim(&req.search) {
+        let ts_headline = match &search_headline_query {
             None => None,
-            Some(ref search) => {
-                sqlx::query(
-                    "select ts_headline('russian', $1, websearch_to_tsquery('russian', $2), 'HighlightAll=true') as headline from sigint_search where id=$3"
-                )
-                    .bind(body.clone().to_lowercase())
-                    .bind(search.to_lowercase().clone())
-                    .bind(message.id)
+            Some((query, pattern)) => Some(
+                sqlx::query_scalar::<_, String>(*query)
+                    .bind(&body)
+                    .bind(pattern)
                     .fetch_one(dbx_raw)
                     .await
-                    .ok()
-                    .and_then(|row| row.try_get::<Option<String>, _>("headline").ok())
-                    .flatten()
-            }
+                    .c(h!())?,
+            ),
         };
         let m_position_tokens =
             positions_by_message.remove(&message.id).unwrap_or_default();
@@ -1113,6 +1134,7 @@ pub async fn aggregate_to_inbox_messages(
                 highlight_positions: Some(highlight_positions),
                 highlight_signals: req.highlight_signals,
                 highlight_searchres: req.highlight_searchres,
+                search_mode: req.search_mode,
             },
         )?;
         let m_comment = find_editable_linked_message_comment(

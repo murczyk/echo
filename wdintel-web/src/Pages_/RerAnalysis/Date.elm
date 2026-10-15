@@ -1,5 +1,7 @@
 module Pages_.RerAnalysis.Date exposing (dateAndPanelsBlock)
 
+import Bindings as B
+import Config
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -123,6 +125,7 @@ dateAndPanelsBlock isDark timeZone model mapFeatureFlag =
                                 ]
                                 []
                         ]
+                    , searchModeSelect model.searchMode
                     , button
                         [ type_ "button"
                         , class searchButtonClass
@@ -136,5 +139,75 @@ dateAndPanelsBlock isDark timeZone model mapFeatureFlag =
                         [ i [ class "bi bi-search" ] []
                         ]
                     ]
+            , searchHelp
+            ]
+        ]
+
+
+searchModeSelect : Maybe B.AnalysisSearchMode -> Html Msg
+searchModeSelect selectedMode =
+    select
+        [ attribute "aria-label" "Режим пошуку"
+        , style "background" "var(--color-bw)"
+        , style "color" "var(--color-text)"
+        , style "border" "none"
+        , style "border-left" "1px solid var(--color-border)"
+        , style "padding" "0 8px"
+        , onInput
+            (\mode ->
+                SearchModeChanged <|
+                    case mode of
+                        "Exact" ->
+                            B.Exact
+
+                        "Substring" ->
+                            B.Substring
+
+                        _ ->
+                            B.Fuzzy
+            )
+        ]
+        (List.map
+            (\( mode, key, label ) ->
+                option [ value key, selected (Maybe.withDefault B.Fuzzy selectedMode == mode) ] [ text label ]
+            )
+            [ ( B.Fuzzy, "Fuzzy", "Гнучкий пошук" )
+            , ( B.Exact, "Exact", "Точний збіг" )
+            , ( B.Substring, "Substring", "Збіг за входженням" )
+            ]
+        )
+
+
+searchHelp : Html Msg
+searchHelp =
+    details [ style "position" "relative" ]
+        [ summary
+            [ attribute "aria-label" "Довідка про пошук"
+            , attribute "role" "button"
+            , title "Режими пошуку"
+            , style "cursor" "pointer"
+            , style "list-style" "none"
+            , style "padding" "8px"
+            ]
+            [ i [ class "bi bi-info-circle", attribute "aria-hidden" "true" ] [] ]
+        , div
+            [ style "position" "absolute"
+            , style "right" "0"
+            , style "top" "100%"
+            , style "width" "320px"
+            , style "max-width" "calc(100vw - 24px)"
+            , style "z-index" "1060"
+            , style "background" "var(--color-bw)"
+            , style "border" "1px solid var(--color-border)"
+            , style "border-radius" "4px"
+            , style "padding" "12px"
+            ]
+            [ p [] [ text "Усі режими не враховують регістр. Для запиту «нора»:" ]
+            , ul []
+                [ li [] [ text "Гнучкий пошук: також «норма», «нормальний»." ]
+                , li [] [ text "Точний збіг: лише слово «нора», також «НОРА!»." ]
+                , li [] [ text "Збіг за входженням: також «панорама»." ]
+                ]
+            , a [ href Config.analysisSearchDocUrl, target "_blank", rel "noopener noreferrer" ] [ text "Докладніше про пошук" ]
             ]
         ]
