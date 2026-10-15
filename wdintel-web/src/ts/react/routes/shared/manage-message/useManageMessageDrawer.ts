@@ -988,7 +988,7 @@ export function useManageMessageDrawer({
   }, [formReady, isEditMode, editTarget?.id, tagsMap]);
 
   useEffect(() => {
-    if (!formReady) return;
+    if (!formReady || hideNetworks) return;
     const source = isEditMode
       ? editTarget
       : isReportCreateMode && reportCopyLoaded
@@ -1045,6 +1045,7 @@ export function useManageMessageDrawer({
     };
   }, [
     formReady,
+    hideNetworks,
     isEditMode,
     editTarget?.id,
     isReportCreateMode,

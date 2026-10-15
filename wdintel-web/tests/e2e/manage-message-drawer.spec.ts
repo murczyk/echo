@@ -116,21 +116,49 @@ async function openLinkedMessageEditDrawer(
   page: Page,
   host: ManageMessageDrawerHost,
   kind: LinkedMessageKind,
+  {
+    hideNetworks = false,
+    systemSettingsFailure = false,
+    withNetworkSource = false,
+    beforeEdit,
+  }: {
+    hideNetworks?: boolean;
+    systemSettingsFailure?: boolean;
+    withNetworkSource?: boolean;
+    beforeEdit?: () => void;
+  } = {},
 ) {
   const inboxResponse = buildLinkedInboxResponse(kind);
   let copyRequestCount = 0;
+  if (withNetworkSource) {
+    Object.assign(inboxResponse.inbox_items[0]![1] as Record<string, unknown>, {
+      networkIds: [7],
+      networkName: 'E2E source network',
+    });
+  }
   await installMessageCardMediaPreviewAssetRoutes(page);
 
   if (host === 'analysis') {
-    await installAnalysisNeoApiMocks(page, { inboxResponse, signalGroups: ['e2e-group'] });
+    await installAnalysisNeoApiMocks(page, {
+      inboxResponse,
+      hideNetworks,
+      systemSettingsFailure,
+      signalGroups: ['e2e-group'],
+    });
     await page.goto('/rer-analysis-neo');
   } else {
     const dutyMocks = await installRerDutyShortStateMocks(page, {
       inboxResponse,
+      hideNetworks,
+      systemSettingsFailure,
       signalGroups: ['e2e-group'],
     });
     await page.goto('/rer-duty-neo');
     await dutyMocks.systemSettingsReady;
+  }
+  if (systemSettingsFailure) {
+    await dismissSettingsFailureNotifications(page, host);
+  } else if (host === 'duty') {
     await expect(page.getByText('Помилка завантаження системних налаштувань')).toHaveCount(0);
   }
   await page.route('**/api/1.1/messages/copy', async (route) => {
@@ -144,6 +172,7 @@ async function openLinkedMessageEditDrawer(
   await expect(
     page.getByText((inboxResponse.inbox_items[0]![1] as { text: string }).text),
   ).toBeVisible();
+  beforeEdit?.();
   await page.getByRole('button', { name: 'Більше дій', exact: true }).first().click();
   await page.getByRole('menuitem', { name: 'Редагувати', exact: true }).first().click();
   return { getCopyRequestCount: () => copyRequestCount };
@@ -287,6 +316,36 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await expect(frequency).toHaveValue('149.500');
       expect(networkSearches).toEqual([]);
     });
+
+    for (const { label, hideNetworks, systemSettingsFailure } of [
+      { label: 'hidden', hideNetworks: true, systemSettingsFailure: false },
+      { label: 'settings unavailable', hideNetworks: false, systemSettingsFailure: true },
+    ]) {
+      test(`#3598 ${host} suppresses source network hydration when ${label}`, async ({ page }) => {
+        const networkRequests: string[] = [];
+        await openLinkedMessageEditDrawer(page, host, 'with-report', {
+          hideNetworks,
+          systemSettingsFailure,
+          withNetworkSource: true,
+          beforeEdit: () => {
+            page.on('request', (request) => {
+              const pathname = new URL(request.url()).pathname;
+              if (
+                pathname === '/api/sigint/network/search' ||
+                pathname === '/api/sigint/network-info-batch-id'
+              ) {
+                networkRequests.push(pathname);
+              }
+            });
+          },
+        });
+
+        const editor = page.locator('[data-manage-message-presentation]');
+        await expect(editor).toBeVisible();
+        await expect(editor.getByRole('combobox', { name: 'Мережа', exact: true })).toHaveCount(0);
+        expect(networkRequests).toEqual([]);
+      });
+    }
 
     test(`${host} restores focus to the report action after closing`, async ({ page }) => {
       await page.setViewportSize({ width: 1600, height: 900 });

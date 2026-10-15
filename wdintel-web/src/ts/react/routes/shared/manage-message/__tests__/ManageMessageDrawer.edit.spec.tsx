@@ -765,7 +765,7 @@ describe('ManageMessageDrawer edit mode', () => {
       const container = document.createElement('div');
       document.body.appendChild(container);
       const root = createRoot(container);
-      const message = buildMessage();
+      const message = buildMessage({ networkIds: [7], networkName: 'Мережа джерела' });
 
       await act(async () => {
         root.render(
@@ -785,12 +785,13 @@ describe('ManageMessageDrawer edit mode', () => {
       expect(container.querySelector('[aria-label="Мережа"]')).toBeNull();
       expect(container.querySelector('[aria-label="Частота (МГц)"]')).not.toBeNull();
       expect(container.textContent).not.toContain('Мережа та радіо');
+      expect(networkMocks.getNetworksByIds).not.toHaveBeenCalled();
       expect(directSubmitMocks.searchNetworkNames).not.toHaveBeenCalled();
       root.unmount();
     },
   );
 
-  it('#3598 preserved an existing network when saving with the network field hidden', async () => {
+  it('#3598 preserves an existing network when saving an unrelated hidden edit', async () => {
     const message = buildMessage({ networkIds: [7], networkName: 'Existing network' });
     networkMocks.getNetworksByIds.mockResolvedValue([
       { id: 7, name: 'Existing network', unitIds: [], freqs: [] },
@@ -813,6 +814,7 @@ describe('ManageMessageDrawer edit mode', () => {
       );
     });
     await act(async () => {
+      autocompleteOnChangeByLabel.get('Частота (МГц)')?.(null, '150.000');
       container
         .querySelector('form')
         ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -822,7 +824,122 @@ describe('ManageMessageDrawer edit mode', () => {
       42,
       expect.objectContaining({ network: expect.objectContaining({ name: 'Existing network' }) }),
     );
+    expect(networkMocks.getNetworksByIds).not.toHaveBeenCalled();
+    expect(directSubmitMocks.searchNetworkNames).not.toHaveBeenCalled();
     expect(container.querySelector('[aria-label="Мережа"]')).toBeNull();
+    root.unmount();
+  });
+
+  it('#3598 skips free-form network hydration for hidden report sources after copy', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({ payloads: [{}] });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          hideNetworks
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          reportSource={{
+            id: 42,
+            message: buildMessage({ networkIds: null, networkName: 'Вільна мережа' }),
+          }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalled();
+    expect(networkMocks.getNetworksByIds).not.toHaveBeenCalled();
+    expect(directSubmitMocks.searchNetworkNames).not.toHaveBeenCalled();
+    root.unmount();
+  });
+
+  it('#3598 hydrates the current source after networks become visible', async () => {
+    networkMocks.getNetworksByIds.mockResolvedValue([
+      { id: 7, name: 'Видима мережа', unitIds: [], freqs: [] },
+    ]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const render = (hideNetworks: boolean) =>
+      root.render(
+        <ManageMessageDrawer
+          open
+          hideNetworks={hideNetworks}
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          editTarget={{ id: 42, message: buildMessage({ networkIds: [7] }) }}
+        />,
+      );
+
+    await act(async () => {
+      render(true);
+    });
+    expect(networkMocks.getNetworksByIds).not.toHaveBeenCalled();
+
+    await act(async () => {
+      render(false);
+      await Promise.resolve();
+    });
+    expect(networkMocks.getNetworksByIds).toHaveBeenCalledWith([7]);
+    expect(autocompleteValuesByLabel.get('Мережа')).toMatchObject({ id: 7 });
+    root.unmount();
+  });
+
+  it('#3598 ignores pending network hydration after networks become hidden', async () => {
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 42 });
+    let resolveNetworks!: (networks: unknown[]) => void;
+    networkMocks.getNetworksByIds.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveNetworks = resolve;
+        }),
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const render = (hideNetworks: boolean) =>
+      root.render(
+        <ManageMessageDrawer
+          open
+          hideNetworks={hideNetworks}
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          editTarget={{
+            id: 42,
+            message: buildMessage({ networkIds: [7], networkName: 'Початкова мережа' }),
+          }}
+        />,
+      );
+
+    await act(async () => {
+      render(false);
+    });
+    expect(networkMocks.getNetworksByIds).toHaveBeenCalledWith([7]);
+    await act(async () => {
+      render(true);
+    });
+    await act(async () => {
+      resolveNetworks([{ id: 7, name: 'Запізніла мережа', unitIds: [], freqs: [] }]);
+    });
+    expect(autocompleteValuesByLabel.get('Мережа')).not.toMatchObject({ id: 7 });
+    await act(async () => {
+      container
+        .querySelector('form')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ network: expect.objectContaining({ name: 'Початкова мережа' }) }),
+    );
     root.unmount();
   });
 
