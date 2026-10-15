@@ -1917,23 +1917,8 @@ function AdminUsersNeoPageBody() {
   };
 
   return (
-    <Box
-      className="w-full"
-      sx={{
-        height: { xs: 'auto', lg: '100%' },
-        minHeight: 0,
-        overflow: { xs: 'visible', lg: 'hidden' },
-      }}
-    >
-      <Stack
-        spacing={3}
-        useFlexGap
-        sx={{
-          height: { xs: 'auto', lg: '100%' },
-          minHeight: 0,
-          overflow: { xs: 'visible', lg: 'hidden' },
-        }}
-      >
+    <div className="flex h-full min-h-0 w-full flex-col gap-echo-lg overflow-hidden">
+      <div className="shrink-0">
         <TablePageToolbar
           title="Користувачі"
           withGlobalTextFilter
@@ -1947,29 +1932,27 @@ function AdminUsersNeoPageBody() {
             </div>
           }
         />
+      </div>
 
-        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
-          {renderTable()}
-        </Box>
+      <div className="flex min-h-0 min-w-0 flex-1">{renderTable()}</div>
 
-        <AddUserDialog
-          open={createOpen}
-          onClose={() => setCreateOpen(false)}
-          onUserCreated={(login) => setLogins((prev) => [login, ...prev])}
-          lookups={lookups}
-        />
-        <EditUserDialog
-          open={Boolean(editingLogin)}
-          login={editingLogin}
-          onClose={() => setEditingLogin(null)}
-          onUserUpdated={(login) =>
-            setLogins((prev) => prev.map((item) => (item.id === login.id ? login : item)))
-          }
-          lookups={lookups}
-          disableRestoreFocus
-        />
-      </Stack>
-    </Box>
+      <AddUserDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onUserCreated={(login) => setLogins((prev) => [login, ...prev])}
+        lookups={lookups}
+      />
+      <EditUserDialog
+        open={Boolean(editingLogin)}
+        login={editingLogin}
+        onClose={() => setEditingLogin(null)}
+        onUserUpdated={(login) =>
+          setLogins((prev) => prev.map((item) => (item.id === login.id ? login : item)))
+        }
+        lookups={lookups}
+        disableRestoreFocus
+      />
+    </div>
   );
 }
 

@@ -6,6 +6,7 @@ import { PowerButton } from '../../../../PowerButton';
 import { GlobalFilterTextField } from './components/global-filter-text-field';
 import { InternalTableActions } from './components/internal-actions';
 import { useTableStateContext } from '../../table-state-provider';
+import { TableToolbarLayout } from '../../../../TableToolbarLayout';
 
 type MobileActionsBarProps = {
   header: ReactNode;
@@ -54,11 +55,7 @@ type DesktopActionsBarProps = {
 };
 
 function DesktopActionsBar(props: DesktopActionsBarProps) {
-  return (
-    <div className="mb-3 hidden sm:flex flex-wrap items-center justify-between gap-2">
-      {props.children}
-    </div>
-  );
+  return <div className="mb-3 hidden sm:block">{props.children}</div>;
 }
 
 type TableTopToolbarProps = {
@@ -104,22 +101,28 @@ export function TableTopToolbar(props: TableTopToolbarProps) {
   return (
     <>
       <DesktopActionsBar>
-        <div className="flex items-center flex-wrap gap-3">
-          {props.header}
-          {props.withDatePicker && props.datePicker}
-          {props.withGlobalTextFilter && (
-            <GlobalFilterTextField
-              globalFilter={tableStateContext.globalFilter}
-              setGlobalFilter={tableStateContext.onChangeGlobalFilter}
-            />
-          )}
-          {props.filter}
-        </div>
-        <div className="flex items-center gap-3">
-          {tableStateContext.tableInstance && props.additionalActions}
-          {props.additionalNoTableActions}
-          {internalTableActions}
-        </div>
+        <TableToolbarLayout
+          leading={
+            <>
+              {props.header}
+              {props.withDatePicker && props.datePicker}
+              {props.withGlobalTextFilter && (
+                <GlobalFilterTextField
+                  globalFilter={tableStateContext.globalFilter}
+                  setGlobalFilter={tableStateContext.onChangeGlobalFilter}
+                />
+              )}
+              {props.filter}
+            </>
+          }
+          trailing={
+            <>
+              {tableStateContext.tableInstance && props.additionalActions}
+              {props.additionalNoTableActions}
+              {internalTableActions}
+            </>
+          }
+        />
       </DesktopActionsBar>
       <MobileActionsBar header={props.header}>
         {internalTableActions}

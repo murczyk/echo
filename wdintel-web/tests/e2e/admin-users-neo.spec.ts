@@ -29,6 +29,35 @@ const inactiveLogin = {
   organismEnabled: false,
 };
 
+const overflowingLogins = Array.from({ length: 60 }, (_, index) => ({
+  ...login,
+  id: `overflow-login-${index}`,
+  login: `overflow-login-${index}`,
+  deltaLogin: `overflow-delta-${index}`,
+}));
+
+async function installAdminUsersApiMocks(
+  page: import('@playwright/test').Page,
+  users = [inactiveLogin],
+) {
+  await installAnalysisNeoApiMocks(page, { userRoles: ['Admin', 'Rer'] });
+  await page.route('**/api/users/messenger-profiles', (route) =>
+    route.fulfill({ json: { data: {} } }),
+  );
+  await page.route('**/api/logins', (route) => route.fulfill({ json: { users } }));
+  await page.route('**/api/sigint/zones/list', (route) =>
+    route.fulfill({ json: [[1, { id: 1, name: 'Зона' }]] }),
+  );
+  await page.route('**/api/organisms', (route) =>
+    route.fulfill({
+      json: [
+        { id: 2, name: 'Організм', enabled: true },
+        { id: 3, name: 'Інший організм', enabled: true },
+      ],
+    }),
+  );
+}
+
 for (const width of [1280, 390]) {
   test(`Admin Users dialogs follow visual keyboard order at ${width}px @regression`, async ({
     page,
@@ -192,3 +221,85 @@ for (const width of [1280, 390]) {
     );
   });
 }
+
+for (const width of [390, 1000, 1280]) {
+  test(`Admin Users table keeps rows reachable at ${width}px @regression`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 480 });
+    await installAdminUsersApiMocks(page, overflowingLogins);
+    await page.goto('/admin/users-neo');
+
+    const users = page.locator('users-neo');
+    const tableContainer = users.locator('.MuiTableContainer-root');
+    await expect(tableContainer).toBeVisible();
+    expect(
+      await tableContainer.evaluate((element) => element.scrollHeight > element.clientHeight),
+    ).toBe(true);
+    await tableContainer.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(users.getByText('overflow-login-59', { exact: true })).toBeVisible();
+
+    expect(await users.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+
+    if (width >= 1000) {
+      const search = users.getByPlaceholder('Пошук');
+      const tableActions = users.locator('#active-filters-button');
+      const searchBox = await search.boundingBox();
+      const actionsBox = await tableActions.boundingBox();
+      expect(searchBox).not.toBeNull();
+      expect(actionsBox).not.toBeNull();
+      expect(Math.abs(searchBox!.y - actionsBox!.y)).toBeLessThan(4);
+    }
+  });
+}
+
+test('Admin Users search clearing updates URL, rows, and the active-filter badge @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installAdminUsersApiMocks(page, overflowingLogins);
+  await page.goto(
+    '/admin/users-neo?columnFilters=%5B%7B%22id%22%3A%22login%22%2C%22value%22%3A%22overflow-login-1%22%7D%5D',
+  );
+
+  const users = page.locator('users-neo');
+  const search = users.getByPlaceholder('Пошук');
+  await expect(users.getByText('overflow-login-1', { exact: true })).toBeVisible();
+  await search.fill('overflow-login-10');
+  await expect(page).toHaveURL(/globalFilter=overflow-login-10/);
+  await expect(users.getByText('overflow-login-10', { exact: true })).toBeVisible();
+  await search.press('Escape');
+
+  await expect(page).not.toHaveURL(/globalFilter=/);
+  await expect(users.getByText('overflow-login-1', { exact: true })).toBeVisible();
+  await expect(
+    users.locator('#active-filters-button').locator('..').locator('.MuiBadge-badge'),
+  ).not.toHaveClass(/MuiBadge-invisible/);
+});
+
+test('Admin Users clear-search button hides the badge when no column filters remain @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installAdminUsersApiMocks(page, overflowingLogins);
+  await page.goto('/admin/users-neo');
+
+  const users = page.locator('users-neo');
+  const search = users.getByPlaceholder('Пошук');
+  const badge = users.locator('#active-filters-button').locator('..').locator('.MuiBadge-badge');
+  await expect(users.locator('tbody tr')).toHaveCount(overflowingLogins.length);
+  await expect(badge).toHaveClass(/MuiBadge-invisible/);
+
+  await search.fill('overflow-login-10');
+  await expect(page).toHaveURL(/globalFilter=overflow-login-10/);
+  await expect(users.locator('tbody tr')).toHaveCount(1);
+  await expect(badge).not.toHaveClass(/MuiBadge-invisible/);
+  await users.getByRole('button', { name: 'clear-filter', exact: true }).click();
+
+  await expect(search).toHaveValue('');
+  await expect(page).not.toHaveURL(/globalFilter=/);
+  await expect(users.locator('tbody tr')).toHaveCount(overflowingLogins.length);
+  await expect(badge).toHaveClass(/MuiBadge-invisible/);
+});
