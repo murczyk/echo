@@ -222,6 +222,7 @@ async fn create_notification_event(
     importance_id: i64,
     group_master_key: &str,
     operation_id: Uuid,
+    public_host: &str,
 ) -> anyhow::Result<()> {
     #[derive(FromQueryResult)]
     struct ExistingOperation {
@@ -337,10 +338,13 @@ async fn create_notification_event(
         .await
         .context(h!())?;
     }
+    crate::messenger::alerts::enqueue(txn, event_id, public_host)
+        .await
+        .context(h!())?;
     Ok(())
 }
 
-async fn recipients_with_group_access(
+pub(crate) async fn recipients_with_group_access(
     txn: &DatabaseTransaction,
     candidates: &[Uuid],
     group_master_key: &str,
@@ -428,6 +432,7 @@ async fn set_importance(
                     important.id,
                     group_master_key,
                     operation_id,
+                    &env.config.public_host,
                 )
                 .await
                 .context(h!())?;
@@ -786,6 +791,7 @@ mod tests {
             important,
             &group.master_key,
             operation_id,
+            &env.config.public_host,
         )
         .await
         .unwrap();
@@ -834,6 +840,7 @@ mod tests {
             important,
             &group.master_key,
             operation_id,
+            &env.config.public_host,
         )
         .await
         .unwrap();

@@ -1,5 +1,7 @@
 import {
   CreateLoginReq,
+  MessengerProfileSearchReq,
+  SignalProfilesRsp,
   DeactivationReasonType,
   ListLoginsReq,
   ListLoginsRsp,
@@ -20,6 +22,7 @@ type CreateLoginReqBody = {
   roles: string[];
   sigint_zone_id: number | null;
   organism_id: number;
+  signal_profile_id: CreateLoginReq['signalProfileId'];
   description: string | null;
 };
 
@@ -33,6 +36,7 @@ type UpdateLoginReqBody = {
   password: string | null;
   delta_login: string | null;
   deactivation_reason: DeactivationReasonType | null;
+  signal_profile_id: UpdateLoginReq['signalProfileId'];
   description: string | null;
   password_auth_enabled: boolean | null;
   clear_totp: boolean | null;
@@ -61,6 +65,8 @@ type LoginLike = {
   last_active_at?: number | string | null;
   deactivationReason?: DeactivationReasonType | null;
   deactivation_reason?: DeactivationReasonType | null;
+  signalProfileId?: Login['signalProfileId'];
+  signal_profile_id?: Login['signalProfileId'];
   description?: string | null;
   passwordAuthEnabled?: boolean;
   password_auth_enabled?: boolean;
@@ -82,6 +88,7 @@ function toCreateLoginReqBody(req: CreateLoginReq): CreateLoginReqBody {
     roles: req.roles,
     sigint_zone_id: req.sigintZoneId,
     organism_id: req.organismId,
+    signal_profile_id: req.signalProfileId,
     description: req.description,
   };
 }
@@ -97,6 +104,7 @@ function toUpdateLoginReqBody(req: UpdateLoginReq): UpdateLoginReqBody {
     password: req.password,
     delta_login: req.deltaLogin,
     deactivation_reason: req.deactivationReason,
+    signal_profile_id: req.signalProfileId,
     description: req.description,
     password_auth_enabled: req.passwordAuthEnabled,
     clear_totp: req.clearTotp,
@@ -137,6 +145,7 @@ function normalizeLogin(raw: LoginLike): Login {
     deltaLogin: raw.deltaLogin ?? raw.delta_login ?? null,
     lastActiveAt: normalizeOptionalNumber(raw.lastActiveAt ?? raw.last_active_at),
     deactivationReason: raw.deactivationReason ?? raw.deactivation_reason ?? null,
+    signalProfileId: raw.signalProfileId ?? raw.signal_profile_id ?? null,
     description: raw.description ?? null,
     passwordAuthEnabled: raw.passwordAuthEnabled ?? raw.password_auth_enabled ?? true,
     totpEnabled: raw.totpEnabled ?? raw.totp_enabled ?? false,
@@ -163,4 +172,23 @@ export async function createLoginDelta(req: CreateLoginReq): Promise<Login> {
 export async function updateLogin(req: UpdateLoginReq): Promise<Login> {
   const data = await postJson<LoginLike>('/api/login/update', toUpdateLoginReqBody(req));
   return normalizeLogin(data ?? {});
+}
+
+export async function searchMessengerProfiles(
+  req: MessengerProfileSearchReq,
+  signal?: AbortSignal,
+): Promise<SignalProfilesRsp> {
+  const response = await postJson<{
+    data: Record<string, { given_name?: string | null; family_name?: string | null } | null>;
+  }>('/api/users/messenger-profiles', req, { signal });
+  return {
+    data: Object.fromEntries(
+      Object.entries(response.data).map(([id, profile]) => [
+        id,
+        profile
+          ? { givenName: profile.given_name ?? null, familyName: profile.family_name ?? null }
+          : null,
+      ]),
+    ),
+  };
 }

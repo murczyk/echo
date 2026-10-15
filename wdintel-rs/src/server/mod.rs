@@ -693,6 +693,15 @@ fn spawn_background_workers(
         )
         .await;
     });
+    let messenger_alert_env = env.clone();
+    let messenger_alert_cancel = cancel_token.clone();
+    spawn_named_worker("messenger_alert_worker", bg_set, async move {
+        crate::messenger::alerts::worker::run(
+            messenger_alert_env,
+            messenger_alert_cancel,
+        )
+        .await;
+    });
     let operator_env = env.clone();
     spawn_named_worker("operator_inbox_worker", bg_set, async move {
         crate::operator::worker::run_operator_inbox_worker_nofail(operator_env)
@@ -1147,6 +1156,12 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::important::important_add)
             .service(crate::rer_importer::important::importants_list)
             .service(crate::rer_importer::important::important_rm)
+            .service(crate::users::messenger_profile::search)
+            .service(crate::messenger::alerts::settings_get)
+            .service(crate::messenger::alerts::settings_put)
+            .service(crate::messenger::alerts::preference_get)
+            .service(crate::messenger::alerts::preference_put)
+            .service(crate::messenger::alerts::history)
             .service(crate::notifications::notification_list)
             .service(crate::notifications::notification_unread_count)
             .service(crate::notifications::notification_read)

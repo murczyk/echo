@@ -37,6 +37,8 @@ type AccountStatusReqBody = {
   account_id: number;
   aor_id: number | null;
   is_active: boolean;
+  can_read_messages: AccountStatusReq['canReadMessages'];
+  can_send_messages: AccountStatusReq['canSendMessages'];
   display_name: string;
   description: string | null;
   api_login: string | null;
@@ -220,6 +222,8 @@ function toAccountStatusReqBody(req: AccountStatusReq): AccountStatusReqBody {
     account_id: req.accountId,
     aor_id: req.aorId,
     is_active: req.isActive,
+    can_read_messages: req.canReadMessages,
+    can_send_messages: req.canSendMessages,
     display_name: req.displayName,
     description: req.description,
     api_login: req.apiLogin,
