@@ -17,7 +17,7 @@ impl MigrationTrait for Migration {
             .execute_unprepared(
                 r#"
                 alter table signal_group
-                    add column if not exists fetch_new_messages boolean default true;
+                    add column if not exists fetch_new_messages boolean;
                 "#,
             )
             .await

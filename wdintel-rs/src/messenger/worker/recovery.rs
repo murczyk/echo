@@ -633,16 +633,6 @@ async fn process_missing_message_recovery(
     inbox_message: &echo_inbox_message::Model,
     do_not_store_duplicate_echoim_failures: bool,
 ) -> anyhow::Result<()> {
-    if recovery_group_fetch_disabled(maps, inbox_message) {
-        mark_missing_message_error(
-            dbx,
-            missing_message,
-            "fetch_new_messages is disabled for this group".to_string(),
-        )
-        .await
-        .c(h!())?;
-        return Ok(());
-    }
     let inbox_id = i64::from(inbox_message.id);
     let queue_item = queue_item_for_inbox(maps, datasources, inbox_message);
     let datasource_id =
@@ -692,6 +682,17 @@ async fn process_missing_message_recovery(
                 .c(h!())?;
             }
         }
+        return Ok(());
+    }
+
+    if recovery_group_fetch_disabled(maps, inbox_message) {
+        mark_missing_message_error(
+            dbx,
+            missing_message,
+            "fetch_new_messages is disabled for this group".to_string(),
+        )
+        .await
+        .c(h!())?;
         return Ok(());
     }
 
@@ -924,6 +925,12 @@ async fn process_recovery_message(
     attachments: Vec<MessageAttachmentF1>,
     created_at: NaiveDateTime,
 ) -> anyhow::Result<ProcessSignalMessageQueueItemResult> {
+    anyhow::ensure!(
+        !super::group_fetch_disabled(dbx, Some(&message.group_id))
+            .await
+            .c(h!())?,
+        "fetch_new_messages is disabled for this group"
+    );
     let staged_media = crate::message_queue::stage_queue_media(
         dbx,
         &attachments,
@@ -997,6 +1004,12 @@ async fn process_recovery_message_in_txn(
     staged_media: &crate::messenger::media::StagedMediaAttachments,
     created_at: NaiveDateTime,
 ) -> anyhow::Result<(ProcessSignalMessageQueueItemResult, Vec<i64>)> {
+    anyhow::ensure!(
+        !super::group_fetch_disabled(txn, Some(&message.group_id))
+            .await
+            .c(h!())?,
+        "fetch_new_messages is disabled for this group"
+    );
     let mut changed_inbox_item_ids = vec![];
     let result =
         process_signal_message_queue_item_with_staged_media_and_options(
@@ -1450,6 +1463,56 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+
+        for expected_status in [
+            EchoMissingMessageStatus::Resolved,
+            EchoMissingMessageStatus::Deleted,
+            EchoMissingMessageStatus::Duplicate,
+        ] {
+            let candidate = mk_inbox_message(
+                &env.dbx,
+                account.id,
+                Some(group.id),
+                cursor + chrono::TimeDelta::seconds(2),
+            )
+            .await;
+            match expected_status {
+                EchoMissingMessageStatus::Resolved => {
+                    mk_existing_signal_for_inbox(
+                        &env.dbx,
+                        candidate.id,
+                        datasource.id,
+                        &group.group_id,
+                    )
+                    .await;
+                }
+                EchoMissingMessageStatus::Deleted => {
+                    let mut candidate = candidate.clone().into_active_model();
+                    candidate.deleted = Set(true);
+                    candidate.update(&env.dbx).await.unwrap();
+                }
+                EchoMissingMessageStatus::Duplicate => {
+                    let mut candidate = candidate.clone().into_active_model();
+                    candidate.duplicate_of = Set(Some(inbox.id));
+                    candidate.update(&env.dbx).await.unwrap();
+                }
+                _ => unreachable!(),
+            }
+            record_missing_message(&env.dbx, candidate.id, Some(&login_id))
+                .await
+                .unwrap();
+            assert_eq!(run_recovery(&env, &[account.id]).await, 1);
+            let missing = echo_missing_message::Entity::find()
+                .filter(
+                    echo_missing_message::Column::MessageId.eq(candidate.id),
+                )
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(missing.status, expected_status);
+            assert!(missing.error.is_none());
+        }
     }
 
     #[tokio::test]

@@ -47,28 +47,8 @@ pub async fn process_queue(
         .into_iter()
         .map(|d| (d.id, d))
         .collect::<HashMap<_, _>>();
-    let disabled_groups = super::load_groups_with_fetch_disabled(
-        &ctx.dbx,
-        queue
-            .iter()
-            .filter_map(|entry| entry.group_id.clone())
-            .collect(),
-    )
-    .await
-    .c(h!())?;
     let mut item_queue = VecDeque::new();
     for entry in queue {
-        if !entry.deleted
-            && entry
-                .group_id
-                .as_ref()
-                .is_some_and(|group_id| disabled_groups.contains(group_id))
-        {
-            delete_message_and_attachments_if_unchanged(&ctx.dbx, &entry)
-                .await
-                .c(h!())?;
-            continue;
-        }
         if let Some(item) =
             make_item_from_entry(entry, &attachments, &datasources).c(h!())?
         {
@@ -389,6 +369,9 @@ async fn process_item_once(
     let prepared_media = prepare_item_media(&context, datasource_id, &m)
         .await
         .context(h!())?;
+    if !m.deleted && prepared_media.is_none() {
+        return Ok(());
+    }
     let txn = match context.dbx.begin().await.c(h!()) {
         Ok(txn) => txn,
         Err(err) => {
@@ -514,6 +497,12 @@ async fn process_item_once(
             uploaded_files_ready_for_deletion
                 .extend(result.uploaded_files_ready_for_deletion);
         } else if let Some(group_id) = m.group_id.clone() {
+            if super::group_fetch_disabled(&txn, Some(&group_id))
+                .await
+                .c(h!())?
+            {
+                return Ok(());
+            }
             let message = Message {
                 body: m.text.clone(),
                 group_id,
@@ -642,6 +631,16 @@ async fn prepare_item_media(
         )
         .await
         .c(h!())?;
+    if linked_messages.is_empty()
+        && super::group_fetch_disabled(
+            &context.dbx,
+            message.group_id.as_deref(),
+        )
+        .await
+        .c(h!())?
+    {
+        return Ok(None);
+    }
     let attachments = match linked_messages.first() {
         Some(source_message) => {
             crate::messenger::reconcile::effective_snapshot_attachments(
