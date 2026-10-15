@@ -95,6 +95,7 @@ type Msg
     | SavedFilterDeleteDone (Result ApiError ())
     | SavedFilterSelect Int
     | SearchInput String
+    | SearchFocusChanged Bool
     | SelMetadataCcMsg (Select.Msg String)
     | SelMetadataSenderMsg (Select.Msg String)
     | SelMetadataReceiverMsg (Select.Msg String)
