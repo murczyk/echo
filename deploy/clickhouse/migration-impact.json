@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20261015_184629_attachment_search_message_change": {
+      "changes": [
+        { "table": "public.attachment_search_change", "strategy": "excluded" },
+        { "table": "public.attachment_search_message_change", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261015_150117_signal_group_fetch_new_messages": {
       "changes": [
         { "table": "public.signal_group", "strategy": "replicated_snapshot", "targeted_resnapshot": true }

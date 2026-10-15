@@ -50,9 +50,24 @@ pub struct Section {
 }
 
 pub async fn run(env: Arc<Env>, cancel: CancellationToken, kind: &'static str) {
+    let mut next_search_cleanup = std::time::Instant::now();
     loop {
         if cancel.is_cancelled() {
             break;
+        }
+        if kind == "extract" && std::time::Instant::now() >= next_search_cleanup
+        {
+            if let Err(error) =
+                super::analytics::prune_search_changes(&env.dbx).await
+            {
+                crate::types::error!(
+                    "attachment search change cleanup: {error:#}"
+                );
+            }
+            next_search_cleanup = std::time::Instant::now()
+                + Duration::from_secs(
+                    ATTACHMENT_SEARCH_CHANGE_CLEANUP_INTERVAL_SECS,
+                );
         }
         match step(&env, kind).await {
             Ok(true) => continue,

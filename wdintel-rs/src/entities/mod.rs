@@ -58,6 +58,7 @@ pub mod attachment_chunk;
 pub mod attachment_document;
 pub mod attachment_job;
 pub mod attachment_search_change;
+pub mod attachment_search_message_change;
 pub mod attachment_settings;
 pub mod battle_line_aor_geometry;
 pub mod battle_line_version;

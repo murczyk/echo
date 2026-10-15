@@ -477,6 +477,7 @@ mod m20261013_094137_inbox_unit_selection;
 mod m20261014_124732_attachment_document_updated_at_index;
 mod m20261014_140818_attachment_chunk_summary_index;
 mod m20261014_144721_attachment_search_change;
+mod m20261015_184629_attachment_search_message_change;
 
 pub struct Migrator;
 
@@ -1144,6 +1145,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261014_144721_attachment_search_change::Migration),
             Box::new(m20261015_092940_messenger_alerts::Migration),
             Box::new(m20261015_150117_signal_group_fetch_new_messages::Migration),
+            Box::new(m20261015_184629_attachment_search_message_change::Migration),
         ]
     }
 }

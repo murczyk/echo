@@ -240,12 +240,13 @@ pub(super) async fn resolve_analytics_message_id_scope(
     db: &DatabaseConnection,
     source_db: &DatabaseConnection,
     freshness_max_age_ms: u64,
+    groups: &[String],
 ) -> Result<AnalyticsMessageIdScope, AppError> {
-    crate::attachments::analytics::ensure_search_coverage_with_mode(
+    ensure_analytics_search_coverage(
         source_db,
         db,
-        &req.search,
-        req.search_mode,
+        req,
+        groups,
         freshness_max_age_ms,
     )
     .await
@@ -457,13 +458,11 @@ async fn resolve_analytics_frequency_scopes(
     db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<AnalyticsFrequencyScopes, AppError> {
-    const COMPARISON_PERIOD_DAYS: u8 = 10;
-
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let comparison_period_start = dt_since
-        - Duration::try_days(COMPARISON_PERIOD_DAYS.into())
+        - Duration::try_days(ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS)
             .context(h!())
             .map_err(Into::<AppError>::into)?;
     let current = resolve_analytics_message_id_scope_for_range(
@@ -1566,6 +1565,7 @@ pub(super) async fn fetch_senders_raw_with_db(
         db,
         &env.dbx,
         freshness_max_age_ms,
+        &master_keys,
     )
     .await
     .c(h!())?;
@@ -1612,6 +1612,29 @@ async fn fetch_senders_for_login_with_db(
         count: i64,
     }
 
+    let tag_access = if req
+        .selected_tags
+        .as_ref()
+        .is_some_and(|tags| !tags.is_empty())
+        || req
+            .denied_tags
+            .as_ref()
+            .is_some_and(|tags| !tags.is_empty())
+        || req.tag_presence.is_some()
+        || req.report_tags_only_this_unit == Some(true)
+    {
+        Some(
+            resolve_analytics_tag_access(
+                &env.dbx,
+                login_str,
+                req.report_tags_only_this_unit.unwrap_or(false),
+            )
+            .await
+            .context(h!())?,
+        )
+    } else {
+        None
+    };
     let instant = std::time::Instant::now();
     let breakdown_query = build_sender_breakdown_query(
         req,
@@ -1621,6 +1644,7 @@ async fn fetch_senders_for_login_with_db(
         master_keys,
         scope,
         units.as_ref(),
+        tag_access.as_ref(),
     )?;
     let breakdown_rows: Vec<SenderBreakdownRes> = breakdown_query
         .into_model::<SenderBreakdownRes>()
@@ -1702,6 +1726,7 @@ pub(super) fn build_sender_breakdown_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
+    tag_access: Option<&AnalyticsTagAccess>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req =
         Json(request_without_facet_filter(&req.0, AnalysisFacet::Senders));
@@ -1754,6 +1779,7 @@ pub(super) fn build_sender_breakdown_query(
         scope,
         units,
         true,
+        tag_access,
     )?;
     Ok(breakdown_query)
 }
@@ -1966,6 +1992,7 @@ fn apply_sender_filters_for_login<E>(
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
     group_access_already_filtered: bool,
+    tag_access: Option<&AnalyticsTagAccess>,
 ) -> Result<Select<E>, AppError>
 where
     E: EntityTrait,
@@ -2017,7 +2044,7 @@ where
     .context(h!())?;
     let query = filter_selected_callsigns(query, &req.selected_callsigns)
         .context(h!())?;
-    let query = filter_selected_tags_with_scope(
+    let query = filter_selected_tags_with_access(
         query,
         &req.selected_tags,
         &req.denied_tags,
@@ -2029,8 +2056,15 @@ where
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        login_str,
         req.report_tags_only_this_unit.unwrap_or(false),
+        match tag_access {
+            Some(access) => TagFilterAccess::Resolved {
+                user_id: login_str,
+                accessible_tag_ids: &access.accessible_tag_ids,
+                unit_login_ids: &access.unit_login_ids,
+            },
+            None => TagFilterAccess::Unresolved { user_id: login_str },
+        },
         scope,
     )
     .context(h!())?;
@@ -2452,11 +2486,17 @@ pub(super) async fn fetch_freqs_raw_with_db(
     freshness_max_age_ms: u64,
 ) -> Result<Vec<AnalysisStatsFreq>, AppError> {
     let login_value = login_id_from_identity(user)?;
-    crate::attachments::analytics::ensure_search_coverage_with_mode(
+    let mut coverage_req = req.0.clone();
+    coverage_req.since_date_inclusive_ms =
+        (dt_from_millis(req.since_date_inclusive_ms).c(h!())?
+            - Duration::days(ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS))
+        .and_utc()
+        .timestamp_millis();
+    ensure_analytics_search_coverage(
         source_db,
         db,
-        &req.search,
-        req.search_mode,
+        &coverage_req,
+        &master_keys,
         freshness_max_age_ms,
     )
     .await
@@ -2571,9 +2611,8 @@ fn build_new_freqs_query(
     dt_till: NaiveDateTime,
     analytics_scopes: Option<&AnalyticsFrequencyScopes>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    const COMPARISON_PERIOD_DAYS: u8 = 10;
     let comparison_period_start = dt_since
-        - Duration::try_days(COMPARISON_PERIOD_DAYS.into())
+        - Duration::try_days(ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS)
             .context(h!())
             .map_err(Into::<AppError>::into)?;
     if let Some(analytics_scopes) = analytics_scopes {
@@ -3282,6 +3321,7 @@ fn build_metadata_messages_query_with_units(
         scope,
         units,
         false,
+        None,
     )
 }
 
