@@ -44,6 +44,7 @@ const LEGACY_QUERY_STATE_FIELDS: LegacyKeyMapEntry[] = [
   { key: 'orWithCoords', legacyKey: 'or_with_coords', defaultValue: false, type: 'boolean' },
   { key: 'orWithoutCoords', legacyKey: 'or_without_coords', defaultValue: false, type: 'boolean' },
   { key: 'search', defaultValue: '', type: 'string' },
+  { key: 'searchMode', legacyKey: 'search_mode', defaultValue: 'Fuzzy', type: 'string' },
   { key: 'metadataCc', legacyKey: 'metadata_cc', defaultValue: [], type: 'string[]' },
   { key: 'metadataSender', legacyKey: 'metadata_sender', defaultValue: [], type: 'string[]' },
   { key: 'metadataReceiver', legacyKey: 'metadata_receiver', defaultValue: [], type: 'string[]' },

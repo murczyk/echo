@@ -171,6 +171,7 @@ init user route _ =
             , savedFilterEditInp = Dict.empty
             , savedFilterMenuOpen = Nothing
             , searchInput = ""
+            , searchMode = Nothing
             , metadataCc = []
             , metadataSender = []
             , metadataReceiver = []
@@ -399,6 +400,7 @@ getInboxReq model =
     , orWithoutCoords = Just model.orWithoutCoords
     , newestFirst = Just model.newestFirst
     , search = emptySToNothing model.searchInput
+    , searchMode = model.searchMode
     , metadataCc = emptyToNothing model.metadataCc
     , metadataSender = emptyToNothing model.metadataSender
     , metadataReceiver = emptyToNothing model.metadataReceiver
@@ -471,6 +473,7 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , orWithoutCoords = Just model.orWithoutCoords
             , nolimit = Just model.callsignGraphNolimit
             , search = Just model.searchInput
+            , searchMode = model.searchMode
             , metadataCc = emptyToNothing model.metadataCc
             , metadataSender = emptyToNothing model.metadataSender
             , metadataReceiver = emptyToNothing model.metadataReceiver
@@ -3507,6 +3510,9 @@ update user shared route msg model =
 
                 _ ->
                     ( model, E.none )
+
+        SearchModeChanged searchMode ->
+            loadCoreStatsAndPushUrl (invalidateOptionFilters { model | searchMode = Just searchMode })
 
         SearchDo ->
             loadCoreStatsAndPushUrl (invalidateOptionFilters model)

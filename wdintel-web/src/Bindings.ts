@@ -568,6 +568,12 @@ export type InboxMessagesSortBy =
   | 'IMSCreatedAt'
 ;
 
+export type AnalysisSearchMode =
+  | 'Fuzzy'
+  | 'Exact'
+  | 'Substring'
+;
+
 export type TagFilterOption =
   | 'OneOfTags'
   | 'AllTags'
@@ -612,6 +618,7 @@ export type InboxMessagesReq = {
   orWithoutCoords: boolean | null;
   newestFirst: boolean | null;
   search: string | null;
+  searchMode: AnalysisSearchMode | null;
   highlightCallsigns: boolean | null;
   highlightKeywords: boolean | null;
   highlightSearchres: boolean | null;
@@ -886,6 +893,7 @@ export type AnalysisStatsReq = {
   orWithCoords: boolean | null;
   orWithoutCoords: boolean | null;
   search: string | null;
+  searchMode: AnalysisSearchMode | null;
   selectedTags: Array<number> | null;
   deniedTags: Array<number> | null;
   tagPresence: TagPresenceFilter | null;
@@ -1071,6 +1079,7 @@ export type CallsignsGraphReq = {
   orWithoutCoords: boolean | null;
   nolimit: boolean | null;
   search: string | null;
+  searchMode: AnalysisSearchMode | null;
   selectedTags: Array<number> | null;
   deniedTags: Array<number> | null;
   tagPresence: TagPresenceFilter | null;
@@ -1163,6 +1172,7 @@ export type RerAnalysisQueryState = {
   orWithCoords: boolean;
   orWithoutCoords: boolean;
   search: string;
+  searchMode: AnalysisSearchMode | null;
   metadataCc: Array<string>;
   metadataSender: Array<string>;
   metadataReceiver: Array<string>;

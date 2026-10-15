@@ -158,3 +158,23 @@ The seven-day count-query strategy switch remains separate from detail loading.
 Compare count plans on both sides of that boundary before changing it.
 PostgreSQL candidate text-search union deduplication and quoted substring
 predicates also need representative plan evidence before further optimization.
+
+## Analysis search modes
+
+`search_mode` is optional on analysis, inbox, and callsign-graph requests.
+Absent, null, and `Fuzzy` retain the original search behavior. `Exact` uses
+case-insensitive word-boundary regular expressions; `Substring` uses escaped
+case-insensitive literal patterns. Operators and structured frequency/UID
+filters remain available. Saved filters and both Analysis URLs retain the mode.
+The user contract is [Analysis search](../content/analysis-search.md#режими-пошуку).
+
+Nonempty exact and substring searches use PostgreSQL. Gateway plans on
+`echo-kharkiv2` showed local literal-body filtering through the JSON compatibility
+views, including an unbounded foreign-table read for the self-correlated regex
+shape. These modes therefore apply body predicates directly to the already
+filtered inbox relation and do not attempt that gateway path. Fuzzy routing is
+unchanged. Read-only unit-count diagnostics with the incident's group scope and
+`нора` took 66 ms for one day and 3.68 s for 30 days on 15 October 2026; the
+30-day plan still scanned large joined relations and spilled temporary data.
+These isolated timings do not establish a latency guarantee under concurrency
+or resolve the separate PostgreSQL count-query performance issue.

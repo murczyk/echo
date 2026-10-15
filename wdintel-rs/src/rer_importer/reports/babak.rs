@@ -99,6 +99,7 @@ pub async fn collect_babak_report_data(
         or_with_coords: inbox_req.or_with_coords,
         or_without_coords: inbox_req.or_without_coords,
         search: inbox_req.search,
+        search_mode: inbox_req.search_mode,
         selected_tags: inbox_req.selected_tags,
         denied_tags: inbox_req.denied_tags,
         tag_presence: inbox_req.tag_presence,
@@ -1627,7 +1628,8 @@ async fn load_babak_candidate_page_for_groups(
     }
     .context(h!())?;
     query = filter_selected_metadata_for_inbox_messages(query, req)?;
-    query = filter_search(query, &req.search)?;
+    query =
+        filter_search_with_mode(query, &req.search, req.search_mode).c(h!())?;
     query = filter_selected_units_or_ids(
         query,
         &req.selected_units,

@@ -42,7 +42,8 @@ isSavedFilterSelected filter model =
                 (Time.millisToPosix req1.tillDateNoninclusiveMs)
                 model
     in
-    req1 == req2
+    { req1 | searchMode = Just (Maybe.withDefault B.Fuzzy req1.searchMode) }
+        == { req2 | searchMode = Just (Maybe.withDefault B.Fuzzy req2.searchMode) }
 
 
 filterMenuBlockCountOutOf : { unfold : Bool, toggleMsg : msg, label : String, mCountLabel : Maybe String, overallLabel : String, withGreenCircle : Bool } -> Html msg -> Html msg

@@ -34,10 +34,29 @@ pub(crate) async fn replicate_history(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) async fn ensure_search_coverage(
     source: &DatabaseConnection,
     analytics: &DatabaseConnection,
     search: &Option<String>,
+    freshness_max_age_ms: u64,
+) -> anyhow::Result<()> {
+    ensure_search_coverage_with_mode(
+        source,
+        analytics,
+        search,
+        None,
+        freshness_max_age_ms,
+    )
+    .await
+    .c(h!())
+}
+
+pub(crate) async fn ensure_search_coverage_with_mode(
+    source: &DatabaseConnection,
+    analytics: &DatabaseConnection,
+    search: &Option<String>,
+    search_mode: Option<crate::rer_importer::types::AnalysisSearchMode>,
     freshness_max_age_ms: u64,
 ) -> anyhow::Result<()> {
     let Some(search) =
@@ -46,8 +65,12 @@ pub(crate) async fn ensure_search_coverage(
         return Ok(());
     };
     let mut values = Vec::new();
-    let predicate =
-        super::search::chunk_terms_predicate(search, &mut values).c(h!())?;
+    let predicate = super::search::chunk_terms_predicate_with_mode(
+        search,
+        search_mode,
+        &mut values,
+    )
+    .c(h!())?;
     if predicate == "false" {
         return Ok(());
     }
