@@ -1,12 +1,12 @@
 use super::types::DirectSubmitPayload;
-use crate::config::SIGINT_DIRECT_SUBMIT_UNIT_LOCK_NAMESPACE;
 use crate::entities::{sigint_inbox_item, sigint_unit};
+use crate::sigint::unit::message_creation::{
+    find_exact_named_units, lock_unit_name_for_creation,
+};
 use crate::sigint::unit::{self, types::CreateUnitReq};
 use crate::types::*;
-use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, Statement,
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
 };
 use uuid::Uuid;
 
@@ -40,17 +40,7 @@ where
         None
     } else {
         if payload.create_unit {
-            db.execute_raw(Statement::from_sql_and_values(
-                DbBackend::Postgres,
-                "SELECT pg_advisory_xact_lock($1, hashtext($2))",
-                [
-                    SIGINT_DIRECT_SUBMIT_UNIT_LOCK_NAMESPACE.into(),
-                    crate::inbox::unit_resolution::normalize_unit_label(name)
-                        .into(),
-                ],
-            ))
-            .await
-            .c(h!())?;
+            lock_unit_name_for_creation(db, name).await.c(h!())?;
         }
         find_or_create_named_unit(db, login, name, payload.create_unit)
             .await
@@ -122,18 +112,7 @@ async fn find_or_create_named_unit<C>(
 where
     C: ConnectionTrait,
 {
-    let units = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .filter(Expr::cust_with_values(
-            "lower(regexp_replace(btrim(name), '[[:space:]]+', ' ', 'g')) = $1",
-            [crate::inbox::unit_resolution::normalize_unit_label(name)],
-        ))
-        .order_by_asc(sigint_unit::Column::Id)
-        .limit(2)
-        .lock_exclusive()
-        .all(db)
-        .await
-        .c(h!())?;
+    let units = find_exact_named_units(db, name).await.c(h!())?;
     match units.len() {
         0 if create => Ok(Some(
             unit::insert_unit_with_changelog(
@@ -505,6 +484,65 @@ mod tests {
             unit::find_search_units(&env.dbx, &request).await.unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].id, children[1].id);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_search_3535_ranked_echelons_before_limiting_children() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let brigade = seed_unit(
+            &env.dbx,
+            &login,
+            CreateUnitReq {
+                brigade: "123 омбр".to_string(),
+                active: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        let battalion = seed_unit(
+            &env.dbx,
+            &login,
+            CreateUnitReq {
+                battalion: "2 мб".to_string(),
+                brigade: brigade.brigade.clone(),
+                ..Default::default()
+            },
+        )
+        .await;
+        for index in 0..260 {
+            seed_unit(
+                &env.dbx,
+                &login,
+                CreateUnitReq {
+                    company: format!("1 мр {index}"),
+                    battalion: battalion.battalion.clone(),
+                    brigade: brigade.brigade.clone(),
+                    ..Default::default()
+                },
+            )
+            .await;
+        }
+        let mut request = UnitSearchReq {
+            search: "123 омб".to_string(),
+            include_inactive: Some(true),
+            names: None,
+        };
+        let found = unit::find_search_units(&env.dbx, &request).await.unwrap();
+        assert_eq!(
+            found.len(),
+            crate::config::SIGINT_UNIT_SEARCH_INACTIVE_LIMIT as usize
+        );
+        assert_eq!(found[0].id, brigade.id);
+        assert_eq!(found[1].id, battalion.id);
+        assert!(found[2..].iter().all(|unit| !unit.company.is_empty()));
+        request.include_inactive = None;
+        let found = unit::find_search_units(&env.dbx, &request).await.unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, brigade.id);
     }
 
     #[tokio::test]

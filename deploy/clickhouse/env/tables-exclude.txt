@@ -135,10 +135,9 @@ public.ai_position_knowledge_job
 public.ai_position_link_job
 public.ai_position_feedback
 
-# Private message attachment content and processing state.
+# Private attachment processing state; searchable content uses CDC-only replication.
 public.attachment_settings
-public.attachment_document
-public.attachment_chunk
+public.attachment_search_change
 public.attachment_job
 
 public.device_document_settings

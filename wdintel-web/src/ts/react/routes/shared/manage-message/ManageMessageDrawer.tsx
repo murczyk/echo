@@ -1,4 +1,4 @@
-import { canWriteMessages } from '../../../utils/roles';
+import { canWriteMessages, hasRole } from '../../../utils/roles';
 import { RadioFeaturesProvider } from '../RadioFeatures';
 import {
   forwardRef,
@@ -964,6 +964,10 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             unitOptions={drawerState.unitOptions}
                             unitLoading={drawerState.unitLoading}
                             unitAllowCreate={drawerState.unitAllowCreate}
+                            canMergeUnitDuplicates={hasRole(
+                              props.currentUser?.roles,
+                              'UnitsEditor',
+                            )}
                             onUnitFocus={drawerState.onUnitFocus}
                             unitLocked={drawerState.unitLocked}
                             callsignOptions={drawerState.callsignOptions}

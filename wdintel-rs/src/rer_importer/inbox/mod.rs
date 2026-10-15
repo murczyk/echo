@@ -4469,6 +4469,18 @@ async fn get_inbox_messages_with_internal_lower_bound(
     req: &InboxMessagesReq,
     internal_lower_bound: Option<NaiveDateTime>,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    if req.nolimit != Some(true) {
+        return Ok(get_postgres_inbox_page(
+            &env.dbx,
+            login,
+            logins,
+            env,
+            req,
+            internal_lower_bound,
+        )
+        .await
+        .c(h!())?);
+    }
     let q = build_inbox_query_with_internal_lower_bound(
         &env.dbx,
         login,
@@ -4479,6 +4491,50 @@ async fn get_inbox_messages_with_internal_lower_bound(
     .await
     .c(h!())?;
     fetch_inbox_messages_with_query(&env.dbx, login, logins, env, req, &q).await
+}
+
+async fn get_postgres_inbox_page(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    internal_lower_bound: Option<NaiveDateTime>,
+) -> anyhow::Result<Vec<(i64, InboxMessage)>> {
+    let transaction = dbx
+        .begin_with_config(
+            Some(IsolationLevel::RepeatableRead),
+            Some(AccessMode::ReadOnly),
+        )
+        .await
+        .c(h!())?;
+    let ids = load_postgres_inbox_page_ids(
+        &transaction,
+        login,
+        env,
+        req,
+        internal_lower_bound,
+    )
+    .await
+    .c(h!())?;
+    let messages = if ids.is_empty() {
+        Vec::new()
+    } else {
+        let query =
+            build_inbox_page_details_query(&transaction, login, req, &ids)
+                .await
+                .c(h!())?;
+        fetch_inbox_message_descriptions(
+            &transaction,
+            Statement::from_string(DatabaseBackend::Postgres, query),
+        )
+        .await
+        .c(h!())?
+    };
+    transaction.commit().await.c(h!())?;
+    aggregate_to_inbox_messages(login, messages, logins, &req, &env)
+        .await
+        .c(h!())
 }
 
 pub async fn get_inbox_messages_created_between(
@@ -4540,6 +4596,11 @@ pub async fn get_inbox_messages_with_conn(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    if req.nolimit != Some(true) {
+        return Ok(get_postgres_inbox_page(dbx, login, logins, env, req, None)
+            .await
+            .c(h!())?);
+    }
     let q = build_inbox_query(login, env, req).await.c(h!())?;
     let res = fetch_inbox_messages_with_query(dbx, login, logins, env, req, &q)
         .await
@@ -4588,6 +4649,20 @@ async fn fetch_inbox_messages_with_statement(
     req: &InboxMessagesReq,
     statement: Statement,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let messages = fetch_inbox_message_descriptions(dbx, statement)
+        .await
+        .c(h!())?;
+    Ok(
+        aggregate_to_inbox_messages(login, messages, logins, &req, &env)
+            .await
+            .c(h!())?,
+    )
+}
+
+async fn fetch_inbox_message_descriptions<C: ConnectionTrait>(
+    dbx: &C,
+    statement: Statement,
+) -> anyhow::Result<Vec<InboxMessageDesc>> {
     let results = dbx.query_all_raw(statement).await.context(h!())?;
 
     let messages: Vec<InboxMessageDesc> = results
@@ -4596,10 +4671,7 @@ async fn fetch_inbox_messages_with_statement(
         .collect::<Result<Vec<_>, DbErr>>()
         .context(h!())?;
 
-    let res = aggregate_to_inbox_messages(login, messages, logins, &req, &env)
-        .await
-        .context(h!())?;
-    Ok(res)
+    Ok(messages)
 }
 
 /// Find our dups and dups of our duplicate_of origin. Don't do anything fancy beyond this.

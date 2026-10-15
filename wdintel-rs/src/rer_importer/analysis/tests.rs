@@ -2305,6 +2305,141 @@ async fn rer_analysis_search_matches_plain_prefix() {
     );
 }
 
+async fn seed_search_pagination_messages(
+    fixture: &RerAnalysisFixture,
+    login: &uuid::Uuid,
+    tag_id: i64,
+) {
+    let db = &fixture.env.dbx;
+    for index in 0..27 {
+        let datetime = test_dt(2026, 3, 1, 10, index % 3);
+        let message = mk_analysis_message(
+            db,
+            &format!("Береза pagination {index}"),
+            "155.2750",
+            datetime,
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+            tag_id: Set(tag_id),
+            confidence: Set(1.0),
+            login_id: Set(Some(*login)),
+            model: Set(None),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_metadata(
+            db,
+            sigint_inbox_item_metadata::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                color_code: Set(Some("7".into())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        if index == 26 {
+            signal_message::Entity::update_many()
+                .col_expr(signal_message::Column::Deleted, Expr::value(true))
+                .filter(signal_message::Column::Id.eq(message.id))
+                .exec(db)
+                .await
+                .unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_search_pages_preserve_filters_details_and_cursors_3780() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let tag = mk_tag(
+        db,
+        tag::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    seed_search_pagination_messages(&fixture, &login.id, tag.id).await;
+    for sort_by in [
+        InboxMessagesSortBy::IMSDatetime,
+        InboxMessagesSortBy::IMSTimestamp,
+        InboxMessagesSortBy::IMSCreatedAt,
+    ] {
+        for newest_first in [false, true] {
+            let mut req = InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 1, 0, 0).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+                ),
+                search: Some("Берез".into()),
+                selected_groups: Some(vec![fixture
+                    .alpha
+                    .signal_group
+                    .master_key
+                    .clone()]),
+                selected_freqs: Some(vec!["155.2750".into()]),
+                selected_tags: Some(vec![tag.id]),
+                metadata_cc: Some(vec!["7".into()]),
+                without_model_tags: Some(true),
+                sort_by: Some(sort_by),
+                newest_first: Some(newest_first),
+                ..Default::default()
+            };
+            let mut first_ids = Vec::new();
+            for page_index in 0..2 {
+                let expected =
+                    inbox_map_item_ids(&fixture.env, &login.id, &req).await;
+                let messages = crate::rer_importer::inbox::get_inbox_messages(
+                    &login.id,
+                    &vec![login.id],
+                    &fixture.env,
+                    &req,
+                )
+                .await
+                .unwrap();
+                let ids =
+                    messages.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+                assert_eq!(ids, expected);
+                assert_eq!(
+                    messages.len(),
+                    if page_index == 0 {
+                        INBOX_MESSAGES_PAGE_LIMIT
+                    } else {
+                        6
+                    }
+                );
+                assert!(messages
+                    .iter()
+                    .all(|(_, message)| message.tags == Some(vec![tag.id])
+                        && message.metadata.len() == 1));
+                if page_index == 0 {
+                    first_ids = ids.clone();
+                    if newest_first {
+                        req.before_id_noninclusive = ids.last().copied();
+                    } else {
+                        req.since_id_noninclusive = ids.last().copied();
+                    }
+                } else {
+                    assert!(ids.iter().all(|id| !first_ids.contains(id)));
+                }
+            }
+        }
+    }
+}
+
 #[tokio::test]
 #[serial]
 async fn rer_analysis_search_matches_dotted_body_text() {
@@ -8766,11 +8901,11 @@ fn creation_time_requests_bypass_interception_scoped_analytics() {
 }
 
 #[test]
-fn count_stats_analytics_supports_callsigns_but_bypasses_text_search() {
+fn count_stats_analytics_supports_callsigns_and_text_search() {
     let mut req = mk_analysis_stats_req(0, 1);
 
     req.search = Some("callsign".to_string());
-    assert!(!analytics_count_request_supported(&req));
+    assert!(analytics_count_request_supported(&req));
 
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
@@ -8785,7 +8920,7 @@ fn count_stats_analytics_supports_unit_filters() {
 }
 
 #[test]
-fn summary_table_analytics_supports_units_but_bypasses_text_search() {
+fn summary_table_analytics_supports_units_and_text_search() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
     assert!(analytics_summary_table_request_supported(&req));
@@ -8793,11 +8928,11 @@ fn summary_table_analytics_supports_units_but_bypasses_text_search() {
 
     req.selected_units = None;
     req.search = Some("message".to_string());
-    assert!(!analytics_summary_table_request_supported(&req));
+    assert!(analytics_summary_table_request_supported(&req));
 }
 
 #[test]
-fn analytical_inbox_reads_support_callsigns_but_bypass_text_search() {
+fn analytical_inbox_reads_support_callsigns_and_text_search() {
     let mut req = InboxMessagesReq::default();
     assert!(!analytics_inbox_request_supported(&req));
 
@@ -8809,7 +8944,7 @@ fn analytical_inbox_reads_support_callsigns_but_bypass_text_search() {
     assert!(analytics_inbox_request_supported(&req));
 
     req.search = Some("callsign".to_string());
-    assert!(!analytics_inbox_request_supported(&req));
+    assert!(analytics_inbox_request_supported(&req));
 
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
@@ -8847,7 +8982,7 @@ fn analytical_inbox_candidates_reject_unbounded_and_support_bounded_media_and_no
 
     req.only_with_media = None;
     req.search = Some("message".to_string());
-    assert!(!analytics_inbox_candidates_supported(&req));
+    assert!(analytics_inbox_candidates_supported(&req));
 
     req.search = None;
     req.nolimit = Some(true);
@@ -9209,6 +9344,7 @@ fn fallback_capacity_only_limits_analytics_incident_routes() {
         "analytics_saturated",
         "analytics_unhealthy",
         "analytics_unavailable",
+        "attachment_history_incomplete",
         "candidate_ordering_incomplete",
         "candidate_revalidation_incomplete",
         "circuit_open",

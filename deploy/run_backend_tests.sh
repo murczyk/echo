@@ -22,6 +22,8 @@ bash deploy/clickhouse/tests/test-source-resnapshot-table.sh
 bash deploy/clickhouse/tests/test-manage-system-logs.sh
 bash deploy/clickhouse/tests/test-source-verify-deploy.sh
 bash deploy/clickhouse/tests/test-control-bundle.sh
+bash deploy/clickhouse/tests/test-cdc-only-table-selection.sh
+bash deploy/clickhouse/tests/test-attachment-history.sh
 bash deploy/clickhouse/tests/test-analytics-reconcile-file-lock.sh
 bash deploy/clickhouse/tests/test-clickhouse-memory-limit.sh
 bash deploy/clickhouse/tests/test-reconcile-if-needed.sh
