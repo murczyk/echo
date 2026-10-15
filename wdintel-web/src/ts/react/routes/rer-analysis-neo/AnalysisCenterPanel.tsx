@@ -10,7 +10,7 @@ import { ANALYSIS_CENTER_TAB_META } from './analysis-center-tabs';
 import { analysisCompactTabsSx, analysisNewestFirstLabelSx } from './analysis-tab-styles';
 import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
 import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
-import { GroupIsland } from '../shared/group-navigation';
+import { GroupIdentity } from '../shared/group-navigation';
 
 type Props = {
   page: AnalysisPageViewModel;
@@ -70,7 +70,28 @@ export function AnalysisCenterPanel({
         spacing={isCompactLayout ? 0.5 : 1}
         sx={{ px: { xs: 1, lg: 2 }, pt: 0, mb: 0, flexShrink: 0 }}
       >
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, gap: 2 }}>
+          <Box
+            data-analysis-current-group
+            sx={{
+              display: 'flex',
+              minWidth: 0,
+              width: { xs: '128px', sm: '180px' },
+              flexShrink: 0,
+              '& .group-navigation-name': {
+                fontSize: '16px',
+                lineHeight: 1.5,
+                fontWeight: 500,
+              },
+            }}
+          >
+            <GroupIdentity group={page.groupNavigation.selectedGroup} avatarSize="context" />
+          </Box>
+          <Box
+            data-analysis-group-divider
+            aria-hidden="true"
+            sx={{ width: '1px', height: '24px', flex: '0 0 auto', bgcolor: 'divider' }}
+          />
           <Tabs
             value={centerTab}
             onChange={(_event, value) => page.setCenterTab(value)}
@@ -196,16 +217,6 @@ export function AnalysisCenterPanel({
           />
         ) : null}
       </Stack>
-
-      {centerTab === 'messages' ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', px: 1, py: 0.5, flexShrink: 0 }}>
-          <GroupIsland
-            group={page.groupNavigation.selectedGroup}
-            expanded={page.leftPanelOpen}
-            onOpen={page.openLeftPanel}
-          />
-        </Box>
-      ) : null}
 
       <Box
         sx={{

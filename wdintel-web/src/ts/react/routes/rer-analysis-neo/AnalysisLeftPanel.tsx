@@ -46,7 +46,7 @@ export function AnalysisLeftPanel({
       >
         <h2
           id="analysis-groups-title"
-          className="m-0 px-2 pb-1 text-sm font-medium text-black/60 dark:text-white/60"
+          className="m-0 px-2 pb-1 !text-sm !leading-5 font-medium text-black/60 dark:text-white/60"
         >
           Групи
         </h2>

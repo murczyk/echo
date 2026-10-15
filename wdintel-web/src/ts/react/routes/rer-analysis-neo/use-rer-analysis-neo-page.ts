@@ -569,6 +569,7 @@ export function useRerAnalysisNeoPage(
   );
   const groupNavigation = useGroupFeedNavigation({
     enabled: leftPanelOpen,
+    resolveSelectedGroupWhenHidden: true,
     scope: groupScope,
     onSelect: selectGroupScope,
     onError: (groupError) => setDirectMessageError(toErrorMessage(groupError)),

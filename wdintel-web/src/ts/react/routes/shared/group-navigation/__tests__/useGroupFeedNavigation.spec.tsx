@@ -74,4 +74,36 @@ describe('useGroupFeedNavigation', () => {
     expect(secondModel!.groups[0]).toMatchObject({ kind: 'all', unreadCount: 9 });
     expect(firstModel!.groups[1]).toMatchObject({ kind: 'group', unreadCount: 4 });
   });
+
+  it('resolves a selected group once while the group list is hidden', async () => {
+    const fetchStates = vi.fn(async () => [serverGroup]);
+    const store = createGroupFeedStateStore({ fetchStates });
+    let model: ReturnType<typeof useGroupFeedNavigation> | null = null;
+
+    function ScopedHarness() {
+      model = useGroupFeedNavigation({
+        enabled: false,
+        resolveSelectedGroupWhenHidden: true,
+        scope: { kind: 'group', masterKey: serverGroup.masterKey },
+        onSelect: vi.fn(),
+        onError: vi.fn(),
+        store,
+      });
+      return null;
+    }
+
+    await act(async () => {
+      root.render(<ScopedHarness />);
+      await Promise.resolve();
+    });
+
+    expect(fetchStates).toHaveBeenCalledTimes(1);
+    expect(model!.selectedGroup.name).toBe(serverGroup.name);
+
+    await act(async () => {
+      store.invalidate();
+      await Promise.resolve();
+    });
+    expect(fetchStates).toHaveBeenCalledTimes(1);
+  });
 });

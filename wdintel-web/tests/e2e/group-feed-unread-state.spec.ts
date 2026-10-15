@@ -202,7 +202,9 @@ test('falls back to all groups after Analysis access is revoked', async ({ page 
   const groupList = page.locator('[data-analysis-group-list]:visible').first();
   await expect(groupList).toBeVisible();
   await groupList.getByRole('button', { name: /Group Alpha/ }).click();
-  await expect(page.locator('[data-group-island] [data-group-name]')).toHaveText(groupName);
+  await expect(page.locator('[data-analysis-current-group] [data-group-name]')).toHaveText(
+    groupName,
+  );
   const initialRequestCount = stateRequestCount;
   accessible = false;
   await dispatchInboxBurst(page);
@@ -210,5 +212,7 @@ test('falls back to all groups after Analysis access is revoked', async ({ page 
   await expect.poll(() => stateRequestCount).toBeGreaterThan(initialRequestCount);
   await expect(page).not.toHaveURL(/(?:\?|&)group=/, { timeout: 10_000 });
   await expect(page.getByText('Обрана група більше недоступна.')).toBeVisible();
-  await expect(page.locator('[data-group-island] [data-group-name]')).toHaveText('Всі групи');
+  await expect(page.locator('[data-analysis-current-group] [data-group-name]')).toHaveText(
+    'Всі групи',
+  );
 });

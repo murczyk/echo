@@ -1,6 +1,6 @@
 type Props = {
   name?: string;
-  size?: 'small' | 'medium';
+  size?: 'small' | 'context' | 'medium';
 };
 
 export function firstVisibleGrapheme(name?: string): string {

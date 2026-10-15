@@ -1,6 +1,6 @@
 import type { Ref } from 'react';
 
-import { GroupAvatar } from './GroupAvatar';
+import { GroupIdentity } from './GroupIdentity';
 import type { GroupNavigationItem } from './group-navigation.types';
 
 type Props = {
@@ -24,10 +24,7 @@ export function GroupIsland({ group, expanded, onOpen, buttonRef, panelId, class
       aria-controls={panelId}
       data-group-island
     >
-      <GroupAvatar name={group.name} size="small" />
-      <span className="group-navigation-name" data-group-name title={group.name}>
-        {group.name}
-      </span>
+      <GroupIdentity group={group} />
     </button>
   );
 }

@@ -68,6 +68,20 @@ async function installGroupNavigationMocks(page: Page) {
 }
 
 test.describe('Analysis group feed navigation', () => {
+  test('resolves the selected group name while both side panels are closed', async ({ page }) => {
+    await page.setViewportSize({ width: 1500, height: 900 });
+    const mocks = await installGroupNavigationMocks(page);
+    await page.goto('/rer-analysis-neo?leftPanelOpen=false&rightPanelOpen=false&group=group-b');
+
+    await expect(page.locator('[data-analysis-group-list]')).toHaveCount(0);
+    await expect(page.locator('[data-analysis-current-group] [data-group-name]')).toHaveText(
+      'Group Beta',
+    );
+    await expect.poll(mocks.getStateRequestCount).toBe(1);
+    await page.waitForTimeout(400);
+    expect(mocks.getStateRequestCount()).toBe(1);
+  });
+
   test('keeps URL scope separate from aggregate filters and prefills create', async ({ page }) => {
     await page.setViewportSize({ width: 1500, height: 900 });
     const mocks = await installGroupNavigationMocks(page);
@@ -80,7 +94,37 @@ test.describe('Analysis group feed navigation', () => {
     await expect(page.getByText('Analysis Beta message')).toBeVisible();
     await expect(page.getByText('Analysis Alpha message')).toHaveCount(0);
     await expect(page.locator('[data-section-id="Групи"]')).toHaveCount(0);
-    await expect(page.locator('[data-group-island] [data-group-name]')).toHaveText('Group Beta');
+    const currentGroup = page.locator('[data-analysis-current-group]');
+    await expect(currentGroup.locator('[data-group-name]')).toHaveText('Group Beta');
+    await expect(currentGroup).toHaveCSS('width', '180px');
+    await expect(currentGroup.locator('[data-group-name]')).toHaveCSS('text-overflow', 'ellipsis');
+    await expect(page.locator('[data-group-island]')).toHaveCount(0);
+    await expect(currentGroup.locator('button')).toHaveCount(0);
+    await expect(currentGroup.locator('[data-group-avatar]')).toHaveCSS('width', '36px');
+    await expect(currentGroup.locator('[data-group-name]')).toHaveCSS('font-size', '16px');
+    const groupDivider = page.locator('[data-analysis-group-divider]');
+    await expect(groupDivider).toHaveCSS('width', '1px');
+    await expect(groupDivider).toHaveCSS('height', '24px');
+    expect(
+      await currentGroup.evaluate((element) => {
+        const tabbar = document.querySelector('[role="tablist"]');
+        return tabbar != null && Boolean(element.compareDocumentPosition(tabbar) & 4);
+      }),
+    ).toBe(true);
+
+    for (const tabName of ['Мапа', 'Зведена таблиця']) {
+      await page.getByRole('tab', { name: tabName, exact: true }).click();
+      await expect(currentGroup.locator('[data-group-name]')).toHaveText('Group Beta');
+    }
+    await page.getByRole('tab', { name: 'Повідомлення', exact: true }).click();
+
+    const groupTitleFontSize = await page
+      .locator('#analysis-groups-title')
+      .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+    const pageTitleFontSize = await page
+      .getByRole('heading', { name: 'Аналіз', exact: true })
+      .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+    expect(groupTitleFontSize).toBeLessThan(pageTitleFontSize);
 
     await page.getByRole('button', { name: 'Додати повідомлення' }).click();
     await expect(page.getByRole('button', { name: 'Закрити ліву панель' })).toHaveCount(0);
@@ -89,10 +133,11 @@ test.describe('Analysis group feed navigation', () => {
 
     await page.reload();
     await expect(page).toHaveURL(/(?:\?|&)group=group-b(?:&|$)/);
-    await expect(page.locator('[data-group-island] [data-group-name]')).toHaveText('Group Beta');
+    await expect(page.locator('[data-analysis-current-group] [data-group-name]')).toHaveText(
+      'Group Beta',
+    );
     await expect(page.getByText('Analysis Beta message')).toBeVisible();
 
-    await page.locator('[data-group-island]').click();
     await page
       .locator('[data-analysis-group-list]:visible')
       .first()
@@ -116,13 +161,14 @@ test.describe('Analysis group feed navigation', () => {
     await installGroupNavigationMocks(page);
     await page.goto('/rer-analysis-neo');
     await expect(page.locator('[data-analysis-group-list]')).toHaveCount(0);
+    await expect(page.locator('[data-analysis-current-group]')).toHaveCSS('width', '128px');
     const scroller = page.locator('[data-analysis-message-scroller]');
     await scroller.evaluate((element) => {
       element.scrollTop = 23;
     });
     const before = await scroller.evaluate((element) => element.scrollTop);
 
-    await page.locator('[data-group-island]').click();
+    await page.getByRole('button', { name: 'Розгорнути ліву панель' }).click();
     await expect(page.locator('[data-analysis-group-list]')).toBeVisible();
     await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(before);
   });

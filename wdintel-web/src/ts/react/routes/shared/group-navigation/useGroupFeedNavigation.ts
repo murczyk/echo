@@ -11,6 +11,7 @@ import type {
 
 type Options = {
   enabled: boolean;
+  resolveSelectedGroupWhenHidden?: boolean;
   scope: GroupScope;
   allUnreadCount?: number;
   onSelect: (scope: GroupScope) => void;
@@ -20,6 +21,7 @@ type Options = {
 
 export function useGroupFeedNavigation({
   enabled,
+  resolveSelectedGroupWhenHidden = false,
   scope,
   allUnreadCount,
   onSelect,
@@ -75,9 +77,26 @@ export function useGroupFeedNavigation({
       ...snapshot.groups.map((group) => ({ kind: 'group' as const, ...group })),
     ];
   }, [allUnreadCount, snapshot.groups]);
+  const selectedGroupFromState =
+    scope.kind === 'group'
+      ? groups.find((group) => group.kind === 'group' && group.masterKey === scope.masterKey)
+      : groups[0];
+  const shouldResolveSelectedGroup =
+    resolveSelectedGroupWhenHidden &&
+    !enabled &&
+    scope.kind === 'group' &&
+    selectedGroupFromState == null &&
+    snapshot.stale &&
+    snapshot.error == null;
+
+  useEffect(() => {
+    if (!shouldResolveSelectedGroup) return;
+    void store.ensureLoaded();
+  }, [shouldResolveSelectedGroup, store]);
+
   const selectedGroup =
     scope.kind === 'group'
-      ? (groups.find((group) => group.kind === 'group' && group.masterKey === scope.masterKey) ?? {
+      ? (selectedGroupFromState ?? {
           kind: 'group' as const,
           masterKey: scope.masterKey,
           name: scope.masterKey,
@@ -87,7 +106,7 @@ export function useGroupFeedNavigation({
           lastActivityAt: null,
           latestCursor: null,
         })
-      : groups[0];
+      : groups[0]!;
 
   const acknowledge = useCallback(
     async (request: AcknowledgeGroupFeedReq, signal?: AbortSignal) => {

@@ -1,6 +1,7 @@
 import './group-navigation.css';
 
 export * from './GroupAvatar';
+export * from './GroupIdentity';
 export * from './GroupIsland';
 export * from './GroupList';
 export * from './GroupPanel';

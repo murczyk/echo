@@ -24,6 +24,13 @@ type StoreOptions = {
 
 export type GroupFeedStateStore = ReturnType<typeof createGroupFeedStateStore>;
 
+type InFlightRequest = {
+  generation: number;
+  controller: AbortController;
+  promise: Promise<void>;
+  keepAlive: boolean;
+};
+
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
@@ -45,11 +52,7 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
   let generation = 0;
   let lastFetchedAt = 0;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let inFlight: {
-    generation: number;
-    controller: AbortController;
-    promise: Promise<void>;
-  } | null = null;
+  let inFlight: InFlightRequest | null = null;
 
   const emit = () => listeners.forEach((listener) => listener());
   const update = (next: Partial<GroupFeedStateSnapshot>) => {
@@ -69,9 +72,12 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
     inFlight = null;
   };
 
-  const refresh = async (force = false): Promise<void> => {
-    if (visibleConsumers === 0) return;
-    if (inFlight !== null) return inFlight.promise;
+  const refresh = async (force = false, keepAlive = false): Promise<void> => {
+    if (!keepAlive && visibleConsumers === 0) return;
+    if (inFlight !== null) {
+      if (keepAlive) inFlight.keepAlive = true;
+      return inFlight.promise;
+    }
     const expired = lastFetchedAt === 0 || now() - lastFetchedAt >= ttlMs;
     if (!force && !snapshot.stale && !expired) return;
 
@@ -79,9 +85,12 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
     const requestGeneration = ++generation;
     const controller = new AbortController();
     update({ loading: true, error: null });
+    let request: InFlightRequest;
     const promise = fetchStates(controller.signal)
       .then((groups) => {
-        if (requestGeneration !== generation || visibleConsumers === 0) return;
+        if (requestGeneration !== generation || (visibleConsumers === 0 && !request.keepAlive)) {
+          return;
+        }
         lastFetchedAt = now();
         update({ groups, loading: false, error: null, stale: false });
       })
@@ -92,7 +101,8 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
       .finally(() => {
         if (inFlight?.generation === requestGeneration) inFlight = null;
       });
-    inFlight = { generation: requestGeneration, controller, promise };
+    request = { generation: requestGeneration, controller, promise, keepAlive };
+    inFlight = request;
     return promise;
   };
 
@@ -123,7 +133,7 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
       visibleConsumers = Math.max(0, visibleConsumers - 1);
       if (visibleConsumers > 0) return;
       clearDebounce();
-      if (inFlight !== null) {
+      if (inFlight !== null && !inFlight.keepAlive) {
         generation += 1;
         abortInFlight();
         update({ loading: false, stale: true });
@@ -159,6 +169,7 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
     addVisibleConsumer,
     invalidate,
     revalidateIfStale,
+    ensureLoaded: () => refresh(false, true),
     refresh: () => refresh(true),
     acknowledge,
     dispose,
