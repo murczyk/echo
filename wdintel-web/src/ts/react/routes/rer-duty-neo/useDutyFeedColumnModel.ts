@@ -14,6 +14,8 @@ import {
 
 export type DutyFeedColumnModelDeps = {
   feeds: RerDutyFeedsBundle;
+  editorSourceFeedId: string | null;
+  editorHighlightedMessageId: number | null;
   narrowScreen: boolean;
   authUserName: string | null;
   currentUser: User | null;
@@ -24,7 +26,7 @@ export type DutyFeedColumnModelDeps = {
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
-  openReportEditor: (feedId: string, reportId: number) => void;
+  openReportEditor: (feedId: string, reportId: number, sourceMessageId: number) => void;
   openMessageEditor: (
     feedId: string,
     target: { id: number; message: InboxMessage },
@@ -58,6 +60,7 @@ function buildFeedColumnView(
     initialPositioningReady,
     watchModeByFeedId,
     loadingNewerFeedIds,
+    isExplicitNavigationLoading,
     arrowResultByFeedId,
     confirmedTailPreviewByFeedId,
     nearBottomByFeedIdRef,
@@ -66,6 +69,8 @@ function buildFeedColumnView(
   } = deps.feeds;
   return {
     narrowScreen: deps.narrowScreen,
+    editorHighlightedMessageId:
+      deps.editorSourceFeedId === feed.id ? deps.editorHighlightedMessageId : null,
     feedCount: messageFeeds.length,
     canRemove: messageFeeds.length > 1,
     maxWidth: dutyFeedColumnMaxWidth(messageFeeds.length, deps.narrowScreen),
@@ -73,6 +78,7 @@ function buildFeedColumnView(
     autoScrollAllowed: !dutyDisableAutoScroll,
     initialPositioningReady,
     loadingNewer: loadingNewerFeedIds.has(feed.id),
+    explicitNavigationLoading: isExplicitNavigationLoading(feed.id),
     arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
     bottomUnreadCount: feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id], {
       // Near-bottom: keep matching tail preview (real beyond-tail pending); only drop residual stock.

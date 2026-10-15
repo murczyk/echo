@@ -43,7 +43,6 @@ type Params = {
   setNetworks: Setter<Network[]>;
   setNewCallsigns: Setter<NewCallsignsRes>;
   setNoMoreToLoad: Setter<boolean>;
-  setNolimitShown: Setter<boolean>;
   setOptions: Setter<import('./types').AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, import('../../../../Bindings').CallsignInfoRes>>;
@@ -86,7 +85,6 @@ export function useAnalysisDataStateUtils(params: Params) {
     setNetworks,
     setNewCallsigns,
     setNoMoreToLoad,
-    setNolimitShown,
     setOptions,
     setProfiles,
     setSummaryCallsignsInfo,
@@ -153,7 +151,6 @@ export function useAnalysisDataStateUtils(params: Params) {
     setGroupsActivityLoadedPeriod(null);
     setRightSidebarLoading(false);
     setNoMoreToLoad(false);
-    setNolimitShown(false);
     setMessageComments({});
     invalidateMessageCommentsLoads();
     optionsFreqsRef.current = [];
@@ -180,7 +177,6 @@ export function useAnalysisDataStateUtils(params: Params) {
     setNetworks,
     setNewCallsigns,
     setNoMoreToLoad,
-    setNolimitShown,
     setOptions,
     setProfiles,
     setSummaryCallsignsInfo,

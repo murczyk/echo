@@ -24,10 +24,8 @@ import { useDocumentClickAway } from '../../hooks/use-document-click-away';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import type { FeedColumnModel } from './types';
 import { clearFeedColumnFab, publishFeedColumnFab } from './feedColumnFab';
-import type {
-  ExplicitScrollNavigation,
-  ScrollNavigationIntent,
-} from './windowed-feed-scroll-shared';
+import { feedHasUnloadedEvictedNewerTail } from './utils';
+import type { ExplicitScrollNavigation, ScrollNavigationIntent } from '../shared/message-feed';
 import { recordDutyScrollDebugSnapshot, useDutyScrollDebugEnabled } from './duty-scroll-debug';
 
 export type FeedColumnProps = {
@@ -45,6 +43,7 @@ export type FeedColumnScrollOptions = {
 export type FeedColumnHandle = {
   scrollToEnd: (behavior?: ScrollBehavior, options?: FeedColumnScrollOptions) => void;
   scrollToMessage?: (id: number, behavior?: ScrollBehavior) => HTMLElement | null;
+  highlightLinkedMessage?: (id: number) => boolean;
 };
 export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
   { column, onPanelOpenChange },
@@ -244,6 +243,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       scrollToMessage(id: number, behavior: ScrollBehavior = 'auto') {
         return contentRef.current?.scrollToMessage(id, behavior) ?? null;
       },
+      highlightLinkedMessage(id: number) {
+        return contentRef.current?.highlightLinkedMessage(id) ?? false;
+      },
     }),
     [feed.items.length],
   );
@@ -255,8 +257,20 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       bottomUnreadCount: view.bottomUnreadCount ?? 0,
       arrowResultMessage: view.arrowResultMessage ?? null,
       tailAvailability: view.tailAvailability ?? 'unknown',
+      hasUnrenderedNewerMessages:
+        (feed.pendingNewerItems?.length ?? 0) > 0 || feedHasUnloadedEvictedNewerTail(feed),
+      explicitNavigationLoading: view.explicitNavigationLoading ?? false,
     });
-  }, [feed.id, view.arrowResultMessage, view.bottomUnreadCount, view.tailAvailability]);
+  }, [
+    feed.id,
+    feed.items,
+    feed.pendingNewerItems,
+    feed.evictedNewerTailId,
+    view.arrowResultMessage,
+    view.bottomUnreadCount,
+    view.tailAvailability,
+    view.explicitNavigationLoading,
+  ]);
 
   useEffect(() => () => clearFeedColumnFab(feed.id), [feed.id]);
 

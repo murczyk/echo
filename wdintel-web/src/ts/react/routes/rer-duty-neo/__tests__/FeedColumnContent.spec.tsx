@@ -1,33 +1,15 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, useMemo, useRef } from 'react';
+import { act, createRef, useMemo } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CallsignInfoRes, InboxMessage, Network } from '../../../../../Bindings';
-import { FeedColumnContent } from '../FeedColumnContent';
+import { FeedColumnContent, type FeedColumnContentHandle } from '../FeedColumnContent';
 import { minimalInboxMessage } from '../inbox-message-mocks';
-import type { FeedColumnModel } from '../types';
+import type { FeedColumnModel, TailAvailability } from '../types';
 import { emptyFilter, type MessageFeedState } from '../utils';
-
-vi.mock('../useWindowedFeedScroll', () => ({
-  useWindowedFeedScroll: () => {
-    const scrollerRef = useRef<HTMLDivElement>(null);
-    const listRef = useRef<HTMLDivElement>(null);
-    return useMemo(
-      () => ({
-        scrollerRef,
-        listRef,
-        setItemRef: () => () => {},
-        handleScroll: () => {},
-        scrollToBottom: () => {},
-        scrollToItem: () => null,
-      }),
-      [scrollerRef, listRef],
-    );
-  },
-}));
 
 vi.mock('../useFeedIdleViewportOffload', () => ({
   useFeedIdleViewportOffload: () =>
@@ -42,17 +24,21 @@ vi.mock('../useFeedIdleViewportOffload', () => ({
 }));
 
 vi.mock('../duty-scroll-debug', () => ({
+  recordDutyScrollDebugEvent: () => {},
+  recordDutyScrollDebugMetrics: () => {},
   recordDutyScrollDebugTiming: () => {},
   useDutyScrollDebugEnabled: () => false,
 }));
 
-vi.mock('../feedColumnFab', () => ({
-  useFeedColumnFab: () => ({
-    bottomUnreadCount: 0,
-    arrowResultMessage: null,
-    tailAvailability: 'unknown',
-  }),
+const fabState = vi.hoisted(() => ({
+  bottomUnreadCount: 0,
+  arrowResultMessage: null as string | null,
+  tailAvailability: 'unknown' as TailAvailability,
+  hasUnrenderedNewerMessages: false,
+  explicitNavigationLoading: false,
 }));
+
+vi.mock('../feedColumnFab', () => ({ useFeedColumnFab: () => fabState }));
 
 const network = {
   id: 7,
@@ -155,6 +141,283 @@ describe('FeedColumnContent', () => {
     act(() => root?.unmount());
     container?.remove();
     document.body.innerHTML = '';
+    fabState.tailAvailability = 'unknown';
+    fabState.hasUnrenderedNewerMessages = false;
+    fabState.explicitNavigationLoading = false;
+  });
+
+  it('uses feed-owned skeleton cards for initial and available older loading', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const initialColumn = {
+      ...column,
+      feed: { ...column.feed, items: [], loading: true },
+    };
+    await act(async () => root.render(<FeedColumnContent column={initialColumn} />));
+    expect(container.querySelector('[data-message-feed-skeleton="initial"]')).not.toBeNull();
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
+
+    const olderColumn = {
+      ...column,
+      feed: { ...column.feed, loadingOlder: true, hasReachedStart: false },
+    };
+    await act(async () => root.render(<FeedColumnContent column={olderColumn} />));
+    expect(container.querySelector('[data-message-feed-skeleton="above"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-message-feed-skeleton-card]')).toHaveLength(1);
+    expect(container.querySelector('[data-duty-message-id="1"]')).not.toBeNull();
+  });
+
+  it('shares linked and editor highlight behavior with the Analysis feed', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const ref = createRef<FeedColumnContentHandle>();
+    await act(async () => root.render(<FeedColumnContent ref={ref} column={column} />));
+    const card = container.querySelector('[data-duty-message-id="1"]');
+    expect(card).not.toBeNull();
+
+    await act(async () => {
+      expect(ref.current?.highlightLinkedMessage(1)).toBe(true);
+    });
+    expect(card?.getAttribute('data-message-feed-highlighted')).toBe('true');
+
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          ref={ref}
+          column={{ ...column, view: { ...column.view, editorHighlightedMessageId: 1 } }}
+        />,
+      ),
+    );
+    expect(card?.getAttribute('data-message-feed-highlighted')).toBe('true');
+  });
+
+  it('clears a Duty link highlight after buffered newer messages become visible', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const ref = createRef<FeedColumnContentHandle>();
+    const highlighted = () => container.querySelector('[data-message-feed-highlighted]');
+
+    await act(async () => root.render(<FeedColumnContent ref={ref} column={column} />));
+    await act(async () => ref.current?.highlightLinkedMessage(1));
+
+    const newerAvailable = {
+      ...column,
+      feed: { ...column.feed, evictedNewerTailId: 2 },
+    };
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          ref={ref}
+          column={{
+            ...newerAvailable,
+            view: { ...column.view, loadingNewer: true },
+          }}
+        />,
+      ),
+    );
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          ref={ref}
+          column={{
+            ...newerAvailable,
+            view: { ...column.view, pendingNewerFlushNeeded: true },
+          }}
+        />,
+      ),
+    );
+    expect(highlighted()?.getAttribute('data-duty-message-id')).toBe('1');
+
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          ref={ref}
+          column={{
+            ...column,
+            feed: {
+              ...column.feed,
+              items: [
+                [1, message],
+                [2, message],
+              ],
+            },
+          }}
+        />,
+      ),
+    );
+    expect(highlighted()).toBeNull();
+  });
+
+  it('copies a Duty message link to the Duty route', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const onMessageCopy = vi.fn();
+    const messageUuid = '019a4aa8-0000-7000-8000-000000000065';
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          column={{
+            ...column,
+            feed: {
+              ...column.feed,
+              items: [[1, minimalInboxMessage({ messageUuid, text: 'Linked message' })]],
+            },
+            actions: { ...column.actions, onMessageCopy },
+          }}
+        />,
+      ),
+    );
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[title="Копіювати…"]')?.click(),
+    );
+    const copyLinkItem = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent?.includes('Копіювати посилання на повідомлення'));
+    expect(copyLinkItem).toBeDefined();
+    await act(async () => copyLinkItem?.click());
+
+    expect(onMessageCopy).toHaveBeenCalledWith(
+      `${window.location.origin}/rer-duty-neo?m=${messageUuid}`,
+      'link-1',
+    );
+  });
+
+  it('keeps newest navigation visible at a chunk boundary until the tail is confirmed', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const onArrowClick = vi.fn();
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          column={{
+            ...column,
+            actions: { ...column.actions, onArrowClick },
+          }}
+        />,
+      ),
+    );
+
+    const arrow = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Завантажити нові та перейти вниз"]',
+    );
+    expect(arrow).not.toBeNull();
+    await act(async () => arrow?.click());
+    expect(onArrowClick).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the lower skeleton until a buffered historical tail is rendered', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    const loaded = {
+      ...column,
+      feed: {
+        ...column.feed,
+        items: [[1, minimalInboxMessage({ createdAtOrder: 100 })]] as MessageFeedState['items'],
+        historicalReadThrough: { id: 2, timestamp: 200 },
+      },
+    };
+    await act(async () => root.render(<FeedColumnContent column={loaded} />));
+    expect(container.querySelector('[data-message-feed-skeleton="below"]')).not.toBeNull();
+
+    const buffered = {
+      ...loaded,
+      view: { ...loaded.view, loadingNewer: true },
+      feed: {
+        ...loaded.feed,
+        pendingNewerItems: [
+          [2, minimalInboxMessage({ createdAtOrder: 200 })],
+        ] as MessageFeedState['items'],
+      },
+    };
+    await act(async () => root.render(<FeedColumnContent column={buffered} />));
+    expect(container.querySelector('[data-message-feed-skeleton="below"]')).not.toBeNull();
+  });
+
+  it('keeps newest navigation visible during a pending newer load even with a stale exhausted status', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    fabState.tailAvailability = 'exhausted';
+    const column = buildColumn(false);
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          column={{
+            ...column,
+            view: { ...column.view, loadingNewer: true },
+            actions: { ...column.actions, onArrowClick: () => {} },
+          }}
+        />,
+      ),
+    );
+
+    const arrow = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Завантажити нові та перейти вниз"]',
+    );
+    expect(arrow).not.toBeNull();
+    expect(arrow?.disabled).toBe(true);
+    expect(arrow?.querySelector('[role="progressbar"]')).toBeNull();
+    expect(arrow?.querySelector('svg[data-testid="ArrowDownwardIcon"]')).not.toBeNull();
+  });
+
+  it('shows progress on the newest button for an explicit jump', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    fabState.explicitNavigationLoading = true;
+    const column = buildColumn(false);
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          column={{
+            ...column,
+            view: { ...column.view, loadingNewer: true },
+            actions: { ...column.actions, onArrowClick: () => {} },
+          }}
+        />,
+      ),
+    );
+
+    const arrow = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Завантажити нові та перейти вниз"]',
+    );
+    expect(arrow?.querySelector('[role="progressbar"]')).not.toBeNull();
+  });
+
+  it('hides newest navigation only when the loaded tail is confirmed and rendered', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    fabState.tailAvailability = 'exhausted';
+    const column = buildColumn(false);
+    const withArrow = {
+      ...column,
+      actions: { ...column.actions, onArrowClick: () => {} },
+    };
+    const arrow = () =>
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Завантажити нові та перейти вниз"]',
+      );
+
+    await act(async () => root.render(<FeedColumnContent key="confirmed" column={withArrow} />));
+    expect(arrow()).toBeNull();
+
+    fabState.hasUnrenderedNewerMessages = true;
+    await act(async () => root.render(<FeedColumnContent key="buffered" column={withArrow} />));
+    expect(arrow()).not.toBeNull();
   });
 
   // Regression: https://github.com/echoua/echo/issues/3598

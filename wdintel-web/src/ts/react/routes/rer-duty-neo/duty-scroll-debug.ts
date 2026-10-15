@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import type { FeedScrollMetrics } from '../shared/message-feed';
 
 import {
   aliasDebugIdentifier,

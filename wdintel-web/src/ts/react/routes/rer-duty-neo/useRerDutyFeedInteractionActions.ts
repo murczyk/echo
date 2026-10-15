@@ -4,14 +4,17 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import {
   compareMessageTuple,
   feedHasUnloadedEvictedNewerTail,
+  feedHasUnloadedHistoricalNewer,
   messageOrderCursor,
   messageOrderTimestamp,
   type MessageFeedState,
 } from './utils';
-import { getDutyFollowScrollBehavior } from './duty-follow-scroll';
-import { ScrollNavigationIntent } from './windowed-feed-scroll-shared';
+import {
+  getFeedFollowScrollBehavior,
+  ScrollNavigationIntent,
+  type ExplicitScrollNavigation,
+} from '../shared/message-feed';
 import type { ExplicitFeedNavigation } from './useRerDutyNavigation';
-import type { ExplicitScrollNavigation } from './windowed-feed-scroll-shared';
 
 type Params = {
   messageFeeds: MessageFeedState[];
@@ -155,7 +158,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
             navigation?.onUnavailable();
             return;
           }
-          column.scrollToEnd(getDutyFollowScrollBehavior(), {
+          column.scrollToEnd(getFeedFollowScrollBehavior(), {
             wakeIdleOffload: true,
             intent: ScrollNavigationIntent.Explicit,
             navigation,
@@ -178,7 +181,8 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       registerExplicitLoading(explicitOperation, releaseLoading);
       try {
         if (feed.items.length > 0) {
-          const hasUnloadedEvictedNewerTail = feedHasUnloadedEvictedNewerTail(feed);
+          const hasUnloadedNewerHistory =
+            feedHasUnloadedEvictedNewerTail(feed) || feedHasUnloadedHistoricalNewer(feed);
           const result = await requestValidatedInboxCount(feedId);
           if (!isCurrent()) return;
           if (!result) {
@@ -186,7 +190,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
             return;
           }
           const { quantity } = result;
-          if (quantity === 0 && !hasUnloadedEvictedNewerTail) {
+          if (quantity === 0 && !hasUnloadedNewerHistory) {
             if (!capturedCursor) {
               showArrowResult(feedId, 'Немає нових повідомлень');
               return;

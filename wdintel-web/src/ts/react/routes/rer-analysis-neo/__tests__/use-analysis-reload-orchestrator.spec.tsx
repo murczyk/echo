@@ -102,6 +102,7 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
       beforeIdNoninclusive: 120,
       sinceIdNoninclusive: null,
     })),
+    currentMessagePageIndex: 1,
     replaceCurrentMessagePage: vi.fn(),
     invalidateMessagePageRequests: vi.fn(),
     invalidateMessagePaging: vi.fn(),
@@ -278,6 +279,26 @@ describe('useAnalysisReloadOrchestrator', () => {
     reloadParams?.setMessages([[119, { text: 'refreshed' } as InboxMessage]]);
     expect(params.replaceCurrentMessagePage).toHaveBeenCalledWith([[119, { text: 'refreshed' }]]);
     expect(params.refreshMessageCounts).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('uses the captured visible page for both the refresh cursor and replacement', async () => {
+    const params = buildParams();
+    await renderHook(params);
+    reloadAnalysisDataMock.reloadAnalysisData.mockClear();
+
+    await act(async () => {
+      await latestResult?.reload({ preserveMessagePage: true, messagePageIndex: 0 });
+    });
+
+    expect(params.getCurrentMessagePageCursor).toHaveBeenCalledWith(0);
+    const reloadParams = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0];
+    reloadParams?.setMessages([[140, { text: 'visible-page' } as InboxMessage]]);
+    expect(params.replaceCurrentMessagePage).toHaveBeenCalledWith(
+      [[140, { text: 'visible-page' }]],
+      0,
+    );
+    expect(reloadParams?.preserveMessageTailExhaustion).toBe(true);
   });
 
   it('loads map palitras on initial eligible load', async () => {

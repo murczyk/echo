@@ -1,0 +1,115 @@
+.message-feed-scroller {
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overflow-anchor: none;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+}
+
+.message-feed-list {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.message-feed-list [data-message-feed-highlighted='true'] [data-message-card-root],
+.message-feed-list [data-message-feed-highlighted='true'][data-message-card-root] {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: -2px;
+}
+
+.message-feed-skeletons {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+}
+
+.message-feed-skeletons[data-message-feed-skeleton='above'],
+.message-feed-skeletons[data-message-feed-skeleton='below'] {
+  pointer-events: none;
+}
+
+.message-feed-skeletons[data-message-feed-skeleton='above'] {
+  margin-bottom: 12px;
+}
+
+.message-feed-skeleton-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.message-feed-skeleton-card-header,
+.message-feed-skeleton-card-body {
+  display: grid;
+  gap: 6px;
+}
+
+.message-feed-skeleton-card-meta,
+.message-feed-skeleton-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-feed-skeletons .MuiSkeleton-pulse {
+    animation: none;
+  }
+}
+
+.message-feed-refresh-overlay {
+  position: sticky;
+  top: 0;
+  height: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.message-feed-scroller[data-message-feed-refreshing='true'] .message-feed-list {
+  visibility: hidden;
+}
+
+.analysis-message-feed {
+  height: 100%;
+  width: 100%;
+  max-width: 100%;
+  scrollbar-color: var(--message-feed-scrollbar-thumb) transparent;
+}
+
+.analysis-message-feed .message-feed-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  width: 100%;
+  max-width: 100%;
+}
+
+.analysis-message-feed .message-feed-list > li {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.analysis-message-feed::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.analysis-message-feed::-webkit-scrollbar-track,
+.analysis-message-feed::-webkit-scrollbar-corner {
+  background-color: transparent;
+}
+
+.analysis-message-feed::-webkit-scrollbar-thumb {
+  background-color: var(--message-feed-scrollbar-thumb);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}

@@ -1,15 +1,13 @@
 import { useCallback, useMemo } from 'react';
-import {
-  isDutyScrollDebugEnabled,
-  recordDutyScrollDebugEvent,
-  recordDutyScrollDebugMetrics,
-} from './duty-scroll-debug';
+import { useFeedScrollDiagnostics } from '../internal/diagnostics';
 import {
   distanceToBottom,
   effectiveBottomLoadBufferPx,
-  type VisibleAnchor,
-  type WindowedFeedScrollRefs,
-} from './windowed-feed-scroll-shared';
+  hasViewportSizeChanged,
+  isAtPhysicalBottom,
+} from '../internal/scroll-math';
+import type { WindowedFeedScrollRefs } from '../internal/internal.types';
+import type { VisibleAnchor } from '../message-feed.types';
 
 const MAX_SYNC_ANCHOR_CORRECTIONS = 5;
 
@@ -41,6 +39,11 @@ export function useWindowedFeedScrollAnchors(args: {
     onAnchorSnapshotChange,
   } = args;
 
+  const {
+    event: recordScrollDebugEvent,
+    metrics: recordScrollDebugMetrics,
+    isEnabled: isScrollDebugEnabled,
+  } = useFeedScrollDiagnostics(refs);
   const setAnchorSnapshot = useCallback(
     (snapshot: WindowedFeedScrollRefs['anchorSnapshotRef']['current']) => {
       refs.anchorSnapshotRef.current = snapshot;
@@ -125,26 +128,43 @@ export function useWindowedFeedScrollAnchors(args: {
     return offsets;
   }, [refs]);
 
-  const captureAnchorSnapshot = useCallback(() => {
-    const scroller = refs.scrollerRef.current;
-    if (!scroller) {
-      setAnchorSnapshot(null);
-      return;
-    }
-    const anchors = collectVisibleAnchors();
-    const itemOffsets = collectMountedItemOffsets();
-    if (anchors.length === 0 && itemOffsets.size === 0) {
-      setAnchorSnapshot(null);
-      return;
-    }
-    setAnchorSnapshot({
-      anchors,
-      itemOffsets,
-      itemIds: refs.itemIdsRef.current.slice(),
-      scrollTop: scroller.scrollTop,
-      scrollHeight: scroller.scrollHeight,
-    });
-  }, [collectMountedItemOffsets, collectVisibleAnchors, refs, setAnchorSnapshot]);
+  const captureAnchorSnapshot = useCallback(
+    (afterResize = false) => {
+      const scroller = refs.scrollerRef.current;
+      if (!scroller) {
+        setAnchorSnapshot(null);
+        return;
+      }
+      if (!afterResize && hasViewportSizeChanged(scroller, refs.anchorSnapshotRef.current)) return;
+      const anchors = collectVisibleAnchors();
+      const itemOffsets = collectMountedItemOffsets();
+      if (afterResize) {
+        for (const anchor of anchors) {
+          const previous = refs.anchorSnapshotRef.current?.anchors.find(
+            (entry) => entry.id === anchor.id,
+          );
+          if (previous && Math.abs(previous.offsetTop - anchor.offsetTop) <= 0.5) {
+            anchor.offsetTop = previous.offsetTop;
+            itemOffsets.set(anchor.id, previous.offsetTop);
+          }
+        }
+      }
+      if (anchors.length === 0 && itemOffsets.size === 0) {
+        setAnchorSnapshot(null);
+        return;
+      }
+      setAnchorSnapshot({
+        anchors,
+        itemOffsets,
+        itemIds: refs.itemIdsRef.current.slice(),
+        scrollTop: scroller.scrollTop,
+        scrollHeight: scroller.scrollHeight,
+        clientWidth: scroller.clientWidth,
+        clientHeight: scroller.clientHeight,
+      });
+    },
+    [collectMountedItemOffsets, collectVisibleAnchors, refs, setAnchorSnapshot],
+  );
 
   const touchAnchorSnapshotScrollMetrics = useCallback(() => {
     const scroller = refs.scrollerRef.current;
@@ -166,6 +186,7 @@ export function useWindowedFeedScrollAnchors(args: {
   const captureVisibleAnchorSnapshot = useCallback(() => {
     const scroller = refs.scrollerRef.current;
     if (!scroller) return;
+    if (hasViewportSizeChanged(scroller, refs.anchorSnapshotRef.current)) return;
     const anchors = collectVisibleAnchors();
     if (anchors.length === 0) {
       touchAnchorSnapshotScrollMetrics();
@@ -181,12 +202,14 @@ export function useWindowedFeedScrollAnchors(args: {
       itemIds: refs.itemIdsRef.current.slice(),
       scrollTop: scroller.scrollTop,
       scrollHeight: scroller.scrollHeight,
+      clientWidth: scroller.clientWidth,
+      clientHeight: scroller.clientHeight,
     });
   }, [collectVisibleAnchors, refs, setAnchorSnapshot, touchAnchorSnapshotScrollMetrics]);
 
   const publishDebugMetrics = useCallback(
     (scroller: HTMLDivElement, previousScrollTop: number) => {
-      if (!isDutyScrollDebugEnabled() || !debugFeedId) return;
+      if (!isScrollDebugEnabled() || !debugFeedId) return;
       const bottomDistance = distanceToBottom(scroller);
       const anchors = collectVisibleAnchors();
       const anchor = refs.anchorSnapshotRef.current?.anchors[0] ?? null;
@@ -196,7 +219,7 @@ export function useWindowedFeedScrollAnchors(args: {
         bottomLoadBufferPx,
         unreadPrefetchNeeded,
       );
-      recordDutyScrollDebugMetrics(debugFeedId, {
+      recordScrollDebugMetrics(debugFeedId, {
         capturedAtMs: Date.now(),
         scrollTop: scroller.scrollTop,
         previousScrollTop,
@@ -209,7 +232,7 @@ export function useWindowedFeedScrollAnchors(args: {
         atBottomThresholdPx,
         atTop: scroller.scrollTop <= 0,
         atBottom: bottomDistance <= atBottomThresholdPx,
-        physicallyAtBottom: bottomDistance <= 1,
+        physicallyAtBottom: isAtPhysicalBottom(scroller),
         nearBottom: bottomDistance <= bottomBufferPx,
         liveBottomFollow: refs.liveBottomFollowRef.current,
         bottomSettleActive: refs.bottomSettleActiveRef.current,
@@ -249,8 +272,24 @@ export function useWindowedFeedScrollAnchors(args: {
         if (!refs.enabledRef.current) return;
         refs.reportVisibleMessageIdsLastRunRef.current = Date.now();
         const latestAtBottom = refs.reportVisibleMessageIdsLatestArgsRef.current;
-        const { onVisibleMessageIds } = refs.callbacksRef.current;
-        if (!onVisibleMessageIds || refs.itemIdsRef.current.length === 0) return;
+        const { onVisibleMessageIds, onFirstVisibleMessage } = refs.callbacksRef.current;
+        if (
+          (!onVisibleMessageIds && !onFirstVisibleMessage) ||
+          refs.itemIdsRef.current.length === 0
+        )
+          return;
+        const anchors = collectVisibleAnchors();
+        const firstVisible = anchors.find((anchor) => {
+          const element = refs.itemRefsRef.current.get(anchor.id);
+          const scroller = refs.scrollerRef.current;
+          return (
+            element &&
+            scroller &&
+            element.getBoundingClientRect().bottom > scroller.getBoundingClientRect().top
+          );
+        });
+        if (firstVisible) onFirstVisibleMessage?.(firstVisible.id, firstVisible.index);
+        if (!onVisibleMessageIds) return;
         if (latestAtBottom) {
           onVisibleMessageIds(refs.itemIdsRef.current[refs.itemIdsRef.current.length - 1], {
             atBottom: true,
@@ -258,7 +297,6 @@ export function useWindowedFeedScrollAnchors(args: {
           return;
         }
 
-        const anchors = collectVisibleAnchors();
         const lastVisibleIndex = anchors.reduce((max, anchor) => Math.max(max, anchor.index), -1);
         if (lastVisibleIndex < 0) return;
         onVisibleMessageIds(refs.itemIdsRef.current[lastVisibleIndex], { atBottom: false });
@@ -306,9 +344,10 @@ export function useWindowedFeedScrollAnchors(args: {
           if (targetScrollTop < -0.5) {
             refs.isRestoringAnchorRef.current = true;
             scroller.scrollTop = 0;
+            refs.restoredScrollTopRef.current = scroller.scrollTop;
             refs.previousScrollTopRef.current = scroller.scrollTop;
             refs.isRestoringAnchorRef.current = false;
-            recordDutyScrollDebugEvent(
+            recordScrollDebugEvent(
               debugFeedId,
               'anchor:restore',
               `id=${id}; reason=${reason}; target=${targetScrollTop.toFixed(1)}; clamped=lower; outcome=restored`,
@@ -319,16 +358,17 @@ export function useWindowedFeedScrollAnchors(args: {
             if (options?.settleUpperClamp) {
               refs.isRestoringAnchorRef.current = true;
               scroller.scrollTop = maxScrollTop;
+              refs.restoredScrollTopRef.current = scroller.scrollTop;
               refs.previousScrollTopRef.current = scroller.scrollTop;
               refs.isRestoringAnchorRef.current = false;
-              recordDutyScrollDebugEvent(
+              recordScrollDebugEvent(
                 debugFeedId,
                 'anchor:restore',
                 `id=${id}; reason=${reason}; target=${targetScrollTop.toFixed(1)}; clamped=upper; outcome=restored`,
               );
               return 'restored';
             }
-            recordDutyScrollDebugEvent(
+            recordScrollDebugEvent(
               debugFeedId,
               'anchor:restore-pending',
               `id=${id}; reason=${reason}; target=${targetScrollTop.toFixed(1)}; range=0..${maxScrollTop.toFixed(1)}`,
@@ -337,13 +377,14 @@ export function useWindowedFeedScrollAnchors(args: {
           }
           refs.isRestoringAnchorRef.current = true;
           scroller.scrollTop += residualDelta;
+          refs.restoredScrollTopRef.current = scroller.scrollTop;
           refs.previousScrollTopRef.current = scroller.scrollTop;
           refs.isRestoringAnchorRef.current = false;
           correctionCount += 1;
           residualDelta = node.getBoundingClientRect().top - scrollerTop - expectedOffsetTop;
         }
         const outcome = Math.abs(residualDelta) <= 0.5 ? 'restored' : 'pending';
-        recordDutyScrollDebugEvent(
+        recordScrollDebugEvent(
           debugFeedId,
           'anchor:restore',
           `id=${id}; reason=${reason}; offset=${expectedOffsetTop.toFixed(1)}; current=${initialOffsetTop.toFixed(1)}; corrections=${correctionCount}; residual=${residualDelta.toFixed(1)}; outcome=${outcome}`,
@@ -382,9 +423,10 @@ export function useWindowedFeedScrollAnchors(args: {
           if (removedHeight > 0.5) {
             refs.isRestoringAnchorRef.current = true;
             scroller.scrollTop = Math.max(0, snapshot.scrollTop - removedHeight);
+            refs.restoredScrollTopRef.current = scroller.scrollTop;
             refs.previousScrollTopRef.current = scroller.scrollTop;
             refs.isRestoringAnchorRef.current = false;
-            recordDutyScrollDebugEvent(
+            recordScrollDebugEvent(
               debugFeedId,
               'anchor:restore',
               `reason=prefix-height; removed=${removedHeight.toFixed(1)}; scrollTop=${scroller.scrollTop.toFixed(1)}`,
@@ -394,7 +436,7 @@ export function useWindowedFeedScrollAnchors(args: {
         }
       }
 
-      recordDutyScrollDebugEvent(
+      recordScrollDebugEvent(
         debugFeedId,
         'anchor:missing',
         `visible=${snapshot.anchors.map((anchor) => anchor.id).join(',')}; snapshotMounted=${snapshot.itemIds.join(',')}; liveMounted=${[...refs.itemRefsRef.current.keys()].join(',')}; unmountedAnchor=${snapshot.anchors.some((anchor) => !refs.itemRefsRef.current.has(anchor.id))}`,

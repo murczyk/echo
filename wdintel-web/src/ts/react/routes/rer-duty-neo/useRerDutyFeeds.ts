@@ -577,6 +577,7 @@ export function useRerDutyFeeds(
     watchModeByFeedId: feedState.watchModeByFeedId,
     setWatchModeByFeedId: feedState.setWatchModeByFeedId,
     loadingNewerFeedIds: feedState.loadingNewerFeedIds,
+    isExplicitNavigationLoading: feedState.isExplicitNavigationLoading,
     arrowResultByFeedId: feedState.arrowResultByFeedId,
     copiedFeedbackId: actions.copiedFeedbackId,
     handleEditedMessage: actions.handleEditedMessage,
