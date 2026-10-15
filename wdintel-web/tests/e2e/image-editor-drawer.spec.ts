@@ -679,20 +679,23 @@ test('opens the save menu below the split button when there is room #3701 @regre
 });
 
 // Regression: https://github.com/echoua/echo/issues/3701
-test('opens save-as-new from the compact arrow and restores its focus after cancellation #3701 @regression', async ({
+test('opens save-as-new from the compact arrow with the keyboard and restores its focus after cancellation #3701 @regression', async ({
   page,
 }) => {
   const { editor } = await openPendingImageEditor(page, 'duty');
   const arrow = editor.locator('footer').getByRole('button', { name: 'Додаткові дії збереження' });
-  await openSettledSaveMenu(editor);
+  await arrow.focus();
+  await page.keyboard.press('Enter');
   const menuItem = page.getByRole('menuitem', { name: 'Зберегти як...' });
   await expect(menuItem).toBeVisible();
+  await expect(menuItem).toBeFocused();
   await page.screenshot({
     path: test.info().outputPath('image-editor-save-menu-above-settled.png'),
   });
-  await menuItem.click();
+  await page.keyboard.press('Enter');
   const dialog = page.getByRole('dialog', { name: 'Зберегти як нове зображення' });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Назва файлу')).toBeFocused();
   await expect(dialog.getByRole('button', { name: 'Зберегти', exact: true })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('image-editor-save-as-dialog.png') });
   await dialog.getByRole('button', { name: 'Скасувати', exact: true }).click();

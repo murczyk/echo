@@ -1,9 +1,8 @@
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
-import { ButtonGroup, CircularProgress, MenuItem } from '@mui/material';
+import { ButtonGroup, CircularProgress, Menu, MenuItem } from '@mui/material';
 import { useCallback, useEffect, useId, useState, type MutableRefObject, type Ref } from 'react';
 
 import { PowerButton } from '../../../components/PowerButton';
-import { PowerMenu } from '../../../components/PowerMenu';
 
 const SAVE_MENU_HEIGHT = 64;
 const VIEWPORT_MARGIN = 16;
@@ -134,14 +133,18 @@ export function ImageEditorFooter({
           <ArrowDropDownIcon fontSize="small" />
         </PowerButton>
       </ButtonGroup>
-      <PowerMenu
+      <Menu
         anchorReference="anchorPosition"
         anchorPosition={menuPosition ?? undefined}
         open={open}
         onClose={closeMenu}
         marginThreshold={VIEWPORT_MARGIN}
         slotProps={{
-          list: { id: menuId, 'aria-label': 'Додаткові дії збереження' },
+          list: {
+            id: menuId,
+            'aria-label': 'Додаткові дії збереження',
+            onKeyDown: (event) => event.stopPropagation(),
+          },
           transition: { onExited: handleMenuExited },
         }}
         transformOrigin={{
@@ -152,7 +155,7 @@ export function ImageEditorFooter({
         <MenuItem onClick={openSaveAsNew} disabled={!saveAvailable}>
           Зберегти як...
         </MenuItem>
-      </PowerMenu>
+      </Menu>
     </footer>
   );
 }
