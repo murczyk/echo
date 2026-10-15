@@ -76,14 +76,13 @@
 
 - **Status:** issue-backed regression
 - **Behavior ID:** `react-image-editor-save-actions-and-replacement`
-- **Affected route/component:** shared image-editor footer, save dialogs, and message attachment submission.
+- **Affected route/component:** shared image-editor footer and save dialogs.
 - **Expected observable result:** the contained split button keeps `Зберегти` as the replacement action; its compact arrow opens `Зберегти як...` below when space permits and fully above otherwise, with a gap from the trigger. The filename dialog keeps its descriptive title and saves an additional image with `Зберегти`; replacement confirmation uses `Замінити`.
-- **Responsive and keyboard requirements:** the arrow remains a 40px touch target and is narrower than the primary button. While open, the message editor switches live between its embedded surface at 1024px and wider and a full-width modal drawer below 1024px; its draft, selected attachment, pending replacement state, open image-editor session, text/raster edits, and undo history remain mounted through either transition. Escape closes only the active menu/dialog layer. Closing the menu or save-as dialog returns focus to the persistent arrow; closing replacement confirmation returns focus to the primary save button.
-- **API endpoint and compatibility requirements:** replacing pending files resets upload state; persisted attachments are submitted as same-ID replacements. Report creation excludes the replaced source attachment and uploads the edited image to the new report.
-- **Verification boundary:** frontend and mocked-browser coverage verifies edited canvas bytes differ from the source at the upload handoff, replacement metadata, and source exclusion. The reported blurred-byte persistence defect remains unresolved: this workspace has no backend environment exposing persisted media bytes, post-save response media, or a reloadable/downloadable saved message, so thumbnail, preview, download, and reload cannot be verified beyond the upload boundary.
+- **Responsive and keyboard requirements:** the arrow remains a 40px touch target and is narrower than the primary button. Escape closes only the active menu/dialog layer. Closing the menu or save-as dialog returns focus to the persistent arrow; closing replacement confirmation returns focus to the primary save button.
+- **Verification boundary:** frontend and mocked-browser coverage verifies split-button labels, menu placement, focus restoration, disabled states, and replacement confirmation behavior.
 - **Known race/idempotency constraints:** save controls are unavailable while source/crop/raster/save state is locked; menu-to-dialog handoff completes after menu cleanup to avoid focus restoration into an unmounted item.
-- **Source implementation:** `routes/shared/image-editor/ImageEditorFooter.tsx`, `ImageEditorSaveDialogs.tsx`, `image-editor-upload.ts`, and `routes/shared/manage-message/useMessageSubmit.ts`.
-- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/ImageEditor.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`, `wdintel-web/tests/e2e/image-editor-drawer.spec.ts`.
+- **Source implementation:** `routes/shared/image-editor/ImageEditorFooter.tsx` and `ImageEditorSaveDialogs.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/ImageEditor.spec.tsx` and `wdintel-web/tests/e2e/image-editor-drawer.spec.ts`.
 - **Original Echo issue/PR, if known:** [#3701](https://github.com/echoua/echo/issues/3701).
 
 ## Selection styles and reachable controls
