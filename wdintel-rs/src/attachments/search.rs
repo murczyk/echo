@@ -205,6 +205,11 @@ fn literal_pattern(token: &str) -> String {
 }
 
 fn exact_pattern(pattern: &str) -> String {
+    let expression = literal_expression(pattern);
+    format!("(^|[^[:alnum:]_]){expression}($|[^[:alnum:]_])")
+}
+
+fn literal_expression(pattern: &str) -> String {
     let pattern = pattern.strip_prefix('%').unwrap_or(pattern);
     let pattern = pattern.strip_suffix('%').unwrap_or(pattern);
     let mut expression = String::new();
@@ -222,7 +227,40 @@ fn exact_pattern(pattern: &str) -> String {
             }
         }
     }
-    format!("(^|[^[:alnum:]_]){expression}($|[^[:alnum:]_])")
+    expression
+}
+
+pub(crate) fn message_headline_pattern(
+    query: &str,
+    search_mode: AnalysisSearchMode,
+) -> anyhow::Result<Option<String>> {
+    let parts =
+        crate::rer_importer::analysis::search::parse_search_parts(query)
+            .c(h!())?;
+    let patterns = parts
+        .ts_query
+        .split_whitespace()
+        .filter(|token| {
+            !token.starts_with('-')
+                && !token.eq_ignore_ascii_case("or")
+                && !token.eq_ignore_ascii_case("and")
+        })
+        .map(literal_pattern)
+        .chain(parts.ilike)
+        .map(|pattern| {
+            let expression = literal_expression(&pattern);
+            if search_mode == AnalysisSearchMode::Exact {
+                format!("(?<![[:alnum:]_])(?:{expression})(?![[:alnum:]_])")
+            } else {
+                format!("(?:{expression})")
+            }
+        })
+        .collect::<Vec<_>>();
+    Ok(if patterns.is_empty() {
+        None
+    } else {
+        Some(patterns.join("|"))
+    })
 }
 
 fn literal_operator(
