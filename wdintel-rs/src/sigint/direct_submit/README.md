@@ -32,13 +32,18 @@ removes explicit selections; the previous application resolves message text.
 
 `POST /api/sigint/unit/search` retains the active-only default and supports
 `include_inactive: true` and exact-name `names` lookup. Ordinary searches return
-at most 50 units; searches including inactive units return at most 250, ordered
-by name and ID, with exact-name matches first when inactive units are included.
+at most 50 units; searches including inactive units return at most 250. Nonempty
+searches order candidates by echelon from highest to lowest before applying the
+limit, then by name and ID, with exact-name matches first within their echelon
+when inactive units are included. Empty searches fetch the first 50 units by
+name and ID. Returned options follow echelon order; units without hierarchy
+follow classified units.
 Narrow the search to find further children. Exact-name lookup
 uses the existing normalized-name index.
 
 The editor validates saved history, removes unresolved names only after a
-successful lookup, and prefills only an unambiguous first recent name.
+successful lookup, and prefills only an unambiguous first recent name. Recent
+choices follow the same echelon ordering in the dropdown.
 Identically named options show their unit IDs. Late
 responses cannot overwrite manual input. A search failure remains visible and
 withholds the creation option until a successful retry. Pasted-text parsing
@@ -47,8 +52,27 @@ can replace a recent-unit default because prefilling is not a manual edit.
 Creation forms automatically select a unique exact unit name after a successful
 search, including names supplied by the parser. Partial matches and duplicate
 names require an explicit choice. The inline creation option appears only when
-the current search succeeds without any candidates; choosing it records creation
-intent until the message is saved. Nonempty unresolved unit text displays
+the current search succeeds without any candidates. Choosing it opens the shared
+unit form from `/rer-units-neo` with the typed text in `name`. Message writers can
+create full units without requiring `UnitsEditor`; merging existing duplicates
+still requires `UnitsEditor`. Saving this form immediately
+creates the unit and selects its ID in the message; cancelling leaves the text
+unresolved. Cancelling the message afterwards does not remove the saved unit.
+`POST /api/sigint/unit/create-for-message` accepts the full unit and optional
+network fields using `CreateUnitWithAutoNetworkReq` and returns a `Unit`.
+It shares the direct-submit normalized-name lock, reuses a unique non-deleted
+exact match without changing its fields or networks, and rejects ambiguous
+matches before inserting. Newly created units and their optional network are
+saved in one transaction with inbox invalidation and unit-tag recalculation tasks.
+Retrying after a post-commit failure replays network-change notifications only
+for the network recorded as pending for that creator and unit in Redis before
+commit, even if the retry skips network creation. Recovery shares the
+normalized-name lock and records each delivered notification in the same Redis
+script. Partial fanout retries skip sessions already notified; success clears
+the pending record and delivery checkpoints atomically. Ordinary exact-name
+reuse and completed retries leave existing networks untouched.
+Both unit creation entry points skip the network step when `hide_networks` is
+enabled, even when the devices section is enabled. Nonempty unresolved unit text displays
 `Підрозділ не обрано` and blocks creation, including keyboard submission.
 Whitespace-only unit text remains optional. Existing editors continue accepting
 legacy labels. Network assignments retain all verified unit IDs and the locked
@@ -66,7 +90,8 @@ unsaved-change detection and remains automatic for parser ownership and
 pristine-source clearing. Explicitly accepting a conflicting parsed unit releases
 the network-owned unit assignment while retaining the network name.
 
-Regression coverage lives in `wdintel-rs/src/sigint/direct_submit/units.rs` and
+Regression coverage lives in `wdintel-rs/src/sigint/direct_submit/units.rs`,
+`wdintel-rs/src/sigint/unit/message_creation.rs`, and
 `wdintel-web/tests/e2e/manage-message-unit.regression.spec.ts`; parser ownership
 is covered by
 `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`.

@@ -48,3 +48,4 @@ peerdb_psql -v ON_ERROR_STOP=1 -f "$sql_file"
 rm -f -- "$sql_file"
 
 log "Mirror submitted; use status.sh and refresh-current-views.sh as snapshot tables appear"
+log "After the initial snapshot, reconcile table selection to add CDC-only attachment tables"

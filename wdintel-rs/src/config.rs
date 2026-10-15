@@ -728,6 +728,8 @@ pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_SEARCH_DEFAULT_LIMIT: u64 = 50;
 pub const SIGINT_UNIT_SEARCH_INACTIVE_LIMIT: u64 = 250;
 pub const SIGINT_DIRECT_SUBMIT_UNIT_LOCK_NAMESPACE: i32 = 3535;
+pub const SIGINT_MESSAGE_UNIT_PENDING_NETWORK_REDIS_PREFIX: &str =
+    "sigint:message-unit:pending-network:";
 pub const SIGINT_UNIT_NAME_FIRST_INCLUDED_ECHELON_INDEX: usize = 1;
 pub const SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX: usize = 10;
 pub const SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX: usize = 11;
@@ -1587,6 +1589,8 @@ pub const ANALYTICS_LOCAL_EXCLUSIONS_PATH: &str = concat!(
 );
 pub const ANALYTICS_TABLE_RECONCILE_SERVICE: &str =
     "echo-peerdb-table-reconcile.service";
+pub const ANALYTICS_ATTACHMENT_HISTORY_SCRIPT: &str =
+    "/opt/echo-peerdb/current/bin/oneoff-replicate-attachment-history.sh";
 pub const SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_DEFAULT: u64 = 500;
 pub const SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_MAX: u64 = 1_000;
 pub const SIGNAL_MESSAGE_UUID_BACKFILL_PAUSE_MS_DEFAULT: u64 = 250;

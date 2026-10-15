@@ -11,6 +11,7 @@ import type {
   DirectSubmitPayload,
 } from '../../../../Bindings';
 import { normalizeInboxMessageFromWire } from './inbox-messages';
+import { transformSnakeToCamel } from '../../../snake-to-camel';
 
 export type DeviceNameSearchRequest = {
   search: string;
@@ -95,7 +96,7 @@ export async function searchPostNames(
   return result?.posts || [];
 }
 
-export type UnitResponse = Pick<Unit, 'id' | 'name'>;
+export type UnitResponse = Pick<Unit, 'id' | 'name'> & Partial<Unit>;
 
 export async function searchUnitNames(
   search: string,
@@ -106,7 +107,7 @@ export async function searchUnitNames(
     { search, include_inactive: true },
     options,
   );
-  return result?.units || [];
+  return transformSnakeToCamel<UnitResponse[]>(result?.units || []);
 }
 
 export async function resolveUnitNames(
@@ -119,7 +120,7 @@ export async function resolveUnitNames(
     { search: '', include_inactive: true, names },
     options,
   );
-  return result?.units || [];
+  return transformSnakeToCamel<UnitResponse[]>(result?.units || []);
 }
 
 import type { NetworkFreq } from '../../../../Bindings';

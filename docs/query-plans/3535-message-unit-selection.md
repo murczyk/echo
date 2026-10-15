@@ -30,12 +30,25 @@ order by lower(regexp_replace(btrim(name), '[[:space:]]+', ' ', 'g')), id
 limit 250
 ```
 
-The broad bounded query used the name index and incremental sorting, reading
-251 candidate rows rather than returning the entire relation. Parent searches
-still filter candidates through the name index, so performance depends on
-where matching names occur. An additional indexed exact-name lookup puts exact matches first without
-loading more than 250 total units. The client debounces input and users can narrow
-the phrase to find further children.
+Before echelon ordering, the broad bounded query used the name index and
+incremental sorting, reading 251 candidate rows rather than returning the
+entire relation. Parent searches filtered candidates through the name index,
+so performance depended on where matching names occurred. An additional indexed
+exact-name lookup preserves exact matches without loading more than 250 total
+units. The client debounces input and users can narrow the phrase to find further
+children.
+
+Echelon ordering was checked separately on a 100,000-unit temporary fixture
+with the name and full-text indexes, 100 brigade names, and 75% inactive units.
+For a partial brigade name matching 1,000 rows, the previous name ordering took
+35.941 ms and echelon ordering took 36.018 ms. Both plans scanned the fixture
+and used a top-N heapsort (191 KiB), returning 250 rows without temporary I/O.
+A broad nonempty phrase matching every row took 67.815 ms with echelon ordering
+(153 KiB top-N heapsort). Empty searches retain the name-index access path:
+50 rows in 0.241 ms after reading 51 candidates. Nonempty searches rank
+echelons before the limit so many companies cannot hide their brigade or
+battalion; the bounded final merge keeps exact matches first within their
+echelon. Recent-name lookup retains its normalized-index ordering.
 
 Selection lookups sought the selection, unit, inbox, and message primary keys
 and computed the current source-body hash; the 500-item batch used one SQL query with bounded index probes. They did
