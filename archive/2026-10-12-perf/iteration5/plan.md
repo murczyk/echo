@@ -36,7 +36,7 @@ before/after trial. Combining both branches into one UNION ALL membership set
 left gateway aggregation local, so that version was discarded.
 
 Resource profile enforcement still needs a representative concurrent workload;
-see [next_steps.md](next_steps.md#analytics-resource-profile). No guessed memory
+see [next_steps.md](next_steps.md#cancellation-analytics-profile-and-broad-source-search). No guessed memory
 or concurrency caps are activated by this patch.
 
 ## 3. Improve quoted search and tagged sender breakdowns

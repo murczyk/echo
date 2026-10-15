@@ -1,30 +1,31 @@
 # Stabilization validation (#3780)
 
 Branch: `3780-stabilize-fixes`, based on `main` at `f1c915695`.
-The results below record the initial implementation checks against the deployed
-`stable` baseline `ad2678da257`; the restored main-based branch requires its own
-verification, including retained Exact/Substring search and newer migrations.
+The repaired commit is `2fe88c048`, directly above main. Rust, frontend and migration checks below were
+repeated on that branch, retaining main's Exact/Substring search and newer
+migrations. The deployed performance comparison remains `stable` at `ad2678da257`.
 Validation date: 15 October 2026. No production deployment or settings/schema
 changes were performed. Production diagnostics used the existing unlocked SSH
 agent and bounded read-only SQL; raw queries and parameters remain private.
 
 ## Results
 
-- **212 Rust tests passed; one existing benchmark ignored.** This covers the
+- **215 Rust tests passed; one existing benchmark ignored.** This covers the
   Analysis, inbox, attachments and request-deadline suites, including AOR union
   membership/counts/cursors, authorization, mixed body/attachment and negative
   search, tag ownership/model/unit/duplicate-association semantics, scoped
   changes, former/deleted owners, startup coverage, overflow and bounded cleanup.
-- **74 frontend tests passed** across the five Duty/settings suites carrying
+- **78 frontend tests passed** across the five Duty/settings suites carrying
   #3546 creation-time regressions. No frontend code changed.
 - **`just build-front` passed.**
+- **Rust formatting check passed** for every Rust file changed against main.
 - **`cargo check -p wdintel-rs -p echo-migration` passed** after the final
   deadline/cleanup correction.
 - **`cargo clippy -p wdintel-rs --all-targets --all-features -- -D warnings`
   passed.** Cargo still reports an existing dependency future-compatibility
   notice for `proc-macro-error2`; there are no project Clippy warnings.
-- **Migration catalog policy check passed** with `GITHUB_BASE_REF=stable` on
-  `wd_test_3780_catalog_20261015`, restored from the standard dump. This compares
+- **Migration catalog policy check passed** with `GITHUB_BASE_REF=main` on
+  `wd_test_3780_main_catalog_20261015`, restored from the standard dump. This compares
   actual base/proposed catalogs and validates both source-only exclusions.
 - **Migration down/up passed** on that separate catalog database. Down removes
   the ledger/column; up restores them. Existing singleton triggers remain.
@@ -56,8 +57,8 @@ cargo check -p wdintel-rs
 cargo clippy -p wdintel-rs --all-targets --all-features -- -D warnings
 just build-front
 
-source deploy/setup_test_database.sh 3780_catalog_20261015
-GITHUB_BASE_REF=stable TEST_DB_NAME="$DB_NAME" \
+source deploy/setup_test_database.sh 3780_main_catalog_20261015
+GITHUB_BASE_REF=main TEST_DB_NAME="$DB_NAME" \
   scripts/ci/check_analytics_migration_catalog.sh
 ```
 
@@ -87,7 +88,9 @@ The Actix deadline regression verifies that a queued read expires with the
 only the path, avoiding Actix's prohibition on cloning a request before routing.
 Submitted database work is still governed by existing statement timeouts;
 immediate PostgreSQL/ClickHouse cancellation and resource caps require the
-follow-up investigation in [next_steps.md](next_steps.md).
+follow-up work in [next_steps.md](next_steps.md). The completed
+[investigation](investigation.md#cancellation-and-analytics-limits) also confirms
+continued backend execution and pool occupancy after dropping a SQLx future.
 
 Production rollout/soak, including Siversk's fallback saturation, remains to be
 performed using the [rollout steps](plan.md#rollout-and-recovery).
