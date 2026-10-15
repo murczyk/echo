@@ -124,7 +124,7 @@ export function ImageEditorSaveDialogs({
             Скасувати
           </PowerButton>
           <PowerButton variant="contained" type="button" disabled={disabled} onClick={onSaveAsNew}>
-            {disabled ? <CircularProgress size={18} color="inherit" /> : 'Зберегти як новий'}
+            {disabled ? <CircularProgress size={18} color="inherit" /> : 'Зберегти'}
           </PowerButton>
         </DialogActions>
       </Dialog>

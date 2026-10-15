@@ -71,7 +71,6 @@ export function RerAnalysisNeoPage({
   }, [notify, page.directMessageError]);
   const isAnalysisCompactLayout = useMediaQuery(theme.breakpoints.down('md'));
   const isNarrowLayout = useMediaQuery(theme.breakpoints.down('lg'));
-  const editorPresentation = useManageMessageEditorPresentation();
   const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
@@ -104,6 +103,7 @@ export function RerAnalysisNeoPage({
           ? `edit-report:${page.editTargetLoadState.reportId}`
           : null;
   const editorOpen = editorIntentKey !== null;
+  const editorPresentation = useManageMessageEditorPresentation(editorOpen);
   const editorHighlightedMessageId = editorOpen
     ? (editorSourceMessageId ??
       page.reportSource?.id ??

@@ -186,6 +186,13 @@ export async function openCreateMessageDrawer(
   if (dutyMocks)
     await expect(page.getByText('Помилка завантаження системних налаштувань')).toHaveCount(0);
   await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  if (host === 'analysis') {
+    const closeFilters = page.getByRole('button', { name: 'Закрити ліву панель' });
+    if (await closeFilters.isVisible()) {
+      await closeFilters.click();
+      await expect(closeFilters).toBeHidden();
+    }
+  }
   await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toBeVisible();
 }
 

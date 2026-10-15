@@ -57,7 +57,7 @@ export function ImageEditor({
   const sourceRef = useRef<import('fabric').FabricImage | null>(null);
   const cropRef = useRef<import('fabric').Rect | null>(null);
   const hiddenTextareaContainerRef = useRef<HTMLDivElement | null>(null);
-  const saveAsNewButtonRef = useRef<HTMLButtonElement | null>(null);
+  const saveOptionsButtonRef = useRef<HTMLButtonElement | null>(null);
   const saveReplacementButtonRef = useRef<HTMLButtonElement | null>(null);
   const cancelGestureRef = useRef<() => boolean>(() => false);
   const [tool, setTool] = useState<ImageEditorTool>(ImageEditorTool.Select);
@@ -532,8 +532,10 @@ export function ImageEditor({
         onSaveReplacement={() =>
           saveDialogs.openDialog(ImageEditorSaveDialog.Replacement, saveReplacementButtonRef)
         }
-        onSaveAsNew={() => saveDialogs.openDialog(ImageEditorSaveDialog.New, saveAsNewButtonRef)}
-        saveAsNewButtonRef={saveAsNewButtonRef}
+        onSaveAsNew={() => saveDialogs.openDialog(ImageEditorSaveDialog.New, saveOptionsButtonRef)}
+        onMenuOpenChange={setMenuOpen}
+        dismissMenu={dismissMenu}
+        saveOptionsButtonRef={saveOptionsButtonRef}
         saveReplacementButtonRef={saveReplacementButtonRef}
       />
       <div ref={hiddenTextareaContainerRef} data-image-editor-textarea-container />

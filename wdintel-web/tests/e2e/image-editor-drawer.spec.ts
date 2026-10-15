@@ -137,6 +137,29 @@ async function openSecondPendingImageEditor(page: import('@playwright/test').Pag
   return page.getByLabel('Редактор зображення');
 }
 
+async function openSettledSaveMenu(
+  editor: import('@playwright/test').Locator,
+): Promise<import('@playwright/test').Locator> {
+  await editor.locator('footer').getByRole('button', { name: 'Додаткові дії збереження' }).click();
+  const menu = editor.page().getByRole('menu', { name: 'Додаткові дії збереження' });
+  await expect(menu).toBeVisible();
+  await expect.poll(() => menu.evaluate((element) => getComputedStyle(element).opacity)).toBe('1');
+  return menu;
+}
+
+function expectNonintersecting(
+  first: { x: number; y: number; width: number; height: number },
+  second: { x: number; y: number; width: number; height: number },
+) {
+  expect(
+    first.x < second.x + second.width &&
+      first.x + first.width > second.x &&
+      first.y < second.y + second.height &&
+      first.y + first.height > second.y,
+    JSON.stringify({ first, second }),
+  ).toBe(false);
+}
+
 test.describe('image editor drawer integration #3448', () => {
   for (const host of ['duty', 'analysis'] as const satisfies ImageEditorDrawerHost[]) {
     // Regression: https://github.com/echoua/echo/issues/3448
@@ -174,7 +197,8 @@ test.describe('image editor drawer integration #3448', () => {
     expect(submitted.submissions).toHaveLength(0);
     pageErrors.assertNone();
   });
-  test('submits one replacement and deletion for persisted media', async ({ page }) => {
+  // Regression: https://github.com/echoua/echo/issues/3701
+  test('submits one same-ID replacement for persisted media', async ({ page }) => {
     await openEditMessageDrawer(page);
     const submitted = await observeImageEditorSubmission(page);
     await page.getByRole('button', { name: `Переглянути ${IMAGE_EDITOR_DRAWER_PNG.name}` }).click();
@@ -186,9 +210,18 @@ test.describe('image editor drawer integration #3448', () => {
     await page.getByRole('button', { name: 'Зберегти', exact: true }).click();
     await expect.poll(() => submitted.submissions.length).toBe(1);
     expect(submitted.uploads).toHaveLength(1);
+    expect(submitted.uploads[0]!.bytes).not.toEqual(IMAGE_EDITOR_DRAWER_PNG.buffer);
     expect(submitted.submissions[0]).toMatchObject({
-      deleted_media_ids: ['existing-editor-image'],
-      upload_urls: ['/api/sigint/file-upload/tus/editor-upload'],
+      deleted_media_ids: [],
+      upload_urls: null,
+      attachment_updates: {
+        replacements: [
+          {
+            media_id: 'existing-editor-image',
+            upload_url: '/api/sigint/file-upload/tus/editor-upload',
+          },
+        ],
+      },
     });
   });
   test('falls back to multipart when the TUS chunk is rejected', async ({ page }) => {
@@ -205,7 +238,15 @@ test.describe('image editor drawer integration #3448', () => {
     await expect.poll(() => submitted.submissions.length).toBe(1);
     expect(submitted.fallbackUploads).toHaveLength(1);
     expect(submitted.submissions[0]).toMatchObject({
-      upload_urls: ['/api/sigint/file-upload/tus/fallback-upload'],
+      upload_urls: null,
+      attachment_updates: {
+        replacements: [
+          {
+            media_id: 'existing-editor-image',
+            upload_url: '/api/sigint/file-upload/tus/fallback-upload',
+          },
+        ],
+      },
     });
     pageErrors.assertNone();
     pageErrors.dispose();
@@ -565,6 +606,13 @@ test('TUS preserves a busy upload while resuming after a lost accepted chunk res
 // Regression: https://github.com/echoua/echo/issues/3448
 test('keeps editor actions reachable at representative viewports @regression', async ({ page }) => {
   const { editor } = await openPendingImageEditor(page, 'duty');
+  await editor.getByRole('button', { name: 'Текст', exact: true }).click();
+  const canvas = await editor.locator('canvas').last().boundingBox();
+  if (!canvas) throw new Error('Canvas редактора не має розмірів');
+  await page.mouse.click(canvas.x + 30, canvas.y + 30);
+  await expect(editor.locator('textarea')).toBeFocused();
+  await page.keyboard.type('resize-preserved');
+  await page.mouse.click(canvas.x + canvas.width * 0.8, canvas.y + canvas.height * 0.8);
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 768, height: 900 },
@@ -572,12 +620,93 @@ test('keeps editor actions reachable at representative viewports @regression', a
   ]) {
     await page.setViewportSize(viewport);
     await expect(editor.locator('canvas[data-fabric="top"]')).toBeVisible();
+    expect((await selectedTextState(editor)).text).toBe('resize-preserved');
+    await expect(page.getByText('Вкладення (1)')).toBeVisible();
     await expect(editor.getByRole('button', { name: 'Текст', exact: true })).toBeVisible();
     await expect(editor.locator('footer').getByRole('button', { name: 'Скасувати' })).toBeVisible();
     await expect(
       editor.locator('footer').getByRole('button', { name: 'Зберегти', exact: true }),
     ).toBeVisible();
   }
+});
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 768, height: 900 },
+  { width: 360, height: 800 },
+]) {
+  // Regression: https://github.com/echoua/echo/issues/3701
+  test(`keeps the compact split save action reachable at ${viewport.width}px #3701 @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const { editor } = await openPendingImageEditor(page, 'duty');
+    const primary = editor.locator('footer').getByRole('button', { name: 'Зберегти', exact: true });
+    const arrow = editor
+      .locator('footer')
+      .getByRole('button', { name: 'Додаткові дії збереження' });
+    await expect(primary).toBeVisible();
+    await expect(arrow).toBeVisible();
+    const [primaryBox, arrowBox] = await Promise.all([primary.boundingBox(), arrow.boundingBox()]);
+    expect(primaryBox).not.toBeNull();
+    expect(arrowBox).not.toBeNull();
+    expect(arrowBox!.width).toBeGreaterThanOrEqual(40);
+    expect(arrowBox!.width).toBeLessThanOrEqual(44);
+    expect(arrowBox!.width).toBeLessThan(primaryBox!.width);
+    const menu = await openSettledSaveMenu(editor);
+    const [menuBox, groupBox] = await Promise.all([
+      menu.boundingBox(),
+      editor.locator('footer .MuiButtonGroup-root').boundingBox(),
+    ]);
+    expect(menuBox).not.toBeNull();
+    expect(groupBox).not.toBeNull();
+    expectNonintersecting(menuBox!, groupBox!);
+    expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(groupBox!.y);
+  });
+}
+
+// Regression: https://github.com/echoua/echo/issues/3701
+test('opens the save menu below the split button when there is room #3701 @regression', async ({
+  page,
+}) => {
+  const { editor } = await openPendingImageEditor(page, 'duty');
+  await editor.locator('footer').evaluate((footer) => {
+    footer.style.marginBottom = '96px';
+  });
+  const menu = await openSettledSaveMenu(editor);
+  const [menuBox, groupBox] = await Promise.all([
+    menu.boundingBox(),
+    editor.locator('footer .MuiButtonGroup-root').boundingBox(),
+  ]);
+  expect(menuBox).not.toBeNull();
+  expect(groupBox).not.toBeNull();
+  expectNonintersecting(menuBox!, groupBox!);
+  expect(menuBox!.y).toBeGreaterThanOrEqual(groupBox!.y + groupBox!.height);
+  await page.screenshot({
+    path: test.info().outputPath('image-editor-save-menu-below-settled.png'),
+  });
+});
+
+// Regression: https://github.com/echoua/echo/issues/3701
+test('opens save-as-new from the compact arrow and restores its focus after cancellation #3701 @regression', async ({
+  page,
+}) => {
+  const { editor } = await openPendingImageEditor(page, 'duty');
+  const arrow = editor.locator('footer').getByRole('button', { name: 'Додаткові дії збереження' });
+  await openSettledSaveMenu(editor);
+  const menuItem = page.getByRole('menuitem', { name: 'Зберегти як...' });
+  await expect(menuItem).toBeVisible();
+  await page.screenshot({
+    path: test.info().outputPath('image-editor-save-menu-above-settled.png'),
+  });
+  await menuItem.click();
+  const dialog = page.getByRole('dialog', { name: 'Зберегти як нове зображення' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Зберегти', exact: true })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('image-editor-save-as-dialog.png') });
+  await dialog.getByRole('button', { name: 'Скасувати', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(arrow).toBeFocused();
 });
 
 // Regression: https://github.com/echoua/echo/issues/3448

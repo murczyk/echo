@@ -72,6 +72,20 @@
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/ImageEditorContextControls.spec.tsx` and `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-padded-text.spec.ts`.
 - **Original Echo issue/PR, if known:** [#3099](https://github.com/echoua/echo/issues/3099), [#3294](https://github.com/echoua/echo/issues/3294).
 
+## Save actions and attachment replacement
+
+- **Status:** issue-backed regression
+- **Behavior ID:** `react-image-editor-save-actions-and-replacement`
+- **Affected route/component:** shared image-editor footer, save dialogs, and message attachment submission.
+- **Expected observable result:** the contained split button keeps `Зберегти` as the replacement action; its compact arrow opens `Зберегти як...` below when space permits and fully above otherwise, with a gap from the trigger. The filename dialog keeps its descriptive title and saves an additional image with `Зберегти`; replacement confirmation uses `Замінити`.
+- **Responsive and keyboard requirements:** the arrow remains a 40px touch target and is narrower than the primary button. An open editor keeps its selected attachment and unsaved canvas edits while the viewport switches between embedded and mobile layouts. Escape closes only the active menu/dialog layer. Closing the menu or save-as dialog returns focus to the persistent arrow; closing replacement confirmation returns focus to the primary save button.
+- **API endpoint and compatibility requirements:** replacing pending files resets upload state; persisted attachments are submitted as same-ID replacements. Report creation excludes the replaced source attachment and uploads the edited image to the new report.
+- **Verification boundary:** frontend and mocked-browser coverage verifies edited canvas bytes differ from the source at the upload handoff, replacement metadata, and source exclusion. The reported blurred-byte persistence defect remains unresolved: this workspace has no backend environment exposing persisted media bytes, post-save response media, or a reloadable/downloadable saved message, so thumbnail, preview, download, and reload cannot be verified beyond the upload boundary.
+- **Known race/idempotency constraints:** save controls are unavailable while source/crop/raster/save state is locked; menu-to-dialog handoff completes after menu cleanup to avoid focus restoration into an unmounted item.
+- **Source implementation:** `routes/shared/image-editor/ImageEditorFooter.tsx`, `ImageEditorSaveDialogs.tsx`, `image-editor-upload.ts`, and `routes/shared/manage-message/useMessageSubmit.ts`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/ImageEditor.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`, `wdintel-web/tests/e2e/image-editor-drawer.spec.ts`.
+- **Original Echo issue/PR, if known:** [#3701](https://github.com/echoua/echo/issues/3701).
+
 ## Selection styles and reachable controls
 
 - **Status:** issue-backed regression

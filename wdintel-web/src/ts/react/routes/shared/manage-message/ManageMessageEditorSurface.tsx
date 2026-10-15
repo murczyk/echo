@@ -38,11 +38,18 @@ export function resolveManageMessageEditorPresentation(
     : 'modal';
 }
 
-export function useManageMessageEditorPresentation(): ManageMessageEditorPresentation {
+export function useManageMessageEditorPresentation(open = false): ManageMessageEditorPresentation {
   const viewportCanEmbed = useMediaQuery(
     `(min-width:${MANAGE_MESSAGE_EDITOR_EMBEDDED_MIN_VIEWPORT_WIDTH}px)`,
   );
-  return viewportCanEmbed ? 'embedded' : 'modal';
+  const presentation: ManageMessageEditorPresentation = viewportCanEmbed ? 'embedded' : 'modal';
+  const [openPresentation, setOpenPresentation] = useState(presentation);
+
+  useEffect(() => {
+    if (!open) setOpenPresentation(presentation);
+  }, [open, presentation]);
+
+  return open ? openPresentation : presentation;
 }
 
 export function ManageMessageEditorSurface({
