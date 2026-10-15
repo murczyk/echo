@@ -811,6 +811,16 @@ async fn sync_inbox(
             message_attachment_info
         );
     }
+    let disabled_groups = load_groups_with_fetch_disabled(
+        &txn,
+        inbox_messages
+            .iter()
+            .chain(inbox_updates.iter())
+            .filter_map(|message| message.group_id.clone())
+            .collect(),
+    )
+    .await
+    .c(h!())?;
     let senders = inbox_messages
         .iter()
         .chain(inbox_updates.iter().filter(|message| !message.deleted))
@@ -823,6 +833,9 @@ async fn sync_inbox(
     let mut ids = vec![];
     for item in &inbox_messages {
         ids.push(item.internal_id);
+        if !should_fetch_message(item, &disabled_groups) {
+            continue;
+        }
         if upsert_signal_message_queue_snapshot(item, datasource.id, &txn)
             .await
             .c(h!())?
@@ -831,6 +844,9 @@ async fn sync_inbox(
         }
     }
     for update in &inbox_updates {
+        if !should_fetch_message(update, &disabled_groups) {
+            continue;
+        }
         if upsert_signal_message_queue_snapshot(update, datasource.id, &txn)
             .await
             .c(h!())?
@@ -850,6 +866,36 @@ async fn sync_inbox(
     notify_private_messages(config, client_name, private_message_bodies).await;
     sync_senders(db, senders).await.c(h!())?;
     Ok(synced_item_count)
+}
+
+async fn load_groups_with_fetch_disabled<C: ConnectionTrait>(
+    db: &C,
+    group_ids: Vec<String>,
+) -> anyhow::Result<HashSet<String>> {
+    if group_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let groups = signal_group::Entity::find()
+        .select_only()
+        .column(signal_group::Column::MasterKey)
+        .filter(signal_group::Column::MasterKey.is_in(group_ids))
+        .filter(signal_group::Column::FetchNewMessages.eq(false))
+        .into_tuple::<String>()
+        .all(db)
+        .await
+        .c(h!())?;
+    Ok(groups.into_iter().collect())
+}
+
+fn should_fetch_message(
+    message: &echo_im::types::MessageF1,
+    disabled_groups: &HashSet<String>,
+) -> bool {
+    message.deleted
+        || !message
+            .group_id
+            .as_ref()
+            .is_some_and(|group_id| disabled_groups.contains(group_id))
 }
 
 async fn notify_private_messages(
@@ -1624,6 +1670,125 @@ mod tests {
         std::fs::remove_dir(hidden.parent().unwrap()).unwrap();
         echo_im::worker::cleanup_signal_attachment_worker_once(&env.dbx).await;
         assert!(attachments.path().is_dir());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn fetch_new_messages_3610_skips_ingestion_and_queued_backlog() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let (account, datasource) = mk_linked_datasource(&env.dbx).await;
+        let client_lock = echo_client_lock::Entity::find_by_id(
+            datasource.echo_client_lock_id.unwrap() as i32,
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        let client = echo_client::Entity::find_by_id(client_lock.client_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut disabled_inbox_id = None;
+        for (group_id, fetch_new_messages) in [
+            ("disabled", Some(false)),
+            ("enabled", Some(true)),
+            ("unset", None),
+        ] {
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                group_id.to_string(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+            let mut group = signal_group::Entity::find_by_id(group_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .into_active_model();
+            group.fetch_new_messages = Set(fetch_new_messages);
+            group.update(&env.dbx).await.unwrap();
+            let group = echo_group::ActiveModel {
+                group_id: Set(group_id.to_string()),
+                account_id: Set(account.id),
+                name: Set(Some(group_id.to_string())),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            let mut inbox = mk_echo_inbox_message(&env.dbx, account.id)
+                .await
+                .into_active_model();
+            inbox.group_id = Set(Some(group.id));
+            let inbox = inbox.update(&env.dbx).await.unwrap();
+            if fetch_new_messages == Some(false) {
+                disabled_inbox_id = Some(inbox.id);
+            }
+        }
+        sync_inbox(&env.config, Utc::now(), &env.dbx, &client.name, &None)
+            .await
+            .unwrap();
+        let queue = signal_message_queue::Entity::find()
+            .filter(
+                signal_message_queue::Column::DatasourceId.eq(datasource.id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(queue.len(), 2);
+        assert!(queue
+            .iter()
+            .all(|entry| entry.group_id.as_deref() != Some("disabled")));
+        let inbox =
+            echo_inbox_message::Entity::find_by_id(disabled_inbox_id.unwrap())
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(inbox.seen);
+
+        let mut snapshot =
+            test_message(inbox.id, "queued before disabling", false);
+        snapshot.group_id = Some("disabled".to_string());
+        let txn = env.dbx.begin().await.unwrap();
+        upsert_signal_message_queue_snapshot(&snapshot, datasource.id, &txn)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+        let queue = signal_message_queue::Entity::find()
+            .filter(
+                signal_message_queue::Column::InternalId
+                    .eq(i64::from(inbox.id)),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        let mut pool =
+            pool::mk_message_processor_pool(env.clone()).await.unwrap();
+        pool::process_queue(&mut pool, queue, vec![], vec![])
+            .await
+            .unwrap();
+        assert!(signal_message_queue::Entity::find()
+            .filter(
+                signal_message_queue::Column::InternalId
+                    .eq(i64::from(inbox.id))
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(signal_message::Entity::find()
+            .filter(
+                signal_message::Column::EchoInboxMessageId
+                    .eq(i64::from(inbox.id))
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]

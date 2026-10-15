@@ -84,6 +84,8 @@ type SignalGroupEntryLike = {
   disable_network_assignment?: boolean;
   isAviationGroup?: boolean;
   is_aviation_group?: boolean;
+  fetchNewMessages?: boolean | null;
+  fetch_new_messages?: boolean | null;
   groupStats?: SignalGroupStatsLike | null;
   group_stats?: SignalGroupStatsLike | null;
   adminData?: GroupAdminDataLike | null;
@@ -106,6 +108,8 @@ type OrphanSignalGroupEntryLike = {
   disable_network_assignment?: boolean;
   isAviationGroup?: boolean;
   is_aviation_group?: boolean;
+  fetchNewMessages?: boolean | null;
+  fetch_new_messages?: boolean | null;
   isArchived?: boolean;
   is_archived?: boolean;
   datasourceId?: number | null;
@@ -161,6 +165,8 @@ type ZoneDatasourceGroupLike = {
   disable_network_assignment?: boolean;
   isAviationGroup?: boolean;
   is_aviation_group?: boolean;
+  fetchNewMessages?: boolean | null;
+  fetch_new_messages?: boolean | null;
   allowedUsers?: string[] | null;
   allowed_users?: string[] | null;
   allowedUserDetails?: SignalGroupLoginLike[] | null;
@@ -273,6 +279,7 @@ type ZoneDatasourceGroupUpdateReqBody = {
   interseption_kind: InterseptionKind | null;
   disable_network_assignment: boolean | null;
   is_aviation_group: boolean | null;
+  fetch_new_messages: boolean | null;
   user_logins: string[];
   organism_ids: number[];
   admin_logins: string[];
@@ -399,6 +406,7 @@ function normalizeSignalGroupEntry(raw: SignalGroupEntryLike): SignalGroupEntry 
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     isAviationGroup: raw.isAviationGroup ?? raw.is_aviation_group ?? false,
+    fetchNewMessages: raw.fetchNewMessages ?? raw.fetch_new_messages ?? true,
     groupStats: normalizeSignalGroupStats(raw.groupStats ?? raw.group_stats),
     adminData: normalizeGroupAdminData(raw.adminData ?? raw.admin_data),
     areasOfResponsibility:
@@ -415,6 +423,7 @@ function normalizeOrphanSignalGroupEntry(raw: OrphanSignalGroupEntryLike): Orpha
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     isAviationGroup: raw.isAviationGroup ?? raw.is_aviation_group ?? false,
+    fetchNewMessages: raw.fetchNewMessages ?? raw.fetch_new_messages ?? true,
     isArchived: raw.isArchived ?? raw.is_archived ?? false,
     datasourceId: raw.datasourceId ?? raw.datasource_id ?? null,
     createdAt: raw.createdAt ?? raw.created_at ?? 0,
@@ -436,6 +445,7 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     isAviationGroup: raw.isAviationGroup ?? raw.is_aviation_group ?? false,
+    fetchNewMessages: raw.fetchNewMessages ?? raw.fetch_new_messages ?? true,
     allowedUsers,
     allowedUserDetails: (raw.allowedUserDetails ?? raw.allowed_user_details ?? []).map(
       normalizeSignalGroupLogin,
@@ -543,6 +553,7 @@ function toZoneDatasourceGroupUpdateReqBody(
     interseption_kind: req.interseptionKind ?? null,
     disable_network_assignment: req.disableNetworkAssignment ?? null,
     is_aviation_group: req.isAviationGroup ?? null,
+    fetch_new_messages: req.fetchNewMessages ?? null,
     user_logins: req.userLogins,
     organism_ids: req.organismIds,
     admin_logins: req.adminLogins,

@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20261015_150117_signal_group_fetch_new_messages": {
+      "changes": [
+        { "table": "public.signal_group", "strategy": "replicated_snapshot", "targeted_resnapshot": true }
+      ]
+    },
     "echo:m20261015_092940_messenger_alerts": {
       "changes": [
         { "table": "public.login", "strategy": "replicated_snapshot", "targeted_resnapshot": true },

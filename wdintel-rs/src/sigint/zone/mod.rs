@@ -128,6 +128,7 @@ pub async fn zones_datasources_group_update(
         interseption_kind: rsp.interseption_kind,
         disable_network_assignment: rsp.disable_network_assignment,
         is_aviation_group: rsp.is_aviation_group,
+        fetch_new_messages: rsp.fetch_new_messages,
         areas_of_responsibility: rsp
             .aor
             .map(|aors| aors.into_iter().map(render_aor).collect()),
@@ -263,6 +264,14 @@ pub async fn zones_datasources_group_add(
             .flatten()
             .unwrap_or(false);
 
+    let fetch_new_messages = bl::update_group_fetch_new_messages_if_present(
+        None,
+        &group_master_key,
+        &txn,
+    )
+    .await
+    .c(h!())?;
+
     let (short_note, long_note) = group_admin_data::Entity::find()
         .filter(
             group_admin_data::Column::GroupMasterKey.eq(&szd.group_master_key),
@@ -298,6 +307,7 @@ pub async fn zones_datasources_group_add(
             interseption_kind,
             disable_network_assignment,
             is_aviation_group,
+            fetch_new_messages,
             areas_of_responsibility,
             group_master_key,
             allowed_user_details: bl::render_group_logins(

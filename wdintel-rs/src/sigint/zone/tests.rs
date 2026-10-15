@@ -241,6 +241,7 @@ async fn test_bl_szd_group_update_01() {
         interseption_kind: None,
         disable_network_assignment: None,
         is_aviation_group: Some(true),
+        fetch_new_messages: Some(false),
         user_logins: vec![],
         organism_ids: vec![],
         admin_logins: vec![],
@@ -253,6 +254,20 @@ async fn test_bl_szd_group_update_01() {
 
     assert!(res.aor.is_some());
     assert!(res.is_aviation_group);
+    assert!(!res.fetch_new_messages);
+    assert!(
+        !bl_szd_group_update(
+            &ZoneDatasourceGroupUpdateReq {
+                fetch_new_messages: None,
+                ..req.clone()
+            },
+            &szd,
+            &txn,
+        )
+        .await
+        .unwrap()
+        .fetch_new_messages
+    );
     let signal_group_aors = signal_group_aor::Entity::find()
         .filter(
             signal_group_aor::Column::MasterKey.eq(group_master_key.clone()),
@@ -350,6 +365,7 @@ async fn test_secret_group_update_preserves_ai_managed_logins() {
         interseption_kind: None,
         disable_network_assignment: None,
         is_aviation_group: None,
+        fetch_new_messages: None,
         user_logins: vec![human.id.to_string()],
         organism_ids: vec![],
         admin_logins: vec![],

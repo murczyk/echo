@@ -47,8 +47,28 @@ pub async fn process_queue(
         .into_iter()
         .map(|d| (d.id, d))
         .collect::<HashMap<_, _>>();
+    let disabled_groups = super::load_groups_with_fetch_disabled(
+        &ctx.dbx,
+        queue
+            .iter()
+            .filter_map(|entry| entry.group_id.clone())
+            .collect(),
+    )
+    .await
+    .c(h!())?;
     let mut item_queue = VecDeque::new();
     for entry in queue {
+        if !entry.deleted
+            && entry
+                .group_id
+                .as_ref()
+                .is_some_and(|group_id| disabled_groups.contains(group_id))
+        {
+            delete_message_and_attachments_if_unchanged(&ctx.dbx, &entry)
+                .await
+                .c(h!())?;
+            continue;
+        }
         if let Some(item) =
             make_item_from_entry(entry, &attachments, &datasources).c(h!())?
         {

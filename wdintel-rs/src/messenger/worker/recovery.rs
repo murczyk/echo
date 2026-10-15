@@ -36,6 +36,7 @@ struct RecoveryMaps {
     existing_signal_ids: HashSet<i64>,
     queue_items: BTreeMap<(i64, i64), signal_message_queue::Model>,
     groups: BTreeMap<i32, echo_group::Model>,
+    disabled_groups: HashSet<String>,
     senders: BTreeMap<i32, echo_sender::Model>,
     attachments: HashMap<i32, Vec<echo_attachment::Model>>,
 }
@@ -269,6 +270,16 @@ async fn load_recovery_maps(
             .collect()
     };
 
+    let disabled_groups = super::load_groups_with_fetch_disabled(
+        dbx,
+        groups
+            .values()
+            .map(|group| group.group_id.clone())
+            .collect(),
+    )
+    .await
+    .c(h!())?;
+
     let existing_signal_ids = load_existing_signal_ids(
         dbx,
         datasources,
@@ -340,6 +351,7 @@ async fn load_recovery_maps(
         existing_signal_ids,
         queue_items,
         groups,
+        disabled_groups,
         senders,
         attachments,
     })
@@ -453,6 +465,11 @@ async fn process_candidates(
             break;
         }
 
+        if recovery_group_fetch_disabled(maps, inbox_message) {
+            result.max_processed_cursor =
+                Some(echo_im_sync_cursor_for_message(inbox_message));
+            continue;
+        }
         let inbox_id = i64::from(inbox_message.id);
         if maps.existing_signal_ids.contains(&inbox_id) {
             result.max_processed_cursor =
@@ -616,6 +633,16 @@ async fn process_missing_message_recovery(
     inbox_message: &echo_inbox_message::Model,
     do_not_store_duplicate_echoim_failures: bool,
 ) -> anyhow::Result<()> {
+    if recovery_group_fetch_disabled(maps, inbox_message) {
+        mark_missing_message_error(
+            dbx,
+            missing_message,
+            "fetch_new_messages is disabled for this group".to_string(),
+        )
+        .await
+        .c(h!())?;
+        return Ok(());
+    }
     let inbox_id = i64::from(inbox_message.id);
     let queue_item = queue_item_for_inbox(maps, datasources, inbox_message);
     let datasource_id =
@@ -712,6 +739,16 @@ async fn process_missing_message_recovery(
     }
 
     Ok(())
+}
+
+fn recovery_group_fetch_disabled(
+    maps: &RecoveryMaps,
+    message: &echo_inbox_message::Model,
+) -> bool {
+    message
+        .group_id
+        .and_then(|group_id| maps.groups.get(&group_id))
+        .is_some_and(|group| maps.disabled_groups.contains(&group.group_id))
 }
 
 fn recovery_datasource_id(
@@ -1338,6 +1375,81 @@ mod tests {
         assert_eq!(maps.groups[&group.id].group_id, "map-group");
         assert_eq!(maps.senders[&sender.id].uuid, sender.uuid);
         assert_eq!(maps.attachments[&queue_inbox_id].len(), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn fetch_new_messages_3610_recovery_skips_disabled_groups() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = recovery_env().await;
+        let (account, datasource) =
+            mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
+        let group =
+            mk_echo_group(&env.dbx, account.id, "disabled-recovery").await;
+        crate::messenger::group::ensure_datasource_group_id(
+            &env.dbx,
+            group.group_id.clone(),
+            datasource.id,
+        )
+        .await
+        .unwrap();
+        let mut signal_group =
+            signal_group::Entity::find_by_id(&group.group_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .into_active_model();
+        signal_group.fetch_new_messages = Set(Some(false));
+        signal_group.update(&env.dbx).await.unwrap();
+        let cursor = old_ts();
+        insert_system_settings_with_autofix(&env.dbx, cursor, false, true)
+            .await;
+        let inbox = mk_inbox_message(
+            &env.dbx,
+            account.id,
+            Some(group.id),
+            cursor + chrono::TimeDelta::seconds(1),
+        )
+        .await;
+        assert_eq!(run_recovery(&env, &[account.id]).await, 0);
+        assert_eq!(
+            crate::system_settings::get_echo_im_sync_cursor(&env.dbx)
+                .await
+                .unwrap(),
+            echo_im_sync_cursor_for_message(&inbox)
+        );
+        assert!(echo_missing_message::Entity::find()
+            .filter(echo_missing_message::Column::MessageId.eq(inbox.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        let login_id = crate::users::system_login_id(&env.dbx).await.unwrap();
+        let missing =
+            record_missing_message(&env.dbx, inbox.id, Some(&login_id))
+                .await
+                .unwrap();
+        schedule_missing_message(&env.dbx, missing, &login_id)
+            .await
+            .unwrap();
+        assert_eq!(run_recovery(&env, &[account.id]).await, 1);
+        let missing = echo_missing_message::Entity::find()
+            .filter(echo_missing_message::Column::MessageId.eq(inbox.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(missing.error.unwrap().contains("fetch_new_messages"));
+        assert!(signal_message::Entity::find()
+            .filter(
+                signal_message::Column::EchoInboxMessageId
+                    .eq(i64::from(inbox.id))
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
