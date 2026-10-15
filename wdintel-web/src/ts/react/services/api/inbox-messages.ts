@@ -431,6 +431,7 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
     or_with_coords: req.orWithCoords,
     newest_first: req.newestFirst,
     search: req.search,
+    search_mode: req.searchMode,
     highlight_callsigns: req.highlightCallsigns,
     highlight_keywords: req.highlightKeywords,
     highlight_keyword_set_id: req.highlightKeywordSetId,

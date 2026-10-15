@@ -106,6 +106,7 @@ createAnalysisQueryState shared network callsign =
     , orWithCoords = False
     , orWithoutCoords = False
     , search = ""
+    , searchMode = Nothing
     , metadataCc = []
     , metadataSender = []
     , metadataReceiver = []

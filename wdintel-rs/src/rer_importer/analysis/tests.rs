@@ -376,6 +376,7 @@ fn mk_analysis_stats_req(
         or_with_coords: None,
         or_without_coords: None,
         search: None,
+        search_mode: None,
         selected_tags: None,
         denied_tags: None,
         tag_presence: None,
@@ -2304,6 +2305,87 @@ async fn rer_analysis_search_matches_plain_prefix() {
     );
 }
 
+#[tokio::test]
+#[serial]
+async fn analysis_search_modes_match_case_insensitively_in_counts_and_inbox_3780(
+) {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let login = find_test_login(&fixture.env.dbx).await.unwrap();
+    let mut ids = Vec::new();
+    for (index, text) in
+        ["нора", "НОРА!", "панорама", "норма", "нормальний", "норою"]
+            .into_iter()
+            .enumerate()
+    {
+        ids.push(
+            mk_analysis_message(
+                &fixture.env.dbx,
+                text,
+                "155.2750",
+                test_dt(2026, 3, 1, 10, index as u32),
+                &[&fixture.alpha],
+                &[],
+                false,
+            )
+            .await
+            .unwrap()
+            .id,
+        );
+    }
+    for (mode, expected_indexes) in [
+        (None, vec![0, 1, 3, 4, 5]),
+        (Some(AnalysisSearchMode::Fuzzy), vec![0, 1, 3, 4, 5]),
+        (Some(AnalysisSearchMode::Exact), vec![0, 1]),
+        (Some(AnalysisSearchMode::Substring), vec![0, 1, 2]),
+    ] {
+        let mut req = analysis_stats_req0(&fixture);
+        req.search = Some("НоРа".into());
+        req.search_mode = mode;
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            expected_indexes.len() as i64,
+            "{mode:?}"
+        );
+        let inbox_req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(req.since_date_inclusive_ms),
+            till_date_inclusive_ms: Some(req.till_date_noninclusive_ms - 1),
+            search: req.search.clone(),
+            search_mode: mode,
+            selected_groups: Some(vec![fixture
+                .alpha
+                .signal_group
+                .master_key
+                .clone()]),
+            ..Default::default()
+        };
+        let actual = inbox_map_item_ids(&fixture.env, &login.id, &inbox_req)
+            .await
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        let expected = expected_indexes
+            .iter()
+            .map(|index| ids[*index])
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(actual, expected, "{mode:?}");
+    }
+    let mut req = analysis_stats_req0(&fixture);
+    req.search_mode = Some(AnalysisSearchMode::Exact);
+    for (query, expected) in
+        [("нора -панорама", 2), ("нора or норма", 3), ("\"нора\"", 2)]
+    {
+        req.search = Some(query.into());
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            expected,
+            "{query}"
+        );
+    }
+}
+
 async fn seed_search_pagination_messages(
     fixture: &RerAnalysisFixture,
     login: &uuid::Uuid,
@@ -2384,6 +2466,7 @@ async fn postgres_search_pages_preserve_filters_details_and_cursors_3780() {
                     test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
                 ),
                 search: Some("Берез".into()),
+                search_mode: None,
                 selected_groups: Some(vec![fixture
                     .alpha
                     .signal_group

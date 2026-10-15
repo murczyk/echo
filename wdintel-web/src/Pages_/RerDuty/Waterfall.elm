@@ -447,6 +447,7 @@ getBasicInboxParams model =
     , orWithoutCoords = Nothing
     , newestFirst = Nothing
     , search = Nothing
+    , searchMode = Nothing
     , highlightCallsigns = Just True
     , highlightSignals = Just model.highlightSignalsEnabled
     , highlightKeywords = Just True

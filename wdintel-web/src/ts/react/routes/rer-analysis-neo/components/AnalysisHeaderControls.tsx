@@ -12,6 +12,7 @@ import {
 import { useEffect, useState } from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
+import { AnalysisSearchControls } from './AnalysisSearchControls';
 import {
   dateTimeRangeDisplaysYear,
   DateTimeRangeControl,
@@ -177,6 +178,12 @@ export function AnalysisHeaderControls({
           />
         </Box>
       )}
+      {!isCompactLayout || compactSearchOpen ? (
+        <AnalysisSearchControls
+          searchMode={queryState.searchMode}
+          onChange={(searchMode) => updateQueryState({ searchMode })}
+        />
+      ) : null}
       <Box
         sx={{
           width: isCompactLayout

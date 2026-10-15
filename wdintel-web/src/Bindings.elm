@@ -1495,6 +1495,22 @@ inboxMessagesSortByEncoder enum =
         ImsCreatedAt ->
             Json.Encode.string "IMSCreatedAt"
 
+type AnalysisSearchMode
+    = Fuzzy
+    | Exact
+    | Substring
+
+
+analysisSearchModeEncoder : AnalysisSearchMode -> Json.Encode.Value
+analysisSearchModeEncoder enum =
+    case enum of
+        Fuzzy ->
+            Json.Encode.string "Fuzzy"
+        Exact ->
+            Json.Encode.string "Exact"
+        Substring ->
+            Json.Encode.string "Substring"
+
 type TagFilterOption
     = OneOfTags
     | AllTags
@@ -1555,6 +1571,7 @@ type alias InboxMessagesReq =
     , orWithoutCoords : Maybe (Bool)
     , newestFirst : Maybe (Bool)
     , search : Maybe (String)
+    , searchMode : Maybe (AnalysisSearchMode)
     , highlightCallsigns : Maybe (Bool)
     , highlightKeywords : Maybe (Bool)
     , highlightSearchres : Maybe (Bool)
@@ -1624,6 +1641,7 @@ inboxMessagesReqEncoder struct =
         , ( "or_without_coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.orWithoutCoords )
         , ( "newest_first", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.newestFirst )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
+        , ( "search_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (analysisSearchModeEncoder)) struct.searchMode )
         , ( "highlight_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightCallsigns )
         , ( "highlight_keywords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightKeywords )
         , ( "highlight_searchres", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightSearchres )
@@ -2286,6 +2304,7 @@ type alias AnalysisStatsReq =
     , orWithCoords : Maybe (Bool)
     , orWithoutCoords : Maybe (Bool)
     , search : Maybe (String)
+    , searchMode : Maybe (AnalysisSearchMode)
     , selectedTags : Maybe (List (Int))
     , deniedTags : Maybe (List (Int))
     , tagPresence : Maybe (TagPresenceFilter)
@@ -2328,6 +2347,7 @@ analysisStatsReqEncoder struct =
         , ( "or_with_coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.orWithCoords )
         , ( "or_without_coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.orWithoutCoords )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
+        , ( "search_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (analysisSearchModeEncoder)) struct.searchMode )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedTags )
         , ( "denied_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedTags )
         , ( "tag_presence", (Maybe.withDefault Json.Encode.null << Maybe.map (tagPresenceFilterEncoder)) struct.tagPresence )
@@ -2755,6 +2775,7 @@ type alias CallsignsGraphReq =
     , orWithoutCoords : Maybe (Bool)
     , nolimit : Maybe (Bool)
     , search : Maybe (String)
+    , searchMode : Maybe (AnalysisSearchMode)
     , selectedTags : Maybe (List (Int))
     , deniedTags : Maybe (List (Int))
     , tagPresence : Maybe (TagPresenceFilter)
@@ -2796,6 +2817,7 @@ callsignsGraphReqEncoder struct =
         , ( "or_without_coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.orWithoutCoords )
         , ( "nolimit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.nolimit )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
+        , ( "search_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (analysisSearchModeEncoder)) struct.searchMode )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedTags )
         , ( "denied_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedTags )
         , ( "tag_presence", (Maybe.withDefault Json.Encode.null << Maybe.map (tagPresenceFilterEncoder)) struct.tagPresence )
@@ -2981,6 +3003,7 @@ type alias RerAnalysisQueryState =
     , orWithCoords : Bool
     , orWithoutCoords : Bool
     , search : String
+    , searchMode : Maybe (AnalysisSearchMode)
     , metadataCc : List (String)
     , metadataSender : List (String)
     , metadataReceiver : List (String)
@@ -3020,6 +3043,7 @@ rerAnalysisQueryStateEncoder struct =
         , ( "or_with_coords", (Json.Encode.bool) struct.orWithCoords )
         , ( "or_without_coords", (Json.Encode.bool) struct.orWithoutCoords )
         , ( "search", (Json.Encode.string) struct.search )
+        , ( "search_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (analysisSearchModeEncoder)) struct.searchMode )
         , ( "metadata_cc", (Json.Encode.list (Json.Encode.string)) struct.metadataCc )
         , ( "metadata_sender", (Json.Encode.list (Json.Encode.string)) struct.metadataSender )
         , ( "metadata_receiver", (Json.Encode.list (Json.Encode.string)) struct.metadataReceiver )
@@ -19382,6 +19406,38 @@ inboxMessagesSortByDecoder =
                 )
         ]
 
+analysisSearchModeDecoder : Json.Decode.Decoder AnalysisSearchMode
+analysisSearchModeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Fuzzy" ->
+                            Json.Decode.succeed Fuzzy
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Exact" ->
+                            Json.Decode.succeed Exact
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Substring" ->
+                            Json.Decode.succeed Substring
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 tagFilterOptionDecoder : Json.Decode.Decoder TagFilterOption
 tagFilterOptionDecoder =
     Json.Decode.oneOf
@@ -19464,6 +19520,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newest_first" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_callsigns" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keywords" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_searchres" (Json.Decode.nullable (Json.Decode.bool))))
@@ -19744,6 +19801,7 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_coords" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_presence" (Json.Decode.nullable (tagPresenceFilterDecoder))))
@@ -19945,6 +20003,7 @@ callsignsGraphReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nolimit" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_presence" (Json.Decode.nullable (tagPresenceFilterDecoder))))
@@ -20082,6 +20141,7 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_coords" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.list (Json.Decode.string))))

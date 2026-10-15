@@ -102,6 +102,7 @@ type Msg
     | OnlyWithMetadataChanged Bool
     | WithoutMetadataChanged Bool
     | WithoutNetworkChanged Bool
+    | SearchModeChanged B.AnalysisSearchMode
     | SearchDo
     | SearchInputKeyDown Int
     | SearchReset

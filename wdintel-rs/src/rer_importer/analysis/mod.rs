@@ -3415,12 +3415,27 @@ pub fn filter_search<Q>(q: Q, search: &Option<String>) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect,
 {
-    Ok(filter_search_with_correlated_terms(q, search, false).c(h!())?)
+    Ok(filter_search_with_mode(q, search, None).c(h!())?)
+}
+
+pub fn filter_search_with_mode<Q>(
+    q: Q,
+    search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect,
+{
+    Ok(
+        filter_search_with_correlated_terms(q, search, search_mode, false)
+            .c(h!())?,
+    )
 }
 
 pub(crate) fn filter_search_with_correlated_terms<Q>(
     q: Q,
     search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
     correlated_terms: bool,
 ) -> Result<Q, AppError>
 where
@@ -3429,11 +3444,12 @@ where
     let mut q2 = q;
     if let Some(ref search) = m_str_trim(search) {
         let search_parts = search::parse_search_parts(search).context(h!())?;
-        let predicate = if correlated_terms {
-            crate::attachments::search::correlated_message_filter(search)
-        } else {
-            crate::attachments::search::message_filter(search, "all")
-        }
+        let predicate = crate::attachments::search::message_filter_with_mode(
+            search,
+            "all",
+            search_mode,
+            correlated_terms,
+        )
         .c(h!())?;
         q2 = q2.filter(predicate);
 
@@ -4305,9 +4321,13 @@ fn build_summary_table_filtered_messages_query_with_access(
         .context(h!())?;
     let q =
         filter_selected_metadata_for_analysis_stats(q, req).context(h!())?;
-    let q =
-        filter_search_with_correlated_terms(q, &req.search, scope.is_some())
-            .context(h!())?;
+    let q = filter_search_with_correlated_terms(
+        q,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .context(h!())?;
     Ok(filter_selected_device_names(q, &req.selected_device_names)
         .context(h!())?)
 }
@@ -5315,10 +5335,11 @@ async fn correlated_freqs(
         "analysis correlated frequencies",
         analytics_count_request_supported(&req),
         |db| async move {
-            crate::attachments::analytics::ensure_search_coverage(
+            crate::attachments::analytics::ensure_search_coverage_with_mode(
                 &postgres_source_db,
                 &db,
                 &analytics_req.search,
+                analytics_req.search_mode,
                 freshness_max_age_ms,
             )
             .await
@@ -5745,7 +5766,12 @@ pub async fn edit_freq_unit_name(
     .context(h!())?;
     let rows_res =
         filter_selected_metadata_for_analysis_stats(rows_res, &reqan)?;
-    let rows_res = filter_search(rows_res, &req.search)?;
+    let rows_res = filter_search_with_mode(
+        rows_res,
+        &req.search,
+        req.analysis_stats_req.search_mode,
+    )
+    .c(h!())?;
     let rows_res =
         filter_selected_device_names(rows_res, &reqan.selected_device_names)?;
     // println!(
@@ -6150,10 +6176,11 @@ pub async fn bi_new_callsigns(
         "analysis new callsigns",
         analytics_supported,
         |db| async move {
-            crate::attachments::analytics::ensure_search_coverage(
+            crate::attachments::analytics::ensure_search_coverage_with_mode(
                 &env.dbx,
                 &db,
                 &analytics_req.search,
+                analytics_req.search_mode,
                 freshness_max_age_ms,
             )
             .await
@@ -6672,6 +6699,7 @@ fn build_new_callsign_filtered_items_query(
     let query = filter_search_with_correlated_terms(
         query,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .c(h!())?;
@@ -8588,6 +8616,16 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
     // through PostgreSQL so every panel describes the same message set.
     req.message_time_basis
         != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+        && analytics_text_search_supported(&req.search, req.search_mode)
+}
+
+fn analytics_text_search_supported(
+    search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
+) -> bool {
+    // Literal body predicates are not pushed down through the gateway JSON views.
+    search_mode.unwrap_or_default() == AnalysisSearchMode::Fuzzy
+        || m_str_trim(search).is_none()
 }
 
 fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
@@ -8623,8 +8661,9 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
-        || (req.load_latest == Some(true) && req.nolimit != Some(true))
+    analytics_text_search_supported(&req.search, req.search_mode)
+        && (!crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
+            || (req.load_latest == Some(true) && req.nolimit != Some(true)))
 }
 
 pub(crate) fn analytics_inbox_candidates_supported(

@@ -1912,6 +1912,7 @@ pub async fn callsigns_graph(
         or_with_coords: req.or_with_coords,
         or_without_coords: req.or_without_coords,
         search: req.search.clone(),
+        search_mode: req.search_mode,
         selected_tags: req.selected_tags.clone(),
         denied_tags: req.denied_tags.clone(),
         tag_presence: req.tag_presence,
