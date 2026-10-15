@@ -162,6 +162,7 @@ export type AnalysisMessagePageCursor = {
 
 export type AnalysisReloadOptions = {
   preserveMessagePage?: boolean;
+  messagePageIndex?: number;
   refreshMessageCounts?: boolean;
 };
 export type AnalysisSidebarTab =
@@ -246,17 +247,23 @@ export type AnalysisPageState = {
   messagesTotalCount: number | null;
   messagesTotalLoading: boolean;
   messages: Array<[number, InboxMessage]>;
+  firstLoadedMessageIndex: number;
+  hasMoreBeforeWindow: boolean;
+  hasMoreAfterWindow: boolean;
+  loadingBeforeWindow: boolean;
+  loadingAfterWindow: boolean;
   directMessageLoading: boolean;
   directMessageNavigation: AnalysisDirectMessageNavigation | null;
+  onLinkedMessageMounted: (messageId: number) => void;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
   newCallsigns: NewCallsignsRes;
   newCallsignsLoading: boolean;
   noMoreToLoad: boolean;
-  nolimitShown: boolean;
   pageIndex: number;
   messagePageNavigationTarget: number | null;
   messageViewportPreservationKey: number;
+  messageEdgeLoadRetryKey: number;
   messageViewportPreserving: boolean;
   visibleMessagesPageIndex: number;
   newestFirst: boolean;
@@ -316,12 +323,12 @@ export type AnalysisPageActions = {
   loadCallsignGraph: () => void;
   loadCorrelatedFreqs: () => void;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => void;
-  loadAllMessages: () => Promise<void>;
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   loadFirstPage: () => Promise<void>;
   loadLastPage: () => Promise<void>;
   loadNextPage: () => Promise<void>;
   loadMoreMessages: () => Promise<boolean>;
+  loadPreviousMessages: () => Promise<boolean>;
   loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   loadSettlementMessagesForMap: (

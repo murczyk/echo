@@ -1,25 +1,25 @@
-# Запис браузерної діагностики
+# Browser diagnostic recorder
 
-Інструмент записує до 60 секунд безпечних браузерних подій у поточній вкладці та формує Markdown-звіт для розробника або Codex. Він працює і в `Debug`, і в `Live` середовищах та не надсилає запис на backend.
+The recorder captures up to 60 seconds of privacy-safe browser events in the current tab and generates a Markdown report for a developer or Codex. It works in Debug and Live environments and does not send the recording to the backend.
 
-## Як записати проблему
+## Record a problem
 
-1. Натисніть іконку рупора в глобальному хедері вісім разів протягом чотирьох секунд.
-2. Переконайтеся, що з’явилася панель «Запис діагностики» з таймером `00:00 / 01:00`.
-3. Відтворіть проблему в цій вкладці. Повне перезавантаження сторінки продовжить той самий запис із початковим дедлайном.
-4. Натисніть «Завершити», щоб зупинити запис і завантажити файл. Після автоматичної зупинки на 60-й секунді натисніть «Завантажити»: браузер не дозволяє надійно починати download без дії користувача.
+1. Click the megaphone icon in the global header eight times within four seconds.
+2. Confirm that the diagnostic recording panel appears with a `00:00 / 01:00` timer.
+3. Reproduce the problem in this tab. A full page reload continues the same recording with its original deadline.
+4. Click Finish to stop and download the report. After automatic stopping at 60 seconds, click Download: browsers cannot reliably initiate a download without a user action.
 
-Файл має назву `echo-debug-YYYYMMDD-HHMMSS.md` і містить розділи `Metadata`, `Anomaly summary`, `Timeline` та `Capture status`. Додайте його до повідомлення або задачі для Codex разом із коротким описом того, що було видно на екрані та приблизно коли це сталося.
+The file is named `echo-debug-YYYYMMDD-HHMMSS.md` and contains `Metadata`, `Anomaly summary`, `Timeline`, and `Capture status`. Attach it to the report with a short description of what was visible and approximately when it occurred.
 
-## Приватність і життєвий цикл
+## Privacy and lifecycle
 
-Recorder не зчитує та не зберігає текст сторінки, значення полів, request/response body, headers, cookies, query/hash, clipboard, файли, медіа, інші ключі `localStorage` чи `sessionStorage`. URL зберігаються лише як очищені шаблони шляхів, а динамічні ID — як псевдоніми в межах одного запису.
+The recorder does not read or store page text, input values, request or response bodies, headers, cookies, query strings or fragments, clipboard contents, files, media, or other `localStorage` or `sessionStorage` keys. URLs are stored only as sanitized path patterns; dynamic IDs become aliases scoped to one recording.
 
-Активний запис зберігається тільки у власному ключі `sessionStorage` поточної вкладки. Logout або HTTP 401 очищає його негайно; готовий незавантажений запис видаляється через десять хвилин. Якщо `sessionStorage` недоступний, запис продовжується в пам’яті, але не переживе reload, а панель покаже попередження. Якщо download не вдався, звіт залишається готовим і кнопку можна натиснути повторно.
+An active recording uses only its own `sessionStorage` key in the current tab. Logout or HTTP 401 clears it immediately. A finished, undownloaded recording expires after ten minutes. If `sessionStorage` is unavailable, recording continues in memory but cannot survive a reload, and the panel shows a warning. If downloading fails, the report remains ready for another attempt.
 
-## Безпечні семантичні події
+## Safe semantic events
 
-Коли браузерних сигналів недостатньо, код фічі може додати структуровану подію через `recordDebugEvent`:
+When browser signals are insufficient, feature code can add a structured event through `recordDebugEvent`:
 
 ```ts
 recordDebugEvent({
@@ -29,6 +29,4 @@ recordDebugEvent({
 });
 ```
 
-Використовуйте лише ключі з allowlist та структурні числа, boolean або безпечні токени. Не передавайте тексти, URL, DOM-вміст, значення полів, headers/body чи сирі ID; для ідентифікаторів використовуйте `aliasDebugIdentifier`.
-
-Архітектура, повна модель подій і правила санітизації описані в [затвердженій специфікації](superpowers/specs/2026-10-08-browser-debug-recorder-design.md).
+Use only allowlisted keys and structural numbers, booleans, or safe tokens. Do not pass text, URLs, DOM content, input values, headers, bodies, or raw IDs. Use `aliasDebugIdentifier` for identifiers. The implementation and sanitizer live in `wdintel-web/src/ts/debug-recorder/`.

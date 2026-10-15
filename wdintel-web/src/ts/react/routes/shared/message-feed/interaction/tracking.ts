@@ -1,13 +1,23 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { recordDutyScrollDebugEvent } from './duty-scroll-debug';
+import { useFeedScrollDiagnostics } from '../internal/diagnostics';
 import {
   distanceToBottom,
   effectiveBottomLoadBufferPx,
   FLUSH_PENDING_SCROLL_IDLE_MS,
+  isAtPhysicalBottom,
   LOAD_NEWER_SCROLL_IDLE_MS,
-  type ScrollStateOpts,
-  type WindowedFeedScrollRefs,
-} from './windowed-feed-scroll-shared';
+} from '../internal/scroll-math';
+import type { ScrollStateOpts, WindowedFeedScrollRefs } from '../internal/internal.types';
+
+function edgeSkeletonVisible(scroller: HTMLElement, position: 'above' | 'below'): boolean | null {
+  const skeleton = scroller.querySelector<HTMLElement>(
+    `[data-message-feed-skeleton="${position}"]`,
+  );
+  if (!skeleton) return null;
+  const viewport = scroller.getBoundingClientRect();
+  const edge = skeleton.getBoundingClientRect();
+  return edge.bottom > viewport.top && edge.top < viewport.bottom;
+}
 
 function hasPendingAnchorLayoutChange(refs: WindowedFeedScrollRefs): boolean {
   const scroller = refs.scrollerRef.current;
@@ -28,6 +38,9 @@ export function useWindowedFeedScrollTracking(args: {
   hasReachedStart: boolean;
   unreadPrefetchNeeded: boolean;
   pendingNewerFlushNeeded: boolean;
+  immediateBelowLoad: boolean;
+  serializeEdgeLoads: boolean;
+  expandBelowLoadBuffer: boolean;
   captureAnchorSnapshot: () => void;
   publishDebugMetrics: (scroller: HTMLDivElement, previousScrollTop: number) => void;
   reportVisibleMessageIds: (atBottom: boolean) => void;
@@ -47,6 +60,9 @@ export function useWindowedFeedScrollTracking(args: {
     hasReachedStart,
     unreadPrefetchNeeded,
     pendingNewerFlushNeeded,
+    immediateBelowLoad,
+    serializeEdgeLoads,
+    expandBelowLoadBuffer,
     captureAnchorSnapshot,
     publishDebugMetrics,
     reportVisibleMessageIds,
@@ -54,6 +70,7 @@ export function useWindowedFeedScrollTracking(args: {
     clearFollowScroll,
   } = args;
 
+  const { event: recordScrollDebugEvent } = useFeedScrollDiagnostics(refs);
   const cancelPendingScrollProcessing = useCallback(() => {
     if (refs.handleScrollRafRef.current !== null) {
       cancelAnimationFrame(refs.handleScrollRafRef.current);
@@ -94,6 +111,10 @@ export function useWindowedFeedScrollTracking(args: {
         refs.loadNewerIdleTimeoutRef.current = null;
         if (!refs.enabledRef.current) return;
         if (refs.loadingNewerRef.current) return;
+        if (serializeEdgeLoads && refs.loadingOlderRef.current) {
+          refs.loadNewerTriggeredRef.current = false;
+          return;
+        }
         if (!refs.unreadPrefetchNeededRef.current) {
           refs.loadNewerTriggeredRef.current = false;
           return;
@@ -110,7 +131,7 @@ export function useWindowedFeedScrollTracking(args: {
           return;
         }
         captureAnchorSnapshot();
-        recordDutyScrollDebugEvent(
+        recordScrollDebugEvent(
           debugFeedId,
           'load-newer:idle-fire',
           `idleMs=${LOAD_NEWER_SCROLL_IDLE_MS}`,
@@ -122,7 +143,7 @@ export function useWindowedFeedScrollTracking(args: {
         LOAD_NEWER_SCROLL_IDLE_MS,
       );
     },
-    [cancelLoadNewerIdle, captureAnchorSnapshot, debugFeedId, refs],
+    [cancelLoadNewerIdle, captureAnchorSnapshot, debugFeedId, refs, serializeEdgeLoads],
   );
 
   const scheduleFlushPendingIdle = useCallback(() => {
@@ -142,7 +163,7 @@ export function useWindowedFeedScrollTracking(args: {
       const onFlushPendingNewer = refs.callbacksRef.current.onFlushPendingNewer;
       if (typeof onFlushPendingNewer !== 'function') return;
       captureAnchorSnapshot();
-      recordDutyScrollDebugEvent(
+      recordScrollDebugEvent(
         debugFeedId,
         'pending-newer:idle-flush',
         `idleMs=${FLUSH_PENDING_SCROLL_IDLE_MS}`,
@@ -160,7 +181,7 @@ export function useWindowedFeedScrollTracking(args: {
 
   const clearReportedScrollTrackingState = useCallback(
     (reason: 'disable' | 'unmount') => {
-      recordDutyScrollDebugEvent(
+      recordScrollDebugEvent(
         debugFeedId,
         reason === 'disable' ? 'tracking:disable' : 'tracking:unmount',
       );
@@ -195,16 +216,14 @@ export function useWindowedFeedScrollTracking(args: {
     (opts: ScrollStateOpts = {}) => {
       if (!refs.enabledRef.current) return;
       const scroller = refs.scrollerRef.current;
-      if (!scroller) return;
+      if (!scroller || scroller.clientHeight <= 0) return;
 
       const bottomDistance = distanceToBottom(scroller);
       const atBottom = bottomDistance <= atBottomThresholdPx;
-      const physicallyAtBottom = bottomDistance <= 1;
-      const bottomBufferPx = effectiveBottomLoadBufferPx(
-        scroller,
-        bottomLoadBufferPx,
-        unreadPrefetchNeeded,
-      );
+      const physicallyAtBottom = isAtPhysicalBottom(scroller);
+      const bottomBufferPx = expandBelowLoadBuffer
+        ? effectiveBottomLoadBufferPx(scroller, bottomLoadBufferPx, unreadPrefetchNeeded)
+        : bottomLoadBufferPx;
       const nearBottom = bottomDistance <= bottomBufferPx;
       const atTop = scroller.scrollTop <= 0;
       const wasAtBottom = refs.atBottomRef.current;
@@ -226,7 +245,7 @@ export function useWindowedFeedScrollTracking(args: {
         const wasPhysicallyAtBottom = refs.physicallyAtBottomRef.current;
         refs.physicallyAtBottomRef.current = physicallyAtBottom;
         refs.callbacksRef.current.onPhysicalBottomChange?.(physicallyAtBottom);
-        recordDutyScrollDebugEvent(
+        recordScrollDebugEvent(
           debugFeedId,
           'state:physical-bottom',
           `${wasPhysicallyAtBottom ?? '—'}→${physicallyAtBottom}; distance=${bottomDistance.toFixed(1)}`,
@@ -243,7 +262,7 @@ export function useWindowedFeedScrollTracking(args: {
             refs.liveBottomFollowRef.current = shouldFollow;
             refs.preserveBottomAnchorRef.current =
               !shouldFollow && opts.navigationIntent === undefined;
-            recordDutyScrollDebugEvent(
+            recordScrollDebugEvent(
               debugFeedId,
               shouldFollow ? 'follow:enable' : 'follow:blocked',
               `physical bottom reached; returned=${refs.hasSeenNotAtBottomRef.current}`,
@@ -258,7 +277,7 @@ export function useWindowedFeedScrollTracking(args: {
         const previousNearBottom = refs.nearBottomRef.current;
         refs.nearBottomRef.current = nearBottom;
         onNearBottomChange?.(nearBottom);
-        recordDutyScrollDebugEvent(
+        recordScrollDebugEvent(
           debugFeedId,
           'state:near-bottom',
           `${previousNearBottom ?? '—'}→${nearBottom}; distance=${bottomDistance.toFixed(1)}; buffer=${bottomBufferPx}`,
@@ -272,7 +291,7 @@ export function useWindowedFeedScrollTracking(args: {
       if (wasAtBottom !== atBottom) {
         refs.atBottomRef.current = atBottom;
         onAtBottomChange?.(atBottom);
-        recordDutyScrollDebugEvent(
+        recordScrollDebugEvent(
           debugFeedId,
           'state:at-bottom',
           `${wasAtBottom ?? '—'}→${atBottom}; distance=${bottomDistance.toFixed(1)}; threshold=${atBottomThresholdPx}`,
@@ -283,7 +302,7 @@ export function useWindowedFeedScrollTracking(args: {
         const scrolledUp = currentScrollTop < prevScrollTop - 1;
         if (scrolledUp) {
           refs.liveBottomFollowRef.current = false;
-          recordDutyScrollDebugEvent(
+          recordScrollDebugEvent(
             debugFeedId,
             'follow:disable',
             `upward scroll ${prevScrollTop.toFixed(1)}→${currentScrollTop.toFixed(1)}`,
@@ -299,37 +318,62 @@ export function useWindowedFeedScrollTracking(args: {
 
       reportVisibleMessageIds(atBottom);
 
+      const aboveSkeletonVisible = edgeSkeletonVisible(scroller, 'above');
+      const belowSkeletonVisible = edgeSkeletonVisible(scroller, 'below');
+      const reachedAbove = aboveSkeletonVisible ?? scroller.scrollTop <= topLoadBufferPx;
+      const reachedBelow = belowSkeletonVisible ?? nearBottom;
+      const bothEdgesVisible =
+        serializeEdgeLoads &&
+        reachedAbove &&
+        !hasReachedStart &&
+        reachedBelow &&
+        unreadPrefetchNeeded &&
+        typeof onLoadNewer === 'function';
+      const scrollDelta = currentScrollTop - prevScrollTop;
+      let requestedOlder = false;
       if (opts.allowLoadOlder !== false) {
         const shouldLoadOlder =
-          scroller.scrollTop <= topLoadBufferPx && !loadingOlder && !hasReachedStart;
+          reachedAbove &&
+          (!bothEdgesVisible || scrollDelta < -1) &&
+          !loadingOlder &&
+          (!serializeEdgeLoads || !loadingNewer) &&
+          !hasReachedStart;
         if (shouldLoadOlder && !refs.loadOlderTriggeredRef.current) {
           refs.loadOlderTriggeredRef.current = true;
+          requestedOlder = true;
+          if (serializeEdgeLoads) cancelLoadNewerIdle();
           captureAnchorSnapshot();
-          recordDutyScrollDebugEvent(
+          recordScrollDebugEvent(
             debugFeedId,
             'load-older:trigger',
             `scrollTop=${scroller.scrollTop.toFixed(1)}; buffer=${topLoadBufferPx}`,
           );
           onLoadOlder();
-        } else if (scroller.scrollTop > topLoadBufferPx) {
+        } else if (!reachedAbove) {
           refs.loadOlderTriggeredRef.current = false;
         }
       }
 
       if (opts.allowLoadNewer !== false) {
         const shouldLoadNewer =
-          nearBottom && unreadPrefetchNeeded && !loadingNewer && typeof onLoadNewer === 'function';
+          reachedBelow &&
+          (!bothEdgesVisible || scrollDelta > 1) &&
+          unreadPrefetchNeeded &&
+          (!serializeEdgeLoads || !loadingOlder) &&
+          !loadingNewer &&
+          (!serializeEdgeLoads || !requestedOlder) &&
+          typeof onLoadNewer === 'function';
         if (shouldLoadNewer && !refs.loadNewerTriggeredRef.current) {
           refs.loadNewerTriggeredRef.current = true;
           captureAnchorSnapshot();
-          recordDutyScrollDebugEvent(
+          recordScrollDebugEvent(
             debugFeedId,
             'load-newer:trigger',
             `distance=${bottomDistance.toFixed(1)}; buffer=${bottomBufferPx}; physical=${physicallyAtBottom}; prefetch=${unreadPrefetchNeeded}; idle=${!physicallyAtBottom}`,
           );
-          // At the physical end, load immediately. Otherwise wait for scroll idle so a
-          // mid-fling newer commit does not freeze the main thread / teleport the viewport.
-          if (physicallyAtBottom) {
+          // A visible edge skeleton or the physical end loads immediately. Otherwise
+          // wait for scroll idle so a mid-fling commit does not teleport the viewport.
+          if (belowSkeletonVisible || physicallyAtBottom || immediateBelowLoad) {
             cancelLoadNewerIdle();
             onLoadNewer();
           } else {
@@ -338,7 +382,7 @@ export function useWindowedFeedScrollTracking(args: {
         } else if (shouldLoadNewer && refs.loadNewerIdleTimeoutRef.current != null) {
           // Still scrolling in the zone — keep deferring until idle.
           scheduleLoadNewerIdle(onLoadNewer);
-        } else if (!nearBottom || !unreadPrefetchNeeded) {
+        } else if (!reachedBelow || !unreadPrefetchNeeded) {
           cancelLoadNewerIdle();
           refs.loadNewerTriggeredRef.current = false;
         }
@@ -357,7 +401,7 @@ export function useWindowedFeedScrollTracking(args: {
         if (physicallyAtBottom) {
           cancelFlushPendingIdle();
           captureAnchorSnapshot();
-          recordDutyScrollDebugEvent(debugFeedId, 'pending-newer:physical-flush', '');
+          recordScrollDebugEvent(debugFeedId, 'pending-newer:physical-flush', '');
           refs.callbacksRef.current.onFlushPendingNewer?.({
             physicallyAtBottom: true,
             visibleAnchorIds:
@@ -393,6 +437,9 @@ export function useWindowedFeedScrollTracking(args: {
       stopBottomSettle,
       topLoadBufferPx,
       unreadPrefetchNeeded,
+      immediateBelowLoad,
+      serializeEdgeLoads,
+      expandBelowLoadBuffer,
     ],
   );
 
@@ -410,10 +457,10 @@ export function useWindowedFeedScrollTracking(args: {
       return;
     }
     if (!refs.enabledRef.current) return;
-    refs.loadNewerTriggeredRef.current = false;
     // Only re-evaluate when prefetch becomes needed again — not on the initial mount
     // (initial bottom pin intentionally suppresses load-newer).
     if (!wasNeeded) {
+      refs.loadNewerTriggeredRef.current = false;
       updateScrollState({ allowLoadOlder: false, allowTopReached: false });
     }
   }, [cancelLoadNewerIdle, refs, unreadPrefetchNeeded, updateScrollState]);

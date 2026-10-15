@@ -16,6 +16,7 @@ import {
   buildAnalysisReq,
   buildInboxReq,
   ANALYSIS_MESSAGES_PAGE_SIZE,
+  ANALYSIS_MESSAGE_WINDOW_LIMIT,
   createInitialQueryState,
   createResetQueryState,
   adjustQueryDateRangeForDirectMessage,
@@ -31,9 +32,13 @@ import {
   parseMessageUidFromWindow,
   removeMessageUidFromWindowUrl,
   writeMessagesPageIndexToWindowUrl,
-  getFirstLoadedMessagesPageIndex,
 } from './helpers';
-import { fetchInboxItemContext, fetchInboxWindow } from '../../services/api/inbox-messages';
+import { fetchInboxWindow } from '../../services/api/inbox-messages';
+import {
+  createMessageNavigationController,
+  messageNavigationErrorText,
+  type MessageNavigationController,
+} from '../shared/message-navigation';
 import type {
   AnalysisCallsignFrequencyMatchesRsp,
   InboxMessage,
@@ -50,6 +55,7 @@ import { uniquePointEtalonsForMapSearch } from '../rer-duty-neo/utils';
 import { getAnalysisSidebarTabs, type AnalysisCenterTab, type AnalysisSidebarTab } from './types';
 import { fetchAnalysisCallsignFrequencyMatches } from '../../services/api/analysis';
 import { toErrorMessage } from './use-analysis-data.shared';
+import { mergeMessageWindow } from '../shared/message-feed/windowing';
 
 function initState(
   parsedQueryState: AnalysisQueryState,
@@ -98,6 +104,20 @@ function inboxWindowMatchesMessages(
   if (inboxWindow.inbox.inboxItems.length !== messages.length) return false;
   const messageIds = new Set(messages.map(([messageId]) => messageId));
   return inboxWindow.inbox.inboxItems.every(([messageId]) => messageIds.has(messageId));
+}
+
+function boundFocusedInboxWindow(inboxWindow: InboxWindowRsp): InboxWindowRsp {
+  const inboxItems = inboxWindow.inbox.inboxItems;
+  if (inboxItems.length <= ANALYSIS_MESSAGE_WINDOW_LIMIT) return inboxWindow;
+  const bounded = mergeMessageWindow([], inboxItems, 'below', {
+    limit: ANALYSIS_MESSAGE_WINDOW_LIMIT,
+    getId: ([id]) => id,
+  });
+  return {
+    ...inboxWindow,
+    inbox: { ...inboxWindow.inbox, inboxItems: bounded.items },
+    hasMoreBefore: inboxWindow.hasMoreBefore || bounded.removedItems.length > 0,
+  };
 }
 
 type DeviceAccess =
@@ -158,6 +178,7 @@ export function useRerAnalysisNeoPage(
     null,
   );
   const [messageViewportPreservationKey, setMessageViewportPreservationKey] = useState(0);
+  const [messageEdgeLoadRetryKey, setMessageEdgeLoadRetryKey] = useState(0);
   const [messageViewportPreserving, setMessageViewportPreserving] = useState(false);
   const messageViewportPreservationRequestRef = useRef(0);
   const messageViewportCaptureRef = useRef<(() => void) | null>(null);
@@ -203,9 +224,17 @@ export function useRerAnalysisNeoPage(
     targetMessageUid !== null,
   );
   const targetMessageLoadedRef = useRef(false);
-  const targetMessageRequestRef = useRef(0);
+  const targetMessageControllerRef = useRef<MessageNavigationController | null>(null);
+  const pendingLinkedMessageLandingRef = useRef<{
+    messageId: number;
+    resolve: (landed: boolean) => void;
+  } | null>(null);
   const targetMessageIdRef = useRef<number | null>(null);
   const targetMessageContextSawReloadRef = useRef(false);
+  const dataMessagesRef = useRef<Array<[number, InboxMessage]> | null>(null);
+  const targetMessageContextPreviousMessagesRef = useRef<Array<[number, InboxMessage]> | null>(
+    null,
+  );
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
   const dutySettings = useDutySettings();
@@ -355,12 +384,10 @@ export function useRerAnalysisNeoPage(
     ) {
       return;
     }
-    let cancelled = false;
-    const requestId = ++targetMessageRequestRef.current;
-    const isCurrentRequest = () => !cancelled && requestId === targetMessageRequestRef.current;
     const isContextRefresh = targetMessageLoadedRef.current;
     if (isContextRefresh) {
       targetMessageContextSawReloadRef.current = false;
+      targetMessageContextPreviousMessagesRef.current = dataMessagesRef.current;
       setTargetMessageContextLoading(true);
       setTargetMessageContextResponsePending(true);
     } else {
@@ -387,58 +414,99 @@ export function useRerAnalysisNeoPage(
     const restorePeriod = () => {
       if (periodAdjusted) publishPeriod(requestQueryState);
     };
-    void fetchInboxItemContext({ messageUid: targetMessageUid })
-      .then((context) => {
-        if (!isCurrentRequest() || context.message == null) return null;
-        const next = adjustQueryDateRangeForDirectMessage(requestQueryState, context.message[1]);
-        periodAdjusted = next !== requestQueryState;
-        if (periodAdjusted) publishPeriod(next);
-        return fetchInboxWindow({
-          messageRef: targetMessageUid,
-          inboxReq: buildInboxReq(next, [], true),
-        });
-      })
-      .then((res) => {
-        if (!isCurrentRequest()) return;
-        if (res == null) {
+    const navigation = createMessageNavigationController<{
+      targetMessageId: number;
+      window: InboxWindowRsp;
+    }>(
+      () => ({
+        materialize: async (context, signal) => {
+          const next = adjustQueryDateRangeForDirectMessage(requestQueryState, context.message![1]);
+          periodAdjusted = next !== requestQueryState;
+          if (periodAdjusted) publishPeriod(next);
+          try {
+            const window = await fetchInboxWindow(
+              { messageRef: targetMessageUid, inboxReq: buildInboxReq(next, [], true) },
+              { signal },
+            );
+            if (signal.aborted) return null;
+            if (
+              window == null ||
+              !window.inbox.inboxItems.some(([messageId]) => messageId === window.targetMessageId)
+            ) {
+              restorePeriod();
+              return null;
+            }
+            setDirectMessageError(null);
+            targetMessageLoadedRef.current = true;
+            targetMessageIdRef.current = window.targetMessageId;
+            setTargetMessageWindow(boundFocusedInboxWindow(window));
+            setTargetMessageContextResponsePending(false);
+            return { targetMessageId: window.targetMessageId, window };
+          } catch (error) {
+            if (!signal.aborted) restorePeriod();
+            throw error;
+          } finally {
+            if (!signal.aborted) setTargetMessageLoading(false);
+          }
+        },
+        land: ({ targetMessageId }, signal) =>
+          new Promise<boolean>((resolve) => {
+            if (signal.aborted) {
+              resolve(false);
+              return;
+            }
+            const onAbort = () => {
+              if (pendingLinkedMessageLandingRef.current?.messageId === targetMessageId) {
+                pendingLinkedMessageLandingRef.current = null;
+              }
+              resolve(false);
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+            pendingLinkedMessageLandingRef.current = {
+              messageId: targetMessageId,
+              resolve: (landed) => {
+                signal.removeEventListener('abort', onAbort);
+                pendingLinkedMessageLandingRef.current = null;
+                resolve(landed);
+              },
+            };
+          }),
+        invalidateNavigation: () => {
+          pendingLinkedMessageLandingRef.current?.resolve(false);
+          pendingLinkedMessageLandingRef.current = null;
+        },
+      }),
+      (outcome) => {
+        if (outcome.status === 'unavailable' || outcome.status === 'landing-error') {
           restorePeriod();
           if (isContextRefresh) {
             setTargetMessageWindow(null);
-            setTargetMessageContextActive(false);
             setTargetMessageFocusActive(false);
             removeMessageUidFromWindowUrl();
-          } else {
-            setTargetMessageContextActive(false);
-            setDirectMessageError('Повідомлення за посиланням не знайдено або воно недоступне.');
           }
-          if (!isContextRefresh) setTargetMessageContextLoading(false);
-          setTargetMessageContextResponsePending(false);
-          return;
-        }
-        setDirectMessageError(null);
-        targetMessageLoadedRef.current = true;
-        targetMessageIdRef.current = res.targetMessageId;
-        setTargetMessageWindow(res);
-        if (isContextRefresh) setTargetMessageContextResponsePending(false);
-      })
-      .catch((err) => {
-        if (!isCurrentRequest()) return;
-        restorePeriod();
-        if (!targetMessageLoadedRef.current) {
+          setTargetMessageContextActive(false);
+        } else if (outcome.status === 'load-error' && !isContextRefresh) {
           setTargetMessageContextActive(false);
         }
-        targetMessageContextSawReloadRef.current = false;
-        setTargetMessageContextLoading(false);
-        setTargetMessageContextResponsePending(false);
-        setDirectMessageError(
-          `Не вдалося відкрити повідомлення за посиланням: ${toErrorMessage(err)}`,
-        );
-      })
-      .finally(() => {
-        if (isCurrentRequest()) setTargetMessageLoading(false);
-      });
+        if (outcome.status !== 'focused') {
+          targetMessageContextSawReloadRef.current = false;
+          if (!isContextRefresh || outcome.status === 'load-error') {
+            setTargetMessageContextLoading(false);
+          }
+          setTargetMessageContextResponsePending(false);
+        }
+        setTargetMessageLoading(false);
+        if (!isContextRefresh || outcome.status === 'load-error') {
+          setDirectMessageError(messageNavigationErrorText(outcome));
+        }
+      },
+    );
+    targetMessageControllerRef.current = navigation;
+    void navigation.navigate(targetMessageUid);
     return () => {
-      cancelled = true;
+      navigation.cancel();
+      if (targetMessageControllerRef.current === navigation)
+        targetMessageControllerRef.current = null;
     };
   }, [
     directMessageDefaultsPending,
@@ -450,18 +518,25 @@ export function useRerAnalysisNeoPage(
   ]);
 
   const clearTargetMessageFocus = useCallback(() => {
+    targetMessageControllerRef.current?.cancel();
     setTargetMessageFocusActive(false);
     removeMessageUidFromWindowUrl();
   }, []);
 
   const clearTargetMessageContext = useCallback(() => {
-    targetMessageRequestRef.current += 1;
+    targetMessageControllerRef.current?.cancel();
     setTargetMessageContextActive(false);
     setTargetMessageLoading(false);
     setTargetMessageContextLoading(false);
     setTargetMessageContextResponsePending(false);
     clearTargetMessageFocus();
   }, [clearTargetMessageFocus]);
+
+  const onLinkedMessageMounted = useCallback((messageId: number) => {
+    if (pendingLinkedMessageLandingRef.current?.messageId === messageId) {
+      pendingLinkedMessageLandingRef.current.resolve(true);
+    }
+  }, []);
 
   useEffect(() => {
     const nextBoundary = {
@@ -516,29 +591,40 @@ export function useRerAnalysisNeoPage(
     queryState: effectiveQueryState,
     hideNetworks,
   });
+  dataMessagesRef.current = data.messages;
   const reload = useCallback(
     (options: Parameters<typeof data.reload>[0] = {}) => {
       const requestId = messageViewportPreservationRequestRef.current + 1;
       messageViewportPreservationRequestRef.current = requestId;
-      if (options.preserveMessagePage !== true) {
+      const preserveMessagePage = options.preserveMessagePage === true;
+      if (!preserveMessagePage) {
         setMessageViewportPreserving(false);
-        data.reload(options);
-        return;
+      } else {
+        messageViewportCaptureRef.current?.();
+        setMessageViewportPreserving(true);
+        setMessageViewportPreservationKey((current) => current + 1);
       }
-      messageViewportCaptureRef.current?.();
-      setMessageViewportPreserving(true);
-      setMessageViewportPreservationKey((current) => current + 1);
-      void Promise.resolve(data.reload(options)).finally(() => {
+      const reloadOptions = preserveMessagePage
+        ? { ...options, messagePageIndex: visibleMessagesPageIndex }
+        : options;
+      void Promise.resolve(data.reload(reloadOptions)).finally(() => {
         if (messageViewportPreservationRequestRef.current === requestId) {
-          setMessageViewportPreserving(false);
+          if (preserveMessagePage) setMessageViewportPreserving(false);
+          setMessageEdgeLoadRetryKey((current) => current + 1);
         }
       });
     },
-    [data.reload],
+    [data.reload, visibleMessagesPageIndex],
   );
-  const firstLoadedMessagesPageIndex = getFirstLoadedMessagesPageIndex(
-    data.pageIndex,
-    data.messages.length,
+  const isPageStartLoaded = useCallback(
+    (targetPageIndex: number) => {
+      const targetMessageIndex = targetPageIndex * ANALYSIS_MESSAGES_PAGE_SIZE;
+      return (
+        targetMessageIndex >= data.firstLoadedMessageIndex &&
+        targetMessageIndex < data.firstLoadedMessageIndex + data.messages.length
+      );
+    },
+    [data.firstLoadedMessageIndex, data.messages.length],
   );
   const requestLoadedMessagesPage = useCallback(
     (pageIndex: number) => {
@@ -599,12 +685,8 @@ export function useRerAnalysisNeoPage(
   const loadDirectAdjacentPage = useCallback(
     async (targetPageIndex: number) => {
       if (!targetMessageContextActive || directTargetMessageIndex == null) return false;
-      const targetLocalIndex = data.messages.findIndex(
-        ([messageId]) => messageId === targetMessageWindow?.targetMessageId,
-      );
-      if (targetLocalIndex < 0) return false;
       clearTargetMessageFocus();
-      const firstLoadedMessageIndex = directTargetMessageIndex - targetLocalIndex;
+      const firstLoadedMessageIndex = data.firstLoadedMessageIndex;
       const lastLoadedMessageIndex = firstLoadedMessageIndex + data.messages.length - 1;
       const targetMessageIndex = targetPageIndex * ANALYSIS_MESSAGES_PAGE_SIZE;
       if (
@@ -630,28 +712,23 @@ export function useRerAnalysisNeoPage(
     [
       data.loadFocusedEarlier,
       data.loadFocusedLater,
-      data.messages,
+      data.firstLoadedMessageIndex,
+      data.messages.length,
       clearTargetMessageFocus,
       directTargetMessageIndex,
       newestFirst,
       requestLoadedMessagesPage,
       targetMessageContextActive,
-      targetMessageWindow?.targetMessageId,
     ],
   );
   const loadFirstPage = useCallback(async () => {
     if (visibleMessagesPageIndex === 0) return;
-    if (firstLoadedMessagesPageIndex === 0) {
+    if (isPageStartLoaded(0)) {
       requestLoadedMessagesPage(0);
       return;
     }
-    await data.loadFirstPage();
-  }, [
-    data.loadFirstPage,
-    firstLoadedMessagesPageIndex,
-    requestLoadedMessagesPage,
-    visibleMessagesPageIndex,
-  ]);
+    if (await data.loadFirstPage()) requestLoadedMessagesPage(0);
+  }, [data.loadFirstPage, isPageStartLoaded, requestLoadedMessagesPage, visibleMessagesPageIndex]);
   const loadLastPage = useCallback(async () => {
     if (data.messagesTotalCount == null || data.messagesTotalCount === 0) return;
     const lastPageIndex = Math.max(
@@ -659,16 +736,15 @@ export function useRerAnalysisNeoPage(
       Math.ceil(data.messagesTotalCount / ANALYSIS_MESSAGES_PAGE_SIZE) - 1,
     );
     if (visibleMessagesPageIndex === lastPageIndex) return;
-    if (lastPageIndex >= firstLoadedMessagesPageIndex && lastPageIndex <= data.pageIndex) {
+    if (isPageStartLoaded(lastPageIndex)) {
       requestLoadedMessagesPage(lastPageIndex);
       return;
     }
-    await data.loadLastPage();
+    if (await data.loadLastPage()) requestLoadedMessagesPage(lastPageIndex);
   }, [
     data.loadLastPage,
     data.messagesTotalCount,
-    data.pageIndex,
-    firstLoadedMessagesPageIndex,
+    isPageStartLoaded,
     requestLoadedMessagesPage,
     visibleMessagesPageIndex,
   ]);
@@ -678,14 +754,14 @@ export function useRerAnalysisNeoPage(
       await loadDirectAdjacentPage(targetPageIndex);
       return;
     }
-    if (targetPageIndex <= data.pageIndex) {
+    if (isPageStartLoaded(targetPageIndex)) {
       requestLoadedMessagesPage(targetPageIndex);
       return;
     }
-    await data.loadNextPage();
+    if (await data.loadNextPage()) requestLoadedMessagesPage(targetPageIndex);
   }, [
     data.loadNextPage,
-    data.pageIndex,
+    isPageStartLoaded,
     loadDirectAdjacentPage,
     requestLoadedMessagesPage,
     targetMessageContextActive,
@@ -698,14 +774,14 @@ export function useRerAnalysisNeoPage(
       await loadDirectAdjacentPage(targetPageIndex);
       return;
     }
-    if (targetPageIndex >= firstLoadedMessagesPageIndex) {
+    if (isPageStartLoaded(targetPageIndex)) {
       requestLoadedMessagesPage(targetPageIndex);
       return;
     }
-    await data.loadPrevPage(targetPageIndex);
+    if (await data.loadPrevPage(targetPageIndex)) requestLoadedMessagesPage(targetPageIndex);
   }, [
     data.loadPrevPage,
-    firstLoadedMessagesPageIndex,
+    isPageStartLoaded,
     loadDirectAdjacentPage,
     requestLoadedMessagesPage,
     targetMessageContextActive,
@@ -1134,6 +1210,16 @@ export function useRerAnalysisNeoPage(
     if (!targetMessageContextLoading || targetMessageContextResponsePending) return;
 
     if (targetMessageContextActive) {
+      if (data.messagesLoading) {
+        targetMessageContextSawReloadRef.current = true;
+        return;
+      }
+      if (
+        !targetMessageContextSawReloadRef.current &&
+        data.messages === targetMessageContextPreviousMessagesRef.current
+      ) {
+        return;
+      }
       if (
         targetMessageWindow == null ||
         !inboxWindowMatchesMessages(targetMessageWindow, data.messages)
@@ -1274,17 +1360,23 @@ export function useRerAnalysisNeoPage(
       directMessageNavigation == null ? data.messagesTotalLoading : targetMessageContextLoading,
     messageComments: data.messageComments,
     messages: data.messages,
+    firstLoadedMessageIndex: data.firstLoadedMessageIndex,
+    hasMoreBeforeWindow: data.hasMoreBeforeWindow,
+    hasMoreAfterWindow: data.hasMoreAfterWindow,
+    loadingBeforeWindow: data.loadingBeforeWindow,
+    loadingAfterWindow: data.loadingAfterWindow,
     directMessageLoading,
     directMessageNavigation,
+    onLinkedMessageMounted,
     networkDisplayMap: data.networkDisplayMap,
     networks: data.networks,
     newCallsigns: data.newCallsigns,
     newCallsignsLoading: data.newCallsignsLoading,
     noMoreToLoad: data.noMoreToLoad,
-    nolimitShown: data.nolimitShown,
     pageIndex: data.pageIndex,
     messagePageNavigationTarget,
     messageViewportPreservationKey,
+    messageEdgeLoadRetryKey,
     messageViewportPreserving,
     visibleMessagesPageIndex,
     newestFirst,
@@ -1342,7 +1434,6 @@ export function useRerAnalysisNeoPage(
     renameExistingSavedFilter: savedFilters.renameExisting,
     findCallsignFrequencyMatches,
     loadCallsignGraph: data.loadCallsignGraph,
-    loadAllMessages: data.loadAllMessages,
     loadFilterSection: data.loadFilterSection,
     loadCorrelatedFreqs: data.loadCorrelatedFreqs,
     loadGroupsActivity: data.loadGroupsActivity,
@@ -1351,6 +1442,7 @@ export function useRerAnalysisNeoPage(
     loadLastPage,
     loadNextPage,
     loadMoreMessages: data.loadMoreMessages,
+    loadPreviousMessages: data.loadPreviousMessages,
     loadPrevPage,
     loadMessagesForMap: data.loadMessagesForMap,
     loadSettlementMessagesForMap: data.loadSettlementMessagesForMap,

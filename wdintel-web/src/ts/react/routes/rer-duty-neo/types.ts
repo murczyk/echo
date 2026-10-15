@@ -15,7 +15,7 @@ import type { MessageCardBotTagAction } from '../shared/message-card/message-car
 import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
 import type { DutyWorkspaceFabAvoidance } from './duty-scroll-fab-position';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
-import type { AnchorSnapshot, ReachedBottomContext } from './windowed-feed-scroll-shared';
+import type { AnchorSnapshot, ReachedBottomContext } from '../shared/message-feed';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 
 export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' | 'exhausted';
@@ -36,6 +36,8 @@ export type FeedColumnModel = {
     initialPositioningReady?: boolean;
     scrollTrackingEnabled?: boolean;
     loadingNewer?: boolean;
+    editorHighlightedMessageId?: number | null;
+    explicitNavigationLoading?: boolean;
     arrowResultMessage?: string | null;
     bottomUnreadCount?: number;
     physicallyAtBottom?: boolean;
@@ -101,7 +103,7 @@ export type FeedColumnModel = {
       etalonDisplayModel: MessageCardEtalonDisplayModel,
       focusTarget: HTMLElement,
     ) => void;
-    onMessageEditReport: (reportId: number) => void;
+    onMessageEditReport: (reportId: number, sourceMessageId: number) => void;
     onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
     onMessageToggleTag: (msgId: number, tagId: number) => void;
     onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;

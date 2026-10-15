@@ -1,25 +1,25 @@
 /** Scroll behavior for following the live tail when new messages arrive. */
-export function getDutyFollowScrollBehavior(): ScrollBehavior {
+export function getFeedFollowScrollBehavior(): ScrollBehavior {
   if (typeof window === 'undefined') return 'auto';
   return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ? 'auto' : 'smooth';
 }
 
 /** Duration of the manual follow ease (Chrome does not animate scrollTop via CSS). */
-export const DUTY_SMOOTH_FOLLOW_MS = 450;
+export const FEED_SMOOTH_FOLLOW_MS = 450;
 
 /** Same scrollHeight for this many frames before we follow-scroll (cards still laying out). */
-export const DUTY_FOLLOW_LAYOUT_STABLE_FRAMES = 3;
+export const FEED_FOLLOW_LAYOUT_STABLE_FRAMES = 3;
 
 /** Cap how long we wait for layout to settle before forcing the follow scroll. */
-export const DUTY_FOLLOW_LAYOUT_STABLE_MAX_MS = 450;
+export const FEED_FOLLOW_LAYOUT_STABLE_MAX_MS = 450;
 
 /** Ease-out cubic for follow-tail animation. */
-export function dutyFollowEaseOutCubic(t: number): number {
+export function feedFollowEaseOutCubic(t: number): number {
   const x = Math.min(1, Math.max(0, t));
   return 1 - (1 - x) ** 3;
 }
 
-export type DutyFollowScrollFrameArgs = {
+export type FeedFollowScrollFrameArgs = {
   startedAtMs: number;
   nowMs: number;
   fromScrollTop: number;
@@ -32,7 +32,7 @@ export type DutyFollowScrollFrameArgs = {
   lastMaxScrollTop?: number;
 };
 
-export type DutyFollowScrollFrameResult = {
+export type FeedFollowScrollFrameResult = {
   scrollTop: number;
   done: boolean;
   fromScrollTop: number;
@@ -46,13 +46,13 @@ export type DutyFollowScrollFrameResult = {
  * from the current scroll position over the remaining duration so new distance is not
  * applied retroactively via the original from×absolute-t lerp.
  */
-export function dutyFollowScrollFrame(
-  args: DutyFollowScrollFrameArgs,
-): DutyFollowScrollFrameResult {
+export function feedFollowScrollFrame(
+  args: FeedFollowScrollFrameArgs,
+): FeedFollowScrollFrameResult {
   const maxScrollTop = Math.max(0, args.scrollHeight - args.clientHeight);
   let fromScrollTop = args.fromScrollTop;
   let startedAtMs = args.startedAtMs;
-  let durationMs = args.durationMs ?? DUTY_SMOOTH_FOLLOW_MS;
+  let durationMs = args.durationMs ?? FEED_SMOOTH_FOLLOW_MS;
 
   if (
     args.currentScrollTop != null &&
@@ -77,7 +77,7 @@ export function dutyFollowScrollFrame(
       maxScrollTop,
     };
   }
-  const t = dutyFollowEaseOutCubic(elapsed / durationMs);
+  const t = feedFollowEaseOutCubic(elapsed / durationMs);
   return {
     scrollTop: fromScrollTop + (maxScrollTop - fromScrollTop) * t,
     done: false,

@@ -1,22 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { recordDutyScrollDebugEvent } from './duty-scroll-debug';
+import { useFeedScrollDiagnostics } from '../internal/diagnostics';
 import {
-  DUTY_FOLLOW_LAYOUT_STABLE_FRAMES,
-  DUTY_FOLLOW_LAYOUT_STABLE_MAX_MS,
-  DUTY_SMOOTH_FOLLOW_MS,
-  dutyFollowScrollFrame,
-  getDutyFollowScrollBehavior,
-} from './duty-follow-scroll';
+  FEED_FOLLOW_LAYOUT_STABLE_FRAMES,
+  FEED_FOLLOW_LAYOUT_STABLE_MAX_MS,
+  FEED_SMOOTH_FOLLOW_MS,
+  feedFollowScrollFrame,
+  getFeedFollowScrollBehavior,
+} from './follow-scroll';
 import {
   distanceToBottom,
   INITIAL_BOTTOM_SETTLE_FRAMES,
   INITIAL_BOTTOM_SETTLE_TIMEOUT_MS,
+  isAtPhysicalBottom,
   nowMs,
-  ScrollNavigationIntent,
-  type ExplicitScrollNavigation,
-  type ScrollStateOpts,
-  type WindowedFeedScrollRefs,
-} from './windowed-feed-scroll-shared';
+} from '../internal/scroll-math';
+import type { ScrollStateOpts, WindowedFeedScrollRefs } from '../internal/internal.types';
+import { ScrollNavigationIntent, type ExplicitScrollNavigation } from '../message-feed.types';
 
 export function useWindowedFeedScrollFollow(args: {
   refs: WindowedFeedScrollRefs;
@@ -25,6 +24,7 @@ export function useWindowedFeedScrollFollow(args: {
   updateScrollState: (opts?: ScrollStateOpts) => void;
 }) {
   const { refs, debugFeedId, captureAnchorSnapshot, updateScrollState } = args;
+  const { event: recordScrollDebugEvent } = useFeedScrollDiagnostics(refs);
   const explicitNavigationRef = useRef<ExplicitScrollNavigation | null>(null);
 
   const isOwnedExplicitNavigation = useCallback((navigation: ExplicitScrollNavigation) => {
@@ -62,7 +62,7 @@ export function useWindowedFeedScrollFollow(args: {
     }
     refs.bottomSettleResizeObserverRef.current?.disconnect();
     refs.bottomSettleResizeObserverRef.current = null;
-    if (wasActive) recordDutyScrollDebugEvent(debugFeedId, 'settle:stop');
+    if (wasActive) recordScrollDebugEvent(debugFeedId, 'settle:stop');
   }, [debugFeedId, refs]);
 
   const clearFollowScroll = useCallback(() => {
@@ -87,6 +87,10 @@ export function useWindowedFeedScrollFollow(args: {
       navigation?: ExplicitScrollNavigation,
     ) => {
       const debugReason = intent;
+      if (navigation && !navigation.isCurrent()) {
+        detachExplicitNavigation(navigation);
+        return;
+      }
       if (intent === ScrollNavigationIntent.Explicit && navigation) {
         if (!isOwnedExplicitNavigation(navigation)) abandonExplicitNavigation();
         explicitNavigationRef.current = navigation;
@@ -108,13 +112,18 @@ export function useWindowedFeedScrollFollow(args: {
           abandonExplicitNavigation(navigation);
           return;
         }
-        if (distanceToBottom(active) <= 1 && detachExplicitNavigation(navigation)) {
+        if (isAtPhysicalBottom(active) && detachExplicitNavigation(navigation)) {
           navigation.onLanded();
         }
       };
       // Pending poll scrollToEnd('smooth') races layout; wait until height is stable first.
-      if (behavior === 'smooth' && options?.skipLayoutWait !== true) {
-        refs.scheduleFollowScrollWhenStableRef.current?.(debugReason, intent, options, navigation);
+      if ((behavior === 'smooth' || navigation != null) && options?.skipLayoutWait !== true) {
+        refs.scheduleFollowScrollWhenStableRef.current?.(
+          debugReason,
+          intent,
+          { ...options, behavior },
+          navigation,
+        );
         return;
       }
 
@@ -136,7 +145,7 @@ export function useWindowedFeedScrollFollow(args: {
           const active = refs.scrollerRef.current;
           if (!active) return;
           const bottomDistance = distanceToBottom(active);
-          const atPhysical = bottomDistance <= 1;
+          const atPhysical = isAtPhysicalBottom(active);
           if (atPhysical) {
             const wasPhysical = refs.physicallyAtBottomRef.current;
             refs.physicallyAtBottomRef.current = true;
@@ -144,7 +153,7 @@ export function useWindowedFeedScrollFollow(args: {
             // publish so FeedColumn / poll refs learn we landed on the tail.
             refs.callbacksRef.current.onPhysicalBottomChange?.(true);
             if (wasPhysical !== true) {
-              recordDutyScrollDebugEvent(
+              recordScrollDebugEvent(
                 debugFeedId,
                 'state:physical-bottom',
                 `${wasPhysical ?? '—'}→true; distance=${bottomDistance.toFixed(1)}; reason=follow-ease-land`,
@@ -156,7 +165,7 @@ export function useWindowedFeedScrollFollow(args: {
                     navigationIntent: intent,
                   }) !== false;
                 refs.liveBottomFollowRef.current = shouldFollow;
-                recordDutyScrollDebugEvent(
+                recordScrollDebugEvent(
                   debugFeedId,
                   shouldFollow ? 'follow:enable' : 'follow:blocked',
                   `follow-ease land; returned=${refs.hasSeenNotAtBottomRef.current}`,
@@ -173,7 +182,7 @@ export function useWindowedFeedScrollFollow(args: {
           });
           captureAnchorSnapshot();
           confirmLanding(active);
-          recordDutyScrollDebugEvent(
+          recordScrollDebugEvent(
             debugFeedId,
             'scroll-to-bottom',
             `${reason}; behavior=raf-ease; top=${active.scrollTop.toFixed(1)}; height=${active.scrollHeight.toFixed(1)}`,
@@ -186,7 +195,7 @@ export function useWindowedFeedScrollFollow(args: {
           return;
         }
 
-        refs.smoothFollowUntilMsRef.current = now + DUTY_SMOOTH_FOLLOW_MS;
+        refs.smoothFollowUntilMsRef.current = now + FEED_SMOOTH_FOLLOW_MS;
         refs.followAnimatingRef.current = true;
         if (enableFollow) refs.liveBottomFollowRef.current = true;
         // Local sticky only — parent is notified in finishFollowEaseLanding.
@@ -195,7 +204,7 @@ export function useWindowedFeedScrollFollow(args: {
         // ease across many real seconds. Tests advance performance.now per rAF.
         let easeFromScrollTop = fromScrollTop;
         let easeStartedAtMs = now;
-        let easeDurationMs = DUTY_SMOOTH_FOLLOW_MS;
+        let easeDurationMs = FEED_SMOOTH_FOLLOW_MS;
         let lastMaxScrollTop = maxScrollTop;
 
         const tick = () => {
@@ -233,7 +242,7 @@ export function useWindowedFeedScrollFollow(args: {
             return;
           }
           const frameNowMs = nowMs();
-          const frame = dutyFollowScrollFrame({
+          const frame = feedFollowScrollFrame({
             startedAtMs: easeStartedAtMs,
             nowMs: frameNowMs,
             fromScrollTop: easeFromScrollTop,
@@ -252,14 +261,14 @@ export function useWindowedFeedScrollFollow(args: {
           refs.previousScrollTopRef.current = active.scrollTop;
           if (!frame.done) {
             // Same wall clock as ResizeObserver suppression checks.
-            refs.smoothFollowUntilMsRef.current = frameNowMs + DUTY_SMOOTH_FOLLOW_MS;
+            refs.smoothFollowUntilMsRef.current = frameNowMs + FEED_SMOOTH_FOLLOW_MS;
             refs.followScrollRafRef.current = requestAnimationFrame(tick);
             return;
           }
           finishFollowEaseLanding(debugReason);
         };
 
-        recordDutyScrollDebugEvent(
+        recordScrollDebugEvent(
           debugFeedId,
           'scroll-to-bottom',
           `${debugReason}; behavior=raf-ease:start; from=${fromScrollTop.toFixed(1)}; to=${maxScrollTop.toFixed(1)}`,
@@ -297,7 +306,7 @@ export function useWindowedFeedScrollFollow(args: {
       captureAnchorSnapshot();
       confirmLanding(scroller);
       if (intent !== ScrollNavigationIntent.Initial) {
-        recordDutyScrollDebugEvent(
+        recordScrollDebugEvent(
           debugFeedId,
           'scroll-to-bottom',
           `${debugReason}; behavior=instant; top=${scroller.scrollTop.toFixed(1)}; height=${scroller.scrollHeight.toFixed(1)}`,
@@ -322,7 +331,7 @@ export function useWindowedFeedScrollFollow(args: {
 
     refs.bottomSettleActiveRef.current = true;
     refs.bottomSettleFramesRemainingRef.current = INITIAL_BOTTOM_SETTLE_FRAMES;
-    recordDutyScrollDebugEvent(
+    recordScrollDebugEvent(
       debugFeedId,
       'settle:start',
       `frames=${INITIAL_BOTTOM_SETTLE_FRAMES}; timeout=${INITIAL_BOTTOM_SETTLE_TIMEOUT_MS}`,
@@ -363,7 +372,7 @@ export function useWindowedFeedScrollFollow(args: {
     (
       debugReason: string,
       intent: ScrollNavigationIntent,
-      options?: { enableFollow?: boolean },
+      options?: { enableFollow?: boolean; behavior?: ScrollBehavior },
       navigation?: ExplicitScrollNavigation,
     ) => {
       const enableFollow = options?.enableFollow !== false;
@@ -375,7 +384,7 @@ export function useWindowedFeedScrollFollow(args: {
 
       // Arm suppress before paint/resize can instant-pin the new height into view.
       refs.smoothFollowUntilMsRef.current =
-        now + DUTY_FOLLOW_LAYOUT_STABLE_MAX_MS + DUTY_SMOOTH_FOLLOW_MS;
+        now + FEED_FOLLOW_LAYOUT_STABLE_MAX_MS + FEED_SMOOTH_FOLLOW_MS;
       if (enableFollow) {
         refs.liveBottomFollowRef.current = true;
       }
@@ -404,6 +413,12 @@ export function useWindowedFeedScrollFollow(args: {
         refs.followScrollRafRef.current = null;
         const wait = refs.followScrollWaitRef.current;
         if (!wait) return;
+        if (navigation && !navigation.isCurrent()) {
+          refs.followScrollWaitRef.current = null;
+          refs.smoothFollowUntilMsRef.current = 0;
+          detachExplicitNavigation(navigation);
+          return;
+        }
         if (!refs.enabledRef.current) {
           refs.followScrollWaitRef.current = null;
           if (navigation) abandonExplicitNavigation(navigation);
@@ -433,18 +448,21 @@ export function useWindowedFeedScrollFollow(args: {
           wait.stableFrames = 0;
           // Layout still growing — keep resize snaps suppressed.
           refs.smoothFollowUntilMsRef.current =
-            tickNow + DUTY_FOLLOW_LAYOUT_STABLE_MAX_MS + DUTY_SMOOTH_FOLLOW_MS;
+            tickNow + FEED_FOLLOW_LAYOUT_STABLE_MAX_MS + FEED_SMOOTH_FOLLOW_MS;
         }
 
-        const timedOut = tickNow - wait.startedAtMs >= DUTY_FOLLOW_LAYOUT_STABLE_MAX_MS;
-        if (wait.stableFrames < DUTY_FOLLOW_LAYOUT_STABLE_FRAMES && !timedOut) {
+        const timedOut = tickNow - wait.startedAtMs >= FEED_FOLLOW_LAYOUT_STABLE_MAX_MS;
+        if (wait.stableFrames < FEED_FOLLOW_LAYOUT_STABLE_FRAMES && !timedOut) {
           refs.followScrollRafRef.current = requestAnimationFrame(tick);
           return;
         }
 
         refs.followScrollWaitRef.current = null;
-        const nextBehavior = getDutyFollowScrollBehavior();
-        recordDutyScrollDebugEvent(
+        const nextBehavior =
+          options?.behavior && options.behavior !== 'smooth'
+            ? options.behavior
+            : getFeedFollowScrollBehavior();
+        recordScrollDebugEvent(
           debugFeedId,
           'follow:layout-stable',
           `reason=${wait.debugReason}; height=${nextHeight.toFixed(1)}; frames=${wait.stableFrames}; timedOut=${timedOut}; behavior=${nextBehavior}; enableFollow=${wait.enableFollow}`,
@@ -462,7 +480,14 @@ export function useWindowedFeedScrollFollow(args: {
 
       refs.followScrollRafRef.current = requestAnimationFrame(tick);
     },
-    [abandonExplicitNavigation, debugFeedId, refs, scrollToBottom, stopBottomSettle],
+    [
+      abandonExplicitNavigation,
+      debugFeedId,
+      detachExplicitNavigation,
+      refs,
+      scrollToBottom,
+      stopBottomSettle,
+    ],
   );
   refs.scheduleFollowScrollWhenStableRef.current = scheduleFollowScrollWhenStable;
 

@@ -78,7 +78,6 @@ export type UseAnalysisDataResult = {
   inboxReq: ReturnType<typeof buildInboxReq>;
   botTagAction: MessageCardBotTagAction | null;
   loadCallsignGraph: () => Promise<void>;
-  loadAllMessages: () => Promise<void>;
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
   invalidateFilterSectionLoadsForPatch: (
@@ -88,13 +87,14 @@ export type UseAnalysisDataResult = {
   loadCorrelatedFreqs: () => Promise<void>;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
   loadNewCallsigns: () => Promise<void>;
-  loadFirstPage: () => Promise<void>;
+  loadFirstPage: () => Promise<boolean>;
   loadFocusedEarlier: () => Promise<boolean>;
   loadFocusedLater: () => Promise<boolean>;
-  loadLastPage: () => Promise<void>;
-  loadNextPage: () => Promise<void>;
+  loadLastPage: () => Promise<boolean>;
+  loadNextPage: () => Promise<boolean>;
   loadMoreMessages: () => Promise<boolean>;
-  loadPrevPage: (targetPageIndex?: number) => Promise<void>;
+  loadPreviousMessages: () => Promise<boolean>;
+  loadPrevPage: (targetPageIndex?: number) => Promise<boolean>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   loadSettlementMessagesForMap: (
     settlementId: number,
@@ -113,12 +113,16 @@ export type UseAnalysisDataResult = {
   focusedLoadingLater: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
+  firstLoadedMessageIndex: number;
+  hasMoreBeforeWindow: boolean;
+  hasMoreAfterWindow: boolean;
+  loadingBeforeWindow: boolean;
+  loadingAfterWindow: boolean;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
   newCallsigns: import('../../../../Bindings').NewCallsignsRes;
   newCallsignsLoading: boolean;
   noMoreToLoad: boolean;
-  nolimitShown: boolean;
   pageIndex: number;
   onUpdateLocalMessage: (
     messageId: number,

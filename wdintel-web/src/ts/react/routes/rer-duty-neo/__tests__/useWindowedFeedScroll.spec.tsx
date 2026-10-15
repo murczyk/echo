@@ -4,13 +4,13 @@
 import { act, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useWindowedFeedScroll } from '../useWindowedFeedScroll';
-import { useRerDutyNavigation } from '../useRerDutyNavigation';
 import {
   ScrollNavigationIntent,
   type AnchorSnapshot,
   type ReachedBottomContext,
-} from '../windowed-feed-scroll-shared';
+} from '../../shared/message-feed';
+import { useWindowedFeedScroll } from '../../shared/message-feed/useWindowedFeedScroll';
+import { useRerDutyNavigation } from '../useRerDutyNavigation';
 
 const renderedItemRefs = new Map<number, (node: HTMLDivElement | null) => void>();
 let latestScrollHandle: ReturnType<typeof useWindowedFeedScroll> | null = null;
@@ -956,6 +956,8 @@ describe('useWindowedFeedScroll', () => {
   it('cancels delayed visible-message reports when disabled', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1000);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(100);
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(100);
 
     const onVisibleMessageIds = vi.fn();
     await act(async () => {
@@ -1246,6 +1248,8 @@ describe('useWindowedFeedScroll', () => {
   });
 
   it('fires the physical bottom transition once after entering from the threshold zone', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(100);
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(100);
     const onReachedBottom = vi.fn();
     const onPhysicalBottomChange = vi.fn();
     await act(async () => {
@@ -1627,6 +1631,61 @@ describe('useWindowedFeedScroll', () => {
     });
 
     expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
+  it('does not request the same newer edge twice when loading finishes before the window changes', async () => {
+    const onLoadNewer = vi.fn();
+    await act(async () => root.render(<TestScroller ids={[]} />));
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 300 });
+    await act(async () =>
+      root.render(
+        <TestScroller ids={[1, 2, 3, 4]} onLoadNewer={onLoadNewer} unreadPrefetchNeeded />,
+      ),
+    );
+
+    scroller.scrollTop = 200;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+
+    await act(async () =>
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          loadingNewer
+          onLoadNewer={onLoadNewer}
+          unreadPrefetchNeeded
+        />,
+      ),
+    );
+    await act(async () =>
+      root.render(
+        <TestScroller ids={[1, 2, 3, 4]} onLoadNewer={onLoadNewer} unreadPrefetchNeeded />,
+      ),
+    );
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+
+    setScrollMetrics(scroller, { scrollTop: 200, clientHeight: 100, scrollHeight: 600 });
+    await act(async () => {
+      root.render(
+        <TestScroller ids={[3, 4, 5, 6]} onLoadNewer={onLoadNewer} unreadPrefetchNeeded />,
+      );
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    scroller.scrollTop = 500;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLoadNewer).toHaveBeenCalledTimes(2);
   });
 
   it('scrolls to the bottom using the current scroll height', async () => {
@@ -2175,6 +2234,62 @@ describe('useWindowedFeedScroll', () => {
     ).toBe(-1);
     await act(async () => vi.advanceTimersByTimeAsync(140));
     expect(onLoadNewer).toHaveBeenCalledTimes(1);
+  });
+
+  it('#3689 keeps the reading anchor when a resize emits scroll before ResizeObserver', async () => {
+    const triggerResize = installResizeObserverMock();
+    const ids = [1, 2, 3, 4];
+    await act(async () => root.render(<TestScroller ids={[]} />));
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    Object.defineProperty(scroller, 'clientWidth', { value: 200, configurable: true });
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+    await act(async () => root.render(<TestScroller ids={ids} />));
+    await act(async () => {
+      scroller.scrollTop = 51;
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    await act(async () => root.render(<TestScroller ids={ids} loadingNewer />));
+    Object.defineProperty(scroller, 'clientWidth', { value: 100, configurable: true });
+    metrics.scrollHeight = 400;
+    layout.items = createItemLayouts(ids, 0, 100);
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+      triggerResize(container.querySelector('[data-testid="list"]')!);
+    });
+    expect(scroller.scrollTop).toBe(101);
+    expect(container.querySelector('[data-testid="item-2"]')!.getBoundingClientRect().top).toBe(-1);
+  });
+
+  it('preserves the pre-reflow anchor when a delayed restoration scroll event fires', async () => {
+    const onAnchorSnapshotChange = vi.fn();
+    const ids = [1, 2, 3, 4];
+    await act(async () =>
+      root.render(<TestScroller ids={[]} onAnchorSnapshotChange={onAnchorSnapshotChange} />),
+    );
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    mockVerticalLayout(scroller, { items: createItemLayouts(ids) });
+    await act(async () =>
+      root.render(<TestScroller ids={ids} onAnchorSnapshotChange={onAnchorSnapshotChange} />),
+    );
+
+    scroller.scrollTop = 50;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onAnchorSnapshotChange.mock.calls.at(-1)?.[0]?.scrollHeight).toBe(200);
+    onAnchorSnapshotChange.mockClear();
+
+    metrics.scrollHeight = 250;
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    expect(onAnchorSnapshotChange).not.toHaveBeenCalled();
   });
 
   it('keeps the current position until a compact-card anchor can be restored', async () => {
@@ -2830,6 +2945,40 @@ describe('useWindowedFeedScroll', () => {
     });
   });
 
+  it('#3689 recognizes the native bottom under zoom without following a reader above it', async () => {
+    const onPhysicalBottomChange = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2]}
+          autoScrollAllowed={false}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+        />,
+      );
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, {
+      scrollTop: 13072.888671875,
+      scrollHeight: 13725,
+      clientHeight: 651,
+    });
+    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue(rect(167.125, 732.875));
+    vi.spyOn(scroller.lastElementChild!, 'getBoundingClientRect').mockImplementation(() =>
+      rect(900.5 + (13072.888671875 - scroller.scrollTop) * 1.125 - 20, 20),
+    );
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onPhysicalBottomChange).toHaveBeenLastCalledWith(true);
+    await act(async () => {
+      scroller.scrollTop -= 2;
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onPhysicalBottomChange).toHaveBeenLastCalledWith(false);
+  });
+
   it('#3360 confirms explicit landing only after the rendered target reaches the physical bottom', async () => {
     const ids = [1, 2, 3, 4, 5, 6];
     await act(async () => {
@@ -2856,6 +3005,9 @@ describe('useWindowedFeedScroll', () => {
     act(() => {
       latestScrollHandle?.scrollToBottom('auto', 'explicit', navigation);
     });
+    await act(async () => {
+      for (let frame = 0; frame < 4; frame++) await waitForAnimationFrame();
+    });
     expect(onLanded).not.toHaveBeenCalled();
     expect(onUnavailable).not.toHaveBeenCalled();
 
@@ -2868,40 +3020,49 @@ describe('useWindowedFeedScroll', () => {
     act(() => {
       latestScrollHandle?.scrollToBottom('auto', 'explicit', navigation);
     });
+    expect(onLanded).not.toHaveBeenCalled();
+    await act(async () => {
+      for (let frame = 0; frame < 4; frame++) await waitForAnimationFrame();
+    });
     expect(onLanded).toHaveBeenCalledTimes(1);
     expect(onUnavailable).not.toHaveBeenCalled();
   });
 
-  it('#3360 stops a smooth explicit landing when its operation is cancelled', async () => {
-    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
-    const ids = [1, 2, 3, 4, 5, 6];
-    await act(async () => {
-      root.render(<TestScroller ids={ids} />);
-    });
-    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
-    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 300 };
-    setClampedScrollMetrics(scroller, metrics);
-    let current = true;
-    const onLanded = vi.fn();
-    act(() => {
-      latestScrollHandle?.scrollToBottom('smooth', 'explicit', {
-        feedId: 'mf-0',
-        generation: 8,
-        targetId: 6,
-        isCurrent: () => current,
-        onLanded,
-        onUnavailable: vi.fn(),
+  it.each(['smooth', 'auto'] as const)(
+    '#3360 stops a %s explicit landing when its operation is cancelled',
+    async (behavior) => {
+      vi.spyOn(window, 'matchMedia').mockImplementation(
+        () => ({ matches: false }) as MediaQueryList,
+      );
+      const ids = [1, 2, 3, 4, 5, 6];
+      await act(async () => {
+        root.render(<TestScroller ids={ids} />);
       });
-    });
-    await act(async () => {
-      await waitForAnimationFrame();
-    });
-    current = false;
-    await waitForFollowEase();
+      const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+      const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 300 };
+      setClampedScrollMetrics(scroller, metrics);
+      let current = true;
+      const onLanded = vi.fn();
+      act(() => {
+        latestScrollHandle?.scrollToBottom(behavior, 'explicit', {
+          feedId: 'mf-0',
+          generation: 8,
+          targetId: 6,
+          isCurrent: () => current,
+          onLanded,
+          onUnavailable: vi.fn(),
+        });
+      });
+      await act(async () => {
+        await waitForAnimationFrame();
+      });
+      current = false;
+      await waitForFollowEase();
 
-    expect(onLanded).not.toHaveBeenCalled();
-    expect(scroller.scrollTop).toBeLessThan(200);
-  });
+      expect(onLanded).not.toHaveBeenCalled();
+      expect(scroller.scrollTop).toBeLessThan(200);
+    },
+  );
 
   it.each(['layout wait', 'easing'] as const)(
     '#3400 releases arrow loading when its scroll owner unmounts during %s',

@@ -3,7 +3,7 @@ import type {
   TopStatus,
   WindowedFeedScrollCallbacks,
   WindowedFeedScrollRefs,
-} from './windowed-feed-scroll-shared';
+} from './internal.types';
 
 /**
  * All mutable scroll state in one bag so the anchor / follow / tracking hooks can share it.
@@ -21,11 +21,13 @@ export function useWindowedFeedScrollRefs(args: {
   pendingNewerFlushNeeded: boolean;
   enabled: boolean;
 }): WindowedFeedScrollRefs {
+  const diagnosticsRef = useRef<WindowedFeedScrollRefs['diagnosticsRef']['current']>(undefined);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const itemRefsRef = useRef(new Map<number, HTMLDivElement>());
+  const listRef = useRef<HTMLElement | null>(null);
+  const itemRefsRef = useRef(new Map<number, HTMLElement>());
   const itemIdsRef = useRef<readonly number[]>([]);
   const anchorSnapshotRef = useRef<WindowedFeedScrollRefs['anchorSnapshotRef']['current']>(null);
+  const restoredScrollTopRef = useRef<number | null>(null);
   const callbacksRef = useRef<WindowedFeedScrollCallbacks>({ onLoadOlder: () => undefined });
   const loadOlderTriggeredRef = useRef(false);
   const loadNewerTriggeredRef = useRef(false);
@@ -72,6 +74,7 @@ export function useWindowedFeedScrollRefs(args: {
   const bagRef = useRef<WindowedFeedScrollRefs | null>(null);
   if (bagRef.current === null) {
     bagRef.current = {
+      diagnosticsRef,
       scrollerRef,
       listRef,
       itemRefsRef,
@@ -102,6 +105,7 @@ export function useWindowedFeedScrollRefs(args: {
       followScrollWaitRef,
       scheduleFollowScrollWhenStableRef,
       isRestoringAnchorRef,
+      restoredScrollTopRef,
       previousItemIdsRef,
       previousResetKeyRef,
       previousTopStatusRef,
