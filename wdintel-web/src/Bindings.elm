@@ -1915,6 +1915,100 @@ signalGroupRspEncoder struct =
         ]
 
 
+type alias MessengerProfileSearchReq =
+    { query : String
+    }
+
+
+messengerProfileSearchReqEncoder : MessengerProfileSearchReq -> Json.Encode.Value
+messengerProfileSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "query", (Json.Encode.string) struct.query )
+        ]
+
+
+type alias MessengerAlertSettings =
+    { enabled : Bool
+    , senderDatasourceIds : List (Int)
+    }
+
+
+messengerAlertSettingsEncoder : MessengerAlertSettings -> Json.Encode.Value
+messengerAlertSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "senderDatasourceIds", (Json.Encode.list (Json.Encode.int)) struct.senderDatasourceIds )
+        ]
+
+
+type alias MessengerAlertPreference =
+    { receiveAlertsInMessenger : Maybe (Bool)
+    }
+
+
+messengerAlertPreferenceEncoder : MessengerAlertPreference -> Json.Encode.Value
+messengerAlertPreferenceEncoder struct =
+    Json.Encode.object
+        [ ( "receiveAlertsInMessenger", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.receiveAlertsInMessenger )
+        ]
+
+
+type alias MessengerAlertHistoryReq =
+    { beforeId : Maybe (String)
+    }
+
+
+messengerAlertHistoryReqEncoder : MessengerAlertHistoryReq -> Json.Encode.Value
+messengerAlertHistoryReqEncoder struct =
+    Json.Encode.object
+        [ ( "beforeId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.beforeId )
+        ]
+
+
+type alias MessengerAlertHistoryEntry =
+    { id : String
+    , recipientLogin : String
+    , recipientProfileId : String
+    , messageUrl : String
+    , status : String
+    , senderName : Maybe (String)
+    , attemptedSenderIds : List (Int)
+    , error : Maybe (String)
+    , createdAt : Int
+    , sentAt : Maybe (Int)
+    }
+
+
+messengerAlertHistoryEntryEncoder : MessengerAlertHistoryEntry -> Json.Encode.Value
+messengerAlertHistoryEntryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "recipientLogin", (Json.Encode.string) struct.recipientLogin )
+        , ( "recipientProfileId", (Json.Encode.string) struct.recipientProfileId )
+        , ( "messageUrl", (Json.Encode.string) struct.messageUrl )
+        , ( "status", (Json.Encode.string) struct.status )
+        , ( "senderName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.senderName )
+        , ( "attemptedSenderIds", (Json.Encode.list (Json.Encode.int)) struct.attemptedSenderIds )
+        , ( "error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.error )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "sentAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sentAt )
+        ]
+
+
+type alias MessengerAlertHistoryRsp =
+    { entries : List (MessengerAlertHistoryEntry)
+    , nextBeforeId : Maybe (String)
+    }
+
+
+messengerAlertHistoryRspEncoder : MessengerAlertHistoryRsp -> Json.Encode.Value
+messengerAlertHistoryRspEncoder struct =
+    Json.Encode.object
+        [ ( "entries", (Json.Encode.list (messengerAlertHistoryEntryEncoder)) struct.entries )
+        , ( "nextBeforeId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextBeforeId )
+        ]
+
+
 type alias SignalProfileReq =
     { uuid : String
     }
@@ -4827,7 +4921,8 @@ userInfoReqEncoder struct =
 
 
 type alias Login =
-    { id : String
+    { signalProfileId : Maybe (String)
+    , id : String
     , login : String
     , roles : List (String)
     , createdAt : Int
@@ -4849,7 +4944,8 @@ type alias Login =
 loginEncoder : Login -> Json.Encode.Value
 loginEncoder struct =
     Json.Encode.object
-        [ ( "id", (Json.Encode.string) struct.id )
+        [ ( "signal_profile_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signalProfileId )
+        , ( "id", (Json.Encode.string) struct.id )
         , ( "login", (Json.Encode.string) struct.login )
         , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
@@ -4908,7 +5004,8 @@ listLoginsRspEncoder struct =
 
 
 type alias CreateLoginReq =
-    { login : String
+    { signalProfileId : Maybe (String)
+    , login : String
     , password : String
     , roles : List (String)
     , sigintZoneId : Maybe (Int)
@@ -4920,7 +5017,8 @@ type alias CreateLoginReq =
 createLoginReqEncoder : CreateLoginReq -> Json.Encode.Value
 createLoginReqEncoder struct =
     Json.Encode.object
-        [ ( "login", (Json.Encode.string) struct.login )
+        [ ( "signal_profile_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signalProfileId )
+        , ( "login", (Json.Encode.string) struct.login )
         , ( "password", (Json.Encode.string) struct.password )
         , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
         , ( "sigint_zone_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintZoneId )
@@ -4930,7 +5028,8 @@ createLoginReqEncoder struct =
 
 
 type alias UpdateLoginReq =
-    { id : String
+    { signalProfileId : Maybe (String)
+    , id : String
     , login : String
     , roles : Maybe (List (String))
     , sigintZoneId : Maybe (Int)
@@ -4948,7 +5047,8 @@ type alias UpdateLoginReq =
 updateLoginReqEncoder : UpdateLoginReq -> Json.Encode.Value
 updateLoginReqEncoder struct =
     Json.Encode.object
-        [ ( "id", (Json.Encode.string) struct.id )
+        [ ( "signal_profile_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signalProfileId )
+        , ( "id", (Json.Encode.string) struct.id )
         , ( "login", (Json.Encode.string) struct.login )
         , ( "roles", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.roles )
         , ( "sigint_zone_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintZoneId )
@@ -18071,6 +18171,8 @@ longPollRspEncoder struct =
 type alias EchoAccountF1 =
     { id : Int
     , areaOfResponsibility : Maybe (AreaOfResponsibility)
+    , canReadMessages : Maybe (Bool)
+    , canSendMessages : Maybe (Bool)
     , status : String
     , createdAt : Int
     , clientId : Maybe (Int)
@@ -18097,6 +18199,8 @@ echoAccountF1Encoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "area_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (areaOfResponsibilityEncoder)) struct.areaOfResponsibility )
+        , ( "can_read_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.canReadMessages )
+        , ( "can_send_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.canSendMessages )
         , ( "status", (Json.Encode.string) struct.status )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "client_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.clientId )
@@ -18222,6 +18326,8 @@ type alias AccountStatusReq =
     { accountId : Int
     , aorId : Maybe (Int)
     , isActive : Bool
+    , canReadMessages : Maybe (Bool)
+    , canSendMessages : Maybe (Bool)
     , displayName : String
     , description : Maybe (String)
     , apiLogin : Maybe (String)
@@ -18235,6 +18341,8 @@ accountStatusReqEncoder struct =
         [ ( "account_id", (Json.Encode.int) struct.accountId )
         , ( "aor_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.aorId )
         , ( "is_active", (Json.Encode.bool) struct.isActive )
+        , ( "can_read_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.canReadMessages )
+        , ( "can_send_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.canSendMessages )
         , ( "display_name", (Json.Encode.string) struct.displayName )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         , ( "api_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.apiLogin )
@@ -19515,6 +19623,53 @@ signalGroupRspDecoder : Json.Decode.Decoder SignalGroupRsp
 signalGroupRspDecoder =
     Json.Decode.succeed SignalGroupRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
+
+
+messengerProfileSearchReqDecoder : Json.Decode.Decoder MessengerProfileSearchReq
+messengerProfileSearchReqDecoder =
+    Json.Decode.succeed MessengerProfileSearchReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "query" (Json.Decode.string)))
+
+
+messengerAlertSettingsDecoder : Json.Decode.Decoder MessengerAlertSettings
+messengerAlertSettingsDecoder =
+    Json.Decode.succeed MessengerAlertSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "senderDatasourceIds" (Json.Decode.list (Json.Decode.int))))
+
+
+messengerAlertPreferenceDecoder : Json.Decode.Decoder MessengerAlertPreference
+messengerAlertPreferenceDecoder =
+    Json.Decode.succeed MessengerAlertPreference
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "receiveAlertsInMessenger" (Json.Decode.nullable (Json.Decode.bool))))
+
+
+messengerAlertHistoryReqDecoder : Json.Decode.Decoder MessengerAlertHistoryReq
+messengerAlertHistoryReqDecoder =
+    Json.Decode.succeed MessengerAlertHistoryReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "beforeId" (Json.Decode.nullable (Json.Decode.string))))
+
+
+messengerAlertHistoryEntryDecoder : Json.Decode.Decoder MessengerAlertHistoryEntry
+messengerAlertHistoryEntryDecoder =
+    Json.Decode.succeed MessengerAlertHistoryEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "recipientLogin" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "recipientProfileId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageUrl" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "senderName" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attemptedSenderIds" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sentAt" (Json.Decode.nullable (Json.Decode.int))))
+
+
+messengerAlertHistoryRspDecoder : Json.Decode.Decoder MessengerAlertHistoryRsp
+messengerAlertHistoryRspDecoder =
+    Json.Decode.succeed MessengerAlertHistoryRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entries" (Json.Decode.list (messengerAlertHistoryEntryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nextBeforeId" (Json.Decode.nullable (Json.Decode.string))))
 
 
 signalProfileReqDecoder : Json.Decode.Decoder SignalProfileReq
@@ -21022,6 +21177,7 @@ userInfoReqDecoder =
 loginDecoder : Json.Decode.Decoder Login
 loginDecoder =
     Json.Decode.succeed Login
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_profile_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
@@ -21079,6 +21235,7 @@ listLoginsRspDecoder =
 createLoginReqDecoder : Json.Decode.Decoder CreateLoginReq
 createLoginReqDecoder =
     Json.Decode.succeed CreateLoginReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_profile_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
@@ -21090,6 +21247,7 @@ createLoginReqDecoder =
 updateLoginReqDecoder : Json.Decode.Decoder UpdateLoginReq
 updateLoginReqDecoder =
     Json.Decode.succeed UpdateLoginReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_profile_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
@@ -29441,6 +29599,8 @@ echoAccountF1Decoder =
     Json.Decode.succeed EchoAccountF1
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility" (Json.Decode.nullable (areaOfResponsibilityDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_read_messages" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_send_messages" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "client_id" (Json.Decode.nullable (Json.Decode.int))))
@@ -29517,6 +29677,8 @@ accountStatusReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_active" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_read_messages" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_send_messages" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_login" (Json.Decode.nullable (Json.Decode.string))))

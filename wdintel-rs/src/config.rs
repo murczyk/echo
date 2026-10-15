@@ -19,6 +19,7 @@ pub const SERVER_ACTIVITY_CONTEXT_HEADERS: &[&str] = &[
 ];
 
 pub const USER_DISPLAY_NAME_MAX_LENGTH: usize = 100;
+pub const USER_MESSENGER_PROFILE_SEARCH_LIMIT: usize = 50;
 pub const USER_AUTHOR_IDENTITIES_MAX_BATCH_SIZE: usize = 200;
 pub const API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT: i64 = 500;
 pub const API_RATE_LIMIT_BURST_SIZE_DEFAULT: i64 = 5;
@@ -836,6 +837,11 @@ pub const IMPORT_DIRECTION_FINDING_UUID: &str =
 pub const REDIS_HOST: &str = "localhost";
 pub const REDIS_PORT: u16 = 6379;
 pub const MESSENGER_WORKER_LONG_SLEEP_MS: u64 = 5000;
+pub const MESSENGER_ALERT_HISTORY_PAGE_SIZE: usize = 20;
+pub const MESSENGER_ALERT_MAX_SENDERS: usize = 20;
+pub const MESSENGER_ALERT_BATCH_SIZE: usize = 20;
+pub const MESSENGER_ALERT_POLL_SECONDS: u64 = 5;
+pub const MESSENGER_ALERT_SENDER_TIMEOUT_SECONDS: i64 = 90;
 pub const MESSENGER_WORKER_IDLE_SLEEP_MS: u64 = 100;
 pub const MESSENGER_WORKER_BATCH_SIZE: u64 = 100;
 pub const MESSENGER_RECONCILE_DUPLICATE_GROUP_LINK_LIMIT: u64 = 2;
@@ -1300,6 +1306,8 @@ DELETE FROM sigint_comment;
 DELETE FROM notification_read_boundary_receipt;
 DELETE FROM notification_read_boundary;
 DELETE FROM notification_read_boundary_completed;
+DELETE FROM messenger_alert_delivery;
+UPDATE messenger_alert_settings SET enabled = false, sender_datasource_ids = '{}' WHERE id = 1;
 DELETE FROM notification_receipt;
 DELETE FROM notification_event;
 DELETE FROM importance_operation;

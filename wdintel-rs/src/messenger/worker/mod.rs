@@ -680,6 +680,9 @@ async fn receive_thread(
     echo_im::worker::whatsapp_worker_tick_once(client_name, dbx)
         .await
         .c(h!())?;
+    if !datasource.can_read_messages.unwrap_or(true) {
+        return Ok(ReceiveThreadResult::Synced(0));
+    }
     let txn = dbx.begin().await.c(h!())?;
     group::sync_groups(&txn, client_name, client_groups_sync_ts_map)
         .await
@@ -738,6 +741,9 @@ async fn sync_inbox(
     metrics: &Option<crate::telemetry::Metrics>,
 ) -> anyhow::Result<usize> {
     let datasource = load_client_datasource(db, client_name).await.c(h!())?;
+    if !datasource.can_read_messages.unwrap_or(true) {
+        return Ok(0);
+    }
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
         trace!(
@@ -1857,6 +1863,8 @@ mod tests {
         .await
         .unwrap();
         let datasource = datasource::ActiveModel {
+            can_read_messages: sea_orm::ActiveValue::NotSet,
+            can_send_messages: sea_orm::ActiveValue::NotSet,
             id: NotSet,
             kind: Set("signal".to_string()),
             display_name: Set(format!("test datasource {}", Uuid::new_v4())),

@@ -35,6 +35,8 @@ pub struct Model {
     pub updated_by_login_id: Option<Uuid>,
     pub deleted: bool,
     pub last_sync_at: Option<DateTime>,
+    pub can_read_messages: Option<bool>,
+    pub can_send_messages: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -73,6 +75,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Login1,
+    #[sea_orm(has_many = "super::messenger_alert_delivery::Entity")]
+    MessengerAlertDelivery,
     #[sea_orm(has_many = "super::sigint_zone_datasource::Entity")]
     SigintZoneDatasource,
     #[sea_orm(has_many = "super::signal_group::Entity")]
@@ -96,6 +100,12 @@ impl Related<super::datasource_group::Entity> for Entity {
 impl Related<super::echo_client_lock::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoClientLock.def()
+    }
+}
+
+impl Related<super::messenger_alert_delivery::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerAlertDelivery.def()
     }
 }
 

@@ -64,6 +64,7 @@ import { listSigintZones } from '../../services/api/zones';
 import { PowerAlert } from '../../components/PowerAlert';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
+import { MessengerProfileSelect } from './MessengerProfileSelect';
 import { UserUuidValue } from './UserUuidValue';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -151,6 +152,7 @@ type AddUserForm = {
   sigintZoneId: number | null;
   organismId: number | null;
   useDelta: boolean;
+  signalProfileId: string | null;
   description: string;
 };
 
@@ -171,6 +173,7 @@ type EditUserForm = {
   organismId: number | null;
   deltaLogin: string;
   deleted: boolean;
+  signalProfileId: string | null;
   description: string;
   passwordAuthEnabled: boolean;
 };
@@ -190,6 +193,7 @@ const EMPTY_ADD_FORM: AddUserForm = {
   organismId: null,
   useDelta: true,
   description: '',
+  signalProfileId: null,
 };
 
 function renderLookupAutocompleteOption(
@@ -212,6 +216,7 @@ function buildUserLoadingRows(): Login[] {
     roles: [],
     deleted: false,
     deactivationReason: null,
+    signalProfileId: null,
     description: null,
     passwordAuthEnabled: true,
     totpEnabled: false,
@@ -353,6 +358,7 @@ function toCreateLoginReq(form: AddUserForm): CreateLoginReq {
     roles: form.roles,
     sigintZoneId: form.sigintZoneId,
     organismId: form.organismId,
+    signalProfileId: form.signalProfileId,
     description: form.description.trim() || null,
   };
 }
@@ -392,6 +398,7 @@ function toClearTotpReq(login: Login): UpdateLoginReq {
     password: null,
     deltaLogin: login.deltaLogin,
     deactivationReason: login.deactivationReason,
+    signalProfileId: login.signalProfileId,
     description: login.description,
     passwordAuthEnabled: login.passwordAuthEnabled,
     clearTotp: true,
@@ -415,6 +422,7 @@ function toUpdateLoginReq(form: EditUserForm): UpdateLoginReq {
     password: trimmedPassword ? trimmedPassword : null,
     deltaLogin: trimmedDelta ? trimmedDelta : null,
     deactivationReason,
+    signalProfileId: form.signalProfileId,
     description: form.description.trim() || null,
     passwordAuthEnabled: form.passwordAuthEnabled,
     clearTotp: null,
@@ -858,6 +866,11 @@ function AddUserDialog(props: {
             )}
           />
 
+          <MessengerProfileSelect
+            value={form.signalProfileId}
+            onChange={(signalProfileId) => setForm((prev) => ({ ...prev, signalProfileId }))}
+            disabled={isSubmitting}
+          />
           <TextField
             label="Нотатка"
             value={form.description}
@@ -940,6 +953,7 @@ function EditUserDialog(props: {
       organismId: login.organismId ?? null,
       deltaLogin: login.deltaLogin ?? '',
       deleted: login.deleted,
+      signalProfileId: login.signalProfileId,
       description: login.description ?? '',
       passwordAuthEnabled: login.passwordAuthEnabled,
     });
@@ -1142,6 +1156,13 @@ function EditUserDialog(props: {
               )}
             />
 
+            <MessengerProfileSelect
+              value={form.signalProfileId}
+              onChange={(signalProfileId) =>
+                setForm((prev) => (prev ? { ...prev, signalProfileId } : prev))
+              }
+              disabled={isSubmitting}
+            />
             <TextField
               label="Delta логін"
               value={form.deltaLogin}
