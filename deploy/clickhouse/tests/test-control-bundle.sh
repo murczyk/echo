@@ -20,12 +20,20 @@ mkdir -p \
   "$case_dir/systemd"
 printf '1\n' >"$case_dir/control-protocol-version"
 printf 'table\n' >"$case_dir/env/tables-exclude.txt"
+printf 'public.attachment_chunk\n' >"$case_dir/env/tables-cdc-only.txt"
 printf '{}\n' >"$case_dir/migration-impact.json"
 printf 'VERSION=1\n' >"$case_dir/versions.env"
 printf 'command\n' >"$case_dir/bin/command.sh"
 printf 'shim\n' >"$case_dir/shims/command.sh"
 printf 'source unit\n' >"$case_dir/source-systemd/source.service"
 printf 'analytics unit\n' >"$case_dir/systemd/analytics.service"
+
+source_table_cdc_only public.attachment_document
+source_table_cdc_only public.attachment_chunk
+if source_table_cdc_only public.signal_message; then
+  printf 'ordinary table unexpectedly classified as CDC-only\n' >&2
+  exit 1
+fi
 
 first_release=$(control_bundle_release_id "$case_dir")
 printf '%s\n' "$first_release" >"$case_dir/release-id"

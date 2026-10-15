@@ -45,6 +45,9 @@ if [[ $# -eq 0 ]]; then
   run_case cdc_empty success
   run_case cdc_race failure
   run_case no_drift success
+  run_case forced_history success
+  run_case forced_history_retry success
+  run_case forced_history_missing_raw success
   run_case additive_empty success
   run_case additive_nonempty success
   run_case nonempty failure
@@ -248,6 +251,34 @@ refresh_analytics() {
 }
 
 case $scenario in
+  forced_history_retry|forced_history_missing_raw)
+    mock_mapping='{"sourceTableIdentifier":"public.attachment_document","destinationTableIdentifier":"attachment_document"}'
+    mock_raw_columns=$mock_source_columns
+    mock_has_rows=true
+    force_resnapshot=true
+    if [[ "$scenario" == forced_history_retry ]]; then
+      write_state_mapping public.attachment_document replicated_snapshot "$mock_mapping"
+      force_resnapshot=false
+    else
+      mock_raw_exists=false
+      mock_raw_columns=
+    fi
+    resnapshot_table replicated_snapshot public.attachment_document
+    grep -q '^invalidate-coverage$' "$operations_file"
+    grep -q '^remove' "$operations_file"
+    grep -q '^snapshot$' "$operations_file"
+    ;;
+  forced_history)
+    mock_raw_columns=$mock_source_columns
+    mock_has_rows=true
+    force_resnapshot=true
+    resnapshot_table replicated_snapshot public.echo_automation
+    grep -q '^remove' "$operations_file"
+    grep -q '^drop' "$operations_file"
+    grep -q '^add' "$operations_file"
+    grep -q '^snapshot$' "$operations_file"
+    grep -q '^refresh$' "$operations_file"
+    ;;
   no_drift)
     mock_raw_columns=$mock_source_columns
     mock_has_rows=true
