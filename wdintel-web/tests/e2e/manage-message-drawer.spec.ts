@@ -15,6 +15,23 @@ type ManageMessageDrawerHost = 'duty' | 'analysis';
 type LinkedMessageKind =
   'with-report' | 'forwarded-report' | 'own-report-without-accessible-parent';
 
+async function dismissSettingsFailureNotifications(page: Page, host: ManageMessageDrawerHost) {
+  const settingsFailure = page
+    .getByRole('alert')
+    .filter({ hasText: 'Помилка завантаження системних налаштувань' });
+  await expect(settingsFailure).toBeVisible();
+  await settingsFailure.getByRole('button', { name: 'Закрити сповіщення' }).click();
+  await expect(settingsFailure).toHaveCount(0);
+  if (host === 'duty') {
+    const requestFailure = page
+      .getByRole('alert')
+      .filter({ hasText: 'System settings unavailable' });
+    await expect(requestFailure).toBeVisible();
+    await requestFailure.getByRole('button', { name: 'Закрити сповіщення' }).click();
+    await expect(requestFailure).not.toBeVisible();
+  }
+}
+
 async function expectEmbeddedEditor(page: Page) {
   const editor = page.locator('[data-manage-message-presentation="embedded"]');
   await expect(editor).toBeVisible();
@@ -136,6 +153,7 @@ async function openOverflowingMessageEditor(
   page: Page,
   host: ManageMessageDrawerHost,
   hideNetworks = false,
+  systemSettingsFailure = false,
 ) {
   const inboxResponse = createOverflowingInboxResponse();
   const dutyMocks =
@@ -143,6 +161,7 @@ async function openOverflowingMessageEditor(
       ? await installRerDutyShortStateMocks(page, {
           inboxResponse,
           hideNetworks,
+          systemSettingsFailure,
           signalGroups: ['analysis-summary-e2e-group'],
         })
       : null;
@@ -150,13 +169,18 @@ async function openOverflowingMessageEditor(
     await installAnalysisNeoApiMocks(page, {
       inboxResponse,
       hideNetworks,
+      systemSettingsFailure,
       signalGroups: ['analysis-summary-e2e-group'],
     });
   }
   await page.goto(host === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo');
   if (dutyMocks) await dutyMocks.systemSettingsReady;
   await expect(page.getByText('Analysis narrow fixture message 0')).toBeVisible();
-  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  const createButton = page.getByRole('button', { name: 'Додати повідомлення' });
+  if (systemSettingsFailure) {
+    await dismissSettingsFailureNotifications(page, host);
+  }
+  await createButton.click();
   await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toBeVisible();
   await expectEmbeddedEditor(page);
 }
@@ -240,6 +264,29 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
         else await expect.poll(() => networkSearches.length).toBeGreaterThan(0);
       });
     }
+
+    test(`#3598 ${host} keeps editor networks hidden when settings fail`, async ({ page }) => {
+      await page.setViewportSize({ width: 1920, height: 900 });
+      const networkSearches: string[] = [];
+      page.on('request', (request) => {
+        if (new URL(request.url()).pathname === '/api/sigint/network/search') {
+          networkSearches.push(request.url());
+        }
+      });
+      await openOverflowingMessageEditor(page, host, false, true);
+      const editor = page.locator('[data-manage-message-presentation]');
+      await expect(editor.getByRole('combobox', { name: 'Мережа', exact: true })).toHaveCount(0);
+      await expect(
+        editor.getByRole('combobox', { name: 'Частота (МГц)', exact: true }),
+      ).toBeVisible();
+      const frequency = editor.getByRole('combobox', { name: 'Частота (МГц)', exact: true });
+      await frequency.click();
+      await frequency.press('Control+A');
+      await frequency.pressSequentially('149.500');
+      await frequency.press('Tab');
+      await expect(frequency).toHaveValue('149.500');
+      expect(networkSearches).toEqual([]);
+    });
 
     test(`${host} restores focus to the report action after closing`, async ({ page }) => {
       await page.setViewportSize({ width: 1600, height: 900 });

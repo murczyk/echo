@@ -173,8 +173,9 @@ viewToast toMsg count toastEi =
                         ]
                         [ text <| String.fromInt count
                         ]
-                , span
-                    [ attribute "aria-hidden" "true"
+                , button
+                    [ type_ "button"
+                    , attribute "aria-label" "Закрити сповіщення"
                     , onClick (toMsg CloseAll)
                     , class "my-2 toast-close-btn"
                     ]
@@ -220,8 +221,9 @@ viewToastV2 toMsg count toastEi =
                         ]
                         [ text <| String.fromInt count
                         ]
-                , span
-                    [ attribute "aria-hidden" "true"
+                , button
+                    [ type_ "button"
+                    , attribute "aria-label" "Закрити сповіщення"
                     , onClick (toMsg CloseAll)
                     , class "my-2 toast-close-btn"
                     ]

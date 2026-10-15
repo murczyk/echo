@@ -609,6 +609,15 @@ describe('useRerAnalysisNeoPage', () => {
     expect(window.location.search).toContain('device-1');
   });
 
+  it('keeps network visibility unavailable when system settings fail', async () => {
+    systemSettingsMock.currentSystemSettings.mockRejectedValueOnce(new Error('settings failed'));
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.networkVisibilityReady).toBe(false);
+    expect(latest?.error).not.toBeNull();
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3461
   it('ECHO-3461 sanitizes direct-link device filters after access denial', async () => {
     const userRequest = deferred<User>();

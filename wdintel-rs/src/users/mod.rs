@@ -430,12 +430,16 @@ pub async fn update_login(
     let update_delta_login = has_update_login_field(&req, "delta_login");
     let req: UpdateLoginReq = serde_json::from_value(req).c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
+    acquire_delta_assignment_serialization_lock(&txn)
+        .await
+        .c(h!())?;
 
     let login_id = Uuid::parse_str(&req.id).c(h!())?;
     crate::ai_agent::ensure_unmanaged_login(&txn, login_id).await?;
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Id.eq(login_id))
+        .lock_exclusive()
         .one(&txn)
         .await
         .c(h!())?
@@ -729,6 +733,9 @@ async fn create_login_1(
         .context(h!())?;
 
     let txn = dbx.begin().await.c(h!())?;
+    acquire_delta_assignment_serialization_lock(&txn)
+        .await
+        .c(h!())?;
     let res = insert_login(
         &txn,
         login::ActiveModel {
@@ -2098,6 +2105,9 @@ async fn register_delta_user(
     description: Option<String>,
 ) -> Result<Login, AppError> {
     let txn = dbx.begin().await.c(h!())?;
+    acquire_delta_assignment_serialization_lock(&txn)
+        .await
+        .c(h!())?;
 
     let login_obj = insert_login(
         &txn,
@@ -2200,6 +2210,10 @@ async fn assign_delta_login<C>(
 where
     C: ConnectionTrait,
 {
+    acquire_delta_assignment_serialization_lock(dbx)
+        .await
+        .c(h!())?;
+
     if let Some(delta_login_id) = current_delta_login_id {
         unlink_deleted_logins_from_shared_delta_login(dbx, delta_login_id)
             .await
@@ -2209,6 +2223,10 @@ where
     let Some(delta_login) = delta_login else {
         return Ok(None);
     };
+
+    acquire_delta_assignment_lock(dbx, delta_login)
+        .await
+        .c(h!())?;
 
     if let Some(existing_delta_login) =
         find_delta_login_by_login(dbx, delta_login).await.c(h!())?
@@ -2290,6 +2308,39 @@ where
         .c(h!())?)
 }
 
+async fn acquire_delta_assignment_lock<C>(
+    dbx: &C,
+    delta_login: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    dbx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock(hashtext($1))",
+        vec![delta_login.to_lowercase().into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn acquire_delta_assignment_serialization_lock<C>(
+    dbx: &C,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    dbx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock(hashtext($1))",
+        vec!["users.delta-assignment".into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
 async fn create_delta_login_row<C>(
     dbx: &C,
     delta_login: &str,
@@ -2358,13 +2409,36 @@ where
         query = query.filter(login::Column::Login.ne(keep_login));
     }
 
-    let logins = query.all(dbx).await.c(h!())?;
+    let logins = query
+        .order_by_asc(login::Column::Id)
+        .lock_exclusive()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    validate_delta_login_owners_can_be_unlinked(&logins).context(h!())?;
     for login in logins {
         let mut login = login.into_active_model();
         login.delta_login_id = Set(None);
         login.update(dbx).await.c(h!())?;
     }
 
+    Ok(())
+}
+
+fn validate_delta_login_owners_can_be_unlinked(
+    logins: &[login::Model],
+) -> Result<(), AppError> {
+    if logins.iter().any(|login| {
+        !login.deleted
+            && !login.deleted_permanently
+            && (!login.password_auth_enabled || login.password.is_none())
+    }) {
+        return Err(AppError::Form(BTreeMap::from_iter([(
+            "delta_login".to_string(),
+            "Неможливо передати Delta-логін: один з користувачів втратить усі способи входу"
+                .to_string(),
+        )])));
+    }
     Ok(())
 }
 
@@ -2518,10 +2592,69 @@ mod tests {
     };
     use actix_web::{cookie::Key, test as actix_test, web, App};
     use redis::AsyncCommands;
+    use sea_query::{Alias, Query};
     use serial_test::serial;
 
     static TEST_LOCK: tokio::sync::Mutex<()> =
         tokio::sync::Mutex::const_new(());
+
+    async fn wait_for_delta_assignment_lock_waiters(
+        dbx: &DatabaseConnection,
+        lock_holder: &DatabaseTransaction,
+        expected_waiters: i64,
+    ) -> bool {
+        let holder_pid = lock_holder
+            .query_one(
+                &Query::select()
+                    .expr_as(Expr::cust("pg_backend_pid()"), Alias::new("pid"))
+                    .to_owned(),
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<i32>("", "pid")
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let waiters = dbx
+                    .query_one(
+                        &Query::select()
+                            .expr_as(
+                                Expr::cust("count(*)"),
+                                Alias::new("count"),
+                            )
+                            .from(Alias::new("pg_locks"))
+                            .and_where(Expr::cust_with_values(
+                                "locktype = 'advisory' and not granted
+                                 and database = (select oid from pg_database where datname = current_database())
+                                 and exists (
+                                     select 1 from pg_locks held
+                                     where held.pid = $1 and held.granted
+                                       and held.locktype = pg_locks.locktype
+                                       and held.database = pg_locks.database
+                                       and held.classid = pg_locks.classid
+                                       and held.objid = pg_locks.objid
+                                       and held.objsubid = pg_locks.objsubid
+                                       and held.pid = any(pg_blocking_pids(pg_locks.pid))
+                                 )",
+                                vec![holder_pid],
+                            ))
+                            .to_owned(),
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .try_get::<i64>("", "count")
+                    .unwrap();
+                if waiters >= expected_waiters {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .is_ok()
+    }
 
     #[test]
     fn detects_update_login_description_presence() {
@@ -2819,7 +2952,14 @@ mod tests {
             login::ActiveModel {
                 id: NotSet,
                 login: Set("Regular".to_string()),
-                password: Set(None),
+                password: Set(Some(
+                    argon2::hash_encoded(
+                        b"regular-password",
+                        b"regular-owner-salt",
+                        &argon2::Config::original(),
+                    )
+                    .unwrap(),
+                )),
                 roles: Set(serde_json::to_value(vec!["Rer"]).unwrap()),
                 created_at: NotSet,
                 sigint_zone_id: Set(None),
@@ -2831,14 +2971,13 @@ mod tests {
                 deleted_permanently: Set(false),
                 last_release_seen: Default::default(),
                 description: Default::default(),
-                password_auth_enabled: Set(false),
+                password_auth_enabled: Set(true),
                 totp_epoch: Set(None),
                 display_name: NotSet,
             },
         )
         .await
         .unwrap();
-
         register_delta_user(
             &env.dbx,
             "kolya".to_string(),
@@ -2857,6 +2996,12 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(regular.delta_login_id, None);
+        assert!(regular.password_auth_enabled);
+        assert!(argon2::verify_encoded(
+            regular.password.as_deref().unwrap(),
+            b"regular-password"
+        )
+        .unwrap());
 
         let kolya = login::Entity::find()
             .filter(login::Column::Login.eq("kolya"))
@@ -2872,6 +3017,532 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(delta_login.login, "kolya");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn register_delta_user_rejects_unsafe_delta_owners() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        for (delta_name, password_auth_enabled, include_safe_owner) in [
+            ("DeltaOnly", false, false),
+            ("NoPassword", true, false),
+            ("MixedOwners", false, true),
+        ] {
+            let delta_login = delta_login::ActiveModel {
+                id: NotSet,
+                login: Set(delta_name.to_string()),
+                created_at: NotSet,
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            let owner = insert_login(
+                &env.dbx,
+                login::ActiveModel {
+                    id: NotSet,
+                    login: Set(format!("{delta_name}-owner")),
+                    password: Set(None),
+                    roles: Set(serde_json::json!(["Rer"])),
+                    created_at: NotSet,
+                    sigint_zone_id: Set(None),
+                    organism_id: Set(None),
+                    deleted: Set(false),
+                    delta_login_id: Set(Some(delta_login.id)),
+                    last_active_at: Set(Some(Utc::now().naive_utc())),
+                    deactivation_reason: Set(None),
+                    deleted_permanently: Set(false),
+                    last_release_seen: Default::default(),
+                    description: Set(None),
+                    password_auth_enabled: Set(password_auth_enabled),
+                    totp_epoch: Set(None),
+                    display_name: NotSet,
+                },
+            )
+            .await
+            .unwrap();
+            if include_safe_owner {
+                let mut safe_owner = owner.into_active_model();
+                safe_owner.id = Set(Uuid::now_v7());
+                safe_owner.login = Set(format!("{delta_name}-safe-owner"));
+                safe_owner.password = Set(Some(
+                    argon2::hash_encoded(
+                        b"safe-owner-password",
+                        b"safe-owner-salt",
+                        &argon2::Config::original(),
+                    )
+                    .unwrap(),
+                ));
+                safe_owner.password_auth_enabled = Set(true);
+                insert_login(&env.dbx, safe_owner).await.unwrap();
+            }
+            let owners_before = login::Entity::find()
+                .filter(login::Column::DeltaLoginId.eq(delta_login.id))
+                .order_by_asc(login::Column::Id)
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            let requested_login = delta_name.to_lowercase();
+            let error = register_delta_user(
+                &env.dbx,
+                requested_login.clone(),
+                vec!["Rer".to_string()],
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                matches!(error, AppError::Form(errors) if errors.contains_key("delta_login"))
+            );
+            assert!(login::Entity::find()
+                .filter(login::Column::Login.eq(requested_login))
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .is_none());
+            let owners_after = login::Entity::find()
+                .filter(login::Column::DeltaLoginId.eq(delta_login.id))
+                .order_by_asc(login::Column::Id)
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            assert_eq!(owners_after, owners_before);
+            let unchanged_delta =
+                delta_login::Entity::find_by_id(delta_login.id)
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(unchanged_delta.login, delta_name);
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn register_delta_user_reclaims_inactive_and_permanently_deleted_owners(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let organism = mk_organism(&env.dbx, Default::default()).await.unwrap();
+        for (delta_name, permanently_deleted) in
+            [("InactiveDelta", false), ("RemovedDelta", true)]
+        {
+            let owner = create_login_1(
+                &env.dbx,
+                CreateLoginReq {
+                    login: format!("{delta_name}-owner"),
+                    password: None,
+                    roles: vec!["Rer".to_string()],
+                    sigint_zone_id: None,
+                    organism_id: organism.id,
+                    description: None,
+                    delta_login: Some(delta_name.to_string()),
+                    password_auth_enabled: Some(false),
+                },
+            )
+            .await
+            .unwrap();
+            let owner_id = Uuid::parse_str(&owner.id).unwrap();
+            let owner = login::Entity::find_by_id(owner_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            let delta_id = owner.delta_login_id.unwrap();
+            let mut owner = owner.into_active_model();
+            owner.deleted = Set(true);
+            owner.deleted_permanently = Set(permanently_deleted);
+            owner.deactivation_reason =
+                Set(Some(DeactivationReasonEnum::Admin));
+            owner.update(&env.dbx).await.unwrap();
+            let replacement = register_delta_user(
+                &env.dbx,
+                delta_name.to_lowercase(),
+                vec!["Rer".to_string()],
+                None,
+                Some(organism.id),
+                None,
+            )
+            .await
+            .unwrap();
+            let replacement = login::Entity::find_by_id(
+                Uuid::parse_str(&replacement.id).unwrap(),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(replacement.delta_login_id, Some(delta_id));
+            let owner = login::Entity::find_by_id(owner_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(owner.delta_login_id, None);
+            assert!(owner.deleted);
+            assert_eq!(owner.deleted_permanently, permanently_deleted);
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_login_rejects_reassignment_from_active_owner_with_disabled_password_authentication(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let organism = mk_organism(&env.dbx, Default::default()).await.unwrap();
+        let delta_login = delta_login::ActiveModel {
+            id: NotSet,
+            login: Set("CreateBlocked".to_string()),
+            created_at: NotSet,
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        insert_login(
+            &env.dbx,
+            login::ActiveModel {
+                id: NotSet,
+                login: Set("create-blocked-owner".to_string()),
+                password: Set(Some(
+                    argon2::hash_encoded(
+                        b"retained-password",
+                        b"create-blocked-owner-salt",
+                        &argon2::Config::original(),
+                    )
+                    .unwrap(),
+                )),
+                roles: Set(serde_json::json!(["Rer"])),
+                created_at: NotSet,
+                sigint_zone_id: Set(None),
+                organism_id: Set(None),
+                deleted: Set(false),
+                delta_login_id: Set(Some(delta_login.id)),
+                last_active_at: Set(Some(Utc::now().naive_utc())),
+                deactivation_reason: Set(None),
+                deleted_permanently: Set(false),
+                last_release_seen: Default::default(),
+                description: Set(None),
+                password_auth_enabled: Set(false),
+                totp_epoch: Set(None),
+                display_name: NotSet,
+            },
+        )
+        .await
+        .unwrap();
+
+        let error = create_login_1(
+            &env.dbx,
+            CreateLoginReq {
+                login: "rejected-create".to_string(),
+                password: None,
+                roles: vec!["Rer".to_string()],
+                sigint_zone_id: None,
+                organism_id: organism.id,
+                description: None,
+                delta_login: Some("createblocked".to_string()),
+                password_auth_enabled: Some(false),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(error, AppError::Form(errors) if errors.contains_key("delta_login"))
+        );
+        assert!(login::Entity::find()
+            .filter(login::Column::Login.eq("rejected-create"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        let owner = login::Entity::find()
+            .filter(login::Column::Login.eq("create-blocked-owner"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(owner.delta_login_id, Some(delta_login.id));
+        let delta_login = delta_login::Entity::find_by_id(delta_login.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(delta_login.login, "CreateBlocked");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn concurrent_delta_transfers_serialize_without_locking_out_active_accounts(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let organism = mk_organism(&env.dbx, Default::default()).await.unwrap();
+        create_login_1(
+            &env.dbx,
+            CreateLoginReq {
+                login: "concurrent-owner".to_string(),
+                password: Some("owner-password".to_string()),
+                roles: vec!["Rer".to_string()],
+                sigint_zone_id: None,
+                organism_id: organism.id,
+                description: None,
+                delta_login: Some("ConcurrentDelta".to_string()),
+                password_auth_enabled: Some(true),
+            },
+        )
+        .await
+        .unwrap();
+
+        let lock_txn = env.dbx.begin().await.unwrap();
+        acquire_delta_assignment_serialization_lock(&lock_txn)
+            .await
+            .unwrap();
+        let observer =
+            crate::new_pg_pool_from_config(&env.config).await.unwrap();
+        let create = |login: &'static str, dbx: DatabaseConnection| async move {
+            create_login_1(
+                &dbx,
+                CreateLoginReq {
+                    login: login.to_string(),
+                    password: None,
+                    roles: vec!["Rer".to_string()],
+                    sigint_zone_id: None,
+                    organism_id: organism.id,
+                    description: None,
+                    delta_login: Some("concurrentdelta".to_string()),
+                    password_auth_enabled: Some(false),
+                },
+            )
+            .await
+        };
+        let first_dbx =
+            crate::new_pg_pool_from_config(&env.config).await.unwrap();
+        let second_dbx =
+            crate::new_pg_pool_from_config(&env.config).await.unwrap();
+        let mut first = tokio::spawn(create("concurrent-first", first_dbx));
+        let mut second = tokio::spawn(create("concurrent-second", second_dbx));
+        if !wait_for_delta_assignment_lock_waiters(&observer, &lock_txn, 2)
+            .await
+        {
+            first.abort();
+            second.abort();
+            let _ = first.await;
+            let _ = second.await;
+            lock_txn.rollback().await.unwrap();
+            panic!(
+                "competing transfers must wait for the Delta assignment lock"
+            );
+        }
+        lock_txn.commit().await.unwrap();
+        let (first, second) = match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            async { tokio::join!(&mut first, &mut second) },
+        )
+        .await
+        {
+            Ok(results) => results,
+            Err(_) => {
+                first.abort();
+                second.abort();
+                let _ = first.await;
+                let _ = second.await;
+                panic!("concurrent Delta transfers must not deadlock");
+            }
+        };
+        let results = [first.unwrap(), second.unwrap()];
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert!(results.iter().any(|result| {
+            matches!(result, Err(AppError::Form(errors)) if errors.contains_key("delta_login"))
+        }));
+        let owner = login::Entity::find()
+            .filter(login::Column::Login.eq("concurrent-owner"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(owner.password_auth_enabled && owner.password.is_some());
+        assert_eq!(
+            login::Entity::find()
+                .filter(
+                    login::Column::Login
+                        .is_in(["concurrent-first", "concurrent-second"])
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            delta_login::Entity::find()
+                .filter(Expr::cust_with_values(
+                    "lower(delta_login.login) = $1",
+                    vec!["concurrentdelta".to_string()],
+                ))
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn concurrent_creation_and_update_login_conflict_without_deadlock() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let mut admin =
+            find_test_login(&env.dbx).await.unwrap().into_active_model();
+        admin.roles = Set(serde_json::json!(["Admin"]));
+        admin.update(&env.dbx).await.unwrap();
+        let organism = mk_organism(&env.dbx, Default::default()).await.unwrap();
+        let target = create_login_1(
+            &env.dbx,
+            CreateLoginReq {
+                login: "concurrent-rename-target".to_string(),
+                password: Some("target-password".to_string()),
+                roles: vec!["Rer".to_string()],
+                sigint_zone_id: None,
+                organism_id: organism.id,
+                description: None,
+                delta_login: None,
+                password_auth_enabled: Some(true),
+            },
+        )
+        .await
+        .unwrap();
+        let mut update_env = (*env).clone();
+        update_env.dbx =
+            crate::new_pg_pool_from_config(&env.config).await.unwrap();
+        let session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(session_store, Key::generate()))
+                .app_data(web::Data::new(update_env))
+                .route("/test/login", web::post().to(start_test_user_session))
+                .service(update_login),
+        )
+        .await;
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/test/login")
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let cookie = response.response().cookies().next().unwrap().into_owned();
+
+        let lock_txn = env.dbx.begin().await.unwrap();
+        acquire_delta_assignment_serialization_lock(&lock_txn)
+            .await
+            .unwrap();
+        let observer =
+            crate::new_pg_pool_from_config(&env.config).await.unwrap();
+        let create_dbx =
+            crate::new_pg_pool_from_config(&env.config).await.unwrap();
+        let mut create = tokio::spawn(async move {
+            create_login_1(
+                &create_dbx,
+                CreateLoginReq {
+                    login: "concurrent-conflict".to_string(),
+                    password: Some("new-password".to_string()),
+                    roles: vec!["Rer".to_string()],
+                    sigint_zone_id: None,
+                    organism_id: organism.id,
+                    description: None,
+                    delta_login: None,
+                    password_auth_enabled: Some(true),
+                },
+            )
+            .await
+        });
+        let mut update = Box::pin(actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie)
+                .set_json(serde_json::json!({
+                    "id": target.id,
+                    "login": "concurrent-conflict",
+                    "organism_id": organism.id,
+                    "roles": ["Rer"],
+                }))
+                .to_request(),
+        ));
+        let mut waiters = Box::pin(wait_for_delta_assignment_lock_waiters(
+            &observer, &lock_txn, 2,
+        ));
+        let lock_waited = tokio::select! {
+            reached = &mut waiters => reached,
+            response = &mut update => {
+                create.abort();
+                let _ = create.await;
+                drop(waiters);
+                lock_txn.rollback().await.unwrap();
+                panic!("update completed before reaching the Delta assignment lock: {:?}", response.status());
+            }
+        };
+        drop(waiters);
+        if !lock_waited {
+            create.abort();
+            let _ = create.await;
+            lock_txn.rollback().await.unwrap();
+            panic!(
+                "creation and update must wait for the Delta assignment lock"
+            );
+        }
+        lock_txn.commit().await.unwrap();
+        let (create, update) = match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            async { tokio::join!(&mut create, &mut update) },
+        )
+        .await
+        {
+            Ok(results) => results,
+            Err(_) => {
+                create.abort();
+                let _ = create.await;
+                panic!("concurrent creation and update must not deadlock");
+            }
+        };
+        let create = create.unwrap();
+        let update_status = update.status();
+        assert_eq!(
+            usize::from(create.is_ok())
+                + usize::from(update_status.is_success()),
+            1
+        );
+        assert!(create.is_err() || update_status.is_client_error());
+        if update_status.is_client_error() {
+            let errors: serde_json::Value =
+                actix_test::read_body_json(update).await;
+            assert!(errors.to_string().contains("login"));
+        }
+        assert_eq!(
+            login::Entity::find()
+                .filter(login::Column::Login.eq("concurrent-conflict"))
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+        let target =
+            login::Entity::find_by_id(Uuid::parse_str(&target.id).unwrap())
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(
+            target.login == "concurrent-rename-target"
+                || target.login == "concurrent-conflict"
+        );
     }
 
     #[tokio::test]
@@ -2975,7 +3646,14 @@ mod tests {
             login::ActiveModel {
                 id: Set(Uuid::now_v7()),
                 login: Set("existing-owner".to_string()),
-                password: Set(None),
+                password: Set(Some(
+                    argon2::hash_encoded(
+                        b"existing-owner-password",
+                        b"existing-owner-salt",
+                        &argon2::Config::original(),
+                    )
+                    .unwrap(),
+                )),
                 roles: Set(serde_json::json!(["Rer"])),
                 created_at: NotSet,
                 sigint_zone_id: Set(None),
@@ -2987,7 +3665,7 @@ mod tests {
                 deleted_permanently: Set(false),
                 last_release_seen: Default::default(),
                 description: Default::default(),
-                password_auth_enabled: Set(false),
+                password_auth_enabled: Set(true),
                 totp_epoch: Set(None),
                 display_name: NotSet,
             },
@@ -3017,13 +3695,17 @@ mod tests {
             },
         )
         .await;
-        env.dbx
-            .execute_unprepared(
-                "DROP TRIGGER fail_admin_user_creation ON login; DROP FUNCTION fail_admin_user_creation();",
-            )
-            .await
-            .unwrap();
-        assert!(result.is_err());
+        let cleanup_trigger = || async {
+            env.dbx
+                .execute_unprepared(
+                    "DROP TRIGGER IF EXISTS fail_admin_user_creation ON login; DROP FUNCTION IF EXISTS fail_admin_user_creation();",
+                )
+                .await
+        };
+        let cleanup_result = cleanup_trigger().await;
+        assert!(cleanup_result.is_ok());
+        let error = result.unwrap_err();
+        assert!(format!("{error:?}").contains("injected login update failure"));
 
         let owner = login::Entity::find()
             .filter(login::Column::Login.eq("existing-owner"))
@@ -3032,6 +3714,18 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(owner.delta_login_id, Some(shared_delta.id));
+        assert!(owner.password_auth_enabled);
+        assert!(argon2::verify_encoded(
+            owner.password.as_deref().unwrap(),
+            b"existing-owner-password"
+        )
+        .unwrap());
+        let restored_delta = delta_login::Entity::find_by_id(shared_delta.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(restored_delta.login, "Alpha");
         assert!(login::Entity::find()
             .filter(login::Column::Login.eq("rolled-back-account"))
             .one(&env.dbx)
@@ -3246,6 +3940,66 @@ mod tests {
         assert!(response.status().is_success());
         let reenabled: Login = actix_test::read_body_json(response).await;
         assert!(reenabled.password_auth_enabled && reenabled.has_password);
+
+        let unsafe_owner = create_login_1(
+            &env.dbx,
+            CreateLoginReq {
+                login: "unsafe-update-owner".to_string(),
+                password: None,
+                roles: vec!["Rer".to_string()],
+                sigint_zone_id: None,
+                organism_id: organism.id,
+                description: None,
+                delta_login: Some("blocked-update-delta".to_string()),
+                password_auth_enabled: Some(false),
+            },
+        )
+        .await
+        .unwrap();
+        let target_before =
+            login::Entity::find_by_id(Uuid::parse_str(&target.id).unwrap())
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let mut blocked_transfer = base.clone();
+        blocked_transfer["login"] = serde_json::json!("target-must-not-change");
+        blocked_transfer["password"] = serde_json::json!("must not persist");
+        blocked_transfer["deleted"] = serde_json::json!(true);
+        blocked_transfer["description"] = serde_json::json!("must not persist");
+        blocked_transfer["delta_login"] =
+            serde_json::json!("blocked-update-delta");
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/login/update")
+                .cookie(cookie.clone())
+                .set_json(blocked_transfer)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_client_error());
+        let errors: serde_json::Value =
+            actix_test::read_body_json(response).await;
+        assert!(errors.to_string().contains("delta_login"));
+        let target_after = login::Entity::find_by_id(target_before.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(target_after.login, target_before.login);
+        assert_eq!(target_after.password, target_before.password);
+        assert_eq!(target_after.deleted, target_before.deleted);
+        assert_eq!(target_after.description, target_before.description);
+        assert_eq!(target_after.delta_login_id, target_before.delta_login_id);
+        let unsafe_owner = login::Entity::find_by_id(
+            Uuid::parse_str(&unsafe_owner.id).unwrap(),
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(unsafe_owner.delta_login_id.is_some());
 
         let delta_only = create_login_1(
             &env.dbx,
@@ -3571,7 +4325,9 @@ mod tests {
                 login::ActiveModel {
                     id: NotSet,
                     login: Set(login_name.to_string()),
-                    password: Set(None),
+                    password: Set(
+                        (!deleted).then_some("stored-password".to_string())
+                    ),
                     roles: Set(serde_json::to_value(vec!["Rer"]).unwrap()),
                     created_at: NotSet,
                     sigint_zone_id: Set(None),
@@ -3583,7 +4339,7 @@ mod tests {
                     deleted_permanently: Set(false),
                     last_release_seen: Default::default(),
                     description: Default::default(),
-                    password_auth_enabled: Set(false),
+                    password_auth_enabled: Set(!deleted),
                     totp_epoch: Set(None),
                     display_name: NotSet,
                 },
@@ -3641,6 +4397,62 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(delta_login.login, "ALPHA");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn delta_reassignment_rejects_active_owner_without_usable_password_authentication(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let delta_login = delta_login::ActiveModel {
+            id: NotSet,
+            login: Set("Alpha".to_string()),
+            created_at: NotSet,
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        insert_login(
+            &env.dbx,
+            login::ActiveModel {
+                id: NotSet,
+                login: Set("unsafe-owner".to_string()),
+                password: Set(None),
+                roles: Set(serde_json::json!(["Rer"])),
+                created_at: NotSet,
+                sigint_zone_id: Set(None),
+                organism_id: Set(None),
+                deleted: Set(false),
+                delta_login_id: Set(Some(delta_login.id)),
+                last_active_at: Set(Some(Utc::now().naive_utc())),
+                deactivation_reason: Set(None),
+                deleted_permanently: Set(false),
+                last_release_seen: Default::default(),
+                description: Set(None),
+                password_auth_enabled: Set(false),
+                totp_epoch: Set(None),
+                display_name: NotSet,
+            },
+        )
+        .await
+        .unwrap();
+
+        let error =
+            assign_delta_login(&env.dbx, "new-owner", Some("ALPHA"), None)
+                .await
+                .unwrap_err();
+        assert!(
+            matches!(error, AppError::Form(errors) if errors.contains_key("delta_login"))
+        );
+
+        let owner = login::Entity::find()
+            .filter(login::Column::Login.eq("unsafe-owner"))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(owner.delta_login_id, Some(delta_login.id));
     }
 
     #[tokio::test]
