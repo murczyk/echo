@@ -32,6 +32,8 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     Login,
+    #[sea_orm(has_one = "super::messenger_alert_delivery::Entity")]
+    MessengerAlertDelivery,
     #[sea_orm(
         belongs_to = "super::notification_event::Entity",
         from = "Column::EventId",
@@ -47,6 +49,12 @@ pub enum Relation {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::messenger_alert_delivery::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerAlertDelivery.def()
     }
 }
 

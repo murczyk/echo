@@ -135,6 +135,8 @@ pub use super::login::Entity as Login;
 pub use super::login_totp::Entity as LoginTotp;
 pub use super::media_summary::Entity as MediaSummary;
 pub use super::media_summary_settings::Entity as MediaSummarySettings;
+pub use super::messenger_alert_delivery::Entity as MessengerAlertDelivery;
+pub use super::messenger_alert_settings::Entity as MessengerAlertSettings;
 pub use super::modulation::Entity as Modulation;
 pub use super::network_callsign::Entity as NetworkCallsign;
 pub use super::network_freq_last_datetime_in_aor::Entity as NetworkFreqLastDatetimeInAor;

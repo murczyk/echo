@@ -2,6 +2,8 @@
 public.goi_knowledge
 
 # Transient operational state.
+public.messenger_alert_settings
+public.messenger_alert_delivery
 public.bgtask
 public.bgtask_res
 public.group_stats_recalculation_task

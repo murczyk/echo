@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Login, Organism, SigintZone } from '../../../../../Bindings';
 
-const mocks = vi.hoisted(() => ({ createLogin: vi.fn(), updateLogin: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  createLogin: vi.fn(),
+  updateLogin: vi.fn(),
+  notify: vi.fn(),
+}));
 vi.hoisted(() => {
   Object.defineProperty(window, 'localStorage', {
     configurable: true,
@@ -17,6 +21,11 @@ vi.mock('../../../services/api/logins', () => ({
   createLogin: mocks.createLogin,
   listLogins: vi.fn(),
   updateLogin: mocks.updateLogin,
+  searchMessengerProfiles: vi.fn().mockResolvedValue({ data: {} }),
+}));
+
+vi.mock('../../../components/PowerSnackbar', () => ({
+  usePowerSnackbar: () => ({ notify: mocks.notify }),
 }));
 
 import { AddUserDialog, EditUserDialog } from '../index';
@@ -45,6 +54,7 @@ function createdLogin(): Login {
     deltaLogin: 'delta-login',
     lastActiveAt: null,
     deactivationReason: null,
+    signalProfileId: null,
     description: null,
     passwordAuthEnabled: true,
     hasPassword: true,
@@ -218,6 +228,7 @@ describe('AddUserDialog', () => {
       passwordAuthEnabled: false,
       hasPassword: false,
       deltaLogin: 'delta-login',
+      signalProfileId: 'existing-profile',
     };
     mocks.updateLogin.mockResolvedValue(inactive);
     const container = document.createElement('div');
@@ -246,6 +257,7 @@ describe('AddUserDialog', () => {
         deactivationReason: expect.anything(),
       }),
     );
+    expect(mocks.updateLogin.mock.calls[0][0]).not.toHaveProperty('signalProfileId');
     act(() => root.unmount());
   });
 

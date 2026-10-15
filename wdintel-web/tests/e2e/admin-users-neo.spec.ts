@@ -15,6 +15,7 @@ const login = {
   deltaLogin: 'delta-login',
   lastActiveAt: null,
   deactivationReason: null,
+  signalProfileId: null,
   description: null,
   passwordAuthEnabled: false,
   hasPassword: false,
@@ -35,6 +36,9 @@ for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await installAnalysisNeoApiMocks(page, { userRoles: ['Admin', 'Rer'] });
     let createRequests = 0;
+    await page.route('**/api/users/messenger-profiles', (route) =>
+      route.fulfill({ json: { data: {} } }),
+    );
     await page.route('**/api/logins', (route) =>
       route.fulfill({ json: { users: [inactiveLogin] } }),
     );

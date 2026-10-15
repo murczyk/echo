@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 pub mod display_name;
 pub mod login_totp;
+pub mod messenger_profile;
 pub mod totp;
 pub mod totp_challenge;
 pub mod totp_crypto;
@@ -428,6 +429,8 @@ pub async fn update_login(
     let req = req.into_inner();
     let update_description = has_update_login_description(&req);
     let update_delta_login = has_update_login_field(&req, "delta_login");
+    let update_signal_profile =
+        has_update_login_field(&req, "signal_profile_id");
     let req: UpdateLoginReq = serde_json::from_value(req).c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     acquire_delta_assignment_serialization_lock(&txn)
@@ -527,6 +530,9 @@ pub async fn update_login(
     }
 
     let mut login_obj: login::ActiveModel = login_obj.into();
+    if update_signal_profile {
+        login_obj.signal_profile_id = Set(req.signal_profile_id.clone());
+    }
     login_obj.login = Set(login_name.clone());
     login_obj.delta_login_id = Set(delta_id);
     if let Some(deleted) = req.deleted {
@@ -637,6 +643,7 @@ pub async fn update_login(
         deactivation_reason: res
             .deactivation_reason
             .map(DeactivationReasonType::from),
+        signal_profile_id: res.signal_profile_id,
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
         has_password: res.password.is_some(),
@@ -740,6 +747,7 @@ async fn create_login_1(
         &txn,
         login::ActiveModel {
             id: Set(Uuid::now_v7()),
+            signal_profile_id: Set(req.signal_profile_id.clone()),
             delta_login_id: Set(None),
             login: Set(login_name.clone()),
             password: Set(password),
@@ -813,6 +821,7 @@ async fn create_login_1(
         deactivation_reason: res
             .deactivation_reason
             .map(DeactivationReasonType::from),
+        signal_profile_id: res.signal_profile_id,
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
         has_password: res.password.is_some(),
@@ -847,6 +856,7 @@ pub async fn create_delta_login(
         sigint_zone,
         organism_id,
         description,
+        req.signal_profile_id.clone(),
     )
     .await
     .c(h!())?;
@@ -864,6 +874,7 @@ pub async fn list_logins(
     #[derive(FromQueryResult)]
     struct LoginRes {
         id: Uuid,
+        signal_profile_id: Option<String>,
         login: String,
         roles: serde_json::Value,
         sigint_zone_id: Option<i64>,
@@ -897,6 +908,7 @@ pub async fn list_logins(
         .select_only()
         .columns([
             login::Column::Id,
+            login::Column::SignalProfileId,
             login::Column::Login,
             login::Column::Roles,
             login::Column::SigintZoneId,
@@ -966,6 +978,7 @@ pub async fn list_logins(
             deactivation_reason: login
                 .deactivation_reason
                 .map(DeactivationReasonType::from),
+            signal_profile_id: login.signal_profile_id,
             description: login.description,
             password_auth_enabled: login.password_auth_enabled,
             has_password: login.password.is_some(),
@@ -1642,6 +1655,7 @@ pub async fn register_user(
     let hash_s =
         argon2::hash_encoded(password.as_bytes(), salt, &config).c(h!())?;
     login::ActiveModel {
+        signal_profile_id: NotSet,
         id: Set(Uuid::now_v7()),
         login: Set(user.to_string()),
         password: Set(Some(hash_s.clone())),
@@ -1907,6 +1921,7 @@ pub async fn oneoff_register_delta_user(
         Some(ps.sigint_zone),
         ps.organism_id,
         None,
+        None,
     )
     .await
     .c(h!())?;
@@ -2103,6 +2118,7 @@ async fn register_delta_user(
     sigint_zone: Option<i64>,
     organism_id: Option<i64>,
     description: Option<String>,
+    signal_profile_id: Option<String>,
 ) -> Result<Login, AppError> {
     let txn = dbx.begin().await.c(h!())?;
     acquire_delta_assignment_serialization_lock(&txn)
@@ -2113,6 +2129,7 @@ async fn register_delta_user(
         &txn,
         login::ActiveModel {
             id: Set(Uuid::now_v7()),
+            signal_profile_id: Set(signal_profile_id),
             login: Set(login),
             password: Set(None),
             roles: Set(serde_json::to_value(roles).c(h!())?),
@@ -2189,6 +2206,7 @@ async fn register_delta_user(
         deactivation_reason: res
             .deactivation_reason
             .map(DeactivationReasonType::from),
+        signal_profile_id: res.signal_profile_id,
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
         has_password: res.password.is_some(),
@@ -2950,6 +2968,7 @@ mod tests {
         insert_login(
             &env.dbx,
             login::ActiveModel {
+                signal_profile_id: sea_orm::ActiveValue::NotSet,
                 id: NotSet,
                 login: Set("Regular".to_string()),
                 password: Set(Some(
@@ -2982,6 +3001,7 @@ mod tests {
             &env.dbx,
             "kolya".to_string(),
             vec!["Rer".to_string()],
+            None,
             None,
             None,
             None,
@@ -3040,6 +3060,7 @@ mod tests {
             let owner = insert_login(
                 &env.dbx,
                 login::ActiveModel {
+                    signal_profile_id: NotSet,
                     id: NotSet,
                     login: Set(format!("{delta_name}-owner")),
                     password: Set(None),
@@ -3090,6 +3111,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .await
             .unwrap_err();
@@ -3132,6 +3154,7 @@ mod tests {
             let owner = create_login_1(
                 &env.dbx,
                 CreateLoginReq {
+                    signal_profile_id: None,
                     login: format!("{delta_name}-owner"),
                     password: None,
                     roles: vec!["Rer".to_string()],
@@ -3163,6 +3186,7 @@ mod tests {
                 vec!["Rer".to_string()],
                 None,
                 Some(organism.id),
+                None,
                 None,
             )
             .await
@@ -3204,6 +3228,7 @@ mod tests {
         insert_login(
             &env.dbx,
             login::ActiveModel {
+                signal_profile_id: NotSet,
                 id: NotSet,
                 login: Set("create-blocked-owner".to_string()),
                 password: Set(Some(
@@ -3236,6 +3261,7 @@ mod tests {
         let error = create_login_1(
             &env.dbx,
             CreateLoginReq {
+                signal_profile_id: None,
                 login: "rejected-create".to_string(),
                 password: None,
                 roles: vec!["Rer".to_string()],
@@ -3282,6 +3308,7 @@ mod tests {
         create_login_1(
             &env.dbx,
             CreateLoginReq {
+                signal_profile_id: None,
                 login: "concurrent-owner".to_string(),
                 password: Some("owner-password".to_string()),
                 roles: vec!["Rer".to_string()],
@@ -3305,6 +3332,7 @@ mod tests {
             create_login_1(
                 &dbx,
                 CreateLoginReq {
+                    signal_profile_id: None,
                     login: login.to_string(),
                     password: None,
                     roles: vec!["Rer".to_string()],
@@ -3400,6 +3428,7 @@ mod tests {
         let target = create_login_1(
             &env.dbx,
             CreateLoginReq {
+                signal_profile_id: None,
                 login: "concurrent-rename-target".to_string(),
                 password: Some("target-password".to_string()),
                 roles: vec!["Rer".to_string()],
@@ -3451,6 +3480,7 @@ mod tests {
             create_login_1(
                 &create_dbx,
                 CreateLoginReq {
+                    signal_profile_id: None,
                     login: "concurrent-conflict".to_string(),
                     password: Some("new-password".to_string()),
                     roles: vec!["Rer".to_string()],
@@ -3562,6 +3592,7 @@ mod tests {
             let created = create_login_1(
                 &env.dbx,
                 CreateLoginReq {
+                    signal_profile_id: None,
                     login: format!("{login}-account"),
                     password: password.map(str::to_string),
                     roles: vec!["Rer".to_string()],
@@ -3584,6 +3615,7 @@ mod tests {
         let disabled_password = create_login_1(
             &env.dbx,
             CreateLoginReq {
+                signal_profile_id: None,
                 login: "disabled-password-account".to_string(),
                 password: Some("must-not-be-stored".to_string()),
                 roles: vec!["Rer".to_string()],
@@ -3602,6 +3634,7 @@ mod tests {
         let spaced_login = create_login_1(
             &env.dbx,
             CreateLoginReq {
+                signal_profile_id: None,
                 login: "spaced-password-account".to_string(),
                 password: Some(spaced_password.to_string()),
                 roles: vec!["Rer".to_string()],
@@ -3644,6 +3677,7 @@ mod tests {
         insert_login(
             &env.dbx,
             login::ActiveModel {
+                signal_profile_id: NotSet,
                 id: Set(Uuid::now_v7()),
                 login: Set("existing-owner".to_string()),
                 password: Set(Some(
@@ -3684,6 +3718,7 @@ mod tests {
         let result = create_login_1(
             &env.dbx,
             CreateLoginReq {
+                signal_profile_id: None,
                 login: "rolled-back-account".to_string(),
                 password: None,
                 roles: vec!["Rer".to_string()],
@@ -3747,6 +3782,7 @@ mod tests {
         let target = create_login_1(
             &env.dbx,
             CreateLoginReq {
+                signal_profile_id: None,
                 login: "update-target".to_string(),
                 password: Some("existing password".to_string()),
                 roles: vec!["Rer".to_string()],
@@ -3944,6 +3980,7 @@ mod tests {
         let unsafe_owner = create_login_1(
             &env.dbx,
             CreateLoginReq {
+                signal_profile_id: None,
                 login: "unsafe-update-owner".to_string(),
                 password: None,
                 roles: vec!["Rer".to_string()],
@@ -4004,6 +4041,7 @@ mod tests {
         let delta_only = create_login_1(
             &env.dbx,
             CreateLoginReq {
+                signal_profile_id: None,
                 login: "delta-only-update".to_string(),
                 password: None,
                 roles: vec!["Rer".to_string()],
@@ -4081,6 +4119,7 @@ mod tests {
         let legacy = insert_login(
             &env.dbx,
             login::ActiveModel {
+                signal_profile_id: NotSet,
                 id: NotSet,
                 login: Set("legacy-authentication".to_string()),
                 password: Set(None),
@@ -4124,6 +4163,7 @@ mod tests {
         let unusable = insert_login(
             &env.dbx,
             login::ActiveModel {
+                signal_profile_id: NotSet,
                 id: NotSet,
                 login: Set("unusable-reactivation".to_string()),
                 password: Set(None),
@@ -4192,6 +4232,7 @@ mod tests {
         insert_login(
             &env.dbx,
             login::ActiveModel {
+                signal_profile_id: NotSet,
                 id: NotSet,
                 login: Set("shared-delta-owner".to_string()),
                 password: Set(None),
@@ -4249,6 +4290,7 @@ mod tests {
             insert_login(
                 &env.dbx,
                 login::ActiveModel {
+                    signal_profile_id: sea_orm::ActiveValue::NotSet,
                     id: NotSet,
                     login: Set(login_name.to_string()),
                     password: Set(None),
@@ -4323,6 +4365,7 @@ mod tests {
             insert_login(
                 &env.dbx,
                 login::ActiveModel {
+                    signal_profile_id: sea_orm::ActiveValue::NotSet,
                     id: NotSet,
                     login: Set(login_name.to_string()),
                     password: Set(
@@ -4351,6 +4394,7 @@ mod tests {
         insert_login(
             &env.dbx,
             login::ActiveModel {
+                signal_profile_id: sea_orm::ActiveValue::NotSet,
                 id: NotSet,
                 login: Set("NewOwner".to_string()),
                 password: Set(None),
@@ -4416,6 +4460,7 @@ mod tests {
         insert_login(
             &env.dbx,
             login::ActiveModel {
+                signal_profile_id: NotSet,
                 id: NotSet,
                 login: Set("unsafe-owner".to_string()),
                 password: Set(None),
@@ -4462,6 +4507,7 @@ mod tests {
         let env = cleanup().await.unwrap();
 
         login::ActiveModel {
+            signal_profile_id: sea_orm::ActiveValue::NotSet,
             id: NotSet,
             login: Set("Kolya".to_string()),
             password: Set(None),
@@ -4487,6 +4533,7 @@ mod tests {
         let err = insert_login(
             &env.dbx,
             login::ActiveModel {
+                signal_profile_id: sea_orm::ActiveValue::NotSet,
                 id: NotSet,
                 login: Set("Kolya".to_string()),
                 password: Set(None),
@@ -4541,6 +4588,7 @@ mod tests {
         let login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                signal_profile_id: NotSet,
                 id: NotSet,
                 login: Set("inactive-secret-group-user".to_string()),
                 organism_id: Set(Some(organism.id)),

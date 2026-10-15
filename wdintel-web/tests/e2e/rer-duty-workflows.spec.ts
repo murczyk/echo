@@ -440,11 +440,23 @@ test.describe('Duty characterization workflows @regression', () => {
     await expect(card).toContainText('Duty message text 99');
 
     await card.getByRole('button', { name: 'Позначити як важливе' }).click();
+    await page
+      .getByRole('dialog', { name: 'Сповістити всіх?' })
+      .getByRole('button', { name: 'Позначити', exact: true })
+      .click();
     await expect(card.getByRole('button', { name: 'Позначити як не важливе' })).toBeVisible();
     await card.getByRole('button', { name: 'Позначити як не важливе' }).click();
     await expect(card.getByRole('button', { name: 'Позначити як важливе' })).toBeVisible();
     expect(importantRequests).toEqual([
-      { path: '/api/rer/important/add', body: { message_id: 99 } },
+      {
+        path: '/api/rer/important/add',
+        body: {
+          message_id: 99,
+          group_master_key: null,
+          notify_group: false,
+          operation_id: expect.any(String),
+        },
+      },
       { path: '/api/rer/important/delete', body: { message_id: 99 } },
     ]);
 

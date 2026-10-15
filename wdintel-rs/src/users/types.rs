@@ -87,6 +87,7 @@ pub struct UserInfoReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct Login {
+    pub signal_profile_id: Option<String>,
     pub id: String,
     pub login: String,
     pub roles: Vec<String>,
@@ -133,6 +134,7 @@ pub struct ListLoginsRsp {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct CreateLoginReq {
+    pub signal_profile_id: Option<String>,
     pub login: String,
     #[serde(default)]
     pub password: Option<String>,
@@ -150,6 +152,7 @@ pub struct CreateLoginReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct CreateDeltaLoginReq {
+    pub signal_profile_id: Option<String>,
     pub login: String,
     pub roles: Vec<String>,
     pub sigint_zone_id: Option<i64>,
@@ -161,6 +164,7 @@ pub struct CreateDeltaLoginReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct UpdateLoginReq {
+    pub signal_profile_id: Option<String>,
     pub id: String,
     pub login: String,
     pub roles: Option<Vec<String>>,

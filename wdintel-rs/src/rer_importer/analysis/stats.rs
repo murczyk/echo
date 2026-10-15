@@ -241,10 +241,11 @@ pub(super) async fn resolve_analytics_message_id_scope(
     source_db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<AnalyticsMessageIdScope, AppError> {
-    crate::attachments::analytics::ensure_search_coverage(
+    crate::attachments::analytics::ensure_search_coverage_with_mode(
         source_db,
         db,
         &req.search,
+        req.search_mode,
         freshness_max_age_ms,
     )
     .await
@@ -1152,6 +1153,7 @@ fn apply_group_stats_filters(
     let query = filter_search_with_correlated_terms(
         query,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .context(h!())?;
@@ -1898,6 +1900,7 @@ fn build_senders_filtered_query(
     let senders_res = filter_search_with_correlated_terms(
         senders_res,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .context(h!())?;
@@ -2043,6 +2046,7 @@ where
     let query = filter_search_with_correlated_terms(
         query,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .context(h!())?;
@@ -2368,6 +2372,7 @@ fn build_posts_filtered_query(
     let post_res = filter_search_with_correlated_terms(
         post_res,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .context(h!())?;
@@ -2447,10 +2452,11 @@ pub(super) async fn fetch_freqs_raw_with_db(
     freshness_max_age_ms: u64,
 ) -> Result<Vec<AnalysisStatsFreq>, AppError> {
     let login_value = login_id_from_identity(user)?;
-    crate::attachments::analytics::ensure_search_coverage(
+    crate::attachments::analytics::ensure_search_coverage_with_mode(
         source_db,
         db,
         &req.search,
+        req.search_mode,
         freshness_max_age_ms,
     )
     .await
@@ -2829,6 +2835,7 @@ fn build_freqs_filtered_query(
     let freqs_res = filter_search_with_correlated_terms(
         freqs_res,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .context(h!())?;
@@ -4062,6 +4069,7 @@ fn build_callsigns_filtered_query(
     let callsigns_res = filter_search_with_correlated_terms(
         callsigns_res,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .c(h!())?;
@@ -4781,6 +4789,7 @@ fn build_tags_filtered_query_with_owner_condition(
     let tags_res = filter_search_with_correlated_terms(
         tags_res,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .c(h!())?;
@@ -5215,6 +5224,7 @@ fn build_units_filtered_query(
     let units_res = filter_search_with_correlated_terms(
         units_res,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .context(h!())?;
@@ -5551,6 +5561,7 @@ fn build_locations_filtered_query_for_login(
     let locations_res = filter_search_with_correlated_terms(
         locations_res,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .context(h!())?;
@@ -6202,6 +6213,7 @@ fn build_aor_messages_query(
     let messages = filter_search_with_correlated_terms(
         messages,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .context(h!())?;
@@ -6605,6 +6617,7 @@ fn build_network_analytics_messages_query(
     let messages = filter_search_with_correlated_terms(
         messages,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .context(h!())?;
@@ -7330,7 +7343,9 @@ fn build_networks_query_for_login(
     )
     .context(h!())?;
     let messages_q = apply_metadata_filters(messages_q, &req)?;
-    let messages_q = filter_search(messages_q, &req.search).context(h!())?;
+    let messages_q =
+        filter_search_with_mode(messages_q, &req.search, req.search_mode)
+            .context(h!())?;
     let messages_q =
         filter_selected_device_names(messages_q, &req.selected_device_names)?;
     let messages_q = filter_selected_tags(
@@ -7765,6 +7780,7 @@ async fn fetch_selected_count_for_login_with_conn(
     let selected_count_res = filter_search_with_correlated_terms(
         selected_count_res,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .context(h!())?;

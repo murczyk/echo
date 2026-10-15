@@ -1,6 +1,7 @@
 module Config exposing
     ( adjacentFreqsRangeOptions
     , analysisHourAfterWhichWeTakeADayTomorrow
+    , analysisSearchDocUrl
     , babakNewCallsignMinMentionsDefault
     , eventServicePollTracker
     , featureAudioTranscriptionBesidePlayer
@@ -93,3 +94,8 @@ thresholdStopCountingDays =
 analysisHourAfterWhichWeTakeADayTomorrow : Int
 analysisHourAfterWhichWeTakeADayTomorrow =
     19
+
+
+analysisSearchDocUrl : String
+analysisSearchDocUrl =
+    "/docs/analysis-search/"

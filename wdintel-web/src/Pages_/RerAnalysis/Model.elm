@@ -99,6 +99,7 @@ type alias Model =
     , savedFilterEditInp : Dict Int String
     , savedFilterMenuOpen : Maybe Int
     , searchInput : String
+    , searchMode : Maybe B.AnalysisSearchMode
     , metadataCc : List String
     , metadataSender : List String
     , metadataReceiver : List String

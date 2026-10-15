@@ -87,6 +87,7 @@ where
             template.update(dbx).await.c(h!())?
         }
         None => login::ActiveModel {
+            signal_profile_id: NotSet,
             login: Set(AI_AGENT_TEMPLATE_LOGIN_NAME.to_string()),
             password: Set(None),
             roles: Set(roles),
@@ -214,6 +215,7 @@ async fn create_link(
     let now = Utc::now().naive_utc();
     let agent_login_id = Uuid::now_v7();
     let agent = login::ActiveModel {
+        signal_profile_id: NotSet,
         login: Set(linked_name),
         password: Set(None),
         roles: Set(agent_roles_json()?),

@@ -1,4 +1,5 @@
 mod m20260906_094818_ai_callsign_feedback;
+mod m20261015_092940_messenger_alerts;
 pub use sea_orm_migration::prelude::*;
 
 mod m20220101_000001_create_table;
@@ -1140,6 +1141,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261014_124732_attachment_document_updated_at_index::Migration),
             Box::new(m20261014_140818_attachment_chunk_summary_index::Migration),
             Box::new(m20261014_144721_attachment_search_change::Migration),
+            Box::new(m20261015_092940_messenger_alerts::Migration),
         ]
     }
 }

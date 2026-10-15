@@ -568,6 +568,12 @@ export type InboxMessagesSortBy =
   | 'IMSCreatedAt'
 ;
 
+export type AnalysisSearchMode =
+  | 'Fuzzy'
+  | 'Exact'
+  | 'Substring'
+;
+
 export type TagFilterOption =
   | 'OneOfTags'
   | 'AllTags'
@@ -612,6 +618,7 @@ export type InboxMessagesReq = {
   orWithoutCoords: boolean | null;
   newestFirst: boolean | null;
   search: string | null;
+  searchMode: AnalysisSearchMode | null;
   highlightCallsigns: boolean | null;
   highlightKeywords: boolean | null;
   highlightSearchres: boolean | null;
@@ -735,6 +742,41 @@ export type SignalGroupRsp = {
   name: string | null;
 };
 
+export type MessengerProfileSearchReq = {
+  query: string;
+};
+
+export type MessengerAlertSettings = {
+  enabled: boolean;
+  senderDatasourceIds: Array<number>;
+};
+
+export type MessengerAlertPreference = {
+  receiveAlertsInMessenger: boolean | null;
+};
+
+export type MessengerAlertHistoryReq = {
+  beforeId: string | null;
+};
+
+export type MessengerAlertHistoryEntry = {
+  id: string;
+  recipientLogin: string;
+  recipientProfileId: string;
+  messageUrl: string;
+  status: string;
+  senderName: string | null;
+  attemptedSenderIds: Array<number>;
+  error: string | null;
+  createdAt: number;
+  sentAt: number | null;
+};
+
+export type MessengerAlertHistoryRsp = {
+  entries: Array<MessengerAlertHistoryEntry>;
+  nextBeforeId: string | null;
+};
+
 export type SignalProfileReq = {
   uuid: string;
 };
@@ -851,6 +893,7 @@ export type AnalysisStatsReq = {
   orWithCoords: boolean | null;
   orWithoutCoords: boolean | null;
   search: string | null;
+  searchMode: AnalysisSearchMode | null;
   selectedTags: Array<number> | null;
   deniedTags: Array<number> | null;
   tagPresence: TagPresenceFilter | null;
@@ -1036,6 +1079,7 @@ export type CallsignsGraphReq = {
   orWithoutCoords: boolean | null;
   nolimit: boolean | null;
   search: string | null;
+  searchMode: AnalysisSearchMode | null;
   selectedTags: Array<number> | null;
   deniedTags: Array<number> | null;
   tagPresence: TagPresenceFilter | null;
@@ -1128,6 +1172,7 @@ export type RerAnalysisQueryState = {
   orWithCoords: boolean;
   orWithoutCoords: boolean;
   search: string;
+  searchMode: AnalysisSearchMode | null;
   metadataCc: Array<string>;
   metadataSender: Array<string>;
   metadataReceiver: Array<string>;
@@ -1858,6 +1903,7 @@ export type UserInfoReq = {
 };
 
 export type Login = {
+  signalProfileId: string | null;
   id: string;
   login: string;
   roles: Array<string>;
@@ -1892,6 +1938,7 @@ export type ListLoginsRsp = {
 };
 
 export type CreateLoginReq = {
+  signalProfileId: string | null;
   login: string;
   password: string | null;
   roles: Array<string>;
@@ -1903,6 +1950,7 @@ export type CreateLoginReq = {
 };
 
 export type UpdateLoginReq = {
+  signalProfileId: string | null;
   id: string;
   login: string;
   roles: Array<string> | null;
@@ -7033,6 +7081,8 @@ export type LongPollRsp = {
 export type EchoAccountF1 = {
   id: number;
   areaOfResponsibility: AreaOfResponsibility | null;
+  canReadMessages: boolean | null;
+  canSendMessages: boolean | null;
   status: string;
   createdAt: number;
   clientId: number | null;
@@ -7091,6 +7141,8 @@ export type AccountStatusReq = {
   accountId: number;
   aorId: number | null;
   isActive: boolean;
+  canReadMessages: boolean | null;
+  canSendMessages: boolean | null;
   displayName: string;
   description: string | null;
   apiLogin: string | null;

@@ -12,6 +12,7 @@ import {
 import { useEffect, useState } from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
+import { AnalysisSearchControls } from './AnalysisSearchControls';
 import {
   dateTimeRangeDisplaysYear,
   DateTimeRangeControl,
@@ -54,12 +55,13 @@ export function AnalysisHeaderControls({
     <Stack
       direction={isCompactLayout ? 'row' : { xs: 'column', sm: 'row' }}
       spacing={1}
+      useFlexGap={isCompactLayout}
       alignItems={isCompactLayout ? 'center' : { xs: 'stretch', sm: 'center' }}
       sx={{
         width: isCompactLayout ? 'fit-content' : { xs: '100%', sm: 'fit-content' },
-        maxWidth: '100%',
+        maxWidth: isCompactLayout ? 'calc(100vw - 2 * var(--echo-spacing-xl))' : '100%',
         minWidth: 0,
-        flexWrap: 'nowrap',
+        flexWrap: isCompactLayout ? 'wrap' : 'nowrap',
         justifyContent: 'flex-start',
       }}
     >
@@ -177,6 +179,12 @@ export function AnalysisHeaderControls({
           />
         </Box>
       )}
+      {!isCompactLayout || compactSearchOpen ? (
+        <AnalysisSearchControls
+          searchMode={queryState.searchMode}
+          onChange={(searchMode) => updateQueryState({ searchMode })}
+        />
+      ) : null}
       <Box
         sx={{
           width: isCompactLayout
