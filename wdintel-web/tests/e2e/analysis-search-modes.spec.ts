@@ -54,20 +54,60 @@ for (const routePath of ['/rer-analysis', '/rer-analysis-neo']) {
   });
 }
 
+test('@regression #3780 legacy saved filters reconcile omitted and explicit fuzzy search', async ({
+  page,
+}) => {
+  const inboxResponse = { ...createEmptyInboxResponse(), poll_cursor_id: null };
+  await installRerDutyShortStateMocks(page, { inboxResponse });
+  await installAnalysisNeoApiMocks(page, { inboxResponse });
+  let currentReq: Record<string, unknown> | undefined;
+  let savedReq: Record<string, unknown> | undefined;
+  await page.route('**/api/rer/analysis/stats/groups/count', async (route) => {
+    currentReq = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fallback();
+  });
+  await page.route('**/api/rer/analysis/saved-filters', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(savedReq ? [{ id: 3780, name: 'Старий пошук', req: savedReq }] : []),
+    });
+  });
+  await page.goto('/rer-analysis');
+  await expect.poll(() => currentReq).toBeDefined();
+  savedReq = { ...currentReq };
+  delete savedReq.search_mode;
+  await page.reload();
+  await page.getByRole('button', { name: 'збережені', exact: true }).click();
+  const savedFilter = page.getByText('Старий пошук', { exact: true });
+  await savedFilter.click();
+  await expect(savedFilter).toHaveClass(/font-medium/);
+  const mode = page.getByRole('combobox', { name: 'Режим пошуку' });
+  await mode.selectOption('Exact');
+  await expect(savedFilter).not.toHaveClass(/font-medium/);
+  await mode.selectOption('Fuzzy');
+  await expect(savedFilter).toHaveClass(/font-medium/);
+});
+
 test('@regression #3780 Neo search modes and help remain reachable on a phone', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 375, height: 844 });
+  await page.setViewportSize({ width: 320, height: 844 });
   await installAnalysisNeoApiMocks(page, { inboxResponse: createEmptyInboxResponse() });
   await page.goto('/rer-analysis-neo');
   await page.getByRole('button', { name: 'Відкрити пошук' }).click();
   await page.getByPlaceholder('Пошук', { exact: true }).fill('нора');
   const mode = page.getByRole('combobox', { name: 'Режим пошуку' });
   await mode.selectOption('Exact');
-  const box = await mode.boundingBox();
-  expect(box).not.toBeNull();
-  expect(box!.x).toBeGreaterThanOrEqual(0);
-  expect(box!.x + box!.width).toBeLessThanOrEqual(375);
-  await page.getByRole('button', { name: 'Довідка про пошук' }).click();
+  const help = page.getByRole('button', { name: 'Довідка про пошук' });
+  for (const width of [320, 375, 768]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const control of [mode, help, page.getByRole('button', { name: /^Інтервал:/ })]) {
+      const box = await control.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    }
+  }
+  await help.click();
   await expect(page.getByRole('link', { name: 'Докладніше про пошук' })).toBeVisible();
 });

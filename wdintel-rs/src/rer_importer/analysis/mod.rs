@@ -3454,11 +3454,12 @@ where
         q2 = q2.filter(predicate);
 
         if !search_parts.freq.is_empty() {
-            q2 = filter_selected_freqs(q2, &Some(search_parts.freq))?;
+            q2 = filter_selected_freqs(q2, &Some(search_parts.freq)).c(h!())?;
         }
 
         if !search_parts.not_freq.is_empty() {
-            q2 = filter_denied_freqs(q2, &Some(search_parts.not_freq))?;
+            q2 = filter_denied_freqs(q2, &Some(search_parts.not_freq))
+                .c(h!())?;
         }
 
         if !search_parts.message_uids.is_empty() {

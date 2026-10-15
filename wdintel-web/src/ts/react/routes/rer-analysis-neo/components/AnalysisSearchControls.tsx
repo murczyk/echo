@@ -1,8 +1,9 @@
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import { Box, IconButton, Popover, Tooltip } from '@mui/material';
+import { Popover, Tooltip } from '@mui/material';
 import { useState } from 'react';
 
 import type { AnalysisSearchMode } from '../../../../../Bindings';
+import { PowerIconButton } from '../../../components/PowerIconButton';
 import { ANALYSIS_SEARCH_DOC_URL } from '../config';
 
 type Props = {
@@ -14,38 +15,22 @@ export function AnalysisSearchControls({ searchMode, onChange }: Props) {
   const [helpAnchor, setHelpAnchor] = useState<HTMLElement | null>(null);
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-      <Box
-        sx={{
-          '& select': {
-            height: 40,
-            maxWidth: 175,
-            px: 1,
-            border: '1px solid',
-            borderColor: 'divider',
-            borderRadius: 1,
-            color: 'text.primary',
-            backgroundColor: 'background.paper',
-            font: 'inherit',
-            fontSize: 14,
-          },
+    <div className="flex shrink-0 items-center gap-echo-xs">
+      <select
+        className="h-echo-control-md max-w-[175px] rounded-echo-sm border border-echo-border bg-echo-surface-raised px-echo-sm font-[inherit] text-echo-base text-echo-text"
+        aria-label="Режим пошуку"
+        value={searchMode ?? 'Fuzzy'}
+        onChange={(event) => {
+          const mode = event.target.value;
+          onChange(mode === 'Exact' || mode === 'Substring' ? mode : 'Fuzzy');
         }}
       >
-        <select
-          aria-label="Режим пошуку"
-          value={searchMode ?? 'Fuzzy'}
-          onChange={(event) => {
-            const mode = event.target.value;
-            onChange(mode === 'Exact' || mode === 'Substring' ? mode : 'Fuzzy');
-          }}
-        >
-          <option value="Fuzzy">Гнучкий пошук</option>
-          <option value="Exact">Точний збіг</option>
-          <option value="Substring">Збіг за входженням</option>
-        </select>
-      </Box>
+        <option value="Fuzzy">Гнучкий пошук</option>
+        <option value="Exact">Точний збіг</option>
+        <option value="Substring">Збіг за входженням</option>
+      </select>
       <Tooltip title="Режими пошуку" arrow>
-        <IconButton
+        <PowerIconButton
           aria-label="Довідка про пошук"
           aria-expanded={Boolean(helpAnchor)}
           aria-controls={helpAnchor ? 'analysis-search-help' : undefined}
@@ -53,7 +38,7 @@ export function AnalysisSearchControls({ searchMode, onChange }: Props) {
           onClick={(event) => setHelpAnchor(event.currentTarget)}
         >
           <InfoOutlinedIcon fontSize="small" />
-        </IconButton>
+        </PowerIconButton>
       </Tooltip>
       <Popover
         id="analysis-search-help"
@@ -63,7 +48,7 @@ export function AnalysisSearchControls({ searchMode, onChange }: Props) {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <Box sx={{ p: 2, maxWidth: 360 }}>
+        <div className="max-w-[360px] p-echo-lg">
           <p>Усі режими не враховують регістр. Для запиту «нора»:</p>
           <ul>
             <li>Гнучкий пошук: також «норма», «нормальний».</li>
@@ -73,8 +58,8 @@ export function AnalysisSearchControls({ searchMode, onChange }: Props) {
           <a href={ANALYSIS_SEARCH_DOC_URL} target="_blank" rel="noopener noreferrer">
             Докладніше про пошук
           </a>
-        </Box>
+        </div>
       </Popover>
-    </Box>
+    </div>
   );
 }

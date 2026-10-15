@@ -320,7 +320,7 @@ fn exists_term(
 }
 
 pub fn message_filter(query: &str, scope: &str) -> anyhow::Result<SimpleExpr> {
-    message_filter_with_mode(query, scope, None, false)
+    message_filter_with_mode(query, scope, None, false).c(h!())
 }
 
 pub(crate) fn message_filter_with_mode(
