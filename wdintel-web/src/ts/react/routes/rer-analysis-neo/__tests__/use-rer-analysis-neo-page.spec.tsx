@@ -489,7 +489,11 @@ describe('useRerAnalysisNeoPage', () => {
   ])(
     'gates the RER report filter for $eligible eligibility and $globallyEnabled global setting',
     async ({ eligible, globallyEnabled, expected }) => {
-      window.history.replaceState({}, '', `${window.location.pathname}?onlyWithNetwork=true`);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?onlyWithNetwork=true&m=target-uid`,
+      );
       currentUserMock.fetchCurrentUser.mockResolvedValue({
         name: 'tester',
         roles: ['Rer'],
@@ -506,6 +510,7 @@ describe('useRerAnalysisNeoPage', () => {
         rerShortUrlEnabled: false,
         enableAudioTranscription: true,
         rerReportEnabled: globallyEnabled,
+        hideNetworks: true,
       });
 
       renderHook(['Rer']);
@@ -514,6 +519,10 @@ describe('useRerAnalysisNeoPage', () => {
       expect(latest?.rerReportFilterEnabled).toBe(expected);
       expect(latest?.queryState.onlyWithNetwork).toBe(expected);
       expect(new URLSearchParams(window.location.search).has('onlyWithNetwork')).toBe(expected);
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.onlyWithNetwork).toBe(expected);
+      expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq.onlyWithNetwork).toBe(
+        expected,
+      );
     },
   );
 
