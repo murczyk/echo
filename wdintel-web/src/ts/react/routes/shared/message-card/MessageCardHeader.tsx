@@ -176,11 +176,13 @@ function HeaderText({
   nowrap = false,
   wrap = false,
   className,
+  headerUnit = false,
 }: {
   children: ReactNode;
   nowrap?: boolean;
   wrap?: boolean;
   className?: string;
+  headerUnit?: boolean;
 }) {
   const classes = [
     'message-card-text',
@@ -191,7 +193,11 @@ function HeaderText({
     .filter(Boolean)
     .join(' ');
   return (
-    <span className={classes} data-message-card-text="body2">
+    <span
+      className={classes}
+      data-message-card-text="body2"
+      data-message-card-header-unit={headerUnit ? 'true' : undefined}
+    >
       {children}
     </span>
   );
@@ -1402,7 +1408,7 @@ function MessageCardHeaderComponent({
   const rightHeaderContentRef = useRef<HTMLDivElement | null>(null);
   const headerColumnGap = 16;
   const [compactActions, setCompactActions] = useState(false);
-  const explicitUnit = msg.unit?.trim() ?? '';
+  const explicitUnit = etalonDisplayModel.headerUnit;
   const displaysCreationTime = messageTimeBasis === 'creation';
   const timestampLabel = displaysCreationTime
     ? 'Дата і час створення повідомлення'
@@ -1443,7 +1449,11 @@ function MessageCardHeaderComponent({
     >
       <div className="message-card-header-identity">
         <div ref={leftHeaderContentRef} data-message-card-header-left="true" className="min-w-0">
-          {explicitUnit !== '' ? <HeaderText wrap>{explicitUnit}</HeaderText> : null}
+          {explicitUnit != null ? (
+            <HeaderText wrap headerUnit>
+              {explicitUnit}
+            </HeaderText>
+          ) : null}
           {dateTimeBlock}
         </div>
       </div>

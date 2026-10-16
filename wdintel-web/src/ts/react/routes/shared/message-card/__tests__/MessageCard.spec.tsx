@@ -350,6 +350,58 @@ describe('MessageCard', () => {
     },
   );
 
+  // Regression: https://github.com/echoua/echo/issues/3324
+  it.each([
+    { displayMode: 'duty' as const, featureStrictNetworks: false, hideNetworks: false },
+    { displayMode: 'analysis' as const, featureStrictNetworks: false, hideNetworks: true },
+    { displayMode: 'duty' as const, featureStrictNetworks: true, hideNetworks: false },
+    { displayMode: 'analysis' as const, featureStrictNetworks: true, hideNetworks: true },
+  ])(
+    'ECHO-3324 applies strict-network header-unit policy in $displayMode cards',
+    async ({ displayMode, featureStrictNetworks, hideNetworks }) => {
+      const view = await renderCard({
+        displayMode,
+        featureStrictNetworks,
+        hideNetworks,
+        msg: buildMessage({ unit: 'Підрозділ 42' }),
+      });
+      const headerUnit = view.container.querySelector('[data-message-card-header-unit="true"]');
+      const shouldShow = !featureStrictNetworks || hideNetworks;
+
+      expect(headerUnit != null).toBe(shouldShow);
+      if (shouldShow) {
+        expect(headerUnit?.textContent).toBe('Підрозділ 42');
+        expect(headerUnit?.textContent).not.toContain('Alpha');
+      }
+      if (!featureStrictNetworks && !hideNetworks) {
+        expect(
+          view.container.querySelector('[data-message-card-network-item="true"]')?.textContent,
+        ).toContain('Alpha');
+      }
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3324
+  it.each([
+    { networkIds: [] as number[], label: 'no network ids' },
+    { networkIds: [99], label: 'unresolved network ids' },
+  ])(
+    'ECHO-3324 suppresses the strict visible-network header unit with $label',
+    async ({ networkIds }) => {
+      const view = await renderCard({
+        featureStrictNetworks: true,
+        msg: buildMessage({ unit: 'Підрозділ 42', networkIds }),
+      });
+      expect(view.container.querySelector('[data-message-card-header-unit="true"]')).toBeNull();
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3324
+  it.each([undefined, null, '', '   '])('ECHO-3324 omits blank header units (%j)', async (unit) => {
+    const view = await renderCard({ msg: buildMessage({ unit }) });
+    expect(view.container.querySelector('[data-message-card-header-unit="true"]')).toBeNull();
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3598
   it('retains hydrated network metadata and copying when network hiding is disabled', async () => {
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
