@@ -139,6 +139,7 @@ public.ai_position_feedback
 # Private attachment processing state; searchable content uses CDC-only replication.
 public.attachment_settings
 public.attachment_search_change
+public.attachment_search_message_change
 public.attachment_job
 
 public.device_document_settings

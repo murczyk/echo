@@ -797,6 +797,7 @@ export type SignalGroupEntry = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  fetchNewMessages: boolean;
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -809,6 +810,7 @@ export type OrphanSignalGroupEntry = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  fetchNewMessages: boolean;
   isArchived: boolean;
   datasourceId: number | null;
   createdAt: number;
@@ -3169,6 +3171,7 @@ export type ZoneDatasourceGroup = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  fetchNewMessages: boolean;
   allowedUsers: Array<string>;
   allowedUserDetails: Array<SignalGroupLogin>;
   allowedOrganismIds: Array<number>;
@@ -3207,6 +3210,7 @@ export type ZoneDatasourceGroupUpdateReq = {
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
   isAviationGroup: boolean | null;
+  fetchNewMessages: boolean | null;
   userLogins: Array<string>;
   organismIds: Array<number>;
   adminLogins: Array<string>;
@@ -7194,6 +7198,7 @@ export type GroupUpdateReq = {
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
   isAviationGroup: boolean | null;
+  fetchNewMessages: boolean | null;
 };
 
 export type GroupEntryF1 = {

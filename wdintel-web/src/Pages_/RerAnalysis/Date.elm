@@ -245,12 +245,12 @@ searchHelp =
             , style "border-radius" "4px"
             , style "padding" "12px"
             ]
-            [ p [] [ text "Усі режими не враховують регістр. Для запиту «рота»:" ]
+            [ p [] [ text "Пошук працює в 3 режимах. Наприклад, для запиту «рота»:" ]
             , ul []
-                [ li [] [ text "Гнучкий пошук: також «ротний»." ]
-                , li [] [ text "Точний збіг: лише слово «рота», також «РОТА.»." ]
-                , li [] [ text "Збіг за входженням: також «воротар»." ]
+                [ li [] [ text "Точний збіг: лише слово «рота»" ]
+                , li [] [ text "Гнучкий пошук: також «ротний», «роти»" ]
+                , li [] [ text "Збіг за входженням: також «воротар»" ]
                 ]
-            , a [ href Config.analysisSearchDocUrl, target "_blank", rel "noopener noreferrer" ] [ text "Докладніше про пошук" ]
+            , a [ href Config.analysisSearchDocUrl, target "_blank", rel "noopener noreferrer" ] [ text "Докладніше на сторінці документації" ]
             ]
         ]

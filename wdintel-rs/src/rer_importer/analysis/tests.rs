@@ -2138,6 +2138,7 @@ fn analytics_senders_selected_networks_use_scoped_flat_joins() {
         vec!["group".to_string()],
         Some(&scope),
         None,
+        None,
     )
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
@@ -2182,6 +2183,7 @@ fn postgres_senders_selected_networks_keep_correlated_filter() {
         vec!["group".to_string()],
         None,
         None,
+        None,
     )
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
@@ -2208,6 +2210,7 @@ fn postgres_senders_creation_breakdown_qualifies_created_at() {
         test_dt(1970, 1, 1, 0, 0),
         test_dt(1970, 1, 2, 0, 0),
         vec!["group".to_string()],
+        None,
         None,
         None,
     )
@@ -2923,6 +2926,114 @@ async fn rer_analysis_aor_filter_hides_groups_outside_selected_aor() {
             .unwrap(),
         0
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_aor_membership_preserves_union_counts_and_cursors_3780() {
+    let fixture = mk_aor_filter_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    for (index, (groups, networks)) in [
+        (vec![&fixture.group_x], vec![]),
+        (vec![&fixture.group_y], vec![fixture.network_k.network.id]),
+        (
+            vec![&fixture.group_x, &fixture.group_y],
+            vec![fixture.network_k.network.id, fixture.network_l.network.id],
+        ),
+        (vec![&fixture.group_y], vec![fixture.network_l.network.id]),
+        (vec![&fixture.group_y], vec![]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        mk_analysis_message(
+            db,
+            &format!("membership-{index}"),
+            "901.3",
+            test_dt(2026, 3, 2, 10, index as u32),
+            &groups,
+            &networks,
+            false,
+        )
+        .await
+        .unwrap();
+    }
+    let login = crate::users::login_id_by_name(db, "Tester").await.unwrap();
+    let mut req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(
+            test_dt(2026, 3, 1, 0, 0).and_utc().timestamp_millis(),
+        ),
+        till_date_inclusive_ms: Some(
+            test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+        ),
+        selected_aors: Some(vec![fixture.aor_a.id]),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    for selected_group in
+        [None, Some(fixture.group_y.signal_group.master_key.clone())]
+    {
+        req.selected_groups = selected_group.map(|group| vec![group]);
+        let mut expected =
+            crate::rer_importer::inbox::query::build_filtered_inbox_query(
+                db,
+                &login,
+                &fixture.env,
+                &req,
+            )
+            .await
+            .unwrap()
+            .select_only()
+            .column(signal_message::Column::Id)
+            .into_tuple::<i64>()
+            .all(db)
+            .await
+            .unwrap();
+        expected.sort_unstable();
+        expected.dedup();
+        assert_eq!(
+            expected.len(),
+            if req.selected_groups.is_some() { 2 } else { 3 }
+        );
+        let candidates =
+            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login,
+                &fixture.env,
+                &req,
+                db,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(candidates, expected);
+        let digest = crate::rer_importer::inbox::query::build_analytics_inbox_digest_query(&login, &fixture.env, &req, db, 90_000).await.unwrap().unwrap();
+        let quantity: i64 = db
+            .query_one_raw(Statement::from_string(DbBackend::Postgres, digest))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get("", "count")
+            .unwrap();
+        assert_eq!(quantity, expected.len() as i64);
+        let cursor_req = InboxMessagesReq {
+            nolimit: Some(false),
+            since_id_noninclusive: Some(expected[0]),
+            ..req.clone()
+        };
+        let candidates =
+            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login,
+                &fixture.env,
+                &cursor_req,
+                db,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(candidates, expected[1..]);
+    }
 }
 
 #[tokio::test]
@@ -8613,6 +8724,67 @@ async fn rer_analysis_analytics_tag_count_matches_postgres_query() {
             .unwrap(),
         expected
     );
+
+    // #3780: sender pushdown must preserve ownership and duplicate-row counts.
+    mk_sigint_inbox_item_tag(
+        db,
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+            tag_id: Set(public_tag.id),
+            login_id: Set(Some(login.id)),
+            model: Set(Some("duplicate-association".into())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let (login_id, groups) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+    let access = stats::resolve_analytics_tag_access(db, &login_id, true)
+        .await
+        .unwrap();
+    let scope = AnalyticsMessageIdScope::From(1);
+    for selected in [
+        vec![public_tag.id, owner_tag.id],
+        vec![public_tag.id, inaccessible_tag.id],
+    ] {
+        for without_model in [false, true] {
+            let mut req = analysis_stats_req0(&fixture);
+            req.selected_tags = Some(selected.clone());
+            req.filter_tags_option = Some(TagFilterOption::AllTags);
+            req.without_model_tags = Some(without_model);
+            req.report_tags_only_this_unit = Some(true);
+            for scope in [None, Some(&scope)] {
+                let mut results = Vec::new();
+                for access in [None, Some(&access)] {
+                    let query = stats::build_sender_breakdown_query(
+                        &Json(req.clone()),
+                        &login_id,
+                        dt_from_millis(req.since_date_inclusive_ms).unwrap(),
+                        dt_from_millis(req.till_date_noninclusive_ms).unwrap(),
+                        groups.clone(),
+                        scope,
+                        None,
+                        access,
+                    )
+                    .unwrap();
+                    let count: i64 = db
+                        .query_all_raw(query.build(DbBackend::Postgres))
+                        .await
+                        .unwrap()
+                        .iter()
+                        .map(|row| row.try_get::<i64>("", "count").unwrap())
+                        .sum();
+                    results.push(count);
+                }
+                assert_eq!(results[0], results[1]);
+                assert_eq!(
+                    results[1],
+                    i64::from(selected[1] == owner_tag.id && without_model)
+                );
+            }
+        }
+    }
 }
 
 #[tokio::test]

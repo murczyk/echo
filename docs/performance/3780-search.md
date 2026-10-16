@@ -1,11 +1,14 @@
 # Search routing and bounded detail loading (#3780)
 
-Text searches attempt the existing PostgreSQL-compatible analytics gateway.
+Supported text searches attempt the existing PostgreSQL-compatible analytics gateway.
 Errors, timeouts, stale replication health, incomplete attachment coverage, and
 failed source revalidation use PostgreSQL fallback. Authorization and message
 details remain authoritative on PostgreSQL. Analytics and bounded source
 revalidation use correlated `EXISTS` per text source so the gateway can push
 text predicates into ClickHouse together with ordering and the page limit.
+Quoted Fuzzy predicates use the source until complete gateway pushdown is
+supported. Source quoted-body matching reads the already joined inbox JSON
+field; attachment and negative-term semantics remain unchanged.
 
 The paginated PostgreSQL path selects only message IDs and ordering keys, with
 all search/access/facet/cursor predicates and the existing page limit. It then
@@ -40,27 +43,52 @@ table.
 When metadata is absent, search falls back safely.
 
 Before querying analytics, the application checks older source attachment
-chunks for any search term, including quoted and negative terms. It also checks
-attachment documents changed within the replication freshness window. Any recent
-document change forces fallback because the analytical copy may still contain
-removed positive terms or omit new terms. Matching requests use PostgreSQL for
-the complete operation. This is conservative: a match outside the requested groups
-or period can also cause fallback. Older attachment matches remain available
-without copying history automatically or combining incomplete negative
-predicates. Other text searches can use analytics with new-only replication.
+chunks for any search term, including negative terms. Incomplete historical
+coverage retains the conservative source fallback, including matches outside
+the requested groups or dates.
 
-Filename changes, media moves and deletions update the source-only singleton
-`attachment_search_change`. Its timestamp survives deletion of the document and
-forces the same fallback for all text terms during the freshness window.
-Migration `m20261014_144721_attachment_search_change` initializes it at deployment
-time, covering mutations from before the triggers were installed. The table stays
-excluded from analytics; the coverage probe reads one source row.
+Migration `m20261015_184629_attachment_search_message_change` adds a source-only
+changed-message ledger. Searchable chunk/revision changes and media
+insert/rename/move/delete record old and new owners; tombstones survive deletion.
+Processing-only document updates do not dirty search. Changes initially have
+`changed_at = NULL` and cannot expire. The extract worker observes up to 500
+committed changes per minute and starts their freshness window at observation;
+another mutation clears the timestamp again. This preserves changes from
+transactions that remain open longer than the freshness window. After one complete
+replication freshness window of tracking, at most 1,001 pending or recent IDs are read.
+More than 1,000 forces full source fallback. Otherwise, relevant changes are
+checked against the request's dates and permitted groups in both source and
+analytics rows. Checking both catches newly imported backdated messages and
+stale former owners without depending on analytics ID optimization bounds.
+Relevant changes use PostgreSQL for the complete operation; unrelated changes
+allow analytics. Results/counts are not merged between databases.
+
+Initial tracking and freshness windows exceeding the ledger's 24-hour retention
+force source fallback. The old singleton `attachment_search_change` remains
+maintained for backend rollback compatibility. After observing changes, the extract
+worker removes at most 500 entries older than 24 hours plus the 60-second request
+deadline every minute; pending changes are never pruned. The extra interval
+protects active requests using the maximum freshness window. Locked tuples are
+deleted directly, keeping cleanup seeks bounded even with a large expired backlog.
+Both tracking tables stay excluded from CDC.
+History coverage and replication health checks remain required. Coverage logs
+distinguish `tracking_incomplete`, `retention_window`, `history_incomplete`,
+`change_limit` and `recent_message_change`.
 
 Body, filename, attachment-content, frequency, UID, prefix, quoted, and negative
 search semantics are unchanged. Existing freshness checks, source tails,
 revalidation, ordering, and fallback capacity controls remain in place.
 
 ## Rollout and historical oneoff
+
+For the scoped guard, sync packaged analytics exclusions before applying
+`m20261015_184629_attachment_search_message_change` through normal deployment.
+No replicated columns change and no mirror/history rebuild is required. Wait
+the configured freshness window (currently 90 seconds), then compare source
+and analytics for edits, removed/negative terms, moves and deletions across
+groups/dates. Revert the backend before rolling back the migration; retaining
+the schema during a backend rollback is safe because the old guard stays
+maintained. See the [stabilization rollout](../../archive/2026-10-12-perf/iteration5/plan.md#rollout-and-recovery).
 
 Before applying `m20261014_124732_attachment_document_updated_at_index`, check
 available disk space and long-running transactions on the source. Its concurrent

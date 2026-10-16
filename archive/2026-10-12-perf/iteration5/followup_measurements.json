@@ -1,0 +1,56 @@
+{
+  "echo-pivnich": {
+    "oldest_retained_app_event_utc": "2026-10-15T19:04:16.401905+00:00",
+    "sampled_at_utc": "2026-10-15T19:19:44.257972+00:00",
+    "retained_age_minutes": 15.5,
+    "journal_disk_usage": "Archived and active journals take up 112.5M in the file system.",
+    "persistent_directory": false,
+    "network": {
+      "at": "2026-10-15T19:18:55.496773+00:00",
+      "tasks": [
+        {
+          "task_kind": "network_freq_last_seen",
+          "pending": 240,
+          "oldest_seconds": 2855.87532
+        }
+      ],
+      "active_blocked": 0
+    },
+    "recent_document_updates": {
+      "at": "2026-10-15T19:29:45.220644+00:00",
+      "recent_document_rows_capped": 9
+    }
+  },
+  "echo-skhid": {
+    "oldest_retained_app_event_utc": "2026-10-15T12:23:24.175291+00:00",
+    "sampled_at_utc": "2026-10-15T19:19:44.258315+00:00",
+    "retained_age_minutes": 416.3,
+    "journal_disk_usage": "Archived and active journals take up 1.5G in the file system.",
+    "persistent_directory": true,
+    "network": {
+      "at": "2026-10-15T19:18:55.640555+00:00",
+      "tasks": null,
+      "active_blocked": 0
+    },
+    "recent_document_updates": {
+      "at": "2026-10-15T19:29:45.530163+00:00",
+      "recent_document_rows_capped": 15
+    }
+  },
+  "echo-siversk": {
+    "oldest_retained_app_event_utc": "2026-10-13T06:11:01.000892+00:00",
+    "sampled_at_utc": "2026-10-15T19:19:44.258359+00:00",
+    "retained_age_minutes": 3668.7,
+    "journal_disk_usage": "Archived and active journals take up 1.6G in the file system.",
+    "persistent_directory": true,
+    "network": {
+      "at": "2026-10-15T19:18:55.500073+00:00",
+      "tasks": null,
+      "active_blocked": 0
+    },
+    "recent_document_updates": {
+      "at": "2026-10-15T19:29:45.488289+00:00",
+      "recent_document_rows_capped": 6
+    }
+  }
+}
