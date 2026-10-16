@@ -6,8 +6,8 @@ use sea_orm::{
 
 mod scoped;
 pub(crate) use scoped::{
-    ensure_search_coverage_scoped, prune_search_changes, SearchCoverageScope,
-    SearchTimeBasis,
+    ensure_search_coverage_scoped, reconcile_search_changes,
+    SearchCoverageScope, SearchTimeBasis,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -58,6 +58,7 @@ pub(crate) async fn ensure_search_coverage(
     .c(h!())
 }
 
+#[cfg(test)]
 pub(crate) async fn ensure_search_coverage_with_mode(
     source: &DatabaseConnection,
     analytics: &DatabaseConnection,

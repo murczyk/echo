@@ -58,10 +58,10 @@ pub async fn run(env: Arc<Env>, cancel: CancellationToken, kind: &'static str) {
         if kind == "extract" && std::time::Instant::now() >= next_search_cleanup
         {
             if let Err(error) =
-                super::analytics::prune_search_changes(&env.dbx).await
+                super::analytics::reconcile_search_changes(&env.dbx).await
             {
                 crate::types::error!(
-                    "attachment search change cleanup: {error:#}"
+                    "attachment search change reconciliation: {error:#}"
                 );
             }
             next_search_cleanup = std::time::Instant::now()

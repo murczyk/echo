@@ -18,7 +18,7 @@ impl MigrationTrait for Migration {
                 r#"
 create table attachment_search_message_change (
  message_id bigint primary key,
- changed_at timestamp not null
+ changed_at timestamp
 );
 create index attachment_search_message_change_time_idx
  on attachment_search_message_change(changed_at, message_id);
@@ -27,11 +27,11 @@ alter table attachment_search_change add column tracked_from timestamp;
 create function attachment_search_record_messages(message_ids bigint[])
 returns void language sql as $$
  insert into attachment_search_message_change(message_id,changed_at)
- select message_id,clock_timestamp() at time zone 'utc'
+ select message_id,null::timestamp
  from (select distinct message_id from unnest(message_ids) ids(message_id)
-       where message_id is not null) unique_ids
+       where message_id is not null) unique_ids order by message_id
  on conflict(message_id) do update
- set changed_at=greatest(attachment_search_message_change.changed_at,excluded.changed_at);
+ set changed_at=null;
 $$;
 
 create function attachment_search_track_media() returns trigger language plpgsql as $$

@@ -1,7 +1,7 @@
 # Approved stabilization work (#3780)
 
 Implementation is on `3780-stabilize-fixes`, based on `main` at
-`f1c915695`. The deployed comparison baseline is `stable` at `ad2678da257`.
+`2dada7b55`. The deployed comparison baseline is `stable` at `ad2678da257`.
 Main's Exact/Substring search modes and newer migrations are retained.
 Production access during this work is read-only. The original
 investigation is in [findings.md](findings.md); deferred work is in
@@ -67,16 +67,22 @@ Install source-only migration
 `m20261015_184629_attachment_search_message_change`. It records changed message
 IDs for searchable chunk/revision changes and media insert/rename/move/delete,
 retaining both owners and deletion tombstones. Processing-only document updates
-do not dirty searchable content. A timestamp-leading index bounds reads; cleanup
-removes at most 500 entries older than 24 hours per minute.
+do not dirty searchable content. Mutations clear `changed_at`; the extract worker
+timestamps at most 500 committed pending entries per minute. Their freshness
+window starts at observation, so a long transaction cannot expire before commit.
+Repeated mutations clear the timestamp again. A timestamp-leading index bounds
+pending/recent reads; cleanup removes at most 500 observed entries older than
+24 hours plus the request deadline per minute and never removes pending changes.
+The additional interval protects in-flight requests at the retention boundary.
 
-After one full freshness window of tracking, inspect at most 1,001 recent IDs.
+After one full freshness window of tracking, inspect at most 1,001 pending or recent IDs.
 If more than 1,000 changed, retain full source fallback. Check request dates and
 permitted groups against both source and analytics rows, independently of the
 analytics ID optimization bounds: newly imported backdated messages and stale
 former owners must remain detectable. Relevant changes use the source for the
 whole operation. Unrelated activity can use analytics. Incomplete history,
-unhealthy replication and the initial tracking window retain existing fallback.
+unhealthy replication, the initial tracking window and freshness windows beyond
+ledger retention force source fallback.
 There is no cross-database count/result merge or reduced freshness interval.
 
 ## Rollout and recovery

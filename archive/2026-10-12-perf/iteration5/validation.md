@@ -1,20 +1,24 @@
 # Stabilization validation (#3780)
 
-Branch: `3780-stabilize-fixes`, based on `main` at `f1c915695`.
-The repaired commit is `2fe88c048`, directly above main. Rust, frontend and migration checks below were
-repeated on that branch, retaining main's Exact/Substring search and newer
+Branch: `3780-stabilize-fixes`, reviewed against `origin/main` at `2dada7b55`.
+Rust, frontend and migration checks below were performed on this branch,
+retaining main's Exact/Substring search and newer
 migrations. The deployed performance comparison remains `stable` at `ad2678da257`.
-Validation date: 15 October 2026. No production deployment or settings/schema
-changes were performed. Production diagnostics used the existing unlocked SSH
+Validation date: 15 October 2026. No production deployment or production
+settings/schema changes were performed. Local test schemas were migrated.
+Production diagnostics used the existing unlocked SSH
 agent and bounded read-only SQL; raw queries and parameters remain private.
 
 ## Results
 
-- **215 Rust tests passed; one existing benchmark ignored.** This covers the
+- **217 Rust tests passed; one existing benchmark ignored.** This covers the
   Analysis, inbox, attachments and request-deadline suites, including AOR union
   membership/counts/cursors, authorization, mixed body/attachment and negative
   search, tag ownership/model/unit/duplicate-association semantics, scoped
-  changes, former/deleted owners, startup coverage, overflow and bounded cleanup.
+  changes, former/deleted owners, startup coverage, overflow, delayed commits,
+  repeated edits, all time bases,
+  date endpoints, literal modes, bounded observation and cleanup. The legacy
+  global guard remains covered as a database-backed backend-rollback safeguard.
 - **78 frontend tests passed** across the five Duty/settings suites carrying
   #3546 creation-time regressions. No frontend code changed.
 - **`just build-front` passed.**
@@ -25,19 +29,18 @@ agent and bounded read-only SQL; raw queries and parameters remain private.
   passed.** Cargo still reports an existing dependency future-compatibility
   notice for `proc-macro-error2`; there are no project Clippy warnings.
 - **Migration catalog policy check passed** with `GITHUB_BASE_REF=main` on
-  `wd_test_3780_main_catalog_20261015`, restored from the standard dump. This compares
+  `wd_test_3780_review_catalog_20261015`, restored from the standard dump. This compares
   actual base/proposed catalogs and validates both source-only exclusions.
-- **Migration down/up passed** on that separate catalog database. Down removes
+- **Migration down/up passed** on the functional-test database. Down removes
   the ledger/column; up restores them. Existing singleton triggers remain.
-- **`just migrate-up` passed** on `wd_test_3780_stabilize_20261015` after the
+- **`just migrate-up` passed** on `wd_test_3780_review_20261015` after the
   normal full dependency migration sequence. Generated the new entity and
   singleton field with `just gen-seaorm`; unrelated generator/formatter changes
   were removed. `npm run format:staged` and whitespace checks passed.
 
-The broad Rust run initially found a missing local NLP service; the existing
-Python virtual environment was reused to start the real service for testing.
-The affected legacy submission test and the full selected suite then passed.
-The temporary service was stopped afterward. The isolated callsign benchmark
+The backend suite requires the real local NLP service on port 5000. Validation
+reused the existing Python virtual environment and stopped the temporary service
+afterward. The isolated callsign benchmark
 remains ignored by its existing default-suite declaration.
 
 ## Reproduction
@@ -47,8 +50,8 @@ point these fixture tests at a development or production database containing
 valuable data. Ensure the real local NLP service is ready on port 5000.
 
 ```bash
-TEST_DB_NAME=wd_test_3780_stabilize_20261015 \
-TEST_WDFILE_DB_NAME=wd_files_test_3780_stabilize_20261015 \
+TEST_DB_NAME=wd_test_3780_review_20261015 \
+TEST_WDFILE_DB_NAME=wd_files_test_3780_review_20261015 \
 cargo test -p wdintel-rs -- \
   rer_importer::analysis::tests rer_importer::inbox::tests \
   attachments::tests server::read_deadline::tests --test-threads=1
@@ -57,7 +60,7 @@ cargo check -p wdintel-rs
 cargo clippy -p wdintel-rs --all-targets --all-features -- -D warnings
 just build-front
 
-source deploy/setup_test_database.sh 3780_main_catalog_20261015
+source deploy/setup_test_database.sh 3780_review_catalog_20261015
 GITHUB_BASE_REF=main TEST_DB_NAME="$DB_NAME" \
   scripts/ci/check_analytics_migration_catalog.sh
 ```
@@ -82,6 +85,14 @@ The cleanup regression exposed a PostgreSQL nested-loop semi-join that
 reevaluated the locking LIMIT subquery for each deleted row. A materialized CTE
 now selects the batch once; a 1,001-row fixture leaves exactly 501 after one
 500-row cleanup, including on the indexed production-shaped table.
+
+Local indexed ledger fixtures with 100,000 rows also covered sparse changes,
+a fully pending backlog and a fully expired backlog. Sparse/pending candidate
+reads took 0.042/0.128 ms and stopped at 1,001 index entries; saturated
+observation and pruning took 1.149/0.391 ms with 500 tuple seeks each. These
+are local access-path checks, not production latency guarantees. Pending entries
+cannot expire before commit observation; cleanup retains the complete supported
+freshness window plus the request deadline to protect active readers.
 
 The Actix deadline regression verifies that a queued read expires with the
 503/Retry-After response and releases its mutex waiter. The middleware retains

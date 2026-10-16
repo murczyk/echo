@@ -1,5 +1,6 @@
 use super::*;
 use crate::config::{
+    ANALYTICS_HTTP_READ_TIMEOUT_MS,
     ATTACHMENT_SEARCH_CHANGE_CLEANUP_BATCH_SIZE,
     ATTACHMENT_SEARCH_CHANGE_LIMIT, ATTACHMENT_SEARCH_CHANGE_RETENTION_SECS,
 };
@@ -53,32 +54,26 @@ pub(crate) async fn ensure_search_coverage_scoped(
     if predicate == "false" {
         return Ok(());
     }
+    if freshness_max_age_ms > ATTACHMENT_SEARCH_CHANGE_RETENTION_SECS * 1_000 {
+        return requires_source("retention_window");
+    }
     let cutoff = Utc::now().naive_utc()
         - Duration::milliseconds(i64::try_from(freshness_max_age_ms).c(h!())?);
-    if freshness_max_age_ms > ATTACHMENT_SEARCH_CHANGE_RETENTION_SECS * 1_000
-        || !tracking_covers_window(source, cutoff).await.c(h!())?
-    {
-        return ensure_search_coverage_with_mode(
-            source,
-            analytics,
-            search,
-            search_mode,
-            freshness_max_age_ms,
-        )
-        .await
-        .c(h!());
+    if !tracking_covers_window(source, cutoff).await.c(h!())? {
+        return requires_source("tracking_incomplete");
     }
     let coverage = load_search_coverage(analytics).await.c(h!())?;
-    if source_matches_incomplete_coverage(
-        source,
-        coverage,
-        predicate,
-        values,
-        freshness_max_age_ms,
-        false,
-    )
-    .await
-    .c(h!())?
+    if !coverage.history_complete
+        && source_matches_incomplete_coverage(
+            source,
+            coverage,
+            predicate,
+            values,
+            freshness_max_age_ms,
+            false,
+        )
+        .await
+        .c(h!())?
     {
         return requires_source("history_incomplete");
     }
@@ -140,7 +135,7 @@ async fn changed_messages(
     source
         .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "SELECT message_id FROM attachment_search_message_change WHERE changed_at >= $1 ORDER BY changed_at DESC, message_id DESC LIMIT $2",
+            "SELECT message_id FROM ((SELECT message_id, changed_at FROM attachment_search_message_change WHERE changed_at IS NULL ORDER BY changed_at DESC, message_id DESC LIMIT $2) UNION ALL (SELECT message_id, changed_at FROM attachment_search_message_change WHERE changed_at >= $1 ORDER BY changed_at DESC, message_id DESC LIMIT $2)) changes ORDER BY changed_at DESC NULLS FIRST, message_id DESC LIMIT $2",
             [cutoff.into(), (ATTACHMENT_SEARCH_CHANGE_LIMIT + 1).into()],
         ))
         .await
@@ -170,17 +165,34 @@ async fn changed_groups_match(
     row.try_get("", "matches").c(h!())
 }
 
-pub(crate) async fn prune_search_changes(
+pub(crate) async fn reconcile_search_changes(
+    source: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    source
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "WITH pending AS MATERIALIZED (SELECT ctid FROM attachment_search_message_change WHERE changed_at IS NULL ORDER BY changed_at, message_id LIMIT $1 FOR UPDATE SKIP LOCKED) UPDATE attachment_search_message_change changes SET changed_at=clock_timestamp() AT TIME ZONE 'UTC' FROM pending WHERE changes.ctid=pending.ctid AND changes.changed_at IS NULL",
+            [ATTACHMENT_SEARCH_CHANGE_CLEANUP_BATCH_SIZE.into()],
+        ))
+        .await
+        .c(h!())?;
+    prune_search_changes(source).await.c(h!())
+}
+
+async fn prune_search_changes(
     source: &DatabaseConnection,
 ) -> anyhow::Result<()> {
     let cutoff = Utc::now().naive_utc()
         - Duration::seconds(
             i64::try_from(ATTACHMENT_SEARCH_CHANGE_RETENTION_SECS).c(h!())?,
+        )
+        - Duration::milliseconds(
+            i64::try_from(ANALYTICS_HTTP_READ_TIMEOUT_MS).c(h!())?,
         );
     source
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "WITH expired AS MATERIALIZED (SELECT message_id FROM attachment_search_message_change WHERE changed_at < $1 ORDER BY changed_at, message_id LIMIT $2 FOR UPDATE SKIP LOCKED) DELETE FROM attachment_search_message_change changes USING expired WHERE changes.message_id=expired.message_id AND changes.changed_at < $1",
+            "WITH expired AS MATERIALIZED (SELECT ctid FROM attachment_search_message_change WHERE changed_at < $1 ORDER BY changed_at, message_id LIMIT $2 FOR UPDATE SKIP LOCKED) DELETE FROM attachment_search_message_change changes USING expired WHERE changes.ctid=expired.ctid AND changes.changed_at < $1",
             [cutoff.into(), ATTACHMENT_SEARCH_CHANGE_CLEANUP_BATCH_SIZE.into()],
         ))
         .await

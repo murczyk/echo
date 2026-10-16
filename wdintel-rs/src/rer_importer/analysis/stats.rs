@@ -1645,7 +1645,8 @@ async fn fetch_senders_for_login_with_db(
         scope,
         units.as_ref(),
         tag_access.as_ref(),
-    )?;
+    )
+    .context(h!())?;
     let breakdown_rows: Vec<SenderBreakdownRes> = breakdown_query
         .into_model::<SenderBreakdownRes>()
         .all(db)
@@ -1780,7 +1781,8 @@ pub(super) fn build_sender_breakdown_query(
         units,
         true,
         tag_access,
-    )?;
+    )
+    .context(h!())?;
     Ok(breakdown_query)
 }
 
@@ -2485,7 +2487,7 @@ pub(super) async fn fetch_freqs_raw_with_db(
     master_keys: Vec<String>,
     freshness_max_age_ms: u64,
 ) -> Result<Vec<AnalysisStatsFreq>, AppError> {
-    let login_value = login_id_from_identity(user)?;
+    let login_value = login_id_from_identity(user).c(h!())?;
     let mut coverage_req = req.0.clone();
     coverage_req.since_date_inclusive_ms =
         (dt_from_millis(req.since_date_inclusive_ms).c(h!())?
@@ -2503,7 +2505,8 @@ pub(super) async fn fetch_freqs_raw_with_db(
     .c(h!())?;
     let scopes =
         resolve_analytics_frequency_scopes(&req.0, db, freshness_max_age_ms)
-            .await?;
+            .await
+            .context(h!())?;
     if scopes.current.is_empty() {
         return Ok(Vec::new());
     }
@@ -3311,7 +3314,7 @@ fn build_metadata_messages_query_with_units(
     let messages_q =
         filter_stats_message_time_range(messages_q, req, dt_since, dt_till);
     let messages_q = apply_analytics_message_id_scope(messages_q, scope);
-    apply_sender_filters_for_login(
+    Ok(apply_sender_filters_for_login(
         messages_q,
         req,
         dt_since,
@@ -3323,6 +3326,7 @@ fn build_metadata_messages_query_with_units(
         false,
         None,
     )
+    .context(h!())?)
 }
 
 #[derive(FromQueryResult)]

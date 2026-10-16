@@ -50,8 +50,12 @@ the requested groups or dates.
 Migration `m20261015_184629_attachment_search_message_change` adds a source-only
 changed-message ledger. Searchable chunk/revision changes and media
 insert/rename/move/delete record old and new owners; tombstones survive deletion.
-Processing-only document updates do not dirty search. After one complete
-replication freshness window of tracking, at most 1,001 recent IDs are read.
+Processing-only document updates do not dirty search. Changes initially have
+`changed_at = NULL` and cannot expire. The extract worker observes up to 500
+committed changes per minute and starts their freshness window at observation;
+another mutation clears the timestamp again. This preserves changes from
+transactions that remain open longer than the freshness window. After one complete
+replication freshness window of tracking, at most 1,001 pending or recent IDs are read.
 More than 1,000 forces full source fallback. Otherwise, relevant changes are
 checked against the request's dates and permitted groups in both source and
 analytics rows. Checking both catches newly imported backdated messages and
@@ -59,12 +63,17 @@ stale former owners without depending on analytics ID optimization bounds.
 Relevant changes use PostgreSQL for the complete operation; unrelated changes
 allow analytics. Results/counts are not merged between databases.
 
-The old singleton `attachment_search_change` and document-update guard remain
-the fallback during initial tracking or when the configured freshness window
-exceeds the ledger's 24-hour retention. The extract worker removes at most 500
-older ledger entries every minute. Both tracking tables stay excluded from CDC.
+Initial tracking and freshness windows exceeding the ledger's 24-hour retention
+force source fallback. The old singleton `attachment_search_change` remains
+maintained for backend rollback compatibility. After observing changes, the extract
+worker removes at most 500 entries older than 24 hours plus the 60-second request
+deadline every minute; pending changes are never pruned. The extra interval
+protects active requests using the maximum freshness window. Locked tuples are
+deleted directly, keeping cleanup seeks bounded even with a large expired backlog.
+Both tracking tables stay excluded from CDC.
 History coverage and replication health checks remain required. Coverage logs
-distinguish `history_incomplete`, `change_limit` and `recent_message_change`.
+distinguish `tracking_incomplete`, `retention_window`, `history_incomplete`,
+`change_limit` and `recent_message_change`.
 
 Body, filename, attachment-content, frequency, UID, prefix, quoted, and negative
 search semantics are unchanged. Existing freshness checks, source tails,
