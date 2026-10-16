@@ -1265,7 +1265,7 @@ export function MessageCardMetadata({
   const deviceName = canUseMessageDevices ? msg.deviceName?.trim() : undefined;
 
   return (
-    <div className="flex w-full items-start gap-2">
+    <div className="message-card-metadata flex w-full items-start gap-2">
       <div
         className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0"
         style={{ flexWrap: 'wrap' }}

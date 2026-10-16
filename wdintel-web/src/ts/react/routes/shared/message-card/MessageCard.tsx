@@ -81,6 +81,7 @@ const ANALYSIS_MESSAGE_CARD_VISIBILITY_STYLE = {
 
 const MessageCardRoot = styled('div')(({ theme }) => ({
   ...theme.typography.body2,
+  '--message-card-metadata-text-color': theme.palette.text.secondary,
 }));
 
 export function formatMessageCardTooltipTime(

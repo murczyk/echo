@@ -146,7 +146,7 @@ export function SettingsMessageCard({
 }: SettingsMessageCardProps) {
   return (
     <Box sx={cardSx}>
-      <Stack spacing={2.5}>
+      <div className="flex flex-col gap-echo-xl">
         <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
           Картка повідомлення
         </Typography>
@@ -184,6 +184,7 @@ export function SettingsMessageCard({
         </Stack>
 
         <FormControlLabel
+          className="m-0! items-start! gap-echo-md"
           control={
             <Switch
               checked={aiPositionHighlightsEnabledGlobally || aiPositionHighlightsEnabled}
@@ -192,9 +193,11 @@ export function SettingsMessageCard({
             />
           }
           label={
-            <div>
-              <Typography variant="body1">Показувати ШІ-позиції (експериментально)</Typography>
-              <Typography variant="body2" color="text.secondary">
+            <div className="flex flex-col gap-echo-xs pt-0.5">
+              <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                Показувати ШІ-позиції (експериментально)
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
                 Підсвічування позицій та їхні координати у картках оперативного й аналізу.
                 {aiPositionHighlightsEnabledGlobally && ' Увімкнено адміністратором для всіх.'}
               </Typography>
@@ -295,11 +298,10 @@ export function SettingsMessageCard({
               <ToggleButton value="off">Без скорочення</ToggleButton>
             </ToggleButtonGroup>
           </Box>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Визначає, коли з’являється кнопка «Показати більше».
+          </Typography>
         </Stack>
-
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          Визначає, коли з’являється кнопка «Показати більше».
-        </Typography>
 
         <Stack direction="row" spacing={1} alignItems="center" sx={{ pt: 0.5 }}>
           <InfoOutlinedIcon sx={{ fontSize: 18, color: 'info.main' }} />
@@ -307,7 +309,7 @@ export function SettingsMessageCard({
             Спільні налаштування для Оперативного та Аналізу.
           </Typography>
         </Stack>
-      </Stack>
+      </div>
     </Box>
   );
 }

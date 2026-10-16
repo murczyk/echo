@@ -900,6 +900,10 @@ html[data-bs-theme='dark'] .message-card-root {
   color: var(--message-card-timestamp-icon-color);
 }
 
+.message-card-metadata {
+  color: var(--message-card-metadata-text-color);
+}
+
 .message-card-header-meta {
   display: inline-flex;
   align-items: center;

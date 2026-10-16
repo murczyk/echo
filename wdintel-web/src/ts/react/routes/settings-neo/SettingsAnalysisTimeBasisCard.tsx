@@ -22,8 +22,8 @@ export function SettingsAnalysisTimeBasisCard({
       }}
     >
       <Stack spacing={1}>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          Сортування:
+        <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
+          Сортування
         </Typography>
         <Box>
           <ToggleButtonGroup
