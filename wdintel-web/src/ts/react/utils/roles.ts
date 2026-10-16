@@ -12,6 +12,7 @@ export type UserRole =
   | 'CallsignsEditor'
   | 'Cyber'
   | 'CyberViewer'
+  | 'CyberViewerRestricted'
   | 'AdvancedReports'
   | 'NoAutoLogout'
   | 'No2FA';
@@ -42,6 +43,7 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
         has('Rer') ||
         has('Cyber') ||
         has('CyberViewer') ||
+        has('CyberViewerRestricted') ||
         has('Basic')
       );
     case 'UnitsEditor':
@@ -54,6 +56,8 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
       return has('Admin') || has('Cyber');
     case 'CyberViewer':
       return has('Admin') || has('Cyber') || has('CyberViewer');
+    case 'CyberViewerRestricted':
+      return hasRole(roles, 'CyberViewer') || has('CyberViewerRestricted');
     case 'AdvancedReports':
       return has('Admin') || has('AdvancedReports');
     case 'NoAutoLogout':
@@ -68,7 +72,7 @@ export function canUseRadioFeatures(roles: readonly string[] | null | undefined)
 }
 
 export function hasRerOrCyber(roles: readonly string[] | null | undefined): boolean {
-  return hasAnyRole(roles, ['Rer', 'CyberViewer']);
+  return hasAnyRole(roles, ['Rer', 'CyberViewerRestricted']);
 }
 
 export function canReadDevices(roles: readonly string[] | null | undefined): boolean {

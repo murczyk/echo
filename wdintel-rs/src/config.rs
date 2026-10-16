@@ -289,6 +289,7 @@ pub const AI_AGENT_ROLE_API: &str = "ApiAgent";
 pub const AI_AGENT_ROLE_RER: &str = "Rer";
 pub const ROLE_CYBER: &str = "Cyber";
 pub const ROLE_CYBER_VIEWER: &str = "CyberViewer";
+pub const ROLE_CYBER_VIEWER_RESTRICTED: &str = "CyberViewerRestricted";
 pub const AI_AGENT_ROLE_CYBER: &str = "Cyber";
 pub const AI_AGENT_CORRELATION_HEADER: &str = "X-Echo-Agent-Session";
 pub const AI_AGENT_BOOTSTRAP_REDIS_PREFIX: &str = "ai-agent:bootstrap:";

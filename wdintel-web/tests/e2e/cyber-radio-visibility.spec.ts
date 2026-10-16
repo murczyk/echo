@@ -114,6 +114,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     ['Full'],
     ['Cyber'],
     ['CyberViewer'],
+    ['CyberViewerRestricted'],
   ]) {
     test(`@smoke #3568 classic Duty saved filters wait for ${roles.join('+')} permissions`, async ({
       page,
@@ -641,4 +642,34 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     await expect(page.getByRole('heading', { name: 'Мережі', exact: true })).toHaveCount(0);
     await expect(page).toHaveURL(/fromDateTime=2026-06-26T00%3A00/);
   });
+});
+
+test('@regression CyberViewerRestricted opens analysis but cannot open devices directly', async ({
+  page,
+}) => {
+  await installRerDutyShortStateMocks(page);
+  await installAnalysisNeoApiMocks(page);
+  await useRoles(page, ['CyberViewerRestricted']);
+  await page.route('**/api/system-settings/current', async (route) => {
+    await route.fulfill({ json: systemSettingsCurrentResponse({ devicesSectionEnabled: true }) });
+  });
+  const deviceRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/device/')) {
+      deviceRequests.push(request.url());
+    }
+  });
+  const analysisRequest = page.waitForRequest('**/api/rer/analysis/stats/groups/count');
+  await page.goto('/rer-analysis-neo');
+  await analysisRequest;
+  await expect(page).toHaveURL(/\/rer-analysis-neo(?:\?|$)/);
+  await expect(page.locator('#app-navbar-links-panel')).toContainText('Оперативний');
+  await expect(page.locator('#app-navbar-links-panel')).toContainText('Аналіз');
+  await expect(page.locator('a[href="/devices"]')).toHaveCount(0);
+  for (const path of ['/devices', '/devices/019fc7f7-9770-7f83-9c1a-211af29b02e6']) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('devices-page, device-details-page')).toHaveCount(0);
+  }
+  expect(deviceRequests).toEqual([]);
 });

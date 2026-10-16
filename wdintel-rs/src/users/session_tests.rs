@@ -505,13 +505,119 @@ async fn obsolete_device_roles_do_not_grant_base_or_message_write_access() {
 
 #[actix_web::test]
 #[serial]
+async fn restricted_viewer_can_read_networks_but_device_http_routes_deny_access(
+) {
+    use actix_web::http::StatusCode;
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    system_settings::ActiveModel {
+        devices_section_enabled: Set(true),
+        ..Default::default()
+    }
+    .insert(&env.dbx)
+    .await
+    .unwrap();
+    let login = find_test_login(&env.dbx).await.unwrap();
+    let mut login = login.into_active_model();
+    login.roles = Set(serde_json::json!(["CyberViewerRestricted"]));
+    let login = login.update(&env.dbx).await.unwrap();
+    ensure_base_role_by_id(&env.dbx, &login.id).await.unwrap();
+    has_role(&env.dbx, &login.id, "Basic").await.unwrap();
+    let store =
+        RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
+            .await
+            .unwrap();
+    let app = actix_test::init_service(
+        App::new()
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(store, Key::generate()))
+            .app_data(web::Data::from(env.clone()))
+            .route("/test/session", web::post().to(start_test_user_session))
+            .service(crate::sigint::network::network_list)
+            .service(crate::devices::devices::list)
+            .service(crate::devices::devices::detail)
+            .service(crate::devices::files::roots)
+            .service(crate::sigint::device_name::device_name_search)
+            .service(crate::devices::audio::routes()),
+    )
+    .await;
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri("/test/session")
+            .to_request(),
+    )
+    .await;
+    assert!(response.status().is_success());
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let device_id = Uuid::now_v7().to_string();
+    for (uri, payload, expected) in [
+        (
+            "/api/sigint/network-list",
+            serde_json::json!({}),
+            StatusCode::OK,
+        ),
+        (
+            "/api/device/list",
+            serde_json::json!({}),
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            "/api/device/detail",
+            serde_json::json!({"device_id": device_id}),
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            "/api/device/files/roots",
+            serde_json::json!({"device_id": device_id}),
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            "/api/device/audio/list",
+            serde_json::json!({"device_id": device_id}),
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            "/api/sigint/device-name/search",
+            serde_json::json!({"search": ""}),
+            StatusCode::FORBIDDEN,
+        ),
+    ] {
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(uri)
+                .cookie(cookie.clone())
+                .set_json(payload)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), expected, "{uri}");
+    }
+}
+
+#[actix_web::test]
+#[serial]
 async fn issue_3569_viewer_cannot_create_or_edit_messages_or_reports() {
+    assert_viewer_cannot_create_or_edit_messages_or_reports("CyberViewer")
+        .await;
+}
+
+#[actix_web::test]
+#[serial]
+async fn restricted_viewer_cannot_create_or_edit_messages_or_reports() {
+    assert_viewer_cannot_create_or_edit_messages_or_reports(
+        "CyberViewerRestricted",
+    )
+    .await;
+}
+
+async fn assert_viewer_cannot_create_or_edit_messages_or_reports(role: &str) {
     use crate::entities::{bgtask, signal_message};
     use crate::sigint::direct_submit::{edit_message, submit_direct};
     let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
     let login = find_test_login(&env.dbx).await.unwrap();
     let mut login = login.into_active_model();
-    login.roles = Set(serde_json::json!(["CyberViewer"]));
+    login.roles = Set(serde_json::json!([role]));
     login.update(&env.dbx).await.unwrap();
     let store =
         RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())

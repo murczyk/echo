@@ -90,6 +90,7 @@ const ROLE_OPTIONS = [
   'CallsignsEditor',
   'Cyber',
   'CyberViewer',
+  'CyberViewerRestricted',
   'AdvancedReports',
 ];
 const ENABLED_FILTER_OPTIONS = withExplicitSelectAllOption([

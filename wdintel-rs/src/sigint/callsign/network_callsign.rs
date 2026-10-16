@@ -1,3 +1,4 @@
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::sigint::callsign::bl_network_callsign::*;
 use crate::sigint::callsign::types::*;
 use crate::types::*;
@@ -32,7 +33,7 @@ pub async fn list_network_callsigns(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
     )
     .await
     .c(h!())?;

@@ -38,6 +38,7 @@ hasRole role user =
                 || List.member "Rer" user.roles
                 || List.member "Cyber" user.roles
                 || List.member "CyberViewer" user.roles
+                || List.member "CyberViewerRestricted" user.roles
                 || List.member "Basic" user.roles
 
         "UnitsEditor" ->
@@ -61,6 +62,10 @@ hasRole role user =
                 || List.member "Cyber" user.roles
                 || List.member "CyberViewer" user.roles
 
+        "CyberViewerRestricted" ->
+            hasRole "CyberViewer" user
+                || List.member "CyberViewerRestricted" user.roles
+
         "AdvancedReports" ->
             List.member "Admin" user.roles
                 || List.member "AdvancedReports" user.roles
@@ -83,7 +88,7 @@ hasRole role user =
 
 hasRerOrCyber : User -> Bool
 hasRerOrCyber user =
-    hasRole "Rer" user || hasRole "CyberViewer" user
+    hasRole "Rer" user || hasRole "CyberViewerRestricted" user
 
 
 canUseRadioFeatures : User -> Bool

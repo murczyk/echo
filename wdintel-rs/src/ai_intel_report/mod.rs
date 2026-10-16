@@ -1,3 +1,4 @@
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 pub mod types;
 
 use crate::ai_engine::{
@@ -258,7 +259,7 @@ async fn ensure_quick_suggestion_role(
     dbx: &DatabaseConnection,
     login_id: &Uuid,
 ) -> Result<(), AppError> {
-    has_any_role(dbx, login_id, vec!["Rer", "CyberViewer"]).await
+    has_any_role(dbx, login_id, vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED]).await
 }
 
 pub(crate) async fn ensure_engine_not_used<C>(
