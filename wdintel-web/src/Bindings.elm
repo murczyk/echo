@@ -14267,9 +14267,28 @@ sendAiChatMessageReqEncoder struct =
         ]
 
 
+type alias AiIntelReportEngineBudgetItem =
+    { aiEngineId : String
+    , maxTokens : Int
+    }
+
+
+aiIntelReportEngineBudgetItemEncoder : AiIntelReportEngineBudgetItem -> Json.Encode.Value
+aiIntelReportEngineBudgetItemEncoder struct =
+    Json.Encode.object
+        [ ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
+        , ( "maxTokens", (Json.Encode.int) struct.maxTokens )
+        ]
+
+
 type alias AiIntelReportSettingsItem =
     { quickSuggestionEnabled : Bool
     , quickAiEngineId : Maybe (String)
+    , fallbackAiEngineId : Maybe (String)
+    , engineBudgets : List (AiIntelReportEngineBudgetItem)
+    , primaryTimeoutSecs : Int
+    , fallbackTimeoutSecs : Int
+    , totalTimeoutSecs : Int
     , legacyCommentCutoff : Int
     , updatedAt : Int
     }
@@ -14280,6 +14299,11 @@ aiIntelReportSettingsItemEncoder struct =
     Json.Encode.object
         [ ( "quickSuggestionEnabled", (Json.Encode.bool) struct.quickSuggestionEnabled )
         , ( "quickAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.quickAiEngineId )
+        , ( "fallbackAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fallbackAiEngineId )
+        , ( "engineBudgets", (Json.Encode.list (aiIntelReportEngineBudgetItemEncoder)) struct.engineBudgets )
+        , ( "primaryTimeoutSecs", (Json.Encode.int) struct.primaryTimeoutSecs )
+        , ( "fallbackTimeoutSecs", (Json.Encode.int) struct.fallbackTimeoutSecs )
+        , ( "totalTimeoutSecs", (Json.Encode.int) struct.totalTimeoutSecs )
         , ( "legacyCommentCutoff", (Json.Encode.int) struct.legacyCommentCutoff )
         , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
         ]
@@ -14288,6 +14312,11 @@ aiIntelReportSettingsItemEncoder struct =
 type alias SaveAiIntelReportSettingsReq =
     { quickSuggestionEnabled : Bool
     , quickAiEngineId : Maybe (String)
+    , fallbackAiEngineId : Maybe (Maybe (String))
+    , engineBudgets : Maybe (List (AiIntelReportEngineBudgetItem))
+    , primaryTimeoutSecs : Maybe (Int)
+    , fallbackTimeoutSecs : Maybe (Int)
+    , totalTimeoutSecs : Maybe (Int)
     }
 
 
@@ -14296,6 +14325,11 @@ saveAiIntelReportSettingsReqEncoder struct =
     Json.Encode.object
         [ ( "quickSuggestionEnabled", (Json.Encode.bool) struct.quickSuggestionEnabled )
         , ( "quickAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.quickAiEngineId )
+        , ( "fallbackAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string))) struct.fallbackAiEngineId )
+        , ( "engineBudgets", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (aiIntelReportEngineBudgetItemEncoder))) struct.engineBudgets )
+        , ( "primaryTimeoutSecs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.primaryTimeoutSecs )
+        , ( "fallbackTimeoutSecs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.fallbackTimeoutSecs )
+        , ( "totalTimeoutSecs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.totalTimeoutSecs )
         ]
 
 
@@ -14357,8 +14391,23 @@ aiIntelReportAttemptItemEncoder struct =
         ]
 
 
+type alias AiIntelReportAttemptListReq =
+    { pageStartId : Maybe (String)
+    }
+
+
+aiIntelReportAttemptListReqEncoder : AiIntelReportAttemptListReq -> Json.Encode.Value
+aiIntelReportAttemptListReqEncoder struct =
+    Json.Encode.object
+        [ ( "pageStartId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.pageStartId )
+        ]
+
+
 type alias AiIntelReportAttemptListRsp =
     { items : List (AiIntelReportAttemptItem)
+    , pageSize : Int
+    , total : Maybe (Int)
+    , pageStartIds : Maybe (List (String))
     }
 
 
@@ -14366,6 +14415,9 @@ aiIntelReportAttemptListRspEncoder : AiIntelReportAttemptListRsp -> Json.Encode.
 aiIntelReportAttemptListRspEncoder struct =
     Json.Encode.object
         [ ( "items", (Json.Encode.list (aiIntelReportAttemptItemEncoder)) struct.items )
+        , ( "pageSize", (Json.Encode.int) struct.pageSize )
+        , ( "total", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.total )
+        , ( "pageStartIds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.pageStartIds )
         ]
 
 
@@ -27485,11 +27537,23 @@ sendAiChatMessageReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
 
 
+aiIntelReportEngineBudgetItemDecoder : Json.Decode.Decoder AiIntelReportEngineBudgetItem
+aiIntelReportEngineBudgetItemDecoder =
+    Json.Decode.succeed AiIntelReportEngineBudgetItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maxTokens" (Json.Decode.int)))
+
+
 aiIntelReportSettingsItemDecoder : Json.Decode.Decoder AiIntelReportSettingsItem
 aiIntelReportSettingsItemDecoder =
     Json.Decode.succeed AiIntelReportSettingsItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickSuggestionEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fallbackAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engineBudgets" (Json.Decode.list (aiIntelReportEngineBudgetItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "primaryTimeoutSecs" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fallbackTimeoutSecs" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totalTimeoutSecs" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "legacyCommentCutoff" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
 
@@ -27499,6 +27563,11 @@ saveAiIntelReportSettingsReqDecoder =
     Json.Decode.succeed SaveAiIntelReportSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickSuggestionEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fallbackAiEngineId" (Json.Decode.nullable (Json.Decode.nullable (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engineBudgets" (Json.Decode.nullable (Json.Decode.list (aiIntelReportEngineBudgetItemDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "primaryTimeoutSecs" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fallbackTimeoutSecs" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totalTimeoutSecs" (Json.Decode.nullable (Json.Decode.int))))
 
 
 quickIntelReportSuggestionReqDecoder : Json.Decode.Decoder QuickIntelReportSuggestionReq
@@ -27530,10 +27599,19 @@ aiIntelReportAttemptItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
 
 
+aiIntelReportAttemptListReqDecoder : Json.Decode.Decoder AiIntelReportAttemptListReq
+aiIntelReportAttemptListReqDecoder =
+    Json.Decode.succeed AiIntelReportAttemptListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pageStartId" (Json.Decode.nullable (Json.Decode.string))))
+
+
 aiIntelReportAttemptListRspDecoder : Json.Decode.Decoder AiIntelReportAttemptListRsp
 aiIntelReportAttemptListRspDecoder =
     Json.Decode.succeed AiIntelReportAttemptListRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiIntelReportAttemptItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pageSize" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pageStartIds" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
 
 
 aiAgentActivityPresentationDecoder : Json.Decode.Decoder AiAgentActivityPresentation

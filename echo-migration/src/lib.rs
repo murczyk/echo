@@ -478,6 +478,7 @@ mod m20261014_124732_attachment_document_updated_at_index;
 mod m20261014_140818_attachment_chunk_summary_index;
 mod m20261014_144721_attachment_search_change;
 mod m20261015_184629_attachment_search_message_change;
+mod m20261016_131615_ai_intel_report_generation_limits;
 
 pub struct Migrator;
 
@@ -1146,6 +1147,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261015_092940_messenger_alerts::Migration),
             Box::new(m20261015_150117_signal_group_fetch_new_messages::Migration),
             Box::new(m20261015_184629_attachment_search_message_change::Migration),
+            Box::new(m20261016_131615_ai_intel_report_generation_limits::Migration),
         ]
     }
 }

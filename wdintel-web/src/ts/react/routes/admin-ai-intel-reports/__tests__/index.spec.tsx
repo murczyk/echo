@@ -66,6 +66,11 @@ beforeEach(() => {
   mocks.getSettings.mockReset().mockResolvedValue({
     quickSuggestionEnabled: true,
     quickAiEngineId: 'engine-a',
+    fallbackAiEngineId: null,
+    engineBudgets: [{ aiEngineId: 'engine-a', maxTokens: 512 }],
+    primaryTimeoutSecs: 20,
+    fallbackTimeoutSecs: 20,
+    totalTimeoutSecs: 20,
     legacyCommentCutoff: 1,
     updatedAt: 1,
   });
@@ -83,36 +88,41 @@ beforeEach(() => {
       updatedAt: 1,
     },
   ]);
-  mocks.listAttempts.mockReset().mockResolvedValue([
-    {
-      id: 'attempt-success',
-      loginId: 'login-a',
-      login: 'operator-a',
-      aiEngineId: 'engine-a',
-      aiEngineName: 'Engine A',
-      sourceMessageId: 3128366,
-      outcome: 'success',
-      suggestions: ['Облаштування позицій противника'],
-      rawResponse: '{"suggestions":["Облаштування позицій противника"]}',
-      error: null,
-      durationMs: 1500,
-      createdAt: Date.now(),
-    },
-    {
-      id: 'attempt-failed',
-      loginId: 'login-a',
-      login: 'operator-a',
-      aiEngineId: 'engine-a',
-      aiEngineName: 'Engine A',
-      sourceMessageId: 3128367,
-      outcome: 'failed',
-      suggestions: [],
-      rawResponse: null,
-      error: 'malformed structured output',
-      durationMs: 25,
-      createdAt: Date.now() - 1000,
-    },
-  ]);
+  mocks.listAttempts.mockReset().mockResolvedValue({
+    items: [
+      {
+        id: 'attempt-success',
+        loginId: 'login-a',
+        login: 'operator-a',
+        aiEngineId: 'engine-a',
+        aiEngineName: 'Engine A',
+        sourceMessageId: 3128366,
+        outcome: 'success',
+        suggestions: ['Облаштування позицій противника'],
+        rawResponse: '{"suggestions":["Облаштування позицій противника"]}',
+        error: null,
+        durationMs: 1500,
+        createdAt: Date.now(),
+      },
+      {
+        id: 'attempt-failed',
+        loginId: 'login-a',
+        login: 'operator-a',
+        aiEngineId: 'engine-a',
+        aiEngineName: 'Engine A',
+        sourceMessageId: 3128367,
+        outcome: 'failed',
+        suggestions: [],
+        rawResponse: null,
+        error: 'malformed structured output',
+        durationMs: 25,
+        createdAt: Date.now() - 1000,
+      },
+    ],
+    pageSize: 20,
+    total: 2,
+    pageStartIds: ['attempt-success'],
+  });
   mocks.saveSettings.mockReset();
   mocks.notify.mockReset();
 });

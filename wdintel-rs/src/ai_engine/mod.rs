@@ -884,6 +884,7 @@ async fn request_ai_response_with_options(
     max_tokens: Option<u32>,
     response_format: Option<serde_json::Value>,
 ) -> Result<AiEngineResponse, AppError> {
+    let structured_output = response_format.is_some();
     let body = serde_json::to_value(OpenAiChatCompletionReq {
         model_name: ai_engine.model_name.clone(),
         messages,
@@ -916,17 +917,13 @@ async fn request_ai_response_with_options(
                 .content
                 .as_deref()
                 .is_some_and(|content| !content.trim().is_empty())
+                || (structured_output
+                    && choice.finish_reason.as_deref() == Some("length"))
         })
         .ok_or_else(|| AppError::BL {
             msg: "ШІ API повернув порожню відповідь".to_string(),
         })?;
-    let content = choice
-        .message
-        .content
-        .ok_or_else(|| AppError::BL {
-            msg: "ШІ API повернув порожню відповідь".to_string(),
-        })
-        .c(h!())?;
+    let content = choice.message.content.unwrap_or_default();
     Ok(AiEngineResponse {
         content,
         finish_reason: choice.finish_reason,
