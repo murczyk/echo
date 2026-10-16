@@ -27,6 +27,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Login,
+    #[sea_orm(has_one = "super::notification_event::Entity")]
+    NotificationEvent,
     #[sea_orm(
         belongs_to = "super::signal_message::Entity",
         from = "Column::SignalMessageId",
@@ -40,6 +42,12 @@ pub enum Relation {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::notification_event::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationEvent.def()
     }
 }
 

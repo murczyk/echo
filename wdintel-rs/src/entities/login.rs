@@ -89,6 +89,8 @@ pub enum Relation {
     GoiIntegration,
     #[sea_orm(has_many = "super::goi_integration_access_login::Entity")]
     GoiIntegrationAccessLogin,
+    #[sea_orm(has_many = "super::importance_operation::Entity")]
+    ImportanceOperation,
     #[sea_orm(has_many = "super::log_users_report_generation::Entity")]
     LogUsersReportGeneration,
     #[sea_orm(has_one = "super::login_totp::Entity")]
@@ -99,6 +101,16 @@ pub enum Relation {
     NetworkFreqLastDatetimeInAor,
     #[sea_orm(has_many = "super::network_recalculation_task::Entity")]
     NetworkRecalculationTask,
+    #[sea_orm(has_many = "super::notification_event::Entity")]
+    NotificationEvent,
+    #[sea_orm(has_many = "super::notification_read_boundary::Entity")]
+    NotificationReadBoundary,
+    #[sea_orm(
+        has_many = "super::notification_read_boundary_completed::Entity"
+    )]
+    NotificationReadBoundaryCompleted,
+    #[sea_orm(has_many = "super::notification_receipt::Entity")]
+    NotificationReceipt,
     #[sea_orm(
         belongs_to = "super::organism::Entity",
         from = "Column::OrganismId",
@@ -333,6 +345,12 @@ impl Related<super::goi_integration_access_login::Entity> for Entity {
     }
 }
 
+impl Related<super::importance_operation::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ImportanceOperation.def()
+    }
+}
+
 impl Related<super::log_users_report_generation::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::LogUsersReportGeneration.def()
@@ -360,6 +378,30 @@ impl Related<super::network_freq_last_datetime_in_aor::Entity> for Entity {
 impl Related<super::network_recalculation_task::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::NetworkRecalculationTask.def()
+    }
+}
+
+impl Related<super::notification_event::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationEvent.def()
+    }
+}
+
+impl Related<super::notification_read_boundary::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationReadBoundary.def()
+    }
+}
+
+impl Related<super::notification_read_boundary_completed::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationReadBoundaryCompleted.def()
+    }
+}
+
+impl Related<super::notification_receipt::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationReceipt.def()
     }
 }
 

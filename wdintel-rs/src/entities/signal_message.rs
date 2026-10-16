@@ -41,6 +41,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     DatasourceGroup,
+    #[sea_orm(has_many = "super::importance_operation::Entity")]
+    ImportanceOperation,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::LoginId",
@@ -49,6 +51,8 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     Login,
+    #[sea_orm(has_many = "super::notification_event::Entity")]
+    NotificationEvent,
     #[sea_orm(has_one = "super::rer_csv_import_message::Entity")]
     RerCsvImportMessage,
     #[sea_orm(has_many = "super::sigint_bookmark::Entity")]
@@ -71,9 +75,21 @@ impl Related<super::datasource_group::Entity> for Entity {
     }
 }
 
+impl Related<super::importance_operation::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ImportanceOperation.def()
+    }
+}
+
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::notification_event::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationEvent.def()
     }
 }
 

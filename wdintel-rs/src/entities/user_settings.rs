@@ -24,8 +24,8 @@ pub struct Model {
     pub show_classic_duty: bool,
     pub show_classic_analysis: bool,
     pub duty_collapse_media_previews: bool,
-    pub message_text_preview_lines: UserSettingsMessageTextPreviewLines,
     pub media_summary_enabled: bool,
+    pub message_text_preview_lines: UserSettingsMessageTextPreviewLines,
     #[sea_orm(column_type = "Text", nullable)]
     pub message_sort_by: Option<String>,
     pub message_auto_parse_enabled: Option<bool>,
