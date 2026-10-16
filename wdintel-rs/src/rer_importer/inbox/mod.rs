@@ -288,9 +288,13 @@ async fn inbox_item_context(
     req: Json<InboxItemContextReq>,
 ) -> Result<Json<InboxItemContextRsp>, AppError> {
     let login = login_id_from_identity(&user).context(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
     let Some(message_uid) =
         normalized_optional_string(Some(req.message_uid.as_str()))
     else {
@@ -720,7 +724,7 @@ async fn messages_by_id(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -750,9 +754,13 @@ async fn messages_by_id_matching_filters(
     req: Json<MessageIdsReq>,
 ) -> Result<Json<MessageIdsRsp>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .context(h!())?;
@@ -796,9 +804,13 @@ async fn messages_by_id_with_metadata(
     req: Json<MessageIdsReq>,
 ) -> Result<Json<InboxMessagesRsp>, AppError> {
     let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
     let is_admin = has_role(&env.dbx, &login, "Admin").await.is_ok();
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
@@ -848,9 +860,13 @@ async fn messages_by_uuid(
 ) -> Result<Json<MessageIdsRsp>, AppError> {
     let req = req.into_inner();
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "ApiAgent"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
     let default_req = InboxMessagesReq {
         highlight_points: Some(true),
         ..Default::default()
@@ -1199,9 +1215,13 @@ async fn inbox_messages(
     req: Json<InboxMessagesReq>,
 ) -> Result<Json<InboxMessagesApiRsp>, AppError> {
     let user_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &user_id, vec!["Rer", "CyberViewer", "ApiAgent"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &user_id,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
     let is_admin = has_role(&env.dbx, &user_id, "Admin").await.is_ok();
     let page_id = req.page_id.clone();
     let req = req.into_inner();
@@ -1970,7 +1990,7 @@ async fn inbox_messages_count(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
     )
     .await
     .c(h!())?;

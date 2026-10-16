@@ -120,6 +120,28 @@ suite =
                                 || Core.Auth.hasRole "CyberViewer" account
                         )
                     |> Expect.equal False
+        , test "restricted viewers retain shared access without devices or message writes" <|
+            \_ ->
+                let
+                    restricted =
+                        user [ "CyberViewerRestricted" ]
+                in
+                Expect.all
+                    [ \_ -> Expect.equal True (Core.Auth.hasRole "Basic" restricted)
+                    , \_ -> Expect.equal True (Core.Auth.hasRerOrCyber restricted)
+                    , \_ -> Expect.equal False (Core.Auth.canReadDevices restricted)
+                    , \_ -> Expect.equal False (Core.Auth.canWriteMessages restricted)
+                    , \_ -> Expect.equal False (Core.Auth.canUseRadioFeatures restricted)
+                    , \_ ->
+                        [ "Rer", "Full", "CyberViewer", "Cyber", "Admin" ]
+                            |> List.all
+                                (\role ->
+                                    Core.Auth.canReadDevices (user [ "CyberViewerRestricted", role ])
+                                        == Core.Auth.canReadDevices (user [ role ])
+                                )
+                            |> Expect.equal True
+                    ]
+                    ()
         , test "#3569 CyberViewer can read without message writes or radio access" <|
             \_ ->
                 Expect.all

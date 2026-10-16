@@ -354,18 +354,20 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
         .await;
     }
 
-    let basic = access::login_with_roles(&owner, &["Basic"]);
-    assert!(matches!(
-        bl::list_roots(
-            &env.dbx,
-            env.file_registry_db().unwrap(),
-            &basic,
-            tree.device_id,
-        )
-        .await
-        .unwrap_err(),
-        AppError::Forbidden(_),
-    ));
+    for role in ["Basic", "CyberViewerRestricted"] {
+        let denied = access::login_with_roles(&owner, &[role]);
+        assert!(matches!(
+            bl::list_roots(
+                &env.dbx,
+                env.file_registry_db().unwrap(),
+                &denied,
+                tree.device_id,
+            )
+            .await
+            .unwrap_err(),
+            AppError::Forbidden(_),
+        ));
+    }
 
     let admin = access::login_with_roles(&owner, &[ROLE_ADMIN]);
     assert_stage_eight_browse_composition(

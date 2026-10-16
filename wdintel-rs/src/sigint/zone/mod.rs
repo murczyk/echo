@@ -1,5 +1,6 @@
 use self::bl::*;
 use super::types::*;
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::entities::sigint_zone_datasource;
 use crate::entities::*;
 use crate::sigint::aor::bl::collect_group_aors;
@@ -22,7 +23,7 @@ pub async fn zones_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api", "Admin"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api", "Admin"],
     )
     .await?;
     let zones = sigint_zone::Entity::find()
@@ -52,7 +53,7 @@ pub async fn zones_datasources_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
     let zone_id: i64 = req.into_inner();

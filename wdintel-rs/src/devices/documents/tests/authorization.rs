@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::AppError;
 
 #[tokio::test]
 #[serial_test::serial]
@@ -56,6 +57,40 @@ async fn device_document_authorization_rechecks_linked_human_3064() {
         access::visible_ids(&env, &resolved, true).await.unwrap(),
         vec![archived.id]
     );
+    let mut restricted = human.clone().into_active_model();
+    restricted.roles = Set(json!(["CyberViewerRestricted"]));
+    restricted.update(&env.dbx).await.unwrap();
+    for id in [human.id, agent.id] {
+        assert!(matches!(
+            access::reader(&env, id).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(!access::available(&env, id).await);
+        assert!(matches!(
+            crate::devices::access::require_message_devices(&env.dbx, &id)
+                .await,
+            Err(AppError::Forbidden(_)),
+        ));
+    }
+    let mut agent = agent.into_active_model();
+    agent.roles = Set(json!(["Cyber"]));
+    let agent = agent.update(&env.dbx).await.unwrap();
+    assert!(matches!(
+        crate::devices::access::require_message_devices(&env.dbx, &agent.id)
+            .await,
+        Err(AppError::Forbidden(_)),
+    ));
+    let mut agent = agent.into_active_model();
+    agent.roles = Set(json!(["ApiAgent", "Cyber", "Rer"]));
+    let agent = agent.update(&env.dbx).await.unwrap();
+    let mut restored = human.clone().into_active_model();
+    restored.roles = Set(json!(["CyberViewerRestricted", "CyberViewer"]));
+    restored.update(&env.dbx).await.unwrap();
+    access::reader(&env, agent.id).await.unwrap();
+    crate::devices::access::require_message_devices(&env.dbx, &agent.id)
+        .await
+        .unwrap();
+
     let mut revoked = human.into_active_model();
     revoked.roles = Set(json!(["Rer"]));
     revoked.update(&env.dbx).await.unwrap();
