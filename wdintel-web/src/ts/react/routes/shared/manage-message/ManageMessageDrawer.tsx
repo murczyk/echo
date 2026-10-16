@@ -74,6 +74,7 @@ import { resolveManageMessageEmbeddedFormLayout } from './manage-message-editor-
 
 export type Props = {
   open: boolean;
+  hideNetworks?: boolean;
   cyberEchoEnabled: boolean;
   currentUser: User | null;
   onClose: () => void;
@@ -973,6 +974,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
 
                           <NetworkSection
                             radioFeaturesAllowed={drawerState.radioFeaturesAllowed}
+                            hideNetworks={props.hideNetworks ?? false}
                             isEditMode={isEditMode}
                             busy={busy}
                             recentValues={recentValues}

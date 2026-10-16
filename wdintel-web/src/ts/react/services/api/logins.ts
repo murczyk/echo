@@ -18,28 +18,33 @@ type ListLoginsReqBody = {
 
 type CreateLoginReqBody = {
   login: string;
-  password: string;
+  password: string | null;
   roles: string[];
   sigint_zone_id: number | null;
   organism_id: number;
   signal_profile_id: CreateLoginReq['signalProfileId'];
   description: string | null;
+  delta_login?: string | null;
+  password_auth_enabled?: boolean | null;
 };
+
+export type UpdateLoginPatch = Pick<UpdateLoginReq, 'id' | 'login' | 'organismId'> &
+  Partial<Omit<UpdateLoginReq, 'id' | 'login' | 'organismId'>>;
 
 type UpdateLoginReqBody = {
   id: string;
   login: string;
-  roles: string[] | null;
-  sigint_zone_id: number | null;
+  roles?: string[] | null;
+  sigint_zone_id?: number | null;
   organism_id: number;
-  deleted: boolean | null;
-  password: string | null;
-  delta_login: string | null;
-  deactivation_reason: DeactivationReasonType | null;
-  signal_profile_id: UpdateLoginReq['signalProfileId'];
-  description: string | null;
-  password_auth_enabled: boolean | null;
-  clear_totp: boolean | null;
+  signal_profile_id?: UpdateLoginReq['signalProfileId'];
+  deleted?: boolean | null;
+  password?: string | null;
+  delta_login?: string | null;
+  deactivation_reason?: DeactivationReasonType | null;
+  description?: string | null;
+  password_auth_enabled?: boolean | null;
+  clear_totp?: boolean | null;
 };
 
 type LoginLike = {
@@ -70,6 +75,8 @@ type LoginLike = {
   description?: string | null;
   passwordAuthEnabled?: boolean;
   password_auth_enabled?: boolean;
+  hasPassword?: boolean;
+  has_password?: boolean;
   totpEnabled?: boolean;
   totp_enabled?: boolean;
 };
@@ -90,24 +97,32 @@ function toCreateLoginReqBody(req: CreateLoginReq): CreateLoginReqBody {
     organism_id: req.organismId,
     signal_profile_id: req.signalProfileId,
     description: req.description,
+    ...(req.deltaLogin === undefined ? {} : { delta_login: req.deltaLogin }),
+    ...(req.passwordAuthEnabled === undefined
+      ? {}
+      : { password_auth_enabled: req.passwordAuthEnabled }),
   };
 }
 
-function toUpdateLoginReqBody(req: UpdateLoginReq): UpdateLoginReqBody {
+function toUpdateLoginReqBody(req: UpdateLoginPatch): UpdateLoginReqBody {
   return {
     id: req.id,
     login: req.login,
-    roles: req.roles,
-    sigint_zone_id: req.sigintZoneId,
+    ...(req.roles === undefined ? {} : { roles: req.roles }),
+    ...(req.sigintZoneId === undefined ? {} : { sigint_zone_id: req.sigintZoneId }),
     organism_id: req.organismId,
-    deleted: req.deleted,
-    password: req.password,
-    delta_login: req.deltaLogin,
-    deactivation_reason: req.deactivationReason,
-    signal_profile_id: req.signalProfileId,
-    description: req.description,
-    password_auth_enabled: req.passwordAuthEnabled,
-    clear_totp: req.clearTotp,
+    ...(req.signalProfileId === undefined ? {} : { signal_profile_id: req.signalProfileId }),
+    ...(req.deleted === undefined ? {} : { deleted: req.deleted }),
+    ...(req.password === undefined ? {} : { password: req.password }),
+    ...(req.deltaLogin === undefined ? {} : { delta_login: req.deltaLogin }),
+    ...(req.deactivationReason === undefined
+      ? {}
+      : { deactivation_reason: req.deactivationReason }),
+    ...(req.description === undefined ? {} : { description: req.description }),
+    ...(req.passwordAuthEnabled === undefined
+      ? {}
+      : { password_auth_enabled: req.passwordAuthEnabled }),
+    ...(req.clearTotp === undefined ? {} : { clear_totp: req.clearTotp }),
   };
 }
 
@@ -148,6 +163,7 @@ function normalizeLogin(raw: LoginLike): Login {
     signalProfileId: raw.signalProfileId ?? raw.signal_profile_id ?? null,
     description: raw.description ?? null,
     passwordAuthEnabled: raw.passwordAuthEnabled ?? raw.password_auth_enabled ?? true,
+    hasPassword: raw.hasPassword ?? raw.has_password ?? false,
     totpEnabled: raw.totpEnabled ?? raw.totp_enabled ?? false,
   };
 }
@@ -169,7 +185,7 @@ export async function createLoginDelta(req: CreateLoginReq): Promise<Login> {
   return normalizeLogin(data ?? {});
 }
 
-export async function updateLogin(req: UpdateLoginReq): Promise<Login> {
+export async function updateLogin(req: UpdateLoginPatch): Promise<Login> {
   const data = await postJson<LoginLike>('/api/login/update', toUpdateLoginReqBody(req));
   return normalizeLogin(data ?? {});
 }

@@ -195,7 +195,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     audioTranscriptionEnabled,
     hideBotTags,
     hideNetworks,
-    networkVisibilityReady: devicesSettingsStatus !== 'loading',
+    networkVisibilityReady: devicesSettingsStatus === 'success',
     dutyExcludeMenuEnabled,
     collapseMediaPreviews,
     mediaSummaryEnabled,
