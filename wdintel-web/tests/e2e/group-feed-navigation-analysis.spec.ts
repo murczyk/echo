@@ -128,6 +128,7 @@ test.describe('Analysis group feed navigation', () => {
 
     const filterPanel = page.locator('[data-analysis-filter-panel]:visible');
     await expect(filterPanel).toBeVisible();
+    await expect(page.locator('[data-analysis-filter-transition]')).toHaveCSS('width', '336px');
     const groupNavigationBackground = await groupNavigation.evaluate((element) => {
       let current: Element | null = element;
       while (current !== null) {
@@ -140,18 +141,40 @@ test.describe('Analysis group feed navigation', () => {
       return getComputedStyle(document.body).backgroundColor;
     });
     await expect(filterPanel).toHaveCSS('background-color', groupNavigationBackground);
-    await expect(filterPanel.getByText('Для: Всі групи', { exact: true })).toBeVisible();
+    await expect(filterPanel.getByRole('button', { name: 'Закрити фільтри' })).toHaveCount(0);
+    await expect(filterPanel.getByText(/^Для:/)).toHaveCount(0);
     await expect(filterPanel.locator('[data-section-id="Групи"]')).toBeVisible();
     const groupNavigationBox = await groupNavigation.boundingBox();
     const filterPanelBox = await filterPanel.boundingBox();
+    const toolbarDividerBox = await page.locator('[data-analysis-group-divider]').boundingBox();
+    const counterBox = await filterPanel.getByRole('status').boundingBox();
+    const messagesScrollerBox = await page
+      .locator('[data-analysis-message-scroller]')
+      .boundingBox();
     expect(filterPanelBox?.x).toBeGreaterThanOrEqual((groupNavigationBox?.x ?? 0) + 200);
+    expect(
+      Math.abs(
+        (toolbarDividerBox?.x ?? 0) - ((filterPanelBox?.x ?? 0) + (filterPanelBox?.width ?? 0)),
+      ),
+    ).toBeLessThanOrEqual(1);
+    expect((counterBox?.y ?? 0) - (filterPanelBox?.y ?? 0)).toBeGreaterThanOrEqual(12);
+    expect((filterPanelBox?.x ?? 0) + (filterPanelBox?.width ?? 0)).toBeLessThanOrEqual(
+      messagesScrollerBox?.x ?? 0,
+    );
+    expect(filterPanelBox?.width).toBeLessThanOrEqual(336);
+    await expect(filterPanel).toHaveCSS('box-shadow', 'none');
 
     await page
       .locator('[data-analysis-group-list]:visible')
       .getByRole('button', { name: /Group Beta, 3 непрочитаних/ })
       .click();
-    await expect(filterPanel.getByText('Для: Group Beta', { exact: true })).toBeVisible();
     await expect(filterPanel.locator('[data-section-id="Групи"]')).toHaveCount(0);
+
+    await filterToggle.click();
+    await expect(filterPanel).toHaveCount(0);
+    await expect(filterToggle).toHaveAttribute('aria-expanded', 'false');
+    await filterToggle.click();
+    await expect(filterPanel).toBeVisible();
 
     await page.keyboard.press('Escape');
     await expect(filterPanel).toHaveCount(0);
@@ -161,6 +184,43 @@ test.describe('Analysis group feed navigation', () => {
       await page.getByRole('tab', { name: tabName, exact: true }).click();
       await expect(filterToggle).toBeVisible();
     }
+  });
+
+  test('animates the desktop filters with the workspace panel motion', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.setViewportSize({ width: 1234, height: 877 });
+    await installGroupNavigationMocks(page);
+    await page.goto('/rer-analysis-neo');
+
+    const filterToggle = page.locator('[data-analysis-filter-toggle]');
+    await filterToggle.click();
+
+    const filterTransition = page.locator('[data-analysis-filter-transition]');
+    const filterPanel = page.locator('[data-analysis-filter-panel]:visible');
+    await expect(filterPanel).toBeVisible();
+    await expect(filterTransition).toHaveCSS('transition-duration', '0.18s');
+    await expect(filterTransition).toHaveCSS(
+      'transition-timing-function',
+      'cubic-bezier(0.2, 0, 0, 1)',
+    );
+
+    await filterToggle.click();
+    await expect(filterPanel).toBeVisible();
+    await expect(filterPanel).toHaveCount(0);
+  });
+
+  test('removes the desktop filter motion when reduced motion is preferred', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.setViewportSize({ width: 1234, height: 877 });
+    await installGroupNavigationMocks(page);
+    await page.goto('/rer-analysis-neo');
+
+    await page.locator('[data-analysis-filter-toggle]').click();
+
+    await expect(page.locator('[data-analysis-filter-transition]')).toHaveCSS(
+      'transition-duration',
+      '0s',
+    );
   });
 
   test('resolves the selected group name while both side panels are closed', async ({ page }) => {

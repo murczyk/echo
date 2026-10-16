@@ -101,6 +101,8 @@ vi.mock('@mui/material', () => ({
   Chip: ({ label }: { label?: ReactNode }) => <div>{label}</div>,
   CircularProgress: () => <div data-testid="circular-progress" />,
   ClickAwayListener: ({ children }: { children: ReactNode }) => children,
+  Collapse: ({ children, in: open }: { children: ReactNode; in?: boolean }) =>
+    open ? <div>{children}</div> : null,
   Drawer: ({
     anchor,
     open,

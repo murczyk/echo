@@ -29,7 +29,7 @@ export const analysisCompactFiltersContentSx = {
 export const analysisFiltersPaperSx = {
   px: { xs: 1, lg: 1.5 },
   pb: { xs: 0, lg: 1.5 },
-  pt: 0,
+  pt: { xs: 0, lg: 1 },
   overflow: { xs: 'visible', md: 'auto' },
   minHeight: 0,
   height: { xs: 'auto', md: '50dvh', lg: '100%' },

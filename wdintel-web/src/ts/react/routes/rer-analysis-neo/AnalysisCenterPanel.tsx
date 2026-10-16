@@ -3,12 +3,14 @@ import {
   Badge,
   Box,
   Button,
+  Collapse,
   FormControlLabel,
   Paper,
   Stack,
   Switch,
   Tab,
   Tabs,
+  useMediaQuery,
 } from '@mui/material';
 import { useCallback, useEffect, useRef } from 'react';
 
@@ -25,8 +27,11 @@ import { getAnalysisActiveFilterCount } from './analysis-active-filter-count';
 import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
 import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
 import { GroupIdentity } from '../shared/group-navigation';
+import {
+  MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
+  MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
+} from '../shared/manage-message/ManageMessageEditorSurface';
 import { AnalysisFullscreenPanelDrawer } from './AnalysisFullscreenPanelDrawer';
-import { AnalysisPanelHeader } from './AnalysisPanelHeader';
 
 type Props = {
   page: AnalysisPageViewModel;
@@ -74,6 +79,7 @@ export function AnalysisCenterPanel({
   // Columns stack below MUI's `lg` (1200px), so the divider is gated to
   // `min-[1200px]`.
   const showRightDivider = rightPanelVisible;
+  const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const messageTransitionLoading = page.groupScopeTransitionPending || page.messagesLoading;
   const filterButtonRef = useRef<HTMLButtonElement>(null);
   const closeFilterPanel = useCallback(() => {
@@ -167,8 +173,8 @@ export function AnalysisCenterPanel({
             startIcon={isCompactLayout ? undefined : filterIcon}
             onClick={onToggleFilterPanel}
             sx={{
-              width: isCompactLayout ? 40 : 112,
-              minWidth: isCompactLayout ? 40 : 112,
+              width: isCompactLayout ? 40 : 116,
+              minWidth: isCompactLayout ? 40 : 116,
               height: 36,
               px: isCompactLayout ? 0.5 : 1,
               flexShrink: 0,
@@ -336,27 +342,38 @@ export function AnalysisCenterPanel({
           minWidth: 0,
           minHeight: 0,
           display: 'flex',
-          flexDirection: 'column',
-          position: 'relative',
+          flexDirection: 'row',
           overflow: 'hidden',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: { xs: 'contain', lg: 'auto' },
         }}
       >
-        {filterPanelOpen && !isNarrowLayout ? (
+        <Collapse
+          data-analysis-filter-transition
+          orientation="horizontal"
+          in={filterPanelOpen && !isNarrowLayout}
+          timeout={reduceMotion ? 0 : MANAGE_MESSAGE_EDITOR_TRANSITION_MS}
+          easing={MANAGE_MESSAGE_EDITOR_TRANSITION_EASING}
+          unmountOnExit
+          sx={{
+            height: '100%',
+            flexShrink: 0,
+            '& .MuiCollapse-wrapper': { height: '100%' },
+            '& .MuiCollapse-wrapperInner': { height: '100%' },
+          }}
+        >
           <Paper
             component="aside"
             id={filtersPanelId}
             data-analysis-filter-panel
             aria-label="Фільтри"
             square
-            elevation={8}
+            elevation={0}
             sx={{
-              position: 'absolute',
-              zIndex: 2,
-              inset: '0 auto 0 0',
-              width: 400,
-              maxWidth: '100%',
+              width: 336,
+              flex: '0 0 336px',
+              height: '100%',
+              minWidth: 0,
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
@@ -364,18 +381,12 @@ export function AnalysisCenterPanel({
               borderColor: 'divider',
               bgcolor: 'var(--echo-color-background)',
               backgroundImage: 'none',
-              boxShadow: '8px 0 24px rgba(0, 0, 0, 0.28)',
+              boxShadow: 'none',
             }}
           >
-            <AnalysisPanelHeader
-              title="Фільтри"
-              subtitle={scopeLabel}
-              closeLabel="Закрити фільтри"
-              onClose={closeFilterPanel}
-            />
             {filterPanelBody}
           </Paper>
-        ) : null}
+        </Collapse>
         <Box
           id={messagesPanelId}
           role="tabpanel"
