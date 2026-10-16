@@ -23,6 +23,7 @@ pub mod discord;
 mod healthcheck;
 pub mod middleware;
 pub mod monitoring;
+mod read_deadline;
 #[cfg(test)]
 mod upload_http_audit;
 pub use admin::RestartEchoRequest;
@@ -1840,6 +1841,7 @@ pub async fn main_server(
             .wrap(actix_web::middleware::from_fn(
                 middleware::mk_activity_middleware(Some(redis_for_middleware)),
             ))
+            .wrap(actix_web::middleware::from_fn(read_deadline::enforce))
             .wrap(actix_web::middleware::from_fn(
                 middleware::access_log_middleware,
             ))

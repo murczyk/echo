@@ -11,8 +11,12 @@ use crate::{
     functest::tests::{cleanup, mk_signal_message},
     types::Env,
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set,
+};
 use uuid::Uuid;
+
+mod scoped;
 
 #[tokio::test]
 #[serial_test::serial]
@@ -69,6 +73,28 @@ async fn attachment_search_correlated_terms_preserve_mixed_source_matches_3780()
             .map(|message| message.id)
             .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(actual, expected, "{query}");
+        for correlated in [false, true] {
+            let actual = signal_message::Entity::find()
+                .join(
+                    sea_orm::JoinType::LeftJoin,
+                    sea_orm::RelationTrait::def(
+                        &signal_message::Relation::SigintInboxItem,
+                    ),
+                )
+                .filter(
+                    super::search::analysis_message_filter(
+                        query, None, correlated,
+                    )
+                    .unwrap(),
+                )
+                .all(&env.dbx)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|message| message.id)
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(actual, expected, "{query}, correlated={correlated}");
+        }
     }
 }
 

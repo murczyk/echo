@@ -123,14 +123,14 @@ export function AnalysisSearchControls({
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         <div className="max-w-[360px] p-echo-lg">
-          <p>Усі режими не враховують регістр. Для запиту «рота»:</p>
+          <p>Пошук працює в 3 режимах. Наприклад, для запиту «рота»:</p>
           <ul>
-            <li>Гнучкий пошук: також «ротний».</li>
-            <li>Точний збіг: лише слово «рота», також «РОТА.».</li>
-            <li>Збіг за входженням: також «воротар».</li>
+            <li>Точний збіг: лише слово «рота»</li>
+            <li>Гнучкий пошук: також «ротний», «роти»</li>
+            <li>Збіг за входженням: також «воротар»</li>
           </ul>
           <a href={ANALYSIS_SEARCH_DOC_URL} target="_blank" rel="noopener noreferrer">
-            Докладніше про пошук
+            Докладніше на сторінці документації
           </a>
         </div>
       </Popover>

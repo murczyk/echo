@@ -1030,6 +1030,13 @@ pub async fn bl_group_update(
     } else {
         group
     };
+    crate::sigint::zone::bl::update_group_fetch_new_messages_if_present(
+        req.fetch_new_messages,
+        &group.master_key,
+        txn,
+    )
+    .await
+    .c(h!())?;
     crate::sigint::zone::bl::update_group_aviation_if_present(
         req.is_aviation_group,
         &group.master_key,

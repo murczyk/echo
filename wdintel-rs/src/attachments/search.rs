@@ -77,11 +77,12 @@ pub fn text_predicate(
     values: &mut Vec<Value>,
 ) -> anyhow::Result<String> {
     text_predicate_with_correlation(
-        query, message, scope, structured, values, false, None,
+        query, message, scope, structured, values, false, None, false,
     )
     .c(h!())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn text_predicate_with_correlation(
     query: &str,
     message: &str,
@@ -90,6 +91,7 @@ fn text_predicate_with_correlation(
     values: &mut Vec<Value>,
     correlated: bool,
     search_mode: Option<AnalysisSearchMode>,
+    direct_body: bool,
 ) -> anyhow::Result<String> {
     let search_mode = search_mode.unwrap_or_default();
     anyhow::ensure!(
@@ -152,6 +154,7 @@ fn text_predicate_with_correlation(
                 &literal_pattern(token),
                 search_mode,
                 values,
+                direct_body,
             )
         };
         alternatives.last_mut().unwrap().push(if negative {
@@ -181,6 +184,7 @@ fn text_predicate_with_correlation(
             &pattern,
             search_mode,
             values,
+            direct_body,
         );
         filters.push(format!(
             "{}({predicate})",
@@ -292,11 +296,12 @@ fn message_literal_predicate(
     pattern: &str,
     search_mode: AnalysisSearchMode,
     values: &mut Vec<Value>,
+    direct_body: bool,
 ) -> String {
     let operator = literal_operator(pattern, search_mode, values);
     let body = if matches!(scope, "attachments" | "document") {
         "false".into()
-    } else if search_mode != AnalysisSearchMode::Fuzzy {
+    } else if direct_body || search_mode != AnalysisSearchMode::Fuzzy {
         format!(
             "coalesce(sigint_inbox_item.body_noheader->>'body','') {operator}"
         )
@@ -376,6 +381,27 @@ pub(crate) fn message_filter_with_mode(
         &mut values,
         correlated,
         search_mode,
+        false,
+    )
+    .c(h!())?;
+    Ok(Expr::cust_with_values(sql, values))
+}
+
+pub(crate) fn analysis_message_filter(
+    query: &str,
+    search_mode: Option<AnalysisSearchMode>,
+    correlated: bool,
+) -> anyhow::Result<SimpleExpr> {
+    let mut values = Vec::new();
+    let sql = text_predicate_with_correlation(
+        query,
+        "signal_message.id",
+        "all",
+        true,
+        &mut values,
+        correlated,
+        search_mode,
+        true,
     )
     .c(h!())?;
     Ok(Expr::cust_with_values(sql, values))
