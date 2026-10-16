@@ -176,10 +176,12 @@ test.describe('message card Duty header @regression', () => {
     });
     const actions = card.locator('[aria-label="Дії повідомлення"]');
     const timestampItems = card.locator('[data-message-card-timestamp-item="true"]');
-    const creationTimestamp = timestampItems.first().locator('.message-card-text');
+    const creationTimestamp = card.locator('[data-message-card-timestamp-footer="true"]');
     const expandLabel = card.locator('.message-card-tag-expand__label');
 
     await expect(actions).toBeVisible();
+    await expect(actions.getByRole('button', { name: 'Створити розвіддонесення' })).toBeVisible();
+    await expect(actions.getByRole('button', { name: 'Більше дій' })).toBeVisible();
     const alignment = await card.evaluate((element) => {
       const cardRect = element.getBoundingClientRect();
       const cardStyle = getComputedStyle(element);
@@ -202,49 +204,8 @@ test.describe('message card Duty header @regression', () => {
         ),
     ).toBe(1);
     await expect(creationTimestamp).toHaveCSS('font-size', '12px');
-    expect(
-      await timestampItems.evaluateAll((items) => {
-        const [creation, interception] = items.map((item) => item.getBoundingClientRect());
-        return (interception?.top ?? 0) - (creation?.bottom ?? 0);
-      }),
-    ).toBeLessThanOrEqual(1);
-    const metadataSpacing = await card.evaluate((element) => {
-      const timestamps = element.querySelectorAll<HTMLElement>(
-        '[data-message-card-timestamp-item="true"]',
-      );
-      const interception = timestamps.item(timestamps.length - 1).getBoundingClientRect();
-      const metadataRows = new Map<number, { top: number; bottom: number }>();
-      element
-        .querySelectorAll<HTMLElement>(
-          '.message-card-content [data-message-card-metadata-item="true"]',
-        )
-        .forEach((item) => {
-          const rect = item.getBoundingClientRect();
-          const rowKey = Math.round(rect.top);
-          const row = metadataRows.get(rowKey);
-          metadataRows.set(rowKey, {
-            top: Math.min(row?.top ?? rect.top, rect.top),
-            bottom: Math.max(row?.bottom ?? rect.bottom, rect.bottom),
-          });
-        });
-      const [firstRow, secondRow] = [...metadataRows.values()].toSorted(
-        (left, right) => left.top - right.top,
-      );
-      return {
-        headerToMetadata: (firstRow?.top ?? 0) - interception.bottom,
-        betweenMetadataRows: (secondRow?.top ?? 0) - (firstRow?.bottom ?? 0),
-      };
-    });
-    expect(
-      Math.abs(metadataSpacing.headerToMetadata - metadataSpacing.betweenMetadataRows),
-    ).toBeLessThanOrEqual(1);
-    expect(
-      await creationTimestamp.evaluate((element) => {
-        const textRange = document.createRange();
-        textRange.selectNodeContents(element);
-        return textRange.getClientRects().length;
-      }),
-    ).toBe(1);
+    await expect(timestampItems).toHaveCount(1);
+    await expect(creationTimestamp).toBeVisible();
     await expect(expandLabel).toHaveCount(1);
     await expect(expandLabel).toBeHidden();
   });

@@ -25,6 +25,7 @@ import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message
 import {
   MessageCardHeader,
   MessageCardMetadata,
+  MessageCardTimestampFooter,
   type MessageCardDisplayMode,
   type MessageCardHeaderProps,
 } from './MessageCardHeader';
@@ -255,7 +256,6 @@ function MessageCardComponent({
   }
   const displayTimestamp = messageTimeBasis === 'creation' ? msg.createdAt : msg.timestamp;
   const downloadGuard = useMessageCardDownloadGuard();
-  const compactLayout = feedCount >= 3;
   const derivedNetworkMap = useMemo(() => {
     if (Object.keys(networkMap).length > 0) return networkMap;
     if (!networks) return {};
@@ -362,7 +362,6 @@ function MessageCardComponent({
     : undefined;
 
   const headerProps: MessageCardHeaderProps = {
-    compact: compactLayout,
     displayMode,
     id,
     msg,
@@ -372,7 +371,6 @@ function MessageCardComponent({
     etalonDisplayModel: visibleEtalonDisplayModel,
     mapHref,
     analysisHref,
-    rightInsetPx: rightHeaderInsetPx,
     onReply:
       replies.open == null ? undefined : (focus) => replies.open?.({ id, message: msg, focus }),
     onBookmark,
@@ -408,7 +406,7 @@ function MessageCardComponent({
         data-message-card-root="true"
         data-message-card-display-mode={displayMode}
         data-important={msg.important ? 'true' : undefined}
-        className="message-card-root relative flex w-full flex-col overflow-hidden"
+        className="message-card-root relative flex w-full min-w-0 flex-col overflow-hidden"
       >
         {watermarkUserName !== '' && (
           <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
@@ -424,6 +422,7 @@ function MessageCardComponent({
               senderName={senderName}
               etalonDisplayModel={visibleEtalonDisplayModel}
               metadataTrigger={metadataTrigger}
+              hideExplicitUnit
             />
           }
           replyContent={
@@ -468,6 +467,11 @@ function MessageCardComponent({
           messageTimeBasis={messageTimeBasis}
           isDownloadStarting={downloadGuard.isDownloadStarting}
           onDownloadStart={downloadGuard.onDownloadStart}
+        />
+        <MessageCardTimestampFooter
+          msg={msg}
+          messageTimeBasis={messageTimeBasis}
+          displayTimestamp={displayTimestamp}
         />
       </MessageCardRoot>
     </li>

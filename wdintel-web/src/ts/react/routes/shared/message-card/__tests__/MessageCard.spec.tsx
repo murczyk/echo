@@ -441,7 +441,7 @@ describe('MessageCard', () => {
     { displayMode: 'duty' as const, hasExcludeSection: true },
     { displayMode: 'analysis' as const, hasExcludeSection: false },
   ])(
-    'moves all actions into the menu and keeps the important status separate on narrow $displayMode cards',
+    'keeps report creation direct and moves the remaining actions into the menu on narrow $displayMode cards',
     async ({ displayMode, hasExcludeSection }) => {
       const clientWidth = vi
         .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
@@ -457,23 +457,26 @@ describe('MessageCard', () => {
         view.container.querySelectorAll<HTMLButtonElement>('.message-card-header-actions button'),
       ).map((action) => action.getAttribute('aria-label'));
 
-      expect(visibleActions).toEqual(['Більше дій']);
-      const importantStatus = view.container.querySelector(
-        '[data-message-card-important-status-position="mobile"]',
-      );
+      expect(visibleActions).toEqual(['Створити розвіддонесення', 'Більше дій']);
       const overflowAction = view.container.querySelector('button[aria-label="Більше дій"]');
 
-      expect(importantStatus?.textContent).toContain('Важливе');
-      expect(importantStatus?.nextElementSibling?.contains(overflowAction)).toBe(true);
+      expect(
+        view.container.querySelector('[data-message-card-important-status="true"]'),
+      ).toBeNull();
+      expect(
+        view.container.querySelector('.message-card-header-actions')?.contains(overflowAction),
+      ).toBe(true);
       expect(
         view.container.querySelectorAll('[data-message-card-timestamp-item="true"]'),
-      ).toHaveLength(2);
+      ).toHaveLength(1);
+      expect(
+        view.container.querySelector('[data-message-card-timestamp-footer="true"]')?.textContent,
+      ).toContain('17.07, 03:30');
       expect(view.container.querySelector('.message-card-header-timestamps')?.classList).toContain(
         'message-card-header-timestamps--mobile-nowrap',
       );
 
       await openOverflowMenu(view.container);
-      expect(document.body.textContent).toContain('Створити розвіддонесення');
       expect(document.body.textContent).toContain('Позначити як не важливе');
       expect(document.body.textContent).toContain('Додати в закладки');
       expect(document.body.textContent).toContain('Копіювати');
@@ -673,6 +676,28 @@ describe('MessageCard', () => {
     expect(document.body.textContent).not.toContain('Редагувати');
   });
 
+  it('keeps attachment archive download without report creation on a read-only card', async () => {
+    const view = await renderCard({
+      readOnly: true,
+      msg: buildMessage({
+        media: ['first', 'second'].map((id) => ({
+          id,
+          href: `/api/messenger/media/${id}`,
+          contentType: 'text/plain',
+          fileName: `${id}.txt`,
+          sizeBytes: 1,
+        })) as InboxMessage['media'],
+      }),
+    });
+
+    await openOverflowMenu(view.container);
+    expect(
+      document.body.querySelector('a[href="/api/rer-importer/messages/42/attachments.zip"]'),
+    ).not.toBeNull();
+    expect(view.container.querySelector('[title="Створити розвіддонесення"]')).toBeNull();
+    expect(document.body.textContent).not.toContain('Створити розвіддонесення');
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3461
   it('ECHO-3461 hides device metadata without device access', async () => {
     const view = await renderHeader(false);
@@ -716,7 +741,10 @@ describe('MessageCard', () => {
       expect(view.container.querySelector('.message-card-relative-time')).toBeNull();
       expect(
         view.container.querySelectorAll('[data-message-card-timestamp-item="true"]'),
-      ).toHaveLength(messageTimeBasis === 'creation' ? 2 : 1);
+      ).toHaveLength(1);
+      expect(
+        view.container.querySelector('[data-message-card-timestamp-footer="true"]') != null,
+      ).toBe(messageTimeBasis === 'creation');
       expect(
         formatMessageCardTooltipTime({
           time: '12:00',
@@ -748,25 +776,20 @@ describe('MessageCard', () => {
         const timestamps = view.container.querySelectorAll(
           '[data-message-card-timestamp-item="true"]',
         );
+        expect(timestamps).toHaveLength(1);
+        expect(timestamps[0]?.getAttribute('title')).toBe('Дата і час перехоплення');
+        expect(timestamps[0]?.textContent).toContain(isTimeNull ? '14.07' : '14.07, 08:45');
+        if (isTimeNull) expect(timestamps[0]?.textContent).not.toContain(':');
+        expect(timestamps[0]?.querySelector('[data-testid="TodayOutlinedIcon"]')).not.toBeNull();
+        expect(timestamps[0]?.querySelector('.message-card-header-icon')).not.toBeNull();
+        expect(timestamps[0]?.querySelector('.message-card-timestamp-icon')).toBeNull();
+        const footer = view.container.querySelector('[data-message-card-timestamp-footer="true"]');
+        expect(footer != null).toBe(messageTimeBasis === 'creation');
         if (messageTimeBasis === 'creation') {
-          expect(timestamps).toHaveLength(2);
-          expect(timestamps[0]?.textContent).toContain('17.07, 00:30');
-          expect(timestamps[0]?.getAttribute('title')).toBe('Дата і час створення повідомлення');
-          expect(timestamps[1]?.getAttribute('title')).toBe('Дата і час перехоплення');
-          expect(timestamps[1]?.textContent).toContain(isTimeNull ? '14.07' : '14.07, 08:45');
-          if (isTimeNull) expect(timestamps[1]?.textContent).not.toContain(':');
-          expect(timestamps[0]?.querySelector('svg')).toBeNull();
-          expect(timestamps[1]?.querySelector('[data-testid="TodayOutlinedIcon"]')).not.toBeNull();
-          expect(timestamps[1]?.querySelector('.message-card-header-icon')).not.toBeNull();
-          expect(timestamps[1]?.querySelector('.message-card-timestamp-icon')).toBeNull();
-        } else {
-          expect(timestamps).toHaveLength(1);
-          expect(timestamps[0]?.getAttribute('title')).toBe('Дата і час перехоплення');
-          expect(timestamps[0]?.textContent).toContain(isTimeNull ? '14.07' : '14.07, 08:45');
-          if (isTimeNull) expect(timestamps[0]?.textContent).not.toContain(':');
-          expect(timestamps[0]?.querySelector('[data-testid="TodayOutlinedIcon"]')).not.toBeNull();
-          expect(timestamps[0]?.querySelector('.message-card-header-icon')).not.toBeNull();
-          expect(timestamps[0]?.querySelector('.message-card-timestamp-icon')).toBeNull();
+          expect(footer?.textContent).toContain('17.07, 00:30');
+          expect(
+            footer?.querySelector('[title="Дата і час створення повідомлення"]'),
+          ).not.toBeNull();
         }
       }
     },

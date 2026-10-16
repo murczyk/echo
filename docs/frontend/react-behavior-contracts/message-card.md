@@ -143,6 +143,7 @@ Hovering or focusing a located text position opens the shared overview/detail
 preview; clicking or pressing Enter/Space opens the full message map focused on
 that point. Positions without parseable coordinates remain textual. Regression:
 `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`.
+
 - **Source implementation:** `message-coordinate-preview.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-coordinate-preview.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational coordinate parser coverage.
@@ -234,7 +235,7 @@ that point. Positions without parseable coordinates remain textual. Regression:
 - **Status:** inferred characterization
 - **Behavior ID:** `react-message-card-presentation-workflows`
 - **Affected route/component:** MessageCard and supporting presentation children
-- **Expected observable result:** Duty and Analysis expose their respective actions and navigation; text folding, headers, timestamps, missing-value fallbacks, comment authorship/disclosure, callsign/tag/report/transcription visibility, and ordinary loading/empty presentation follow the current component behavior. The header owns date/time presentation in both modes: interception metadata is not prepended to message body text, interception time uses its labeled calendar item, creation-basis cards add a separate muted creation timestamp, and Duty cards do not show the former relative-time counter.
+- **Expected observable result:** Duty and Analysis expose their respective actions and navigation; text folding, headers, timestamps, missing-value fallbacks, comment authorship/disclosure, callsign/tag/report/transcription visibility, and ordinary loading/empty presentation follow the current component behavior. The header shows only a nonblank explicit message unit plus the labeled interception date/time; network bindings remain in details. The body uses container-width regions: one column below 760px, message plus attachments with full-width details from 760px, and three regions from 1000px when attachments exist. The full toolbar remains centered until the inner card width reaches 520px, then keeps report creation direct and moves other applicable actions into overflow. Creation-basis cards render their existing muted creation timestamp in the bottom-right footer, and Duty cards do not show the former relative-time counter.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/`
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 
@@ -260,7 +261,7 @@ that point. Positions without parseable coordinates remain textual. Regression:
 ## Duty header regression
 
 - **Behavior ID:** `react-message-card-duty-header`
-- **Expected observable result:** the narrow Duty header remains compact and right-aligned without duplicate timestamp or tag controls.
+- **Expected observable result:** the narrow Duty header keeps the explicit unit/date at left and direct report creation plus overflow actions at right, without duplicate timestamp or tag controls.
 - **Existing test(s):** `wdintel-web/tests/e2e/message-card-duty-header.spec.ts`
 - **Original Echo issue/PR, if known:** [#3570](https://github.com/echoua/echo/issues/3570)
 
