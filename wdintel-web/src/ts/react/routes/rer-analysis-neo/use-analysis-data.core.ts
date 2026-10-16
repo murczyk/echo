@@ -530,7 +530,6 @@ export function useAnalysisData({
   focusedWindow = null,
   focusedMessageActive = false,
   centerTab,
-  leftPanelOpen = true,
   newestFirst,
   onBeforeRealtimeMessageListChange,
   onError,
@@ -1078,14 +1077,13 @@ export function useAnalysisData({
     }),
   );
 
-  const { reload } = useAnalysisReloadOrchestrator(
+  const { reload, messagesLoadedForCurrentQuery } = useAnalysisReloadOrchestrator(
     buildReloadOrchestratorParams({
       centerTab,
       deferInitialLoad,
       hideNetworks,
       focusedWindow,
       focusedMessageActive,
-      leftPanelOpen,
       newestFirst,
       onError,
       onUnauthorized,
@@ -1190,6 +1188,7 @@ export function useAnalysisData({
     groupsActivityLoadedPeriod: sidebarData.groupsActivityLoadedPeriod,
     groupsActivityLoading: sidebarData.groupsActivityLoading,
     hasLoadedInitialMessages: messageList.hasLoadedInitialMessages,
+    messagesLoadedForCurrentQuery,
     // Exposed for map/report flows; `onlyWithMedia` is message-list-only and is applied at message fetch call sites.
     inboxReq: buildInboxReq(queryState, optionsFreqValues),
     botTagAction: messageActionState.botTagAction,

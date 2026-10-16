@@ -110,6 +110,7 @@ const baseAnalysisData = {
   groupsActivityLoadedPeriod: null,
   groupsActivityLoading: false,
   hasLoadedInitialMessages: true,
+  messagesLoadedForCurrentQuery: true,
   inboxReq: null,
   botTagAction: null,
   loadCallsignGraph: vi.fn(),
@@ -296,18 +297,25 @@ function buildEditor() {
   };
 }
 
-function renderHook(authUserRoles: string[] = []) {
+function renderHook(authUserRoles: string[] = [], onRender?: () => void) {
   if (container == null) throw new Error('container not initialized');
 
   root = createRoot(container);
   const Harness = () => {
     latest = useRerAnalysisNeoPage(null, authUserRoles);
+    onRender?.();
     return null;
   };
 
   act(() => {
     root?.render(createElement(Harness));
   });
+
+  return () => {
+    act(() => {
+      root?.render(createElement(Harness));
+    });
+  };
 }
 
 async function flushEffects() {
@@ -427,6 +435,58 @@ describe('useRerAnalysisNeoPage', () => {
       'group-c',
     ]);
     expect(new URL(window.location.href).searchParams.has('group')).toBe(false);
+  });
+
+  it('keeps a group scope transition pending until that scope commits its messages', async () => {
+    renderHook(['Rer']);
+    if (currentAnalysisData == null) throw new Error('analysis data not initialized');
+    currentAnalysisData.messagesLoadedForCurrentQuery = false;
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+
+    expect(latest?.groupScopeTransitionPending).toBe(true);
+
+    currentAnalysisData.messagesLoadedForCurrentQuery = true;
+    await act(async () => {
+      latest?.toggleRightPanel();
+    });
+
+    expect(latest?.groupScopeTransitionPending).toBe(false);
+  });
+
+  it('does not render again after a group scope commits its messages', async () => {
+    let renderCount = 0;
+    const rerender = renderHook(['Rer'], () => {
+      renderCount += 1;
+    });
+    if (currentAnalysisData == null) throw new Error('analysis data not initialized');
+    currentAnalysisData.messagesLoadedForCurrentQuery = false;
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+    const renderCountBeforeCommit = renderCount;
+
+    currentAnalysisData.messagesLoadedForCurrentQuery = true;
+    rerender();
+
+    expect(renderCount).toBe(renderCountBeforeCommit + 1);
+  });
+
+  it('does not treat a later filter reload as a group transition when the scope query was unchanged', async () => {
+    const rerender = renderHook(['Rer']);
+    if (currentAnalysisData == null) throw new Error('analysis data not initialized');
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+
+    currentAnalysisData.messagesLoadedForCurrentQuery = false;
+    rerender();
+
+    expect(latest?.groupScopeTransitionPending).toBe(false);
   });
 
   // Regression: https://github.com/echoua/echo/issues/3568

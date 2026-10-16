@@ -431,6 +431,49 @@ describe('AnalysisMessagesPane', () => {
     expect(message?.getAttribute('data-message-feed-highlighted')).toBe('true');
   });
 
+  it('keeps a direct-link target highlighted when a scoped reload replaces its message', async () => {
+    const directMessageNavigation = {
+      targetMessageId: 7,
+      targetMessageIndex: 0,
+      totalCount: 1,
+      focusActive: true,
+      newestFirst: true,
+      canLoadEarlier: false,
+      canLoadLater: false,
+      loadingEarlier: false,
+      loadingLater: false,
+      onClearFocus: vi.fn(),
+      onLoadEarlier: vi.fn().mockResolvedValue(false),
+      onLoadLater: vi.fn().mockResolvedValue(false),
+    };
+    const renderedPane = await renderComponent(
+      buildProps({
+        messages: [[7, buildMessage({ text: 'before reload' })]],
+        directMessageNavigation,
+        isLoading: true,
+      }),
+    );
+    rendered.push(renderedPane);
+
+    await act(async () => {
+      renderedPane.root.render(
+        <AnalysisMessagesPane
+          {...buildProps({
+            messages: [[7, buildMessage({ text: 'after reload' })]],
+            directMessageNavigation,
+            isLoading: false,
+          })}
+        />,
+      );
+    });
+
+    expect(
+      renderedPane.container
+        .querySelector('[data-message-id="7"]')
+        ?.getAttribute('data-message-feed-highlighted'),
+    ).toBe('true');
+  });
+
   it('highlights the message behind an open editor drawer', async () => {
     const messages: Array<[number, InboxMessage]> = [[7, buildMessage()]];
     const view = await renderComponent(buildProps({ messages, editorHighlightedMessageId: 7 }));

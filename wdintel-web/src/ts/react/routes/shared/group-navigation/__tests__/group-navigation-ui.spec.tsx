@@ -4,6 +4,7 @@
 import React, { useRef, useState } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { createTheme, ThemeProvider } from '@mui/material/styles';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { firstVisibleGrapheme, GroupAvatar } from '../GroupAvatar';
@@ -54,6 +55,28 @@ describe('group navigation UI', () => {
 
     expect(container.querySelector('[data-group-avatar]')?.textContent).toBe('🇺🇦');
     expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('renders the Material group icon for the all-groups avatar', async () => {
+    const theme = createTheme({
+      palette: {
+        background: { default: '#123456' },
+        text: { primary: '#abcdef' },
+      },
+    });
+    await act(async () => {
+      root.render(
+        <ThemeProvider theme={theme}>
+          <GroupAvatar kind="all" name="Всі групи" />
+        </ThemeProvider>,
+      );
+    });
+
+    const avatar = container.querySelector<HTMLElement>('[data-group-avatar]');
+    expect(container.querySelector('[data-testid="GroupOutlinedIcon"]')).not.toBeNull();
+    expect(avatar?.textContent).toBe('');
+    expect(avatar?.style.backgroundColor).toBe('#123456');
+    expect(avatar?.style.color).toBe('#abcdef');
   });
 
   it('uses a neutral glyph while a group name is temporarily unavailable', () => {

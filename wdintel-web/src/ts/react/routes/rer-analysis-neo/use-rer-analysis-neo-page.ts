@@ -64,6 +64,13 @@ import {
   type GroupScope,
 } from '../shared/group-navigation';
 
+function groupScopesEqual(left: GroupScope, right: GroupScope): boolean {
+  return (
+    left.kind === right.kind &&
+    (left.kind === 'all' || (right.kind === 'group' && left.masterKey === right.masterKey))
+  );
+}
+
 function initState(
   parsedQueryState: AnalysisQueryState,
   now: Date,
@@ -149,6 +156,7 @@ export function useRerAnalysisNeoPage(
   );
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
   const [groupScope, setGroupScope] = useState<GroupScope>(readAnalysisGroupScopeFromUrl);
+  const groupScopeTransitionRequestedRef = useRef(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentUserStatus, setCurrentUserStatus] = useState<'loading' | 'success' | 'error'>(
     'loading',
@@ -557,6 +565,7 @@ export function useRerAnalysisNeoPage(
     ) => {
       clearTargetMessageContext();
       setTargetMessageUid(null);
+      if (!groupScopesEqual(groupScope, scope)) groupScopeTransitionRequestedRef.current = true;
       setGroupScope(scope);
       writeAnalysisGroupScopeToUrl(scope, options);
       if (scope.kind !== 'group' || oldestUnreadMessageRef == null) return;
@@ -565,7 +574,7 @@ export function useRerAnalysisNeoPage(
       setTargetMessageFocusActive(true);
       setTargetMessageLoading(true);
     },
-    [clearTargetMessageContext],
+    [clearTargetMessageContext, groupScope],
   );
   const groupNavigation = useGroupFeedNavigation({
     enabled: leftPanelOpen,
@@ -614,11 +623,15 @@ export function useRerAnalysisNeoPage(
     const onPopState = () => {
       clearTargetMessageContext();
       setTargetMessageUid(null);
-      setGroupScope(readAnalysisGroupScopeFromUrl());
+      const nextGroupScope = readAnalysisGroupScopeFromUrl();
+      if (!groupScopesEqual(groupScope, nextGroupScope)) {
+        groupScopeTransitionRequestedRef.current = true;
+      }
+      setGroupScope(nextGroupScope);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [clearTargetMessageContext]);
+  }, [clearTargetMessageContext, groupScope]);
 
   const onLinkedMessageMounted = useCallback((messageId: number) => {
     if (pendingLinkedMessageLandingRef.current?.messageId === messageId) {
@@ -666,7 +679,6 @@ export function useRerAnalysisNeoPage(
       targetMessageContextResponsePending,
     focusedWindow: targetMessageWindow,
     focusedMessageActive: targetMessageContextActive,
-    leftPanelOpen,
     centerTab,
     newestFirst,
     onBeforeRealtimeMessageListChange: preserveMessageViewportForRealtime,
@@ -679,6 +691,13 @@ export function useRerAnalysisNeoPage(
     queryState: scopedEffectiveQueryState,
     hideNetworks,
   });
+  const groupScopeTransitionPending =
+    groupScopeTransitionRequestedRef.current && !data.messagesLoadedForCurrentQuery;
+  useEffect(() => {
+    if (data.messagesLoadedForCurrentQuery) {
+      groupScopeTransitionRequestedRef.current = false;
+    }
+  }, [data.messagesLoadedForCurrentQuery, groupScope]);
   dataMessagesRef.current = data.messages;
   const reload = useCallback(
     (options: Parameters<typeof data.reload>[0] = {}) => {
@@ -1279,13 +1298,10 @@ export function useRerAnalysisNeoPage(
 
   useEffect(() => {
     const sections = new Set<AnalysisFilterSectionId>();
-    if (leftPanelOpen) {
-      (['tags', 'groups', 'senders'] as const).forEach((section) => sections.add(section));
-    }
     if (rightPanelOpen && rightSidebarTab === 'stats') sections.add('groups');
     if (sections.size === 0) return;
     void Promise.all(Array.from(sections, (section) => data.loadFilterSection(section)));
-  }, [data.loadFilterSection, leftPanelOpen, rightPanelOpen, rightSidebarTab]);
+  }, [data.loadFilterSection, rightPanelOpen, rightSidebarTab]);
 
   const canResetFilters = useMemo(() => {
     const queryStateKey = queryStateUiComparisonKey(queryState);
@@ -1434,6 +1450,7 @@ export function useRerAnalysisNeoPage(
     groupsActivityLoadedPeriod: data.groupsActivityLoadedPeriod,
     groupsActivityLoading: data.groupsActivityLoading,
     hasLoadedInitialMessages: data.hasLoadedInitialMessages,
+    groupScopeTransitionPending,
     includeOnlyNewFreqs: effectiveQueryState.includeOnlyNewFreqs,
     inboxReq: data.inboxReq,
     isDirty: savedFilters.isDirty,

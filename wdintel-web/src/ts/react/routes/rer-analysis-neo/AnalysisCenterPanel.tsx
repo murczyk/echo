@@ -1,16 +1,32 @@
-import { Box, FormControlLabel, Stack, Switch, Tab, Tabs } from '@mui/material';
+import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
+import {
+  Badge,
+  Box,
+  Button,
+  FormControlLabel,
+  Paper,
+  Stack,
+  Switch,
+  Tab,
+  Tabs,
+} from '@mui/material';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { PowerChip } from '../../components/PowerChip';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import { AnalysisMapPane } from './components/AnalysisMapPane';
 import { AnalysisMessagesPane } from './components/AnalysisMessagesPane';
 import { AnalysisPaginationControl } from './components/AnalysisPaginationControl';
+import { AnalysisFiltersPanel } from './components/AnalysisFiltersPanel';
 import { AnalysisSummaryTableCard } from './components/AnalysisSummaryTableCard';
 import { ANALYSIS_CENTER_TAB_META } from './analysis-center-tabs';
 import { analysisCompactTabsSx, analysisNewestFirstLabelSx } from './analysis-tab-styles';
+import { getAnalysisActiveFilterCount } from './analysis-active-filter-count';
 import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
 import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
 import { GroupIdentity } from '../shared/group-navigation';
+import { AnalysisFullscreenPanelDrawer } from './AnalysisFullscreenPanelDrawer';
+import { AnalysisPanelHeader } from './AnalysisPanelHeader';
 
 type Props = {
   page: AnalysisPageViewModel;
@@ -26,6 +42,10 @@ type Props = {
   summaryTabId: string;
   mapPanelId: string;
   mapTabId: string;
+  filtersPanelId: string;
+  filterPanelOpen: boolean;
+  onToggleFilterPanel: () => void;
+  onCloseFilterPanel: () => void;
 };
 
 export function AnalysisCenterPanel({
@@ -42,6 +62,10 @@ export function AnalysisCenterPanel({
   summaryTabId,
   mapPanelId,
   mapTabId,
+  filtersPanelId,
+  filterPanelOpen,
+  onToggleFilterPanel,
+  onCloseFilterPanel,
 }: Props) {
   // Flush, full-height divider on the column edge for every tab — mirrors the
   // left panel's `border-r` so both sides read identically. (Previously the
@@ -50,6 +74,44 @@ export function AnalysisCenterPanel({
   // Columns stack below MUI's `lg` (1200px), so the divider is gated to
   // `min-[1200px]`.
   const showRightDivider = rightPanelVisible;
+  const messageTransitionLoading = page.groupScopeTransitionPending || page.messagesLoading;
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
+  const closeFilterPanel = useCallback(() => {
+    onCloseFilterPanel();
+    window.requestAnimationFrame(() => filterButtonRef.current?.focus());
+  }, [onCloseFilterPanel]);
+  useEffect(() => {
+    if (!filterPanelOpen || isNarrowLayout) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeFilterPanel();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [closeFilterPanel, filterPanelOpen, isNarrowLayout]);
+  const group = page.groupNavigation.selectedGroup;
+  const scopeLabel = `Для: ${group.name}`;
+  const activeFilterCount = getAnalysisActiveFilterCount(page.queryState, {
+    hideGroupSelection: page.groupNavigation.scope.kind === 'group',
+    radioFeaturesAllowed: page.radioFeaturesAllowed,
+  });
+  const filterButtonLabel =
+    activeFilterCount > 0 ? `Фільтри, активних розділів: ${activeFilterCount}` : 'Фільтри';
+  const filterIcon = (
+    <Badge color="primary" badgeContent={activeFilterCount} invisible={activeFilterCount === 0}>
+      <FilterAltOutlinedIcon fontSize="small" />
+    </Badge>
+  );
+  const filterPanelBody = (
+    <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <AnalysisFiltersPanel
+        page={page}
+        fullHeight
+        hideGroupSelection={page.groupNavigation.scope.kind === 'group'}
+      />
+    </Box>
+  );
 
   return (
     <section
@@ -70,7 +132,15 @@ export function AnalysisCenterPanel({
         spacing={isCompactLayout ? 0.5 : 1}
         sx={{ px: { xs: 1, lg: 2 }, pt: 0, mb: 0, flexShrink: 0 }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, gap: 2 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            flex: 1,
+            minWidth: 0,
+            gap: { xs: 1, sm: 1.5 },
+          }}
+        >
           <Box
             data-analysis-current-group
             sx={{
@@ -85,8 +155,29 @@ export function AnalysisCenterPanel({
               },
             }}
           >
-            <GroupIdentity group={page.groupNavigation.selectedGroup} avatarSize="context" />
+            <GroupIdentity group={group} avatarSize="context" />
           </Box>
+          <Button
+            ref={filterButtonRef}
+            data-analysis-filter-toggle
+            size="small"
+            aria-label={filterButtonLabel}
+            aria-expanded={filterPanelOpen}
+            aria-controls={filtersPanelId}
+            startIcon={isCompactLayout ? undefined : filterIcon}
+            onClick={onToggleFilterPanel}
+            sx={{
+              width: isCompactLayout ? 40 : 112,
+              minWidth: isCompactLayout ? 40 : 112,
+              height: 36,
+              px: isCompactLayout ? 0.5 : 1,
+              flexShrink: 0,
+              textTransform: 'none',
+              color: filterPanelOpen || activeFilterCount > 0 ? 'primary.main' : 'text.secondary',
+            }}
+          >
+            {isCompactLayout ? filterIcon : 'Фільтри'}
+          </Button>
           <Box
             data-analysis-group-divider
             aria-hidden="true"
@@ -176,10 +267,11 @@ export function AnalysisCenterPanel({
             messagesCount={page.messages.length}
             totalCount={page.messagesTotalCount}
             totalLoading={page.messagesTotalLoading}
-            loading={page.messagesLoading}
+            loading={messageTransitionLoading}
+            preserveRangeWhileLoading
             noMoreToLoad={page.noMoreToLoad}
             hasMoreAfterWindow={page.hasMoreAfterWindow}
-            busy={page.messagesPaging || page.messagesLoading}
+            busy={page.messagesPaging || messageTransitionLoading}
             jumpDisabled={page.directMessageNavigation != null}
             onFirstPage={page.loadFirstPage}
             onLastPage={page.loadLastPage}
@@ -218,6 +310,24 @@ export function AnalysisCenterPanel({
         ) : null}
       </Stack>
 
+      <AnalysisFullscreenPanelDrawer
+        anchor="left"
+        title="Фільтри"
+        subtitle={scopeLabel}
+        closeLabel="Закрити фільтри"
+        open={isNarrowLayout && filterPanelOpen}
+        onClose={closeFilterPanel}
+        maxPanelWidth={400}
+      >
+        <Box
+          id={isNarrowLayout ? filtersPanelId : undefined}
+          data-analysis-filter-panel
+          sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}
+        >
+          {filterPanelBody}
+        </Box>
+      </AnalysisFullscreenPanelDrawer>
+
       <Box
         sx={{
           flex: 1,
@@ -227,11 +337,45 @@ export function AnalysisCenterPanel({
           minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
+          position: 'relative',
           overflow: 'hidden',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: { xs: 'contain', lg: 'auto' },
         }}
       >
+        {filterPanelOpen && !isNarrowLayout ? (
+          <Paper
+            component="aside"
+            id={filtersPanelId}
+            data-analysis-filter-panel
+            aria-label="Фільтри"
+            square
+            elevation={8}
+            sx={{
+              position: 'absolute',
+              zIndex: 2,
+              inset: '0 auto 0 0',
+              width: 400,
+              maxWidth: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              borderRight: '1px solid',
+              borderColor: 'divider',
+              bgcolor: 'var(--echo-color-background)',
+              backgroundImage: 'none',
+              boxShadow: '8px 0 24px rgba(0, 0, 0, 0.28)',
+            }}
+          >
+            <AnalysisPanelHeader
+              title="Фільтри"
+              subtitle={scopeLabel}
+              closeLabel="Закрити фільтри"
+              onClose={closeFilterPanel}
+            />
+            {filterPanelBody}
+          </Paper>
+        ) : null}
         <Box
           id={messagesPanelId}
           role="tabpanel"
@@ -259,7 +403,10 @@ export function AnalysisCenterPanel({
             copiedFeedbackId={page.copiedFeedbackId}
             groupInfos={page.groupInfos}
             paginationLoading={page.messagesPaging}
-            isLoading={page.hasLoadedInitialMessages && page.messagesLoading}
+            isLoading={
+              page.groupScopeTransitionPending ||
+              (page.hasLoadedInitialMessages && page.messagesLoading)
+            }
             newestFirst={page.newestFirst}
             botTagAction={page.botTagAction}
             messageComments={page.messageComments}

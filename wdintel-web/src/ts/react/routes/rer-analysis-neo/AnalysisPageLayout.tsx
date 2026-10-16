@@ -58,6 +58,7 @@ export function RerAnalysisNeoPage({
   const analysisDebugEnabled = useAnalysisDebugEnabled();
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const editorRef = useRef<ManageMessageEditorHandle>(null);
   const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
@@ -81,6 +82,7 @@ export function RerAnalysisNeoPage({
   const messagesPanelId = `${centerTabsId}-messages-panel`;
   const summaryPanelId = `${centerTabsId}-summary-panel`;
   const mapPanelId = `${centerTabsId}-map-panel`;
+  const filtersPanelId = `${centerTabsId}-filters-panel`;
   const keepDirectMessageVisible =
     page.directMessageNavigation != null &&
     page.messages.some(
@@ -115,6 +117,23 @@ export function RerAnalysisNeoPage({
     : null;
   const rightPanelVisible = requestedRightPanelVisible && !editorOpen;
   const modalEditorOpen = editorOpen && editorPresentation === 'modal';
+  const toggleFilterPanel = useCallback(() => {
+    setFilterPanelOpen((current) => !current);
+  }, []);
+  const closeFilterPanel = useCallback(() => {
+    setFilterPanelOpen(false);
+  }, []);
+  useEffect(() => {
+    if (!filterPanelOpen) return;
+    const sections =
+      page.groupNavigation.scope.kind === 'group'
+        ? (['tags', 'senders'] as const)
+        : (['tags', 'groups', 'senders'] as const);
+    void Promise.all(sections.map((section) => page.loadFilterSection(section)));
+  }, [filterPanelOpen, page.groupNavigation.scope.kind, page.loadFilterSection]);
+  useEffect(() => {
+    if (editorOpen) closeFilterPanel();
+  }, [closeFilterPanel, editorOpen]);
   const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth;
   const inlineLeftPanelVisible = shouldInlineAnalysisLeftPanel({
     layoutWidth,
@@ -430,13 +449,7 @@ export function RerAnalysisNeoPage({
             }}
           >
             <Box sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
-              {inlineLeftPanelVisible ? (
-                <AnalysisLeftPanel
-                  page={page}
-                  leftPanelVisible
-                  isCompactLayout={isAnalysisCompactLayout}
-                />
-              ) : null}
+              {inlineLeftPanelVisible ? <AnalysisLeftPanel page={page} leftPanelVisible /> : null}
             </Box>
             <Box sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
               <PointBlacklistPaletteNamesCacheProvider>
@@ -464,6 +477,10 @@ export function RerAnalysisNeoPage({
                         summaryTabId={summaryTabId}
                         mapPanelId={mapPanelId}
                         mapTabId={mapTabId}
+                        filtersPanelId={filtersPanelId}
+                        filterPanelOpen={filterPanelOpen}
+                        onToggleFilterPanel={toggleFilterPanel}
+                        onCloseFilterPanel={closeFilterPanel}
                       />
                     </AudioTranscriptionPreferencesProvider>
                   )}
@@ -566,12 +583,12 @@ export function RerAnalysisNeoPage({
 
         <AnalysisFullscreenPanelDrawer
           anchor="left"
-          title="Фільтри"
+          title="Групи"
           open={!inlineLeftPanelVisible && leftPanelVisible && !editorOpen}
           onClose={page.toggleLeftPanel}
-          maxPanelWidth={400}
+          maxPanelWidth={320}
         >
-          <AnalysisLeftPanel page={page} leftPanelVisible isCompactLayout={false} fullHeight />
+          <AnalysisLeftPanel page={page} leftPanelVisible fullHeight />
         </AnalysisFullscreenPanelDrawer>
 
         <AnalysisReportDialog

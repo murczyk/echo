@@ -34,7 +34,6 @@ type Params = {
   hideNetworks: boolean;
   focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
-  leftPanelOpen?: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -112,6 +111,7 @@ type Params = {
 
 export type UseAnalysisReloadOrchestratorResult = {
   reload: (options?: AnalysisReloadOptions) => Promise<void>;
+  messagesLoadedForCurrentQuery: boolean;
   summaryReloadBarrier: number;
 };
 
@@ -135,7 +135,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     invalidateMessagePageRequests,
     invalidateRightSidebarData,
     invalidateSummaryData,
-    leftPanelOpen = true,
     loadInitialFilterSections,
     loadMapPalitras,
     loadMessageComments,
@@ -194,6 +193,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
   const summaryDebouncePendingKeyRef = useRef<string | null>(null);
   const reloadAbortControllerRef = useRef<AbortController | null>(null);
   const reloadDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [loadedMessagesTriggerKey, setLoadedMessagesTriggerKey] = useState<string | null>(null);
   const [summaryReloadBarrier, setSummaryReloadBarrier] = useState(0);
 
   const reload = useCallback(
@@ -207,13 +207,17 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       const messagePageCursor = preserveMessagePage
         ? getCurrentMessagePageCursor(messagePageIndex)
         : undefined;
-      const setReloadedMessages =
+      const applyReloadedMessages =
         preserveMessagePage && !focusedMessageActive
           ? messagePageIndex === undefined
             ? replaceCurrentMessagePage
             : (messages: Array<[number, InboxMessage]>) =>
                 replaceCurrentMessagePage(messages, messagePageIndex)
           : (messages: Array<[number, InboxMessage]>) => setMessages(messages);
+      const setReloadedMessages = (messages: Array<[number, InboxMessage]>) => {
+        applyReloadedMessages(messages);
+        setLoadedMessagesTriggerKey(reloadTriggerKey);
+      };
 
       if (shouldRefreshMessageCounts) refreshMessageCounts();
 
@@ -228,7 +232,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           invalidateMessagePaging: preserveMessagePage
             ? invalidateMessagePageRequests
             : invalidateMessagePaging,
-          includeDefaultFilterSections: leftPanelOpen,
+          includeDefaultFilterSections: false,
           messagePageCursor,
           preserveMessageTailExhaustion:
             preserveMessagePage &&
@@ -313,7 +317,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       invalidateMessagePageRequests,
       invalidateRightSidebarData,
       invalidateSummaryData,
-      leftPanelOpen,
       loadInitialFilterSections,
       loadMessageComments,
       currentMessagePageIndex,
@@ -481,5 +484,9 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     };
   }, []);
 
-  return { reload, summaryReloadBarrier };
+  return {
+    reload,
+    messagesLoadedForCurrentQuery: loadedMessagesTriggerKey === reloadTriggerKey,
+    summaryReloadBarrier,
+  };
 }

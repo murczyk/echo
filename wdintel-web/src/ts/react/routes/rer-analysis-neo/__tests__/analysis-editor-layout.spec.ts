@@ -28,12 +28,12 @@ describe('analysisWorkspaceColumns', () => {
     {
       left: true,
       right: false,
-      expected: '400px minmax(0, 1fr) minmax(0, 0fr)',
+      expected: '256px minmax(0, 1fr) minmax(0, 0fr)',
     },
     {
       left: true,
       right: true,
-      expected: '400px minmax(0, 1fr) minmax(0, 1fr)',
+      expected: '256px minmax(0, 1fr) minmax(0, 1fr)',
     },
   ])('builds the workspace for left=$left and right=$right', ({ left, right, expected }) => {
     expect(

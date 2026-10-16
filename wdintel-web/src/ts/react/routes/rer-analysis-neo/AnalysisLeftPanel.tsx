@@ -1,20 +1,13 @@
-import { AnalysisFiltersPanel } from './components/AnalysisFiltersPanel';
 import { GroupList, type GroupScope } from '../shared/group-navigation';
 import type { AnalysisPageViewModel } from './types';
 
 type Props = {
   page: AnalysisPageViewModel;
   leftPanelVisible: boolean;
-  isCompactLayout?: boolean;
   fullHeight?: boolean;
 };
 
-export function AnalysisLeftPanel({
-  page,
-  leftPanelVisible,
-  isCompactLayout = false,
-  fullHeight = false,
-}: Props) {
+export function AnalysisLeftPanel({ page, leftPanelVisible, fullHeight = false }: Props) {
   if (!leftPanelVisible) return null;
 
   const selectGroup = (scope: GroupScope) => {
@@ -32,39 +25,34 @@ export function AnalysisLeftPanel({
 
   return (
     <aside
-      aria-label="Панель фільтрів"
+      aria-label="Навігація груп"
       className={
-        fullHeight
-          ? 'flex h-full min-h-0 flex-col overflow-hidden'
-          : 'flex h-auto min-h-0 flex-col overflow-hidden min-[1200px]:h-full'
+        'flex h-full min-h-0 flex-col overflow-hidden' +
+        (fullHeight
+          ? ''
+          : ' min-[1200px]:border-r min-[1200px]:border-solid min-[1200px]:border-black/12 dark:min-[1200px]:border-white/12')
       }
     >
       <section
         data-analysis-group-list
-        aria-labelledby="analysis-groups-title"
-        className="flex min-h-0 max-h-[42%] shrink-0 flex-col border-0 border-b border-solid border-black/12 px-3 py-2 dark:border-white/12"
+        aria-labelledby={fullHeight ? undefined : 'analysis-groups-title'}
+        className="flex min-h-0 flex-1 flex-col px-3 py-2"
       >
-        <h2
-          id="analysis-groups-title"
-          className="m-0 px-2 pb-1 !text-sm !leading-5 font-medium text-black/60 dark:text-white/60"
-        >
-          Групи
-        </h2>
+        {!fullHeight ? (
+          <h2
+            id="analysis-groups-title"
+            className="m-0 px-2 pb-1 !text-sm !leading-5 font-medium text-black/60 dark:text-white/60"
+          >
+            Групи
+          </h2>
+        ) : null}
         <GroupList
           groups={page.groupNavigation.groups}
           scope={page.groupNavigation.scope}
           onSelect={selectGroup}
-          labelledBy="analysis-groups-title"
+          labelledBy={fullHeight ? undefined : 'analysis-groups-title'}
         />
       </section>
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <AnalysisFiltersPanel
-          page={page}
-          isCompactLayout={isCompactLayout}
-          fullHeight
-          hideGroupSelection={page.groupNavigation.scope.kind === 'group'}
-        />
-      </div>
     </aside>
   );
 }

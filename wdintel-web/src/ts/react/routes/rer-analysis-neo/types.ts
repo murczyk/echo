@@ -242,6 +242,7 @@ export type AnalysisPageState = {
   groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
   groupsActivityLoading: boolean;
   hasLoadedInitialMessages: boolean;
+  groupScopeTransitionPending: boolean;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
   botTagAction: MessageCardBotTagAction | null;

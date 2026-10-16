@@ -1,4 +1,8 @@
+import GroupOutlinedIcon from '@mui/icons-material/GroupOutlined';
+import { useTheme } from '@mui/material/styles';
+
 type Props = {
+  kind?: 'all' | 'group';
   name?: string;
   size?: 'small' | 'context' | 'medium';
 };
@@ -15,10 +19,29 @@ export function firstVisibleGrapheme(name?: string): string {
   return Array.from(visibleName)[0] ?? '—';
 }
 
-export function GroupAvatar({ name, size = 'medium' }: Props) {
+export function GroupAvatar({ kind = 'group', name, size = 'medium' }: Props) {
+  const theme = useTheme();
+  const allGroupsStyle =
+    kind === 'all'
+      ? {
+          backgroundColor: theme.palette.background.default,
+          color: theme.palette.text.primary,
+        }
+      : undefined;
+
   return (
-    <span className="group-navigation-avatar" data-group-avatar data-size={size} aria-hidden="true">
-      {firstVisibleGrapheme(name)}
+    <span
+      className="group-navigation-avatar"
+      data-group-avatar
+      data-size={size}
+      aria-hidden="true"
+      style={allGroupsStyle}
+    >
+      {kind === 'all' ? (
+        <GroupOutlinedIcon className="group-navigation-avatar-icon" />
+      ) : (
+        firstVisibleGrapheme(name)
+      )}
     </span>
   );
 }

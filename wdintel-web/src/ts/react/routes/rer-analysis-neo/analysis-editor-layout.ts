@@ -1,4 +1,4 @@
-const ANALYSIS_LEFT_PANEL_WIDTH = 400;
+export const ANALYSIS_GROUP_NAV_WIDTH = 256;
 const ANALYSIS_MIN_CENTER_WIDTH = 360;
 const ANALYSIS_LEFT_PANEL_MIN_WIDTH = 1200;
 const ANALYSIS_LEFT_PANEL_WITH_EDITOR_MIN_WIDTH = 1600;
@@ -25,10 +25,10 @@ export function shouldInlineAnalysisLeftPanel({
   ) {
     return false;
   }
-  if (!editorOpen) return layoutWidth - ANALYSIS_LEFT_PANEL_WIDTH >= ANALYSIS_MIN_CENTER_WIDTH;
+  if (!editorOpen) return layoutWidth - ANALYSIS_GROUP_NAV_WIDTH >= ANALYSIS_MIN_CENTER_WIDTH;
 
   const editorWidth = Math.min(640, Math.max(440, viewportWidth * 0.4));
-  return layoutWidth - ANALYSIS_LEFT_PANEL_WIDTH - editorWidth >= ANALYSIS_MIN_CENTER_WIDTH;
+  return layoutWidth - ANALYSIS_GROUP_NAV_WIDTH - editorWidth >= ANALYSIS_MIN_CENTER_WIDTH;
 }
 
 export function analysisRightDockColumn(editorOpen: boolean): string {
@@ -45,7 +45,7 @@ export function analysisWorkspaceColumns({
   editorOpen: boolean;
 }): string {
   return [
-    inlineLeftPanelVisible ? '400px' : '0px',
+    inlineLeftPanelVisible ? `${ANALYSIS_GROUP_NAV_WIDTH}px` : '0px',
     'minmax(0, 1fr)',
     inlineRightDockVisible ? analysisRightDockColumn(editorOpen) : 'minmax(0, 0fr)',
   ].join(' ');

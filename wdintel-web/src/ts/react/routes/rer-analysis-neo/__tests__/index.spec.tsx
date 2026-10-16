@@ -199,7 +199,13 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('@mui/material/styles', () => ({
-  useTheme: () => ({ breakpoints: { down: (key: string) => key } }),
+  useTheme: () => ({
+    breakpoints: { down: (key: string) => key },
+    palette: {
+      background: { default: '#121212' },
+      text: { primary: '#ffffff' },
+    },
+  }),
 }));
 
 vi.mock('@mui/material/Alert', () => ({
@@ -486,6 +492,7 @@ function buildPage() {
     groupsActivityLoadedPeriod: null,
     groupsActivityLoading: false,
     hasLoadedInitialMessages: true,
+    groupScopeTransitionPending: false,
     mapAttrs: {
       daterange: '',
       daterangeLoading: '',
@@ -700,6 +707,24 @@ describe('RerAnalysisNeoPage', () => {
     expect(container.textContent).toContain('skeleton');
     expect(container.querySelector('[data-testid="circular-progress"]')).toBeNull();
     expect(container.querySelector('[data-testid="messages-pane"]')).toBeNull();
+  });
+
+  it('replaces stale group messages with skeletons while the selected group loads', async () => {
+    const page = buildPage();
+    page.messages = [[42, { text: 'Message from the previous group' }]] as never;
+    page.groupScopeTransitionPending = true;
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
+    expect(messagesPanePropsHistory.at(-1)?.isLoading).toBe(true);
   });
 
   it('shows message skeletons during a refresh without replacing the mounted feed', async () => {
@@ -1039,6 +1064,7 @@ describe('RerAnalysisNeoPage', () => {
   it('preserves the current message page when the header refresh button is clicked', async () => {
     const page = buildPage();
     page.countsLoading = false;
+    page.messagesTotalLoading = false;
     useRerAnalysisNeoPageMock.mockReturnValue(page);
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -1118,6 +1144,43 @@ describe('RerAnalysisNeoPage', () => {
       intentKey: 'create-message:group-b',
       initialGroupMasterKey: 'group-b',
     });
+    root.unmount();
+  });
+
+  it('does not load the hidden group facet for a dedicated group', async () => {
+    const page = buildPage();
+    const group = {
+      kind: 'group' as const,
+      masterKey: 'group-b',
+      name: 'Bravo',
+      ignoreOperativny: false,
+      unreadCount: 2,
+      oldestUnreadMessageRef: 'message-b',
+      lastActivityAt: 1,
+      latestCursor: { createdAt: 1, messageId: 2 },
+    };
+    page.groupNavigation = {
+      ...page.groupNavigation,
+      groups: [page.groupNavigation.groups[0], group],
+      scope: { kind: 'group', masterKey: 'group-b' },
+      selectedGroup: group,
+      selectedCursor: group.latestCursor,
+    };
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    const filterButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Фільтри',
+    );
+    await act(async () => filterButton?.click());
+
+    expect(page.loadFilterSection).toHaveBeenCalledWith('tags');
+    expect(page.loadFilterSection).toHaveBeenCalledWith('senders');
+    expect(page.loadFilterSection).not.toHaveBeenCalledWith('groups');
     root.unmount();
   });
 

@@ -13,7 +13,7 @@ export function GroupIdentity({ group, className, avatarSize = 'small' }: Props)
       className={`group-navigation-identity${className ? ` ${className}` : ''}`}
       data-group-identity
     >
-      <GroupAvatar name={group.name} size={avatarSize} />
+      <GroupAvatar kind={group.kind} name={group.name} size={avatarSize} />
       <span className="group-navigation-name" data-group-name title={group.name}>
         {group.name}
       </span>

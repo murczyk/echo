@@ -48,7 +48,7 @@ export function GroupList({ groups, scope, onSelect, labelledBy }: Props) {
                 aria-label={itemLabel(group)}
                 onClick={() => onSelect(nextScope)}
               >
-                <GroupAvatar name={group.name} />
+                <GroupAvatar kind={group.kind} name={group.name} />
                 <span className="group-navigation-name" data-group-name title={group.name}>
                   {group.name}
                 </span>

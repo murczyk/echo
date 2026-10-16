@@ -178,7 +178,6 @@ function AnalysisMessagesPaneComponent({
   const referenceTimeMsRef = useRef<number | null>(Date.now());
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const debugSnapshotTimerRef = useRef<number | null>(null);
-  const highlightedTargetIdRef = useRef<number | null>(null);
   const feedRef = useRef<MessageFeedHandle>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
@@ -256,17 +255,11 @@ function AnalysisMessagesPaneComponent({
   );
 
   useEffect(() => {
-    if (directMessageNavigation == null) {
-      highlightedTargetIdRef.current = null;
-      return;
-    }
+    if (directMessageNavigation == null) return;
     if (messages.length === 0) return;
     const targetId = directMessageNavigation.targetMessageId;
     if (feedRef.current?.getItemElement(targetId)) {
-      if (highlightedTargetIdRef.current !== targetId) {
-        highlightedTargetIdRef.current = directMessageNavigation.targetMessageId;
-        feedRef.current?.highlightLinkedMessage(targetId);
-      }
+      feedRef.current.highlightLinkedMessage(targetId);
       if (directMessageNavigation.focusActive) onLinkedMessageMounted?.(targetId);
     }
   }, [directMessageNavigation, messages, onLinkedMessageMounted]);
