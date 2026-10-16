@@ -280,7 +280,7 @@ export function useRerAnalysisNeoPage(
               ? []
               : queryStateWithResolvedRoleDate.deviceNamesSelected,
           onlyWithNetwork:
-            rerReportFilterAccess.status === 'denied' || hideNetworks
+            rerReportFilterAccess.status === 'denied'
               ? false
               : queryStateWithResolvedRoleDate.onlyWithNetwork,
           networksSelected: hideNetworks ? [] : queryStateWithResolvedRoleDate.networksSelected,
@@ -312,9 +312,7 @@ export function useRerAnalysisNeoPage(
           deviceNamesSelected:
             deviceAccess.status === 'denied' ? [] : initialQueryState.deviceNamesSelected,
           onlyWithNetwork:
-            rerReportFilterAccess.status === 'denied' || hideNetworks
-              ? false
-              : initialQueryState.onlyWithNetwork,
+            rerReportFilterAccess.status === 'denied' ? false : initialQueryState.onlyWithNetwork,
           groupsSelected: queryState.groupsSelected,
           freqsSelected: queryState.freqsSelected,
           networksSelected: hideNetworks ? [] : queryState.networksSelected,
