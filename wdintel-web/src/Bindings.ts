@@ -5990,7 +5990,7 @@ export type AiAgentContainerListRsp = {
 export type AiAgentAdminRequestListReq = {
   state: string | null;
   suspicious: boolean | null;
-  limit: number | null;
+  pageStartId: string | null;
 };
 
 export type AiAgentSecurityReviewItem = {
@@ -6025,6 +6025,9 @@ export type AiAgentAdminRequestItem = {
 
 export type AiAgentAdminRequestListRsp = {
   items: Array<AiAgentAdminRequestItem>;
+  pageSize: number;
+  total: number | null;
+  pageStartIds: Array<string> | null;
 };
 
 export type AiAgentRequestEventItem = {

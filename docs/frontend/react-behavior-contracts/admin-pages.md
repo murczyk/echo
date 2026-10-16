@@ -19,6 +19,15 @@
 - **Source implementation:** `wdintel-web/src/ts/react/routes/admin-ai-agent/engine-eligibility.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-ai-agent/__tests__/engine-eligibility.spec.ts`
 
+## AI request history pagination
+
+- **Affected route:** `/admin/ai/requests` (administrators only).
+- **Expected observable result:** the server returns 20 requests per page. “SHOW MORE” appends the next page; numbered navigation replaces the entries. The final page can contain fewer than 20 entries and hides “SHOW MORE”. Refresh returns to the newest page.
+- **API:** `/api/admin/ai-agent/requests/list` returns `pageSize`, `total`, and `pageStartIds` on the initial request. Subsequent requests pass `pageStartId` and return null metadata. Requests use descending UUIDv7 creation order and inclusive page boundaries, so new requests do not shift previously established pages. Search, column filters, and sorting apply to the loaded entries.
+- **Loading/error behavior:** pagination is disabled while loading; failures preserve existing entries, show an error toast, and allow retry. Stale responses cannot replace current entries. Request deep links open independently of the displayed page.
+- **Source implementation:** `wdintel-rs/src/ai_agent/admin.rs`, `wdintel-web/src/ts/react/routes/admin-ai-agent/index.tsx`.
+- **Existing tests:** `wdintel-web/tests/e2e/admin-ai-requests.spec.ts`.
+
 ## API integration deletion
 
 - **Status:** inferred characterization

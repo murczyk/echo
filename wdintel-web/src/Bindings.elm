@@ -15412,7 +15412,7 @@ aiAgentContainerListRspEncoder struct =
 type alias AiAgentAdminRequestListReq =
     { state : Maybe (String)
     , suspicious : Maybe (Bool)
-    , limit : Maybe (Int)
+    , pageStartId : Maybe (String)
     }
 
 
@@ -15421,7 +15421,7 @@ aiAgentAdminRequestListReqEncoder struct =
     Json.Encode.object
         [ ( "state", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.state )
         , ( "suspicious", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.suspicious )
-        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        , ( "pageStartId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.pageStartId )
         ]
 
 
@@ -15495,6 +15495,9 @@ aiAgentAdminRequestItemEncoder struct =
 
 type alias AiAgentAdminRequestListRsp =
     { items : List (AiAgentAdminRequestItem)
+    , pageSize : Int
+    , total : Maybe (Int)
+    , pageStartIds : Maybe (List (String))
     }
 
 
@@ -15502,6 +15505,9 @@ aiAgentAdminRequestListRspEncoder : AiAgentAdminRequestListRsp -> Json.Encode.Va
 aiAgentAdminRequestListRspEncoder struct =
     Json.Encode.object
         [ ( "items", (Json.Encode.list (aiAgentAdminRequestItemEncoder)) struct.items )
+        , ( "pageSize", (Json.Encode.int) struct.pageSize )
+        , ( "total", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.total )
+        , ( "pageStartIds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.pageStartIds )
         ]
 
 
@@ -28079,7 +28085,7 @@ aiAgentAdminRequestListReqDecoder =
     Json.Decode.succeed AiAgentAdminRequestListReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "suspicious" (Json.Decode.nullable (Json.Decode.bool))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pageStartId" (Json.Decode.nullable (Json.Decode.string))))
 
 
 aiAgentSecurityReviewItemDecoder : Json.Decode.Decoder AiAgentSecurityReviewItem
@@ -28120,6 +28126,9 @@ aiAgentAdminRequestListRspDecoder : Json.Decode.Decoder AiAgentAdminRequestListR
 aiAgentAdminRequestListRspDecoder =
     Json.Decode.succeed AiAgentAdminRequestListRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiAgentAdminRequestItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pageSize" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pageStartIds" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
 
 
 aiAgentRequestEventItemDecoder : Json.Decode.Decoder AiAgentRequestEventItem

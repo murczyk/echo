@@ -1,9 +1,8 @@
 use super::types::*;
 use super::{access, chat_monitoring, dispatcher, lifecycle, review};
 use crate::config::{
-    AI_AGENT_ADMIN_REQUEST_LIMIT_DEFAULT, AI_AGENT_ADMIN_REQUEST_LIMIT_MAX,
-    AI_AGENT_ECHO_PROXY_PING_PATH, AI_AGENT_ECHO_PROXY_TEST_TIMEOUT_SEC,
-    AI_AGENT_MATTERMOST_TIMEOUT_SEC,
+    AI_AGENT_ADMIN_REQUEST_PAGE_SIZE, AI_AGENT_ECHO_PROXY_PING_PATH,
+    AI_AGENT_ECHO_PROXY_TEST_TIMEOUT_SEC, AI_AGENT_MATTERMOST_TIMEOUT_SEC,
 };
 use crate::entities::{
     ai_agent_allowed_engine, ai_agent_container, ai_agent_conversation,
@@ -20,10 +19,12 @@ use actix_identity::Identity;
 use actix_web::{get, post, web::Json};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
+    ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement,
+    TransactionTrait,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
@@ -833,40 +834,160 @@ pub async fn list_requests(
     user: Identity,
     req: Json<AiAgentAdminRequestListReq>,
 ) -> Result<Json<AiAgentAdminRequestListRsp>, AppError> {
-    ensure_admin_non_api_agent(&env, &user).await?;
+    ensure_admin_non_api_agent(&env, &user).await.c(h!())?;
+    Ok(Json(list_request_page(&env.dbx, &req).await.c(h!())?))
+}
+
+async fn list_request_page(
+    db: &impl ConnectionTrait,
+    req: &AiAgentAdminRequestListReq,
+) -> anyhow::Result<AiAgentAdminRequestListRsp> {
+    let pages = if req.page_start_id.is_none() {
+        Some(request_page_starts(db, req).await.c(h!())?)
+    } else {
+        None
+    };
+    let page_start_id = req
+        .page_start_id
+        .as_deref()
+        .map(access::parse_uuid)
+        .transpose()
+        .c(h!())?
+        .or_else(|| pages.as_ref()?.first().map(|page| page.id));
     let mut query = ai_agent_request::Entity::find();
     if let Some(state) = req.state.as_deref() {
         query = query.filter(ai_agent_request::Column::State.eq(state));
     }
     if let Some(suspicious) = req.suspicious {
-        let ids = ai_agent_security_review::Entity::find()
-            .filter(ai_agent_security_review::Column::Suspicious.eq(suspicious))
-            .all(&env.dbx)
+        query = query.filter(
+            ai_agent_request::Column::Id.in_subquery(
+                sea_orm::sea_query::Query::select()
+                    .column(ai_agent_security_review::Column::RequestId)
+                    .from(ai_agent_security_review::Entity)
+                    .and_where(
+                        ai_agent_security_review::Column::Suspicious
+                            .eq(suspicious),
+                    )
+                    .to_owned(),
+            ),
+        );
+    }
+    if let Some(id) = page_start_id {
+        query = query.filter(ai_agent_request::Column::Id.lte(id));
+    }
+    let requests = if pages.as_ref().is_some_and(Vec::is_empty) {
+        Vec::new()
+    } else {
+        query
+            .order_by_desc(ai_agent_request::Column::Id)
+            .limit(AI_AGENT_ADMIN_REQUEST_PAGE_SIZE as u64)
+            .all(db)
             .await
             .c(h!())?
-            .into_iter()
-            .map(|review| review.request_id)
-            .collect::<Vec<_>>();
-        if ids.is_empty() {
-            return Ok(Json(AiAgentAdminRequestListRsp { items: vec![] }));
-        }
-        query = query.filter(ai_agent_request::Column::Id.is_in(ids));
+    };
+    Ok(AiAgentAdminRequestListRsp {
+        items: request_items(db, requests).await.c(h!())?,
+        page_size: AI_AGENT_ADMIN_REQUEST_PAGE_SIZE,
+        total: pages.as_ref().map(|pages| {
+            pages.first().map(|page| page.total).unwrap_or_default()
+        }),
+        page_start_ids: pages.map(|pages| {
+            pages.into_iter().map(|page| page.id.to_string()).collect()
+        }),
+    })
+}
+
+#[derive(FromQueryResult)]
+struct RequestPageStart {
+    id: Uuid,
+    total: i64,
+}
+
+async fn request_page_starts(
+    db: &impl ConnectionTrait,
+    req: &AiAgentAdminRequestListReq,
+) -> anyhow::Result<Vec<RequestPageStart>> {
+    RequestPageStart::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+select id, total
+from (
+    select r.id,
+           row_number() over (order by r.id desc) as position,
+           count(*) over () as total
+    from ai_agent_request r
+    where ($1::text is null or r.state = $1)
+      and ($2::boolean is null or exists (
+          select 1 from ai_agent_security_review review
+          where review.request_id = r.id and review.suspicious = $2
+      ))
+) requests
+where (position - 1) % $3 = 0
+order by position
+"#,
+        [
+            req.state.clone().into(),
+            req.suspicious.into(),
+            AI_AGENT_ADMIN_REQUEST_PAGE_SIZE.into(),
+        ],
+    ))
+    .all(db)
+    .await
+    .c(h!())
+}
+
+async fn request_items(
+    db: &impl ConnectionTrait,
+    requests: Vec<ai_agent_request::Model>,
+) -> anyhow::Result<Vec<AiAgentAdminRequestItem>> {
+    if requests.is_empty() {
+        return Ok(Vec::new());
     }
-    let limit = req
-        .limit
-        .unwrap_or(AI_AGENT_ADMIN_REQUEST_LIMIT_DEFAULT)
-        .clamp(1, AI_AGENT_ADMIN_REQUEST_LIMIT_MAX) as u64;
-    let requests = query
-        .order_by_desc(ai_agent_request::Column::QueuedAt)
-        .limit(limit)
-        .all(&env.dbx)
+    let humans = login::Entity::find()
+        .filter(
+            login::Column::Id.is_in(requests.iter().map(|r| r.human_login_id)),
+        )
+        .all(db)
         .await
-        .c(h!())?;
-    let mut items = Vec::with_capacity(requests.len());
-    for request in requests {
-        items.push(request_item(&env, request).await?);
-    }
-    Ok(Json(AiAgentAdminRequestListRsp { items }))
+        .c(h!())?
+        .into_iter()
+        .map(|human| (human.id, human))
+        .collect::<HashMap<_, _>>();
+    let engines = ai_engine::Entity::find()
+        .filter(
+            ai_engine::Column::Id
+                .is_in(requests.iter().map(|r| r.ai_engine_id)),
+        )
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|engine| (engine.id, engine))
+        .collect::<HashMap<_, _>>();
+    let mut reviews = ai_agent_security_review::Entity::find()
+        .filter(
+            ai_agent_security_review::Column::RequestId
+                .is_in(requests.iter().map(|r| r.id)),
+        )
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|review| (review.request_id, review))
+        .collect::<HashMap<_, _>>();
+    requests
+        .into_iter()
+        .map(|request| {
+            let human = humans.get(&request.human_login_id).c(h!())?;
+            let engine = engines.get(&request.ai_engine_id).c(h!())?;
+            let review = reviews
+                .remove(&request.id)
+                .map(review_item)
+                .transpose()
+                .c(h!())?;
+            Ok(build_request_item(request, human, engine, review))
+        })
+        .collect()
 }
 
 #[post("/api/admin/ai-agent/requests/get")]
@@ -952,13 +1073,22 @@ async fn request_item(
         .c(h!())?
         .map(review_item)
         .transpose()?;
-    Ok(AiAgentAdminRequestItem {
+    Ok(build_request_item(request, &human, &ai_engine, review))
+}
+
+fn build_request_item(
+    request: ai_agent_request::Model,
+    human: &login::Model,
+    ai_engine: &ai_engine::Model,
+    review: Option<AiAgentSecurityReviewItem>,
+) -> AiAgentAdminRequestItem {
+    AiAgentAdminRequestItem {
         id: request.id.to_string(),
         conversation_id: request.conversation_id.to_string(),
         human_login_id: human.id.to_string(),
-        human_login: human.login,
+        human_login: human.login.clone(),
         ai_engine_id: ai_engine.id.to_string(),
-        ai_engine_name: ai_engine.name,
+        ai_engine_name: ai_engine.name.clone(),
         prompt: request.prompt,
         response: request.response,
         state: request.state,
@@ -967,7 +1097,7 @@ async fn request_item(
         started_at: timestamp(request.started_at),
         completed_at: timestamp(request.completed_at),
         review,
-    })
+    }
 }
 
 fn review_item(
@@ -1133,6 +1263,104 @@ fn timestamp(value: Option<chrono::NaiveDateTime>) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn request_pages_remain_disjoint_when_new_requests_arrive() {
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let human = crate::functest::tests::find_test_login(&env.dbx)
+            .await
+            .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let request = request_fixture(&txn, human.id).await;
+        let mut expected = Vec::new();
+        for _ in 0..45 {
+            let id = Uuid::now_v7();
+            expected.push(id.to_string());
+            ai_agent_request::ActiveModel {
+                id: Set(id),
+                ..request.clone()
+            }
+            .insert(&txn)
+            .await
+            .unwrap();
+        }
+        expected.reverse();
+        let mut req = AiAgentAdminRequestListReq {
+            state: None,
+            suspicious: None,
+            page_start_id: None,
+        };
+        let first = list_request_page(&txn, &req).await.unwrap();
+        assert_eq!(first.total, Some(45));
+        assert_eq!(first.items.len(), 20);
+        let starts = first.page_start_ids.unwrap();
+        assert_eq!(starts.len(), 3);
+        ai_agent_request::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            ..request
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let mut loaded = first.items;
+        for (index, start) in starts.into_iter().enumerate().skip(1) {
+            req.page_start_id = Some(start);
+            let page = list_request_page(&txn, &req).await.unwrap();
+            assert_eq!(page.items.len(), if index == 1 { 20 } else { 5 });
+            assert_eq!(page.total, None);
+            loaded.extend(page.items);
+        }
+        assert_eq!(
+            loaded.into_iter().map(|item| item.id).collect::<Vec<_>>(),
+            expected
+        );
+        req.page_start_id = None;
+        req.state = Some("failed".to_string());
+        let empty = list_request_page(&txn, &req).await.unwrap();
+        assert!(empty.items.is_empty());
+        assert_eq!(empty.total, Some(0));
+        assert_eq!(empty.page_start_ids, Some(Vec::new()));
+        txn.rollback().await.unwrap();
+    }
+
+    async fn request_fixture(
+        db: &impl ConnectionTrait,
+        human_login_id: Uuid,
+    ) -> ai_agent_request::ActiveModel {
+        let engine_id = Uuid::now_v7();
+        ai_engine::ActiveModel {
+            id: Set(engine_id),
+            name: Set(format!("pagination-{engine_id}")),
+            url: Set("http://127.0.0.1:18000/v1".to_string()),
+            model_name: Set("test".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        let conversation_id = Uuid::now_v7();
+        ai_agent_conversation::ActiveModel {
+            id: Set(conversation_id),
+            human_login_id: Set(human_login_id),
+            ai_engine_id: Set(engine_id),
+            title: Set("Pagination".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        ai_agent_request::ActiveModel {
+            conversation_id: Set(conversation_id),
+            human_login_id: Set(human_login_id),
+            ai_engine_id: Set(engine_id),
+            prompt: Set("Pagination".to_string()),
+            state: Set("completed".to_string()),
+            queued_at: Set(Utc::now().naive_utc()),
+            ..Default::default()
+        }
+    }
 
     fn echo_proxy(upstream_port: i32) -> ai_agent_echo_proxy::Model {
         let now = Utc::now().naive_utc();
