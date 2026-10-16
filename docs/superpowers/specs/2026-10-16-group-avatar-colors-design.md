@@ -1,6 +1,6 @@
 # Group Avatar Colors Design
 
-**Status:** Proposed
+**Status:** Approved
 
 **Issue:** [#3727](https://github.com/echoua/echo/issues/3727)
 
