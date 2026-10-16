@@ -1,0 +1,1659 @@
+{
+  "issue": 3780,
+  "date_utc": "2026-10-15",
+  "access": "read-only SSH using the existing unlocked agent; no production mutations or settings/service changes",
+  "deployment": {
+    "package": "0.1.1~rc.202610150805-1",
+    "served_commit": "ad2678da257",
+    "api_started_utc": {
+      "echo-pivnich": "12:21:47",
+      "echo-skhid": "12:12:50",
+      "echo-siversk": "12:25:15"
+    }
+  },
+  "methodology": {
+    "http": "known-hostname filtered; COUNT(DISTINCT request_id); lifecycle totals and request-only referer attribution are separate",
+    "http_response_window_note": "request starts may precede the response window; proxy failures before the API are absent",
+    "postgres": "userid/dbid/queryid/toplevel matched monotonic deltas; reset/deallocation metadata retained; new or evicted entries omitted",
+    "sql_time": "summed concurrent execution time, not CPU utilization",
+    "read_bytes": "PostgreSQL shared blocks multiplied by 8192; not physical disk bytes",
+    "temp_files": "sum of logged temporary-file sizes, not peak occupancy",
+    "journals": "unequal actual retention windows; counts are not directly comparable rates",
+    "sanitization": "no credentials, SQL literals, account names, raw referers, message content, or message/group IDs"
+  },
+  "hosts": {
+    "echo-pivnich": {
+      "source_logs": {
+        "first_utc": "2026-10-15 00:00:01.633",
+        "last_utc": "2026-10-15 15:36:07.253",
+        "counts_since_midnight": {
+          "other": 179,
+          "lock_timeout": 101,
+          "statement_timeout": 422
+        },
+        "after_1230_by_family": [
+          {
+            "kind": "other",
+            "family": "other",
+            "n": 8
+          },
+          {
+            "kind": "statement_timeout",
+            "family": "text_count_facet",
+            "n": 61
+          },
+          {
+            "kind": "statement_timeout",
+            "family": "text_inbox",
+            "n": 7
+          },
+          {
+            "kind": "lock_timeout",
+            "family": "other",
+            "n": 17
+          },
+          {
+            "kind": "statement_timeout",
+            "family": "message_count_facet",
+            "n": 3
+          },
+          {
+            "kind": "other",
+            "family": "message_count_facet",
+            "n": 4
+          },
+          {
+            "kind": "other",
+            "family": "text_count_facet",
+            "n": 22
+          }
+        ],
+        "slow_threshold_ms": 3000,
+        "slow_after_1230": [
+          {
+            "window": "after_1230",
+            "family": "network_last_seen",
+            "n": 493,
+            "total_ms": 9290585.111000001,
+            "max_ms": 116402.376
+          },
+          {
+            "window": "after_1230",
+            "family": "inbox_or_enrichment",
+            "n": 230,
+            "total_ms": 1084133.1540000006,
+            "max_ms": 17987.155
+          },
+          {
+            "window": "after_1230",
+            "family": "text_count_facet",
+            "n": 118,
+            "total_ms": 996259.6090000003,
+            "max_ms": 29844.074
+          },
+          {
+            "window": "after_1230",
+            "family": "message_id_bounds",
+            "n": 64,
+            "total_ms": 220687.20400000003,
+            "max_ms": 4483.689
+          },
+          {
+            "window": "after_1230",
+            "family": "network_id_bounds",
+            "n": 122,
+            "total_ms": 721369.2899999998,
+            "max_ms": 11753.592
+          },
+          {
+            "window": "after_1230",
+            "family": "message_count_facet",
+            "n": 59,
+            "total_ms": 402798.024,
+            "max_ms": 20611.271
+          },
+          {
+            "window": "after_1230",
+            "family": "duplicate_or_group_lookup",
+            "n": 21,
+            "total_ms": 113404.60599999997,
+            "max_ms": 6698.224
+          },
+          {
+            "window": "after_1230",
+            "family": "text_inbox",
+            "n": 20,
+            "total_ms": 185222.384,
+            "max_ms": 29844.994
+          }
+        ],
+        "temporary_file_bytes_after_1230": 62304842948
+      },
+      "source_statement_delta": {
+        "from_utc": "2026-10-15T15:33:16.122162+00:00",
+        "to_utc": "2026-10-15T15:35:11.051465+00:00",
+        "elapsed_seconds": 114.929303,
+        "statistics_start": {
+          "dealloc": 4149,
+          "stats_reset": "2026-09-05T11:51:51.272077+00:00"
+        },
+        "statistics_end": {
+          "dealloc": 4150,
+          "stats_reset": "2026-09-05T11:51:51.272077+00:00"
+        },
+        "matched_execution_seconds": 422.005,
+        "top": [
+          {
+            "query_id": "-3248399419679346841",
+            "family": "network_last_seen",
+            "calls": 3,
+            "execution_seconds": 63.763,
+            "mean_ms": 21254.251,
+            "shared_read_bytes": 4682391552,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "3735437045196031626",
+            "family": "message_body_or_enrichment",
+            "calls": 345,
+            "execution_seconds": 33.455,
+            "mean_ms": 96.97,
+            "shared_read_bytes": 25092096,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "311144201116218771",
+            "family": "message_body_or_enrichment",
+            "calls": 345,
+            "execution_seconds": 32.099,
+            "mean_ms": 93.042,
+            "shared_read_bytes": 290422784,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-4759275900820158273",
+            "family": "network_id_bounds",
+            "calls": 12,
+            "execution_seconds": 31.172,
+            "mean_ms": 2597.652,
+            "shared_read_bytes": 1387577344,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "3572258331169442282",
+            "family": "creation_id_bounds",
+            "calls": 671,
+            "execution_seconds": 21.818,
+            "mean_ms": 32.516,
+            "shared_read_bytes": 90112,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "1053316392732999605",
+            "family": "attachment_jobs",
+            "calls": 161,
+            "execution_seconds": 18.857,
+            "mean_ms": 117.127,
+            "shared_read_bytes": 27156480,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-7632155729565156483",
+            "family": "message_body_or_enrichment",
+            "calls": 28,
+            "execution_seconds": 17.165,
+            "mean_ms": 613.024,
+            "shared_read_bytes": 491520,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "6548822120911682254",
+            "family": "settlement_links",
+            "calls": 40,
+            "execution_seconds": 13.16,
+            "mean_ms": 329.002,
+            "shared_read_bytes": 0,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "7450296989083107792",
+            "family": "network_last_seen",
+            "calls": 3,
+            "execution_seconds": 12.378,
+            "mean_ms": 4126.106,
+            "shared_read_bytes": 800055296,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-8323304359179068053",
+            "family": "other",
+            "calls": 654,
+            "execution_seconds": 11.157,
+            "mean_ms": 17.06,
+            "shared_read_bytes": 434176,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "4746916043397860604",
+            "family": "message_body_or_enrichment",
+            "calls": 97,
+            "execution_seconds": 9.743,
+            "mean_ms": 100.443,
+            "shared_read_bytes": 9666560,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "3966236413320020617",
+            "family": "message_body_or_enrichment",
+            "calls": 97,
+            "execution_seconds": 9.195,
+            "mean_ms": 94.794,
+            "shared_read_bytes": 68542464,
+            "temp_written_bytes": 0
+          }
+        ]
+      },
+      "source_health": {
+        "at_utc": "2026-10-15T15:37:06.669058+00:00",
+        "network_tasks": [
+          {
+            "task_kind": "network_freq_last_seen",
+            "count": 287,
+            "min": "2026-10-15T14:43:29.866693",
+            "oldest_seconds": 3216.792652
+          },
+          {
+            "task_kind": "network_freq_last_datetime_in_aor",
+            "count": 3,
+            "min": "2026-10-15T15:21:19.040839",
+            "oldest_seconds": 947.618506
+          }
+        ],
+        "attachment_recent": {
+          "newest_document": "2026-10-15T15:37:05.07762",
+          "age_s": 1.581725
+        },
+        "attachment_change": {
+          "singleton": true,
+          "changed_at": "2026-10-15T12:21:45.540761"
+        },
+        "indexes": [
+          {
+            "indexrelid": "signal_message_group_duplicate_lookup_idx",
+            "indisvalid": true,
+            "indisready": true
+          },
+          {
+            "indexrelid": "attachment_document_updated_at_idx",
+            "indisvalid": true,
+            "indisready": true
+          },
+          {
+            "indexrelid": "attachment_chunk_summary_idx",
+            "indisvalid": true,
+            "indisready": true
+          }
+        ]
+      },
+      "analytics": {
+        "version": "26.3.12.3",
+        "health": {
+          "checked_at": "2026-10-15T15:35:11.481681+00:00",
+          "healthy": true
+        },
+        "attachment_coverage": {
+          "singleton": true,
+          "started_at": "2026-10-15T12:25:11.529815",
+          "history_complete": true
+        },
+        "exceptions_since_midnight_to_1535": {
+          "241": 23,
+          "735": 1,
+          "62": 1
+        },
+        "exceptions_after_1230_to_1541": [
+          {
+            "exception_code": 241,
+            "n": 2,
+            "first": "2026-10-15 13:09:13",
+            "last": "2026-10-15 13:09:14"
+          }
+        ],
+        "largest_query_peaks_after_1230": [
+          {
+            "hour": "2026-10-15 13:00:00",
+            "normalized_query_hash": 13164020871193851233,
+            "calls": 1,
+            "peak_memory": 12210352000,
+            "max_ms": 2390
+          },
+          {
+            "hour": "2026-10-15 13:00:00",
+            "normalized_query_hash": 3691299278516426647,
+            "calls": 2,
+            "peak_memory": 6925059931,
+            "max_ms": 1841
+          },
+          {
+            "hour": "2026-10-15 13:00:00",
+            "normalized_query_hash": 7021511499272105414,
+            "calls": 1,
+            "peak_memory": 6829393779,
+            "max_ms": 12075
+          },
+          {
+            "hour": "2026-10-15 15:00:00",
+            "normalized_query_hash": 17278686667090462826,
+            "calls": 2,
+            "peak_memory": 5795196323,
+            "max_ms": 7112
+          },
+          {
+            "hour": "2026-10-15 14:00:00",
+            "normalized_query_hash": 10472012379770443388,
+            "calls": 2,
+            "peak_memory": 5755633925,
+            "max_ms": 7442
+          },
+          {
+            "hour": "2026-10-15 13:00:00",
+            "normalized_query_hash": 16918604716406724515,
+            "calls": 8,
+            "peak_memory": 5602411859,
+            "max_ms": 5513
+          },
+          {
+            "hour": "2026-10-15 15:00:00",
+            "normalized_query_hash": 16918604716406724515,
+            "calls": 2,
+            "peak_memory": 5594127940,
+            "max_ms": 1664
+          },
+          {
+            "hour": "2026-10-15 13:00:00",
+            "normalized_query_hash": 10563344543923658181,
+            "calls": 2,
+            "peak_memory": 5534572160,
+            "max_ms": 4151
+          }
+        ],
+        "gateway_session_defaults": {
+          "max_threads": "auto(32)",
+          "max_memory_usage": 0,
+          "max_memory_usage_for_user": 0,
+          "max_concurrent_queries_for_user": 0,
+          "max_execution_time": 0
+        },
+        "server_memory_limit_bytes": 18897856102
+      },
+      "nginx": {
+        "errors_today": {
+          "date": "2026-10-15",
+          "counts": {
+            "connect() failed": 10872
+          },
+          "first": "2026/10/15 12:19:20",
+          "last": "2026/10/15 12:21:47"
+        },
+        "connection_refused_after_noon": {
+          "after_noon_targets": {
+            "http://127.0.0.1:8081": {
+              "n": 10872,
+              "first": "2026/10/15 12:19:20",
+              "last": "2026/10/15 12:21:47"
+            }
+          },
+          "per_minute": {
+            "2026/10/15 12:19": 3469,
+            "2026/10/15 12:20": 4271,
+            "2026/10/15 12:21": 3132
+          }
+        }
+      },
+      "journal": {
+        "first_unix_us": 1792077921448848,
+        "last_unix_us": 1792078420700214,
+        "postgres_route_reasons": {
+          "query_policy": 51,
+          "attachment_history_incomplete": 39
+        },
+        "goi_callsign_sync_info": 9866,
+        "postgres_notices": 1656,
+        "sqlx_slow_warnings": 280
+      }
+    },
+    "echo-skhid": {
+      "source_logs": {
+        "first_utc": "2026-10-15 00:00:01.414",
+        "last_utc": "2026-10-15 15:36:08.085",
+        "counts_since_midnight": {
+          "lock_timeout": 157,
+          "statement_timeout": 577,
+          "other": 562,
+          "deadlock": 3
+        },
+        "after_1230_by_family": [
+          {
+            "kind": "statement_timeout",
+            "family": "message_count_facet",
+            "n": 44
+          },
+          {
+            "kind": "other",
+            "family": "message_count_facet",
+            "n": 6
+          },
+          {
+            "kind": "lock_timeout",
+            "family": "inbox_or_enrichment",
+            "n": 14
+          },
+          {
+            "kind": "lock_timeout",
+            "family": "other",
+            "n": 3
+          }
+        ],
+        "slow_threshold_ms": 3000,
+        "slow_after_1230": [
+          {
+            "window": "after_1230",
+            "family": "message_count_facet",
+            "n": 1288,
+            "total_ms": 10707576.853000011,
+            "max_ms": 36170.177
+          },
+          {
+            "window": "after_1230",
+            "family": "network_last_seen",
+            "n": 812,
+            "total_ms": 5782955.592999998,
+            "max_ms": 26191.985
+          },
+          {
+            "window": "after_1230",
+            "family": "inbox_or_enrichment",
+            "n": 54,
+            "total_ms": 275412.621,
+            "max_ms": 12256.293
+          },
+          {
+            "window": "after_1230",
+            "family": "text_count_facet",
+            "n": 177,
+            "total_ms": 1597041.0960000006,
+            "max_ms": 21939.15
+          },
+          {
+            "window": "after_1230",
+            "family": "text_inbox",
+            "n": 43,
+            "total_ms": 362604.63000000006,
+            "max_ms": 14448.721
+          },
+          {
+            "window": "after_1230",
+            "family": "message_id_bounds",
+            "n": 14,
+            "total_ms": 49276.684,
+            "max_ms": 4232.258
+          },
+          {
+            "window": "after_1230",
+            "family": "network_id_bounds",
+            "n": 3,
+            "total_ms": 10068.364000000001,
+            "max_ms": 3358.098
+          },
+          {
+            "window": "after_1230",
+            "family": "duplicate_or_group_lookup",
+            "n": 156,
+            "total_ms": 698356.4550000003,
+            "max_ms": 9248.489
+          },
+          {
+            "window": "after_1230",
+            "family": "ocr_queue_ranking",
+            "n": 1,
+            "total_ms": 3243.903,
+            "max_ms": 3243.903
+          }
+        ],
+        "temporary_file_bytes_after_1230": 0
+      },
+      "source_statement_delta": {
+        "from_utc": "2026-10-15T15:33:16.058972+00:00",
+        "to_utc": "2026-10-15T15:35:11.117095+00:00",
+        "elapsed_seconds": 115.058123,
+        "statistics_start": {
+          "dealloc": 2923,
+          "stats_reset": "2026-09-05T11:51:43.166019+00:00"
+        },
+        "statistics_end": {
+          "dealloc": 2923,
+          "stats_reset": "2026-09-05T11:51:43.166019+00:00"
+        },
+        "matched_execution_seconds": 371.364,
+        "top": [
+          {
+            "query_id": "-30456828075260547",
+            "family": "inbox_digest",
+            "calls": 42,
+            "execution_seconds": 48.764,
+            "mean_ms": 1161.047,
+            "shared_read_bytes": 7428005888,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "1934484142945490860",
+            "family": "network_last_seen",
+            "calls": 7,
+            "execution_seconds": 41.283,
+            "mean_ms": 5897.601,
+            "shared_read_bytes": 5830180864,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "3572258331169442282",
+            "family": "creation_id_bounds",
+            "calls": 397,
+            "execution_seconds": 26.179,
+            "mean_ms": 65.941,
+            "shared_read_bytes": 0,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "7793311616869653648",
+            "family": "ocr_queue_ranking",
+            "calls": 33,
+            "execution_seconds": 19.337,
+            "mean_ms": 585.982,
+            "shared_read_bytes": 412360704,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-7754801256479955228",
+            "family": "attachment_jobs",
+            "calls": 111,
+            "execution_seconds": 19.067,
+            "mean_ms": 171.774,
+            "shared_read_bytes": 15818752,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-4680921788057010158",
+            "family": "inbox_digest",
+            "calls": 7,
+            "execution_seconds": 17.683,
+            "mean_ms": 2526.211,
+            "shared_read_bytes": 1453006848,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-8775946595035416805",
+            "family": "other",
+            "calls": 5278,
+            "execution_seconds": 16.47,
+            "mean_ms": 3.12,
+            "shared_read_bytes": 0,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "6548822120911682254",
+            "family": "settlement_links",
+            "calls": 40,
+            "execution_seconds": 12.801,
+            "mean_ms": 320.037,
+            "shared_read_bytes": 0,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-3520703590422063962",
+            "family": "settlement_distance",
+            "calls": 42,
+            "execution_seconds": 11.178,
+            "mean_ms": 266.138,
+            "shared_read_bytes": 106496,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-4188261153536244137",
+            "family": "other_id_bounds",
+            "calls": 578,
+            "execution_seconds": 8.309,
+            "mean_ms": 14.375,
+            "shared_read_bytes": 557916160,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-6079895006490093408",
+            "family": "other",
+            "calls": 6,
+            "execution_seconds": 7.57,
+            "mean_ms": 1261.64,
+            "shared_read_bytes": 27072430080,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-5224916840765240675",
+            "family": "other",
+            "calls": 10,
+            "execution_seconds": 7.2,
+            "mean_ms": 720.023,
+            "shared_read_bytes": 910729216,
+            "temp_written_bytes": 0
+          }
+        ]
+      },
+      "source_health": {
+        "at_utc": "2026-10-15T15:37:06.705528+00:00",
+        "network_tasks": [
+          {
+            "task_kind": "network_freq_last_seen",
+            "count": 3,
+            "min": "2026-10-15T15:36:45.405594",
+            "oldest_seconds": 21.288473
+          }
+        ],
+        "attachment_recent": {
+          "newest_document": "2026-10-15T15:37:03.974191",
+          "age_s": 2.719876
+        },
+        "attachment_change": {
+          "singleton": true,
+          "changed_at": "2026-10-15T14:36:59.684794"
+        },
+        "indexes": [
+          {
+            "indexrelid": "signal_message_group_duplicate_lookup_idx",
+            "indisvalid": true,
+            "indisready": true
+          },
+          {
+            "indexrelid": "attachment_document_updated_at_idx",
+            "indisvalid": true,
+            "indisready": true
+          },
+          {
+            "indexrelid": "attachment_chunk_summary_idx",
+            "indisvalid": true,
+            "indisready": true
+          }
+        ]
+      },
+      "analytics": {
+        "version": "26.3.12.3",
+        "health": {
+          "checked_at": "2026-10-15T15:35:11.813676+00:00",
+          "healthy": true
+        },
+        "attachment_coverage": {
+          "singleton": true,
+          "started_at": "2026-10-15T12:16:13.256939",
+          "history_complete": true
+        },
+        "exceptions_since_midnight_to_1535": {
+          "241": 24,
+          "735": 88,
+          "210": 10
+        },
+        "exceptions_after_1230_to_1541": [
+          {
+            "exception_code": 241,
+            "n": 6,
+            "first": "2026-10-15 14:30:28",
+            "last": "2026-10-15 15:21:58"
+          },
+          {
+            "exception_code": 735,
+            "n": 43,
+            "first": "2026-10-15 12:30:25",
+            "last": "2026-10-15 13:42:53"
+          }
+        ],
+        "largest_query_peaks_after_1230": [
+          {
+            "hour": "2026-10-15 12:00:00",
+            "normalized_query_hash": 16918604716406724515,
+            "calls": 5,
+            "peak_memory": 7399142441,
+            "max_ms": 2643
+          },
+          {
+            "hour": "2026-10-15 13:00:00",
+            "normalized_query_hash": 11666273038114959566,
+            "calls": 1,
+            "peak_memory": 6644231715,
+            "max_ms": 1914
+          },
+          {
+            "hour": "2026-10-15 12:00:00",
+            "normalized_query_hash": 6750477179451359341,
+            "calls": 6,
+            "peak_memory": 6455614743,
+            "max_ms": 2552
+          },
+          {
+            "hour": "2026-10-15 12:00:00",
+            "normalized_query_hash": 17553886132850373755,
+            "calls": 2,
+            "peak_memory": 6304842645,
+            "max_ms": 9438
+          },
+          {
+            "hour": "2026-10-15 14:00:00",
+            "normalized_query_hash": 17553886132850373755,
+            "calls": 4,
+            "peak_memory": 6287032665,
+            "max_ms": 7782
+          },
+          {
+            "hour": "2026-10-15 12:00:00",
+            "normalized_query_hash": 14836224292918909662,
+            "calls": 5,
+            "peak_memory": 6268068543,
+            "max_ms": 2267
+          },
+          {
+            "hour": "2026-10-15 15:00:00",
+            "normalized_query_hash": 17278686667090462826,
+            "calls": 3,
+            "peak_memory": 6119676748,
+            "max_ms": 10523
+          },
+          {
+            "hour": "2026-10-15 13:00:00",
+            "normalized_query_hash": 8131219521796472526,
+            "calls": 1,
+            "peak_memory": 6109643406,
+            "max_ms": 7348
+          }
+        ],
+        "gateway_session_defaults": {
+          "max_threads": "auto(32)",
+          "max_memory_usage": 0,
+          "max_memory_usage_for_user": 0,
+          "max_concurrent_queries_for_user": 0,
+          "max_execution_time": 0
+        },
+        "server_memory_limit_bytes": 18897856102
+      },
+      "nginx": {
+        "errors_today": {
+          "date": "2026-10-15",
+          "counts": {
+            "upstream sent too big header": 13,
+            "connect() failed": 7918
+          },
+          "first": "2026/10/15 00:00:19",
+          "last": "2026/10/15 14:54:37"
+        },
+        "connection_refused_after_noon": {
+          "after_noon_targets": {
+            "http://127.0.0.1:8081": {
+              "n": 7918,
+              "first": "2026/10/15 12:11:13",
+              "last": "2026/10/15 12:12:50"
+            }
+          },
+          "per_minute": {
+            "2026/10/15 12:11": 4338,
+            "2026/10/15 12:12": 3580
+          }
+        }
+      },
+      "journal": {
+        "first_unix_us": 1792077496075921,
+        "last_unix_us": 1792078409402845,
+        "postgres_route_reasons": {
+          "attachment_history_incomplete": 43,
+          "query_policy": 4,
+          "analytics_error": 5,
+          "circuit_open": 504,
+          "fallback_saturated": 8
+        },
+        "goi_callsign_sync_info": 22229,
+        "postgres_notices": 44484,
+        "sqlx_slow_warnings": 297
+      }
+    },
+    "echo-siversk": {
+      "source_logs": {
+        "first_utc": "2026-10-15 00:00:02.313",
+        "last_utc": "2026-10-15 15:36:02.892",
+        "counts_since_midnight": {
+          "statement_timeout": 36,
+          "other": 18
+        },
+        "after_1230_by_family": [],
+        "slow_threshold_ms": 1000,
+        "slow_after_1230": [
+          {
+            "window": "after_1230",
+            "family": "text_count_facet",
+            "n": 311,
+            "total_ms": 947539.5300000004,
+            "max_ms": 16201.807
+          },
+          {
+            "window": "after_1230",
+            "family": "network_last_seen",
+            "n": 43,
+            "total_ms": 180859.64800000004,
+            "max_ms": 12924.242
+          },
+          {
+            "window": "after_1230",
+            "family": "message_count_facet",
+            "n": 356,
+            "total_ms": 682252.4949999999,
+            "max_ms": 3524.428
+          },
+          {
+            "window": "after_1230",
+            "family": "inbox_or_enrichment",
+            "n": 83,
+            "total_ms": 190939.10300000003,
+            "max_ms": 7342.062
+          },
+          {
+            "window": "after_1230",
+            "family": "message_id_bounds",
+            "n": 79,
+            "total_ms": 113416.15700000004,
+            "max_ms": 1864.292
+          },
+          {
+            "window": "after_1230",
+            "family": "text_inbox",
+            "n": 43,
+            "total_ms": 122801.66900000004,
+            "max_ms": 15134.892
+          }
+        ],
+        "temporary_file_bytes_after_1230": 2542031356
+      },
+      "source_statement_delta": {
+        "from_utc": "2026-10-15T15:33:16.104114+00:00",
+        "to_utc": "2026-10-15T15:35:11.155503+00:00",
+        "elapsed_seconds": 115.051389,
+        "statistics_start": {
+          "dealloc": 1604,
+          "stats_reset": "2026-09-05T11:51:26.399305+00:00"
+        },
+        "statistics_end": {
+          "dealloc": 1604,
+          "stats_reset": "2026-09-05T11:51:26.399305+00:00"
+        },
+        "matched_execution_seconds": 96.737,
+        "top": [
+          {
+            "query_id": "3572258331169442282",
+            "family": "creation_id_bounds",
+            "calls": 127,
+            "execution_seconds": 37.797,
+            "mean_ms": 297.618,
+            "shared_read_bytes": 7895621632,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-7754801256479955228",
+            "family": "attachment_jobs",
+            "calls": 2428,
+            "execution_seconds": 7.483,
+            "mean_ms": 3.082,
+            "shared_read_bytes": 336003072,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-5224916840765240675",
+            "family": "other",
+            "calls": 25,
+            "execution_seconds": 7.447,
+            "mean_ms": 297.899,
+            "shared_read_bytes": 2611838976,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-30456828075260547",
+            "family": "inbox_digest",
+            "calls": 4,
+            "execution_seconds": 5.67,
+            "mean_ms": 1417.614,
+            "shared_read_bytes": 1907236864,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "6548822120911682254",
+            "family": "settlement_links",
+            "calls": 35,
+            "execution_seconds": 4.041,
+            "mean_ms": 115.468,
+            "shared_read_bytes": 7596367872,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-5592199830080776284",
+            "family": "other",
+            "calls": 25,
+            "execution_seconds": 3.655,
+            "mean_ms": 146.197,
+            "shared_read_bytes": 3958792192,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-6706279200532724923",
+            "family": "other",
+            "calls": 16,
+            "execution_seconds": 3.591,
+            "mean_ms": 224.462,
+            "shared_read_bytes": 1406312448,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-4188261153536244137",
+            "family": "other_id_bounds",
+            "calls": 219,
+            "execution_seconds": 2.423,
+            "mean_ms": 11.064,
+            "shared_read_bytes": 1256357888,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "408796795625877267",
+            "family": "other_id_bounds",
+            "calls": 4,
+            "execution_seconds": 2.37,
+            "mean_ms": 592.41,
+            "shared_read_bytes": 785039360,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-1498770946252016770",
+            "family": "inbox_digest",
+            "calls": 52,
+            "execution_seconds": 1.622,
+            "mean_ms": 31.195,
+            "shared_read_bytes": 223043584,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "5482431781391345026",
+            "family": "inbox_digest",
+            "calls": 4,
+            "execution_seconds": 1.491,
+            "mean_ms": 372.724,
+            "shared_read_bytes": 115597312,
+            "temp_written_bytes": 0
+          },
+          {
+            "query_id": "-590582543571831616",
+            "family": "other",
+            "calls": 16,
+            "execution_seconds": 1.428,
+            "mean_ms": 89.231,
+            "shared_read_bytes": 888152064,
+            "temp_written_bytes": 0
+          }
+        ]
+      },
+      "source_health": {
+        "at_utc": "2026-10-15T15:37:06.672348+00:00",
+        "network_tasks": null,
+        "attachment_recent": {
+          "newest_document": "2026-10-15T15:36:33.33259",
+          "age_s": 33.328791
+        },
+        "attachment_change": {
+          "singleton": true,
+          "changed_at": "2026-10-15T12:25:13.072249"
+        },
+        "indexes": [
+          {
+            "indexrelid": "signal_message_group_duplicate_lookup_idx",
+            "indisvalid": true,
+            "indisready": true
+          },
+          {
+            "indexrelid": "attachment_document_updated_at_idx",
+            "indisvalid": true,
+            "indisready": true
+          },
+          {
+            "indexrelid": "attachment_chunk_summary_idx",
+            "indisvalid": true,
+            "indisready": true
+          }
+        ]
+      },
+      "analytics": {
+        "version": "26.3.12.3",
+        "health": {
+          "checked_at": "2026-10-15T15:35:12.136194+00:00",
+          "healthy": true
+        },
+        "attachment_coverage": {
+          "singleton": true,
+          "started_at": "2026-10-15T12:28:36.484702",
+          "history_complete": true
+        },
+        "exceptions_since_midnight_to_1535": {},
+        "exceptions_after_1230_to_1541": [],
+        "largest_query_peaks_after_1230": [
+          {
+            "hour": "2026-10-15 15:00:00",
+            "normalized_query_hash": 17278686667090462826,
+            "calls": 1,
+            "peak_memory": 3193187335,
+            "max_ms": 1495
+          },
+          {
+            "hour": "2026-10-15 13:00:00",
+            "normalized_query_hash": 17278686667090462826,
+            "calls": 1,
+            "peak_memory": 3058233485,
+            "max_ms": 1555
+          },
+          {
+            "hour": "2026-10-15 12:00:00",
+            "normalized_query_hash": 10472012379770443388,
+            "calls": 1,
+            "peak_memory": 3043700444,
+            "max_ms": 2228
+          },
+          {
+            "hour": "2026-10-15 12:00:00",
+            "normalized_query_hash": 17278686667090462826,
+            "calls": 2,
+            "peak_memory": 2364068452,
+            "max_ms": 1516
+          },
+          {
+            "hour": "2026-10-15 13:00:00",
+            "normalized_query_hash": 14363236252032805429,
+            "calls": 1,
+            "peak_memory": 2160573428,
+            "max_ms": 1594
+          },
+          {
+            "hour": "2026-10-15 12:00:00",
+            "normalized_query_hash": 16918604716406724515,
+            "calls": 16,
+            "peak_memory": 2154097948,
+            "max_ms": 457
+          },
+          {
+            "hour": "2026-10-15 14:00:00",
+            "normalized_query_hash": 16918604716406724515,
+            "calls": 1,
+            "peak_memory": 2150419034,
+            "max_ms": 407
+          },
+          {
+            "hour": "2026-10-15 13:00:00",
+            "normalized_query_hash": 16918604716406724515,
+            "calls": 1,
+            "peak_memory": 2144952165,
+            "max_ms": 427
+          }
+        ],
+        "gateway_session_defaults": {
+          "max_threads": "auto(32)",
+          "max_memory_usage": 0,
+          "max_memory_usage_for_user": 0,
+          "max_concurrent_queries_for_user": 0,
+          "max_execution_time": 0
+        },
+        "server_memory_limit_bytes": 18897856102
+      },
+      "nginx": {
+        "errors_today": {
+          "date": "2026-10-15",
+          "counts": {
+            "upstream sent too big header": 1,
+            "connect() failed": 3640
+          },
+          "first": "2026/10/15 05:53:10",
+          "last": "2026/10/15 12:25:15"
+        },
+        "connection_refused_after_noon": {
+          "after_noon_targets": {
+            "http://127.0.0.1:8081": {
+              "n": 3640,
+              "first": "2026/10/15 12:23:31",
+              "last": "2026/10/15 12:25:15"
+            }
+          },
+          "per_minute": {
+            "2026/10/15 12:23": 1108,
+            "2026/10/15 12:24": 1980,
+            "2026/10/15 12:25": 552
+          }
+        }
+      },
+      "journal": {
+        "first_unix_us": 1792077496694386,
+        "last_unix_us": 1792078401195236,
+        "postgres_route_reasons": {
+          "attachment_history_incomplete": 33,
+          "query_policy": 4
+        },
+        "goi_callsign_sync_info": 78,
+        "postgres_notices": 0,
+        "sqlx_slow_warnings": 16
+      }
+    }
+  },
+  "http_5min": {
+    "from_utc": "2026-10-15T15:20:00Z",
+    "to_utc": "2026-10-15T15:25:00Z",
+    "totals": {
+      "echo-pivnich": {
+        "/api/event-stream/long-poll": 21106,
+        "/api/rer-importer/get-inbox-count": 6471,
+        "/api/rer-importer/get-inbox": 2067,
+        "/api/rer-importer/messages-by-id-matching-filters": 897,
+        "/api/rer-importer/messages-by-id": 389
+      },
+      "echo-skhid": {
+        "/api/event-stream/long-poll": 19304,
+        "/api/rer-importer/get-inbox-count": 8609,
+        "/api/rer-importer/get-inbox": 2977,
+        "/api/rer-importer/messages-by-id-matching-filters": 717,
+        "/api/rer-importer/messages-by-id": 491
+      },
+      "echo-siversk": {
+        "/api/event-stream/long-poll": 7034,
+        "/api/rer-importer/get-inbox-count": 2001,
+        "/api/rer-importer/messages-by-id-matching-filters": 115,
+        "/api/rer-importer/messages-by-id": 69,
+        "/api/rer-importer/get-inbox": 42
+      }
+    },
+    "request_only_counts_by_view": {
+      "echo-skhid": {
+        "analysis-neo": 292,
+        "duty-neo": 1990,
+        "duty-classic": 3427,
+        "other": 2896
+      },
+      "echo-siversk": {
+        "duty-classic": 718,
+        "analysis-neo": 40,
+        "duty-neo": 695,
+        "other": 547
+      },
+      "echo-pivnich": {
+        "other": 337,
+        "duty-neo": 3316,
+        "duty-classic": 2660,
+        "analysis-neo": 157
+      }
+    }
+  },
+  "http_errors_after_rollout": {
+    "from_utc": "2026-10-15T12:30:00Z",
+    "to_utc": "2026-10-15T15:25:00Z",
+    "responses": [
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer-importer/get-inbox-count",
+        "status": 503,
+        "requests": 164,
+        "mean_ms": 262.4512195121951,
+        "max_ms": 276
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer-importer/get-inbox-count",
+        "status": 503,
+        "requests": 44,
+        "mean_ms": 2173.659090909091,
+        "max_ms": 41124
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/senders",
+        "status": 503,
+        "requests": 43,
+        "mean_ms": 75481.90697674418,
+        "max_ms": 75681
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/tags",
+        "status": 503,
+        "requests": 41,
+        "mean_ms": 5341.829268292683,
+        "max_ms": 30014
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/groups",
+        "status": 503,
+        "requests": 40,
+        "mean_ms": 3237.725,
+        "max_ms": 30015
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/senders",
+        "status": 503,
+        "requests": 36,
+        "mean_ms": 3567.8611111111113,
+        "max_ms": 30015
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer-importer/get-inbox",
+        "status": 503,
+        "requests": 30,
+        "mean_ms": 7200.366666666667,
+        "max_ms": 30021
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer-importer/get-inbox-count",
+        "status": 503,
+        "requests": 18,
+        "mean_ms": 978.6666666666666,
+        "max_ms": 2663
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/groups/count",
+        "status": 503,
+        "requests": 17,
+        "mean_ms": 72030.70588235294,
+        "max_ms": 445506
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/freqs/count",
+        "status": 503,
+        "requests": 17,
+        "mean_ms": 70354.82352941176,
+        "max_ms": 415504
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/sigint/freqs",
+        "status": 500,
+        "requests": 16,
+        "mean_ms": 30006.4375,
+        "max_ms": 30009
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/senders/count",
+        "status": 503,
+        "requests": 16,
+        "mean_ms": 63592.5,
+        "max_ms": 385503
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer/analysis/stats/freqs",
+        "status": 503,
+        "requests": 15,
+        "mean_ms": 259.8,
+        "max_ms": 265
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer-importer/get-inbox-count",
+        "status": 503,
+        "requests": 14,
+        "mean_ms": 263.14285714285717,
+        "max_ms": 291
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer-importer/get-inbox",
+        "status": 503,
+        "requests": 14,
+        "mean_ms": 274.57142857142856,
+        "max_ms": 414
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/posts/count",
+        "status": 503,
+        "requests": 13,
+        "mean_ms": 18982.53846153846,
+        "max_ms": 120304
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer/analysis/stats/freqs/count",
+        "status": 503,
+        "requests": 12,
+        "mean_ms": 2248.6666666666665,
+        "max_ms": 6342
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/freqs",
+        "status": 503,
+        "requests": 12,
+        "mean_ms": 2872.75,
+        "max_ms": 31571
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer/analysis/stats/posts/count",
+        "status": 503,
+        "requests": 11,
+        "mean_ms": 2317.909090909091,
+        "max_ms": 6617
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer/analysis/stats/senders/count",
+        "status": 503,
+        "requests": 10,
+        "mean_ms": 3082.4,
+        "max_ms": 15653
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer/analysis/stats/groups/count",
+        "status": 503,
+        "requests": 9,
+        "mean_ms": 1427.888888888889,
+        "max_ms": 5077
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer/analysis/stats/tags",
+        "status": 503,
+        "requests": 8,
+        "mean_ms": 280.0,
+        "max_ms": 339
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/messages/count",
+        "status": 503,
+        "requests": 7,
+        "mean_ms": 195997.42857142858,
+        "max_ms": 475901
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer-importer/get-inbox",
+        "status": 503,
+        "requests": 7,
+        "mean_ms": 255.85714285714286,
+        "max_ms": 258
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer/analysis/stats/groups",
+        "status": 503,
+        "requests": 6,
+        "mean_ms": 259.0,
+        "max_ms": 262
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer/analysis/stats/senders",
+        "status": 503,
+        "requests": 6,
+        "mean_ms": 258.3333333333333,
+        "max_ms": 260
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/callsigns/count",
+        "status": 503,
+        "requests": 4,
+        "mean_ms": 946.0,
+        "max_ms": 954
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/1.1/intelligence-reports/quick-suggestion",
+        "status": 503,
+        "requests": 3,
+        "mean_ms": 20198.0,
+        "max_ms": 20209
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/tags",
+        "status": 503,
+        "requests": 3,
+        "mean_ms": 259.0,
+        "max_ms": 260
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer-importer/get-inbox",
+        "status": 503,
+        "requests": 3,
+        "mean_ms": 255.66666666666666,
+        "max_ms": 257
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/freqs/count",
+        "status": 503,
+        "requests": 3,
+        "mean_ms": 5520.666666666667,
+        "max_ms": 8853
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/units/count",
+        "status": 503,
+        "requests": 2,
+        "mean_ms": 950.0,
+        "max_ms": 951
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer/analysis/stats/networks",
+        "status": 503,
+        "requests": 2,
+        "mean_ms": 262.0,
+        "max_ms": 265
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/networks",
+        "status": 503,
+        "requests": 2,
+        "mean_ms": 30011.5,
+        "max_ms": 30013
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/tags/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 881.0,
+        "max_ms": 881
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/aors/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 946.0,
+        "max_ms": 946
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/callsigns/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 1285.0,
+        "max_ms": 1285
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/groups/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 509.0,
+        "max_ms": 509
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/units/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 883.0,
+        "max_ms": 883
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/echo-operator/message/submit",
+        "status": 500,
+        "requests": 1,
+        "mean_ms": 3007.0,
+        "max_ms": 3007
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer-importer/get-inbox",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 255.0,
+        "max_ms": 255
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/networks/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 947.0,
+        "max_ms": 947
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer/analysis/stats/aors",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 260.0,
+        "max_ms": 260
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/posts/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 1284.0,
+        "max_ms": 1284
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/messages/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 1407.0,
+        "max_ms": 1407
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/callsigns-page",
+        "status": 500,
+        "requests": 1,
+        "mean_ms": 50007.0,
+        "max_ms": 50007
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/ai-agent/provider/v1/responses",
+        "status": 502,
+        "requests": 1,
+        "mean_ms": 3643.0,
+        "max_ms": 3643
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/locations/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 925.0,
+        "max_ms": 925
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/networks/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 882.0,
+        "max_ms": 882
+      },
+      {
+        "host": "echo-siversk",
+        "path": "/api/rer/analysis/stats/callsigns/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 964.0,
+        "max_ms": 964
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/aors/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 881.0,
+        "max_ms": 881
+      },
+      {
+        "host": "echo-pivnich",
+        "path": "/api/rer/analysis/stats/tags/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 947.0,
+        "max_ms": 947
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/senders/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 8606.0,
+        "max_ms": 8606
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/locations/count",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 880.0,
+        "max_ms": 880
+      },
+      {
+        "host": "echo-skhid",
+        "path": "/api/rer/analysis/stats/freqs",
+        "status": 503,
+        "requests": 1,
+        "mean_ms": 258.0,
+        "max_ms": 258
+      }
+    ]
+  },
+  "siversk_retrospective_journal": {
+    "counts": {
+      "fallback_saturated": 113,
+      "service_unavailable": 113
+    },
+    "first_rejection": "[2026-10-15T12:52:27Z",
+    "last_rejection": "[2026-10-15T13:42:32Z"
+  },
+  "network_bounds_diagnostic": {
+    "host": "echo-pivnich",
+    "scope": "eight most-common network IDs from pg_stats; diagnostic, not captured failing parameters",
+    "timeout_ms": 3000,
+    "existing_ms": 3.732,
+    "per_network_ms": 6.525,
+    "existing_access": "global inbox-item-ID index scan with network filter",
+    "alternative_access": "per-network composite-index endpoint seeks",
+    "conclusion": "no general speedup established; sparse and absent networks/generic plans still need evaluation"
+  }
+}

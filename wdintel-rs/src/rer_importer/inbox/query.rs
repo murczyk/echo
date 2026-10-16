@@ -1371,6 +1371,62 @@ struct ResolvedAnalyticsAorFilter {
     present: bool,
 }
 
+async fn ensure_inbox_analytics_search_coverage(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    analytics_db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> anyhow::Result<()> {
+    if req
+        .search
+        .as_deref()
+        .is_some_and(|search| !search.trim().is_empty())
+    {
+        use crate::attachments::analytics::{
+            SearchCoverageScope, SearchTimeBasis,
+        };
+        let groups = crate::messenger::group::get_identity_sigint_groups(
+            &env.dbx, login,
+        )
+        .await
+        .c(h!())?;
+        let time_basis = match req
+            .sort_by
+            .unwrap_or(InboxMessagesSortBy::IMSDatetime)
+        {
+            InboxMessagesSortBy::IMSDatetime => SearchTimeBasis::Interception,
+            InboxMessagesSortBy::IMSTimestamp => SearchTimeBasis::Timestamp,
+            InboxMessagesSortBy::IMSCreatedAt => SearchTimeBasis::Creation,
+        };
+        crate::attachments::analytics::ensure_search_coverage_scoped(
+            &env.dbx,
+            analytics_db,
+            &req.search,
+            req.search_mode,
+            freshness_max_age_ms,
+            SearchCoverageScope {
+                since: req
+                    .since_date_inclusive_ms
+                    .map(dt_from_millis)
+                    .transpose()
+                    .c(h!())?,
+                till: req
+                    .till_date_inclusive_ms
+                    .map(dt_from_millis)
+                    .transpose()
+                    .c(h!())?,
+                till_inclusive: true,
+                time_basis,
+                groups: &groups,
+            },
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
 async fn build_analytics_filtered_inbox_query(
     login: &uuid::Uuid,
     env: &Env,
@@ -1378,11 +1434,11 @@ async fn build_analytics_filtered_inbox_query(
     analytics_db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<Option<(Select<signal_message::Entity>, bool)>, AppError> {
-    crate::attachments::analytics::ensure_search_coverage_with_mode(
-        &env.dbx,
+    ensure_inbox_analytics_search_coverage(
+        login,
+        env,
+        req,
         analytics_db,
-        &req.search,
-        req.search_mode,
         freshness_max_age_ms,
     )
     .await
@@ -1517,7 +1573,7 @@ fn analytics_aor_bounds_overlap(lhs: (f64, f64), rhs: (f64, f64)) -> bool {
 }
 
 fn apply_resolved_analytics_aor_filter(
-    mut query: Select<signal_message::Entity>,
+    query: Select<signal_message::Entity>,
     resolved: &ResolvedAnalyticsAorFilter,
     scope: &AnalyticsMessageIdScope,
 ) -> Select<signal_message::Entity> {
@@ -1526,75 +1582,34 @@ fn apply_resolved_analytics_aor_filter(
     }
     let mut matches = Condition::any();
     if !resolved.group_keys.is_empty() {
-        let alias = Alias::new("analytics_selected_aor_group");
-        QueryTrait::query(&mut query).join_as(
-            JoinType::LeftJoin,
-            signal_message_group::Entity,
-            alias.clone(),
-            Condition::all()
-                .add(
-                    Expr::col((
-                        alias.clone(),
-                        signal_message_group::Column::SignalMessageId,
-                    ))
-                    .equals((
-                        signal_message::Entity,
-                        signal_message::Column::Id,
-                    )),
-                )
-                .add(
-                    Expr::col((
-                        alias.clone(),
-                        signal_message_group::Column::GroupMasterKey,
-                    ))
+        let groups = signal_message_group::Entity::find()
+            .select_only()
+            .column(signal_message_group::Column::SignalMessageId)
+            .filter(
+                signal_message_group::Column::GroupMasterKey
                     .is_in(resolved.group_keys.clone()),
-                )
-                .add(scope.condition((
-                    alias.clone(),
-                    signal_message_group::Column::SignalMessageId,
-                ))),
-        );
-        matches = matches.add(
-            Expr::col((alias, signal_message_group::Column::SignalMessageId))
-                .is_not_null(),
-        );
+            )
+            .filter(scope.condition((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            )))
+            .into_query();
+        matches = matches.add(signal_message::Column::Id.in_subquery(groups));
     }
     if !resolved.network_ids.is_empty() {
-        let alias = Alias::new("analytics_selected_aor_network");
-        QueryTrait::query(&mut query).join_as(
-            JoinType::LeftJoin,
-            sigint_inbox_item_network::Entity,
-            alias.clone(),
-            Condition::all()
-                .add(
-                    Expr::col((
-                        alias.clone(),
-                        sigint_inbox_item_network::Column::SigintInboxItemId,
-                    ))
-                    .equals((
-                        sigint_inbox_item::Entity,
-                        sigint_inbox_item::Column::Id,
-                    )),
-                )
-                .add(
-                    Expr::col((
-                        alias.clone(),
-                        sigint_inbox_item_network::Column::SigintNetworkId,
-                    ))
+        let networks = sigint_inbox_item_network::Entity::find()
+            .select_only()
+            .column(sigint_inbox_item_network::Column::SigintInboxItemId)
+            .filter(
+                sigint_inbox_item_network::Column::SigintNetworkId
                     .is_in(resolved.network_ids.clone()),
-                )
-                .add(scope.condition((
-                    alias.clone(),
-                    sigint_inbox_item_network::Column::SigintInboxItemId,
-                ))),
-        );
-        matches = matches.add(
-            Expr::col((
-                alias,
+            )
+            .filter(scope.condition((
+                sigint_inbox_item_network::Entity,
                 sigint_inbox_item_network::Column::SigintInboxItemId,
-            ))
-            .is_not_null(),
-        );
+            )))
+            .into_query();
+        matches = matches.add(signal_message::Column::Id.in_subquery(networks));
     }
     if resolved.group_keys.is_empty() && resolved.network_ids.is_empty() {
         return query.filter(Expr::value(false));
