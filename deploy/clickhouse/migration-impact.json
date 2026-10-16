@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20261016_144130_signal_group_color_key": {
+      "changes": [{ "table": "public.signal_group", "strategy": "cdc_additive" }]
+    },
     "echo:m20261014_172633_user_group_feed_read_state": {
       "changes": [
         { "table": "public.user_group_feed_read_state", "strategy": "excluded" }

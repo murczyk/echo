@@ -2,6 +2,7 @@ use super::*;
 use crate::entities::*;
 use crate::functest::tests::*;
 use crate::messenger::bl::bl_group_update;
+use crate::messenger::group::types::SignalGroupColor;
 use crate::messenger::types::GroupUpdateReq;
 use serial_test::serial;
 
@@ -74,6 +75,7 @@ async fn test_bl_group_update_add_second_aor() {
 
     let req1 = GroupUpdateReq {
         master_key: group.master_key.clone(),
+        color_key: SignalGroupColor::Blue,
         short_note: Some("Test group".to_string()),
         long_note: None,
         area_of_responsibility_id: None,
@@ -86,6 +88,7 @@ async fn test_bl_group_update_add_second_aor() {
     let res1 = bl_group_update(&req1, &txn).await.unwrap();
 
     assert_eq!(res1.group.is_aviation_group, Some(true));
+    assert_eq!(res1.group.color_key.as_deref(), Some("blue"));
     assert_eq!(res1.aors.len(), 1);
     assert_eq!(res1.aors[0].id, aor1.id);
 
@@ -129,6 +132,7 @@ async fn test_bl_group_update_add_second_aor() {
 
     let req2 = GroupUpdateReq {
         master_key: group.master_key.clone(),
+        color_key: SignalGroupColor::DeepPurple,
         short_note: Some("Test group updated".to_string()),
         long_note: Some("Added second AOR".to_string()),
         area_of_responsibility_id: None,
@@ -139,6 +143,7 @@ async fn test_bl_group_update_add_second_aor() {
     };
 
     let res2 = bl_group_update(&req2, &txn).await.unwrap();
+    assert_eq!(res2.group.color_key.as_deref(), Some("deep_purple"));
 
     assert_eq!(res2.aors.len(), 2);
     let settlement_link = sigint_inbox_item_settlement::Entity::find()
@@ -251,6 +256,7 @@ async fn test_bl_group_update_disable_network_assignment_invalidates_all_history
 
     let req = GroupUpdateReq {
         master_key: group.master_key.clone(),
+        color_key: SignalGroupColor::Teal,
         short_note: None,
         long_note: None,
         area_of_responsibility_id: None,

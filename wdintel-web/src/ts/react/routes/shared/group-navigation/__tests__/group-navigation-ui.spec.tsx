@@ -26,6 +26,7 @@ const kitkat: GroupNavigationItem = {
   kind: 'group',
   masterKey: 'kitkat',
   name: 'KitKat',
+  colorKey: 'deep_purple',
   ignoreOperativny: false,
   unreadCount: 128,
   oldestUnreadMessageRef: null,
@@ -55,6 +56,35 @@ describe('group navigation UI', () => {
 
     expect(container.querySelector('[data-group-avatar]')?.textContent).toBe('🇺🇦');
     expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('uses the persisted palette color and a readable foreground', async () => {
+    await act(async () => {
+      root.render(
+        <ThemeProvider theme={createTheme({ palette: { mode: 'dark' } })}>
+          <GroupAvatar name="KitKat" colorKey="deep_purple" />
+        </ThemeProvider>,
+      );
+    });
+
+    const avatar = container.querySelector<HTMLElement>('[data-group-avatar]');
+    expect(avatar?.style.backgroundColor).toBe('#7e57c2');
+    expect(avatar?.style.color).not.toBe('');
+  });
+
+  it('falls back to the neutral theme avatar for an unknown color', async () => {
+    const theme = createTheme({ palette: { action: { selected: '#334455' } } });
+    await act(async () => {
+      root.render(
+        <ThemeProvider theme={theme}>
+          <GroupAvatar name="KitKat" colorKey={'future_color' as 'blue'} />
+        </ThemeProvider>,
+      );
+    });
+
+    expect(container.querySelector<HTMLElement>('[data-group-avatar]')?.style.backgroundColor).toBe(
+      '#334455',
+    );
   });
 
   it('renders the Material group icon for the all-groups avatar', async () => {

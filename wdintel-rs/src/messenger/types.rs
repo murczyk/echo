@@ -1,6 +1,6 @@
 use crate::entities::signal_message;
 use crate::messenger::group::types::{
-    SignalGroupStats, SignalGroupStatsTimelinePoint,
+    SignalGroupColor, SignalGroupStats, SignalGroupStatsTimelinePoint,
 };
 use crate::sigint::aor::types::AreaOfResponsibility;
 use crate::sigint::types::InterseptionKind;
@@ -71,6 +71,7 @@ pub struct GroupEntryF1 {
     pub long_note: Option<String>,
     pub group_stats: SignalGroupStats,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
+    pub color_key: SignalGroupColor,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -173,6 +174,7 @@ pub struct LinkAccountRsp {
 )]
 pub struct GroupUpdateReq {
     pub master_key: String,
+    pub color_key: SignalGroupColor,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
     /// Deprecated - use area_of_responsibility_ids instead

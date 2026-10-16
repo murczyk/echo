@@ -7,6 +7,7 @@ function group(masterKey: string, unreadCount = 0): GroupFeedState {
   return {
     masterKey,
     name: masterKey,
+    colorKey: 'blue',
     ignoreOperativny: false,
     unreadCount,
     oldestUnreadMessageRef: null,

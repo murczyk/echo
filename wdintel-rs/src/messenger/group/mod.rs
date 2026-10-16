@@ -137,6 +137,10 @@ pub async fn collect_groups(
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
+                color_key: types::SignalGroupColor::from_optional_db_value(
+                    g.color_key.as_deref(),
+                )
+                .unwrap_or(types::SignalGroupColor::BlueGrey),
             })
         })
         .collect();
@@ -175,6 +179,7 @@ pub async fn collect_groups(
             group_stats: stats,
             admin_data,
             areas_of_responsibility: aors,
+            color_key: types::SignalGroupColor::BlueGrey,
         }
     }));
     Ok(data)
@@ -553,6 +558,27 @@ where
     };
 
     Ok(saved.master_key)
+}
+
+pub async fn set_signal_group_color<C>(
+    db: &C,
+    master_key: &str,
+    color: types::SignalGroupColor,
+) -> anyhow::Result<types::SignalGroupColor>
+where
+    C: ConnectionTrait,
+{
+    let result = signal_group::Entity::update_many()
+        .col_expr(
+            signal_group::Column::ColorKey,
+            Expr::value(color.as_db_value()),
+        )
+        .filter(signal_group::Column::MasterKey.eq(master_key))
+        .exec(db)
+        .await
+        .c(h!())?;
+    anyhow::ensure!(result.rows_affected == 1, "signal group not found");
+    Ok(color)
 }
 
 pub async fn set_signal_group_archived(

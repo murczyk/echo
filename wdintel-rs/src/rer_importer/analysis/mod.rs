@@ -10985,6 +10985,7 @@ async fn collect_group_names(
             signal_group::Column::InterseptionKind,
             signal_group::Column::DisableNetworkAssignment,
             signal_group::Column::IsAviationGroup,
+            signal_group::Column::ColorKey,
         ])
         .filter(signal_group::Column::MasterKey.eq_any(group_keys.clone()))
         .into_tuple::<(
@@ -10994,6 +10995,7 @@ async fn collect_group_names(
             sea_orm_active_enums::InterseptionKind,
             bool,
             Option<bool>,
+            Option<String>,
         )>()
         .all(txn)
         .await
@@ -11001,7 +11003,7 @@ async fn collect_group_names(
     let mut resolved_keys = vec![];
     let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _, _, _, _)| key.clone())
+        .map(|(key, _, _, _, _, _, _)| key.clone())
         .collect();
     let stats = match analytics_group_stats {
         Some(analytics_group_stats) => analytics_group_stats.clone(),
@@ -11027,6 +11029,7 @@ async fn collect_group_names(
         interseption_kind,
         disable_network_assignment,
         is_aviation_group,
+        color_key,
     ) in signal_groups
     {
         if let Some(name) = name {
@@ -11045,6 +11048,10 @@ async fn collect_group_names(
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
+                color_key: SignalGroupColor::from_optional_db_value(
+                    color_key.as_deref(),
+                )
+                .context(h!())?,
             });
         }
     }
@@ -11079,6 +11086,7 @@ async fn collect_group_names(
             group_stats: stats,
             admin_data: group_admin_data,
             areas_of_responsibility: aors,
+            color_key: SignalGroupColor::BlueGrey,
         });
     }
     Ok(result)

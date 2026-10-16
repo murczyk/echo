@@ -6,8 +6,8 @@ import { minimalInboxMessage } from '../../src/ts/react/routes/rer-duty-neo/inbo
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
 const groups = [
-  { masterKey: 'group-a', name: 'Group Alpha', unreadCount: 2 },
-  { masterKey: 'group-b', name: 'Group Beta', unreadCount: 3 },
+  { masterKey: 'group-a', name: 'Group Alpha', unreadCount: 2, colorKey: 'blue' },
+  { masterKey: 'group-b', name: 'Group Beta', unreadCount: 3, colorKey: 'deep_purple' },
 ];
 
 function message(id: number, groupMasterKey: string, text: string): InboxMessage {
@@ -70,6 +70,7 @@ async function installGroupNavigationMocks(
         groups: groups.map((group, index) => ({
           master_key: group.masterKey,
           name: group.name,
+          color_key: group.colorKey,
           ignore_operativny: false,
           unread_count: group.unreadCount,
           oldest_unread_message_ref: null,
@@ -120,6 +121,15 @@ test.describe('Analysis group feed navigation', () => {
     expect((await groupNavigation.boundingBox())?.height).toBe(workspaceBox?.height);
     await expect(groupNavigation.locator('[data-analysis-filters-scroll-container]')).toHaveCount(
       0,
+    );
+    const groupAvatars = groupNavigation.locator(
+      '[data-group-list-item]:not([aria-label^="Всі групи"]) [data-group-avatar]',
+    );
+    await expect(groupAvatars).toHaveCount(2);
+    expect(
+      await groupAvatars.nth(0).evaluate((avatar) => getComputedStyle(avatar).backgroundColor),
+    ).not.toBe(
+      await groupAvatars.nth(1).evaluate((avatar) => getComputedStyle(avatar).backgroundColor),
     );
 
     const filterToggle = page.locator('[data-analysis-filter-toggle]');

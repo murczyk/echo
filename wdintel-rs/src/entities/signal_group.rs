@@ -22,8 +22,8 @@ pub struct Model {
     pub disable_network_assignment: bool,
     pub interseption_kind: InterseptionKind,
     pub is_aviation_group: Option<bool>,
-    #[sea_orm(column_type = "Text")]
-    pub color_key: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub color_key: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

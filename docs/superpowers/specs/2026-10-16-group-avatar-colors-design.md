@@ -62,7 +62,7 @@ evolve without data migrations.
 The frontend owns one palette module that maps every key to a Material hue. It
 uses the hue's `700` tone in light mode and `400` tone in dark mode. For every
 background, it chooses whichever of `theme.palette.common.white` and
-`theme.palette.grey[900]` provides the higher contrast, with a required minimum
+`theme.palette.common.black` provides the higher contrast, with a required minimum
 ratio of 4.5:1. It uses no hard-coded `#000` fallback. An unknown runtime value
 uses `theme.palette.action.selected` with `theme.palette.text.primary`.
 

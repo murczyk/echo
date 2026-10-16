@@ -264,6 +264,10 @@ pub async fn group_update(
         } else {
             Some(res.aors.into_iter().map(render_aor).collect())
         },
+        color_key: crate::messenger::group::types::SignalGroupColor::from_optional_db_value(
+            res.group.color_key.as_deref(),
+        )
+        .c(h!())?,
     }))
 }
 

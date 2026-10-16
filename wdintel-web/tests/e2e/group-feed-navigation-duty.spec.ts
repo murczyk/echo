@@ -6,8 +6,8 @@ import { minimalInboxMessage } from '../../src/ts/react/routes/rer-duty-neo/inbo
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 
 const groups = [
-  { masterKey: 'group-a', name: 'Group Alpha', unreadCount: 2 },
-  { masterKey: 'group-b', name: 'Group Beta', unreadCount: 3 },
+  { masterKey: 'group-a', name: 'Group Alpha', unreadCount: 2, colorKey: 'blue' },
+  { masterKey: 'group-b', name: 'Group Beta', unreadCount: 3, colorKey: 'deep_purple' },
 ];
 
 function message(id: number, groupMasterKey: string, text: string): InboxMessage {
@@ -54,6 +54,7 @@ async function installGroupNavigationMocks(page: Page) {
         groups: groups.map((group, index) => ({
           master_key: group.masterKey,
           name: group.name,
+          color_key: group.colorKey,
           ignore_operativny: false,
           unread_count: group.unreadCount,
           oldest_unread_message_ref: null,
@@ -86,6 +87,10 @@ test.describe('Duty group feed navigation', () => {
 
     await columns.nth(0).locator('[data-group-island]').click();
     await expect(columns.nth(0).locator('[data-group-panel]')).toBeVisible();
+    const avatars = columns.nth(0).locator('[data-group-panel] [data-group-avatar]');
+    expect(
+      await avatars.nth(1).evaluate((avatar) => getComputedStyle(avatar).backgroundColor),
+    ).not.toBe(await avatars.nth(2).evaluate((avatar) => getComputedStyle(avatar).backgroundColor));
     await columns
       .nth(0)
       .getByRole('button', { name: /Group Alpha, 2 непрочитаних/ })

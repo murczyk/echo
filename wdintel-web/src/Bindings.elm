@@ -1833,6 +1833,7 @@ type alias GroupFeedState =
     , oldestUnreadMessageRef : Maybe (String)
     , lastActivityAt : Maybe (Int)
     , latestCursor : Maybe (GroupFeedCursorDto)
+    , colorKey : SignalGroupColor
     }
 
 
@@ -1846,6 +1847,7 @@ groupFeedStateEncoder struct =
         , ( "oldest_unread_message_ref", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.oldestUnreadMessageRef )
         , ( "last_activity_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastActivityAt )
         , ( "latest_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (groupFeedCursorDtoEncoder)) struct.latestCursor )
+        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
         ]
 
 
@@ -1900,6 +1902,61 @@ signalGroupStatsEncoder struct =
         , ( "activity_last_week", (Json.Encode.int) struct.activityLastWeek )
         ]
 
+
+type SignalGroupColor
+    = Red
+    | Pink
+    | Purple
+    | DeepPurple
+    | Indigo
+    | Blue
+    | LightBlue
+    | Cyan
+    | Teal
+    | Green
+    | LightGreen
+    | Lime
+    | Amber
+    | Orange
+    | DeepOrange
+    | BlueGrey
+
+
+signalGroupColorEncoder : SignalGroupColor -> Json.Encode.Value
+signalGroupColorEncoder enum =
+    case enum of
+        Red ->
+            Json.Encode.string "red"
+        Pink ->
+            Json.Encode.string "pink"
+        Purple ->
+            Json.Encode.string "purple"
+        DeepPurple ->
+            Json.Encode.string "deep_purple"
+        Indigo ->
+            Json.Encode.string "indigo"
+        Blue ->
+            Json.Encode.string "blue"
+        LightBlue ->
+            Json.Encode.string "light_blue"
+        Cyan ->
+            Json.Encode.string "cyan"
+        Teal ->
+            Json.Encode.string "teal"
+        Green ->
+            Json.Encode.string "green"
+        LightGreen ->
+            Json.Encode.string "light_green"
+        Lime ->
+            Json.Encode.string "lime"
+        Amber ->
+            Json.Encode.string "amber"
+        Orange ->
+            Json.Encode.string "orange"
+        DeepOrange ->
+            Json.Encode.string "deep_orange"
+        BlueGrey ->
+            Json.Encode.string "blue_grey"
 
 type alias SignalGroupStatsTimelineReq =
     { masterKeys : List (String)
@@ -2027,6 +2084,7 @@ type alias SignalGroupEntry =
     , groupStats : SignalGroupStats
     , adminData : Maybe (GroupAdminData)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
+    , colorKey : SignalGroupColor
     }
 
 
@@ -2042,6 +2100,7 @@ signalGroupEntryEncoder struct =
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
         , ( "admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map (groupAdminDataEncoder)) struct.adminData )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
+        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
         ]
 
 
@@ -2058,6 +2117,7 @@ type alias OrphanSignalGroupEntry =
     , groupStats : SignalGroupStats
     , groupAdminData : Maybe (GroupAdminData)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
+    , colorKey : SignalGroupColor
     }
 
 
@@ -2076,6 +2136,7 @@ orphanSignalGroupEntryEncoder struct =
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
         , ( "group_admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map (groupAdminDataEncoder)) struct.groupAdminData )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
+        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
         ]
 
 
@@ -8156,6 +8217,7 @@ type alias ZoneDatasourceGroup =
     , shortNote : Maybe (String)
     , longNote : Maybe (String)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
+    , colorKey : SignalGroupColor
     }
 
 
@@ -8176,6 +8238,7 @@ zoneDatasourceGroupEncoder struct =
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.shortNote )
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.longNote )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
+        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
         ]
 
 
@@ -8237,6 +8300,7 @@ zoneDatasourceGroupAddReqEncoder struct =
 
 type alias ZoneDatasourceGroupUpdateReq =
     { id : Int
+    , colorKey : SignalGroupColor
     , isSecret : Bool
     , interseptionKind : Maybe (InterseptionKind)
     , disableNetworkAssignment : Maybe (Bool)
@@ -8255,6 +8319,7 @@ zoneDatasourceGroupUpdateReqEncoder : ZoneDatasourceGroupUpdateReq -> Json.Encod
 zoneDatasourceGroupUpdateReqEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
+        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
         , ( "is_secret", (Json.Encode.bool) struct.isSecret )
         , ( "interseption_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (interseptionKindEncoder)) struct.interseptionKind )
         , ( "disable_network_assignment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.disableNetworkAssignment )
@@ -18406,6 +18471,7 @@ linkEchoOperatorReqEncoder struct =
 
 type alias GroupUpdateReq =
     { masterKey : String
+    , colorKey : SignalGroupColor
     , shortNote : Maybe (String)
     , longNote : Maybe (String)
     , areaOfResponsibilityId : Maybe (Int)
@@ -18420,6 +18486,7 @@ groupUpdateReqEncoder : GroupUpdateReq -> Json.Encode.Value
 groupUpdateReqEncoder struct =
     Json.Encode.object
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.shortNote )
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.longNote )
         , ( "area_of_responsibility_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.areaOfResponsibilityId )
@@ -18439,6 +18506,7 @@ type alias GroupEntryF1 =
     , longNote : Maybe (String)
     , groupStats : SignalGroupStats
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
+    , colorKey : SignalGroupColor
     }
 
 
@@ -18453,6 +18521,7 @@ groupEntryF1Encoder struct =
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.longNote )
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
+        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
         ]
 
 
@@ -19548,6 +19617,7 @@ groupFeedStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "oldest_unread_message_ref" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_activity_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "latest_cursor" (Json.Decode.nullable (groupFeedCursorDtoDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
 
 
 groupFeedStatesRspDecoder : Json.Decode.Decoder GroupFeedStatesRsp
@@ -19575,6 +19645,155 @@ signalGroupStatsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_last_day" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_last_week" (Json.Decode.int)))
 
+
+signalGroupColorDecoder : Json.Decode.Decoder SignalGroupColor
+signalGroupColorDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "red" ->
+                            Json.Decode.succeed Red
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "pink" ->
+                            Json.Decode.succeed Pink
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "purple" ->
+                            Json.Decode.succeed Purple
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "deep_purple" ->
+                            Json.Decode.succeed DeepPurple
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "indigo" ->
+                            Json.Decode.succeed Indigo
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "blue" ->
+                            Json.Decode.succeed Blue
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "light_blue" ->
+                            Json.Decode.succeed LightBlue
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "cyan" ->
+                            Json.Decode.succeed Cyan
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "teal" ->
+                            Json.Decode.succeed Teal
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "green" ->
+                            Json.Decode.succeed Green
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "light_green" ->
+                            Json.Decode.succeed LightGreen
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "lime" ->
+                            Json.Decode.succeed Lime
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "amber" ->
+                            Json.Decode.succeed Amber
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "orange" ->
+                            Json.Decode.succeed Orange
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "deep_orange" ->
+                            Json.Decode.succeed DeepOrange
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "blue_grey" ->
+                            Json.Decode.succeed BlueGrey
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 signalGroupStatsTimelineReqDecoder : Json.Decode.Decoder SignalGroupStatsTimelineReq
 signalGroupStatsTimelineReqDecoder =
@@ -20000,6 +20219,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_admin_data" (Json.Decode.nullable (groupAdminDataDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
 
 
 rerAnalysisQueryStateDecoder : Json.Decode.Decoder RerAnalysisQueryState
@@ -20077,6 +20297,7 @@ signalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_data" (Json.Decode.nullable (groupAdminDataDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
 
 
 batchMessageCommentsReqDecoder : Json.Decode.Decoder BatchMessageCommentsReq
@@ -23510,6 +23731,7 @@ zoneDatasourceGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
 
 
 zoneDatasourceGroupsReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupsReq
@@ -23544,6 +23766,7 @@ zoneDatasourceGroupUpdateReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupUpd
 zoneDatasourceGroupUpdateReqDecoder =
     Json.Decode.succeed ZoneDatasourceGroupUpdateReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (Json.Decode.nullable (interseptionKindDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.nullable (Json.Decode.bool))))
@@ -29674,6 +29897,7 @@ groupUpdateReqDecoder : Json.Decode.Decoder GroupUpdateReq
 groupUpdateReqDecoder =
     Json.Decode.succeed GroupUpdateReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_id" (Json.Decode.nullable (Json.Decode.int))))
@@ -29694,6 +29918,7 @@ groupEntryF1Decoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
 
 
 type DutyTagsLayout

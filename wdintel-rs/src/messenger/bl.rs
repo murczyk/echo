@@ -4,8 +4,8 @@ use crate::entities::area_of_responsibility::Model;
 use crate::entities::sea_orm_active_enums::AccountStatus;
 use crate::entities::*;
 use crate::error::ContextAndError;
-use crate::messenger::group::collect_group_stats;
 use crate::messenger::group::types::SignalGroupStats;
+use crate::messenger::group::{collect_group_stats, set_signal_group_color};
 use crate::messenger::types::{
     AccountSyncResult, EchoAccountF1, GroupUpdateReq,
 };
@@ -928,6 +928,9 @@ pub async fn bl_group_update(
     txn: &DatabaseTransaction,
 ) -> Result<BlGroupUpdateRes, AppError> {
     let mut network_invalidation_enqueued = false;
+    set_signal_group_color(txn, &req.master_key, req.color_key)
+        .await
+        .c(h!())?;
     let m_group = group_admin_data::Entity::find()
         .filter(
             group_admin_data::Column::GroupMasterKey.eq(req.master_key.clone()),

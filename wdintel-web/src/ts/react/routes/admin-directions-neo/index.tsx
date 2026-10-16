@@ -42,6 +42,7 @@ import {
   Organism,
   OrphanSignalGroupEntry,
   SigintZone,
+  SignalGroupColor,
   SignalGroupLogin,
   SignalGroupEntry,
   SignalGroupStatsTimelinePoint,
@@ -113,6 +114,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { DatasourceKindIcon } from '../../components/icons';
 import { GroupStatsTimelineCell } from './GroupStatsTimelineCell';
 import { GroupCardView, type GroupCardData } from './GroupCardView';
+import { GroupColorPicker } from '../shared/group-navigation';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -180,6 +182,7 @@ type GroupEditState = {
   datasourceId: number;
   group: ZoneDatasourceGroup;
   groupName: string;
+  colorKey: SignalGroupColor;
   isSecret: boolean;
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
@@ -199,6 +202,7 @@ type GroupEditState = {
 type OrphanEditState = {
   group: OrphanSignalGroupEntry;
   groupName: string;
+  colorKey: SignalGroupColor;
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
@@ -691,6 +695,7 @@ function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
   return Array.from({ length: LOADING_SKELETON_ROW_COUNT }, (_, index) => ({
     masterKey: `loading-orphan-${index}`,
     name: '',
+    colorKey: 'blue_grey',
     datasourceId: null,
     ignoreOperativny: false,
     interseptionKind: 'rer',
@@ -715,6 +720,7 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
     group: {
       sigintZoneDatasourceId: index,
       groupMasterKey: '',
+      colorKey: 'blue_grey',
       isGroupSecret: false,
       interseptionKind: 'rer',
       disableNetworkAssignment: false,
@@ -1981,6 +1987,7 @@ function AdminDirectionsNeoPageBody() {
           infoMap.set(group.masterKey, {
             masterKey: group.masterKey,
             name: group.name,
+            colorKey: group.colorKey,
             ignoreOperativny: group.ignoreOperativny,
             interseptionKind: group.interseptionKind,
             disableNetworkAssignment: group.disableNetworkAssignment,
@@ -2013,6 +2020,7 @@ function AdminDirectionsNeoPageBody() {
       datasourceId,
       group,
       groupName,
+      colorKey: group.colorKey,
       isSecret: group.isGroupSecret,
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
@@ -2035,6 +2043,7 @@ function AdminDirectionsNeoPageBody() {
     setOrphanEditDialog({
       group,
       groupName,
+      colorKey: group.colorKey,
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
       isAviationGroup: group.isAviationGroup,
@@ -2147,6 +2156,7 @@ function AdminDirectionsNeoPageBody() {
     const selectedOrganismIds = editDialog.isSecret ? editDialog.selectedOrganismIds : [];
     const req: ZoneDatasourceGroupUpdateReq = {
       id: editDialog.group.sigintZoneDatasourceId,
+      colorKey: editDialog.colorKey,
       isSecret: editDialog.isSecret,
       interseptionKind: supportNonRerInterceptions ? editDialog.interseptionKind : null,
       disableNetworkAssignment: editDialog.disableNetworkAssignment,
@@ -2216,6 +2226,7 @@ function AdminDirectionsNeoPageBody() {
         areaOfResponsibilityId: null,
         areaOfResponsibilityIds:
           orphanEditDialog.selectedAorIds.length > 0 ? orphanEditDialog.selectedAorIds : null,
+        colorKey: orphanEditDialog.colorKey,
         interseptionKind: supportNonRerInterceptions ? orphanEditDialog.interseptionKind : null,
         disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
         isAviationGroup: orphanEditDialog.isAviationGroup,
@@ -2237,6 +2248,7 @@ function AdminDirectionsNeoPageBody() {
             interseptionKind: orphanEditDialog.interseptionKind,
             disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
             isAviationGroup: orphanEditDialog.isAviationGroup,
+            colorKey: updated.colorKey,
           };
         }),
       );
@@ -2256,6 +2268,7 @@ function AdminDirectionsNeoPageBody() {
             interseptionKind: orphanEditDialog.interseptionKind,
             disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
             isAviationGroup: orphanEditDialog.isAviationGroup,
+            colorKey: updated.colorKey,
           };
         }),
       );
@@ -2340,6 +2353,7 @@ function AdminDirectionsNeoPageBody() {
             next.set(response.groupMasterKey, {
               masterKey: response.groupMasterKey,
               name: response.groupName,
+              colorKey: response.zoneDatasourceGroup.colorKey,
               ignoreOperativny: false,
               interseptionKind: assignDialog.interseptionKind,
               disableNetworkAssignment: assignDialog.disableNetworkAssignment,
@@ -2516,6 +2530,13 @@ function AdminDirectionsNeoPageBody() {
         <DialogContent className="space-y-4">
           {editDialog?.error ? <PowerAlert severity="error">{editDialog.error}</PowerAlert> : null}
           <div className="text-sm text-muted-foreground">Група: {editDialog?.groupName}</div>
+          {editDialog ? (
+            <GroupColorPicker
+              value={editDialog.colorKey}
+              disabled={editDialog.isSaving}
+              onChange={(colorKey) => setEditDialog({ ...editDialog, colorKey })}
+            />
+          ) : null}
           <FormControlLabel
             control={
               <Switch
@@ -2700,6 +2721,13 @@ function AdminDirectionsNeoPageBody() {
             <PowerAlert severity="error">{orphanEditDialog.error}</PowerAlert>
           ) : null}
           <div className="text-sm text-muted-foreground">Група: {orphanEditDialog?.groupName}</div>
+          {orphanEditDialog ? (
+            <GroupColorPicker
+              value={orphanEditDialog.colorKey}
+              disabled={orphanEditDialog.isSaving}
+              onChange={(colorKey) => setOrphanEditDialog({ ...orphanEditDialog, colorKey })}
+            />
+          ) : null}
           {supportNonRerInterceptions ? (
             <InterseptionKindSelect
               value={orphanEditDialog?.interseptionKind ?? 'rer'}

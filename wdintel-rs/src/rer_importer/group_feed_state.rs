@@ -1,5 +1,7 @@
 use crate::error::AppError;
-use crate::messenger::group::get_identity_sigint_groups;
+use crate::messenger::group::{
+    get_identity_sigint_groups, types::SignalGroupColor,
+};
 use crate::types::*;
 use crate::users::{ensure_base_role_by_id, login_id_from_identity};
 use actix_identity::Identity;
@@ -38,6 +40,7 @@ pub struct GroupFeedState {
     pub oldest_unread_message_ref: Option<String>,
     pub last_activity_at: Option<i64>,
     pub latest_cursor: Option<GroupFeedCursorDto>,
+    pub color_key: SignalGroupColor,
 }
 
 #[derive(
@@ -70,6 +73,7 @@ pub struct GroupFeedStateRecord {
     pub oldest_unread_message_ref: Option<Uuid>,
     pub last_activity_cursor: Option<GroupFeedCursor>,
     pub last_read_cursor: Option<GroupFeedCursor>,
+    pub color_key: SignalGroupColor,
 }
 
 #[derive(FromQueryResult)]
@@ -83,6 +87,7 @@ struct GroupFeedStateRow {
     last_activity_message_id: Option<i64>,
     last_read_created_at: Option<NaiveDateTime>,
     last_read_message_id: Option<i64>,
+    color_key: Option<String>,
 }
 
 impl GroupFeedStateRow {
@@ -101,6 +106,10 @@ impl GroupFeedStateRow {
                 self.last_read_created_at,
                 self.last_read_message_id,
             ),
+            color_key: SignalGroupColor::from_optional_db_value(
+                self.color_key.as_deref(),
+            )
+            .unwrap_or(SignalGroupColor::BlueGrey),
         }
     }
 }
@@ -216,6 +225,7 @@ select
     signal_group.master_key as group_master_key,
     signal_group.name as group_name,
     signal_group.ignore_operativny,
+    signal_group.color_key,
     count(messages.id) filter (
         where read_state.last_read_created_at is null
             or (messages.created_at, messages.id) > (
@@ -254,6 +264,7 @@ group by
     signal_group.master_key,
     signal_group.name,
     signal_group.ignore_operativny,
+    signal_group.color_key,
     read_state.last_read_created_at,
     read_state.last_read_message_id
 order by
@@ -483,6 +494,7 @@ fn record_to_dto(record: GroupFeedStateRecord) -> GroupFeedState {
             .as_ref()
             .map(|cursor| cursor.created_at.and_utc().timestamp_millis()),
         latest_cursor: record.last_activity_cursor.map(cursor_to_dto),
+        color_key: record.color_key,
     }
 }
 
@@ -573,6 +585,29 @@ mod tests {
         .await
         .unwrap();
         message
+    }
+
+    #[tokio::test]
+    async fn group_feed_state_returns_persisted_color() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        crate::messenger::group::set_signal_group_color(
+            &env.dbx,
+            &group.master_key,
+            SignalGroupColor::Cyan,
+        )
+        .await
+        .unwrap();
+
+        let state = list_group_feed_states(&env.dbx, login.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|state| state.group_master_key == group.master_key)
+            .unwrap();
+
+        assert_eq!(state.color_key, SignalGroupColor::Cyan);
     }
 
     #[tokio::test]

@@ -4,6 +4,96 @@ use crate::types::*;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::ser::SerializeStruct;
 
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SignalGroupColor {
+    Red,
+    Pink,
+    Purple,
+    DeepPurple,
+    Indigo,
+    Blue,
+    LightBlue,
+    Cyan,
+    Teal,
+    Green,
+    LightGreen,
+    Lime,
+    Amber,
+    Orange,
+    DeepOrange,
+    BlueGrey,
+}
+
+impl SignalGroupColor {
+    pub const ALL: [Self; 16] = [
+        Self::Red,
+        Self::Pink,
+        Self::Purple,
+        Self::DeepPurple,
+        Self::Indigo,
+        Self::Blue,
+        Self::LightBlue,
+        Self::Cyan,
+        Self::Teal,
+        Self::Green,
+        Self::LightGreen,
+        Self::Lime,
+        Self::Amber,
+        Self::Orange,
+        Self::DeepOrange,
+        Self::BlueGrey,
+    ];
+
+    pub const fn as_db_value(self) -> &'static str {
+        match self {
+            Self::Red => "red",
+            Self::Pink => "pink",
+            Self::Purple => "purple",
+            Self::DeepPurple => "deep_purple",
+            Self::Indigo => "indigo",
+            Self::Blue => "blue",
+            Self::LightBlue => "light_blue",
+            Self::Cyan => "cyan",
+            Self::Teal => "teal",
+            Self::Green => "green",
+            Self::LightGreen => "light_green",
+            Self::Lime => "lime",
+            Self::Amber => "amber",
+            Self::Orange => "orange",
+            Self::DeepOrange => "deep_orange",
+            Self::BlueGrey => "blue_grey",
+        }
+    }
+
+    pub fn from_db_value(value: &str) -> anyhow::Result<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|color| color.as_db_value() == value)
+            .ok_or_else(|| {
+                anyhow::anyhow!("unknown signal group color: {value}")
+            })
+    }
+
+    pub fn from_optional_db_value(value: Option<&str>) -> anyhow::Result<Self> {
+        match value {
+            Some(value) => Self::from_db_value(value),
+            None => Ok(Self::BlueGrey),
+        }
+    }
+}
+
 /// Запис групи, яка не прив'язана до жодного напрямку
 #[derive(Elm, ElmEncode, ElmDecode, Debug, Deserialize, PartialEq, Clone)]
 pub struct OrphanSignalGroupEntry {
@@ -24,6 +114,7 @@ pub struct OrphanSignalGroupEntry {
     pub group_stats: SignalGroupStats,
     pub group_admin_data: Option<GroupAdminData>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
+    pub color_key: SignalGroupColor,
 }
 
 #[derive(Debug, Deserialize, Elm, ElmEncode, ElmDecode, PartialEq, Clone)]
@@ -37,6 +128,7 @@ pub struct SignalGroupEntry {
     pub group_stats: SignalGroupStats,
     pub admin_data: Option<GroupAdminData>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
+    pub color_key: SignalGroupColor,
 }
 
 impl Serialize for OrphanSignalGroupEntry {
@@ -45,7 +137,7 @@ impl Serialize for OrphanSignalGroupEntry {
         S: serde::Serializer,
     {
         let mut state =
-            serializer.serialize_struct("OrphanSignalGroupEntry", 14)?;
+            serializer.serialize_struct("OrphanSignalGroupEntry", 15)?;
         state.serialize_field("master_key", &self.master_key)?;
         state.serialize_field("name", &self.name)?;
         state.serialize_field("ignore_operativny", &self.ignore_operativny)?;
@@ -72,6 +164,7 @@ impl Serialize for OrphanSignalGroupEntry {
             "areas_of_responsibility",
             &self.areas_of_responsibility,
         )?;
+        state.serialize_field("color_key", &self.color_key)?;
         state.end()
     }
 }
@@ -81,7 +174,7 @@ impl Serialize for SignalGroupEntry {
     where
         S: serde::Serializer,
     {
-        let mut state = serializer.serialize_struct("SignalGroupEntry", 11)?;
+        let mut state = serializer.serialize_struct("SignalGroupEntry", 12)?;
         state.serialize_field("master_key", &self.master_key)?;
         state.serialize_field("name", &self.name)?;
         state.serialize_field("ignore_operativny", &self.ignore_operativny)?;
@@ -105,6 +198,7 @@ impl Serialize for SignalGroupEntry {
             "areas_of_responsibility",
             &self.areas_of_responsibility,
         )?;
+        state.serialize_field("color_key", &self.color_key)?;
         state.end()
     }
 }
@@ -199,6 +293,20 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn signal_group_color_serializes_as_snake_case() {
+        assert_eq!(
+            serde_json::to_value(SignalGroupColor::DeepPurple).unwrap(),
+            json!("deep_purple")
+        );
+    }
+
+    #[test]
+    fn signal_group_color_rejects_unknown_json() {
+        assert!(serde_json::from_value::<SignalGroupColor>(json!("unknown"))
+            .is_err());
+    }
+
+    #[test]
     fn signal_group_entry_serializes_legacy_aliases() {
         let signal_group = SignalGroupEntry {
             master_key: "group.1".to_string(),
@@ -210,6 +318,7 @@ mod tests {
             group_stats: SignalGroupStats::default(),
             admin_data: None,
             areas_of_responsibility: None,
+            color_key: SignalGroupColor::Blue,
         };
 
         let json = serde_json::to_value(signal_group).unwrap();
@@ -235,6 +344,7 @@ mod tests {
             group_stats: SignalGroupStats::default(),
             group_admin_data: None,
             areas_of_responsibility: None,
+            color_key: SignalGroupColor::Blue,
         };
 
         let json = serde_json::to_value(signal_group).unwrap();

@@ -13,6 +13,7 @@ import { useGroupFeedNavigation } from '../useGroupFeedNavigation';
 const serverGroup: GroupFeedState = {
   masterKey: 'g-1',
   name: 'Група 1',
+  colorKey: 'blue',
   ignoreOperativny: false,
   unreadCount: 4,
   oldestUnreadMessageRef: null,

@@ -23,6 +23,7 @@ describe('group feed state API', () => {
                   created_at: 1_760_000_000_000,
                   message_id: 42,
                 },
+                color_key: 'cyan',
               },
               {
                 master_key: 'group-2',
@@ -32,6 +33,7 @@ describe('group feed state API', () => {
                 oldest_unread_message_ref: null,
                 last_activity_at: null,
                 latest_cursor: null,
+                color_key: 'orange',
               },
             ],
           }),
@@ -46,11 +48,13 @@ describe('group feed state API', () => {
         unreadCount: 2,
         oldestUnreadMessageRef: '018f1234-1234-7000-8000-123456789abc',
         latestCursor: { createdAt: 1_760_000_000_000, messageId: 42 },
+        colorKey: 'cyan',
       }),
       expect.objectContaining({
         masterKey: 'group-2',
         oldestUnreadMessageRef: null,
         latestCursor: null,
+        colorKey: 'orange',
       }),
     ]);
   });
@@ -69,6 +73,7 @@ describe('group feed state API', () => {
             oldest_unread_message_ref: null,
             last_activity_at: 1_760_000_000_000,
             latest_cursor: { created_at: 1_760_000_000_000, message_id: 42 },
+            color_key: 'cyan',
           }),
           { status: 200 },
         ),

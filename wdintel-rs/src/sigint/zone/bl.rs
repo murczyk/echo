@@ -1,5 +1,8 @@
 use crate::entities::sea_orm_active_enums as db_enums;
 use crate::entities::*;
+use crate::messenger::group::{
+    set_signal_group_color, types::SignalGroupColor,
+};
 use crate::sigint::types::{InterseptionKind, SignalGroupLogin};
 use crate::sigint::zone::ZoneDatasourceGroup;
 use crate::types::*;
@@ -21,6 +24,7 @@ pub struct BlSzdGroupUpdateRes {
     pub admin_login_details: Vec<SignalGroupLogin>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
+    pub color_key: SignalGroupColor,
 }
 
 pub async fn bl_szd_group_update(
@@ -28,6 +32,10 @@ pub async fn bl_szd_group_update(
     szd: &sigint_zone_datasource::Model,
     txn: &DatabaseTransaction,
 ) -> Result<BlSzdGroupUpdateRes, AppError> {
+    let color_key =
+        set_signal_group_color(txn, &szd.group_master_key, req.color_key)
+            .await
+            .c(h!())?;
     bl_zones_datasources_group_update_or_add(
         req.user_logins.clone(),
         req.organism_ids.clone(),
@@ -162,6 +170,7 @@ pub async fn bl_szd_group_update(
         admin_logins,
         short_note,
         long_note,
+        color_key,
     };
     Ok(res)
 }
@@ -985,6 +994,7 @@ pub async fn bl_szd_groups_list(
         is_aviation_group: Option<bool>,
         short_note: Option<String>,
         long_note: Option<String>,
+        color_key: Option<String>,
     }
 
     let rows = sigint_zone_datasource::Entity::find()
@@ -1012,6 +1022,7 @@ pub async fn bl_szd_groups_list(
             "disable_network_assignment",
         )
         .column_as(signal_group::Column::IsAviationGroup, "is_aviation_group")
+        .column_as(signal_group::Column::ColorKey, "color_key")
         .column(group_admin_data::Column::ShortNote)
         .column(group_admin_data::Column::LongNote)
         .filter(datasource::Column::Deleted.eq(false))
@@ -1034,6 +1045,7 @@ pub async fn bl_szd_groups_list(
             i64,
             Option<String>,
             Option<String>,
+            Option<String>,
         ),
     >::new();
     for row in rows {
@@ -1045,6 +1057,7 @@ pub async fn bl_szd_groups_list(
             row.id,
             row.short_note,
             row.long_note,
+            row.color_key,
         ));
     }
 
@@ -1086,6 +1099,7 @@ pub async fn bl_szd_groups_list(
                     szd_id,
                     short_note,
                     long_note,
+                    color_key,
                 ),
             )| {
                 let aors = group_aors.get(&master_key).cloned();
@@ -1125,6 +1139,10 @@ pub async fn bl_szd_groups_list(
                     group_master_key: master_key,
                     short_note,
                     long_note,
+                    color_key: SignalGroupColor::from_optional_db_value(
+                        color_key.as_deref(),
+                    )
+                    .unwrap_or(SignalGroupColor::BlueGrey),
                 }
             },
         )

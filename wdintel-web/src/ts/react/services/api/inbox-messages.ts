@@ -16,6 +16,7 @@ import type {
   MessageMediaInfo,
   MessageIdsRsp,
   SignalGroupEntry,
+  SignalGroupColor,
   SignalGroupStats,
   SignalProfilesRsp,
 } from '../../../../Bindings';
@@ -359,6 +360,7 @@ function normalizeSignalGroupEntry(
   return {
     masterKey: (g.masterKey ?? g.master_key ?? '') as string,
     name: (g.name ?? '') as string,
+    colorKey: (raw.colorKey ?? raw.color_key ?? '') as SignalGroupColor,
     ignoreOperativny: (raw.ignoreOperativny ?? raw.ignore_operativny ?? false) as boolean,
     interseptionKind: normalizeInterseptionKind(raw),
     disableNetworkAssignment: (raw.disableNetworkAssignment ??

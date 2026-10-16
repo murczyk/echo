@@ -13,6 +13,7 @@ import {
   OrphanSignalGroupEntry,
   SigintZone,
   SignalGroupArchiveReq,
+  SignalGroupColor,
   SignalGroupEntry,
   SignalGroupStats,
   SignalGroupStatsTimelineReq,
@@ -90,6 +91,8 @@ type SignalGroupEntryLike = {
   admin_data?: GroupAdminDataLike | null;
   areasOfResponsibility?: AreaOfResponsibilityLike[] | null;
   areas_of_responsibility?: AreaOfResponsibilityLike[] | null;
+  colorKey?: SignalGroupColor | string;
+  color_key?: SignalGroupColor | string;
 };
 
 type OrphanSignalGroupEntryLike = {
@@ -118,6 +121,8 @@ type OrphanSignalGroupEntryLike = {
   group_admin_data?: GroupAdminDataLike | null;
   areasOfResponsibility?: AreaOfResponsibilityLike[] | null;
   areas_of_responsibility?: AreaOfResponsibilityLike[] | null;
+  colorKey?: SignalGroupColor | string;
+  color_key?: SignalGroupColor | string;
 };
 
 type AreaOfResponsibilityLike = {
@@ -177,6 +182,8 @@ type ZoneDatasourceGroupLike = {
   long_note?: string | null;
   areasOfResponsibility?: AreaOfResponsibilityLike[] | null;
   areas_of_responsibility?: AreaOfResponsibilityLike[] | null;
+  colorKey?: SignalGroupColor | string;
+  color_key?: SignalGroupColor | string;
 };
 
 type ZoneDatasourceGroupListRspLike = {
@@ -269,6 +276,7 @@ type ZoneDatasourceGroupAddReqBody = {
 
 type ZoneDatasourceGroupUpdateReqBody = {
   id: number;
+  color_key: SignalGroupColor;
   is_secret: boolean;
   interseption_kind: InterseptionKind | null;
   disable_network_assignment: boolean | null;
@@ -403,6 +411,7 @@ function normalizeSignalGroupEntry(raw: SignalGroupEntryLike): SignalGroupEntry 
     adminData: normalizeGroupAdminData(raw.adminData ?? raw.admin_data),
     areasOfResponsibility:
       (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
+    colorKey: (raw.colorKey ?? raw.color_key ?? '') as SignalGroupColor,
   };
 }
 
@@ -422,6 +431,7 @@ function normalizeOrphanSignalGroupEntry(raw: OrphanSignalGroupEntryLike): Orpha
     groupAdminData: normalizeGroupAdminData(raw.groupAdminData ?? raw.group_admin_data),
     areasOfResponsibility:
       (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
+    colorKey: (raw.colorKey ?? raw.color_key ?? '') as SignalGroupColor,
   };
 }
 
@@ -449,6 +459,7 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     longNote: raw.longNote ?? raw.long_note ?? null,
     areasOfResponsibility:
       (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
+    colorKey: (raw.colorKey ?? raw.color_key ?? '') as SignalGroupColor,
   };
 }
 
@@ -539,6 +550,7 @@ function toZoneDatasourceGroupUpdateReqBody(
 ): ZoneDatasourceGroupUpdateReqBody {
   return {
     id: req.id,
+    color_key: req.colorKey,
     is_secret: req.isSecret,
     interseption_kind: req.interseptionKind ?? null,
     disable_network_assignment: req.disableNetworkAssignment ?? null,

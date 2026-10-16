@@ -16,7 +16,12 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-alter table signal_group add column color_key text;
+alter table signal_group add column color_key text check (color_key is null or color_key in (
+    'red', 'pink', 'purple', 'deep_purple',
+    'indigo', 'blue', 'light_blue', 'cyan',
+    'teal', 'green', 'light_green', 'lime',
+    'amber', 'orange', 'deep_orange', 'blue_grey'
+));
 
 update signal_group
 set color_key = (array[
@@ -24,22 +29,26 @@ set color_key = (array[
     'indigo', 'blue', 'light_blue', 'cyan',
     'teal', 'green', 'light_green', 'lime',
     'amber', 'orange', 'deep_orange', 'blue_grey'
-])[1 + ((('x' || substr(md5(master_key), 1, 8))::bit(32)::bigint) % 16)];
+])[1 + ((('x' || substr(md5(master_key), 1, 8))::bit(32)::bigint) % 16)]
+where color_key is null;
 
-alter table signal_group
-    add constraint signal_group_color_key_check check (color_key in (
+create function signal_group_set_color_key() returns trigger as $$
+begin
+    if new.color_key is null then
+        new.color_key := (array[
         'red', 'pink', 'purple', 'deep_purple',
         'indigo', 'blue', 'light_blue', 'cyan',
         'teal', 'green', 'light_green', 'lime',
         'amber', 'orange', 'deep_orange', 'blue_grey'
-    )),
-    alter column color_key set default (array[
-        'red', 'pink', 'purple', 'deep_purple',
-        'indigo', 'blue', 'light_blue', 'cyan',
-        'teal', 'green', 'light_green', 'lime',
-        'amber', 'orange', 'deep_orange', 'blue_grey'
-    ])[1 + floor(random() * 16)::integer],
-    alter column color_key set not null;
+        ])[1 + floor(random() * 16)::integer];
+    end if;
+    return new;
+end;
+$$ language plpgsql;
+
+create trigger signal_group_set_color_key
+before insert or update of color_key on signal_group
+for each row execute function signal_group_set_color_key();
                 "#,
             )
             .await
@@ -51,7 +60,11 @@ alter table signal_group
         manager
             .get_connection()
             .execute_unprepared(
-                "alter table signal_group drop column color_key;",
+                r#"
+drop trigger signal_group_set_color_key on signal_group;
+drop function signal_group_set_color_key();
+alter table signal_group drop column color_key;
+                "#,
             )
             .await
             .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;

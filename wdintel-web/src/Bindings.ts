@@ -712,6 +712,7 @@ export type GroupFeedState = {
   oldestUnreadMessageRef: string | null;
   lastActivityAt: number | null;
   latestCursor: GroupFeedCursorDto | null;
+  colorKey: SignalGroupColor;
 };
 
 export type GroupFeedStatesRsp = {
@@ -731,6 +732,25 @@ export type SignalGroupStats = {
   activityLastDay: number;
   activityLastWeek: number;
 };
+
+export type SignalGroupColor =
+  | 'red'
+  | 'pink'
+  | 'purple'
+  | 'deep_purple'
+  | 'indigo'
+  | 'blue'
+  | 'light_blue'
+  | 'cyan'
+  | 'teal'
+  | 'green'
+  | 'light_green'
+  | 'lime'
+  | 'amber'
+  | 'orange'
+  | 'deep_orange'
+  | 'blue_grey'
+;
 
 export type SignalGroupStatsTimelineReq = {
   masterKeys: Array<string>;
@@ -782,6 +802,7 @@ export type SignalGroupEntry = {
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
+  colorKey: SignalGroupColor;
 };
 
 export type OrphanSignalGroupEntry = {
@@ -797,6 +818,7 @@ export type OrphanSignalGroupEntry = {
   groupStats: SignalGroupStats;
   groupAdminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
+  colorKey: SignalGroupColor;
 };
 
 export type SignalProfileEntry = {
@@ -3151,6 +3173,7 @@ export type ZoneDatasourceGroup = {
   shortNote: string | null;
   longNote: string | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
+  colorKey: SignalGroupColor;
 };
 
 export type ZoneDatasourceGroupsReq = {
@@ -3177,6 +3200,7 @@ export type ZoneDatasourceGroupAddReq = {
 
 export type ZoneDatasourceGroupUpdateReq = {
   id: number;
+  colorKey: SignalGroupColor;
   isSecret: boolean;
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
@@ -7157,6 +7181,7 @@ export type LinkEchoOperatorReq = {
 
 export type GroupUpdateReq = {
   masterKey: string;
+  colorKey: SignalGroupColor;
   shortNote: string | null;
   longNote: string | null;
   areaOfResponsibilityId: number | null;
@@ -7175,6 +7200,7 @@ export type GroupEntryF1 = {
   longNote: string | null;
   groupStats: SignalGroupStats;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
+  colorKey: SignalGroupColor;
 };
 
 export type GroupAdminData = {

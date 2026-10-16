@@ -331,6 +331,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           kind: 'group',
           masterKey: groupNavigation.scope.masterKey,
           name: groupNavigation.groupName,
+          colorKey: 'blue_grey',
           ignoreOperativny: false,
           unreadCount: 0,
           oldestUnreadMessageRef: null,

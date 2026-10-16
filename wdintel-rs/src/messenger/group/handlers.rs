@@ -130,6 +130,10 @@ async fn collect_orphan_signal_groups(
                 group_stats: stats,
                 group_admin_data,
                 areas_of_responsibility: aors,
+                color_key: SignalGroupColor::from_optional_db_value(
+                    g.color_key.as_deref(),
+                )
+                .unwrap_or(SignalGroupColor::BlueGrey),
             })
         })
         .collect();

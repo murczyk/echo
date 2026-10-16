@@ -100,6 +100,7 @@ export function useGroupFeedNavigation({
           kind: 'group' as const,
           masterKey: scope.masterKey,
           name: scope.masterKey,
+          colorKey: 'blue_grey',
           ignoreOperativny: false,
           unreadCount: 0,
           oldestUnreadMessageRef: null,
