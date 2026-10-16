@@ -135,10 +135,17 @@ pub(crate) async fn submit_attachments(
     staged
         .finalize_after_commit(&env.config, &env.s3, &env.dbx)
         .await;
+    // The attachments are stored; a failed notification is logged instead
+    // of failing the request, same as for messages.
     let mut redis = env.redis.clone();
-    crate::inbox::fanout_inbox_changes(&mut redis, vec![signal_message_id])
-        .await
-        .c(h!())?;
+    if let Err(error) =
+        crate::inbox::fanout_inbox_changes(&mut redis, vec![signal_message_id])
+            .await
+    {
+        log::error!(
+            "failed to fanout ingested attachments after commit: {error:?}"
+        );
+    }
     Ok(results(&req.attachments, &existing, &created))
 }
 

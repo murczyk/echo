@@ -81,9 +81,17 @@ pub(crate) async fn submit_messages(
         );
     }
     txn.commit().await.c(h!())?;
-    crate::inbox::fanout_inbox_changes(&mut redis, changed_inbox_item_ids)
-        .await
-        .c(h!())?;
+    // The messages are stored: a failed notification must not turn the
+    // response into an error, or the collector would retry and get the
+    // messages back as `existing` without any fanout at all.
+    if let Err(error) =
+        crate::inbox::fanout_inbox_changes(&mut redis, changed_inbox_item_ids)
+            .await
+    {
+        log::error!(
+            "failed to fanout ingested messages after commit: {error:?}"
+        );
+    }
     Ok(MessengerIngestMessagesSubmitRsp { results })
 }
 

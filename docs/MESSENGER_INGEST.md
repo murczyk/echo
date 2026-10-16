@@ -367,7 +367,9 @@ Semantics:
 
 - `created`: Echo mints the uuid. The collector maps it back to its own record
   through `external_id` in the returned item. Creating an `external_id` that
-  was previously deleted restores that account with its original uuid.
+  was previously deleted restores that account with its original uuid; its
+  `messenger_type` and Telegram `user_id` must match the stored account
+  (`400`), so a restore never moves an account's history to another identity.
 - Creating an `external_id` that is already live applies the item as a full
   update of that account and returns it under `created` with its existing
   uuid. Its `messenger_type` and Telegram `user_id` must match the stored
@@ -511,7 +513,8 @@ Semantics:
   is a `404`.
 - `created`: Echo mints the uuid; the collector maps it back through
   `external_id`. Creating an `external_id` that was previously deleted under
-  the same account restores that chat with its original uuid. Creating a
+  the same account restores that chat with its original uuid; its Telegram
+  `chat_id` must match the stored chat (`400`). Creating a
   live `external_id` applies the item as a full update and returns it under
   `created` with its existing uuid; its Telegram `chat_id` must match the
   stored chat (`400` otherwise). One `external_id` may appear only once in
@@ -671,7 +674,8 @@ Semantics:
   mismatching reference, or a deleted chat, is a `404`.
 - `created`: Echo mints the uuid. Creating an `external_id` that was
   previously deleted in the same chat restores that member with its original
-  uuid. Creating a live one applies the item as a full update and returns it
+  uuid; its Telegram `user_id` must match the stored member (`400`). Creating
+  a live one applies the item as a full update and returns it
   under `created` with its existing uuid; its Telegram `user_id` must match
   the stored member (`400` otherwise). One `external_id` may appear only once
   in `created` (`400`).

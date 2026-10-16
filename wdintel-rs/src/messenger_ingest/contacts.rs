@@ -104,7 +104,9 @@ pub(crate) async fn create_or_restore_contact(
             set_contact_fields(&mut contact, item, telegram_user_id, now);
             Ok(contact.update(txn).await.c(h!())?)
         }
+        // A restore keeps the stored Telegram user id.
         Some(contact) => {
+            ensure_same_telegram_user_id(&contact, telegram_user_id).c(h!())?;
             ensure_telegram_user_id_free(
                 txn,
                 account.id,
@@ -442,6 +444,17 @@ mod tests {
             find_contact_by_id(&txn, account.id, contact.id).await,
             Err(AppError::NotFound)
         ));
+
+        // A restore cannot move the contact to another Telegram user.
+        let error = create_or_restore_contact(
+            &txn,
+            &account,
+            &contact_input("u-1", Some("6011122299")),
+            now,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, AppError::BL { .. }));
 
         let restored = create_or_restore_contact(
             &txn,

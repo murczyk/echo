@@ -100,7 +100,10 @@ pub(crate) async fn create_or_restore_chat(
             set_chat_fields(&mut chat, item, telegram_chat_id, now).c(h!())?;
             Ok(chat.update(txn).await.c(h!())?)
         }
+        // A restore keeps the stored Telegram chat id, so the chat's
+        // history never moves to another chat.
         Some(chat) => {
+            ensure_same_telegram_chat_id(&chat, telegram_chat_id).c(h!())?;
             ensure_telegram_chat_id_free(
                 txn,
                 account.id,
@@ -426,6 +429,17 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(deleted_again, None);
+
+        // A restore cannot move the chat to another Telegram chat.
+        let error = create_or_restore_chat(
+            &txn,
+            &account,
+            &chat_input("chat-1", Some("-1099")),
+            now,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, AppError::BL { .. }));
 
         let restored = create_or_restore_chat(
             &txn,

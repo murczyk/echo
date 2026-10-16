@@ -111,7 +111,10 @@ pub(crate) async fn create_or_restore_chat_member(
                 .c(h!())?;
             Ok(member.update(txn).await.c(h!())?)
         }
+        // A restore keeps the stored Telegram user id, so the messages the
+        // member sent never move to another person.
         Some(member) => {
+            ensure_same_telegram_user_id(&member, telegram_user_id).c(h!())?;
             ensure_telegram_user_id_free(
                 txn,
                 chat.id,
@@ -490,6 +493,18 @@ mod tests {
             resolve_chat_member_ref(&txn, &chat, &member_ref(&member)).await,
             Err(AppError::NotFound)
         ));
+
+        // A restore cannot move the member to another Telegram user.
+        let error = create_or_restore_chat_member(
+            &txn,
+            &account,
+            &chat,
+            &member_input("u-1", Some("6011122299")),
+            now,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, AppError::BL { .. }));
 
         let restored = create_or_restore_chat_member(
             &txn,

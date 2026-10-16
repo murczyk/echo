@@ -127,17 +127,19 @@ pub(crate) async fn create_or_restore_account(
     // The unique (datasource_id, external_id) constraint spans deleted
     // rows, so a create for a previously deleted external id restores it.
     // A create for a live external id is applied as a full update, so a
-    // collector that lost the response can resend it and learn the uuid;
-    // its messenger ids must still match.
+    // collector that lost the response can resend it and learn the uuid.
+    // Either way the messenger ids must match the stored account: a
+    // restore never moves the account's history to another identity.
     let existing =
         find_scoped_account_by_external_id(txn, scope, &item.external_id)
             .await
             .c(h!())?;
     if let Some(account) = existing {
-        if !account.deleted {
-            ensure_same_messenger_type(&account, item).c(h!())?;
-            ensure_same_telegram_user_id(&account, user_id).c(h!())?;
-        } else {
+        ensure_same_messenger_type(&account, item).c(h!())?;
+        ensure_same_telegram_user_id(&account, user_id).c(h!())?;
+        if account.deleted {
+            // The Telegram id index covers live rows only, so another
+            // account may have taken the id while this one was deleted.
             ensure_telegram_user_id_free(txn, scope, user_id)
                 .await
                 .c(h!())?;
@@ -640,6 +642,19 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(datasource_group.deleted);
+
+        // A restore cannot move the account to another Telegram user.
+        let error = create_or_restore_account(
+            &scope,
+            &account_input("collector-account-1", "700099"),
+            now,
+            &txn,
+        )
+        .await
+        .unwrap_err()
+        .downcast::<AppError>()
+        .unwrap();
+        assert!(matches!(error, AppError::BL { .. }));
 
         // Re-creating the same external id restores the account.
         let restored = create_or_restore_account(
