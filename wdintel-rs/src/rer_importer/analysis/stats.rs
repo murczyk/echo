@@ -238,8 +238,19 @@ pub(in crate::rer_importer) async fn resolve_analytics_tag_access(
 pub(super) async fn resolve_analytics_message_id_scope(
     req: &AnalysisStatsReq,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     freshness_max_age_ms: u64,
+    groups: &[String],
 ) -> Result<AnalyticsMessageIdScope, AppError> {
+    ensure_analytics_search_coverage(
+        source_db,
+        db,
+        req,
+        groups,
+        freshness_max_age_ms,
+    )
+    .await
+    .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -447,13 +458,11 @@ async fn resolve_analytics_frequency_scopes(
     db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<AnalyticsFrequencyScopes, AppError> {
-    const COMPARISON_PERIOD_DAYS: u8 = 10;
-
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let comparison_period_start = dt_since
-        - Duration::try_days(COMPARISON_PERIOD_DAYS.into())
+        - Duration::try_days(ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS)
             .context(h!())
             .map_err(Into::<AppError>::into)?;
     let current = resolve_analytics_message_id_scope_for_range(
@@ -1140,7 +1149,13 @@ fn apply_group_stats_filters(
     )
     .context(h!())?;
     let query = apply_metadata_filters(query, req)?;
-    let query = filter_search(query, &req.search).context(h!())?;
+    let query = filter_search_with_correlated_terms(
+        query,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .context(h!())?;
     let query =
         filter_selected_device_names(query, &req.selected_device_names)?;
     let query =
@@ -1545,9 +1560,15 @@ pub(super) async fn fetch_senders_raw_with_db(
     freshness_max_age_ms: u64,
 ) -> Result<Vec<AnalysisStatsSender>, AppError> {
     let login_value = login_id_from_identity(user)?;
-    let scope =
-        resolve_analytics_message_id_scope(&req.0, db, freshness_max_age_ms)
-            .await?;
+    let scope = resolve_analytics_message_id_scope(
+        &req.0,
+        db,
+        &env.dbx,
+        freshness_max_age_ms,
+        &master_keys,
+    )
+    .await
+    .c(h!())?;
     if scope.is_empty() {
         return Ok(Vec::new());
     }
@@ -1591,6 +1612,29 @@ async fn fetch_senders_for_login_with_db(
         count: i64,
     }
 
+    let tag_access = if req
+        .selected_tags
+        .as_ref()
+        .is_some_and(|tags| !tags.is_empty())
+        || req
+            .denied_tags
+            .as_ref()
+            .is_some_and(|tags| !tags.is_empty())
+        || req.tag_presence.is_some()
+        || req.report_tags_only_this_unit == Some(true)
+    {
+        Some(
+            resolve_analytics_tag_access(
+                &env.dbx,
+                login_str,
+                req.report_tags_only_this_unit.unwrap_or(false),
+            )
+            .await
+            .context(h!())?,
+        )
+    } else {
+        None
+    };
     let instant = std::time::Instant::now();
     let breakdown_query = build_sender_breakdown_query(
         req,
@@ -1600,7 +1644,9 @@ async fn fetch_senders_for_login_with_db(
         master_keys,
         scope,
         units.as_ref(),
-    )?;
+        tag_access.as_ref(),
+    )
+    .context(h!())?;
     let breakdown_rows: Vec<SenderBreakdownRes> = breakdown_query
         .into_model::<SenderBreakdownRes>()
         .all(db)
@@ -1681,6 +1727,7 @@ pub(super) fn build_sender_breakdown_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
+    tag_access: Option<&AnalyticsTagAccess>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req =
         Json(request_without_facet_filter(&req.0, AnalysisFacet::Senders));
@@ -1733,7 +1780,9 @@ pub(super) fn build_sender_breakdown_query(
         scope,
         units,
         true,
-    )?;
+        tag_access,
+    )
+    .context(h!())?;
     Ok(breakdown_query)
 }
 
@@ -1876,7 +1925,13 @@ fn build_senders_filtered_query(
     )
     .context(h!())?;
     let senders_res = apply_metadata_filters(senders_res, &req.0)?;
-    let senders_res = filter_search(senders_res, &req.search).context(h!())?;
+    let senders_res = filter_search_with_correlated_terms(
+        senders_res,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .context(h!())?;
     let senders_res =
         filter_selected_device_names(senders_res, &req.selected_device_names)?;
     filter_selected_aors_for_scope(senders_res, &req.selected_aors, scope)
@@ -1939,6 +1994,7 @@ fn apply_sender_filters_for_login<E>(
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
     group_access_already_filtered: bool,
+    tag_access: Option<&AnalyticsTagAccess>,
 ) -> Result<Select<E>, AppError>
 where
     E: EntityTrait,
@@ -1990,7 +2046,7 @@ where
     .context(h!())?;
     let query = filter_selected_callsigns(query, &req.selected_callsigns)
         .context(h!())?;
-    let query = filter_selected_tags_with_scope(
+    let query = filter_selected_tags_with_access(
         query,
         &req.selected_tags,
         &req.denied_tags,
@@ -2002,8 +2058,15 @@ where
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        login_str,
         req.report_tags_only_this_unit.unwrap_or(false),
+        match tag_access {
+            Some(access) => TagFilterAccess::Resolved {
+                user_id: login_str,
+                accessible_tag_ids: &access.accessible_tag_ids,
+                unit_login_ids: &access.unit_login_ids,
+            },
+            None => TagFilterAccess::Unresolved { user_id: login_str },
+        },
         scope,
     )
     .context(h!())?;
@@ -2016,7 +2079,13 @@ where
     )
     .context(h!())?;
     let query = apply_metadata_filters(query, &req.0)?;
-    let query = filter_search(query, &req.search).context(h!())?;
+    let query = filter_search_with_correlated_terms(
+        query,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .context(h!())?;
     let query =
         filter_selected_device_names(query, &req.selected_device_names)?;
     let query =
@@ -2336,7 +2405,13 @@ fn build_posts_filtered_query(
     )
     .context(h!())?;
     let post_res = apply_metadata_filters(post_res, &req.0)?;
-    let post_res = filter_search(post_res, &req.search).context(h!())?;
+    let post_res = filter_search_with_correlated_terms(
+        post_res,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .context(h!())?;
     let post_res =
         filter_selected_device_names(post_res, &req.selected_device_names)?;
     let post_res =
@@ -2412,10 +2487,26 @@ pub(super) async fn fetch_freqs_raw_with_db(
     master_keys: Vec<String>,
     freshness_max_age_ms: u64,
 ) -> Result<Vec<AnalysisStatsFreq>, AppError> {
-    let login_value = login_id_from_identity(user)?;
+    let login_value = login_id_from_identity(user).c(h!())?;
+    let mut coverage_req = req.0.clone();
+    coverage_req.since_date_inclusive_ms =
+        (dt_from_millis(req.since_date_inclusive_ms).c(h!())?
+            - Duration::days(ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS))
+        .and_utc()
+        .timestamp_millis();
+    ensure_analytics_search_coverage(
+        source_db,
+        db,
+        &coverage_req,
+        &master_keys,
+        freshness_max_age_ms,
+    )
+    .await
+    .c(h!())?;
     let scopes =
         resolve_analytics_frequency_scopes(&req.0, db, freshness_max_age_ms)
-            .await?;
+            .await
+            .context(h!())?;
     if scopes.current.is_empty() {
         return Ok(Vec::new());
     }
@@ -2523,9 +2614,8 @@ fn build_new_freqs_query(
     dt_till: NaiveDateTime,
     analytics_scopes: Option<&AnalyticsFrequencyScopes>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    const COMPARISON_PERIOD_DAYS: u8 = 10;
     let comparison_period_start = dt_since
-        - Duration::try_days(COMPARISON_PERIOD_DAYS.into())
+        - Duration::try_days(ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS)
             .context(h!())
             .map_err(Into::<AppError>::into)?;
     if let Some(analytics_scopes) = analytics_scopes {
@@ -2784,7 +2874,13 @@ fn build_freqs_filtered_query(
     )
     .context(h!())?;
     let freqs_res = apply_metadata_filters(freqs_res, &req)?;
-    let freqs_res = filter_search(freqs_res, &req.search).context(h!())?;
+    let freqs_res = filter_search_with_correlated_terms(
+        freqs_res,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .context(h!())?;
     let freqs_res =
         filter_selected_device_names(freqs_res, &req.selected_device_names)?;
     let freqs_res =
@@ -3218,7 +3314,7 @@ fn build_metadata_messages_query_with_units(
     let messages_q =
         filter_stats_message_time_range(messages_q, req, dt_since, dt_till);
     let messages_q = apply_analytics_message_id_scope(messages_q, scope);
-    apply_sender_filters_for_login(
+    Ok(apply_sender_filters_for_login(
         messages_q,
         req,
         dt_since,
@@ -3228,7 +3324,9 @@ fn build_metadata_messages_query_with_units(
         scope,
         units,
         false,
+        None,
     )
+    .context(h!())?)
 }
 
 #[derive(FromQueryResult)]
@@ -4012,7 +4110,13 @@ fn build_callsigns_filtered_query(
     )
     .context(h!())?;
     let callsigns_res = apply_metadata_filters(callsigns_res, &req)?;
-    let callsigns_res = filter_search(callsigns_res, &req.search)?;
+    let callsigns_res = filter_search_with_correlated_terms(
+        callsigns_res,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .c(h!())?;
     let callsigns_res = filter_selected_device_names(
         callsigns_res,
         &req.selected_device_names,
@@ -4726,7 +4830,13 @@ fn build_tags_filtered_query_with_owner_condition(
     }
     .context(h!())?;
     let tags_res = apply_metadata_filters(tags_res, &req)?;
-    let tags_res = filter_search(tags_res, &req.search)?;
+    let tags_res = filter_search_with_correlated_terms(
+        tags_res,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .c(h!())?;
     let tags_res =
         filter_selected_device_names(tags_res, &req.selected_device_names)?;
     let tags_res =
@@ -5155,7 +5265,13 @@ fn build_units_filtered_query(
     )
     .context(h!())?;
     let units_res = apply_metadata_filters(units_res, &req.0)?;
-    let units_res = filter_search(units_res, &req.search).context(h!())?;
+    let units_res = filter_search_with_correlated_terms(
+        units_res,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .context(h!())?;
     let units_res =
         filter_selected_device_names(units_res, &req.selected_device_names)?;
     let units_res =
@@ -5486,8 +5602,13 @@ fn build_locations_filtered_query_for_login(
     )
     .context(h!())?;
     let locations_res = apply_metadata_filters(locations_res, &req)?;
-    let locations_res =
-        filter_search(locations_res, &req.search).context(h!())?;
+    let locations_res = filter_search_with_correlated_terms(
+        locations_res,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .context(h!())?;
     let locations_res = filter_selected_device_names(
         locations_res,
         &req.selected_device_names,
@@ -6133,7 +6254,13 @@ fn build_aor_messages_query(
         scope,
     )
     .context(h!())?;
-    let messages = filter_search(messages, &req.search).context(h!())?;
+    let messages = filter_search_with_correlated_terms(
+        messages,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .context(h!())?;
     let messages =
         filter_selected_device_names(messages, &req.selected_device_names)
             .context(h!())?;
@@ -6531,7 +6658,13 @@ fn build_network_analytics_messages_query(
     )
     .context(h!())?;
     let messages = apply_metadata_filters(messages, req)?;
-    let messages = filter_search(messages, &req.search).context(h!())?;
+    let messages = filter_search_with_correlated_terms(
+        messages,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .context(h!())?;
     let messages =
         filter_selected_device_names(messages, &req.selected_device_names)?;
     let report_tags_only_this_unit =
@@ -7254,7 +7387,9 @@ fn build_networks_query_for_login(
     )
     .context(h!())?;
     let messages_q = apply_metadata_filters(messages_q, &req)?;
-    let messages_q = filter_search(messages_q, &req.search).context(h!())?;
+    let messages_q =
+        filter_search_with_mode(messages_q, &req.search, req.search_mode)
+            .context(h!())?;
     let messages_q =
         filter_selected_device_names(messages_q, &req.selected_device_names)?;
     let messages_q = filter_selected_tags(
@@ -7686,8 +7821,13 @@ async fn fetch_selected_count_for_login_with_conn(
     .context(h!())?;
     let selected_count_res =
         apply_metadata_filters(selected_count_res, &req.0).context(h!())?;
-    let selected_count_res =
-        filter_search(selected_count_res, &req.search).context(h!())?;
+    let selected_count_res = filter_search_with_correlated_terms(
+        selected_count_res,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .context(h!())?;
     let selected_count_res = filter_selected_device_names(
         selected_count_res,
         &req.selected_device_names,

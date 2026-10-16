@@ -151,4 +151,11 @@ describe('useRerDutyPageSettings device access', () => {
     expect(latest?.hideNetworks).toBe(true);
     expect(latest?.networkVisibilityReady).toBe(true);
   });
+  it('keeps network visibility unavailable when system settings fail', async () => {
+    mocks.currentSystemSettings.mockRejectedValue(new Error('settings lookup failed'));
+    mocks.fetchCurrentUser.mockResolvedValue({ roles: ['Rer'] } as User);
+    render();
+    await flush();
+    expect(latest?.networkVisibilityReady).toBe(false);
+  });
 });

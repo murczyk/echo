@@ -11,8 +11,170 @@ use crate::{
     functest::tests::{cleanup, mk_signal_message},
     types::Env,
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set,
+};
 use uuid::Uuid;
+
+mod scoped;
+
+#[tokio::test]
+#[serial_test::serial]
+async fn attachment_search_correlated_terms_preserve_mixed_source_matches_3780()
+{
+    let (env, _, message) = fixture().await;
+    crate::functest::tests::mk_sigint_inbox_item(
+        &env.dbx,
+        crate::entities::sigint_inbox_item::ActiveModel {
+            id: Set(message),
+            body_noheader: Set(Some(
+                serde_json::json!({"body": "звичайне повідомлення"}),
+            )),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    execute(&env.dbx, "INSERT INTO sigint_search(id,search_tsv) VALUES($1,to_tsvector('russian','звичайне повідомлення'))", vec![message.into()]).await.unwrap();
+    let first = attachment(&env, message, "Бойовий звіт.txt").await;
+    let second = attachment(&env, message, "Другий файл.txt").await;
+    publish(&env, &first, package("Береза зміна позиції"), vec![1])
+        .await
+        .unwrap();
+    publish(&env, &second, package("чергування Вільха"), vec![2])
+        .await
+        .unwrap();
+    for query in [
+        "Берез",
+        "звичайне Береза",
+        "Береза Вільха",
+        "\"зміна позиції\"",
+        "Бойовий",
+        "Береза or Вільха",
+        "звичайне -Береза",
+        "звичайне -Невідомий",
+        "-\"зміна позиції\"",
+        "звичайне -\"немає тексту\"",
+    ] {
+        let expected = signal_message::Entity::find()
+            .filter(super::search::message_filter(query, "all").unwrap())
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|message| message.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        let actual = signal_message::Entity::find()
+            .filter(super::search::correlated_message_filter(query).unwrap())
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|message| message.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(actual, expected, "{query}");
+        for correlated in [false, true] {
+            let actual = signal_message::Entity::find()
+                .join(
+                    sea_orm::JoinType::LeftJoin,
+                    sea_orm::RelationTrait::def(
+                        &signal_message::Relation::SigintInboxItem,
+                    ),
+                )
+                .filter(
+                    super::search::analysis_message_filter(
+                        query, None, correlated,
+                    )
+                    .unwrap(),
+                )
+                .all(&env.dbx)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|message| message.id)
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(actual, expected, "{query}, correlated={correlated}");
+        }
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn attachment_search_modes_respect_word_boundaries_and_case_3780() {
+    use crate::entities::sigint_inbox_item;
+    use crate::rer_importer::types::AnalysisSearchMode;
+    use sea_orm::{JoinType, QuerySelect, RelationTrait};
+
+    let (env, _, message) = fixture().await;
+    crate::functest::tests::mk_sigint_inbox_item(
+        &env.dbx,
+        sigint_inbox_item::ActiveModel {
+            id: Set(message),
+            body_noheader: Set(Some(
+                serde_json::json!({"body": "звичайне повідомлення"}),
+            )),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let document = attachment(&env, message, "схема.txt").await;
+    publish(&env, &document, package("норма ПАНОРАМА"), vec![1])
+        .await
+        .unwrap();
+    for (mode, query, matches) in [
+        (AnalysisSearchMode::Fuzzy, "НоРа", true),
+        (AnalysisSearchMode::Exact, "НоРа", false),
+        (AnalysisSearchMode::Substring, "НоРа", true),
+        (AnalysisSearchMode::Exact, "-нора", true),
+        (AnalysisSearchMode::Substring, "-нора", false),
+    ] {
+        let predicate = super::search::message_filter_with_mode(
+            query,
+            "all",
+            Some(mode),
+            false,
+        )
+        .unwrap();
+        let actual = sigint_inbox_item::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item::Relation::SignalMessage.def(),
+            )
+            .filter(sigint_inbox_item::Column::Id.eq(message))
+            .filter(predicate)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some();
+        assert_eq!(actual, matches, "{mode:?}: {query}");
+    }
+    execute(
+        &env.dbx,
+        "UPDATE signal_message_media SET file_name='НОРА.txt' WHERE id=$1",
+        vec![document.media_id.into()],
+    )
+    .await
+    .unwrap();
+    let predicate = super::search::message_filter_with_mode(
+        "нора",
+        "all",
+        Some(AnalysisSearchMode::Exact),
+        false,
+    )
+    .unwrap();
+    assert!(sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def()
+        )
+        .filter(sigint_inbox_item::Column::Id.eq(message))
+        .filter(predicate)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .is_some());
+}
 
 async fn fixture() -> (Env, String, i64) {
     let env = cleanup().await.unwrap();
@@ -243,6 +405,204 @@ async fn attachment_search_visibility_and_revision_3064() {
         .await
         .unwrap()
         .is_none());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn attachment_search_preserves_cdc_only_history_and_recent_changes_3780()
+{
+    let (env, _, message) = fixture().await;
+    let job = attachment(&env, message, "history.txt").await;
+    publish(&env, &job, package("Береза зміна позиції"), vec![1])
+        .await
+        .unwrap();
+    let source = &env.dbx;
+    execute(source, "CREATE TABLE IF NOT EXISTS public.echo_analytics_attachment_search(singleton boolean PRIMARY KEY CHECK(singleton), started_at timestamp NOT NULL, history_complete boolean NOT NULL DEFAULT false)", vec![]).await.unwrap();
+    execute(source, "INSERT INTO public.echo_analytics_attachment_search VALUES(true, now() AT TIME ZONE 'UTC', false) ON CONFLICT(singleton) DO UPDATE SET started_at=EXCLUDED.started_at,history_complete=false", vec![]).await.unwrap();
+    execute(source, "UPDATE attachment_document SET created_at=(now() AT TIME ZONE 'UTC')-interval '1 day',updated_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE media_id=$1", vec![job.media_id.into()]).await.unwrap();
+    execute(source, "UPDATE attachment_search_change SET changed_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE singleton", vec![]).await.unwrap();
+    for query in [
+        "Береза",
+        "-Береза",
+        "\"зміна позиції\"",
+        "-\"зміна позиції\"",
+    ] {
+        let error = super::analytics::ensure_search_coverage(
+            source,
+            source,
+            &Some(query.into()),
+            90_000,
+        )
+        .await
+        .unwrap_err();
+        assert!(error
+            .chain()
+            .any(|error| error
+                .is::<super::analytics::AttachmentSearchCoverageError>()));
+    }
+    super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("НевідомийПозивний".into()),
+        90_000,
+    )
+    .await
+    .unwrap();
+    execute(source, "UPDATE public.echo_analytics_attachment_search SET history_complete=true", vec![]).await.unwrap();
+    super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("Береза".into()),
+        90_000,
+    )
+    .await
+    .unwrap();
+    execute(source, "UPDATE attachment_document SET updated_at=now() AT TIME ZONE 'UTC' WHERE media_id=$1", vec![job.media_id.into()]).await.unwrap();
+    assert!(super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("Береза".into()),
+        90_000
+    )
+    .await
+    .is_err());
+    execute(source, "UPDATE attachment_chunk SET text='Вільха',summary=NULL WHERE media_id=$1", vec![job.media_id.into()]).await.unwrap();
+    for query in ["Береза", "-Береза", "\"зміна позиції\""]
+    {
+        assert!(super::analytics::ensure_search_coverage(
+            source,
+            source,
+            &Some(query.into()),
+            90_000
+        )
+        .await
+        .is_err());
+    }
+    assert!(super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("-Вільха".into()),
+        90_000
+    )
+    .await
+    .is_err());
+    assert_media_mutations_require_source(source, job.media_id).await;
+    assert_media_insert_requires_source(&env, message).await;
+    execute(
+        source,
+        "DROP TABLE public.echo_analytics_attachment_search",
+        vec![],
+    )
+    .await
+    .unwrap();
+    super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("155.275".into()),
+        90_000,
+    )
+    .await
+    .unwrap();
+    assert!(super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("Береза".into()),
+        90_000
+    )
+    .await
+    .is_err());
+}
+
+async fn assert_media_mutations_require_source(
+    source: &sea_orm::DatabaseConnection,
+    media_id: Uuid,
+) {
+    execute(source, "UPDATE attachment_document SET updated_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE media_id=$1", vec![media_id.into()]).await.unwrap();
+    let document = attachment_document::Entity::find_by_id(media_id)
+        .one(source)
+        .await
+        .unwrap()
+        .unwrap();
+    signal_message_media::ActiveModel {
+        id: Set(media_id),
+        file_name: Set(Some("renamed.txt".into())),
+        ..Default::default()
+    }
+    .update(source)
+    .await
+    .unwrap();
+    assert_eq!(
+        attachment_document::Entity::find_by_id(media_id)
+            .one(source)
+            .await
+            .unwrap()
+            .unwrap()
+            .updated_at,
+        document.updated_at
+    );
+    assert_mutation_search_falls_back(source).await;
+    execute(source, "UPDATE attachment_search_change SET changed_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE singleton", vec![]).await.unwrap();
+    super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("renamed".into()),
+        90_000,
+    )
+    .await
+    .unwrap();
+    signal_message_media::Entity::delete_by_id(media_id)
+        .exec(source)
+        .await
+        .unwrap();
+    assert!(attachment_document::Entity::find_by_id(media_id)
+        .one(source)
+        .await
+        .unwrap()
+        .is_none());
+    assert_mutation_search_falls_back(source).await;
+}
+
+async fn assert_mutation_search_falls_back(
+    source: &sea_orm::DatabaseConnection,
+) {
+    for query in [
+        "history",
+        "inserted",
+        "renamed",
+        "-renamed",
+        "Береза",
+        "-Вільха",
+        "\"зміна позиції\"",
+    ] {
+        let error = super::analytics::ensure_search_coverage(
+            source,
+            source,
+            &Some(query.into()),
+            90_000,
+        )
+        .await
+        .unwrap_err();
+        assert!(error
+            .chain()
+            .any(|error| error
+                .is::<super::analytics::AttachmentSearchCoverageError>()));
+    }
+}
+
+async fn assert_media_insert_requires_source(env: &Env, message: i64) {
+    let source = &env.dbx;
+    execute(source, "UPDATE signal_message SET created_at=(now() AT TIME ZONE 'UTC')-interval '1 day' WHERE id=$1", vec![message.into()]).await.unwrap();
+    execute(source, "UPDATE attachment_search_change SET changed_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE singleton", vec![]).await.unwrap();
+    super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("inserted".into()),
+        90_000,
+    )
+    .await
+    .unwrap();
+    attachment(env, message, "inserted.txt").await;
+    assert_mutation_search_falls_back(source).await;
 }
 
 #[tokio::test]

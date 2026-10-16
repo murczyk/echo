@@ -24,6 +24,7 @@ import type { AnalysisQueryState } from './types';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
 export const ANALYSIS_MESSAGES_PAGE_SIZE = 20;
+export const ANALYSIS_MESSAGE_WINDOW_LIMIT = 40;
 
 export function getFirstLoadedMessagesPageIndex(
   lastLoadedPageIndex: number,
@@ -117,6 +118,7 @@ export function emptyQueryState(): AnalysisQueryState {
     orWithCoords: false,
     orWithoutCoords: false,
     search: '',
+    searchMode: 'Fuzzy',
     metadataCc: [],
     metadataSender: [],
     metadataReceiver: [],
@@ -210,28 +212,10 @@ export function parseAnalysisPanelQueryStateFromWindow(): AnalysisPanelQueryStat
   };
 }
 
-export function parseMessageUidFromWindow(): string | null {
-  if (typeof window === 'undefined') return null;
-  const url = new URL(window.location.href);
-  const param =
-    url.searchParams.get('m') || url.searchParams.get('mid') || url.searchParams.get('messageUid');
-  const trimmed = param?.trim();
-  return trimmed && trimmed !== '' ? trimmed : null;
-}
-
-export function removeMessageUidFromWindowUrl(): void {
-  if (typeof window === 'undefined') return;
-  const url = new URL(window.location.href);
-  url.searchParams.delete('m');
-  url.searchParams.delete('mid');
-  url.searchParams.delete('messageUid');
-  const query = url.searchParams.toString();
-  window.history.replaceState(
-    {},
-    '',
-    `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`,
-  );
-}
+export {
+  readLinkedMessageReferenceFromWindow as parseMessageUidFromWindow,
+  removeLinkedMessageReferenceFromWindowUrl as removeMessageUidFromWindowUrl,
+} from '../shared/message-navigation/message-navigation-url';
 
 export function createInitialQueryState(
   parsed: AnalysisQueryState,
@@ -376,6 +360,14 @@ export function pushQueryStateToUrl(
 export function normalizeQueryState(state: AnalysisQueryState): AnalysisQueryState {
   let next = state;
 
+  if (
+    next.searchMode !== 'Exact' &&
+    next.searchMode !== 'Substring' &&
+    next.searchMode !== 'Fuzzy'
+  ) {
+    next = { ...next, searchMode: 'Fuzzy' };
+  }
+
   if (state.withoutMetadata) {
     next = {
       ...next,
@@ -456,6 +448,7 @@ export function buildAnalysisReq(
     orWithCoords: query.orWithCoords,
     orWithoutCoords: query.orWithoutCoords,
     search: query.search.trim() === '' ? null : query.search.trim(),
+    searchMode: query.searchMode ?? null,
     selectedTags: query.tags.length && !query.tagsExcludeMode ? query.tags : null,
     deniedTags: query.tags.length && query.tagsExcludeMode ? query.tags : null,
     tagPresence: null,
@@ -535,6 +528,7 @@ export function buildInboxReq(
     orWithoutCoords: req.orWithoutCoords,
     newestFirst: true,
     search: req.search,
+    searchMode: req.searchMode,
     highlightCallsigns: true,
     highlightKeywords: true,
     highlightKeywordSetId: null,
@@ -629,6 +623,7 @@ export function queryStateFromSavedFilter(
     orWithCoords: req.orWithCoords ?? false,
     orWithoutCoords: req.orWithoutCoords ?? false,
     search: req.search ?? '',
+    searchMode: req.searchMode ?? 'Fuzzy',
     metadataCc: req.metadataCc ?? [],
     metadataSender: req.metadataSender ?? [],
     metadataReceiver: req.metadataReceiver ?? [],
@@ -720,6 +715,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     orWithCoords: normalized.orWithCoords,
     orWithoutCoords: normalized.orWithoutCoords,
     search: normalized.search ?? '',
+    searchMode: normalized.searchMode ?? 'Fuzzy',
     metadataCc: normalized.metadataCc ?? [],
     metadataSender: normalized.metadataSender ?? [],
     metadataReceiver: normalized.metadataReceiver ?? [],

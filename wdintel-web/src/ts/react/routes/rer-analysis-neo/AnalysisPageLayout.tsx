@@ -57,6 +57,7 @@ export function RerAnalysisNeoPage({
   const analysisDebugEnabled = useAnalysisDebugEnabled();
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const editorRef = useRef<ManageMessageEditorHandle>(null);
   const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
   const { ref: layoutRef, width: layoutWidth } = useObservedWidth<HTMLDivElement>();
@@ -103,6 +104,12 @@ export function RerAnalysisNeoPage({
           ? `edit-report:${page.editTargetLoadState.reportId}`
           : null;
   const editorOpen = editorIntentKey !== null;
+  const editorHighlightedMessageId = editorOpen
+    ? (editorSourceMessageId ??
+      page.reportSource?.id ??
+      page.editorMessage?.id ??
+      (page.editTargetLoadState.status !== 'idle' ? page.editTargetLoadState.reportId : null))
+    : null;
   const rightPanelVisible = requestedRightPanelVisible && !editorOpen;
   const modalEditorOpen = editorOpen && editorPresentation === 'modal';
   const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth;
@@ -169,13 +176,14 @@ export function RerAnalysisNeoPage({
     [page.openReport],
   );
   const requestEditorIntent = useCallback(
-    (key: string, commit: () => void, invokingControl?: HTMLElement) => {
+    (key: string, commit: () => void, invokingControl?: HTMLElement, sourceMessageId?: number) => {
       if (!canWriteMessages(page.currentUser?.roles)) return;
       const focusTarget =
         invokingControl ??
         (document.activeElement instanceof HTMLElement ? document.activeElement : null);
       editorInitialFocusTargetRef.current = focusTarget;
       const applyIntent = () => {
+        setEditorSourceMessageId(sourceMessageId ?? null);
         if (page.rightPanelOpen) page.toggleRightPanel();
         if (key === 'create-message') {
           if (
@@ -220,6 +228,7 @@ export function RerAnalysisNeoPage({
           page.openEditor(messageId);
         },
         invokingControl,
+        messageId,
       );
     },
     [page.messages, page.openEditor, page.setCenterTab, requestEditorIntent],
@@ -237,16 +246,22 @@ export function RerAnalysisNeoPage({
           page.openReportCreator(messageId, etalonDisplayModel);
         },
         invokingControl,
+        messageId,
       );
     },
     [page.openReportCreator, page.setCenterTab, requestEditorIntent],
   );
   const openReportEditor = useCallback(
-    (messageId: number) => {
-      requestEditorIntent(`edit-report:${messageId}`, () => {
-        page.setCenterTab('messages');
-        page.openReportEditor(messageId);
-      });
+    (messageId: number, sourceMessageId?: number) => {
+      requestEditorIntent(
+        `edit-report:${messageId}`,
+        () => {
+          page.setCenterTab('messages');
+          page.openReportEditor(messageId);
+        },
+        undefined,
+        sourceMessageId,
+      );
     },
     [page.openReportEditor, page.setCenterTab, requestEditorIntent],
   );
@@ -257,6 +272,7 @@ export function RerAnalysisNeoPage({
     openReportEditor,
   };
   const closeMessageEditor = useCallback(() => {
+    setEditorSourceMessageId(null);
     if (
       isPresent(page.editorMessage) ||
       isPresent(page.reportSource) ||
@@ -411,6 +427,7 @@ export function RerAnalysisNeoPage({
                     >
                       <AnalysisCenterPanel
                         page={centerPage}
+                        editorHighlightedMessageId={editorHighlightedMessageId}
                         centerTab={centerTab}
                         centerTabs={centerTabs}
                         isCompactLayout={isAnalysisCompactLayout}
@@ -436,6 +453,7 @@ export function RerAnalysisNeoPage({
                 editor={
                   <ManageMessageDrawer
                     ref={editorRef}
+                    hideNetworks={page.hideNetworks || !page.networkVisibilityReady}
                     open={editorOpen}
                     intentKey={editorIntentKey ?? 'closed'}
                     presentation={editorPresentation}

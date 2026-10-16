@@ -2430,7 +2430,7 @@ for (const width of [1280, 390]) {
       await page.getByRole('menuitem', { name: 'Копіювати посилання на повідомлення' }).click();
       const link = new URL(await page.evaluate(() => navigator.clipboard.readText()));
       expect(link.searchParams.get('m')).toBe(uuid);
-      expect(link.pathname).toBe('/rer-analysis-neo');
+      expect(link.pathname).toBe(host === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo');
     }
   });
 }

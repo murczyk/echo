@@ -1,0 +1,1060 @@
+{
+  "issue": 3780,
+  "collected_on": "2026-10-15",
+  "production_mutated": false,
+  "scope": "Bounded read-only source diagnostics; local scratch-database correctness and cancellation probes. Timings are sequential samples under live load, not capacity guarantees. Raw plans, tokens, identities and operational parameters are excluded.",
+  "matched_source_window": [
+    {
+      "host": "echo-pivnich",
+      "start": "2026-10-15T19:56:26.480633+00:00",
+      "end": "2026-10-15T20:05:42.361961+00:00",
+      "seconds": 555.881328,
+      "stats_reset_unchanged": true,
+      "statement_deallocations_delta": 1,
+      "families": {
+        "network_last_seen": {
+          "calls": 31,
+          "total_ms": 408710.0590441227,
+          "read_bytes": 30952783872,
+          "hit_bytes": 69465088000,
+          "temp_written_bytes": 5652480
+        },
+        "ocr_queue": {
+          "calls": 62,
+          "total_ms": 19571.76726204157,
+          "read_bytes": 1157881856,
+          "hit_bytes": 220575473664,
+          "temp_written_bytes": 0
+        },
+        "network_bounds": {
+          "calls": 6,
+          "total_ms": 7.308339953422546,
+          "read_bytes": 1859584,
+          "hit_bytes": 7307264,
+          "temp_written_bytes": 0
+        },
+        "source_creation_bounds": {
+          "calls": 3235,
+          "total_ms": 108788.5366332531,
+          "read_bytes": 622313472,
+          "hit_bytes": 1274234331136,
+          "temp_written_bytes": 0
+        }
+      },
+      "queue": {
+        "pending_start": 212,
+        "pending_end": 218,
+        "removed_lower_bound": 58,
+        "arrived_lower_bound": 64,
+        "started_start": 5,
+        "started_end": 5,
+        "oldest_age_start_s": 2675.641736,
+        "oldest_age_end_s": 2400.000977
+      },
+      "sampled_blockers": [
+        0,
+        0
+      ]
+    },
+    {
+      "host": "echo-skhid",
+      "start": "2026-10-15T19:56:26.684573+00:00",
+      "end": "2026-10-15T20:05:42.46206+00:00",
+      "seconds": 555.777487,
+      "stats_reset_unchanged": true,
+      "statement_deallocations_delta": 0,
+      "families": {
+        "network_last_seen": {
+          "calls": 39,
+          "total_ms": 143799.31972062588,
+          "read_bytes": 21032771584,
+          "hit_bytes": 91968290816,
+          "temp_written_bytes": 23248896
+        },
+        "source_creation_bounds": {
+          "calls": 1658,
+          "total_ms": 123034.48477524519,
+          "read_bytes": 213680128,
+          "hit_bytes": 1053272301568,
+          "temp_written_bytes": 0
+        },
+        "ocr_queue": {
+          "calls": 79,
+          "total_ms": 49433.66544997692,
+          "read_bytes": 5072936960,
+          "hit_bytes": 376744001536,
+          "temp_written_bytes": 0
+        },
+        "network_bounds": {
+          "calls": 0,
+          "total_ms": 0.0,
+          "read_bytes": 0,
+          "hit_bytes": 0,
+          "temp_written_bytes": 0
+        }
+      },
+      "queue": {
+        "pending_start": 3,
+        "pending_end": 5,
+        "removed_lower_bound": 3,
+        "arrived_lower_bound": 5,
+        "started_start": 0,
+        "started_end": 0,
+        "oldest_age_start_s": 39.928465,
+        "oldest_age_end_s": 37.008309
+      },
+      "sampled_blockers": [
+        0,
+        0
+      ]
+    },
+    {
+      "host": "echo-siversk",
+      "start": "2026-10-15T19:56:26.641136+00:00",
+      "end": "2026-10-15T20:05:42.420571+00:00",
+      "seconds": 555.779435,
+      "stats_reset_unchanged": true,
+      "statement_deallocations_delta": 0,
+      "families": {
+        "ocr_queue": {
+          "calls": 5,
+          "total_ms": 238.00795600004494,
+          "read_bytes": 33890304,
+          "hit_bytes": 722436096,
+          "temp_written_bytes": 0
+        },
+        "network_last_seen": {
+          "calls": 0,
+          "total_ms": 0.0,
+          "read_bytes": 0,
+          "hit_bytes": 0,
+          "temp_written_bytes": 0
+        },
+        "source_creation_bounds": {
+          "calls": 789,
+          "total_ms": 156760.02377706766,
+          "read_bytes": 35778953216,
+          "hit_bytes": 63114280960,
+          "temp_written_bytes": 0
+        }
+      },
+      "queue": {
+        "pending_start": 0,
+        "pending_end": 0,
+        "removed_lower_bound": 0,
+        "arrived_lower_bound": 0,
+        "started_start": 0,
+        "started_end": 0,
+        "oldest_age_start_s": null,
+        "oldest_age_end_s": null
+      },
+      "sampled_blockers": [
+        0,
+        0
+      ]
+    }
+  ],
+  "last_seen_probe": {
+    "host": "echo-pivnich",
+    "timeout_ms": 8000,
+    "measurements": [
+      {
+        "case": "oldest-1",
+        "target_count": 1,
+        "variant": "current",
+        "timeout": true
+      },
+      {
+        "case": "oldest-1",
+        "target_count": 1,
+        "variant": "date_first",
+        "timeout": false,
+        "elapsed_ms": 2.428,
+        "shared_hits": 59,
+        "shared_reads": 9,
+        "temp_written": 0
+      },
+      {
+        "case": "oldest-2",
+        "target_count": 2,
+        "variant": "current",
+        "timeout": true
+      },
+      {
+        "case": "oldest-2",
+        "target_count": 2,
+        "variant": "date_first",
+        "timeout": false,
+        "elapsed_ms": 2.403,
+        "shared_hits": 47,
+        "shared_reads": 12,
+        "temp_written": 0
+      },
+      {
+        "case": "hot-1",
+        "target_count": 1,
+        "variant": "current",
+        "timeout": true
+      },
+      {
+        "case": "hot-1",
+        "target_count": 1,
+        "variant": "date_first",
+        "timeout": false,
+        "elapsed_ms": 2.187,
+        "shared_hits": 24,
+        "shared_reads": 10,
+        "temp_written": 0
+      },
+      {
+        "case": "hot-4",
+        "target_count": 4,
+        "variant": "current",
+        "timeout": true
+      },
+      {
+        "case": "hot-4",
+        "target_count": 4,
+        "variant": "date_first",
+        "timeout": false,
+        "elapsed_ms": 3.497,
+        "shared_hits": 81,
+        "shared_reads": 23,
+        "temp_written": 0
+      },
+      {
+        "case": "hot-16",
+        "target_count": 16,
+        "variant": "current",
+        "timeout": true
+      },
+      {
+        "case": "hot-16",
+        "target_count": 16,
+        "variant": "date_first",
+        "timeout": false,
+        "elapsed_ms": 108.033,
+        "shared_hits": 8700,
+        "shared_reads": 822,
+        "temp_written": 0
+      }
+    ],
+    "local_equivalence": [
+      {
+        "phase": "baseline",
+        "cases": 76,
+        "differences": 0,
+        "null_maxima": 6
+      },
+      {
+        "phase": "delete_latest",
+        "cases": 76,
+        "differences": 0,
+        "null_maxima": 7
+      },
+      {
+        "phase": "remove_links",
+        "cases": 76,
+        "differences": 0,
+        "null_maxima": 9
+      },
+      {
+        "phase": "reassign_frequency",
+        "cases": 76,
+        "differences": 0,
+        "null_maxima": 36
+      },
+      {
+        "phase": "narrow_active_range",
+        "cases": 76,
+        "differences": 0,
+        "null_maxima": 41
+      },
+      {
+        "phase": "delete_networks",
+        "cases": 76,
+        "differences": 0,
+        "null_maxima": 74
+      },
+      {
+        "phase": "null_date_branches",
+        "cases": 76,
+        "differences": 0,
+        "null_maxima": 74
+      },
+      {
+        "phase": "all_networks_deleted",
+        "cases": 76,
+        "differences": 0,
+        "null_maxima": 76
+      }
+    ],
+    "local_fixture_message_count": 10000,
+    "concurrent_writer_validation_performed": false
+  },
+  "bounds_probe": {
+    "timeout_ms": 5000,
+    "measurements": [
+      {
+        "host": "echo-pivnich",
+        "case": "common1-current",
+        "mode": "force_custom_plan",
+        "timeout": false,
+        "ms": 4.201,
+        "hits": 51,
+        "reads": 107,
+        "heap_fetches": 0,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-pivnich",
+        "case": "common1-current",
+        "mode": "force_generic_plan",
+        "timeout": false,
+        "ms": 1.714,
+        "hits": 158,
+        "reads": 0,
+        "heap_fetches": 0,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-pivnich",
+        "case": "common1-per_network",
+        "mode": "force_custom_plan",
+        "timeout": false,
+        "ms": 1.26,
+        "hits": 7,
+        "reads": 4,
+        "heap_fetches": 1,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-pivnich",
+        "case": "common1-per_network",
+        "mode": "force_generic_plan",
+        "timeout": false,
+        "ms": 0.279,
+        "hits": 11,
+        "reads": 0,
+        "heap_fetches": 1,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-pivnich",
+        "case": "common16-current",
+        "mode": "force_custom_plan",
+        "timeout": false,
+        "ms": 1.02,
+        "hits": 138,
+        "reads": 0,
+        "heap_fetches": 0,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-pivnich",
+        "case": "common16-current",
+        "mode": "force_generic_plan",
+        "timeout": false,
+        "ms": 1.082,
+        "hits": 138,
+        "reads": 0,
+        "heap_fetches": 0,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-pivnich",
+        "case": "common16-per_network",
+        "mode": "force_custom_plan",
+        "timeout": false,
+        "ms": 9.98,
+        "hits": 110,
+        "reads": 49,
+        "heap_fetches": 15,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-pivnich",
+        "case": "common16-per_network",
+        "mode": "force_generic_plan",
+        "timeout": false,
+        "ms": 1.697,
+        "hits": 157,
+        "reads": 2,
+        "heap_fetches": 15,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-pivnich",
+        "case": "absent-current",
+        "mode": "force_custom_plan",
+        "timeout": true
+      },
+      {
+        "host": "echo-pivnich",
+        "case": "absent-current",
+        "mode": "force_generic_plan",
+        "timeout": true
+      },
+      {
+        "host": "echo-pivnich",
+        "case": "absent-per_network",
+        "mode": "force_custom_plan",
+        "timeout": false,
+        "ms": 0.298,
+        "hits": 6,
+        "reads": 2,
+        "heap_fetches": 0,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-pivnich",
+        "case": "absent-per_network",
+        "mode": "force_generic_plan",
+        "timeout": false,
+        "ms": 0.233,
+        "hits": 8,
+        "reads": 0,
+        "heap_fetches": 0,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-siversk",
+        "case": "1d-current",
+        "mode": "force_custom_plan",
+        "timeout": false,
+        "ms": 90.447,
+        "hits": 12468,
+        "reads": 6156,
+        "heap_fetches": 20563,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-siversk",
+        "case": "1d-current",
+        "mode": "force_generic_plan",
+        "timeout": false,
+        "ms": 116.759,
+        "hits": 11071,
+        "reads": 7553,
+        "heap_fetches": 20563,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-siversk",
+        "case": "1d-parallel_aggregate",
+        "mode": "force_custom_plan",
+        "timeout": false,
+        "ms": 159.957,
+        "hits": 7276,
+        "reads": 11348,
+        "heap_fetches": 20563,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-siversk",
+        "case": "1d-parallel_aggregate",
+        "mode": "force_generic_plan",
+        "timeout": false,
+        "ms": 145.543,
+        "hits": 9438,
+        "reads": 9186,
+        "heap_fetches": 20563,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-siversk",
+        "case": "8d-current",
+        "mode": "force_custom_plan",
+        "timeout": false,
+        "ms": 676.588,
+        "hits": 15063,
+        "reads": 37984,
+        "heap_fetches": 56466,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-siversk",
+        "case": "8d-current",
+        "mode": "force_generic_plan",
+        "timeout": false,
+        "ms": 631.961,
+        "hits": 16025,
+        "reads": 37022,
+        "heap_fetches": 56466,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-siversk",
+        "case": "8d-parallel_aggregate",
+        "mode": "force_custom_plan",
+        "timeout": false,
+        "ms": 679.074,
+        "hits": 15967,
+        "reads": 37080,
+        "heap_fetches": 56466,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-siversk",
+        "case": "8d-parallel_aggregate",
+        "mode": "force_generic_plan",
+        "timeout": false,
+        "ms": 699.876,
+        "hits": 15595,
+        "reads": 37452,
+        "heap_fetches": 56466,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-siversk",
+        "case": "31d-current",
+        "mode": "force_custom_plan",
+        "timeout": false,
+        "ms": 1364.816,
+        "hits": 167912,
+        "reads": 70585,
+        "heap_fetches": 253610,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-siversk",
+        "case": "31d-current",
+        "mode": "force_generic_plan",
+        "timeout": false,
+        "ms": 1419.994,
+        "hits": 157643,
+        "reads": 80854,
+        "heap_fetches": 253610,
+        "workers_launched": 0
+      },
+      {
+        "host": "echo-siversk",
+        "case": "31d-parallel_aggregate",
+        "mode": "force_custom_plan",
+        "timeout": false,
+        "ms": 579.339,
+        "hits": 157394,
+        "reads": 81239,
+        "heap_fetches": 253642,
+        "workers_launched": 2
+      },
+      {
+        "host": "echo-siversk",
+        "case": "31d-parallel_aggregate",
+        "mode": "force_generic_plan",
+        "timeout": false,
+        "ms": 1363.644,
+        "hits": 157286,
+        "reads": 81236,
+        "heap_fetches": 253642,
+        "workers_launched": 0
+      }
+    ],
+    "siversk_visibility": {
+      "visibility": [
+        {
+          "relname": "signal_message_created_at_id_idx",
+          "relpages": 26978,
+          "relallvisible": 0,
+          "reltuples": 6948959.0
+        },
+        {
+          "relname": "signal_message",
+          "relpages": 589626,
+          "relallvisible": 533675,
+          "reltuples": 6948959.0
+        }
+      ],
+      "autovacuum": {
+        "last_autovacuum": "2026-10-13T06:48:33.392815+00:00",
+        "last_autoanalyze": "2026-10-15T06:21:10.604951+00:00",
+        "n_live_tup": 6962718,
+        "n_dead_tup": 103843,
+        "n_ins_since_vacuum": 53172
+      }
+    }
+  },
+  "operational_samples": [
+    {
+      "host": "echo-pivnich",
+      "sample_at": "2026-10-15T19:58:43.700009+00:00",
+      "app_journal_sample_seconds": 300.4433488845825,
+      "app_journal_events": {
+        "events": 17409
+      },
+      "app_journal_bytes": {
+        "message_bytes": 3611482
+      },
+      "journal_config": [
+        "Storage=volatile",
+        "RuntimeMaxUse=100M",
+        "RuntimeKeepFree=50M",
+        "SystemMaxUse=0",
+        "SystemKeepFree=0"
+      ],
+      "journal_directories": {
+        "persistent": false,
+        "runtime": true
+      },
+      "root_disk_available_bytes": 107480088576,
+      "vector": {
+        "service": "echo-vector.service",
+        "signoz_enabled": "true",
+        "endpoint_configured": true,
+        "active_config_path": "/etc/echo/vector.yaml",
+        "since_now": true,
+        "disk_buffer": false,
+        "service_events_30m": 0,
+        "service_errors_30m": 0,
+        "central_freshness_verified": false,
+        "central_verification_failure": "available SSH identity rejected for echo and ubuntu on configured receiver host"
+      },
+      "nginx": {
+        "oversized_header_routes": {
+          "/api/user/logout": 1
+        },
+        "error_line_structure": [
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          }
+        ],
+        "response_buffer_overrides": [
+          "large_client_header_buffers 16 64k;"
+        ],
+        "system_page_bytes": 4096
+      },
+      "app_notice_counts_retained_30m": {
+        "tsquery": 1968,
+        "mapping_warning": 111
+      },
+      "ocr": {
+        "web_bg_signing_keys_equal": true,
+        "queued": 25289,
+        "retry_wait": 134,
+        "submitted": 2,
+        "submitted_older_than_15m": 0,
+        "completed": 4622,
+        "longest_completed_submission_seconds": 2063.03104,
+        "stored_grant_error_jobs": 0
+      }
+    },
+    {
+      "host": "echo-skhid",
+      "sample_at": "2026-10-15T19:58:43.839348+00:00",
+      "app_journal_sample_seconds": 302.11673498153687,
+      "app_journal_events": {
+        "events": 40387,
+        "goi_events": 14497,
+        "goi_candidates": 2517,
+        "goi_selected": 2517
+      },
+      "app_journal_bytes": {
+        "message_bytes": 11012254,
+        "goi_bytes": 6681200
+      },
+      "journal_config": [],
+      "journal_directories": {
+        "persistent": true,
+        "runtime": true
+      },
+      "root_disk_available_bytes": 342070394880,
+      "vector": {
+        "service": "echo-vector.service",
+        "signoz_enabled": "true",
+        "endpoint_configured": true,
+        "active_config_path": "/etc/echo/vector.yaml",
+        "since_now": true,
+        "disk_buffer": false,
+        "service_events_30m": 0,
+        "service_errors_30m": 0,
+        "central_freshness_verified": false,
+        "central_verification_failure": "available SSH identity rejected for echo and ubuntu on configured receiver host"
+      },
+      "nginx": {
+        "oversized_header_routes": {
+          "/api/user/logout": 14,
+          "/api/delta-redirect": 1
+        },
+        "error_line_structure": [
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 669,
+            "request_end_recorded": true,
+            "ends_in_newline": true
+          }
+        ],
+        "response_buffer_overrides": [
+          "large_client_header_buffers 16 64k;"
+        ],
+        "system_page_bytes": 4096
+      },
+      "app_notice_counts_retained_30m": {
+        "tsquery": 59224,
+        "mapping_warning": 170,
+        "battle_lock": 1
+      },
+      "ocr": {
+        "web_bg_signing_keys_equal": true,
+        "queued": 41295,
+        "retry_wait": 205,
+        "submitted": 2,
+        "submitted_older_than_15m": 0,
+        "completed": 4600,
+        "longest_completed_submission_seconds": 2813.050502,
+        "stored_grant_error_jobs": 0
+      }
+    },
+    {
+      "host": "echo-siversk",
+      "sample_at": "2026-10-15T19:58:43.819500+00:00",
+      "app_journal_sample_seconds": 299.8607668876648,
+      "app_journal_events": {
+        "events": 2405,
+        "goi_events": 78,
+        "goi_candidates": 12,
+        "goi_selected": 12
+      },
+      "app_journal_bytes": {
+        "message_bytes": 406316,
+        "goi_bytes": 22745
+      },
+      "journal_config": [],
+      "journal_directories": {
+        "persistent": true,
+        "runtime": true
+      },
+      "root_disk_available_bytes": 254406426624,
+      "vector": {
+        "service": "echo-vector.service",
+        "signoz_enabled": "true",
+        "endpoint_configured": true,
+        "active_config_path": "/etc/echo/vector.yaml",
+        "since_now": true,
+        "disk_buffer": false,
+        "service_events_30m": 0,
+        "service_errors_30m": 0,
+        "central_freshness_verified": false,
+        "central_verification_failure": "available SSH identity rejected for echo and ubuntu on configured receiver host"
+      },
+      "nginx": {
+        "oversized_header_routes": {
+          "/api/user/logout": 2
+        },
+        "error_line_structure": [
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          },
+          {
+            "line_bytes": 2048,
+            "request_end_recorded": false,
+            "ends_in_newline": true
+          }
+        ],
+        "response_buffer_overrides": [
+          "large_client_header_buffers 16 64k;"
+        ],
+        "system_page_bytes": 4096
+      },
+      "app_notice_counts_retained_30m": {
+        "mapping_warning": 63
+      },
+      "ocr": {
+        "web_bg_signing_keys_equal": true,
+        "queued": 621,
+        "retry_wait": 69,
+        "submitted": 1,
+        "submitted_older_than_15m": 0,
+        "completed": 7231,
+        "longest_completed_submission_seconds": 2061.696205,
+        "stored_grant_error_jobs": 0
+      }
+    }
+  ],
+  "local_cancellation": {
+    "sqlx_version": "0.9.0",
+    "client_deadline_ms": 100,
+    "server_sleep_ms": 2000,
+    "measurements": [
+      {
+        "statement_timeout_ms": 0,
+        "caller_expired": true,
+        "state_at_300ms": "active",
+        "wait_at_300ms": "PgSleep",
+        "pool_available_at_300ms": false,
+        "pool_recovered_ms": 2000
+      },
+      {
+        "statement_timeout_ms": 1000,
+        "caller_expired": true,
+        "state_at_300ms": "active",
+        "wait_at_300ms": "PgSleep",
+        "pool_available_at_300ms": false,
+        "pool_recovered_ms": 1079
+      }
+    ]
+  },
+  "local_stopword_parse": {
+    "plan_cache_mode": "force_generic_plan",
+    "query_kind": "sequential scan of synthetic tsvectors with Russian stopword; equivalent scalar initplan comparison",
+    "measurements": [
+      {
+        "variant": "per_row",
+        "rows": 1000,
+        "notices": 2000,
+        "ms": 5.975,
+        "exit": 0
+      },
+      {
+        "variant": "one_initplan",
+        "rows": 1000,
+        "notices": 2,
+        "ms": 0.082,
+        "exit": 0
+      }
+    ]
+  },
+  "limits": [
+    "One matched approximately nine-minute window; disappeared/arrived queue IDs are lower bounds because short-lived tasks can fall between snapshots.",
+    "One pg_stat_statements deallocation on Pivnich; newly created/evicted statement entries are omitted. Execution time is accumulated across concurrent work, not CPU utilization.",
+    "Shared-block read bytes count PostgreSQL buffers, not confirmed physical device I/O.",
+    "Local stopword reproduction explains a possible repeated-parse mechanism; production notice records lack caller arguments, so individual requests remain unattributed.",
+    "No production load tests, cancellation experiments, configuration changes, deployments or migrations."
+  ],
+  "recurring_read_activity": {
+    "start": "2026-10-15 19:56:00 UTC",
+    "end": "2026-10-15 20:05:00 UTC",
+    "counts": [
+      {
+        "host": "echo-pivnich",
+        "view": "analysis-classic",
+        "path": "/api/event-stream/long-poll",
+        "requests": 11663
+      },
+      {
+        "host": "echo-pivnich",
+        "view": "analysis-neo",
+        "path": "/api/event-stream/long-poll",
+        "requests": 874
+      },
+      {
+        "host": "echo-pivnich",
+        "view": "analysis-neo",
+        "path": "/api/rer-importer/get-inbox-count",
+        "requests": 152
+      },
+      {
+        "host": "echo-pivnich",
+        "view": "duty-classic",
+        "path": "/api/event-stream/long-poll",
+        "requests": 3936
+      },
+      {
+        "host": "echo-pivnich",
+        "view": "duty-classic",
+        "path": "/api/rer-importer/get-inbox-count",
+        "requests": 6137
+      },
+      {
+        "host": "echo-pivnich",
+        "view": "duty-neo",
+        "path": "/api/event-stream/long-poll",
+        "requests": 5620
+      },
+      {
+        "host": "echo-pivnich",
+        "view": "duty-neo",
+        "path": "/api/rer-importer/get-inbox-count",
+        "requests": 6487
+      },
+      {
+        "host": "echo-pivnich",
+        "view": "other",
+        "path": "/api/event-stream/long-poll",
+        "requests": 5508
+      },
+      {
+        "host": "echo-pivnich",
+        "view": "other",
+        "path": "/api/rer-importer/get-inbox-count",
+        "requests": 394
+      },
+      {
+        "host": "echo-siversk",
+        "view": "analysis-classic",
+        "path": "/api/event-stream/long-poll",
+        "requests": 6016
+      },
+      {
+        "host": "echo-siversk",
+        "view": "analysis-neo",
+        "path": "/api/event-stream/long-poll",
+        "requests": 196
+      },
+      {
+        "host": "echo-siversk",
+        "view": "analysis-neo",
+        "path": "/api/rer-importer/get-inbox-count",
+        "requests": 70
+      },
+      {
+        "host": "echo-siversk",
+        "view": "duty-classic",
+        "path": "/api/event-stream/long-poll",
+        "requests": 2348
+      },
+      {
+        "host": "echo-siversk",
+        "view": "duty-classic",
+        "path": "/api/rer-importer/get-inbox-count",
+        "requests": 1037
+      },
+      {
+        "host": "echo-siversk",
+        "view": "duty-neo",
+        "path": "/api/event-stream/long-poll",
+        "requests": 1607
+      },
+      {
+        "host": "echo-siversk",
+        "view": "duty-neo",
+        "path": "/api/rer-importer/get-inbox-count",
+        "requests": 1447
+      },
+      {
+        "host": "echo-siversk",
+        "view": "other",
+        "path": "/api/event-stream/long-poll",
+        "requests": 1470
+      },
+      {
+        "host": "echo-siversk",
+        "view": "other",
+        "path": "/api/rer-importer/get-inbox-count",
+        "requests": 126
+      },
+      {
+        "host": "echo-skhid",
+        "view": "analysis-classic",
+        "path": "/api/event-stream/long-poll",
+        "requests": 12647
+      },
+      {
+        "host": "echo-skhid",
+        "view": "analysis-neo",
+        "path": "/api/event-stream/long-poll",
+        "requests": 1337
+      },
+      {
+        "host": "echo-skhid",
+        "view": "analysis-neo",
+        "path": "/api/rer-importer/get-inbox-count",
+        "requests": 527
+      },
+      {
+        "host": "echo-skhid",
+        "view": "duty-classic",
+        "path": "/api/event-stream/long-poll",
+        "requests": 6218
+      },
+      {
+        "host": "echo-skhid",
+        "view": "duty-classic",
+        "path": "/api/rer-importer/get-inbox-count",
+        "requests": 4186
+      },
+      {
+        "host": "echo-skhid",
+        "view": "duty-neo",
+        "path": "/api/event-stream/long-poll",
+        "requests": 3244
+      },
+      {
+        "host": "echo-skhid",
+        "view": "duty-neo",
+        "path": "/api/rer-importer/get-inbox-count",
+        "requests": 2856
+      },
+      {
+        "host": "echo-skhid",
+        "view": "other",
+        "path": "/api/event-stream/long-poll",
+        "requests": 5172
+      },
+      {
+        "host": "echo-skhid",
+        "view": "other",
+        "path": "/api/rer-importer/get-inbox-count",
+        "requests": 3859
+      }
+    ],
+    "classification": "page inferred from retained referer; frontend release, tab identity and visibility not recorded by server context-header allowlist"
+  }
+}

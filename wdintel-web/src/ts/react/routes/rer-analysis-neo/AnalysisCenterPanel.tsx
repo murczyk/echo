@@ -1,7 +1,6 @@
 import { Box, FormControlLabel, Stack, Switch, Tab, Tabs } from '@mui/material';
 
 import { PowerChip } from '../../components/PowerChip';
-import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import { AnalysisMapPane } from './components/AnalysisMapPane';
 import { AnalysisMessagesPane } from './components/AnalysisMessagesPane';
@@ -14,6 +13,7 @@ import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
 
 type Props = {
   page: AnalysisPageViewModel;
+  editorHighlightedMessageId: number | null;
   centerTab: AnalysisCenterTab;
   centerTabs: AnalysisCenterTab[];
   isCompactLayout?: boolean;
@@ -29,6 +29,7 @@ type Props = {
 
 export function AnalysisCenterPanel({
   page,
+  editorHighlightedMessageId,
   centerTab,
   centerTabs,
   isCompactLayout = false,
@@ -155,6 +156,7 @@ export function AnalysisCenterPanel({
             totalLoading={page.messagesTotalLoading}
             loading={page.messagesLoading}
             noMoreToLoad={page.noMoreToLoad}
+            hasMoreAfterWindow={page.hasMoreAfterWindow}
             busy={page.messagesPaging || page.messagesLoading}
             jumpDisabled={page.directMessageNavigation != null}
             onFirstPage={page.loadFirstPage}
@@ -229,18 +231,26 @@ export function AnalysisCenterPanel({
           }}
         >
           <AnalysisMessagesPane
+            editorHighlightedMessageId={editorHighlightedMessageId}
             authUserName={page.authUserName}
             currentUser={page.currentUser}
             copiedFeedbackId={page.copiedFeedbackId}
             groupInfos={page.groupInfos}
             paginationLoading={page.messagesPaging}
+            isLoading={page.hasLoadedInitialMessages && page.messagesLoading}
             botTagAction={page.botTagAction}
             messageComments={page.messageComments}
             messages={page.messages}
+            firstLoadedMessageIndex={page.firstLoadedMessageIndex}
+            hasMoreBeforeWindow={page.hasMoreBeforeWindow}
+            hasMoreAfterWindow={page.hasMoreAfterWindow}
+            loadingBeforeWindow={page.loadingBeforeWindow}
+            loadingAfterWindow={page.loadingAfterWindow}
             networkDisplayMap={page.networkDisplayMap}
             pageIndex={page.pageIndex}
             pageNavigationTarget={page.messagePageNavigationTarget}
             viewportPreservationKey={page.messageViewportPreservationKey}
+            edgeLoadRetryKey={page.messageEdgeLoadRetryKey}
             onViewportCaptureChange={page.setMessageViewportCapture}
             onVisiblePageChange={page.setVisibleMessagesPageIndex}
             onPageNavigationHandled={page.clearMessagePageNavigationTarget}
@@ -253,6 +263,7 @@ export function AnalysisCenterPanel({
             onCreateReport={page.openReportCreator}
             onEditReport={page.openReportEditor}
             onLoadMoreMessages={page.loadMoreMessages}
+            onLoadPreviousMessages={page.loadPreviousMessages}
             onOpenPointsOnMap={page.openPointsOnMap}
             onAddPointHighlightBlacklist={page.onAddPointHighlightBlacklist}
             onSaveMessageUpdate={page.saveMessageUpdate}
@@ -276,10 +287,7 @@ export function AnalysisCenterPanel({
             networks={page.networks}
             unitsMap={page.unitsMap}
             directMessageNavigation={page.directMessageNavigation}
-          />
-          <SectionLoadingOverlay
-            open={page.hasLoadedInitialMessages && page.messagesLoading}
-            ariaLabel="Оновлення повідомлень"
+            onLinkedMessageMounted={page.onLinkedMessageMounted}
           />
         </Box>
 

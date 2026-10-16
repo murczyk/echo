@@ -107,6 +107,7 @@ function baseProps(): React.ComponentProps<typeof AnalysisPaginationControl> {
     totalLoading: false,
     loading: false,
     noMoreToLoad: false,
+    rangeUsesPageSize: true,
     busy: false,
     onFirstPage: vi.fn(),
     onLastPage: vi.fn(),
@@ -137,7 +138,7 @@ describe('AnalysisPaginationControl', () => {
       <AnalysisPaginationControl {...baseProps()} pageIndex={2} messagesCount={17} />,
     );
     await act(async () => {});
-    expect(view.container.textContent).toContain('41-57 з 137');
+    expect(view.container.textContent).toContain('41-60 з 137');
   });
 
   it('renders only the active page range when previous messages are retained', async () => {
@@ -148,6 +149,47 @@ describe('AnalysisPaginationControl', () => {
     });
     rendered.push(view);
     expect(view.container.textContent).toContain('21-40 з 137');
+  });
+
+  it('shows a bounded partial final page using the total rather than mounted card count', async () => {
+    const view = await renderComponent({
+      ...baseProps(),
+      pageIndex: 2,
+      rangePageIndex: 2,
+      messagesCount: 40,
+      totalCount: 45,
+    });
+    rendered.push(view);
+    expect(view.container.textContent).toContain('41-45 з 45');
+  });
+
+  it('keeps Next enabled for an evicted adjacent bounded page while a later logical page exists', async () => {
+    const view = await renderComponent({
+      ...baseProps(),
+      pageIndex: 1,
+      rangePageIndex: 1,
+      messagesCount: 40,
+      totalCount: 60,
+      noMoreToLoad: true,
+    });
+    rendered.push(view);
+    expect(
+      (view.container.querySelector('[aria-label="Наступна сторінка"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it('keeps Next disabled for an exhausted non-windowed consumer', async () => {
+    const view = await renderComponent({
+      ...baseProps(),
+      rangeUsesPageSize: false,
+      noMoreToLoad: true,
+    });
+    rendered.push(view);
+    expect(
+      (view.container.querySelector('[aria-label="Наступна сторінка"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 
   it('falls back to em dash while totals are loading', async () => {
@@ -244,8 +286,8 @@ describe('AnalysisPaginationControl', () => {
     expect((left as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('disables the right chevron when noMoreToLoad is true', async () => {
-    const view = await renderComponent({ ...baseProps(), noMoreToLoad: true });
+  it('disables the right chevron when the total is unknown and noMoreToLoad is true', async () => {
+    const view = await renderComponent({ ...baseProps(), totalCount: null, noMoreToLoad: true });
     rendered.push(view);
     const right = view.container.querySelector('[aria-label="Наступна сторінка"]');
     expect((right as HTMLButtonElement).disabled).toBe(true);

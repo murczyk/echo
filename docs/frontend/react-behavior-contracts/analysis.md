@@ -216,6 +216,28 @@ Regression coverage:
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-message-list.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as concurrency safeguards.
 
+## Bounded Analysis message feed
+
+Analysis retains at most 40 message payloads and mounted cards per feed. Scrolling
+loads 20-message pages from either edge and evicts the opposite edge; an evicted
+page can be fetched again. The page owns the limit, cursors, and logical message
+coordinates. The shared `MessageFeed` owns viewport anchoring and edge skeletons,
+not the data window. This also applies to direct-message context, refresh, and
+realtime insertion. Filter and sort changes invalidate older requests.
+If a page arrives during wheel input, the shared feed keeps the current cards
+and edge skeleton until wheel and inertial scroll events are idle for ~140ms. Wheel input is never
+blocked; only the visual window commit waits.
+
+The first/previous/next/last controls and scroll-driven page selection share the
+same logical page and `messagesPage` URL state. A button click additionally aligns
+the requested page; ordinary scrolling does not jump. The range label uses the
+selected page and total count, including a partial final page, rather than the
+number of cards currently mounted.
+
+Regression coverage: `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-message-list.spec.ts`,
+`wdintel-web/src/ts/react/routes/rer-analysis-neo/components/__tests__/AnalysisPaginationControl.spec.tsx`,
+and `wdintel-web/tests/e2e/message-feed-unification.spec.ts`.
+
 ## Analysis filter-facet invalidation
 
 - **Status:** inferred characterization

@@ -73,6 +73,7 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   CircularProgress: () => <div>loading</div>,
+  Skeleton: () => <span data-skeleton />,
 }));
 
 vi.mock('../../../shared/message-card/MessageCard', () => ({
@@ -224,6 +225,11 @@ function buildProps(
     paginationLoading: false,
     messageComments: {},
     messages: [],
+    firstLoadedMessageIndex: 0,
+    hasMoreBeforeWindow: false,
+    hasMoreAfterWindow: false,
+    loadingBeforeWindow: false,
+    loadingAfterWindow: false,
     networkDisplayMap: {},
     pageIndex: 0,
     noMoreToLoad: false,
@@ -232,6 +238,7 @@ function buildProps(
     onCreateReport: vi.fn(),
     onEditReport: vi.fn(),
     onLoadMoreMessages: vi.fn().mockResolvedValue(true),
+    onLoadPreviousMessages: vi.fn().mockResolvedValue(true),
     onSaveMessageUpdate: vi.fn().mockResolvedValue(true),
     onToggleMessageBookmark: vi.fn(),
     onToggleMessageImportant: vi.fn(),
@@ -365,12 +372,14 @@ describe('AnalysisMessagesPane', () => {
 
   it('highlights a direct-link target without scrolling the message viewport', async () => {
     const scrollIntoView = vi.fn();
+    const onLinkedMessageMounted = vi.fn();
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
       value: scrollIntoView,
     });
     const renderedPane = await renderComponent(
       buildProps({
+        onLinkedMessageMounted,
         messages: [[7, buildMessage()]],
         directMessageNavigation: {
           targetMessageId: 7,
@@ -391,11 +400,50 @@ describe('AnalysisMessagesPane', () => {
     rendered.push(renderedPane);
 
     expect(scrollIntoView).not.toHaveBeenCalled();
-    expect(
-      renderedPane.container
-        .querySelector('[data-testid="message-card-7"] span')
-        ?.getAttribute('style'),
-    ).toContain('outline');
+    expect(onLinkedMessageMounted).toHaveBeenCalledExactlyOnceWith(7);
+    const message = renderedPane.container.querySelector('[data-message-id="7"]');
+    expect(message?.getAttribute('data-message-feed-highlighted')).toBe('true');
+
+    await act(async () => {
+      renderedPane.root.render(
+        <AnalysisMessagesPane
+          {...buildProps({
+            onLinkedMessageMounted,
+            messages: [[7, buildMessage()]],
+            directMessageNavigation: {
+              targetMessageId: 7,
+              targetMessageIndex: 0,
+              totalCount: 1,
+              focusActive: false,
+              newestFirst: true,
+              canLoadEarlier: false,
+              canLoadLater: false,
+              loadingEarlier: false,
+              loadingLater: false,
+              onClearFocus: vi.fn(),
+              onLoadEarlier: vi.fn().mockResolvedValue(false),
+              onLoadLater: vi.fn().mockResolvedValue(false),
+            },
+          })}
+        />,
+      );
+    });
+    expect(message?.getAttribute('data-message-feed-highlighted')).toBe('true');
+  });
+
+  it('highlights the message behind an open editor drawer', async () => {
+    const messages: Array<[number, InboxMessage]> = [[7, buildMessage()]];
+    const view = await renderComponent(buildProps({ messages, editorHighlightedMessageId: 7 }));
+    rendered.push(view);
+    const card = view.container.querySelector('[data-message-id="7"]');
+    expect(card?.getAttribute('data-message-feed-highlighted')).toBe('true');
+
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane {...buildProps({ messages, editorHighlightedMessageId: null })} />,
+      );
+    });
+    expect(card?.hasAttribute('data-message-feed-highlighted')).toBe(false);
   });
 
   it('shows the empty state when there are no messages', async () => {
@@ -477,7 +525,7 @@ describe('AnalysisMessagesPane', () => {
       },
       createReportButton,
     );
-    expect(onEditReport).toHaveBeenCalledWith(91);
+    expect(onEditReport).toHaveBeenCalledWith(91, 7);
   });
 
   it('forwards loaded message comments into the rendered message card', async () => {
@@ -624,7 +672,7 @@ describe('AnalysisMessagesPane', () => {
     expect(onSaveMessageUpdate).toHaveBeenCalled();
   });
 
-  it('scrolls the message list to top when pageIndex changes', async () => {
+  it('keeps the scroll position when the visible page changes without navigation', async () => {
     const view = await renderComponent(
       buildProps({ messages: [[7, buildMessage()]], pageIndex: 0 }),
     );
@@ -642,7 +690,7 @@ describe('AnalysisMessagesPane', () => {
       );
     });
 
-    expect(scrollBox?.scrollTop).toBe(0);
+    expect(scrollBox?.scrollTop).toBe(500);
   });
 
   it('keeps a prepended newest message visible during leading-edge viewport preservation', async () => {
@@ -776,6 +824,22 @@ describe('AnalysisMessagesPane', () => {
 
     expect(scrollBox.scrollTop).toBe(880);
     expect(anchor.getBoundingClientRect().top).toBe(20);
+  });
+
+  it('keeps a mounted card while the feed owns the refresh skeleton', async () => {
+    const props = buildProps({ messages: [[7, buildMessage()]] });
+    const view = await renderComponent(props);
+    rendered.push(view);
+    const card = view.container.querySelector('[data-message-id="7"]');
+    await act(async () => {
+      view.root.render(<AnalysisMessagesPane {...props} isLoading />);
+    });
+    expect(view.container.querySelector('[data-message-id="7"]')).toBe(card);
+    expect(view.container.querySelector('[data-message-feed-skeleton="refresh"]')).not.toBeNull();
+    await act(async () => {
+      view.root.render(<AnalysisMessagesPane {...props} />);
+    });
+    expect(view.container.querySelector('[data-message-feed-skeleton="refresh"]')).toBeNull();
   });
 
   it('keeps page navigation authoritative during viewport preservation', async () => {

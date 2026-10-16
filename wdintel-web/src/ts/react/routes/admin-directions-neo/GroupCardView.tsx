@@ -71,6 +71,7 @@ function buildGroupMessagesRequest(masterKey: string): InboxMessagesReq {
     orWithoutCoords: null,
     newestFirst: true,
     search: null,
+    searchMode: null,
     highlightCallsigns: null,
     highlightKeywords: null,
     highlightSearchres: null,

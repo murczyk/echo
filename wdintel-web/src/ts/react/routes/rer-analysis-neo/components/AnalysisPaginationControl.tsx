@@ -27,6 +27,8 @@ type Props = {
   totalLoading: boolean;
   loading: boolean;
   noMoreToLoad: boolean;
+  hasMoreAfterWindow?: boolean;
+  rangeUsesPageSize?: boolean;
   busy: boolean;
   jumpDisabled?: boolean;
   onFirstPage: () => void;
@@ -159,6 +161,8 @@ export function AnalysisPaginationControl({
   totalLoading,
   loading,
   noMoreToLoad,
+  hasMoreAfterWindow = false,
+  rangeUsesPageSize = false,
   busy,
   jumpDisabled = false,
   onFirstPage,
@@ -172,7 +176,11 @@ export function AnalysisPaginationControl({
   const end =
     totalCount === null
       ? rangePageIndex * pageSize + Math.min(messagesCount, pageSize)
-      : Math.min(rangePageIndex * pageSize + Math.min(messagesCount, pageSize), totalCount);
+      : Math.min(
+          rangePageIndex * pageSize +
+            (rangeUsesPageSize ? pageSize : Math.min(messagesCount, pageSize)),
+          totalCount,
+        );
   let rangeText = '';
   if (totalUnknown) {
     rangeText = '— з —';
@@ -184,12 +192,14 @@ export function AnalysisPaginationControl({
 
   const lastPageIndex = totalUnknown ? null : Math.max(0, Math.ceil(totalCount / pageSize) - 1);
   const hasLoadedNextPage = rangePageIndex < pageIndex;
+  const hasLogicalNextPage = rangeUsesPageSize
+    ? lastPageIndex !== null
+      ? rangePageIndex < lastPageIndex
+      : hasLoadedNextPage || hasMoreAfterWindow || !noMoreToLoad
+    : (hasLoadedNextPage || !noMoreToLoad) &&
+      (lastPageIndex === null || rangePageIndex < lastPageIndex);
   const prevDisabled = !isMessagesTab || rangePageIndex === 0 || busy;
-  const nextDisabled =
-    !isMessagesTab ||
-    busy ||
-    (!hasLoadedNextPage && noMoreToLoad) ||
-    (lastPageIndex !== null && rangePageIndex >= lastPageIndex);
+  const nextDisabled = !isMessagesTab || busy || !hasLogicalNextPage;
   const menuDisabled = !isMessagesTab || busy || jumpDisabled;
   const firstDisabled = menuDisabled || rangePageIndex === 0;
   const lastDisabled =

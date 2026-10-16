@@ -134,6 +134,7 @@ pub async fn collect_groups(
                 interseption_kind: g.interseption_kind.clone().into(),
                 disable_network_assignment: g.disable_network_assignment,
                 is_aviation_group: g.is_aviation_group.unwrap_or(false),
+                fetch_new_messages: g.fetch_new_messages.unwrap_or(true),
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
@@ -172,6 +173,7 @@ pub async fn collect_groups(
                 crate::sigint::types::InterseptionKind::InterseptionRer,
             disable_network_assignment: false,
             is_aviation_group: false,
+            fetch_new_messages: true,
             group_stats: stats,
             admin_data,
             areas_of_responsibility: aors,
@@ -545,6 +547,7 @@ where
             interseption_kind: NotSet,
             disable_network_assignment: NotSet,
             is_aviation_group: NotSet,
+            fetch_new_messages: NotSet,
         }
         .insert(db)
         .await

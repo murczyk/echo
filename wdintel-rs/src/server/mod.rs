@@ -23,6 +23,7 @@ pub mod discord;
 mod healthcheck;
 pub mod middleware;
 pub mod monitoring;
+mod read_deadline;
 #[cfg(test)]
 mod upload_http_audit;
 pub use admin::RestartEchoRequest;
@@ -693,6 +694,15 @@ fn spawn_background_workers(
         )
         .await;
     });
+    let messenger_alert_env = env.clone();
+    let messenger_alert_cancel = cancel_token.clone();
+    spawn_named_worker("messenger_alert_worker", bg_set, async move {
+        crate::messenger::alerts::worker::run(
+            messenger_alert_env,
+            messenger_alert_cancel,
+        )
+        .await;
+    });
     let operator_env = env.clone();
     spawn_named_worker("operator_inbox_worker", bg_set, async move {
         crate::operator::worker::run_operator_inbox_worker_nofail(operator_env)
@@ -1156,6 +1166,16 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::important::important_add)
             .service(crate::rer_importer::important::importants_list)
             .service(crate::rer_importer::important::important_rm)
+            .service(crate::users::messenger_profile::search)
+            .service(crate::messenger::alerts::settings_get)
+            .service(crate::messenger::alerts::settings_put)
+            .service(crate::messenger::alerts::preference_get)
+            .service(crate::messenger::alerts::preference_put)
+            .service(crate::messenger::alerts::history)
+            .service(crate::notifications::notification_list)
+            .service(crate::notifications::notification_unread_count)
+            .service(crate::notifications::notification_read)
+            .service(crate::notifications::notification_read_all)
             .service(crate::rer_importer::callsigns::callsigns_graph)
             .service(crate::rer_importer::gdoc::rer_callsign_info)
             .service(crate::rer_importer::gdoc::rer_callsign_info_batch)
@@ -1457,6 +1477,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::list_units_by_id)
             .service(crate::sigint::unit::create_unit)
             .service(crate::sigint::unit::create_unit_with_auto_network)
+            .service(crate::sigint::unit::message_creation::create_unit_for_message)
             .service(crate::sigint::unit::create_device_network)
             .service(crate::sigint::unit::update_unit)
             .service(crate::sigint::unit::delete_unit)
@@ -1837,6 +1858,7 @@ pub async fn main_server(
             .wrap(actix_web::middleware::from_fn(
                 middleware::mk_activity_middleware(Some(redis_for_middleware)),
             ))
+            .wrap(actix_web::middleware::from_fn(read_deadline::enforce))
             .wrap(actix_web::middleware::from_fn(
                 middleware::access_log_middleware,
             ))

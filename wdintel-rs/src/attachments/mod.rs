@@ -1,3 +1,4 @@
+pub(crate) mod analytics;
 pub mod api;
 pub mod coordinates;
 pub mod enrich;

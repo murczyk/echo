@@ -10,6 +10,7 @@ import { useImageEditorKeyboardShortcuts } from '../use-image-editor-keyboard-sh
 function Harness({
   onTool,
   menuOpen = false,
+  saveAsNewHandoff = false,
   registerEscapeHandler,
   setMenuOpen = vi.fn(),
   dismissMenu = vi.fn(),
@@ -17,6 +18,7 @@ function Harness({
 }: {
   onTool: (tool: ImageEditorTool) => void;
   menuOpen?: boolean;
+  saveAsNewHandoff?: boolean;
   registerEscapeHandler?: (handler: ((event: KeyboardEvent) => boolean) | null) => void;
   setMenuOpen?: (value: boolean) => void;
   dismissMenu?: () => void;
@@ -38,6 +40,7 @@ function Harness({
     saveDialogs: { activeDialog: null, closeDialog: vi.fn() } as never,
     confirmCancel: false,
     menuOpen,
+    saveAsNewHandoff,
     setConfirmCancel: vi.fn(),
     setMenuOpen,
     dismissMenu,
@@ -184,5 +187,27 @@ describe('useImageEditorKeyboardShortcuts #3448', () => {
     expect(latestRequestCancel).not.toHaveBeenCalled();
     act(() => root.unmount());
     expect(registerEscapeHandler.mock.calls.at(-1)?.[0]).toBeNull();
+  });
+
+  it('consumes Escape while save-as-new is handing off from its menu', () => {
+    const requestCancel = vi.fn();
+    const registerEscapeHandler = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    act(() =>
+      root.render(
+        <Harness
+          onTool={vi.fn()}
+          saveAsNewHandoff
+          requestCancel={requestCancel}
+          registerEscapeHandler={registerEscapeHandler}
+        />,
+      ),
+    );
+    const handler = registerEscapeHandler.mock.calls[0]?.[0];
+    expect(handler?.(new KeyboardEvent('keydown', { key: 'Escape' }))).toBe(true);
+    expect(requestCancel).not.toHaveBeenCalled();
+    act(() => root.unmount());
   });
 });

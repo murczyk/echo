@@ -1,4 +1,4 @@
-import { canWriteMessages } from '../../../utils/roles';
+import { canWriteMessages, hasRole } from '../../../utils/roles';
 import { RadioFeaturesProvider } from '../RadioFeatures';
 import {
   forwardRef,
@@ -74,6 +74,7 @@ import { resolveManageMessageEmbeddedFormLayout } from './manage-message-editor-
 
 export type Props = {
   open: boolean;
+  hideNetworks?: boolean;
   cyberEchoEnabled: boolean;
   currentUser: User | null;
   onClose: () => void;
@@ -959,6 +960,10 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             unitOptions={drawerState.unitOptions}
                             unitLoading={drawerState.unitLoading}
                             unitAllowCreate={drawerState.unitAllowCreate}
+                            canMergeUnitDuplicates={hasRole(
+                              props.currentUser?.roles,
+                              'UnitsEditor',
+                            )}
                             onUnitFocus={drawerState.onUnitFocus}
                             unitLocked={drawerState.unitLocked}
                             callsignOptions={drawerState.callsignOptions}
@@ -969,6 +974,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
 
                           <NetworkSection
                             radioFeaturesAllowed={drawerState.radioFeaturesAllowed}
+                            hideNetworks={props.hideNetworks ?? false}
                             isEditMode={isEditMode}
                             busy={busy}
                             recentValues={recentValues}

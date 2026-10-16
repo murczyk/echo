@@ -9,7 +9,7 @@ import type {
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { MessageFeedState } from './utils';
 import type { ExplicitFeedNavigation } from './useRerDutyNavigation';
-import type { ExplicitScrollNavigation } from './windowed-feed-scroll-shared';
+import type { ExplicitScrollNavigation } from '../shared/message-feed';
 
 export type MessageActionsDeps = {
   messageFeeds: MessageFeedState[];

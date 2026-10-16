@@ -115,10 +115,12 @@ const baseAnalysisData = {
   loadCallsignGraph: vi.fn(),
   loadAllMessages: vi.fn(),
   loadFilterSection: vi.fn(),
+  loadFirstPage: vi.fn(),
   invalidateFilterSectionLoads: vi.fn(),
   invalidateFilterSectionLoadsForPatch: vi.fn(),
   loadCorrelatedFreqs: vi.fn(),
   loadGroupsActivity: vi.fn(),
+  loadLastPage: vi.fn(),
   loadNewCallsigns: vi.fn(),
   loadNextPage: vi.fn(),
   loadMoreMessages: vi.fn(),
@@ -149,6 +151,7 @@ const baseAnalysisData = {
   noMoreToLoad: false,
   nolimitShown: false,
   pageIndex: 0,
+  firstLoadedMessageIndex: 0,
   onUpdateLocalMessage: vi.fn(),
   onDeleteMessage: vi.fn(),
   onCancelBotTagAction: vi.fn(),
@@ -199,10 +202,12 @@ function buildAnalysisData() {
     loadCallsignGraph: vi.fn(),
     loadAllMessages: vi.fn(),
     loadFilterSection: vi.fn(),
+    loadFirstPage: vi.fn(),
     invalidateFilterSectionLoads: vi.fn(),
     invalidateFilterSectionLoadsForPatch: vi.fn(),
     loadCorrelatedFreqs: vi.fn(),
     loadGroupsActivity: vi.fn(),
+    loadLastPage: vi.fn(),
     loadNewCallsigns: vi.fn(),
     loadNextPage: vi.fn(),
     loadMoreMessages: vi.fn(),
@@ -456,6 +461,26 @@ describe('useRerAnalysisNeoPage', () => {
     },
   );
 
+  it('advances the visible page and URL after a bounded next page loads', async () => {
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: Array.from(
+        { length: 20 },
+        (_, index) => [60 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+      ),
+      messagesTotalCount: 60,
+      loadNextPage: vi.fn().mockResolvedValue(true),
+    };
+
+    renderHook();
+    await flushEffects();
+    await act(async () => latest?.loadNextPage());
+
+    expect(latest?.visibleMessagesPageIndex).toBe(1);
+    expect(latest?.messagePageNavigationTarget).toBe(1);
+    expect(new URLSearchParams(window.location.search).get('messagesPage')).toBe('2');
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3598
   it.each([
     { eligible: true, globallyEnabled: true, expected: true },
@@ -464,7 +489,11 @@ describe('useRerAnalysisNeoPage', () => {
   ])(
     'gates the RER report filter for $eligible eligibility and $globallyEnabled global setting',
     async ({ eligible, globallyEnabled, expected }) => {
-      window.history.replaceState({}, '', `${window.location.pathname}?onlyWithNetwork=true`);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?onlyWithNetwork=true&m=target-uid`,
+      );
       currentUserMock.fetchCurrentUser.mockResolvedValue({
         name: 'tester',
         roles: ['Rer'],
@@ -481,6 +510,7 @@ describe('useRerAnalysisNeoPage', () => {
         rerShortUrlEnabled: false,
         enableAudioTranscription: true,
         rerReportEnabled: globallyEnabled,
+        hideNetworks: true,
       });
 
       renderHook(['Rer']);
@@ -489,6 +519,10 @@ describe('useRerAnalysisNeoPage', () => {
       expect(latest?.rerReportFilterEnabled).toBe(expected);
       expect(latest?.queryState.onlyWithNetwork).toBe(expected);
       expect(new URLSearchParams(window.location.search).has('onlyWithNetwork')).toBe(expected);
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.onlyWithNetwork).toBe(expected);
+      expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq.onlyWithNetwork).toBe(
+        expected,
+      );
     },
   );
 
@@ -607,6 +641,15 @@ describe('useRerAnalysisNeoPage', () => {
     });
     expect(latest?.error).not.toBeNull();
     expect(window.location.search).toContain('device-1');
+  });
+
+  it('keeps network visibility unavailable when system settings fail', async () => {
+    systemSettingsMock.currentSystemSettings.mockRejectedValueOnce(new Error('settings failed'));
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.networkVisibilityReady).toBe(false);
+    expect(latest?.error).not.toBeNull();
   });
 
   // Regression: https://github.com/echoua/echo/issues/3461
@@ -1024,6 +1067,33 @@ describe('useRerAnalysisNeoPage', () => {
     );
     expect(new URL(window.location.href).searchParams.get('m')).toBe('missing-uid');
   });
+  it('does not disclose API error details while opening a linked message', async () => {
+    inboxMessagesMock.fetchInboxItemContext.mockRejectedValueOnce(
+      new Error('private group internal id 123'),
+    );
+    window.history.replaceState({}, '', `${window.location.pathname}?m=hidden-uid`);
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.directMessageError).toBe(
+      'Не вдалося відкрити повідомлення за посиланням. Спробуйте ще раз.',
+    );
+    expect(latest?.directMessageError).not.toContain('private group');
+  });
+  it('reports a missing feed target after the context lookup succeeds', async () => {
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce({
+      ...buildDirectLinkWindow(),
+      inbox: { ...buildDirectLinkWindow().inbox, inboxItems: [] },
+    });
+    window.history.replaceState({}, '', `${window.location.pathname}?m=disappeared-uid`);
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.directMessageError).toBe('Повідомлення за посиланням відсутнє у стрічці.');
+    expect(latest?.directMessageNavigation).toBeNull();
+  });
   // Regression: https://github.com/echoua/echo/issues/2726
   it.each([
     { roles: ['Rer'], from: '2026-08-20T00:00', to: '2026-08-21T00:00' },
@@ -1113,9 +1183,10 @@ describe('useRerAnalysisNeoPage', () => {
       );
       renderHook();
       await flushEffects();
-      expect(inboxMessagesMock.fetchInboxItemContext).toHaveBeenCalledWith({
-        messageUid: 'target-uid',
-      });
+      expect(inboxMessagesMock.fetchInboxItemContext).toHaveBeenCalledWith(
+        { messageUid: 'target-uid' },
+        { signal: expect.any(AbortSignal) },
+      );
       expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
       await act(async () => {
         latest?.updateQueryState(patch);
@@ -1214,6 +1285,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
     expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledWith(
       expect.objectContaining({ messageRef: 'target-uid' }),
+      { signal: expect.any(AbortSignal) },
     );
     expect(latest?.queryState).toMatchObject({
       fromDateTimeStr: '2026-08-20T00:00',
@@ -1242,6 +1314,56 @@ describe('useRerAnalysisNeoPage', () => {
     act(() => latest?.directMessageNavigation?.onClearFocus());
     expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
     expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('finishes a linked-context refresh when the 41-message response is displayed in a 40-message window', async () => {
+    const baseWindow = buildDirectLinkWindow();
+    const targetMessage = baseWindow.inbox.inboxItems[0][1];
+    const inboxItems = Array.from(
+      { length: 41 },
+      (_, index) =>
+        [index + 30, { ...targetMessage, text: `message-${index + 30}` }] as [number, InboxMessage],
+    );
+    const focusedWindow: InboxWindowRsp = {
+      ...baseWindow,
+      messagesBefore: 20,
+      messagesAfter: 20,
+      inbox: { ...baseWindow.inbox, inboxItems },
+    };
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(focusedWindow);
+
+    renderHook();
+    await flushEffects();
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: inboxItems.slice(1),
+    };
+    act(() => latest?.setNewestFirst(false));
+    await flushEffects();
+    expect(latest?.directMessageLoading).toBe(false);
+
+    const refreshedItems = inboxItems.map(
+      ([id, message]) => [id, { ...message, text: `refreshed-${id}` }] as [number, InboxMessage],
+    );
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce({
+      ...focusedWindow,
+      inbox: { ...focusedWindow.inbox, inboxItems: refreshedItems },
+    });
+    act(() => latest?.updateQueryState({ groupsSelected: ['group-1'] }));
+    await flushEffects();
+    expect(latest?.directMessageLoading).toBe(true);
+
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: refreshedItems.slice(1),
+    };
+    act(() => latest?.setNewestFirst(true));
+    await flushEffects();
+
+    expect(latest?.directMessageLoading).toBe(false);
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
   });
 
   // https://github.com/echoua/echo/issues/3455
@@ -1336,6 +1458,116 @@ describe('useRerAnalysisNeoPage', () => {
       focusedMessageActive: true,
     });
   });
+  it('writes a bounded scroll-selected page to the URL without creating a button target', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?messagesPage=2`);
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: Array.from(
+        { length: 40 },
+        (_, index) => [60 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+      ),
+      firstLoadedMessageIndex: 20,
+      pageIndex: 2,
+      messagesTotalCount: 60,
+    };
+
+    renderHook();
+    await flushEffects();
+    act(() => latest?.clearMessagePageNavigationTarget());
+    act(() => latest?.setVisibleMessagesPageIndex(2));
+
+    expect(latest?.visibleMessagesPageIndex).toBe(2);
+    expect(latest?.messagePageNavigationTarget).toBeNull();
+    expect(new URL(window.location.href).searchParams.get('messagesPage')).toBe('3');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('refreshes the page made visible by scrolling rather than the last loaded edge', async () => {
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: Array.from(
+        { length: 40 },
+        (_, index) => [40 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+      ),
+      pageIndex: 1,
+      messagesTotalCount: 40,
+    };
+    renderHook();
+    await flushEffects();
+    act(() => latest?.setVisibleMessagesPageIndex(1));
+    act(() => latest?.setVisibleMessagesPageIndex(0));
+    expect(latest?.visibleMessagesPageIndex).toBe(0);
+
+    await act(async () => {
+      latest?.reload({ preserveMessagePage: true });
+      await Promise.resolve();
+    });
+
+    expect(currentAnalysisData.reload).toHaveBeenCalledWith({
+      preserveMessagePage: true,
+      messagePageIndex: 0,
+    });
+  });
+
+  it('requests an evicted previous bounded page when its button is clicked', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?messagesPage=2`);
+    const loadPrevPage = vi.fn().mockResolvedValue(undefined);
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: Array.from(
+        { length: 40 },
+        (_, index) => [60 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+      ),
+      firstLoadedMessageIndex: 20,
+      pageIndex: 2,
+      messagesTotalCount: 60,
+      loadPrevPage,
+    };
+
+    renderHook();
+    await flushEffects();
+    await act(async () => latest?.loadPrevPage());
+
+    expect(loadPrevPage).toHaveBeenCalledWith(0);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it.each([
+    { action: 'loadFirstPage', initialPageIndex: 1 },
+    { action: 'loadLastPage', initialPageIndex: 0 },
+    { action: 'loadNextPage', initialPageIndex: 0 },
+    { action: 'loadPrevPage', initialPageIndex: 1 },
+  ] as const)(
+    'keeps the current page and URL when $action cannot load the requested chunk',
+    async ({ action, initialPageIndex }) => {
+      const initialUrl =
+        `${window.location.pathname}` + (initialPageIndex === 1 ? '?messagesPage=2' : '');
+      window.history.replaceState({}, '', initialUrl);
+      currentAnalysisData = {
+        ...buildAnalysisData(),
+        messages: Array.from(
+          { length: 20 },
+          (_, index) => [60 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+        ),
+        firstLoadedMessageIndex: initialPageIndex * 20,
+        pageIndex: initialPageIndex,
+        messagesTotalCount: 60,
+        [action]: vi.fn().mockResolvedValue(false),
+      };
+
+      renderHook();
+      await flushEffects();
+      const initialNavigationTarget = latest?.messagePageNavigationTarget;
+      const initialVisibleUrl = window.location.pathname + window.location.search;
+      await act(async () => latest?.[action]());
+
+      expect(currentAnalysisData[action]).toHaveBeenCalledTimes(1);
+      expect(latest?.visibleMessagesPageIndex).toBe(initialPageIndex);
+      expect(latest?.messagePageNavigationTarget).toBe(initialNavigationTarget);
+      expect(window.location.pathname + window.location.search).toBe(initialVisibleUrl);
+    },
+  );
+
   it('updates the visible chunk across previous and next direct-link navigation', async () => {
     const targetMessage = {
       text: 'target',
@@ -1503,6 +1735,25 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.messages).toEqual([]);
     expect(latest?.directMessageLoading).toBe(false);
     expect(latest?.error).toBeNull();
+  });
+  it('reports a focused-window refresh failure without exposing API details or losing focus', async () => {
+    const focusedWindow = buildDirectLinkWindow();
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(focusedWindow);
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    renderHook();
+    await flushEffects();
+
+    inboxMessagesMock.fetchInboxWindow.mockRejectedValueOnce(
+      new Error('private group internal id 123'),
+    );
+    act(() => latest?.updateQueryState({ groupsSelected: ['other-group'] }));
+    await flushEffects();
+
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageError).toBe(
+      'Не вдалося відкрити повідомлення за посиланням. Спробуйте ще раз.',
+    );
+    expect(latest?.directMessageError).not.toContain('private group');
   });
   it('leaves direct-link context when the date range changes', async () => {
     const targetMessage = {

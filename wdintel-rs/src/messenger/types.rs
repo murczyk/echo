@@ -23,6 +23,8 @@ pub struct Message {
 pub struct EchoAccountF1 {
     pub id: i64,
     pub area_of_responsibility: Option<AreaOfResponsibility>,
+    pub can_read_messages: Option<bool>,
+    pub can_send_messages: Option<bool>,
     pub status: String,
     pub created_at: i64,
     pub client_id: Option<i32>,
@@ -120,6 +122,8 @@ pub struct AccountStatusReq {
     pub account_id: i64,
     pub aor_id: Option<i64>,
     pub is_active: bool,
+    pub can_read_messages: Option<bool>,
+    pub can_send_messages: Option<bool>,
     pub display_name: String,
     pub description: Option<String>,
     pub api_login: Option<String>,
@@ -181,6 +185,7 @@ pub struct GroupUpdateReq {
     pub interseption_kind: Option<InterseptionKind>,
     pub disable_network_assignment: Option<bool>,
     pub is_aviation_group: Option<bool>,
+    pub fetch_new_messages: Option<bool>,
 }
 
 pub struct UnstageResult {

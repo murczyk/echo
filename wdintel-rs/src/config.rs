@@ -19,6 +19,7 @@ pub const SERVER_ACTIVITY_CONTEXT_HEADERS: &[&str] = &[
 ];
 
 pub const USER_DISPLAY_NAME_MAX_LENGTH: usize = 100;
+pub const USER_MESSENGER_PROFILE_SEARCH_LIMIT: usize = 50;
 pub const USER_AUTHOR_IDENTITIES_MAX_BATCH_SIZE: usize = 200;
 pub const API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT: i64 = 500;
 pub const API_RATE_LIMIT_BURST_SIZE_DEFAULT: i64 = 5;
@@ -765,6 +766,8 @@ pub const REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS: &str =
     "Звіт містить понад 1 млн. записів. Зменшіть період або звузьте фільтри.";
 pub const RER_DUTY_TEST_REPLAY_SOURCE_MAX: i64 = 10_000;
 pub const ANALYTICS_VERIFY_TIMEOUT_MS: u64 = 15_000;
+pub const ANALYTICS_HTTP_READ_TIMEOUT_MS: u64 = 60_000;
+pub const ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS: i64 = 10;
 pub const ANALYTICS_VERIFY_PGOPTIONS: &str = "-c default_transaction_read_only=on -c statement_timeout=15000 -c application_name=echo-analytics-verify";
 pub const RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX: i64 = 31_536_000;
 pub const RER_DUTY_TEST_REPLAY_COMMENT: &str = "[duplicate]";
@@ -800,6 +803,8 @@ pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_SEARCH_DEFAULT_LIMIT: u64 = 50;
 pub const SIGINT_UNIT_SEARCH_INACTIVE_LIMIT: u64 = 250;
 pub const SIGINT_DIRECT_SUBMIT_UNIT_LOCK_NAMESPACE: i32 = 3535;
+pub const SIGINT_MESSAGE_UNIT_PENDING_NETWORK_REDIS_PREFIX: &str =
+    "sigint:message-unit:pending-network:";
 pub const SIGINT_UNIT_NAME_FIRST_INCLUDED_ECHELON_INDEX: usize = 1;
 pub const SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX: usize = 10;
 pub const SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX: usize = 11;
@@ -906,6 +911,11 @@ pub const IMPORT_DIRECTION_FINDING_UUID: &str =
 pub const REDIS_HOST: &str = "localhost";
 pub const REDIS_PORT: u16 = 6379;
 pub const MESSENGER_WORKER_LONG_SLEEP_MS: u64 = 5000;
+pub const MESSENGER_ALERT_HISTORY_PAGE_SIZE: usize = 20;
+pub const MESSENGER_ALERT_MAX_SENDERS: usize = 20;
+pub const MESSENGER_ALERT_BATCH_SIZE: usize = 20;
+pub const MESSENGER_ALERT_POLL_SECONDS: u64 = 5;
+pub const MESSENGER_ALERT_SENDER_TIMEOUT_SECONDS: i64 = 90;
 pub const MESSENGER_WORKER_IDLE_SLEEP_MS: u64 = 100;
 pub const MESSENGER_WORKER_BATCH_SIZE: u64 = 100;
 pub const MESSENGER_RECONCILE_DUPLICATE_GROUP_LINK_LIMIT: u64 = 2;
@@ -1135,6 +1145,8 @@ pub const INBOX_COUNT_INDEXED_MAX_DAYS: i64 = 7;
 pub const INBOX_COUNT_SINGLEFLIGHT_SUCCESS_TTL_MS: u64 = 5_000;
 pub const INBOX_COUNT_SINGLEFLIGHT_STALE_SECS: u64 = 60;
 pub const INBOX_COUNT_SINGLEFLIGHT_MAX_ENTRIES: usize = 2_048;
+pub const NOTIFICATION_READ_BOUNDARY_TTL_MINUTES: i64 = 15;
+pub const NOTIFICATION_READ_BOUNDARY_MAX_PER_RECIPIENT: i64 = 8;
 pub const INBOX_MESSAGES_PAGE_LIMIT: usize = 20;
 pub const ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE: usize = 1_000;
 pub const ANALYTICS_INBOX_POSTGRES_BOUNDS_MAX_DAYS: i64 = 7;
@@ -1365,6 +1377,14 @@ DELETE FROM sigint_peleng;
 DELETE FROM freq_location;
 DELETE FROM sigint_bookmark;
 DELETE FROM sigint_comment;
+DELETE FROM notification_read_boundary_receipt;
+DELETE FROM notification_read_boundary;
+DELETE FROM notification_read_boundary_completed;
+DELETE FROM messenger_alert_delivery;
+UPDATE messenger_alert_settings SET enabled = false, sender_datasource_ids = '{}' WHERE id = 1;
+DELETE FROM notification_receipt;
+DELETE FROM notification_event;
+DELETE FROM importance_operation;
 DELETE FROM sigint_important;
 DELETE FROM ai_intel_report_attempt;
 DELETE FROM messenger_media_meta;
@@ -1657,6 +1677,8 @@ pub const ANALYTICS_LOCAL_EXCLUSIONS_PATH: &str = concat!(
 );
 pub const ANALYTICS_TABLE_RECONCILE_SERVICE: &str =
     "echo-peerdb-table-reconcile.service";
+pub const ANALYTICS_ATTACHMENT_HISTORY_SCRIPT: &str =
+    "/opt/echo-peerdb/current/bin/oneoff-replicate-attachment-history.sh";
 pub const SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_DEFAULT: u64 = 500;
 pub const SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_MAX: u64 = 1_000;
 pub const SIGNAL_MESSAGE_UUID_BACKFILL_PAUSE_MS_DEFAULT: u64 = 250;
@@ -2281,6 +2303,10 @@ pub const ATTACHMENT_MAX_ATTEMPTS: i32 = 8;
 pub const ATTACHMENT_SEARCH_LIMIT: i64 = 20;
 pub const ATTACHMENT_READ_LIMIT: i64 = 4;
 pub const ATTACHMENT_MAX_QUERY_CHARS: usize = 1_000;
+pub const ATTACHMENT_SEARCH_CHANGE_LIMIT: u64 = 1_000;
+pub const ATTACHMENT_SEARCH_CHANGE_RETENTION_SECS: u64 = 24 * 60 * 60;
+pub const ATTACHMENT_SEARCH_CHANGE_CLEANUP_INTERVAL_SECS: u64 = 60;
+pub const ATTACHMENT_SEARCH_CHANGE_CLEANUP_BATCH_SIZE: u64 = 500;
 pub const ATTACHMENT_MAX_RESULT_BYTES: usize = 250 * 1024 * 1024;
 
 pub const ATTACHMENT_MAX_INSPECTION_JOBS: i64 = 32;

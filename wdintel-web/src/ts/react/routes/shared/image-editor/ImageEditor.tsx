@@ -57,7 +57,7 @@ export function ImageEditor({
   const sourceRef = useRef<import('fabric').FabricImage | null>(null);
   const cropRef = useRef<import('fabric').Rect | null>(null);
   const hiddenTextareaContainerRef = useRef<HTMLDivElement | null>(null);
-  const saveAsNewButtonRef = useRef<HTMLButtonElement | null>(null);
+  const saveOptionsButtonRef = useRef<HTMLButtonElement | null>(null);
   const saveReplacementButtonRef = useRef<HTMLButtonElement | null>(null);
   const cancelGestureRef = useRef<() => boolean>(() => false);
   const [tool, setTool] = useState<ImageEditorTool>(ImageEditorTool.Select);
@@ -70,6 +70,7 @@ export function ImageEditor({
   const [magnification, setMagnification] = useState(2);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [saveAsNewHandoff, setSaveAsNewHandoff] = useState(false);
   const [dismissMenu, setDismissMenu] = useState(0);
   const theme = useTheme();
   const cropStroke = theme.palette.primary.main;
@@ -396,6 +397,9 @@ export function ImageEditor({
     if (hasEdits || finalizedText) setConfirmCancel(true);
     else onCancel();
   }, [finalizeActiveText, hasEdits, isInteractionLocked, onCancel]);
+  useEffect(() => {
+    if (saveDialogs.activeDialog === ImageEditorSaveDialog.New) setSaveAsNewHandoff(false);
+  }, [saveDialogs.activeDialog]);
   const { activate } = useImageEditorKeyboardShortcuts({
     editorIdRef,
     editorRootRef,
@@ -408,6 +412,7 @@ export function ImageEditor({
     saveDialogs,
     confirmCancel,
     menuOpen,
+    saveAsNewHandoff: saveAsNewHandoff && saveDialogs.activeDialog !== ImageEditorSaveDialog.New,
     setConfirmCancel,
     setMenuOpen,
     dismissMenu: () => setDismissMenu((value) => value + 1),
@@ -532,8 +537,11 @@ export function ImageEditor({
         onSaveReplacement={() =>
           saveDialogs.openDialog(ImageEditorSaveDialog.Replacement, saveReplacementButtonRef)
         }
-        onSaveAsNew={() => saveDialogs.openDialog(ImageEditorSaveDialog.New, saveAsNewButtonRef)}
-        saveAsNewButtonRef={saveAsNewButtonRef}
+        onSaveAsNew={() => saveDialogs.openDialog(ImageEditorSaveDialog.New, saveOptionsButtonRef)}
+        onSaveAsNewHandoffChange={setSaveAsNewHandoff}
+        onMenuOpenChange={setMenuOpen}
+        dismissMenu={dismissMenu}
+        saveOptionsButtonRef={saveOptionsButtonRef}
         saveReplacementButtonRef={saveReplacementButtonRef}
       />
       <div ref={hiddenTextareaContainerRef} data-image-editor-textarea-container />

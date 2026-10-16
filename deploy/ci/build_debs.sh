@@ -89,6 +89,16 @@ for font_path in \
   fi
 done
 
+(
+  analytics_bundle_dir=$(mktemp -d)
+  trap 'rm -rf -- "$analytics_bundle_dir"' EXIT
+  dpkg-deb --fsys-tarfile "$wdintel_deb" \
+    | tar -x -C "$analytics_bundle_dir" ./usr/share/echo/analytics-control
+  # shellcheck source=../clickhouse/bin/lib.sh
+  source "$analytics_bundle_dir/usr/share/echo/analytics-control/bin/lib.sh"
+  validate_control_bundle "$BUNDLE_DIR"
+)
+
 # Build deb packages for non-workspace crates and copy them to root target/debian
 doc_version_epoch=""
 if [ -f "docs/echo-docs/Cargo.toml" ]; then

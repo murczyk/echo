@@ -7,6 +7,7 @@ type AnalysisNeoMockOptions = {
   enableAudioTranscription?: boolean;
   analysisAorFilterEnabled?: boolean;
   hideNetworks?: boolean;
+  systemSettingsFailure?: boolean;
   summaryDelayMs?: number;
   sidebarDelayMs?: number;
   inboxDelayMs?: number;
@@ -236,6 +237,10 @@ export async function installAnalysisNeoApiMocks(
     }
 
     if (pathname === '/api/system-settings/current') {
+      if (options.systemSettingsFailure) {
+        await route.fulfill({ status: 500, body: 'System settings unavailable' });
+        return;
+      }
       await fulfillJson(
         route,
         systemSettingsCurrentResponse({

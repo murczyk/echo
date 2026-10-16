@@ -161,6 +161,7 @@ pub async fn user_settings_put(
             MessageTimeBasis::MessageCreation => "creation".to_owned(),
         })),
         message_auto_parse_enabled: Set(Some(dto.message_auto_parse_enabled)),
+        receive_alerts_in_messenger: NotSet,
         updated_at: Set(now),
     })
     .on_conflict(
