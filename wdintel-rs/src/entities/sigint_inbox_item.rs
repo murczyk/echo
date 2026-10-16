@@ -86,6 +86,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Nominatimres,
+    #[sea_orm(has_one = "super::sigint_chat_message::Entity")]
+    SigintChatMessage,
     #[sea_orm(has_many = "super::sigint_inbox_item_callsign::Entity")]
     SigintInboxItemCallsign,
     #[sea_orm(has_many = "super::sigint_inbox_item_failed_unit_label::Entity")]
@@ -181,6 +183,12 @@ impl Related<super::device_name::Entity> for Entity {
 impl Related<super::nominatimres::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Nominatimres.def()
+    }
+}
+
+impl Related<super::sigint_chat_message::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintChatMessage.def()
     }
 }
 

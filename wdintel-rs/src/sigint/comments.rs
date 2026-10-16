@@ -918,7 +918,7 @@ pub async fn oneoff_export_sigint_comments(
             signal_message::Entity::belongs_to(sigint_comment::Entity)
                 .from(signal_message::Column::Id)
                 .to(sigint_comment::Column::SignalMessageId)
-                .into()
+                .into(),
         )
         .join(
             JoinType::InnerJoin,

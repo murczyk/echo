@@ -1,6 +1,8 @@
 use crate::config::{ROLE_API, ROLE_MESSENGER_INGEST};
 use crate::entities::datasource;
 use crate::error::AppError;
+use crate::h;
+use crate::types::ShortContext;
 use crate::users::{has_role, login_id_from_identity};
 use uuid::Uuid;
 
@@ -28,13 +30,16 @@ pub async fn ensure_messenger_ingest_access(
     dbx: &sea_orm::DatabaseConnection,
     user: &actix_identity::Identity,
 ) -> Result<IngestScope, AppError> {
-    let login_id = login_id_from_identity(user)?;
-    ensure_messenger_ingest_roles(dbx, &login_id).await?;
+    let login_id = login_id_from_identity(user).c(h!())?;
+    ensure_messenger_ingest_roles(dbx, &login_id)
+        .await
+        .c(h!())?;
     let datasource =
         crate::messenger_ingest::datasource::ensure_ingest_datasource(
             dbx, &login_id,
         )
-        .await?;
+        .await
+        .c(h!())?;
     Ok(IngestScope {
         login_id,
         datasource,
@@ -45,7 +50,9 @@ pub(crate) async fn ensure_messenger_ingest_roles(
     dbx: &sea_orm::DatabaseConnection,
     login_id: &Uuid,
 ) -> Result<(), AppError> {
-    has_role(dbx, login_id, ROLE_API).await?;
-    has_role(dbx, login_id, ROLE_MESSENGER_INGEST).await?;
+    has_role(dbx, login_id, ROLE_API).await.c(h!())?;
+    has_role(dbx, login_id, ROLE_MESSENGER_INGEST)
+        .await
+        .c(h!())?;
     Ok(())
 }

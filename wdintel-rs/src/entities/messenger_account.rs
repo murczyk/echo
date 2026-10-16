@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    pub login_id: Uuid,
     #[sea_orm(unique_key = "messenger_account_datasource_id_external_id_key")]
     pub datasource_id: i64,
     #[sea_orm(unique)]
@@ -45,6 +44,8 @@ pub struct Model {
     pub deleted: bool,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    #[sea_orm(column_type = "Text")]
+    pub messenger_type: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -65,14 +66,10 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     DatasourceGroup,
-    #[sea_orm(
-        belongs_to = "super::login::Entity",
-        from = "Column::LoginId",
-        to = "super::login::Column::Id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
-    Login,
+    #[sea_orm(has_many = "super::messenger_chat::Entity")]
+    MessengerChat,
+    #[sea_orm(has_many = "super::messenger_contact::Entity")]
+    MessengerContact,
 }
 
 impl Related<super::datasource::Entity> for Entity {
@@ -87,9 +84,15 @@ impl Related<super::datasource_group::Entity> for Entity {
     }
 }
 
-impl Related<super::login::Entity> for Entity {
+impl Related<super::messenger_chat::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Login.def()
+        Relation::MessengerChat.def()
+    }
+}
+
+impl Related<super::messenger_contact::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerContact.def()
     }
 }
 

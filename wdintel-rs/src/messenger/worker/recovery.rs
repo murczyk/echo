@@ -974,6 +974,7 @@ async fn process_recovery_message_in_txn(
             &mut changed_inbox_item_ids,
             ProcessSignalMessageQueueItemOptions {
                 created_at: Some(created_at),
+                ..Default::default()
             },
         )
         .await

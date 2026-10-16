@@ -134,6 +134,10 @@ pub use super::login_totp::Entity as LoginTotp;
 pub use super::media_summary::Entity as MediaSummary;
 pub use super::media_summary_settings::Entity as MediaSummarySettings;
 pub use super::messenger_account::Entity as MessengerAccount;
+pub use super::messenger_chat::Entity as MessengerChat;
+pub use super::messenger_chat_member::Entity as MessengerChatMember;
+pub use super::messenger_contact::Entity as MessengerContact;
+pub use super::messenger_media_meta::Entity as MessengerMediaMeta;
 pub use super::modulation::Entity as Modulation;
 pub use super::network_callsign::Entity as NetworkCallsign;
 pub use super::network_freq_last_datetime_in_aor::Entity as NetworkFreqLastDatetimeInAor;
@@ -183,6 +187,7 @@ pub use super::sigint_activity_decision_changelog::Entity as SigintActivityDecis
 pub use super::sigint_bookmark::Entity as SigintBookmark;
 pub use super::sigint_callsign::Entity as SigintCallsign;
 pub use super::sigint_callsign_changelog::Entity as SigintCallsignChangelog;
+pub use super::sigint_chat_message::Entity as SigintChatMessage;
 pub use super::sigint_comment::Entity as SigintComment;
 pub use super::sigint_comment_blacklist::Entity as SigintCommentBlacklist;
 pub use super::sigint_important::Entity as SigintImportant;

@@ -4,7 +4,7 @@ use crate::messenger::media::{MediaUploadInput, StagedMediaAttachments};
 use crate::{
     location::SettlementsDataConfig, messenger::types::Message, types::*,
 };
-use chrono::Utc;
+use chrono::{TimeZone, Utc};
 use echo_im::types::MessageAttachmentF1;
 use redis::aio::ConnectionManager;
 use sea_orm::*;
@@ -18,10 +18,21 @@ use sea_orm::*;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ProcessSignalMessageQueueItemOptions {
     pub created_at: Option<NaiveDateTime>,
+    /// Stores the message as-is: no lookup of, and no registration as, a
+    /// deduplication original. Used by the messenger ingest API.
+    pub skip_dedupe: bool,
+    /// The submitting login, for messages pushed through an API.
+    pub login_id: Option<uuid::Uuid>,
+    /// UTC time that dates and times mentioned in the body are resolved
+    /// against, instead of the processing time. Used for messages whose
+    /// send time is known, such as backfilled messenger history.
+    pub inbox_reference_time: Option<NaiveDateTime>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ProcessSignalMessageQueueItemResult {
+    pub signal_message_id: i64,
+    pub signal_message_uuid: Option<uuid::Uuid>,
     pub message_uid: String,
     pub is_duplicate: bool,
     pub uploaded_files_ready_for_deletion: Vec<MediaUploadInput>,
@@ -166,7 +177,10 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
         },
         timestamp: Set(Some(m.timestamp)),
         sender: Set(m.sender),
-        login_id: NotSet,
+        login_id: match options.login_id {
+            Some(login_id) => Set(Some(login_id)),
+            None => NotSet,
+        },
         format: NotSet,
         deleted: Set(true), // unstaged message
         external_id: Set(None),
@@ -181,17 +195,21 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
     .c(h!())?;
     let staged_signal_message_id = signal_message.id;
     let staged_signal_message_uuid = signal_message.id_uuid;
-    let m_duplicate_of = crate::sigint::find_duplicate_of(
-        txn,
-        &body_for_dedupe,
-        &body,
-        signal_message.attachments_hash.as_deref(),
-        Some(m.timestamp),
-        signal_message.id,
-        redis,
-    )
-    .await
-    .c(h!())?;
+    let m_duplicate_of = if options.skip_dedupe {
+        None
+    } else {
+        crate::sigint::find_duplicate_of(
+            txn,
+            &body_for_dedupe,
+            &body,
+            signal_message.attachments_hash.as_deref(),
+            Some(m.timestamp),
+            signal_message.id,
+            redis,
+        )
+        .await
+        .c(h!())?
+    };
     let res = crate::sigint::worker::unstage_message(
         txn,
         &m.group_id,
@@ -245,6 +263,8 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
             res.message
         };
         return Ok(ProcessSignalMessageQueueItemResult {
+            signal_message_id: duplicate_target.id,
+            signal_message_uuid: duplicate_target.id_uuid,
             message_uid: duplicate_target.message_uid.context(h!())?,
             is_duplicate: true,
             uploaded_files_ready_for_deletion,
@@ -272,8 +292,25 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
     };
 
     if !skip_process_inbox_item {
-        let processed_inbox_item_ids =
-            crate::rer_importer::bgworker::process_message_to_inbox(
+        let processed_inbox_item_ids = match options.inbox_reference_time {
+            Some(reference_time) => {
+                crate::rer_importer::bgworker::process_message_to_inbox_with_override(
+                    settlements.clone(),
+                    txn,
+                    rq,
+                    config,
+                    signal_message.id,
+                    Some(crate::inbox::InboxDatetimeOverride::ReferenceTime {
+                        reference_time: Utc
+                            .from_utc_datetime(&reference_time)
+                            .with_timezone(&crate::config::get_tz()),
+                    }),
+                    None,
+                )
+                .await
+                .c(h!())?
+            }
+            None => crate::rer_importer::bgworker::process_message_to_inbox(
                 settlements.clone(),
                 txn,
                 rq,
@@ -282,7 +319,8 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
                 None,
             )
             .await
-            .c(h!())?;
+            .c(h!())?,
+        };
         for processed_inbox_item_id in &processed_inbox_item_ids {
             crate::sigint::worker::incoming_message_after_insert(
                 txn,
@@ -294,6 +332,8 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
         changed_inbox_item_ids.extend(processed_inbox_item_ids);
     }
     Ok(ProcessSignalMessageQueueItemResult {
+        signal_message_id: signal_message.id,
+        signal_message_uuid: signal_message.id_uuid,
         message_uid,
         is_duplicate: false,
         uploaded_files_ready_for_deletion,

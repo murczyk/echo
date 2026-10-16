@@ -1,5 +1,6 @@
 use crate::config::{
     MESSENGER_INGEST_DATASOURCE_KIND, MESSENGER_INGEST_DATASOURCE_LABEL_PREFIX,
+    MESSENGER_INGEST_LAST_SYNC_REFRESH_SECS,
 };
 use crate::entities::{datasource, login};
 use crate::error::AppError;
@@ -24,7 +25,8 @@ pub async fn ensure_ingest_datasource(
         .one(dbx)
         .await
         .c(h!())?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
     let display_name =
         format!("{MESSENGER_INGEST_DATASOURCE_LABEL_PREFIX}{login_name}");
 
@@ -61,7 +63,7 @@ pub async fn ensure_ingest_datasource(
                 needs_update = true;
             }
         }
-        if datasource.last_sync_at != Some(now) {
+        if last_sync_is_stale(datasource.last_sync_at, now) {
             updated_datasource.last_sync_at = Set(Some(now));
             needs_update = true;
         }
@@ -83,4 +85,59 @@ pub async fn ensure_ingest_datasource(
         ..Default::default()
     };
     Ok(new_datasource.insert(dbx).await.c(h!())?)
+}
+
+/// `datasource` is replicated to analytics, so `last_sync_at` is refreshed
+/// only when it is unset or older than the refresh interval instead of on
+/// every request.
+fn last_sync_is_stale(
+    last_sync_at: Option<chrono::NaiveDateTime>,
+    now: chrono::NaiveDateTime,
+) -> bool {
+    last_sync_at.is_none_or(|last_sync_at| {
+        now - last_sync_at
+            >= chrono::Duration::seconds(
+                MESSENGER_INGEST_LAST_SYNC_REFRESH_SECS,
+            )
+    })
+}
+
+/// Whether a signal message was submitted through the messenger ingest
+/// API, judged by the kind of its group's datasource. Ingest messages are
+/// stored one-to-one with their inbox item and are never split.
+pub async fn is_messenger_ingest_message<C: ConnectionTrait>(
+    txn: &C,
+    message: &crate::entities::signal_message::Model,
+) -> Result<bool, AppError> {
+    let Some(datasource_group_id) = message.datasource_group_id else {
+        return Ok(false);
+    };
+    let count = crate::entities::datasource_group::Entity::find_by_id(
+        datasource_group_id,
+    )
+    .inner_join(datasource::Entity)
+    .filter(datasource::Column::Kind.eq(MESSENGER_INGEST_DATASOURCE_KIND))
+    .count(txn)
+    .await
+    .c(h!())?;
+    Ok(count > 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn last_sync_is_refreshed_only_when_stale() {
+        let now = chrono::Utc::now().naive_utc();
+        let interval =
+            chrono::Duration::seconds(MESSENGER_INGEST_LAST_SYNC_REFRESH_SECS);
+        assert!(last_sync_is_stale(None, now));
+        assert!(!last_sync_is_stale(Some(now), now));
+        assert!(!last_sync_is_stale(
+            Some(now - interval + chrono::Duration::seconds(1)),
+            now
+        ));
+        assert!(last_sync_is_stale(Some(now - interval), now));
+    }
 }

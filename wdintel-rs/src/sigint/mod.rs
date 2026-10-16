@@ -682,11 +682,28 @@ async fn find_duplicate_in_db(
             .add(signal_message::Column::AttachmentsHash.is_null()),
     };
 
+    // Messenger ingest messages are never deduplicated, so they must not
+    // become originals for other messages either.
+    let is_messenger_ingest_message = Expr::exists(
+        sigint_chat_message::Entity::find()
+            .select_only()
+            .expr(Expr::value(1))
+            .filter(
+                Expr::col((
+                    sigint_chat_message::Entity,
+                    sigint_chat_message::Column::Id,
+                ))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
+            )
+            .into_query(),
+    );
+
     let m_duplicate = signal_message::Entity::find()
         .find_with_related(datasource_group::Entity)
         .filter(time_filter)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(body_filter)
+        .filter(is_messenger_ingest_message.not())
         .order_by_asc(signal_message::Column::CreatedAt)
         .all(txn)
         .await

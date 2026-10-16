@@ -125,7 +125,13 @@ where
     };
 
     let body = message.body.clone().unwrap_or("".to_string());
-    if crate::rer_importer::multimessage::should_try_split_message(&body) {
+    if crate::rer_importer::multimessage::should_try_split_message(&body)
+        && !crate::messenger_ingest::datasource::is_messenger_ingest_message(
+            txn, &message,
+        )
+        .await
+        .c(h!())?
+    {
         let spawned = match datetime_override.as_ref() {
             Some(InboxDatetimeOverride::Historical {
                 reference_time, ..

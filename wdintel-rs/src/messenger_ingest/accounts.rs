@@ -1,11 +1,10 @@
-use crate::config::{MESSENGER_INGEST_SYNC_MAX_ITEMS, MESSENGER_TYPE_TELEGRAM};
+use crate::config::MESSENGER_INGEST_SYNC_MAX_ITEMS;
 use crate::entities::{datasource_group, messenger_account, signal_group};
 use crate::error::AppError;
 use crate::h;
-use crate::messenger_ingest::access::{
-    ensure_messenger_ingest_access, IngestScope,
-};
+use crate::messenger_ingest::access::IngestScope;
 use crate::messenger_ingest::refs::{
+    ensure_provider_fields, ensure_unique_created_external_ids,
     find_scoped_account_by_external_id, find_scoped_account_by_id,
     parse_i64_decimal,
 };
@@ -14,21 +13,17 @@ use crate::messenger_ingest::types::{
     MessengerIngestAccountsSyncReq, MessengerIngestAccountsSyncRsp,
     MessengerIngestTelegramAccountId,
 };
-use crate::types::{Env, ShortContext};
-use actix_web::post;
-use actix_web::web::Json;
+use crate::types::ShortContext;
 use chrono::{NaiveDateTime, Utc};
 use sea_orm::*;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-#[post("/api/messenger-ingest/v1/accounts/sync")]
-pub async fn accounts_sync(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<MessengerIngestAccountsSyncReq>,
-) -> Result<Json<MessengerIngestAccountsSyncRsp>, AppError> {
-    let req = req.into_inner();
+pub(crate) async fn sync_accounts(
+    db: &DatabaseConnection,
+    scope: &IngestScope,
+    req: MessengerIngestAccountsSyncReq,
+) -> Result<MessengerIngestAccountsSyncRsp, AppError> {
     let item_count = req.created.len() + req.updated.len() + req.deleted.len();
     if item_count > MESSENGER_INGEST_SYNC_MAX_ITEMS {
         return Err(AppError::BL {
@@ -37,11 +32,11 @@ pub async fn accounts_sync(
             ),
         });
     }
-
-    let scope = ensure_messenger_ingest_access(&env.dbx, &user).await?;
-    if !scope.is_enabled() {
-        return Err(AppError::Forbidden("datasource is disabled".to_string()));
-    }
+    ensure_unique_created_external_ids(
+        "account",
+        req.created.iter().map(|item| item.external_id.as_str()),
+    )
+    .c(h!())?;
 
     let now = Utc::now().naive_utc();
     let mut created = BTreeMap::new();
@@ -50,32 +45,32 @@ pub async fn accounts_sync(
 
     // One transaction for the whole batch: the delta shape has no
     // per-item error channel, so any item error rolls the request back.
-    let txn = env.dbx.begin().await.c(h!())?;
+    let txn = db.begin().await.c(h!())?;
     for item in &req.created {
-        let account = create_or_restore_account(&scope, item, now, &txn)
+        let account = create_or_restore_account(scope, item, now, &txn)
             .await
             .c(h!())?;
         created.insert(account.id.to_string(), account_item(&account));
     }
     for (id, item) in &req.updated {
         let account =
-            update_account(&scope, id, item, now, &txn).await.c(h!())?;
+            update_account(scope, id, item, now, &txn).await.c(h!())?;
         updated.insert(account.id.to_string(), account_item(&account));
     }
     for id in &req.deleted {
         if let Some(deleted_id) =
-            delete_account(&scope, id, now, &txn).await.c(h!())?
+            delete_account(scope, id, now, &txn).await.c(h!())?
         {
             deleted.push(deleted_id);
         }
     }
     txn.commit().await.c(h!())?;
 
-    Ok(Json(MessengerIngestAccountsSyncRsp {
+    Ok(MessengerIngestAccountsSyncRsp {
         created,
         updated,
         deleted,
-    }))
+    })
 }
 
 fn account_item(
@@ -103,24 +98,109 @@ fn account_item(
         last_sync: account
             .external_last_sync_at
             .map(|dt| dt.and_utc().timestamp_millis()),
-        telegram: MessengerIngestTelegramAccountId {
-            user_id: account
-                .telegram_user_id
-                .map(|id| id.to_string())
-                .unwrap_or_default(),
-        },
+        messenger_type: account.messenger_type.clone(),
+        telegram: account.telegram_user_id.map(|id| {
+            MessengerIngestTelegramAccountId {
+                user_id: id.to_string(),
+            }
+        }),
     }
 }
 
-async fn create_or_restore_account(
+pub(crate) async fn create_or_restore_account(
     scope: &IngestScope,
     item: &MessengerIngestAccountInput,
     now: NaiveDateTime,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<messenger_account::Model> {
-    let user_id =
-        parse_i64_decimal("telegram user_id", &item.telegram.user_id)?;
+    ensure_provider_fields(&item.messenger_type, item.telegram.is_some())
+        .c(h!())?;
+    let user_id = item
+        .telegram
+        .as_ref()
+        .map(|telegram| {
+            parse_i64_decimal("telegram user_id", &telegram.user_id)
+        })
+        .transpose()
+        .c(h!())?;
 
+    // The unique (datasource_id, external_id) constraint spans deleted
+    // rows, so a create for a previously deleted external id restores it.
+    // A create for a live external id is applied as a full update, so a
+    // collector that lost the response can resend it and learn the uuid;
+    // its messenger ids must still match.
+    let existing =
+        find_scoped_account_by_external_id(txn, scope, &item.external_id)
+            .await
+            .c(h!())?;
+    if let Some(account) = existing {
+        if !account.deleted {
+            ensure_same_messenger_type(&account, item).c(h!())?;
+            ensure_same_telegram_user_id(&account, user_id).c(h!())?;
+        } else {
+            ensure_telegram_user_id_free(txn, scope, user_id)
+                .await
+                .c(h!())?;
+        }
+        return restore_and_update_account(
+            scope, &account, item, user_id, now, txn,
+        )
+        .await;
+    }
+    ensure_telegram_user_id_free(txn, scope, user_id)
+        .await
+        .c(h!())?;
+
+    let id = Uuid::now_v7();
+    let datasource_group = create_account_group(
+        txn,
+        scope,
+        id,
+        &item.display_name,
+        &item.messenger_type,
+        now,
+    )
+    .await
+    .c(h!())?;
+    let account = messenger_account::ActiveModel {
+        id: Set(id),
+        datasource_id: Set(scope.datasource_id()),
+        datasource_group_id: Set(datasource_group.id),
+        external_id: Set(item.external_id.clone()),
+        display_name: Set(item.display_name.clone()),
+        messenger_type: Set(item.messenger_type.clone()),
+        telegram_user_id: Set(user_id),
+        phone: Set(item.phone.clone()),
+        username: Set(item.username.clone()),
+        first_name: Set(item.first_name.clone()),
+        last_name: Set(item.last_name.clone()),
+        status: Set(item.status.clone()),
+        status_error: Set(item.status_error.clone()),
+        status_changed_at: Set(ts_from_millis(item.status_changed_at).c(h!())?),
+        is_active: Set(item.is_active),
+        is_paused: Set(item.is_paused),
+        notes: Set(item.notes.clone()),
+        external_created_at: Set(ts_from_millis(item.created_at).c(h!())?),
+        external_last_sync_at: Set(ts_from_millis(item.last_sync).c(h!())?),
+        deleted: Set(false),
+        created_at: Set(now),
+        updated_at: Set(now),
+    }
+    .insert(txn)
+    .await
+    .c(h!())?;
+    Ok(account)
+}
+
+/// A Telegram user id may belong to only one live account per datasource.
+async fn ensure_telegram_user_id_free(
+    txn: &DatabaseTransaction,
+    scope: &IngestScope,
+    user_id: Option<i64>,
+) -> Result<(), AppError> {
+    let Some(user_id) = user_id else {
+        return Ok(());
+    };
     let conflicting = messenger_account::Entity::find()
         .filter(
             messenger_account::Column::DatasourceId.eq(scope.datasource_id()),
@@ -135,94 +215,62 @@ async fn create_or_restore_account(
             msg: format!(
                 "telegram user_id {user_id} already belongs to another account"
             ),
-        }
-        .into());
+        });
     }
-
-    // The unique (datasource_id, external_id) constraint spans deleted
-    // rows, so a create for a previously deleted external id restores it.
-    let existing =
-        find_scoped_account_by_external_id(txn, scope, &item.external_id)
-            .await
-            .c(h!())?;
-    if let Some(account) = existing {
-        if account.deleted {
-            return restore_and_update_account(
-                scope, &account, item, user_id, now, txn,
-            )
-            .await;
-        }
-        return Err(AppError::BL {
-            msg: format!(
-                "account external_id {} already exists; use updated instead of created",
-                item.external_id
-            ),
-        }
-        .into());
-    }
-
-    let id = Uuid::now_v7();
-    let datasource_group =
-        create_account_group(txn, scope, id, &item.display_name, now).await?;
-    let account = messenger_account::ActiveModel {
-        id: Set(id),
-        login_id: Set(scope.login_id),
-        datasource_id: Set(scope.datasource_id()),
-        datasource_group_id: Set(datasource_group.id),
-        external_id: Set(item.external_id.clone()),
-        display_name: Set(item.display_name.clone()),
-        telegram_user_id: Set(Some(user_id)),
-        phone: Set(item.phone.clone()),
-        username: Set(item.username.clone()),
-        first_name: Set(item.first_name.clone()),
-        last_name: Set(item.last_name.clone()),
-        status: Set(item.status.clone()),
-        status_error: Set(item.status_error.clone()),
-        status_changed_at: Set(ts_from_millis(item.status_changed_at)?),
-        is_active: Set(item.is_active),
-        is_paused: Set(item.is_paused),
-        notes: Set(item.notes.clone()),
-        external_created_at: Set(ts_from_millis(item.created_at)?),
-        external_last_sync_at: Set(ts_from_millis(item.last_sync)?),
-        deleted: Set(false),
-        created_at: Set(now),
-        updated_at: Set(now),
-    }
-    .insert(txn)
-    .await
-    .c(h!())?;
-    Ok(account)
+    Ok(())
 }
 
+/// A stored Telegram user id never changes, and an account without one
+/// cannot gain one through an update.
+fn ensure_same_telegram_user_id(
+    account: &messenger_account::Model,
+    user_id: Option<i64>,
+) -> Result<(), AppError> {
+    if account.telegram_user_id != user_id {
+        return Err(AppError::BL {
+            msg: format!(
+                "telegram user_id does not match account {}",
+                account.external_id
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Full-state write of an existing account: restores a deleted one or
+/// overwrites a live one.
 async fn restore_and_update_account(
     scope: &IngestScope,
     account: &messenger_account::Model,
     item: &MessengerIngestAccountInput,
-    user_id: i64,
+    user_id: Option<i64>,
     now: NaiveDateTime,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<messenger_account::Model> {
-    ensure_account_group(txn, scope, account, &item.display_name, now).await?;
+    ensure_same_messenger_type(account, item).c(h!())?;
+    ensure_account_group(txn, scope, account, &item.display_name, now)
+        .await
+        .c(h!())?;
     let account = messenger_account::ActiveModel {
         id: Set(account.id),
-        login_id: Set(account.login_id),
         datasource_id: Set(account.datasource_id),
         datasource_group_id: Set(account.datasource_group_id),
         external_id: Set(account.external_id.clone()),
         display_name: Set(item.display_name.clone()),
-        telegram_user_id: Set(Some(user_id)),
+        messenger_type: Set(item.messenger_type.clone()),
+        telegram_user_id: Set(user_id),
         phone: Set(item.phone.clone()),
         username: Set(item.username.clone()),
         first_name: Set(item.first_name.clone()),
         last_name: Set(item.last_name.clone()),
         status: Set(item.status.clone()),
         status_error: Set(item.status_error.clone()),
-        status_changed_at: Set(ts_from_millis(item.status_changed_at)?),
+        status_changed_at: Set(ts_from_millis(item.status_changed_at).c(h!())?),
         is_active: Set(item.is_active),
         is_paused: Set(item.is_paused),
         notes: Set(item.notes.clone()),
-        external_created_at: Set(ts_from_millis(item.created_at)?),
-        external_last_sync_at: Set(ts_from_millis(item.last_sync)?),
+        external_created_at: Set(ts_from_millis(item.created_at).c(h!())?),
+        external_last_sync_at: Set(ts_from_millis(item.last_sync).c(h!())?),
         deleted: Set(false),
         created_at: Set(account.created_at),
         updated_at: Set(now),
@@ -233,6 +281,23 @@ async fn restore_and_update_account(
     Ok(account)
 }
 
+/// An account never changes messenger: its group mirror, chats and
+/// provider ids all belong to the original messenger.
+fn ensure_same_messenger_type(
+    account: &messenger_account::Model,
+    item: &MessengerIngestAccountInput,
+) -> Result<(), AppError> {
+    if account.messenger_type != item.messenger_type {
+        return Err(AppError::BL {
+            msg: format!(
+                "messenger_type {} does not match account {}",
+                item.messenger_type, account.external_id
+            ),
+        });
+    }
+    Ok(())
+}
+
 async fn update_account(
     scope: &IngestScope,
     id: &str,
@@ -240,41 +305,44 @@ async fn update_account(
     now: NaiveDateTime,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<messenger_account::Model> {
-    let id = crate::messenger_ingest::refs::parse_echo_uuid(id)?;
+    let id = crate::messenger_ingest::refs::parse_echo_uuid(id).c(h!())?;
     let account = find_scoped_account_by_id(txn, scope, id).await.c(h!())?;
-    let user_id =
-        parse_i64_decimal("telegram user_id", &item.telegram.user_id)?;
-    if account.telegram_user_id != Some(user_id) {
-        return Err(AppError::BL {
-            msg: format!(
-                "telegram user_id {} does not match account {}",
-                item.telegram.user_id, account.external_id
-            ),
-        }
-        .into());
-    }
+    ensure_provider_fields(&item.messenger_type, item.telegram.is_some())
+        .c(h!())?;
+    let user_id = item
+        .telegram
+        .as_ref()
+        .map(|telegram| {
+            parse_i64_decimal("telegram user_id", &telegram.user_id)
+        })
+        .transpose()
+        .c(h!())?;
+    ensure_same_messenger_type(&account, item).c(h!())?;
+    ensure_same_telegram_user_id(&account, user_id).c(h!())?;
 
-    ensure_account_group(txn, scope, &account, &item.display_name, now).await?;
+    ensure_account_group(txn, scope, &account, &item.display_name, now)
+        .await
+        .c(h!())?;
     let account = messenger_account::ActiveModel {
         id: Set(account.id),
-        login_id: Set(account.login_id),
         datasource_id: Set(account.datasource_id),
         datasource_group_id: Set(account.datasource_group_id),
         external_id: Set(account.external_id.clone()),
         display_name: Set(item.display_name.clone()),
-        telegram_user_id: Set(Some(user_id)),
+        messenger_type: Set(item.messenger_type.clone()),
+        telegram_user_id: Set(user_id),
         phone: Set(item.phone.clone()),
         username: Set(item.username.clone()),
         first_name: Set(item.first_name.clone()),
         last_name: Set(item.last_name.clone()),
         status: Set(item.status.clone()),
         status_error: Set(item.status_error.clone()),
-        status_changed_at: Set(ts_from_millis(item.status_changed_at)?),
+        status_changed_at: Set(ts_from_millis(item.status_changed_at).c(h!())?),
         is_active: Set(item.is_active),
         is_paused: Set(item.is_paused),
         notes: Set(item.notes.clone()),
-        external_created_at: Set(ts_from_millis(item.created_at)?),
-        external_last_sync_at: Set(ts_from_millis(item.last_sync)?),
+        external_created_at: Set(ts_from_millis(item.created_at).c(h!())?),
+        external_last_sync_at: Set(ts_from_millis(item.last_sync).c(h!())?),
         deleted: Set(false),
         created_at: Set(account.created_at),
         updated_at: Set(now),
@@ -293,7 +361,7 @@ async fn delete_account(
     now: NaiveDateTime,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Option<String>> {
-    let id = crate::messenger_ingest::refs::parse_echo_uuid(id)?;
+    let id = crate::messenger_ingest::refs::parse_echo_uuid(id).c(h!())?;
     let account = find_scoped_account_by_id(txn, scope, id).await;
     let account = match account {
         Ok(account) => account,
@@ -337,6 +405,7 @@ async fn create_account_group(
     scope: &IngestScope,
     account_id: Uuid,
     display_name: &str,
+    messenger_type: &str,
     now: NaiveDateTime,
 ) -> anyhow::Result<datasource_group::Model> {
     // One signal_group and one datasource_group per messenger account;
@@ -355,7 +424,7 @@ async fn create_account_group(
         datasource_id: Set(scope.datasource_id()),
         group_master_key: Set(signal_group.master_key.clone()),
         name: Set(display_name.to_string()),
-        messenger_type: Set(Some(MESSENGER_TYPE_TELEGRAM.to_string())),
+        messenger_type: Set(Some(messenger_type.to_string())),
         last_sync_at: Set(now),
         ..Default::default()
     }
@@ -383,7 +452,7 @@ async fn ensure_account_group(
     if datasource_group.deleted
         || datasource_group.name != display_name
         || datasource_group.messenger_type.as_deref()
-            != Some(MESSENGER_TYPE_TELEGRAM)
+            != Some(account.messenger_type.as_str())
     {
         let signal_group = signal_group::Entity::find_by_id(
             datasource_group.group_master_key.clone(),
@@ -403,7 +472,7 @@ async fn ensure_account_group(
         let mut datasource_group = datasource_group.into_active_model();
         datasource_group.name = Set(display_name.to_string());
         datasource_group.messenger_type =
-            Set(Some(MESSENGER_TYPE_TELEGRAM.to_string()));
+            Set(Some(account.messenger_type.clone()));
         datasource_group.deleted = Set(false);
         datasource_group.last_sync_at = Set(now);
         datasource_group.update(txn).await.c(h!())?;
@@ -424,8 +493,8 @@ fn ts_from_millis(ms: Option<i64>) -> anyhow::Result<Option<NaiveDateTime>> {
 mod tests {
     use super::*;
     use crate::config::{
-        MESSENGER_INGEST_DATASOURCE_KIND, MESSENGER_TYPE_TELEGRAM, ROLE_API,
-        ROLE_MESSENGER_INGEST,
+        MESSENGER_INGEST_DATASOURCE_KIND, MESSENGER_TYPE_MAX,
+        MESSENGER_TYPE_TELEGRAM, ROLE_API, ROLE_MESSENGER_INGEST,
     };
     use crate::entities::{datasource, login};
     use crate::functest::tests::{cleanup, mk_datasource, mk_login};
@@ -465,6 +534,7 @@ mod tests {
         user_id: &str,
     ) -> MessengerIngestAccountInput {
         MessengerIngestAccountInput {
+            messenger_type: MESSENGER_TYPE_TELEGRAM.to_string(),
             external_id: external_id.to_string(),
             display_name: format!("Account {external_id}"),
             phone: None,
@@ -479,9 +549,9 @@ mod tests {
             notes: None,
             created_at: None,
             last_sync: None,
-            telegram: MessengerIngestTelegramAccountId {
+            telegram: Some(MessengerIngestTelegramAccountId {
                 user_id: user_id.to_string(),
-            },
+            }),
         }
     }
 
@@ -504,7 +574,6 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(account.telegram_user_id, Some(700001));
-        assert_eq!(account.login_id, scope.login_id);
         assert_eq!(account.display_name, "Account collector-account-1");
 
         let datasource_group =
@@ -651,35 +720,42 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn ensure_ingest_datasource_rejects_other_kind() {
+    async fn account_create_of_live_external_id_updates_it() {
         let env = cleanup().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
-        let login = mk_login(
+        let scope =
+            mk_ingest_scope(&txn, &[ROLE_API, ROLE_MESSENGER_INGEST]).await;
+        let now = Utc::now().naive_utc();
+        let account = create_or_restore_account(
+            &scope,
+            &account_input("collector-account-5", "700005"),
+            now,
             &txn,
-            login::ActiveModel {
-                roles: Set(serde_json::json!([ROLE_API])),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        mk_datasource(
-            &txn,
-            datasource::ActiveModel {
-                kind: Set("whatsapp".to_string()),
-                api_login_id: Set(Some(login.id)),
-                ..Default::default()
-            },
         )
         .await
         .unwrap();
 
-        let error =
-            crate::messenger_ingest::datasource::ensure_ingest_datasource(
-                &env.dbx, &login.id,
-            )
+        // A resent create returns the same account with the new body.
+        let mut resent = account_input("collector-account-5", "700005");
+        resent.display_name = "Renamed".to_string();
+        let again = create_or_restore_account(&scope, &resent, now, &txn)
             .await
-            .unwrap_err();
-        assert!(matches!(error, AppError::Forbidden(_)));
+            .unwrap();
+        assert_eq!(again.id, account.id);
+        assert_eq!(again.display_name, "Renamed");
+
+        // Messenger ids must still match.
+        let mut other_type = account_input("collector-account-5", "700005");
+        other_type.messenger_type = MESSENGER_TYPE_MAX.to_string();
+        other_type.telegram = None;
+        for item in [account_input("collector-account-5", "700006"), other_type]
+        {
+            let error = create_or_restore_account(&scope, &item, now, &txn)
+                .await
+                .unwrap_err()
+                .downcast::<AppError>()
+                .unwrap();
+            assert!(matches!(error, AppError::BL { .. }));
+        }
     }
 }

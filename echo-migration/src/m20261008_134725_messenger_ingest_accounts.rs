@@ -20,11 +20,17 @@ impl MigrationTrait for Migration {
 -- per messenger account. 'telegram' for now; null for every other kind.
 alter table datasource_group add column messenger_type text;
 
+-- The only trigger on this table watches group_master_key. One indexed row
+-- change publishes the nullable column through CDC without a backfill.
+update datasource_group
+set messenger_type = null
+where id = (select id from datasource_group order by id limit 1);
+
 create table messenger_account (
  id uuid primary key,
- login_id uuid not null references login(id),
  datasource_id int8 not null references datasource(id),
  datasource_group_id int8 not null unique references datasource_group(id),
+ messenger_type text not null,
  external_id text not null,
  display_name text not null,
  telegram_user_id int8,
@@ -59,8 +65,8 @@ begin
  execute format('alter table messenger_account alter column id set default %s', id_generator);
 end $$;
 create unique index messenger_account_datasource_telegram_user_idx
- on messenger_account (datasource_id, telegram_user_id) where telegram_user_id is not null;
-create index messenger_account_login_idx on messenger_account(login_id);
+ on messenger_account (datasource_id, telegram_user_id)
+ where telegram_user_id is not null and not deleted;
                 "#,
             )
             .await
@@ -73,7 +79,6 @@ create index messenger_account_login_idx on messenger_account(login_id);
             .get_connection()
             .execute_unprepared(
                 r#"
-drop index if exists messenger_account_login_idx;
 drop index if exists messenger_account_datasource_telegram_user_idx;
 drop table if exists messenger_account;
 alter table datasource_group drop column if exists messenger_type;

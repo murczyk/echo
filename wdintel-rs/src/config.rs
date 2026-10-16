@@ -585,7 +585,31 @@ pub const ROLE_MESSENGER_INGEST: &str = "MessengerIngest";
 pub const MESSENGER_INGEST_DATASOURCE_KIND: &str = "echo_messenger_ingest";
 pub const MESSENGER_INGEST_DATASOURCE_LABEL_PREFIX: &str = "EХО Мессенджер ";
 pub const MESSENGER_INGEST_SYNC_MAX_ITEMS: usize = 200;
+/// Every ingest request, including each TUS chunk, resolves the ingest
+/// datasource; its `last_sync_at` is refreshed at most this often.
+pub const MESSENGER_INGEST_LAST_SYNC_REFRESH_SECS: i64 = 300;
+pub const MESSENGER_INGEST_SUBMIT_MAX_MESSAGES: usize = 100;
+pub const MESSENGER_INGEST_MESSAGE_STATUS_CREATED: &str = "created";
+pub const MESSENGER_INGEST_MESSAGE_STATUS_EXISTING: &str = "existing";
+/// `409` code of a message batch that lost a race with a concurrent
+/// submission of the same messages; the collector retries the batch.
+pub const MESSENGER_INGEST_CONCURRENT_SUBMIT_CODE: &str =
+    "messenger_ingest_concurrent_submit";
+/// `409` code of an attachment batch that lost a race with a concurrent
+/// attach of the same attachments; the collector retries the batch.
+pub const MESSENGER_INGEST_CONCURRENT_ATTACH_CODE: &str =
+    "messenger_ingest_concurrent_attach";
+pub const MESSENGER_INGEST_SUBMIT_MAX_ATTACHMENTS: usize =
+    SIGINT_MESSAGE_MAX_ATTACHMENTS;
+pub const MESSENGER_INGEST_UPLOAD_PATH_BASE: &str =
+    "/api/messenger-ingest/v1/uploads";
+/// Subdirectory of `storage_dir` holding the ingest TUS uploads, apart from
+/// the operator uploads.
+pub const MESSENGER_INGEST_UPLOAD_STORAGE_DIR: &str = "messenger_ingest";
 pub const MESSENGER_TYPE_TELEGRAM: &str = "Telegram";
+pub const MESSENGER_TYPE_MAX: &str = "Max";
+pub const MESSENGER_INGEST_MESSENGER_TYPES: &[&str] =
+    &[MESSENGER_TYPE_TELEGRAM, MESSENGER_TYPE_MAX];
 pub const DEVICE_SETTINGS_ID: i16 = 1;
 pub const DEVICE_MATTERMOST_TIMEOUT_SEC: u64 = 5;
 pub const DEVICE_CUSTOM_FIELDS_MAX_COUNT: usize = 50;
@@ -1343,6 +1367,12 @@ DELETE FROM sigint_bookmark;
 DELETE FROM sigint_comment;
 DELETE FROM sigint_important;
 DELETE FROM ai_intel_report_attempt;
+DELETE FROM messenger_media_meta;
+DELETE FROM sigint_chat_message;
+DELETE FROM messenger_chat_member;
+DELETE FROM messenger_contact;
+DELETE FROM messenger_chat;
+DELETE FROM messenger_account;
 DELETE FROM signal_message_media;
 DELETE FROM signal_message_queue_attachment;
 DELETE FROM signal_message_queue;

@@ -463,6 +463,10 @@ mod m20261006_160533_rer_report_enabled;
 mod m20261006_164921_sigint_inbox_item_freq_datetime_index;
 mod m20261008_080110_rer_report_admin;
 mod m20261008_134725_messenger_ingest_accounts;
+mod m20261014_000000_messenger_ingest_chats;
+mod m20261014_000001_messenger_ingest_messages;
+mod m20261015_000000_messenger_ingest_attachments;
+mod m20261016_000000_messenger_ingest_contacts;
 
 mod m20261009_201221_ai_agent_reasoning_policy;
 
@@ -1132,6 +1136,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20261012_082021_signal_message_group_duplicate_lookup_index::Migration),
             Box::new(m20261012_155351_api_rate_limit::Migration),
             Box::new(m20261013_094137_inbox_unit_selection::Migration),
+            Box::new(m20261014_000000_messenger_ingest_chats::Migration),
+            Box::new(m20261014_000001_messenger_ingest_messages::Migration),
+            Box::new(m20261015_000000_messenger_ingest_attachments::Migration),
+            Box::new(m20261016_000000_messenger_ingest_contacts::Migration),
         ]
     }
 }

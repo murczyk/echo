@@ -929,6 +929,15 @@ fn spawn_background_workers(
         )
         .await;
     });
+    let ingest_upload_cleanup_storage_dir = config.storage_dir.clone();
+    let ingest_upload_cleanup_cancellation = cancel_token.clone();
+    spawn_named_worker("messenger_ingest_upload_cleanup", bg_set, async move {
+        crate::messenger_ingest::uploads::run_cleanup_nofail(
+            ingest_upload_cleanup_storage_dir,
+            ingest_upload_cleanup_cancellation,
+        )
+        .await;
+    });
     if env.file_registry_db.is_some() {
         spawn_device_file_preview_workers(
             bg_set,
@@ -1631,7 +1640,14 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::link_operator)
             .service(crate::messenger::group_update)
             .service(crate::operator::message_submit)
-            .service(crate::messenger_ingest::accounts::accounts_sync)
+            .service(crate::messenger_ingest::accounts_sync)
+            .service(crate::messenger_ingest::chats_sync)
+            .service(crate::messenger_ingest::chat_members_sync)
+            .service(crate::messenger_ingest::contacts_sync)
+            .service(crate::messenger_ingest::messages_submit)
+            .service(crate::messenger_ingest::attachments_submit)
+            .service(crate::messenger_ingest::uploads_base)
+            .service(crate::messenger_ingest::uploads_file)
             .service(crate::palitra::list_all_palitras)
             .service(crate::palitra::highlight_blacklist::resolve_palitra_names)
             .service(crate::palitra::list_all_palitras_v2)
