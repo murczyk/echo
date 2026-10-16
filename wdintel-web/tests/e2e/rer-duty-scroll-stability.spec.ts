@@ -677,9 +677,14 @@ test('uses creation time for Duty ordering and display with an event-time Analys
       elements.map((element) => Number(element.getAttribute('data-duty-message-id'))),
     ),
   ).toEqual([2, 7, 9]);
-  await expect(rows.first().locator('[title="Дата і час створення повідомлення"]')).toContainText(
-    '19.09, 10:58',
+  const firstHeaderTimestamp = rows.first().locator('[data-message-card-timestamp-item="true"]');
+  await expect(firstHeaderTimestamp).toHaveAttribute('title', 'Дата і час створення повідомлення');
+  await expect(firstHeaderTimestamp).toContainText('19.09, 10:58');
+  await expect(rows.first().locator('[data-message-card-timestamp-footer="true"]')).toHaveAttribute(
+    'data-message-card-timestamp-footer',
+    'true',
   );
+  await expect(rows.first().locator('[title="Час від отримання повідомлення"]')).toBeVisible();
   expect(fixture.getLastInboxRequest()).toMatchObject({ sort_by: 'IMSCreatedAt' });
 });
 test('keeps a compact-tag reading anchor stable while prepending an older chunk', async ({

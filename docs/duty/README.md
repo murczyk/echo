@@ -20,8 +20,9 @@ preference. Analysis alone retains the event/creation-time choice; its saved
   Local sorting, pagination/unread cursors, pending buffers, and notification
   selection use `createdAtOrder` (microseconds), falling back only to
   `createdAt * 1000` for older payloads. Event time is never an ordering fallback.
-- Cards use creation time for the primary/relative time display. Event dates remain
-  message metadata; editing an event date cannot move a card in the feed.
+- Cards use creation time for the primary absolute header timestamp. Their independent
+  relative receipt-age footer also uses `createdAt`; event dates remain message metadata,
+  and editing an event date cannot move a card in the feed.
 - The sorting chooser exists only under Settings → Analysis. Existing Analysis
   preferences and its shared API/storage field are preserved.
 

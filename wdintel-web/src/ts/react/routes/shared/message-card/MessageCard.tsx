@@ -255,7 +255,6 @@ function MessageCardComponent({
     analysisCallsignActions = undefined;
     showCallsignAddForm = false;
   }
-  const displayTimestamp = messageTimeBasis === 'creation' ? msg.createdAt : msg.timestamp;
   const downloadGuard = useMessageCardDownloadGuard();
   const derivedNetworkMap = useMemo(() => {
     if (Object.keys(networkMap).length > 0) return networkMap;
@@ -366,7 +365,6 @@ function MessageCardComponent({
     displayMode,
     id,
     msg,
-    displayTimestamp: messageTimeBasis === 'creation' ? displayTimestamp : undefined,
     messageTimeBasis,
     copiedFeedbackId,
     etalonDisplayModel: visibleEtalonDisplayModel,
@@ -469,11 +467,7 @@ function MessageCardComponent({
           isDownloadStarting={downloadGuard.isDownloadStarting}
           onDownloadStart={downloadGuard.onDownloadStart}
         />
-        <MessageCardTimestampFooter
-          msg={msg}
-          messageTimeBasis={messageTimeBasis}
-          displayTimestamp={displayTimestamp}
-        />
+        <MessageCardTimestampFooter msg={msg} referenceTimeMs={referenceTimeMs} />
       </MessageCardRoot>
     </li>
   );

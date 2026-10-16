@@ -451,6 +451,7 @@ describe('MessageCard', () => {
       const view = await renderCard({
         displayMode,
         messageTimeBasis: 'creation',
+        referenceTimeMs: Date.UTC(2026, 6, 17, 0, 31),
         msg: buildMessage({ createdAt: Date.UTC(2026, 6, 17, 0, 30), important: true }),
       });
       const visibleActions = Array.from(
@@ -471,7 +472,7 @@ describe('MessageCard', () => {
       ).toHaveLength(1);
       expect(
         view.container.querySelector('[data-message-card-timestamp-footer="true"]')?.textContent,
-      ).toContain('17.07, 03:30');
+      ).toContain('1 хв');
       expect(view.container.querySelector('.message-card-header-timestamps')?.classList).toContain(
         'message-card-header-timestamps--mobile-nowrap',
       );
@@ -721,10 +722,11 @@ describe('MessageCard', () => {
 
   // Regression: https://github.com/echoua/echo/issues/3515
   it.each(['interception', 'creation'] as const)(
-    '#3515 hides all generated times for a date-only message (%s)',
+    '#3515 keeps receipt age when a date-only interception timestamp is selected (%s)',
     async (messageTimeBasis) => {
       const view = await renderCard({
         messageTimeBasis,
+        referenceTimeMs: Date.UTC(2026, 6, 15, 10, 1),
         msg: buildMessage({
           text: 'Повідомлення без часу',
           textMarked: [],
@@ -736,15 +738,17 @@ describe('MessageCard', () => {
           hasDateInHeader: false,
         }),
       });
-      expect(view.container.textContent).toContain('15.07');
-      expect(view.container.textContent).not.toContain('12:00');
-      expect(view.container.querySelector('.message-card-relative-time')).toBeNull();
+      const timestamp = view.container.querySelector('[data-message-card-timestamp-item="true"]');
+      expect(timestamp?.textContent).toContain(
+        messageTimeBasis === 'creation' ? '15.07, 13:00' : '15.07',
+      );
+      expect(timestamp?.textContent).not.toContain('12:00');
+      expect(view.container.querySelector('.message-card-relative-time')?.textContent).toContain(
+        '1 хв',
+      );
       expect(
-        view.container.querySelectorAll('[data-message-card-timestamp-item="true"]'),
-      ).toHaveLength(1);
-      expect(
-        view.container.querySelector('[data-message-card-timestamp-footer="true"]') != null,
-      ).toBe(messageTimeBasis === 'creation');
+        view.container.querySelector('[data-message-card-timestamp-footer="true"]'),
+      ).not.toBeNull();
       expect(
         formatMessageCardTooltipTime({
           time: '12:00',
@@ -757,12 +761,13 @@ describe('MessageCard', () => {
 
   // Regression: https://github.com/echoua/echo/issues/3515
   it.each(['interception', 'creation'] as const)(
-    '#3515 shows creation and event dates independently in analysis (%s)',
+    '#3515 displays the selected absolute timestamp and independent receipt age in analysis (%s)',
     async (messageTimeBasis) => {
       for (const isTimeNull of [true, false, null]) {
         const view = await renderCard({
           displayMode: 'analysis',
           messageTimeBasis,
+          referenceTimeMs: Date.UTC(2026, 6, 16, 21, 31),
           msg: buildMessage({
             text: 'Повідомлення',
             textMarked: [],
@@ -777,23 +782,61 @@ describe('MessageCard', () => {
           '[data-message-card-timestamp-item="true"]',
         );
         expect(timestamps).toHaveLength(1);
-        expect(timestamps[0]?.getAttribute('title')).toBe('Дата і час перехоплення');
-        expect(timestamps[0]?.textContent).toContain(isTimeNull ? '14.07' : '14.07, 08:45');
-        if (isTimeNull) expect(timestamps[0]?.textContent).not.toContain(':');
+        expect(timestamps[0]?.getAttribute('title')).toBe(
+          messageTimeBasis === 'creation'
+            ? 'Дата і час створення повідомлення'
+            : 'Дата і час перехоплення',
+        );
+        expect(timestamps[0]?.textContent).toContain(
+          messageTimeBasis === 'creation' ? '17.07, 00:30' : isTimeNull ? '14.07' : '14.07, 08:45',
+        );
+        if (messageTimeBasis === 'interception' && isTimeNull)
+          expect(timestamps[0]?.textContent).not.toContain(':');
         expect(timestamps[0]?.querySelector('[data-testid="TodayOutlinedIcon"]')).not.toBeNull();
         expect(timestamps[0]?.querySelector('.message-card-header-icon')).not.toBeNull();
         expect(timestamps[0]?.querySelector('.message-card-timestamp-icon')).toBeNull();
         const footer = view.container.querySelector('[data-message-card-timestamp-footer="true"]');
-        expect(footer != null).toBe(messageTimeBasis === 'creation');
-        if (messageTimeBasis === 'creation') {
-          expect(footer?.textContent).toContain('17.07, 00:30');
-          expect(
-            footer?.querySelector('[title="Дата і час створення повідомлення"]'),
-          ).not.toBeNull();
-        }
+        expect(footer?.querySelector('[title="Час від отримання повідомлення"]')).not.toBeNull();
+        expect(footer?.textContent).toContain('1 хв');
       }
     },
   );
+
+  // Regression: https://github.com/echoua/echo/issues/3515
+  it('ECHO-3515 does not borrow a timestamp across missing time bases', async () => {
+    const createdAt = Date.UTC(2026, 6, 16, 21, 30);
+    const interception = Date.UTC(2026, 6, 15, 9);
+    const creationView = await renderCard({
+      messageTimeBasis: 'creation',
+      referenceTimeMs: createdAt + 60_000,
+      msg: buildMessage({
+        createdAt: null,
+        timestamp: interception,
+        date: '14.07.2026',
+        time: '08:45:00',
+      }),
+    });
+    expect(
+      creationView.container.querySelector('[data-message-card-timestamp-item="true"]')
+        ?.textContent,
+    ).toContain('—');
+    expect(
+      creationView.container.querySelector('[data-message-card-timestamp-footer="true"]'),
+    ).toBeNull();
+
+    const interceptionView = await renderCard({
+      messageTimeBasis: 'interception',
+      referenceTimeMs: createdAt + 60_000,
+      msg: buildMessage({ createdAt, timestamp: null, date: null, time: null, isTimeNull: false }),
+    });
+    expect(
+      interceptionView.container.querySelector('[data-message-card-timestamp-item="true"]')
+        ?.textContent,
+    ).toContain('—');
+    expect(
+      interceptionView.container.querySelector('.message-card-relative-time')?.textContent,
+    ).toContain('1 хв');
+  });
 
   // Regression: https://github.com/echoua/echo/issues/3515
   it.each([

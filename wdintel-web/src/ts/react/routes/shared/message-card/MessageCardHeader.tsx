@@ -46,7 +46,7 @@ import type {
   MessageEntityExcludeMenuOption,
   MessageEntityFilterKind,
 } from '../../rer-duty-neo/utils';
-import { formatDateNoYear, formatTime } from '../../rer-duty-neo/utils';
+import { formatDateNoYear, formatTime, messageRenderDistance } from '../../rer-duty-neo/utils';
 import {
   buildMessageCardNavigationMenuItems,
   type MessageCardEtalonDisplayModel,
@@ -55,6 +55,7 @@ import {
 } from './message-card.utils';
 import { useMessageDeviceAccess } from './MessageDeviceAccess';
 import type { MessageTimeBasis } from '../../../services/api/user-settings';
+import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
 
 dayjs.extend(customParseFormat);
 
@@ -1217,7 +1218,6 @@ export type MessageCardHeaderProps = {
   excludeMenuOptions?: MessageEntityExcludeMenuOption[];
   id: number;
   msg: InboxMessage;
-  displayTimestamp?: number | null;
   messageTimeBasis?: MessageTimeBasis;
   copiedFeedbackId: string | null;
   etalonDisplayModel: MessageCardEtalonDisplayModel;
@@ -1325,22 +1325,32 @@ export function MessageCardMetadata({
 
 export function MessageCardTimestampFooter({
   msg,
-  messageTimeBasis,
-  displayTimestamp,
-}: Pick<MessageCardHeaderProps, 'msg' | 'messageTimeBasis' | 'displayTimestamp'>) {
-  if (messageTimeBasis !== 'creation') return null;
+  referenceTimeMs,
+}: Pick<MessageCardHeaderProps, 'msg'> & { referenceTimeMs: number | null }) {
+  const receiptTimestamp = Number.isFinite(msg.createdAt) ? msg.createdAt : null;
+  const [footerRef, displayMs] = useRelativeTimeDisplayMs(referenceTimeMs, receiptTimestamp);
+
+  if (receiptTimestamp == null) return null;
 
   return (
-    <div className="message-card-timestamp-footer" data-message-card-timestamp-footer="true">
-      <span title="Дата і час створення повідомлення">
-        <HeaderText className="opacity-50">
-          {displayTimestamp == null
-            ? '—'
-            : dayjs(displayTimestamp).tz(APP_TIME_ZONE).format('DD.MM, HH:mm')}
+    <div
+      ref={footerRef as RefObject<HTMLDivElement>}
+      className="message-card-timestamp-footer"
+      data-message-card-timestamp-footer="true"
+    >
+      <span title="Час від отримання повідомлення">
+        <HeaderText className="message-card-relative-time opacity-50">
+          {messageRenderDistance(receiptTimestamp, displayMs ?? referenceTimeMs ?? Date.now())}
         </HeaderText>
       </span>
     </div>
   );
+}
+
+function formatCreationDateTime(createdAt: number | null | undefined): string {
+  return Number.isFinite(createdAt)
+    ? dayjs(createdAt).tz(APP_TIME_ZONE).format('DD.MM, HH:mm')
+    : '—';
 }
 
 function formatAnalysisEventDateTime(msg: InboxMessage): string {
@@ -1366,7 +1376,6 @@ function MessageCardHeaderComponent({
   excludeMenuOptions = [],
   id,
   msg,
-  displayTimestamp,
   messageTimeBasis,
   copiedFeedbackId,
   etalonDisplayModel,
@@ -1394,6 +1403,13 @@ function MessageCardHeaderComponent({
   const headerColumnGap = 16;
   const [compactActions, setCompactActions] = useState(false);
   const explicitUnit = msg.unit?.trim() ?? '';
+  const displaysCreationTime = messageTimeBasis === 'creation';
+  const timestampLabel = displaysCreationTime
+    ? 'Дата і час створення повідомлення'
+    : 'Дата і час перехоплення';
+  const timestampValue = displaysCreationTime
+    ? formatCreationDateTime(msg.createdAt)
+    : formatAnalysisEventDateTime(msg);
   const navigationMenuItems = buildMessageCardNavigationMenuItems(
     etalonDisplayModel.renderedNetworks,
     mapHref,
@@ -1408,13 +1424,10 @@ function MessageCardHeaderComponent({
       <div
         className="message-card-timestamp-item"
         data-message-card-timestamp-item="true"
-        title="Дата і час перехоплення"
+        title={timestampLabel}
       >
-        <TodayOutlinedIcon
-          className="message-card-header-icon"
-          titleAccess="Дата і час перехоплення"
-        />
-        <HeaderText>{formatAnalysisEventDateTime(msg)}</HeaderText>
+        <TodayOutlinedIcon className="message-card-header-icon" titleAccess={timestampLabel} />
+        <HeaderText>{timestampValue}</HeaderText>
       </div>
     </div>
   );
