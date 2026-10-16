@@ -10,6 +10,7 @@ type ShortStateFixtureOptions = {
   rerReportEligible?: boolean;
   rerReportEnabled?: boolean;
   hideNetworks?: boolean;
+  systemSettingsFailure?: boolean;
   shortStateId?: string;
   shortState?: unknown;
   inboxResponse?: InboxMessagesRspRaw | null | Promise<InboxMessagesRspRaw | null>;
@@ -202,6 +203,11 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/system-settings/current') {
+      if (options.systemSettingsFailure) {
+        resolveSystemSettingsReady();
+        await route.fulfill({ status: 500, body: 'System settings unavailable' });
+        return;
+      }
       await fulfillJson(
         route,
         systemSettingsCurrentResponse({

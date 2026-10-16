@@ -1030,6 +1030,7 @@ mod tests {
         ai_engine, ai_intel_report_attempt, datasource_group, intel_product,
         sigint_comment, signal_group, signal_message,
     };
+    use crate::rer_importer::intel_product_filter;
     use chrono::{Duration, Utc};
     use sea_orm::{
         ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
@@ -1038,7 +1039,6 @@ mod tests {
     use std::time::Duration as StdDuration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use uuid::Uuid;
-    use crate::rer_importer::intel_product_filter;
 
     fn engine_record(url: String) -> ai_engine::Model {
         let now = Utc::now().naive_utc();

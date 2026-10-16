@@ -189,9 +189,10 @@ export function useRerDutyFeeds(
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;
+  const deviceAccessError = deviceAccess.status === 'error' ? deviceAccess.message : null;
   useEffect(() => {
-    if (deviceAccess.status === 'error') setFeedError(deviceAccess.message);
-  }, [deviceAccess, setFeedError]);
+    if (deviceAccessError != null) setFeedError(deviceAccessError);
+  }, [deviceAccessError, setFeedError]);
   useEffect(() => {
     let cancelled = false;
     fetchOrganismKeywordSets()

@@ -1406,6 +1406,7 @@ export function useRerAnalysisNeoPage(
     tagsLayout: dutySettings.tagsLayout,
     hideBotTags,
     hideNetworks,
+    networkVisibilityReady: systemSettingsStatus === 'success',
     mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
     collapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
     messageTextPreviewLines: dutySettings.messageTextPreviewLines,

@@ -563,7 +563,7 @@ describe('RerDutyNeoPage creation workflow', () => {
     await act(async () => root.unmount());
   });
 
-  it('restores visible card network presentation after a settings failure', async () => {
+  it('keeps card network presentation hidden after a settings failure', async () => {
     currentSystemSettingsMock.mockRejectedValue(new Error('settings unavailable'));
     const { container, root } = await renderPage();
 
@@ -572,7 +572,7 @@ describe('RerDutyNeoPage creation workflow', () => {
       await Promise.resolve();
     });
     expect(container.querySelector('[data-testid="card-network-visibility"]')?.textContent).toBe(
-      'false',
+      'true',
     );
 
     await act(async () => root.unmount());

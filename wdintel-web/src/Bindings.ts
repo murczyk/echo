@@ -1921,6 +1921,7 @@ export type Login = {
   deactivationReason: DeactivationReasonType | null;
   description: string | null;
   passwordAuthEnabled: boolean;
+  hasPassword: boolean;
   totpEnabled: boolean;
 };
 
@@ -1941,11 +1942,13 @@ export type ListLoginsRsp = {
 export type CreateLoginReq = {
   signalProfileId: string | null;
   login: string;
-  password: string;
+  password: string | null;
   roles: Array<string>;
   sigintZoneId: number | null;
   organismId: number;
   description: string | null;
+  deltaLogin: string | null;
+  passwordAuthEnabled: boolean | null;
 };
 
 export type UpdateLoginReq = {

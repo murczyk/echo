@@ -76,6 +76,7 @@ export type ManageMessageIntentChange = {
 
 export type UseManageMessageDrawerProps = {
   open: boolean;
+  hideNetworks?: boolean;
   cyberEchoEnabled: boolean;
   currentUser: User | null;
   onClose: () => void;
@@ -103,6 +104,7 @@ export type UseManageMessageDrawerProps = {
 
 export function useManageMessageDrawer({
   open,
+  hideNetworks = false,
   cyberEchoEnabled,
   currentUser,
   onClose,
@@ -274,7 +276,7 @@ export function useManageMessageDrawer({
   ]);
 
   useEffect(() => {
-    if (!formReady) return;
+    if (!formReady || hideNetworks) return;
     let active = true;
 
     setNetworkNameLoading(true);
@@ -292,10 +294,16 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [formReady, handleReferenceDataError, networkNameInput, referenceDataRetryAttempt]);
+  }, [
+    formReady,
+    hideNetworks,
+    handleReferenceDataError,
+    networkNameInput,
+    referenceDataRetryAttempt,
+  ]);
 
   useEffect(() => {
-    if (!formReady) return;
+    if (!formReady || hideNetworks) return;
     const unitIds = Array.from(
       new Set(networkNameOptions.flatMap((network) => network.unit_ids ?? [])),
     ).filter((unitId) => networkUnitNamesById[unitId] == null);
@@ -318,6 +326,7 @@ export function useManageMessageDrawer({
     };
   }, [
     formReady,
+    hideNetworks,
     handleReferenceDataError,
     networkNameOptions,
     networkUnitNamesById,
@@ -979,7 +988,7 @@ export function useManageMessageDrawer({
   }, [formReady, isEditMode, editTarget?.id, tagsMap]);
 
   useEffect(() => {
-    if (!formReady) return;
+    if (!formReady || hideNetworks) return;
     const source = isEditMode
       ? editTarget
       : isReportCreateMode && reportCopyLoaded
@@ -1036,6 +1045,7 @@ export function useManageMessageDrawer({
     };
   }, [
     formReady,
+    hideNetworks,
     isEditMode,
     editTarget?.id,
     isReportCreateMode,

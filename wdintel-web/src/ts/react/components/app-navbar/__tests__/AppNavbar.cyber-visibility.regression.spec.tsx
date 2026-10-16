@@ -661,7 +661,7 @@ describe('AppNavbar', () => {
     expect(container.querySelector('[data-testid="mock-profile-dropdown"]')).not.toBeNull();
   });
 
-  it('shows a spinner instead of the anonymous profile while the user is loading', () => {
+  it('shows a dash instead of the anonymous profile while the user is loading', () => {
     const { container } = renderComponent({
       ...defaultProps,
       user: { ...defaultProps.user, name: 'anonymous' },
@@ -670,7 +670,9 @@ describe('AppNavbar', () => {
 
     expect(container.querySelector('[data-testid="mock-profile-dropdown"]')).toBeNull();
     expect(container.querySelector('[aria-label="Завантаження користувача"]')).not.toBeNull();
-    expect(container.querySelector('.MuiCircularProgress-root')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Завантаження користувача"]')?.textContent).toBe(
+      '—',
+    );
     expect(container.textContent).not.toContain('anonymous');
   });
 });
