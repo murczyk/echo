@@ -476,6 +476,7 @@ mod m20261014_124732_attachment_document_updated_at_index;
 mod m20261014_140818_attachment_chunk_summary_index;
 mod m20261014_144721_attachment_search_change;
 mod m20261014_172633_user_group_feed_read_state;
+mod m20261016_144130_signal_group_color_key;
 
 pub struct Migrator;
 
@@ -1142,6 +1143,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261014_140818_attachment_chunk_summary_index::Migration),
             Box::new(m20261014_144721_attachment_search_change::Migration),
             Box::new(m20261014_172633_user_group_feed_read_state::Migration),
+            Box::new(m20261016_144130_signal_group_color_key::Migration),
         ]
     }
 }

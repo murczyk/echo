@@ -116,6 +116,52 @@ fn test_group_requests_default_missing_organism_ids() {
 
 #[serial]
 #[tokio::test]
+async fn new_signal_group_receives_allowed_color_key_by_default() {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let group = mk_signal_group(
+        &txn,
+        signal_group::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(
+        group.color_key.as_str(),
+        "red"
+            | "pink"
+            | "purple"
+            | "deep_purple"
+            | "indigo"
+            | "blue"
+            | "light_blue"
+            | "cyan"
+            | "teal"
+            | "green"
+            | "light_green"
+            | "lime"
+            | "amber"
+            | "orange"
+            | "deep_orange"
+            | "blue_grey"
+    ));
+
+    let invalid_update = txn
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "update signal_group set color_key = $1 where master_key = $2",
+            vec!["invalid".into(), group.master_key.into()],
+        ))
+        .await;
+    assert!(invalid_update.is_err());
+
+    txn.rollback().await.unwrap();
+}
+
+#[serial]
+#[tokio::test]
 async fn test_collect_active_organism_login_ids_excludes_deleted() {
     let env = cleanup().await.unwrap();
     let txn = env.dbx.begin().await.unwrap();

@@ -544,6 +544,7 @@ where
             interseption_kind: NotSet,
             disable_network_assignment: NotSet,
             is_aviation_group: NotSet,
+            color_key: NotSet,
         }
         .insert(db)
         .await

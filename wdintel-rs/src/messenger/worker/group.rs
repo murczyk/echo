@@ -161,6 +161,7 @@ pub async fn sync_groups(
                     interseption_kind: NotSet,
                     disable_network_assignment: NotSet,
                     is_aviation_group: NotSet,
+                    color_key: NotSet,
                 };
                 crate::messenger::group::add_group(model, txn)
                     .await
