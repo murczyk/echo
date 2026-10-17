@@ -357,11 +357,22 @@ describe('ImageEditor initialization', () => {
         />,
       );
     });
-    const saveAsNew = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Зберегти як новий',
+    const saveAsNew = container.querySelector(
+      'button[aria-label="Додаткові дії збереження"]',
     ) as HTMLButtonElement;
     await vi.waitFor(() => expect(saveAsNew.disabled).toBe(false));
     await act(async () => saveAsNew.click());
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Зберегти як...'));
+    await act(async () =>
+      (
+        Array.from(document.querySelectorAll('[role="menuitem"]')).find(
+          (item) => item.textContent === 'Зберегти як...',
+        ) as HTMLElement
+      ).click(),
+    );
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('Зберегти як нове зображення'),
+    );
     const input = document.querySelector('input') as HTMLInputElement;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
@@ -372,9 +383,9 @@ describe('ImageEditor initialization', () => {
     });
     await act(async () =>
       (
-        Array.from(document.querySelectorAll('button'))
-          .filter((button) => button.textContent === 'Зберегти як новий')
-          .at(-1) as HTMLButtonElement
+        Array.from(document.querySelectorAll('[role="dialog"] button')).find(
+          (button) => button.textContent === 'Зберегти',
+        ) as HTMLButtonElement
       ).click(),
     );
     await vi.waitFor(() =>
@@ -385,6 +396,42 @@ describe('ImageEditor initialization', () => {
     expect(mocks.exportEditedImage).toHaveBeenCalledWith(
       expect.objectContaining({ outputBasename: 'edited' }),
     );
+    act(() => root.unmount());
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3701
+  it('opens save-as-new only from the split-button menu and closes that menu on Escape', async () => {
+    const onCancel = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+          onCancel={onCancel}
+          onSaveReplacement={vi.fn()}
+          onSaveAsNew={vi.fn()}
+        />,
+      );
+    });
+    const saveOptions = container.querySelector(
+      'button[aria-label="Додаткові дії збереження"]',
+    ) as HTMLButtonElement;
+    await vi.waitFor(() => expect(saveOptions.disabled).toBe(false));
+    await act(async () => saveOptions.click());
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="menuitem"]')?.textContent).toBe('Зберегти як...'),
+    );
+    expect(document.body.textContent).not.toContain('Зберегти як нове зображення');
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    await vi.waitFor(() => expect(document.querySelector('[role="menuitem"]')).toBeNull());
+    expect(onCancel).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(document.activeElement).toBe(saveOptions));
     act(() => root.unmount());
   });
 

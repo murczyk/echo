@@ -1,3 +1,4 @@
+use crate::rer_importer::types::AnalysisSearchMode;
 use crate::{h, types::ShortContext};
 use sea_orm::{
     sea_query::{Expr, SimpleExpr},
@@ -22,10 +23,12 @@ fn term_tsquery(
     }
 }
 
-pub(crate) fn chunk_terms_predicate(
+pub(crate) fn chunk_terms_predicate_with_mode(
     query: &str,
+    search_mode: Option<AnalysisSearchMode>,
     values: &mut Vec<Value>,
 ) -> anyhow::Result<String> {
+    let search_mode = search_mode.unwrap_or_default();
     anyhow::ensure!(
         query.chars().count() <= crate::config::ATTACHMENT_MAX_QUERY_CHARS,
         "search query too long"
@@ -44,13 +47,20 @@ pub(crate) fn chunk_terms_predicate(
         }
         let token = token.strip_prefix('-').unwrap_or(token);
         if !token.is_empty() {
-            let tsquery = term_tsquery(token, prefixes, values);
-            predicates.push(format!("chunk.search_tsv @@ {tsquery}"));
+            if search_mode == AnalysisSearchMode::Fuzzy {
+                let tsquery = term_tsquery(token, prefixes, values);
+                predicates.push(format!("chunk.search_tsv @@ {tsquery}"));
+            } else {
+                predicates.push(chunk_literal_predicate(
+                    &literal_pattern(token),
+                    search_mode,
+                    values,
+                ));
+            }
         }
     }
     for pattern in parts.ilike.into_iter().chain(parts.not_ilike) {
-        let parameter = bind(values, pattern);
-        predicates.push(format!("(chunk.text ilike {parameter} escape '\\' or chunk.member ilike {parameter} escape '\\' or chunk.summary ilike {parameter} escape '\\')"));
+        predicates.push(chunk_literal_predicate(&pattern, search_mode, values));
     }
     Ok(if predicates.is_empty() {
         "false".into()
@@ -67,11 +77,12 @@ pub fn text_predicate(
     values: &mut Vec<Value>,
 ) -> anyhow::Result<String> {
     text_predicate_with_correlation(
-        query, message, scope, structured, values, false,
+        query, message, scope, structured, values, false, None, false,
     )
     .c(h!())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn text_predicate_with_correlation(
     query: &str,
     message: &str,
@@ -79,7 +90,10 @@ fn text_predicate_with_correlation(
     structured: bool,
     values: &mut Vec<Value>,
     correlated: bool,
+    search_mode: Option<AnalysisSearchMode>,
+    direct_body: bool,
 ) -> anyhow::Result<String> {
+    let search_mode = search_mode.unwrap_or_default();
     anyhow::ensure!(
         query.chars().count() <= crate::config::ATTACHMENT_MAX_QUERY_CHARS,
         "search query too long"
@@ -88,7 +102,6 @@ fn text_predicate_with_correlation(
         matches!(scope, "all" | "body" | "attachments" | "document"),
         "invalid search scope"
     );
-    let media_filter = media_filter(message, scope);
     let parts =
         crate::rer_importer::analysis::search::parse_search_parts(query)
             .c(h!())?;
@@ -123,25 +136,27 @@ fn text_predicate_with_correlation(
         if token.is_empty() {
             continue;
         }
-        let tsquery = term_tsquery(token, prefixes, values);
-        let name_pattern = bind(
-            values,
-            format!(
-                "%{}%",
-                token
-                    .replace('\\', "\\\\")
-                    .replace('%', "\\%")
-                    .replace('_', "\\_")
-            ),
-        );
-        let predicate = exists_term(
-            message,
-            scope,
-            &format!("chunk.search_tsv @@ {tsquery}"),
-            &format!("media.file_name ilike {name_pattern} escape '\\'"),
-            &format!("body_search.search_tsv @@ {tsquery}"),
-            correlated,
-        );
+        let predicate = if search_mode == AnalysisSearchMode::Fuzzy {
+            let tsquery = term_tsquery(token, prefixes, values);
+            let name_pattern = bind(values, literal_pattern(token));
+            exists_term(
+                message,
+                scope,
+                &format!("chunk.search_tsv @@ {tsquery}"),
+                &format!("media.file_name ilike {name_pattern} escape '\\'"),
+                &format!("body_search.search_tsv @@ {tsquery}"),
+                correlated,
+            )
+        } else {
+            message_literal_predicate(
+                message,
+                scope,
+                &literal_pattern(token),
+                search_mode,
+                values,
+                direct_body,
+            )
+        };
         alternatives.last_mut().unwrap().push(if negative {
             format!("not ({predicate})")
         } else {
@@ -163,19 +178,16 @@ fn text_predicate_with_correlation(
         .map(|p| (false, p))
         .chain(parts.not_ilike.into_iter().map(|p| (true, p)))
     {
-        let parameter = bind(values, pattern);
-        let body = if matches!(scope, "attachments" | "document") {
-            "false".into()
-        } else {
-            format!("exists(select 1 from sigint_inbox_item literal_item where literal_item.id={message} and coalesce(literal_item.body_noheader->>'body','') ilike {parameter} escape '\\')")
-        };
-        let attachment = if scope == "body" {
-            "false".into()
-        } else {
-            format!("exists(select 1 from signal_message_media media where {media_filter} and (coalesce(media.file_name,'') ilike {parameter} escape '\\' or exists(select 1 from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision where chunk.media_id=media.id and (chunk.text ilike {parameter} escape '\\' or chunk.member ilike {parameter} escape '\\' or chunk.summary ilike {parameter} escape '\\'))))")
-        };
+        let predicate = message_literal_predicate(
+            message,
+            scope,
+            &pattern,
+            search_mode,
+            values,
+            direct_body,
+        );
         filters.push(format!(
-            "{}({body} or {attachment})",
+            "{}({predicate})",
             if negative { "not " } else { "" }
         ));
     }
@@ -184,6 +196,125 @@ fn text_predicate_with_correlation(
     } else {
         filters.join(" and ")
     })
+}
+
+fn literal_pattern(token: &str) -> String {
+    format!(
+        "%{}%",
+        token
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    )
+}
+
+fn exact_pattern(pattern: &str) -> String {
+    let expression = literal_expression(pattern);
+    format!("(^|[^[:alnum:]_]){expression}($|[^[:alnum:]_])")
+}
+
+fn literal_expression(pattern: &str) -> String {
+    let pattern = pattern.strip_prefix('%').unwrap_or(pattern);
+    let pattern = pattern.strip_suffix('%').unwrap_or(pattern);
+    let mut expression = String::new();
+    let mut escaped = false;
+    for ch in pattern.chars() {
+        if escaped {
+            expression.push_str(&regex::escape(&ch.to_string()));
+            escaped = false;
+        } else {
+            match ch {
+                '\\' => escaped = true,
+                '%' => expression.push_str(".*"),
+                '_' => expression.push('.'),
+                _ => expression.push_str(&regex::escape(&ch.to_string())),
+            }
+        }
+    }
+    expression
+}
+
+pub(crate) fn message_headline_pattern(
+    query: &str,
+    search_mode: AnalysisSearchMode,
+) -> anyhow::Result<Option<String>> {
+    let parts =
+        crate::rer_importer::analysis::search::parse_search_parts(query)
+            .c(h!())?;
+    let patterns = parts
+        .ts_query
+        .split_whitespace()
+        .filter(|token| {
+            !token.starts_with('-')
+                && !token.eq_ignore_ascii_case("or")
+                && !token.eq_ignore_ascii_case("and")
+        })
+        .map(literal_pattern)
+        .chain(parts.ilike)
+        .map(|pattern| {
+            let expression = literal_expression(&pattern);
+            if search_mode == AnalysisSearchMode::Exact {
+                format!("(?<![[:alnum:]_])(?:{expression})(?![[:alnum:]_])")
+            } else {
+                format!("(?:{expression})")
+            }
+        })
+        .collect::<Vec<_>>();
+    Ok(if patterns.is_empty() {
+        None
+    } else {
+        Some(patterns.join("|"))
+    })
+}
+
+fn literal_operator(
+    pattern: &str,
+    search_mode: AnalysisSearchMode,
+    values: &mut Vec<Value>,
+) -> String {
+    if search_mode == AnalysisSearchMode::Exact {
+        let parameter = bind(values, exact_pattern(pattern));
+        format!("~* {parameter}")
+    } else {
+        let parameter = bind(values, pattern);
+        format!("ilike {parameter} escape '\\'")
+    }
+}
+
+fn chunk_literal_predicate(
+    pattern: &str,
+    search_mode: AnalysisSearchMode,
+    values: &mut Vec<Value>,
+) -> String {
+    let operator = literal_operator(pattern, search_mode, values);
+    format!("(chunk.text {operator} or chunk.member {operator} or chunk.summary {operator})")
+}
+
+fn message_literal_predicate(
+    message: &str,
+    scope: &str,
+    pattern: &str,
+    search_mode: AnalysisSearchMode,
+    values: &mut Vec<Value>,
+    direct_body: bool,
+) -> String {
+    let operator = literal_operator(pattern, search_mode, values);
+    let body = if matches!(scope, "attachments" | "document") {
+        "false".into()
+    } else if direct_body || search_mode != AnalysisSearchMode::Fuzzy {
+        format!(
+            "coalesce(sigint_inbox_item.body_noheader->>'body','') {operator}"
+        )
+    } else {
+        format!("exists(select 1 from sigint_inbox_item literal_item where literal_item.id={message} and coalesce(literal_item.body_noheader->>'body','') {operator})")
+    };
+    let attachment = if scope == "body" {
+        "false".into()
+    } else {
+        let media_filter = media_filter(message, scope);
+        format!("exists(select 1 from signal_message_media media where {media_filter} and (coalesce(media.file_name,'') {operator} or exists(select 1 from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision where chunk.media_id=media.id and (chunk.text {operator} or chunk.member {operator} or chunk.summary {operator}))))")
+    };
+    format!("({body} or {attachment})")
 }
 
 fn exists_term(
@@ -232,15 +363,34 @@ fn exists_term(
 }
 
 pub fn message_filter(query: &str, scope: &str) -> anyhow::Result<SimpleExpr> {
+    message_filter_with_mode(query, scope, None, false).c(h!())
+}
+
+pub(crate) fn message_filter_with_mode(
+    query: &str,
+    scope: &str,
+    search_mode: Option<AnalysisSearchMode>,
+    correlated: bool,
+) -> anyhow::Result<SimpleExpr> {
     let mut values = Vec::new();
-    let sql =
-        text_predicate(query, "signal_message.id", scope, true, &mut values)
-            .c(h!())?;
+    let sql = text_predicate_with_correlation(
+        query,
+        "signal_message.id",
+        scope,
+        true,
+        &mut values,
+        correlated,
+        search_mode,
+        false,
+    )
+    .c(h!())?;
     Ok(Expr::cust_with_values(sql, values))
 }
 
-pub(crate) fn correlated_message_filter(
+pub(crate) fn analysis_message_filter(
     query: &str,
+    search_mode: Option<AnalysisSearchMode>,
+    correlated: bool,
 ) -> anyhow::Result<SimpleExpr> {
     let mut values = Vec::new();
     let sql = text_predicate_with_correlation(
@@ -249,10 +399,19 @@ pub(crate) fn correlated_message_filter(
         "all",
         true,
         &mut values,
+        correlated,
+        search_mode,
         true,
     )
     .c(h!())?;
     Ok(Expr::cust_with_values(sql, values))
+}
+
+#[cfg(test)]
+pub(crate) fn correlated_message_filter(
+    query: &str,
+) -> anyhow::Result<SimpleExpr> {
+    message_filter_with_mode(query, "all", None, true).c(h!())
 }
 
 fn media_filter(message: &str, scope: &str) -> String {

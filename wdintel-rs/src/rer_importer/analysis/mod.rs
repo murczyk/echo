@@ -74,6 +74,38 @@ impl AnalyticsMessageIdScope {
     }
 }
 
+pub(super) async fn ensure_analytics_search_coverage(
+    source: &DatabaseConnection,
+    analytics: &DatabaseConnection,
+    req: &AnalysisStatsReq,
+    groups: &[String],
+    freshness_max_age_ms: u64,
+) -> anyhow::Result<()> {
+    use crate::attachments::analytics::{SearchCoverageScope, SearchTimeBasis};
+    let time_basis = match req.message_time_basis {
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation) => {
+            SearchTimeBasis::Creation
+        }
+        _ => SearchTimeBasis::Interception,
+    };
+    crate::attachments::analytics::ensure_search_coverage_scoped(
+        source,
+        analytics,
+        &req.search,
+        req.search_mode,
+        freshness_max_age_ms,
+        SearchCoverageScope {
+            since: Some(dt_from_millis(req.since_date_inclusive_ms).c(h!())?),
+            till: Some(dt_from_millis(req.till_date_noninclusive_ms).c(h!())?),
+            till_inclusive: false,
+            time_basis,
+            groups,
+        },
+    )
+    .await
+    .c(h!())
+}
+
 pub fn filter_selected_groups<Q>(
     q: Q,
     selected_groups: &Option<Vec<String>>,
@@ -1935,10 +1967,6 @@ fn get_related_tag_items_filter(
     let expected_count = unique_tags.len();
 
     let mut q = sigint_inbox_item_tag::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item_tag::Relation::Tag.def(),
-        )
         .filter(
             Expr::col((
                 sigint_inbox_item_tag::Entity,
@@ -1954,8 +1982,21 @@ fn get_related_tag_items_filter(
             sigint_inbox_item_tag::Column::Confidence
                 .gte(TAG_MINIMUM_CONFIDENCE),
         )
-        .filter(access.owner_condition())
         .select_only();
+    q = match access {
+        TagFilterAccess::Unresolved { .. } => q
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_tag::Relation::Tag.def(),
+            )
+            .filter(access.owner_condition()),
+        TagFilterAccess::Resolved {
+            accessible_tag_ids, ..
+        } => q.filter(
+            sigint_inbox_item_tag::Column::TagId
+                .eq_any(accessible_tag_ids.to_vec()),
+        ),
+    };
 
     if let Some(scope) = scope {
         q = q.filter(scope.condition((
@@ -2376,6 +2417,14 @@ fn selected_tags_accessible_expr(
     unique_tags: BTreeSet<i64>,
     access: TagFilterAccess<'_>,
 ) -> SimpleExpr {
+    if let TagFilterAccess::Resolved {
+        accessible_tag_ids, ..
+    } = access
+    {
+        return Expr::value(
+            unique_tags.iter().all(|id| accessible_tag_ids.contains(id)),
+        );
+    }
     let expected_count = unique_tags.len();
     let subquery = tag::Entity::find()
         .filter(
@@ -3415,12 +3464,27 @@ pub fn filter_search<Q>(q: Q, search: &Option<String>) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect,
 {
-    Ok(filter_search_with_correlated_terms(q, search, false).c(h!())?)
+    Ok(filter_search_with_mode(q, search, None).c(h!())?)
+}
+
+pub fn filter_search_with_mode<Q>(
+    q: Q,
+    search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect,
+{
+    Ok(
+        filter_search_with_correlated_terms(q, search, search_mode, false)
+            .c(h!())?,
+    )
 }
 
 pub(crate) fn filter_search_with_correlated_terms<Q>(
     q: Q,
     search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
     correlated_terms: bool,
 ) -> Result<Q, AppError>
 where
@@ -3429,20 +3493,21 @@ where
     let mut q2 = q;
     if let Some(ref search) = m_str_trim(search) {
         let search_parts = search::parse_search_parts(search).context(h!())?;
-        let predicate = if correlated_terms {
-            crate::attachments::search::correlated_message_filter(search)
-        } else {
-            crate::attachments::search::message_filter(search, "all")
-        }
+        let predicate = crate::attachments::search::analysis_message_filter(
+            search,
+            search_mode,
+            correlated_terms,
+        )
         .c(h!())?;
         q2 = q2.filter(predicate);
 
         if !search_parts.freq.is_empty() {
-            q2 = filter_selected_freqs(q2, &Some(search_parts.freq))?;
+            q2 = filter_selected_freqs(q2, &Some(search_parts.freq)).c(h!())?;
         }
 
         if !search_parts.not_freq.is_empty() {
-            q2 = filter_denied_freqs(q2, &Some(search_parts.not_freq))?;
+            q2 = filter_denied_freqs(q2, &Some(search_parts.not_freq))
+                .c(h!())?;
         }
 
         if !search_parts.message_uids.is_empty() {
@@ -3645,6 +3710,7 @@ async fn query_summary_table_freq_analytics(
             db,
             &env.dbx,
             freshness_max_age_ms,
+            master_keys,
         ),
         analytics_unit::resolve_analytics_unit_filters(
             &env.dbx,
@@ -4305,9 +4371,13 @@ fn build_summary_table_filtered_messages_query_with_access(
         .context(h!())?;
     let q =
         filter_selected_metadata_for_analysis_stats(q, req).context(h!())?;
-    let q =
-        filter_search_with_correlated_terms(q, &req.search, scope.is_some())
-            .context(h!())?;
+    let q = filter_search_with_correlated_terms(
+        q,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+    )
+    .context(h!())?;
     Ok(filter_selected_device_names(q, &req.selected_device_names)
         .context(h!())?)
 }
@@ -5315,10 +5385,11 @@ async fn correlated_freqs(
         "analysis correlated frequencies",
         analytics_count_request_supported(&req),
         |db| async move {
-            crate::attachments::analytics::ensure_search_coverage(
+            ensure_analytics_search_coverage(
                 &postgres_source_db,
                 &db,
-                &analytics_req.search,
+                analytics_req,
+                &analytics_groups,
                 freshness_max_age_ms,
             )
             .await
@@ -5745,7 +5816,12 @@ pub async fn edit_freq_unit_name(
     .context(h!())?;
     let rows_res =
         filter_selected_metadata_for_analysis_stats(rows_res, &reqan)?;
-    let rows_res = filter_search(rows_res, &req.search)?;
+    let rows_res = filter_search_with_mode(
+        rows_res,
+        &req.search,
+        req.analysis_stats_req.search_mode,
+    )
+    .c(h!())?;
     let rows_res =
         filter_selected_device_names(rows_res, &reqan.selected_device_names)?;
     // println!(
@@ -6150,10 +6226,14 @@ pub async fn bi_new_callsigns(
         "analysis new callsigns",
         analytics_supported,
         |db| async move {
-            crate::attachments::analytics::ensure_search_coverage(
+            let mut coverage_req = analytics_req.clone();
+            coverage_req.since_date_inclusive_ms =
+                lookback_since.and_utc().timestamp_millis();
+            ensure_analytics_search_coverage(
                 &env.dbx,
                 &db,
-                &analytics_req.search,
+                &coverage_req,
+                &analytics_groups,
                 freshness_max_age_ms,
             )
             .await
@@ -6672,6 +6752,7 @@ fn build_new_callsign_filtered_items_query(
     let query = filter_search_with_correlated_terms(
         query,
         &req.search,
+        req.search_mode,
         scope.is_some(),
     )
     .c(h!())?;
@@ -7276,6 +7357,7 @@ pub async fn activity_daily(
                 &db,
                 postgres_db,
                 freshness_max_age_ms,
+                &analytics_groups,
             )
             .await
             .c(h!())?;
@@ -7373,6 +7455,7 @@ pub async fn callsign_relations(
                 &db,
                 postgres_db,
                 freshness_max_age_ms,
+                &analytics_groups,
             )
             .await
             .c(h!())?;
@@ -7483,6 +7566,7 @@ pub async fn callsign_frequency_matches(
                 &db,
                 postgres_db,
                 freshness_max_age_ms,
+                &analytics_groups,
             )
             .await
             .c(h!())?;
@@ -7566,6 +7650,7 @@ async fn group_stats(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -7784,6 +7869,7 @@ async fn post_stats(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -7819,9 +7905,13 @@ async fn freq_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<FreqStatsRsp>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
+    )
+    .await
+    .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -7911,6 +8001,7 @@ async fn callsign_stats(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -8003,6 +8094,7 @@ async fn metadata_stats(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -8071,6 +8163,7 @@ async fn tag_stats(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -8137,6 +8230,7 @@ async fn unit_stats(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -8202,6 +8296,7 @@ async fn location_stats(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -8283,6 +8378,7 @@ async fn aor_stats(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -8394,6 +8490,7 @@ async fn network_stats(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -8588,6 +8685,20 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
     // through PostgreSQL so every panel describes the same message set.
     req.message_time_basis
         != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+        && analytics_text_search_supported(&req.search, req.search_mode)
+}
+
+fn analytics_text_search_supported(
+    search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
+) -> bool {
+    m_str_trim(search).is_none()
+        || (search_mode.unwrap_or_default() == AnalysisSearchMode::Fuzzy
+            && search.as_deref().is_none_or(|search| {
+                search::parse_search_parts(search).is_ok_and(|parts| {
+                    parts.ilike.is_empty() && parts.not_ilike.is_empty()
+                })
+            }))
 }
 
 fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
@@ -8623,8 +8734,9 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
-        || (req.load_latest == Some(true) && req.nolimit != Some(true))
+    analytics_text_search_supported(&req.search, req.search_mode)
+        && (!crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
+            || (req.load_latest == Some(true) && req.nolimit != Some(true)))
 }
 
 pub(crate) fn analytics_inbox_candidates_supported(
@@ -9323,6 +9435,7 @@ async fn query_count_stats_raw(
         db,
         &env.dbx,
         freshness_max_age_ms,
+        &access.master_keys,
     )
     .await
     .c(h!())?;
@@ -9745,6 +9858,7 @@ async fn query_message_stats_count_raw(
         db,
         &env.dbx,
         freshness_max_age_ms,
+        &master_keys,
     )
     .await
     .context(h!())?;
@@ -9794,6 +9908,7 @@ async fn query_unit_match_stats_count_raw(
         db,
         &env.dbx,
         freshness_max_age_ms,
+        &master_keys,
     )
     .await
     .context(h!())?;
@@ -10019,6 +10134,7 @@ async fn group_stats_count(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -10086,6 +10202,7 @@ async fn sender_stats_count(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -10154,6 +10271,7 @@ async fn post_stats_count(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -10190,9 +10308,13 @@ async fn freq_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
+    )
+    .await
+    .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -10225,6 +10347,7 @@ async fn freq_stats_count(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -10293,6 +10416,7 @@ async fn callsign_stats_count(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -10362,6 +10486,7 @@ async fn tag_stats_count(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -10430,6 +10555,7 @@ async fn unit_stats_count(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -10496,6 +10622,7 @@ async fn location_stats_count(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -10578,6 +10705,7 @@ async fn aor_stats_count(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -10661,6 +10789,7 @@ async fn network_stats_count(
                 &db,
                 &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
             .await
             .c(h!())?;
@@ -10802,7 +10931,11 @@ async fn query_combined_stats_analytics(
 ) -> Result<AnalysisStatsRsp, AppError> {
     let login = login_id_from_identity(user).context(h!())?;
     let scope = stats::resolve_analytics_message_id_scope(
-        &req.0, &db, &env.dbx, freshness,
+        &req.0,
+        &db,
+        &env.dbx,
+        freshness,
+        &master_keys,
     )
     .await
     .context(h!())?;
@@ -10986,6 +11119,7 @@ async fn collect_group_names(
             signal_group::Column::DisableNetworkAssignment,
             signal_group::Column::IsAviationGroup,
             signal_group::Column::ColorKey,
+            signal_group::Column::FetchNewMessages,
         ])
         .filter(signal_group::Column::MasterKey.eq_any(group_keys.clone()))
         .into_tuple::<(
@@ -10996,6 +11130,7 @@ async fn collect_group_names(
             bool,
             Option<bool>,
             Option<String>,
+            Option<bool>,
         )>()
         .all(txn)
         .await
@@ -11003,7 +11138,7 @@ async fn collect_group_names(
     let mut resolved_keys = vec![];
     let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _, _, _, _, _)| key.clone())
+        .map(|(key, _, _, _, _, _, _, _)| key.clone())
         .collect();
     let stats = match analytics_group_stats {
         Some(analytics_group_stats) => analytics_group_stats.clone(),
@@ -11030,6 +11165,7 @@ async fn collect_group_names(
         disable_network_assignment,
         is_aviation_group,
         color_key,
+        fetch_new_messages,
     ) in signal_groups
     {
         if let Some(name) = name {
@@ -11045,6 +11181,7 @@ async fn collect_group_names(
                 interseption_kind: interseption_kind.into(),
                 disable_network_assignment,
                 is_aviation_group: is_aviation_group.unwrap_or(false),
+                fetch_new_messages: fetch_new_messages.unwrap_or(true),
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
@@ -11083,6 +11220,7 @@ async fn collect_group_names(
                 crate::sigint::types::InterseptionKind::InterseptionRer,
             disable_network_assignment: false,
             is_aviation_group: false,
+            fetch_new_messages: true,
             group_stats: stats,
             admin_data: group_admin_data,
             areas_of_responsibility: aors,

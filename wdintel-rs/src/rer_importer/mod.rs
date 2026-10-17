@@ -1,4 +1,5 @@
 use self::types::*;
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::delta::bgtask_log;
 use crate::entities::signal_profile::Model;
 use crate::entities::*;
@@ -1339,7 +1340,7 @@ pub async fn signal_group_info_batch(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
     let is_admin = has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
@@ -1368,7 +1369,7 @@ pub async fn signal_groups(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await
     .c(h!())?;
@@ -1946,7 +1947,7 @@ pub async fn senders(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await
     .c(h!())?;

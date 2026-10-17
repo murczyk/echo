@@ -382,6 +382,14 @@ async fn audio_access_role_org_archive_matrix() {
         (vec!["ApiAgent"], false, false, false),
         (vec!["DeviceSource"], false, false, false),
         (vec!["CyberViewer"], false, true, false),
+        (vec!["CyberViewerRestricted"], false, false, false),
+        (
+            vec!["CyberViewerRestricted", "CyberViewer"],
+            false,
+            true,
+            false,
+        ),
+        (vec!["CyberViewerRestricted", "Cyber"], true, true, true),
         (vec!["Api"], false, false, false),
         (vec![], false, false, false),
     ] {

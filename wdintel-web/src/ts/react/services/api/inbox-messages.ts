@@ -367,6 +367,7 @@ function normalizeSignalGroupEntry(
       raw.disable_network_assignment ??
       false) as boolean,
     isAviationGroup: (raw.isAviationGroup ?? raw.is_aviation_group ?? false) as boolean,
+    fetchNewMessages: (raw.fetchNewMessages ?? raw.fetch_new_messages ?? true) as boolean,
     groupStats:
       groupStats && typeof groupStats.activityLastDay === 'number' ? groupStats : defaultGroupStats,
     adminData: (raw.adminData ?? raw.admin_data ?? null) as GroupAdminData | null,
@@ -433,6 +434,7 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
     or_with_coords: req.orWithCoords,
     newest_first: req.newestFirst,
     search: req.search,
+    search_mode: req.searchMode,
     highlight_callsigns: req.highlightCallsigns,
     highlight_keywords: req.highlightKeywords,
     highlight_keyword_set_id: req.highlightKeywordSetId,

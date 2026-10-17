@@ -1101,28 +1101,24 @@ describe('AnalysisFiltersPanel', () => {
   });
 
   // Regression: https://github.com/echoua/echo/issues/3598
-  it('shows the RER report filter only when enabled and networks are visible', async () => {
+  it('shows the RER report filter only when enabled regardless of network visibility', async () => {
     const hidden = await renderComponent(buildProps());
     rendered.push(hidden);
     expect(hidden.container.textContent).not.toContain('для звіту РЕР');
 
-    const networkHidden = await renderComponent(
-      buildProps({ hideNetworks: true, rerReportFilterEnabled: true }),
-    );
-    rendered.push(networkHidden);
-    expect(networkHidden.container.textContent).not.toContain('для звіту РЕР');
+    for (const hideNetworks of [false, true]) {
+      const updateQueryState = vi.fn();
+      const visible = await renderComponent(
+        buildProps({ hideNetworks, rerReportFilterEnabled: true, updateQueryState }),
+      );
+      rendered.push(visible);
+      await setChecked(findLabelInput(visible.container, 'для звіту РЕР'), true);
 
-    const updateQueryState = vi.fn();
-    const visible = await renderComponent(
-      buildProps({ rerReportFilterEnabled: true, updateQueryState }),
-    );
-    rendered.push(visible);
-    await setChecked(findLabelInput(visible.container, 'для звіту РЕР'), true);
-
-    expect(updateQueryState).toHaveBeenCalledWith({
-      onlyWithNetwork: true,
-      withoutNetwork: false,
-    });
+      expect(updateQueryState).toHaveBeenCalledWith({
+        onlyWithNetwork: true,
+        withoutNetwork: false,
+      });
+    }
   });
 
   it('maps the metadata mode buttons into the query state updates and helper text', async () => {

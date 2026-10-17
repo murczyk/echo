@@ -33,6 +33,8 @@ pub struct Model {
     pub totp_epoch: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub display_name: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub signal_profile_id: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -91,6 +93,8 @@ pub enum Relation {
     LogUsersReportGeneration,
     #[sea_orm(has_one = "super::login_totp::Entity")]
     LoginTotp,
+    #[sea_orm(has_many = "super::messenger_alert_delivery::Entity")]
+    MessengerAlertDelivery,
     #[sea_orm(has_many = "super::network_freq_last_datetime_in_aor::Entity")]
     NetworkFreqLastDatetimeInAor,
     #[sea_orm(has_many = "super::network_recalculation_task::Entity")]
@@ -179,6 +183,14 @@ pub enum Relation {
     SignalMessage,
     #[sea_orm(has_many = "super::signal_message_group::Entity")]
     SignalMessageGroup,
+    #[sea_orm(
+        belongs_to = "super::signal_profile::Entity",
+        from = "Column::SignalProfileId",
+        to = "super::signal_profile::Column::Uuid",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SignalProfile,
     #[sea_orm(has_many = "super::system_settings::Entity")]
     SystemSettings,
     #[sea_orm(has_many = "super::tags_ordering::Entity")]
@@ -330,6 +342,12 @@ impl Related<super::log_users_report_generation::Entity> for Entity {
 impl Related<super::login_totp::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::LoginTotp.def()
+    }
+}
+
+impl Related<super::messenger_alert_delivery::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerAlertDelivery.def()
     }
 }
 
@@ -558,6 +576,12 @@ impl Related<super::signal_message::Entity> for Entity {
 impl Related<super::signal_message_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalMessageGroup.def()
+    }
+}
+
+impl Related<super::signal_profile::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalProfile.def()
     }
 }
 

@@ -685,7 +685,7 @@ export function AnalysisFiltersPanelSections({
             label="Важливі"
             sx={compactCheckboxLabelSx}
           />
-          {rerReportFilterEnabled && !hideNetworks ? (
+          {rerReportFilterEnabled ? (
             <FormControlLabel
               control={
                 <Checkbox

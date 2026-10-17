@@ -24,6 +24,7 @@ pub struct Model {
     pub is_aviation_group: Option<bool>,
     #[sea_orm(column_type = "Text", nullable)]
     pub color_key: Option<String>,
+    pub fetch_new_messages: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -16,6 +16,7 @@ pub struct BlSzdGroupUpdateRes {
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
     pub is_aviation_group: bool,
+    pub fetch_new_messages: bool,
     pub aor: Option<Vec<area_of_responsibility::Model>>,
     pub allowed_users: Vec<String>,
     pub allowed_user_details: Vec<SignalGroupLogin>,
@@ -106,6 +107,13 @@ pub async fn bl_szd_group_update(
     )
     .await
     .c(h!())?;
+    let fetch_new_messages = update_group_fetch_new_messages_if_present(
+        req.fetch_new_messages,
+        &szd.group_master_key,
+        txn,
+    )
+    .await
+    .c(h!())?;
     let (short_note, long_note) = group_admin_data::Entity::find()
         .filter(
             group_admin_data::Column::GroupMasterKey.eq(&szd.group_master_key),
@@ -156,6 +164,7 @@ pub async fn bl_szd_group_update(
         interseption_kind,
         disable_network_assignment,
         is_aviation_group,
+        fetch_new_messages,
         aor: if aor.is_empty() { None } else { Some(aor) },
         allowed_user_details: render_group_logins(
             allowed_users.clone(),
@@ -173,6 +182,27 @@ pub async fn bl_szd_group_update(
         color_key,
     };
     Ok(res)
+}
+
+pub async fn update_group_fetch_new_messages_if_present(
+    fetch_new_messages: Option<bool>,
+    master_key: &str,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<bool> {
+    let group = signal_group::Entity::find_by_id(master_key.to_string())
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let Some(fetch_new_messages) = fetch_new_messages else {
+        return Ok(group.fetch_new_messages.unwrap_or(true));
+    };
+    if group.fetch_new_messages != Some(fetch_new_messages) {
+        let mut group = group.into_active_model();
+        group.fetch_new_messages = Set(Some(fetch_new_messages));
+        group.update(txn).await.c(h!())?;
+    }
+    Ok(fetch_new_messages)
 }
 
 pub async fn update_group_aviation_if_present(
@@ -992,6 +1022,7 @@ pub async fn bl_szd_groups_list(
         interseption_kind: db_enums::InterseptionKind,
         disable_network_assignment: bool,
         is_aviation_group: Option<bool>,
+        fetch_new_messages: Option<bool>,
         short_note: Option<String>,
         long_note: Option<String>,
         color_key: Option<String>,
@@ -1023,6 +1054,7 @@ pub async fn bl_szd_groups_list(
         )
         .column_as(signal_group::Column::IsAviationGroup, "is_aviation_group")
         .column_as(signal_group::Column::ColorKey, "color_key")
+        .column_as(signal_group::Column::FetchNewMessages, "fetch_new_messages")
         .column(group_admin_data::Column::ShortNote)
         .column(group_admin_data::Column::LongNote)
         .filter(datasource::Column::Deleted.eq(false))
@@ -1042,6 +1074,7 @@ pub async fn bl_szd_groups_list(
             InterseptionKind,
             bool,
             Option<bool>,
+            Option<bool>,
             i64,
             Option<String>,
             Option<String>,
@@ -1054,6 +1087,7 @@ pub async fn bl_szd_groups_list(
             row.interseption_kind.into(),
             row.disable_network_assignment,
             row.is_aviation_group,
+            row.fetch_new_messages,
             row.id,
             row.short_note,
             row.long_note,
@@ -1096,6 +1130,7 @@ pub async fn bl_szd_groups_list(
                     interseption_kind,
                     disable_network_assignment,
                     is_aviation_group,
+                    fetch_new_messages,
                     szd_id,
                     short_note,
                     long_note,
@@ -1110,6 +1145,7 @@ pub async fn bl_szd_groups_list(
                     interseption_kind,
                     disable_network_assignment,
                     is_aviation_group: is_aviation_group.unwrap_or(false),
+                    fetch_new_messages: fetch_new_messages.unwrap_or(true),
                     allowed_users: group_users
                         .get(&master_key)
                         .cloned()

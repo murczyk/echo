@@ -1,3 +1,4 @@
+import { SettingsMessengerAlerts } from './SettingsMessengerAlerts';
 import { TextField } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import { PowerAlert } from '../../components/PowerAlert';
@@ -94,6 +95,7 @@ function ProfileForm() {
         disabled={loading || saving || loadFailed}
         helperText="До 100 символів. Ім’я може збігатися з іменами інших користувачів. Залиште порожнім, щоб показувати логін."
       />
+      <SettingsMessengerAlerts />
       <div>
         <PowerButton
           type="submit"

@@ -17,6 +17,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
+pub mod alerts;
 pub mod attachments;
 pub mod bl;
 pub mod dedupe;
@@ -213,6 +214,8 @@ pub async fn edit(
         id,
         req.aor_id,
         req.is_active,
+        req.can_read_messages,
+        req.can_send_messages,
         req.display_name.to_string(),
         req.description.clone(),
         req.api_login.clone(),
@@ -375,6 +378,8 @@ pub async fn link_operator(
         updated_by_login_id: Set(Some(login)),
         deleted: NotSet,
         last_sync_at: NotSet,
+        can_read_messages: NotSet,
+        can_send_messages: NotSet,
     }
     .insert(&txn)
     .await

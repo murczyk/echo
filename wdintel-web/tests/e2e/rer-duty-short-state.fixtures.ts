@@ -10,6 +10,7 @@ type ShortStateFixtureOptions = {
   rerReportEligible?: boolean;
   rerReportEnabled?: boolean;
   hideNetworks?: boolean;
+  systemSettingsFailure?: boolean;
   shortStateId?: string;
   shortState?: unknown;
   inboxResponse?: InboxMessagesRspRaw | null | Promise<InboxMessagesRspRaw | null>;
@@ -83,6 +84,7 @@ function serverInfoResponse() {
     feature_delta: true,
     feature_analysis_map: true,
     feature_strict_networks: false,
+    feature_my_admin_groups_edit: false,
     version: 'test',
   };
 }
@@ -202,6 +204,11 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/system-settings/current') {
+      if (options.systemSettingsFailure) {
+        resolveSystemSettingsReady();
+        await route.fulfill({ status: 500, body: 'System settings unavailable' });
+        return;
+      }
       await fulfillJson(
         route,
         systemSettingsCurrentResponse({

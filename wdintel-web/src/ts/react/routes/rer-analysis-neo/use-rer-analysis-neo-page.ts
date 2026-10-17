@@ -298,6 +298,7 @@ export function useRerAnalysisNeoPage(
     fromDateTimeStr: initialQueryState.fromDateTimeStr,
     toDateTimeStr: initialQueryState.toDateTimeStr,
     search: initialQueryState.search,
+    searchMode: initialQueryState.searchMode,
   });
   const queryStateWithResolvedRoleDate = useMemo(
     () =>
@@ -324,6 +325,7 @@ export function useRerAnalysisNeoPage(
         fromDateTimeStr: queryStateWithResolvedRoleDate.fromDateTimeStr,
         toDateTimeStr: queryStateWithResolvedRoleDate.toDateTimeStr,
         search: queryStateWithResolvedRoleDate.search,
+        searchMode: queryStateWithResolvedRoleDate.searchMode,
       };
       setQueryState(queryStateWithResolvedRoleDate);
     }
@@ -344,7 +346,7 @@ export function useRerAnalysisNeoPage(
               ? []
               : queryStateWithResolvedRoleDate.deviceNamesSelected,
           onlyWithNetwork:
-            rerReportFilterAccess.status === 'denied' || hideNetworks
+            rerReportFilterAccess.status === 'denied'
               ? false
               : queryStateWithResolvedRoleDate.onlyWithNetwork,
           networksSelected: hideNetworks ? [] : queryStateWithResolvedRoleDate.networksSelected,
@@ -383,9 +385,7 @@ export function useRerAnalysisNeoPage(
           deviceNamesSelected:
             deviceAccess.status === 'denied' ? [] : initialQueryState.deviceNamesSelected,
           onlyWithNetwork:
-            rerReportFilterAccess.status === 'denied' || hideNetworks
-              ? false
-              : initialQueryState.onlyWithNetwork,
+            rerReportFilterAccess.status === 'denied' ? false : initialQueryState.onlyWithNetwork,
           groupsSelected:
             groupScope.kind === 'group' ? [groupScope.masterKey] : queryState.groupsSelected,
           freqsSelected: queryState.freqsSelected,
@@ -446,6 +446,7 @@ export function useRerAnalysisNeoPage(
         fromDateTimeStr: period.fromDateTimeStr,
         toDateTimeStr: period.toDateTimeStr,
         search: period.search,
+        searchMode: queryStateWithResolvedRoleDate.searchMode,
       };
       setQueryState((current) => ({
         ...current,
@@ -695,6 +696,7 @@ export function useRerAnalysisNeoPage(
       fromDateTimeStr: queryStateWithResolvedRoleDate.fromDateTimeStr,
       toDateTimeStr: queryStateWithResolvedRoleDate.toDateTimeStr,
       search: queryStateWithResolvedRoleDate.search,
+      searchMode: queryStateWithResolvedRoleDate.searchMode,
     };
     const previousBoundary = directQueryBoundaryRef.current;
     directQueryBoundaryRef.current = nextBoundary;
@@ -702,7 +704,8 @@ export function useRerAnalysisNeoPage(
     if (
       previousBoundary.fromDateTimeStr === nextBoundary.fromDateTimeStr &&
       previousBoundary.toDateTimeStr === nextBoundary.toDateTimeStr &&
-      previousBoundary.search === nextBoundary.search
+      previousBoundary.search === nextBoundary.search &&
+      previousBoundary.searchMode === nextBoundary.searchMode
     ) {
       return;
     }
@@ -711,6 +714,7 @@ export function useRerAnalysisNeoPage(
     clearTargetMessageContext,
     queryStateWithResolvedRoleDate.fromDateTimeStr,
     queryStateWithResolvedRoleDate.search,
+    queryStateWithResolvedRoleDate.searchMode,
     queryStateWithResolvedRoleDate.toDateTimeStr,
     targetMessageContextActive,
   ]);
@@ -1148,7 +1152,8 @@ export function useRerAnalysisNeoPage(
         targetMessageContextActive &&
         ((patch.fromDateTimeStr != null && patch.fromDateTimeStr !== boundary.fromDateTimeStr) ||
           (patch.toDateTimeStr != null && patch.toDateTimeStr !== boundary.toDateTimeStr) ||
-          (patch.search != null && patch.search !== boundary.search))
+          (patch.search != null && patch.search !== boundary.search) ||
+          (patch.searchMode != null && patch.searchMode !== boundary.searchMode))
       ) {
         clearTargetMessageContext();
       }
@@ -1560,6 +1565,7 @@ export function useRerAnalysisNeoPage(
     tagsLayout: dutySettings.tagsLayout,
     hideBotTags,
     hideNetworks,
+    networkVisibilityReady: systemSettingsStatus === 'success',
     mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
     collapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
     messageTextPreviewLines: dutySettings.messageTextPreviewLines,

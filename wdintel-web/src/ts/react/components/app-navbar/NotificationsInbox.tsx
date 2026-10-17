@@ -625,9 +625,9 @@ export function NotificationsInbox({ identity }: { identity: string }) {
                       </time>
                     </span>
                     <span
-                      className="mt-2 block rounded border-l-2 px-[8px] py-[12px] text-sm font-normal leading-5"
+                      className="mt-2 block rounded border-l-2 border-solid px-[8px] py-[12px] text-sm font-normal leading-5"
                       style={{
-                        backgroundColor: theme.palette.background.paper,
+                        backgroundColor: `color-mix(in srgb, ${theme.palette.text.primary} 9%, ${theme.palette.background.paper})`,
                         borderLeftColor:
                           item.readAt == null ? theme.palette.primary.dark : theme.palette.divider,
                         color: theme.palette.text.secondary,

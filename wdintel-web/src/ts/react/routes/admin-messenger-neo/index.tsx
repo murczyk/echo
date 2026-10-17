@@ -13,6 +13,8 @@ import {
   DialogContent,
   DialogTitle,
   Drawer,
+  FormControlLabel,
+  Switch,
   InputAdornment,
   MenuItem,
   Stack,
@@ -81,23 +83,27 @@ import {
 import { PowerAlert } from '../../components/PowerAlert';
 import { GroupStatsTimelineCell } from '../admin-directions-neo/GroupStatsTimelineCell';
 import { AdminEchoMissingMessagesSection } from '../admin-echo-missing-messages';
+import { transformAccounts } from './transform-accounts';
+import { MessengerSendingSection } from './MessengerSendingSection';
 import { RestApiErrorsSection } from './RestApiErrorsSection';
 import { MessengerDescriptionCell } from './MessengerDescriptionCell';
 import { getSystemServicePrefix, useSystemServiceName } from './use-system-service-name';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
-type AdminMessengerTab = 'accounts' | 'missingEchoIm' | 'restApiErrors';
+type AdminMessengerTab = 'accounts' | 'sending' | 'missingEchoIm' | 'restApiErrors';
 
 const ADMIN_MESSENGER_TAB_QUERY_PARAM = 'tab';
 const TABLE_QUERY_PARAM_NAMES = ['globalFilter', 'sorting', 'columnFilters', 'date'];
 
 function parseAdminMessengerTab(value: string | null | undefined): AdminMessengerTab {
+  if (value === 'sending') return 'sending';
   if (value === 'missing-echo-im') return 'missingEchoIm';
   if (value === 'rest-api-errors') return 'restApiErrors';
   return 'accounts';
 }
 
 function serializeAdminMessengerTab(tab: AdminMessengerTab): string {
+  if (tab === 'sending') return 'sending';
   if (tab === 'missingEchoIm') return 'missing-echo-im';
   if (tab === 'restApiErrors') return 'rest-api-errors';
   return 'accounts';
@@ -145,6 +151,8 @@ type PhoneForm = {
 };
 
 type EditForm = {
+  canReadMessages: boolean;
+  canSendMessages: boolean;
   id: number;
   displayName: string;
   description: string;
@@ -165,29 +173,6 @@ type StatusMessage = {
 } | null;
 
 type SignalCliMode = 'Normal' | 'Native';
-
-type EchoAccountLegacy = {
-  id: number;
-  area_of_responsibility: EchoAccountF1['areaOfResponsibility'];
-  status: string;
-  created_at: number;
-  client_id: number | null;
-  display_name: string;
-  system_service_name: string | null;
-  description: string | null;
-  messenger: string;
-  phone_number: string;
-  api_login: string | null;
-  api_endpoint: string | null;
-  is_linked: boolean;
-  is_imported: boolean;
-  signal_port: string | null;
-  process_name: string | null;
-  attachments_path: string | null;
-  echo_client_id: string | null;
-  echo_account_id: string | null;
-  echo_client_lock_id: string | null;
-};
 
 const DEFAULT_COLUMNS_VISIBILITY = {
   displayName: true,
@@ -315,6 +300,8 @@ function buildMessengerLoadingRows(): EchoAccountF1[] {
     phoneNumber: '',
     apiLogin: null,
     apiEndpoint: null,
+    canReadMessages: null,
+    canSendMessages: null,
     isLinked: false,
     isImported: false,
     signalPort: null,
@@ -347,6 +334,8 @@ function buildEditRequest(editForm: EditForm, account: EchoAccountF1): AccountSt
     accountId: editForm.id,
     aorId: editForm.aorId,
     isActive: currentIsActive,
+    canReadMessages: editForm.canReadMessages,
+    canSendMessages: editForm.canSendMessages,
     displayName: editForm.displayName,
     description: normalizeDescription(editForm.description),
     apiLogin: account.apiLogin,
@@ -813,37 +802,6 @@ function AdminMessengerAccountsSection() {
     }
   }
 
-  function transformAccounts(accounts: Array<EchoAccountF1 | EchoAccountLegacy>): EchoAccountF1[] {
-    // transform objects from BE model to FE model
-    return accounts.map((account) => ({
-      id: account.id,
-      areaOfResponsibility:
-        'areaOfResponsibility' in account
-          ? account.areaOfResponsibility
-          : account.area_of_responsibility,
-      status: account.status,
-      createdAt: 'createdAt' in account ? account.createdAt : account.created_at,
-      clientId: 'clientId' in account ? account.clientId : account.client_id,
-      displayName: 'displayName' in account ? account.displayName : account.display_name,
-      systemServiceName:
-        'systemServiceName' in account ? account.systemServiceName : account.system_service_name,
-      description: account.description,
-      messenger: account.messenger,
-      phoneNumber: 'phoneNumber' in account ? account.phoneNumber : account.phone_number,
-      apiLogin: 'apiLogin' in account ? account.apiLogin : account.api_login,
-      apiEndpoint: 'apiEndpoint' in account ? account.apiEndpoint : account.api_endpoint,
-      isLinked: 'isLinked' in account ? account.isLinked : account.is_linked,
-      isImported: 'isImported' in account ? account.isImported : account.is_imported,
-      signalPort: 'signalPort' in account ? account.signalPort : account.signal_port,
-      processName: 'processName' in account ? account.processName : account.process_name,
-      attachmentsPath:
-        'attachmentsPath' in account ? account.attachmentsPath : account.attachments_path,
-      echoClientId: 'echoClientId' in account ? account.echoClientId : account.echo_client_id,
-      echoAccountId: 'echoAccountId' in account ? account.echoAccountId : account.echo_account_id,
-      echoClientLockId:
-        'echoClientLockId' in account ? account.echoClientLockId : account.echo_client_lock_id,
-    }));
-  }
   async function loadAors() {
     setAorsStatus('loading');
     try {
@@ -1028,6 +986,8 @@ function AdminMessengerAccountsSection() {
       id: account.id,
       displayName: account.displayName,
       description: account.description || '',
+      canReadMessages: account.canReadMessages ?? true,
+      canSendMessages: account.canSendMessages ?? false,
       aorId: account.areaOfResponsibility?.id ?? null,
     });
     setEditErrors({});
@@ -1065,6 +1025,8 @@ function AdminMessengerAccountsSection() {
         updateAccountInList(prev, editForm.id, (current) => ({
           ...current,
           displayName: editForm.displayName,
+          canReadMessages: editForm.canReadMessages,
+          canSendMessages: editForm.canSendMessages,
           description: normalizeDescription(editForm.description),
           areaOfResponsibility: updatedAor,
         })),
@@ -1105,6 +1067,8 @@ function AdminMessengerAccountsSection() {
     const request: AccountStatusReq = {
       accountId: account.id,
       aorId: account.areaOfResponsibility?.id ?? null,
+      canReadMessages: account.canReadMessages,
+      canSendMessages: account.canSendMessages,
       isActive: account.status !== 'active',
       displayName: account.displayName,
       description: account.description,
@@ -1485,6 +1449,28 @@ function AdminMessengerAccountsSection() {
                 aorOptions
               )}
             </TextField>
+            <FormControlLabel
+              label="Читати повідомлення"
+              control={
+                <Switch
+                  checked={editForm.canReadMessages}
+                  onChange={(_, value) =>
+                    setEditForm((prev) => (prev ? { ...prev, canReadMessages: value } : prev))
+                  }
+                />
+              }
+            />
+            <FormControlLabel
+              label="Надсилати повідомлення"
+              control={
+                <Switch
+                  checked={editForm.canSendMessages}
+                  onChange={(_, value) =>
+                    setEditForm((prev) => (prev ? { ...prev, canSendMessages: value } : prev))
+                  }
+                />
+              }
+            />
             <TextField
               label="Опис (необов'язково)"
               value={editForm.description}
@@ -1610,6 +1596,12 @@ export function AdminMessengerNeoPage() {
             aria-controls="admin-messenger-panel-accounts"
           />
           <Tab
+            value="sending"
+            label="Відправка"
+            id="admin-messenger-tab-sending"
+            aria-controls="admin-messenger-panel-sending"
+          />
+          <Tab
             value="missingEchoIm"
             label="Відсутні Echo IM"
             id="admin-messenger-tab-missing-echo-im"
@@ -1624,6 +1616,16 @@ export function AdminMessengerNeoPage() {
         </Tabs>
 
         <Box sx={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+          {activeTab === 'sending' ? (
+            <section
+              id="admin-messenger-panel-sending"
+              role="tabpanel"
+              aria-labelledby="admin-messenger-tab-sending"
+              className="h-full overflow-auto"
+            >
+              <MessengerSendingSection />
+            </section>
+          ) : null}
           <Box
             id="admin-messenger-panel-accounts"
             role="tabpanel"

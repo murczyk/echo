@@ -1495,6 +1495,22 @@ inboxMessagesSortByEncoder enum =
         ImsCreatedAt ->
             Json.Encode.string "IMSCreatedAt"
 
+type AnalysisSearchMode
+    = Fuzzy
+    | Exact
+    | Substring
+
+
+analysisSearchModeEncoder : AnalysisSearchMode -> Json.Encode.Value
+analysisSearchModeEncoder enum =
+    case enum of
+        Fuzzy ->
+            Json.Encode.string "Fuzzy"
+        Exact ->
+            Json.Encode.string "Exact"
+        Substring ->
+            Json.Encode.string "Substring"
+
 type TagFilterOption
     = OneOfTags
     | AllTags
@@ -1555,6 +1571,7 @@ type alias InboxMessagesReq =
     , orWithoutCoords : Maybe (Bool)
     , newestFirst : Maybe (Bool)
     , search : Maybe (String)
+    , searchMode : Maybe (AnalysisSearchMode)
     , highlightCallsigns : Maybe (Bool)
     , highlightKeywords : Maybe (Bool)
     , highlightSearchres : Maybe (Bool)
@@ -1624,6 +1641,7 @@ inboxMessagesReqEncoder struct =
         , ( "or_without_coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.orWithoutCoords )
         , ( "newest_first", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.newestFirst )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
+        , ( "search_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (analysisSearchModeEncoder)) struct.searchMode )
         , ( "highlight_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightCallsigns )
         , ( "highlight_keywords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightKeywords )
         , ( "highlight_searchres", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightSearchres )
@@ -2036,6 +2054,100 @@ signalGroupRspEncoder struct =
         ]
 
 
+type alias MessengerProfileSearchReq =
+    { query : String
+    }
+
+
+messengerProfileSearchReqEncoder : MessengerProfileSearchReq -> Json.Encode.Value
+messengerProfileSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "query", (Json.Encode.string) struct.query )
+        ]
+
+
+type alias MessengerAlertSettings =
+    { enabled : Bool
+    , senderDatasourceIds : List (Int)
+    }
+
+
+messengerAlertSettingsEncoder : MessengerAlertSettings -> Json.Encode.Value
+messengerAlertSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "senderDatasourceIds", (Json.Encode.list (Json.Encode.int)) struct.senderDatasourceIds )
+        ]
+
+
+type alias MessengerAlertPreference =
+    { receiveAlertsInMessenger : Maybe (Bool)
+    }
+
+
+messengerAlertPreferenceEncoder : MessengerAlertPreference -> Json.Encode.Value
+messengerAlertPreferenceEncoder struct =
+    Json.Encode.object
+        [ ( "receiveAlertsInMessenger", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.receiveAlertsInMessenger )
+        ]
+
+
+type alias MessengerAlertHistoryReq =
+    { beforeId : Maybe (String)
+    }
+
+
+messengerAlertHistoryReqEncoder : MessengerAlertHistoryReq -> Json.Encode.Value
+messengerAlertHistoryReqEncoder struct =
+    Json.Encode.object
+        [ ( "beforeId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.beforeId )
+        ]
+
+
+type alias MessengerAlertHistoryEntry =
+    { id : String
+    , recipientLogin : String
+    , recipientProfileId : String
+    , messageUrl : String
+    , status : String
+    , senderName : Maybe (String)
+    , attemptedSenderIds : List (Int)
+    , error : Maybe (String)
+    , createdAt : Int
+    , sentAt : Maybe (Int)
+    }
+
+
+messengerAlertHistoryEntryEncoder : MessengerAlertHistoryEntry -> Json.Encode.Value
+messengerAlertHistoryEntryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "recipientLogin", (Json.Encode.string) struct.recipientLogin )
+        , ( "recipientProfileId", (Json.Encode.string) struct.recipientProfileId )
+        , ( "messageUrl", (Json.Encode.string) struct.messageUrl )
+        , ( "status", (Json.Encode.string) struct.status )
+        , ( "senderName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.senderName )
+        , ( "attemptedSenderIds", (Json.Encode.list (Json.Encode.int)) struct.attemptedSenderIds )
+        , ( "error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.error )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "sentAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sentAt )
+        ]
+
+
+type alias MessengerAlertHistoryRsp =
+    { entries : List (MessengerAlertHistoryEntry)
+    , nextBeforeId : Maybe (String)
+    }
+
+
+messengerAlertHistoryRspEncoder : MessengerAlertHistoryRsp -> Json.Encode.Value
+messengerAlertHistoryRspEncoder struct =
+    Json.Encode.object
+        [ ( "entries", (Json.Encode.list (messengerAlertHistoryEntryEncoder)) struct.entries )
+        , ( "nextBeforeId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextBeforeId )
+        ]
+
+
 type alias SignalProfileReq =
     { uuid : String
     }
@@ -2081,6 +2193,7 @@ type alias SignalGroupEntry =
     , interseptionKind : InterseptionKind
     , disableNetworkAssignment : Bool
     , isAviationGroup : Bool
+    , fetchNewMessages : Bool
     , groupStats : SignalGroupStats
     , adminData : Maybe (GroupAdminData)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
@@ -2097,6 +2210,7 @@ signalGroupEntryEncoder struct =
         , ( "interseption_kind", (interseptionKindEncoder) struct.interseptionKind )
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
         , ( "is_aviation_group", (Json.Encode.bool) struct.isAviationGroup )
+        , ( "fetch_new_messages", (Json.Encode.bool) struct.fetchNewMessages )
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
         , ( "admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map (groupAdminDataEncoder)) struct.adminData )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
@@ -2111,6 +2225,7 @@ type alias OrphanSignalGroupEntry =
     , interseptionKind : InterseptionKind
     , disableNetworkAssignment : Bool
     , isAviationGroup : Bool
+    , fetchNewMessages : Bool
     , isArchived : Bool
     , datasourceId : Maybe (Int)
     , createdAt : Int
@@ -2130,6 +2245,7 @@ orphanSignalGroupEntryEncoder struct =
         , ( "interseption_kind", (interseptionKindEncoder) struct.interseptionKind )
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
         , ( "is_aviation_group", (Json.Encode.bool) struct.isAviationGroup )
+        , ( "fetch_new_messages", (Json.Encode.bool) struct.fetchNewMessages )
         , ( "is_archived", (Json.Encode.bool) struct.isArchived )
         , ( "datasource_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.datasourceId )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
@@ -2317,6 +2433,7 @@ type alias AnalysisStatsReq =
     , orWithCoords : Maybe (Bool)
     , orWithoutCoords : Maybe (Bool)
     , search : Maybe (String)
+    , searchMode : Maybe (AnalysisSearchMode)
     , selectedTags : Maybe (List (Int))
     , deniedTags : Maybe (List (Int))
     , tagPresence : Maybe (TagPresenceFilter)
@@ -2359,6 +2476,7 @@ analysisStatsReqEncoder struct =
         , ( "or_with_coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.orWithCoords )
         , ( "or_without_coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.orWithoutCoords )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
+        , ( "search_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (analysisSearchModeEncoder)) struct.searchMode )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedTags )
         , ( "denied_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedTags )
         , ( "tag_presence", (Maybe.withDefault Json.Encode.null << Maybe.map (tagPresenceFilterEncoder)) struct.tagPresence )
@@ -2786,6 +2904,7 @@ type alias CallsignsGraphReq =
     , orWithoutCoords : Maybe (Bool)
     , nolimit : Maybe (Bool)
     , search : Maybe (String)
+    , searchMode : Maybe (AnalysisSearchMode)
     , selectedTags : Maybe (List (Int))
     , deniedTags : Maybe (List (Int))
     , tagPresence : Maybe (TagPresenceFilter)
@@ -2827,6 +2946,7 @@ callsignsGraphReqEncoder struct =
         , ( "or_without_coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.orWithoutCoords )
         , ( "nolimit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.nolimit )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
+        , ( "search_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (analysisSearchModeEncoder)) struct.searchMode )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedTags )
         , ( "denied_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedTags )
         , ( "tag_presence", (Maybe.withDefault Json.Encode.null << Maybe.map (tagPresenceFilterEncoder)) struct.tagPresence )
@@ -3012,6 +3132,7 @@ type alias RerAnalysisQueryState =
     , orWithCoords : Bool
     , orWithoutCoords : Bool
     , search : String
+    , searchMode : Maybe (AnalysisSearchMode)
     , metadataCc : List (String)
     , metadataSender : List (String)
     , metadataReceiver : List (String)
@@ -3051,6 +3172,7 @@ rerAnalysisQueryStateEncoder struct =
         , ( "or_with_coords", (Json.Encode.bool) struct.orWithCoords )
         , ( "or_without_coords", (Json.Encode.bool) struct.orWithoutCoords )
         , ( "search", (Json.Encode.string) struct.search )
+        , ( "search_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (analysisSearchModeEncoder)) struct.searchMode )
         , ( "metadata_cc", (Json.Encode.list (Json.Encode.string)) struct.metadataCc )
         , ( "metadata_sender", (Json.Encode.list (Json.Encode.string)) struct.metadataSender )
         , ( "metadata_receiver", (Json.Encode.list (Json.Encode.string)) struct.metadataReceiver )
@@ -4954,7 +5076,8 @@ userInfoReqEncoder struct =
 
 
 type alias Login =
-    { id : String
+    { signalProfileId : Maybe (String)
+    , id : String
     , login : String
     , roles : List (String)
     , createdAt : Int
@@ -4969,6 +5092,7 @@ type alias Login =
     , deactivationReason : Maybe (DeactivationReasonType)
     , description : Maybe (String)
     , passwordAuthEnabled : Bool
+    , hasPassword : Bool
     , totpEnabled : Bool
     }
 
@@ -4976,7 +5100,8 @@ type alias Login =
 loginEncoder : Login -> Json.Encode.Value
 loginEncoder struct =
     Json.Encode.object
-        [ ( "id", (Json.Encode.string) struct.id )
+        [ ( "signal_profile_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signalProfileId )
+        , ( "id", (Json.Encode.string) struct.id )
         , ( "login", (Json.Encode.string) struct.login )
         , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
@@ -4991,6 +5116,7 @@ loginEncoder struct =
         , ( "deactivation_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (deactivationReasonTypeEncoder)) struct.deactivationReason )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         , ( "password_auth_enabled", (Json.Encode.bool) struct.passwordAuthEnabled )
+        , ( "has_password", (Json.Encode.bool) struct.hasPassword )
         , ( "totp_enabled", (Json.Encode.bool) struct.totpEnabled )
         ]
 
@@ -5035,29 +5161,36 @@ listLoginsRspEncoder struct =
 
 
 type alias CreateLoginReq =
-    { login : String
-    , password : String
+    { signalProfileId : Maybe (String)
+    , login : String
+    , password : Maybe (String)
     , roles : List (String)
     , sigintZoneId : Maybe (Int)
     , organismId : Int
     , description : Maybe (String)
+    , deltaLogin : Maybe (String)
+    , passwordAuthEnabled : Maybe (Bool)
     }
 
 
 createLoginReqEncoder : CreateLoginReq -> Json.Encode.Value
 createLoginReqEncoder struct =
     Json.Encode.object
-        [ ( "login", (Json.Encode.string) struct.login )
-        , ( "password", (Json.Encode.string) struct.password )
+        [ ( "signal_profile_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signalProfileId )
+        , ( "login", (Json.Encode.string) struct.login )
+        , ( "password", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.password )
         , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
         , ( "sigint_zone_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintZoneId )
         , ( "organism_id", (Json.Encode.int) struct.organismId )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
+        , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deltaLogin )
+        , ( "password_auth_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.passwordAuthEnabled )
         ]
 
 
 type alias UpdateLoginReq =
-    { id : String
+    { signalProfileId : Maybe (String)
+    , id : String
     , login : String
     , roles : Maybe (List (String))
     , sigintZoneId : Maybe (Int)
@@ -5075,7 +5208,8 @@ type alias UpdateLoginReq =
 updateLoginReqEncoder : UpdateLoginReq -> Json.Encode.Value
 updateLoginReqEncoder struct =
     Json.Encode.object
-        [ ( "id", (Json.Encode.string) struct.id )
+        [ ( "signal_profile_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signalProfileId )
+        , ( "id", (Json.Encode.string) struct.id )
         , ( "login", (Json.Encode.string) struct.login )
         , ( "roles", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.roles )
         , ( "sigint_zone_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintZoneId )
@@ -8209,6 +8343,7 @@ type alias ZoneDatasourceGroup =
     , interseptionKind : InterseptionKind
     , disableNetworkAssignment : Bool
     , isAviationGroup : Bool
+    , fetchNewMessages : Bool
     , allowedUsers : List (String)
     , allowedUserDetails : List (SignalGroupLogin)
     , allowedOrganismIds : List (Int)
@@ -8230,6 +8365,7 @@ zoneDatasourceGroupEncoder struct =
         , ( "interseption_kind", (interseptionKindEncoder) struct.interseptionKind )
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
         , ( "is_aviation_group", (Json.Encode.bool) struct.isAviationGroup )
+        , ( "fetch_new_messages", (Json.Encode.bool) struct.fetchNewMessages )
         , ( "allowed_users", (Json.Encode.list (Json.Encode.string)) struct.allowedUsers )
         , ( "allowed_user_details", (Json.Encode.list (signalGroupLoginEncoder)) struct.allowedUserDetails )
         , ( "allowed_organism_ids", (Json.Encode.list (Json.Encode.int)) struct.allowedOrganismIds )
@@ -8305,6 +8441,7 @@ type alias ZoneDatasourceGroupUpdateReq =
     , interseptionKind : Maybe (InterseptionKind)
     , disableNetworkAssignment : Maybe (Bool)
     , isAviationGroup : Maybe (Bool)
+    , fetchNewMessages : Maybe (Bool)
     , userLogins : List (String)
     , organismIds : List (Int)
     , adminLogins : List (String)
@@ -8324,6 +8461,7 @@ zoneDatasourceGroupUpdateReqEncoder struct =
         , ( "interseption_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (interseptionKindEncoder)) struct.interseptionKind )
         , ( "disable_network_assignment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.disableNetworkAssignment )
         , ( "is_aviation_group", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isAviationGroup )
+        , ( "fetch_new_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fetchNewMessages )
         , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
         , ( "organism_ids", (Json.Encode.list (Json.Encode.int)) struct.organismIds )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
@@ -14260,9 +14398,28 @@ sendAiChatMessageReqEncoder struct =
         ]
 
 
+type alias AiIntelReportEngineBudgetItem =
+    { aiEngineId : String
+    , maxTokens : Int
+    }
+
+
+aiIntelReportEngineBudgetItemEncoder : AiIntelReportEngineBudgetItem -> Json.Encode.Value
+aiIntelReportEngineBudgetItemEncoder struct =
+    Json.Encode.object
+        [ ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
+        , ( "maxTokens", (Json.Encode.int) struct.maxTokens )
+        ]
+
+
 type alias AiIntelReportSettingsItem =
     { quickSuggestionEnabled : Bool
     , quickAiEngineId : Maybe (String)
+    , fallbackAiEngineId : Maybe (String)
+    , engineBudgets : List (AiIntelReportEngineBudgetItem)
+    , primaryTimeoutSecs : Int
+    , fallbackTimeoutSecs : Int
+    , totalTimeoutSecs : Int
     , legacyCommentCutoff : Int
     , updatedAt : Int
     }
@@ -14273,6 +14430,11 @@ aiIntelReportSettingsItemEncoder struct =
     Json.Encode.object
         [ ( "quickSuggestionEnabled", (Json.Encode.bool) struct.quickSuggestionEnabled )
         , ( "quickAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.quickAiEngineId )
+        , ( "fallbackAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fallbackAiEngineId )
+        , ( "engineBudgets", (Json.Encode.list (aiIntelReportEngineBudgetItemEncoder)) struct.engineBudgets )
+        , ( "primaryTimeoutSecs", (Json.Encode.int) struct.primaryTimeoutSecs )
+        , ( "fallbackTimeoutSecs", (Json.Encode.int) struct.fallbackTimeoutSecs )
+        , ( "totalTimeoutSecs", (Json.Encode.int) struct.totalTimeoutSecs )
         , ( "legacyCommentCutoff", (Json.Encode.int) struct.legacyCommentCutoff )
         , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
         ]
@@ -14281,6 +14443,11 @@ aiIntelReportSettingsItemEncoder struct =
 type alias SaveAiIntelReportSettingsReq =
     { quickSuggestionEnabled : Bool
     , quickAiEngineId : Maybe (String)
+    , fallbackAiEngineId : Maybe (Maybe (String))
+    , engineBudgets : Maybe (List (AiIntelReportEngineBudgetItem))
+    , primaryTimeoutSecs : Maybe (Int)
+    , fallbackTimeoutSecs : Maybe (Int)
+    , totalTimeoutSecs : Maybe (Int)
     }
 
 
@@ -14289,6 +14456,11 @@ saveAiIntelReportSettingsReqEncoder struct =
     Json.Encode.object
         [ ( "quickSuggestionEnabled", (Json.Encode.bool) struct.quickSuggestionEnabled )
         , ( "quickAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.quickAiEngineId )
+        , ( "fallbackAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string))) struct.fallbackAiEngineId )
+        , ( "engineBudgets", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (aiIntelReportEngineBudgetItemEncoder))) struct.engineBudgets )
+        , ( "primaryTimeoutSecs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.primaryTimeoutSecs )
+        , ( "fallbackTimeoutSecs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.fallbackTimeoutSecs )
+        , ( "totalTimeoutSecs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.totalTimeoutSecs )
         ]
 
 
@@ -14350,8 +14522,23 @@ aiIntelReportAttemptItemEncoder struct =
         ]
 
 
+type alias AiIntelReportAttemptListReq =
+    { pageStartId : Maybe (String)
+    }
+
+
+aiIntelReportAttemptListReqEncoder : AiIntelReportAttemptListReq -> Json.Encode.Value
+aiIntelReportAttemptListReqEncoder struct =
+    Json.Encode.object
+        [ ( "pageStartId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.pageStartId )
+        ]
+
+
 type alias AiIntelReportAttemptListRsp =
     { items : List (AiIntelReportAttemptItem)
+    , pageSize : Int
+    , total : Maybe (Int)
+    , pageStartIds : Maybe (List (String))
     }
 
 
@@ -14359,6 +14546,9 @@ aiIntelReportAttemptListRspEncoder : AiIntelReportAttemptListRsp -> Json.Encode.
 aiIntelReportAttemptListRspEncoder struct =
     Json.Encode.object
         [ ( "items", (Json.Encode.list (aiIntelReportAttemptItemEncoder)) struct.items )
+        , ( "pageSize", (Json.Encode.int) struct.pageSize )
+        , ( "total", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.total )
+        , ( "pageStartIds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.pageStartIds )
         ]
 
 
@@ -15405,7 +15595,7 @@ aiAgentContainerListRspEncoder struct =
 type alias AiAgentAdminRequestListReq =
     { state : Maybe (String)
     , suspicious : Maybe (Bool)
-    , limit : Maybe (Int)
+    , pageStartId : Maybe (String)
     }
 
 
@@ -15414,7 +15604,7 @@ aiAgentAdminRequestListReqEncoder struct =
     Json.Encode.object
         [ ( "state", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.state )
         , ( "suspicious", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.suspicious )
-        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        , ( "pageStartId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.pageStartId )
         ]
 
 
@@ -15488,6 +15678,9 @@ aiAgentAdminRequestItemEncoder struct =
 
 type alias AiAgentAdminRequestListRsp =
     { items : List (AiAgentAdminRequestItem)
+    , pageSize : Int
+    , total : Maybe (Int)
+    , pageStartIds : Maybe (List (String))
     }
 
 
@@ -15495,6 +15688,9 @@ aiAgentAdminRequestListRspEncoder : AiAgentAdminRequestListRsp -> Json.Encode.Va
 aiAgentAdminRequestListRspEncoder struct =
     Json.Encode.object
         [ ( "items", (Json.Encode.list (aiAgentAdminRequestItemEncoder)) struct.items )
+        , ( "pageSize", (Json.Encode.int) struct.pageSize )
+        , ( "total", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.total )
+        , ( "pageStartIds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.pageStartIds )
         ]
 
 
@@ -18202,6 +18398,8 @@ longPollRspEncoder struct =
 type alias EchoAccountF1 =
     { id : Int
     , areaOfResponsibility : Maybe (AreaOfResponsibility)
+    , canReadMessages : Maybe (Bool)
+    , canSendMessages : Maybe (Bool)
     , status : String
     , createdAt : Int
     , clientId : Maybe (Int)
@@ -18228,6 +18426,8 @@ echoAccountF1Encoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "area_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (areaOfResponsibilityEncoder)) struct.areaOfResponsibility )
+        , ( "can_read_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.canReadMessages )
+        , ( "can_send_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.canSendMessages )
         , ( "status", (Json.Encode.string) struct.status )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "client_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.clientId )
@@ -18353,6 +18553,8 @@ type alias AccountStatusReq =
     { accountId : Int
     , aorId : Maybe (Int)
     , isActive : Bool
+    , canReadMessages : Maybe (Bool)
+    , canSendMessages : Maybe (Bool)
     , displayName : String
     , description : Maybe (String)
     , apiLogin : Maybe (String)
@@ -18366,6 +18568,8 @@ accountStatusReqEncoder struct =
         [ ( "account_id", (Json.Encode.int) struct.accountId )
         , ( "aor_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.aorId )
         , ( "is_active", (Json.Encode.bool) struct.isActive )
+        , ( "can_read_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.canReadMessages )
+        , ( "can_send_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.canSendMessages )
         , ( "display_name", (Json.Encode.string) struct.displayName )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         , ( "api_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.apiLogin )
@@ -18479,6 +18683,7 @@ type alias GroupUpdateReq =
     , interseptionKind : Maybe (InterseptionKind)
     , disableNetworkAssignment : Maybe (Bool)
     , isAviationGroup : Maybe (Bool)
+    , fetchNewMessages : Maybe (Bool)
     }
 
 
@@ -18494,6 +18699,7 @@ groupUpdateReqEncoder struct =
         , ( "interseption_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (interseptionKindEncoder)) struct.interseptionKind )
         , ( "disable_network_assignment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.disableNetworkAssignment )
         , ( "is_aviation_group", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isAviationGroup )
+        , ( "fetch_new_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fetchNewMessages )
         ]
 
 
@@ -19409,6 +19615,38 @@ inboxMessagesSortByDecoder =
                 )
         ]
 
+analysisSearchModeDecoder : Json.Decode.Decoder AnalysisSearchMode
+analysisSearchModeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Fuzzy" ->
+                            Json.Decode.succeed Fuzzy
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Exact" ->
+                            Json.Decode.succeed Exact
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Substring" ->
+                            Json.Decode.succeed Substring
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 tagFilterOptionDecoder : Json.Decode.Decoder TagFilterOption
 tagFilterOptionDecoder =
     Json.Decode.oneOf
@@ -19491,6 +19729,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newest_first" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_callsigns" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keywords" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_searchres" (Json.Decode.nullable (Json.Decode.bool))))
@@ -19834,6 +20073,53 @@ signalGroupRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
 
 
+messengerProfileSearchReqDecoder : Json.Decode.Decoder MessengerProfileSearchReq
+messengerProfileSearchReqDecoder =
+    Json.Decode.succeed MessengerProfileSearchReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "query" (Json.Decode.string)))
+
+
+messengerAlertSettingsDecoder : Json.Decode.Decoder MessengerAlertSettings
+messengerAlertSettingsDecoder =
+    Json.Decode.succeed MessengerAlertSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "senderDatasourceIds" (Json.Decode.list (Json.Decode.int))))
+
+
+messengerAlertPreferenceDecoder : Json.Decode.Decoder MessengerAlertPreference
+messengerAlertPreferenceDecoder =
+    Json.Decode.succeed MessengerAlertPreference
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "receiveAlertsInMessenger" (Json.Decode.nullable (Json.Decode.bool))))
+
+
+messengerAlertHistoryReqDecoder : Json.Decode.Decoder MessengerAlertHistoryReq
+messengerAlertHistoryReqDecoder =
+    Json.Decode.succeed MessengerAlertHistoryReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "beforeId" (Json.Decode.nullable (Json.Decode.string))))
+
+
+messengerAlertHistoryEntryDecoder : Json.Decode.Decoder MessengerAlertHistoryEntry
+messengerAlertHistoryEntryDecoder =
+    Json.Decode.succeed MessengerAlertHistoryEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "recipientLogin" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "recipientProfileId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageUrl" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "senderName" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attemptedSenderIds" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sentAt" (Json.Decode.nullable (Json.Decode.int))))
+
+
+messengerAlertHistoryRspDecoder : Json.Decode.Decoder MessengerAlertHistoryRsp
+messengerAlertHistoryRspDecoder =
+    Json.Decode.succeed MessengerAlertHistoryRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entries" (Json.Decode.list (messengerAlertHistoryEntryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nextBeforeId" (Json.Decode.nullable (Json.Decode.string))))
+
+
 signalProfileReqDecoder : Json.Decode.Decoder SignalProfileReq
 signalProfileReqDecoder =
     Json.Decode.succeed SignalProfileReq
@@ -19906,6 +20192,7 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_coords" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_presence" (Json.Decode.nullable (tagPresenceFilterDecoder))))
@@ -20107,6 +20394,7 @@ callsignsGraphReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nolimit" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_presence" (Json.Decode.nullable (tagPresenceFilterDecoder))))
@@ -20213,6 +20501,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (interseptionKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
@@ -20245,6 +20534,7 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_coords" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_without_coords" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.list (Json.Decode.string))))
@@ -20294,6 +20584,7 @@ signalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (interseptionKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_data" (Json.Decode.nullable (groupAdminDataDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
@@ -21342,6 +21633,7 @@ userInfoReqDecoder =
 loginDecoder : Json.Decode.Decoder Login
 loginDecoder =
     Json.Decode.succeed Login
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_profile_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
@@ -21357,6 +21649,7 @@ loginDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deactivation_reason" (Json.Decode.nullable (deactivationReasonTypeDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password_auth_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_password" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totp_enabled" (Json.Decode.bool)))
 
 
@@ -21399,17 +21692,21 @@ listLoginsRspDecoder =
 createLoginReqDecoder : Json.Decode.Decoder CreateLoginReq
 createLoginReqDecoder =
     Json.Decode.succeed CreateLoginReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_profile_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_zone_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password_auth_enabled" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 updateLoginReqDecoder : Json.Decode.Decoder UpdateLoginReq
 updateLoginReqDecoder =
     Json.Decode.succeed UpdateLoginReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_profile_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
@@ -23723,6 +24020,7 @@ zoneDatasourceGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (interseptionKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_user_details" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_organism_ids" (Json.Decode.list (Json.Decode.int))))
@@ -23771,6 +24069,7 @@ zoneDatasourceGroupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (Json.Decode.nullable (interseptionKindDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
@@ -27560,11 +27859,23 @@ sendAiChatMessageReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
 
 
+aiIntelReportEngineBudgetItemDecoder : Json.Decode.Decoder AiIntelReportEngineBudgetItem
+aiIntelReportEngineBudgetItemDecoder =
+    Json.Decode.succeed AiIntelReportEngineBudgetItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maxTokens" (Json.Decode.int)))
+
+
 aiIntelReportSettingsItemDecoder : Json.Decode.Decoder AiIntelReportSettingsItem
 aiIntelReportSettingsItemDecoder =
     Json.Decode.succeed AiIntelReportSettingsItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickSuggestionEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fallbackAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engineBudgets" (Json.Decode.list (aiIntelReportEngineBudgetItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "primaryTimeoutSecs" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fallbackTimeoutSecs" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totalTimeoutSecs" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "legacyCommentCutoff" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
 
@@ -27574,6 +27885,11 @@ saveAiIntelReportSettingsReqDecoder =
     Json.Decode.succeed SaveAiIntelReportSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickSuggestionEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fallbackAiEngineId" (Json.Decode.nullable (Json.Decode.nullable (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engineBudgets" (Json.Decode.nullable (Json.Decode.list (aiIntelReportEngineBudgetItemDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "primaryTimeoutSecs" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fallbackTimeoutSecs" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totalTimeoutSecs" (Json.Decode.nullable (Json.Decode.int))))
 
 
 quickIntelReportSuggestionReqDecoder : Json.Decode.Decoder QuickIntelReportSuggestionReq
@@ -27605,10 +27921,19 @@ aiIntelReportAttemptItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
 
 
+aiIntelReportAttemptListReqDecoder : Json.Decode.Decoder AiIntelReportAttemptListReq
+aiIntelReportAttemptListReqDecoder =
+    Json.Decode.succeed AiIntelReportAttemptListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pageStartId" (Json.Decode.nullable (Json.Decode.string))))
+
+
 aiIntelReportAttemptListRspDecoder : Json.Decode.Decoder AiIntelReportAttemptListRsp
 aiIntelReportAttemptListRspDecoder =
     Json.Decode.succeed AiIntelReportAttemptListRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiIntelReportAttemptItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pageSize" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pageStartIds" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
 
 
 aiAgentActivityPresentationDecoder : Json.Decode.Decoder AiAgentActivityPresentation
@@ -28160,7 +28485,7 @@ aiAgentAdminRequestListReqDecoder =
     Json.Decode.succeed AiAgentAdminRequestListReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "suspicious" (Json.Decode.nullable (Json.Decode.bool))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pageStartId" (Json.Decode.nullable (Json.Decode.string))))
 
 
 aiAgentSecurityReviewItemDecoder : Json.Decode.Decoder AiAgentSecurityReviewItem
@@ -28201,6 +28526,9 @@ aiAgentAdminRequestListRspDecoder : Json.Decode.Decoder AiAgentAdminRequestListR
 aiAgentAdminRequestListRspDecoder =
     Json.Decode.succeed AiAgentAdminRequestListRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiAgentAdminRequestItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pageSize" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pageStartIds" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
 
 
 aiAgentRequestEventItemDecoder : Json.Decode.Decoder AiAgentRequestEventItem
@@ -29763,6 +30091,8 @@ echoAccountF1Decoder =
     Json.Decode.succeed EchoAccountF1
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility" (Json.Decode.nullable (areaOfResponsibilityDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_read_messages" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_send_messages" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "client_id" (Json.Decode.nullable (Json.Decode.int))))
@@ -29839,6 +30169,8 @@ accountStatusReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_active" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_read_messages" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_send_messages" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_login" (Json.Decode.nullable (Json.Decode.string))))
@@ -29905,6 +30237,7 @@ groupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (Json.Decode.nullable (interseptionKindDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 groupEntryF1Decoder : Json.Decode.Decoder GroupEntryF1

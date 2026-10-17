@@ -568,6 +568,12 @@ export type InboxMessagesSortBy =
   | 'IMSCreatedAt'
 ;
 
+export type AnalysisSearchMode =
+  | 'Fuzzy'
+  | 'Exact'
+  | 'Substring'
+;
+
 export type TagFilterOption =
   | 'OneOfTags'
   | 'AllTags'
@@ -612,6 +618,7 @@ export type InboxMessagesReq = {
   orWithoutCoords: boolean | null;
   newestFirst: boolean | null;
   search: string | null;
+  searchMode: AnalysisSearchMode | null;
   highlightCallsigns: boolean | null;
   highlightKeywords: boolean | null;
   highlightSearchres: boolean | null;
@@ -779,6 +786,41 @@ export type SignalGroupRsp = {
   name: string | null;
 };
 
+export type MessengerProfileSearchReq = {
+  query: string;
+};
+
+export type MessengerAlertSettings = {
+  enabled: boolean;
+  senderDatasourceIds: Array<number>;
+};
+
+export type MessengerAlertPreference = {
+  receiveAlertsInMessenger: boolean | null;
+};
+
+export type MessengerAlertHistoryReq = {
+  beforeId: string | null;
+};
+
+export type MessengerAlertHistoryEntry = {
+  id: string;
+  recipientLogin: string;
+  recipientProfileId: string;
+  messageUrl: string;
+  status: string;
+  senderName: string | null;
+  attemptedSenderIds: Array<number>;
+  error: string | null;
+  createdAt: number;
+  sentAt: number | null;
+};
+
+export type MessengerAlertHistoryRsp = {
+  entries: Array<MessengerAlertHistoryEntry>;
+  nextBeforeId: string | null;
+};
+
 export type SignalProfileReq = {
   uuid: string;
 };
@@ -799,6 +841,7 @@ export type SignalGroupEntry = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  fetchNewMessages: boolean;
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -812,6 +855,7 @@ export type OrphanSignalGroupEntry = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  fetchNewMessages: boolean;
   isArchived: boolean;
   datasourceId: number | null;
   createdAt: number;
@@ -897,6 +941,7 @@ export type AnalysisStatsReq = {
   orWithCoords: boolean | null;
   orWithoutCoords: boolean | null;
   search: string | null;
+  searchMode: AnalysisSearchMode | null;
   selectedTags: Array<number> | null;
   deniedTags: Array<number> | null;
   tagPresence: TagPresenceFilter | null;
@@ -1082,6 +1127,7 @@ export type CallsignsGraphReq = {
   orWithoutCoords: boolean | null;
   nolimit: boolean | null;
   search: string | null;
+  searchMode: AnalysisSearchMode | null;
   selectedTags: Array<number> | null;
   deniedTags: Array<number> | null;
   tagPresence: TagPresenceFilter | null;
@@ -1174,6 +1220,7 @@ export type RerAnalysisQueryState = {
   orWithCoords: boolean;
   orWithoutCoords: boolean;
   search: string;
+  searchMode: AnalysisSearchMode | null;
   metadataCc: Array<string>;
   metadataSender: Array<string>;
   metadataReceiver: Array<string>;
@@ -1905,6 +1952,7 @@ export type UserInfoReq = {
 };
 
 export type Login = {
+  signalProfileId: string | null;
   id: string;
   login: string;
   roles: Array<string>;
@@ -1920,6 +1968,7 @@ export type Login = {
   deactivationReason: DeactivationReasonType | null;
   description: string | null;
   passwordAuthEnabled: boolean;
+  hasPassword: boolean;
   totpEnabled: boolean;
 };
 
@@ -1938,15 +1987,19 @@ export type ListLoginsRsp = {
 };
 
 export type CreateLoginReq = {
+  signalProfileId: string | null;
   login: string;
-  password: string;
+  password: string | null;
   roles: Array<string>;
   sigintZoneId: number | null;
   organismId: number;
   description: string | null;
+  deltaLogin: string | null;
+  passwordAuthEnabled: boolean | null;
 };
 
 export type UpdateLoginReq = {
+  signalProfileId: string | null;
   id: string;
   login: string;
   roles: Array<string> | null;
@@ -3165,6 +3218,7 @@ export type ZoneDatasourceGroup = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  fetchNewMessages: boolean;
   allowedUsers: Array<string>;
   allowedUserDetails: Array<SignalGroupLogin>;
   allowedOrganismIds: Array<number>;
@@ -3205,6 +3259,7 @@ export type ZoneDatasourceGroupUpdateReq = {
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
   isAviationGroup: boolean | null;
+  fetchNewMessages: boolean | null;
   userLogins: Array<string>;
   organismIds: Array<number>;
   adminLogins: Array<string>;
@@ -5526,9 +5581,19 @@ export type SendAiChatMessageReq = {
   prompt: string;
 };
 
+export type AiIntelReportEngineBudgetItem = {
+  aiEngineId: string;
+  maxTokens: number;
+};
+
 export type AiIntelReportSettingsItem = {
   quickSuggestionEnabled: boolean;
   quickAiEngineId: string | null;
+  fallbackAiEngineId: string | null;
+  engineBudgets: Array<AiIntelReportEngineBudgetItem>;
+  primaryTimeoutSecs: number;
+  fallbackTimeoutSecs: number;
+  totalTimeoutSecs: number;
   legacyCommentCutoff: number;
   updatedAt: number;
 };
@@ -5536,6 +5601,11 @@ export type AiIntelReportSettingsItem = {
 export type SaveAiIntelReportSettingsReq = {
   quickSuggestionEnabled: boolean;
   quickAiEngineId: string | null;
+  fallbackAiEngineId: string | null | null;
+  engineBudgets: Array<AiIntelReportEngineBudgetItem> | null;
+  primaryTimeoutSecs: number | null;
+  fallbackTimeoutSecs: number | null;
+  totalTimeoutSecs: number | null;
 };
 
 export type QuickIntelReportSuggestionReq = {
@@ -5561,8 +5631,15 @@ export type AiIntelReportAttemptItem = {
   createdAt: number;
 };
 
+export type AiIntelReportAttemptListReq = {
+  pageStartId: string | null;
+};
+
 export type AiIntelReportAttemptListRsp = {
   items: Array<AiIntelReportAttemptItem>;
+  pageSize: number;
+  total: number | null;
+  pageStartIds: Array<string> | null;
 };
 
 export type AiAgentActivityPresentation = {
@@ -5984,7 +6061,7 @@ export type AiAgentContainerListRsp = {
 export type AiAgentAdminRequestListReq = {
   state: string | null;
   suspicious: boolean | null;
-  limit: number | null;
+  pageStartId: string | null;
 };
 
 export type AiAgentSecurityReviewItem = {
@@ -6019,6 +6096,9 @@ export type AiAgentAdminRequestItem = {
 
 export type AiAgentAdminRequestListRsp = {
   items: Array<AiAgentAdminRequestItem>;
+  pageSize: number;
+  total: number | null;
+  pageStartIds: Array<string> | null;
 };
 
 export type AiAgentRequestEventItem = {
@@ -7079,6 +7159,8 @@ export type LongPollRsp = {
 export type EchoAccountF1 = {
   id: number;
   areaOfResponsibility: AreaOfResponsibility | null;
+  canReadMessages: boolean | null;
+  canSendMessages: boolean | null;
   status: string;
   createdAt: number;
   clientId: number | null;
@@ -7137,6 +7219,8 @@ export type AccountStatusReq = {
   accountId: number;
   aorId: number | null;
   isActive: boolean;
+  canReadMessages: boolean | null;
+  canSendMessages: boolean | null;
   displayName: string;
   description: string | null;
   apiLogin: string | null;
@@ -7189,6 +7273,7 @@ export type GroupUpdateReq = {
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
   isAviationGroup: boolean | null;
+  fetchNewMessages: boolean | null;
 };
 
 export type GroupEntryF1 = {

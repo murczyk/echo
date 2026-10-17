@@ -112,6 +112,33 @@ describe('roles', () => {
     },
   );
 
+  it('grants restricted viewers the shared permissions without any device capability', () => {
+    const roles = ['CyberViewerRestricted'];
+    expect(hasRole(roles, 'Basic')).toBe(true);
+    expect(hasRerOrCyber(roles)).toBe(true);
+    expect(hasRole(roles, 'CyberViewer')).toBe(false);
+    expect(canUseRadioFeatures(roles)).toBe(false);
+    expect(canWriteMessages(roles)).toBe(false);
+    expect(canUseMessageDevices(roles, true)).toBe(false);
+    expect(resolveDevicesCapabilities(roles)).toEqual({
+      canRead: false,
+      canCreate: false,
+      canWriteSourceData: false,
+      canWriteAnalyticalData: false,
+    });
+  });
+
+  it.each(['Rer', 'Full', 'CyberViewer', 'Cyber', 'Admin'])(
+    'keeps restricted viewer permissions additive with %s',
+    (role) => {
+      const roles = ['CyberViewerRestricted', role];
+      expect(hasRerOrCyber(roles)).toBe(true);
+      expect(canUseMessageDevices(roles, true)).toBe(canUseMessageDevices([role], true));
+      expect(resolveDevicesCapabilities(roles)).toEqual(resolveDevicesCapabilities([role]));
+      expect(canWriteMessages(roles)).toBe(canWriteMessages([role]));
+    },
+  );
+
   it('checks any role through the same hierarchy', () => {
     expect(hasAnyRole(['Admin'], ['AdvancedReports'])).toBe(true);
     expect(hasAnyRole(['Full'], ['UnitsEditor', 'CallsignsEditor'])).toBe(false);

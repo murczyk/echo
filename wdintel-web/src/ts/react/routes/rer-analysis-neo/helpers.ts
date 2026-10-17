@@ -121,6 +121,7 @@ export function emptyQueryState(): AnalysisQueryState {
     orWithCoords: false,
     orWithoutCoords: false,
     search: '',
+    searchMode: 'Fuzzy',
     metadataCc: [],
     metadataSender: [],
     metadataReceiver: [],
@@ -387,6 +388,14 @@ export function pushQueryStateToUrl(
 export function normalizeQueryState(state: AnalysisQueryState): AnalysisQueryState {
   let next = state;
 
+  if (
+    next.searchMode !== 'Exact' &&
+    next.searchMode !== 'Substring' &&
+    next.searchMode !== 'Fuzzy'
+  ) {
+    next = { ...next, searchMode: 'Fuzzy' };
+  }
+
   if (state.withoutMetadata) {
     next = {
       ...next,
@@ -467,6 +476,7 @@ export function buildAnalysisReq(
     orWithCoords: query.orWithCoords,
     orWithoutCoords: query.orWithoutCoords,
     search: query.search.trim() === '' ? null : query.search.trim(),
+    searchMode: query.searchMode ?? null,
     selectedTags: query.tags.length && !query.tagsExcludeMode ? query.tags : null,
     deniedTags: query.tags.length && query.tagsExcludeMode ? query.tags : null,
     tagPresence: null,
@@ -546,6 +556,7 @@ export function buildInboxReq(
     orWithoutCoords: req.orWithoutCoords,
     newestFirst: true,
     search: req.search,
+    searchMode: req.searchMode,
     highlightCallsigns: true,
     highlightKeywords: true,
     highlightKeywordSetId: null,
@@ -640,6 +651,7 @@ export function queryStateFromSavedFilter(
     orWithCoords: req.orWithCoords ?? false,
     orWithoutCoords: req.orWithoutCoords ?? false,
     search: req.search ?? '',
+    searchMode: req.searchMode ?? 'Fuzzy',
     metadataCc: req.metadataCc ?? [],
     metadataSender: req.metadataSender ?? [],
     metadataReceiver: req.metadataReceiver ?? [],
@@ -731,6 +743,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     orWithCoords: normalized.orWithCoords,
     orWithoutCoords: normalized.orWithoutCoords,
     search: normalized.search ?? '',
+    searchMode: normalized.searchMode ?? 'Fuzzy',
     metadataCc: normalized.metadataCc ?? [],
     metadataSender: normalized.metadataSender ?? [],
     metadataReceiver: normalized.metadataReceiver ?? [],

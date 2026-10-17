@@ -286,6 +286,7 @@ function buildLiveRefreshInboxReq(
     highlightSignals: null,
     highlightPoints: true,
     search: hasSearchText(queryState.search) ? queryState.search.trim() : null,
+    searchMode: queryState.searchMode,
     withoutModelTags: queryState.withoutModelTags,
     onlyWithMedia: includeOnlyWithMedia && queryState.onlyWithMedia,
   };

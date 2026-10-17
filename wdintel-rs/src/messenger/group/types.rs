@@ -106,6 +106,7 @@ pub struct OrphanSignalGroupEntry {
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
     pub is_aviation_group: bool,
+    pub fetch_new_messages: bool,
     pub is_archived: bool,
     /// Ідентифікатор джерела даних, з якого походить група (може бути None)
     pub datasource_id: Option<i64>,
@@ -125,6 +126,7 @@ pub struct SignalGroupEntry {
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
     pub is_aviation_group: bool,
+    pub fetch_new_messages: bool,
     pub group_stats: SignalGroupStats,
     pub admin_data: Option<GroupAdminData>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
@@ -151,6 +153,8 @@ impl Serialize for OrphanSignalGroupEntry {
             &self.disable_network_assignment,
         )?;
         state.serialize_field("is_aviation_group", &self.is_aviation_group)?;
+        state
+            .serialize_field("fetch_new_messages", &self.fetch_new_messages)?;
         state.serialize_field(
             "fills_etalonka",
             &(!self.disable_network_assignment),
@@ -188,6 +192,8 @@ impl Serialize for SignalGroupEntry {
             &self.disable_network_assignment,
         )?;
         state.serialize_field("is_aviation_group", &self.is_aviation_group)?;
+        state
+            .serialize_field("fetch_new_messages", &self.fetch_new_messages)?;
         state.serialize_field(
             "fills_etalonka",
             &(!self.disable_network_assignment),
@@ -315,6 +321,7 @@ mod tests {
             interseption_kind: InterseptionKind::InterseptionRer,
             disable_network_assignment: true,
             is_aviation_group: false,
+            fetch_new_messages: true,
             group_stats: SignalGroupStats::default(),
             admin_data: None,
             areas_of_responsibility: None,
@@ -338,6 +345,7 @@ mod tests {
             interseption_kind: InterseptionKind::InterseptionOther,
             disable_network_assignment: false,
             is_aviation_group: false,
+            fetch_new_messages: true,
             is_archived: false,
             datasource_id: Some(1),
             created_at: 0,

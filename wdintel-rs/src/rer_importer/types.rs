@@ -456,6 +456,25 @@ pub struct MessageUuidsReq {
     Deserialize,
     PartialEq,
     Clone,
+    Copy,
+    Default,
+)]
+pub enum AnalysisSearchMode {
+    #[default]
+    Fuzzy,
+    Exact,
+    Substring,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
     Default,
 )]
 pub struct InboxMessagesReq {
@@ -496,6 +515,8 @@ pub struct InboxMessagesReq {
     pub or_without_coords: Option<bool>,
     pub newest_first: Option<bool>,
     pub search: Option<String>,
+    #[serde(default)]
+    pub search_mode: Option<AnalysisSearchMode>,
     pub highlight_callsigns: Option<bool>,
     pub highlight_keywords: Option<bool>,
     pub highlight_searchres: Option<bool>,
@@ -958,6 +979,8 @@ pub struct AnalysisStatsReq {
     pub or_with_coords: Option<bool>,
     pub or_without_coords: Option<bool>,
     pub search: Option<String>,
+    #[serde(default)]
+    pub search_mode: Option<AnalysisSearchMode>,
     pub selected_tags: Option<Vec<i64>>,
     pub denied_tags: Option<Vec<i64>>,
     pub tag_presence: Option<TagPresenceFilter>,
@@ -1029,6 +1052,8 @@ pub struct CallsignsGraphReq {
     pub or_without_coords: Option<bool>,
     pub nolimit: Option<bool>,
     pub search: Option<String>,
+    #[serde(default)]
+    pub search_mode: Option<AnalysisSearchMode>,
     pub selected_tags: Option<Vec<i64>>,
     pub denied_tags: Option<Vec<i64>>,
     pub tag_presence: Option<TagPresenceFilter>,
@@ -1509,6 +1534,8 @@ pub struct RerAnalysisQueryState {
     pub or_with_coords: bool,
     pub or_without_coords: bool,
     pub search: String,
+    #[serde(default)]
+    pub search_mode: Option<AnalysisSearchMode>,
     pub metadata_cc: Vec<String>,
     pub metadata_sender: Vec<String>,
     pub metadata_receiver: Vec<String>,

@@ -649,7 +649,11 @@ describe('useRerAnalysisNeoPage', () => {
   ])(
     'gates the RER report filter for $eligible eligibility and $globallyEnabled global setting',
     async ({ eligible, globallyEnabled, expected }) => {
-      window.history.replaceState({}, '', `${window.location.pathname}?onlyWithNetwork=true`);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?onlyWithNetwork=true&m=target-uid`,
+      );
       currentUserMock.fetchCurrentUser.mockResolvedValue({
         name: 'tester',
         roles: ['Rer'],
@@ -666,6 +670,7 @@ describe('useRerAnalysisNeoPage', () => {
         rerShortUrlEnabled: false,
         enableAudioTranscription: true,
         rerReportEnabled: globallyEnabled,
+        hideNetworks: true,
       });
 
       renderHook(['Rer']);
@@ -674,6 +679,10 @@ describe('useRerAnalysisNeoPage', () => {
       expect(latest?.rerReportFilterEnabled).toBe(expected);
       expect(latest?.queryState.onlyWithNetwork).toBe(expected);
       expect(new URLSearchParams(window.location.search).has('onlyWithNetwork')).toBe(expected);
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.onlyWithNetwork).toBe(expected);
+      expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq.onlyWithNetwork).toBe(
+        expected,
+      );
     },
   );
 
@@ -792,6 +801,15 @@ describe('useRerAnalysisNeoPage', () => {
     });
     expect(latest?.error).not.toBeNull();
     expect(window.location.search).toContain('device-1');
+  });
+
+  it('keeps network visibility unavailable when system settings fail', async () => {
+    systemSettingsMock.currentSystemSettings.mockRejectedValueOnce(new Error('settings failed'));
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.networkVisibilityReady).toBe(false);
+    expect(latest?.error).not.toBeNull();
   });
 
   // Regression: https://github.com/echoua/echo/issues/3461

@@ -93,6 +93,7 @@ const ROLE_OPTIONS = [
   'CallsignsEditor',
   'Cyber',
   'CyberViewer',
+  'CyberViewerRestricted',
   'AdvancedReports',
 ];
 

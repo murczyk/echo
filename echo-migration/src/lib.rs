@@ -1,4 +1,6 @@
 mod m20260906_094818_ai_callsign_feedback;
+mod m20261015_092940_messenger_alerts;
+mod m20261015_150117_signal_group_fetch_new_messages;
 pub use sea_orm_migration::prelude::*;
 
 mod m20220101_000001_create_table;
@@ -476,6 +478,8 @@ mod m20261014_124732_attachment_document_updated_at_index;
 mod m20261014_140818_attachment_chunk_summary_index;
 mod m20261014_144721_attachment_search_change;
 mod m20261014_172633_user_group_feed_read_state;
+mod m20261015_184629_attachment_search_message_change;
+mod m20261016_131615_ai_intel_report_generation_limits;
 mod m20261016_144130_signal_group_color_key;
 
 pub struct Migrator;
@@ -1143,6 +1147,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20261014_140818_attachment_chunk_summary_index::Migration),
             Box::new(m20261014_144721_attachment_search_change::Migration),
             Box::new(m20261014_172633_user_group_feed_read_state::Migration),
+            Box::new(m20261015_092940_messenger_alerts::Migration),
+            Box::new(m20261015_150117_signal_group_fetch_new_messages::Migration),
+            Box::new(m20261015_184629_attachment_search_message_change::Migration),
+            Box::new(m20261016_131615_ai_intel_report_generation_limits::Migration),
             Box::new(m20261016_144130_signal_group_color_key::Migration),
         ]
     }

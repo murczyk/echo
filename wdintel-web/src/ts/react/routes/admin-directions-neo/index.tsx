@@ -187,6 +187,7 @@ type GroupEditState = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  fetchNewMessages: boolean;
   selectedUsers: string[];
   selectedUserDetails: SignalGroupLogin[];
   selectedOrganismIds: number[];
@@ -206,6 +207,7 @@ type OrphanEditState = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  fetchNewMessages: boolean;
   shortNote: string;
   longNote: string;
   selectedAorIds: number[];
@@ -701,6 +703,7 @@ function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
     interseptionKind: 'rer',
     disableNetworkAssignment: false,
     isAviationGroup: false,
+    fetchNewMessages: true,
     isArchived: false,
     groupStats: {
       activityLastDay: 0,
@@ -725,6 +728,7 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
       interseptionKind: 'rer',
       disableNetworkAssignment: false,
       isAviationGroup: false,
+      fetchNewMessages: true,
       allowedUsers: [],
       allowedUserDetails: [],
       allowedOrganismIds: [],
@@ -1992,6 +1996,7 @@ function AdminDirectionsNeoPageBody() {
             interseptionKind: group.interseptionKind,
             disableNetworkAssignment: group.disableNetworkAssignment,
             isAviationGroup: group.isAviationGroup,
+            fetchNewMessages: group.fetchNewMessages,
             groupStats: group.groupStats,
             adminData: group.groupAdminData,
             areasOfResponsibility: group.areasOfResponsibility,
@@ -2025,6 +2030,7 @@ function AdminDirectionsNeoPageBody() {
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
       isAviationGroup: group.isAviationGroup,
+      fetchNewMessages: group.fetchNewMessages,
       selectedUsers: group.allowedUsers,
       selectedUserDetails: group.allowedUserDetails,
       selectedOrganismIds: group.allowedOrganismIds,
@@ -2047,6 +2053,7 @@ function AdminDirectionsNeoPageBody() {
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
       isAviationGroup: group.isAviationGroup,
+      fetchNewMessages: group.fetchNewMessages,
       shortNote: group.groupAdminData?.shortNote ?? '',
       longNote: group.groupAdminData?.longNote ?? '',
       selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
@@ -2161,6 +2168,7 @@ function AdminDirectionsNeoPageBody() {
       interseptionKind: supportNonRerInterceptions ? editDialog.interseptionKind : null,
       disableNetworkAssignment: editDialog.disableNetworkAssignment,
       isAviationGroup: editDialog.isAviationGroup,
+      fetchNewMessages: editDialog.fetchNewMessages,
       userLogins: selectedUsers,
       organismIds: selectedOrganismIds,
       adminLogins: editDialog.selectedAdmins,
@@ -2196,6 +2204,7 @@ function AdminDirectionsNeoPageBody() {
           interseptionKind: updatedGroup.interseptionKind,
           disableNetworkAssignment: updatedGroup.disableNetworkAssignment,
           isAviationGroup: updatedGroup.isAviationGroup,
+          fetchNewMessages: updatedGroup.fetchNewMessages,
           adminData:
             updatedGroup.shortNote || updatedGroup.longNote
               ? { shortNote: updatedGroup.shortNote, longNote: updatedGroup.longNote }
@@ -2230,6 +2239,7 @@ function AdminDirectionsNeoPageBody() {
         interseptionKind: supportNonRerInterceptions ? orphanEditDialog.interseptionKind : null,
         disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
         isAviationGroup: orphanEditDialog.isAviationGroup,
+        fetchNewMessages: orphanEditDialog.fetchNewMessages,
       });
 
       setOrphanGroups((prev) =>
@@ -2249,6 +2259,7 @@ function AdminDirectionsNeoPageBody() {
             disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
             isAviationGroup: orphanEditDialog.isAviationGroup,
             colorKey: updated.colorKey,
+            fetchNewMessages: orphanEditDialog.fetchNewMessages,
           };
         }),
       );
@@ -2269,6 +2280,7 @@ function AdminDirectionsNeoPageBody() {
             disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
             isAviationGroup: orphanEditDialog.isAviationGroup,
             colorKey: updated.colorKey,
+            fetchNewMessages: orphanEditDialog.fetchNewMessages,
           };
         }),
       );
@@ -2358,6 +2370,7 @@ function AdminDirectionsNeoPageBody() {
               interseptionKind: assignDialog.interseptionKind,
               disableNetworkAssignment: assignDialog.disableNetworkAssignment,
               isAviationGroup: assignDialog.group.isAviationGroup,
+              fetchNewMessages: assignDialog.group.fetchNewMessages,
               groupStats: assignDialog.group.groupStats,
               adminData: assignDialog.group.groupAdminData,
               areasOfResponsibility: assignDialog.group.areasOfResponsibility,
@@ -2591,6 +2604,23 @@ function AdminDirectionsNeoPageBody() {
             }
             label="Авіаційна група"
           />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={editDialog?.fetchNewMessages ?? true}
+                onChange={(event) =>
+                  editDialog &&
+                  setEditDialog({ ...editDialog, fetchNewMessages: event.target.checked })
+                }
+              />
+            }
+            label={
+              <InfoFieldLabel
+                label="Отримувати нові повідомлення з месенджера"
+                tooltip="Якщо вимкнено, нові повідомлення з цієї групи не імпортуються. Додавання повідомлень вручну та синхронізація назви й видалення групи залишаються доступними."
+              />
+            }
+          />
           {editDialog?.isSecret ? (
             <LoginAutocomplete
               label="Користувачі"
@@ -2769,6 +2799,26 @@ function AdminDirectionsNeoPageBody() {
               />
             }
             label="Авіаційна група"
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={orphanEditDialog?.fetchNewMessages ?? true}
+                onChange={(event) =>
+                  orphanEditDialog &&
+                  setOrphanEditDialog({
+                    ...orphanEditDialog,
+                    fetchNewMessages: event.target.checked,
+                  })
+                }
+              />
+            }
+            label={
+              <InfoFieldLabel
+                label="Отримувати нові повідомлення з месенджера"
+                tooltip="Якщо вимкнено, нові повідомлення з цієї групи не імпортуються. Додавання повідомлень вручну та синхронізація назви й видалення групи залишаються доступними."
+              />
+            }
           />
           <Autocomplete
             multiple

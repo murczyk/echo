@@ -256,6 +256,7 @@ test('#3610 inbox links remain keyboard-accessible on a narrow viewport @smoke',
 test('#3610 inbox renders normalized quotations and three complete rows @smoke', async ({
   page,
 }) => {
+  await page.addInitScript(() => localStorage.setItem('echo-theme-mode', 'light'));
   const longQuote = `\r\n  \r\n${'Довгий перший рядок для перевірки обрізання. '.repeat(12)}\r\n\t\r\nДругий рядок\r\nТретій рядок\r\nЧетвертий рядок`;
   const items = Array.from({ length: 5 }, (_, index) => ({
     ...item,
@@ -304,6 +305,10 @@ test('#3610 inbox renders normalized quotations and three complete rows @smoke',
   }));
   expect(listMetrics.scrollHeight).toBeGreaterThan(listMetrics.clientHeight);
   const quote = panel.getByTestId('notification-quote').first();
+  const readQuote = panel.getByTestId('notification-quote').last().locator('..');
+  await expect(readQuote).toHaveCSS('border-left-style', 'solid');
+  await expect(readQuote).toHaveCSS('border-left-width', '2px');
+  await expect(readQuote).toHaveCSS('border-left-color', 'rgba(0, 0, 0, 0.12)');
   const dimensions = await quote.evaluate((element) => {
     const style = window.getComputedStyle(element);
     return {
@@ -341,6 +346,23 @@ test('#3610 inbox renders normalized quotations and three complete rows @smoke',
     'href',
     '/rer-analysis-neo?m=inbox-e2e-message-0',
   );
+  await page.evaluate(() => {
+    document.documentElement.setAttribute('data-bs-theme', 'dark');
+    window.dispatchEvent(new Event('echo-theme-applied'));
+  });
+  await expect(readQuote).toHaveCSS('border-left-color', 'rgba(255, 255, 255, 0.12)');
+  await expect(quote.locator('..')).toHaveCSS('border-left-color', 'rgb(66, 165, 245)');
+  for (const surface of [quote.locator('..'), readQuote]) {
+    const pixel = await surface.evaluate((element) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext('2d')!;
+      context.fillStyle = window.getComputedStyle(element).backgroundColor;
+      context.fillRect(0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data);
+    });
+    expect(pixel).toEqual([39, 39, 39, 255]);
+  }
 });
 
 test('#3610 inbox measures row counts without moving its open viewport @smoke', async ({

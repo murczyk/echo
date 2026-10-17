@@ -857,7 +857,7 @@ async fn build_inbox_messages_report_sql(
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_denied_freqs(q, &req.denied_freqs)?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
-    let q = filter_search(q, &req.search)?;
+    let q = filter_search_with_mode(q, &req.search, req.search_mode).c(h!())?;
     let q = filter_selected_units_or_ids(
         q,
         &req.selected_units,

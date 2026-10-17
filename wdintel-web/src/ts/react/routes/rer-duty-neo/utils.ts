@@ -412,6 +412,7 @@ export function buildInboxReq(opts: {
     orWithoutCoords: null,
     newestFirst: null,
     search: null,
+    searchMode: null,
     highlightCallsigns: true,
     highlightKeywords: f.highlightKeywordSetId != null,
     highlightKeywordSetId: f.highlightKeywordSetId ?? null,

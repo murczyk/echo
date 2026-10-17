@@ -1,5 +1,6 @@
 use self::bl::*;
 use super::types::*;
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::entities::sigint_zone_datasource;
 use crate::entities::*;
 use crate::sigint::aor::bl::collect_group_aors;
@@ -22,7 +23,7 @@ pub async fn zones_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api", "Admin"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api", "Admin"],
     )
     .await?;
     let zones = sigint_zone::Entity::find()
@@ -52,7 +53,7 @@ pub async fn zones_datasources_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
     let zone_id: i64 = req.into_inner();
@@ -128,6 +129,7 @@ pub async fn zones_datasources_group_update(
         interseption_kind: rsp.interseption_kind,
         disable_network_assignment: rsp.disable_network_assignment,
         is_aviation_group: rsp.is_aviation_group,
+        fetch_new_messages: rsp.fetch_new_messages,
         areas_of_responsibility: rsp
             .aor
             .map(|aors| aors.into_iter().map(render_aor).collect()),
@@ -268,6 +270,14 @@ pub async fn zones_datasources_group_add(
             .flatten()
             .unwrap_or(false);
 
+    let fetch_new_messages = bl::update_group_fetch_new_messages_if_present(
+        None,
+        &group_master_key,
+        &txn,
+    )
+    .await
+    .c(h!())?;
+
     let (short_note, long_note) = group_admin_data::Entity::find()
         .filter(
             group_admin_data::Column::GroupMasterKey.eq(&szd.group_master_key),
@@ -303,6 +313,7 @@ pub async fn zones_datasources_group_add(
             interseption_kind,
             disable_network_assignment,
             is_aviation_group,
+            fetch_new_messages,
             areas_of_responsibility,
             group_master_key,
             allowed_user_details: bl::render_group_logins(
