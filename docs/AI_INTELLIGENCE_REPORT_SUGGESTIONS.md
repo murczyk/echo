@@ -3,9 +3,11 @@
 The quick path prepares a draft while an operator opens a new intelligence
 report. It is available to RER and Cyber users, is disabled by default, and
 makes an OpenAI-compatible structured-output request to the primary engine.
-If it finishes at the token limit, a configured fallback engine gets one retry
-with the same prompt and its own token budget. No other failure triggers a
-fallback, and there is no third attempt. The [government transport](ai/government-inference.md)
+If the primary attempt fails, a configured fallback engine gets one retry
+with the same prompt and its own token budget and attempt timeout, bounded by
+the remaining overall time. A successful primary response skips fallback;
+without a configured fallback, the primary error is returned. Any fallback
+failure ends generation without a third attempt. The [government transport](ai/government-inference.md)
 may renew authorization and retry an initial HTTP 401 once. The selected system prompt is compiled from
 `ai-eval/2026-08-19-intelligence-report-prompt/prompt.txt`.
 
@@ -37,9 +39,16 @@ deadline includes preparation and both attempts; starting a fallback does not
 reset it. Administrators can set each engine's budget to 1–32,768 tokens and
 each timeout to 1–180 seconds. The response must be
 strict JSON containing one to three distinct nonempty paragraphs totaling at
-most 1,000 characters; new numeric or coordinate tokens are rejected instead
-of retried. Multiple variants are displayed in a small carousel and are
+most 1,000 characters; new numeric or coordinate tokens are rejected as content
+validation failures. Multiple variants are displayed in a small carousel and are
 inserted only when the operator clicks the selected text.
+
+GPT-5, GPT-6, and o-series engines use `max_completion_tokens` and omit
+`temperature`. Quick suggestions disable reasoning only for explicitly
+supported aliases and their dated snapshots; other engines retain their
+provider's reasoning default. Ordinary chat requests keep their existing
+reasoning behavior. See the [OpenAI reasoning guide](https://developers.openai.com/api/docs/guides/reasoning?api-mode=chat)
+for model-specific effort support.
 
 Source material, style examples, and prompts are never written to the database
 or application logs. Each authorized attempt stores its bounded outcome,
@@ -63,9 +72,11 @@ report setting uses it. The same screen lists the latest attempts and exposes
 their validated suggestions, raw model responses, and failure diagnostics
 without source messages or prompts. Each logical request records the last
 engine attempted and its bounded response; duration includes preparation and
-both model calls. Empty content with `finish_reason=length` still triggers the
-fallback. HTTP failures, per-attempt timeouts, malformed output, unsupported
-facts, and an expired overall deadline fail without another model call.
+both model calls. Primary failures, including token exhaustion
+(`finish_reason=length`, even with empty content), HTTP or connection errors,
+per-attempt timeouts, malformed output, and unsupported facts, invoke the
+configured fallback once if time remains before the overall deadline. An
+expired overall deadline ends generation without another model call.
 
 Attempt history loads twenty entries per page, discovering the next cursor
 with one lookahead row. Numbered navigation covers discovered pages, and

@@ -231,34 +231,40 @@ async fn generate_enabled_suggestion(
         prepare_suggestion_input(env, login_id, signal_message_id)
             .await
             .c(h!())?;
-    let mut response = request_engine_suggestion(
+    let result = request_engine_suggestion(
         env,
         primary_id,
         &user_prompt,
+        &source_materials,
         settings
             .primary_timeout_secs
             .unwrap_or(AI_INTEL_REPORT_TIMEOUT_SECS),
         review,
     )
-    .await
-    .c(h!())?;
-    if response.finish_reason.as_deref() == Some("length") {
-        if let Some(fallback_id) = settings.fallback_ai_engine_id {
-            response = request_engine_suggestion(
+    .await;
+    let suggestions = match (result, settings.fallback_ai_engine_id) {
+        (Ok(suggestions), _) => suggestions,
+        (Err(_), Some(fallback_id)) => {
+            log::warn!(
+                "Primary intelligence-report attempt failed; trying fallback: primary_id={}, fallback_id={}",
+                primary_id,
+                fallback_id,
+            );
+            request_engine_suggestion(
                 env,
                 fallback_id,
                 &user_prompt,
+                &source_materials,
                 settings
                     .fallback_timeout_secs
                     .unwrap_or(AI_INTEL_REPORT_TIMEOUT_SECS),
                 review,
             )
             .await
-            .c(h!())?;
+            .c(h!())?
         }
-    }
-    let suggestions =
-        validate_suggestion_response(&response, &source_materials).c(h!())?;
+        (Err(error), None) => Err(error).c(h!())?,
+    };
     Ok(SuggestionResult::Suggestions(suggestions))
 }
 
@@ -306,9 +312,10 @@ async fn request_engine_suggestion(
     env: &Env,
     engine_id: Uuid,
     user_prompt: &str,
+    source_materials: &[String],
     timeout_secs: i32,
     review: &mut SuggestionAttemptReview,
-) -> Result<AiEngineResponse, AppError> {
+) -> Result<Vec<String>, AppError> {
     review.ai_engine_id = Some(engine_id);
     review.raw_response = None;
     let engine = find_eligible_engine(&env.dbx, engine_id).await.c(h!())?;
@@ -328,7 +335,7 @@ async fn request_engine_suggestion(
         &response.content,
         AI_INTEL_REPORT_ATTEMPT_RAW_RESPONSE_MAX_CHARS,
     ));
-    Ok(response)
+    Ok(validate_suggestion_response(&response, source_materials).c(h!())?)
 }
 
 async fn request_suggestion(
@@ -987,8 +994,41 @@ mod tests {
         }
     }
 
+    // Regression: https://github.com/echoua/echo/issues/3821
     #[tokio::test]
     async fn structured_request_uses_one_bounded_schema_call() {
+        for (name, completion_tokens, effort) in [
+            ("test-model", false, None),
+            ("gpt-4.1", false, None),
+            ("gpt-5", true, None),
+            ("gpt-5-2025-08-07", true, None),
+            ("gpt-5-mini", true, None),
+            ("gpt-5-mini-2025-08-07", true, None),
+            ("gpt-5-nano", true, None),
+            ("gpt-5-nano-2025-08-07", true, None),
+            ("gpt-5.1", true, Some("none")),
+            ("gpt-5.2-pro", true, None),
+            ("gpt-5.2-pro-2025-12-11", true, None),
+            ("gpt-5.6-luna", true, Some("none")),
+            ("gpt-5.6-sol", true, Some("none")),
+            ("gpt-6-sol", true, Some("none")),
+            ("gpt-6-sol-2026-09-01", true, Some("none")),
+            ("gpt-6-luna", true, Some("none")),
+            ("gpt-6-luna-2026-09-01", true, Some("none")),
+            ("gpt-6.1-sol", true, None),
+            ("gpt-6.1-sol-2026-10-01", true, None),
+            ("gpt-6-astra", true, None),
+            ("o3-mini", true, None),
+        ] {
+            assert_structured_request(name, completion_tokens, effort).await;
+        }
+    }
+
+    async fn assert_structured_request(
+        name: &'static str,
+        completion_tokens: bool,
+        effort: Option<&'static str>,
+    ) {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .unwrap();
@@ -996,18 +1036,11 @@ mod tests {
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let request = read_json_request(&mut stream).await;
-            assert_eq!(request["model"], "test-model");
-            assert_eq!(request["temperature"], 0.0);
-            assert_eq!(request["max_tokens"], 512);
-            assert_eq!(request["messages"].as_array().unwrap().len(), 2);
-            assert_eq!(
-                request["messages"][0]["content"],
-                super::AI_INTEL_REPORT_PROMPT
-            );
-            assert_eq!(request["response_format"]["type"], "json_schema");
-            assert_eq!(
-                request["response_format"]["json_schema"]["strict"],
-                true
+            assert_structured_request_body(
+                &request,
+                name,
+                completion_tokens,
+                effort,
             );
             let response = serde_json::json!({
                 "model": "served-test-model",
@@ -1025,15 +1058,33 @@ mod tests {
                 response
             );
             stream.write_all(response.as_bytes()).await.unwrap();
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_json_request(&mut stream).await;
+            assert_eq!(request["model"], name);
+            for parameter in [
+                "reasoning_effort",
+                "temperature",
+                "max_tokens",
+                "max_completion_tokens",
+                "response_format",
+            ] {
+                assert!(
+                    request.get(parameter).is_none(),
+                    "{name}: {parameter}"
+                );
+            }
+            stream.write_all(response.as_bytes()).await.unwrap();
         });
-        let ai_engine = engine_record(format!("http://{address}/v1"));
+        let mut ai_engine = engine_record(format!("http://{address}/v1"));
+        ai_engine.model_name = name.to_string();
 
+        let ai_client = crate::ai_engine::AiEngineClient::new(
+            sea_orm::DatabaseConnection::default(),
+            None,
+        )
+        .unwrap();
         let response = request_suggestion_with_timeout(
-            &crate::ai_engine::AiEngineClient::new(
-                sea_orm::DatabaseConnection::default(),
-                None,
-            )
-            .unwrap(),
+            &ai_client,
             &ai_engine,
             "{}".to_string(),
             512,
@@ -1045,7 +1096,46 @@ mod tests {
         assert_eq!(response.content, r#"{"suggestions":["Політ БпЛА."]}"#);
         assert_eq!(response.finish_reason.as_deref(), Some("stop"));
         assert_eq!(response.model_name.as_deref(), Some("served-test-model"));
+        let chat_response = crate::ai_engine::request_ai_response(
+            &ai_client,
+            &ai_engine,
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(chat_response, response.content);
         server.await.unwrap();
+    }
+
+    fn assert_structured_request_body(
+        request: &serde_json::Value,
+        name: &str,
+        completion_tokens: bool,
+        effort: Option<&str>,
+    ) {
+        assert_eq!(request["model"], name);
+        if !completion_tokens {
+            assert_eq!(request["temperature"], 0.0);
+            assert_eq!(request["max_tokens"], 512);
+            assert!(request.get("max_completion_tokens").is_none());
+        } else {
+            assert!(request.get("temperature").is_none());
+            assert!(request.get("max_tokens").is_none());
+            assert_eq!(request["max_completion_tokens"], 512);
+        }
+        assert_eq!(
+            request
+                .get("reasoning_effort")
+                .and_then(serde_json::Value::as_str),
+            effort
+        );
+        assert_eq!(request["messages"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            request["messages"][0]["content"],
+            super::AI_INTEL_REPORT_PROMPT
+        );
+        assert_eq!(request["response_format"]["type"], "json_schema");
+        assert_eq!(request["response_format"]["json_schema"]["strict"], true);
     }
 
     #[tokio::test]

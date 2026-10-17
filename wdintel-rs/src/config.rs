@@ -79,6 +79,22 @@ pub const AI_ENGINE_URL_MAX_CHARS: usize = 2048;
 pub const AI_ENGINE_MODEL_NAME_MAX_CHARS: usize = 255;
 pub const AI_ENGINE_TOKEN_MAX_CHARS: usize = 16_384;
 pub const AI_ENGINE_ERROR_BODY_MAX_CHARS: usize = 2_000;
+pub const AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES: &[&str] =
+    &["gpt-5", "gpt-6", "o1", "o3", "o4"];
+pub const AI_ENGINE_OPENAI_REASONING_NONE_MODELS: &[&str] = &[
+    "gpt-5.1",
+    "gpt-5.2",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "gpt-5.5",
+    "gpt-5.6",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-6-sol",
+    "gpt-6-luna",
+];
 pub const AI_CHAT_PROMPT_MAX_CHARS: usize = 100_000;
 pub const AI_CHAT_TITLE_MAX_CHARS: usize = 120;
 pub const AI_CALLSIGN_FEEDBACK_PAGE_SIZE: i64 = 100;
