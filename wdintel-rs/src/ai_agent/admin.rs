@@ -20,9 +20,8 @@ use actix_web::{get, post, web::Json};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
-    ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement,
-    TransactionTrait,
+    ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
+    QuerySelect, TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
@@ -842,18 +841,12 @@ async fn list_request_page(
     db: &impl ConnectionTrait,
     req: &AiAgentAdminRequestListReq,
 ) -> anyhow::Result<AiAgentAdminRequestListRsp> {
-    let pages = if req.page_start_id.is_none() {
-        Some(request_page_starts(db, req).await.c(h!())?)
-    } else {
-        None
-    };
     let page_start_id = req
         .page_start_id
         .as_deref()
         .map(access::parse_uuid)
         .transpose()
-        .c(h!())?
-        .or_else(|| pages.as_ref()?.first().map(|page| page.id));
+        .c(h!())?;
     let mut query = ai_agent_request::Entity::find();
     if let Some(state) = req.state.as_deref() {
         query = query.filter(ai_agent_request::Column::State.eq(state));
@@ -875,65 +868,29 @@ async fn list_request_page(
     if let Some(id) = page_start_id {
         query = query.filter(ai_agent_request::Column::Id.lte(id));
     }
-    let requests = if pages.as_ref().is_some_and(Vec::is_empty) {
-        Vec::new()
+    let mut requests = query
+        .order_by_desc(ai_agent_request::Column::Id)
+        .limit(AI_AGENT_ADMIN_REQUEST_PAGE_SIZE as u64 + 1)
+        .all(db)
+        .await
+        .c(h!())?;
+    let mut page_start_ids = page_start_id
+        .or_else(|| requests.first().map(|request| request.id))
+        .map(|id| id.to_string())
+        .into_iter()
+        .collect::<Vec<_>>();
+    let total = if requests.len() > AI_AGENT_ADMIN_REQUEST_PAGE_SIZE as usize {
+        page_start_ids.push(requests.pop().c(h!())?.id.to_string());
+        None
     } else {
-        query
-            .order_by_desc(ai_agent_request::Column::Id)
-            .limit(AI_AGENT_ADMIN_REQUEST_PAGE_SIZE as u64)
-            .all(db)
-            .await
-            .c(h!())?
+        page_start_id.is_none().then_some(requests.len() as i64)
     };
     Ok(AiAgentAdminRequestListRsp {
         items: request_items(db, requests).await.c(h!())?,
         page_size: AI_AGENT_ADMIN_REQUEST_PAGE_SIZE,
-        total: pages.as_ref().map(|pages| {
-            pages.first().map(|page| page.total).unwrap_or_default()
-        }),
-        page_start_ids: pages.map(|pages| {
-            pages.into_iter().map(|page| page.id.to_string()).collect()
-        }),
+        total,
+        page_start_ids: Some(page_start_ids),
     })
-}
-
-#[derive(FromQueryResult)]
-struct RequestPageStart {
-    id: Uuid,
-    total: i64,
-}
-
-async fn request_page_starts(
-    db: &impl ConnectionTrait,
-    req: &AiAgentAdminRequestListReq,
-) -> anyhow::Result<Vec<RequestPageStart>> {
-    RequestPageStart::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        r#"
-select id, total
-from (
-    select r.id,
-           row_number() over (order by r.id desc) as position,
-           count(*) over () as total
-    from ai_agent_request r
-    where ($1::text is null or r.state = $1)
-      and ($2::boolean is null or exists (
-          select 1 from ai_agent_security_review review
-          where review.request_id = r.id and review.suspicious = $2
-      ))
-) requests
-where (position - 1) % $3 = 0
-order by position
-"#,
-        [
-            req.state.clone().into(),
-            req.suspicious.into(),
-            AI_AGENT_ADMIN_REQUEST_PAGE_SIZE.into(),
-        ],
-    ))
-    .all(db)
-    .await
-    .c(h!())
 }
 
 async fn request_items(
@@ -1293,10 +1250,10 @@ mod tests {
             page_start_id: None,
         };
         let first = list_request_page(&txn, &req).await.unwrap();
-        assert_eq!(first.total, Some(45));
+        assert_eq!(first.total, None);
         assert_eq!(first.items.len(), 20);
-        let starts = first.page_start_ids.unwrap();
-        assert_eq!(starts.len(), 3);
+        let mut starts = first.page_start_ids.unwrap();
+        assert_eq!(starts, vec![expected[0].clone(), expected[20].clone()]);
         ai_agent_request::ActiveModel {
             id: Set(Uuid::now_v7()),
             ..request
@@ -1305,23 +1262,46 @@ mod tests {
         .await
         .unwrap();
         let mut loaded = first.items;
-        for (index, start) in starts.into_iter().enumerate().skip(1) {
-            req.page_start_id = Some(start);
+        while starts.len() == 2 {
+            req.page_start_id = starts.pop();
             let page = list_request_page(&txn, &req).await.unwrap();
-            assert_eq!(page.items.len(), if index == 1 { 20 } else { 5 });
+            assert_eq!(
+                page.items.len(),
+                if loaded.len() == 20 { 20 } else { 5 }
+            );
             assert_eq!(page.total, None);
+            starts = page.page_start_ids.unwrap();
+            assert_eq!(starts.first(), page.items.first().map(|item| &item.id));
             loaded.extend(page.items);
         }
+        assert_eq!(starts.len(), 1);
         assert_eq!(
             loaded.into_iter().map(|item| item.id).collect::<Vec<_>>(),
             expected
         );
+        ai_agent_request::Entity::delete_many()
+            .filter(
+                ai_agent_request::Column::Id
+                    .gt(access::parse_uuid(&expected[25]).unwrap()),
+            )
+            .exec(&txn)
+            .await
+            .unwrap();
         req.page_start_id = None;
+        let full = list_request_page(&txn, &req).await.unwrap();
+        assert_eq!(full.items.len(), 20);
+        assert_eq!(full.total, Some(20));
+        assert_eq!(full.page_start_ids, Some(vec![expected[25].clone()]));
         req.state = Some("failed".to_string());
         let empty = list_request_page(&txn, &req).await.unwrap();
         assert!(empty.items.is_empty());
         assert_eq!(empty.total, Some(0));
         assert_eq!(empty.page_start_ids, Some(Vec::new()));
+        req.page_start_id = Some(expected[25].clone());
+        let empty = list_request_page(&txn, &req).await.unwrap();
+        assert!(empty.items.is_empty());
+        assert_eq!(empty.total, None);
+        assert_eq!(empty.page_start_ids, Some(vec![expected[25].clone()]));
         txn.rollback().await.unwrap();
     }
 

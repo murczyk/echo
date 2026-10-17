@@ -4,7 +4,7 @@ import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
 async function installRequests(page: Page) {
   await installAnalysisNeoApiMocks(page, { userRoles: ['Admin', 'Rer'] });
-  const requests: AiAgentAdminRequestItem[] = Array.from({ length: 565 }, (_, index) => ({
+  const requests: AiAgentAdminRequestItem[] = Array.from({ length: 65 }, (_, index) => ({
     id: `request-${index + 1}`,
     conversationId: 'conversation',
     humanLoginId: 'human',
@@ -33,34 +33,39 @@ async function installRequests(page: Page) {
       json: {
         items: requests.slice(start, start + 20),
         pageSize: 20,
-        total: pageStartId ? null : requests.length,
-        pageStartIds: pageStartId
-          ? null
-          : requests.filter((_, index) => index % 20 === 0).map((request) => request.id),
+        total: null,
+        pageStartIds: [requests[start]?.id, requests[start + 20]?.id].filter(Boolean),
       },
     });
   });
   return state;
 }
 
-test('AI request pages append 20 entries and allow direct navigation to the final page', async ({
+test('AI request pages discover bounded cursors and allow navigation to the final page', async ({
   page,
 }) => {
   const state = await installRequests(page);
   await page.goto('/admin/ai/requests');
   const rows = page.locator('tbody tr');
   await expect(rows).toHaveCount(20);
-  await expect(page.getByText('Усього: 565', { exact: true })).toBeVisible();
+  await expect(page.getByText('Усього:', { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Go to page 3', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'SHOW MORE', exact: true }).click();
   await expect(rows).toHaveCount(40);
   expect(state.starts).toEqual([null, 'request-21']);
-  await page.getByRole('button', { name: 'Go to page 29', exact: true }).click();
-  await expect(rows).toHaveCount(5);
-  await expect(page.getByText('Audit prompt 561', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'SHOW MORE', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Go to page 28', exact: true }).click();
+  await page.getByRole('button', { name: 'Go to page 3', exact: true }).click();
   await expect(rows).toHaveCount(20);
-  await expect(page.getByText('Audit prompt 541', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Go to page 4', exact: true }).click();
+  await expect(rows).toHaveCount(5);
+  await expect(page.getByText('Audit prompt 61', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'SHOW MORE', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Go to page 2', exact: true }).click();
+  await expect(rows).toHaveCount(20);
+  await expect(page.getByText('Audit prompt 21', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Go to page 4', exact: true }).click();
+  await expect(rows).toHaveCount(5);
+  await page.getByRole('button', { name: 'Go to page 3', exact: true }).click();
+  await expect(rows).toHaveCount(20);
   await page.getByRole('button', { name: 'SHOW MORE', exact: true }).click();
   await expect(rows).toHaveCount(25);
   await expect(page.getByRole('button', { name: 'SHOW MORE', exact: true })).toHaveCount(0);
@@ -70,9 +75,12 @@ test('AI request pages append 20 entries and allow direct navigation to the fina
   expect(state.starts).toEqual([
     null,
     'request-21',
-    'request-561',
-    'request-541',
-    'request-561',
+    'request-41',
+    'request-61',
+    'request-21',
+    'request-61',
+    'request-41',
+    'request-61',
     null,
   ]);
 });

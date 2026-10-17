@@ -831,7 +831,7 @@ function RequestsPage() {
   const [requests, setRequests] = useState<AiAgentAuditRequest[]>([]);
   const [pageStartIds, setPageStartIds] = useState<string[]>([]);
   const [pageSize, setPageSize] = useState(0);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [firstPage, setFirstPage] = useState(1);
   const loadVersion = useRef(0);
@@ -863,8 +863,17 @@ function RequestsPage() {
       );
       if (version !== loadVersion.current) return;
       setRequests((current) => (append ? [...current, ...response.items] : response.items));
-      if (response.pageStartIds !== null) setPageStartIds(response.pageStartIds);
-      if (response.total !== null) setTotal(response.total);
+      if (response.pageStartIds !== null) {
+        const starts = response.pageStartIds;
+        setPageStartIds((current) => [
+          ...current.slice(0, nextPage - 1),
+          ...starts,
+          ...(nextPage > 1 && starts.length === 2 && starts[1] === current[nextPage]
+            ? current.slice(nextPage + 1)
+            : []),
+        ]);
+      }
+      setTotal(response.total);
       setPageSize(response.pageSize);
       setPage(nextPage);
       if (!append) setFirstPage(nextPage);
@@ -941,9 +950,11 @@ function RequestsPage() {
               onChange={(_, nextPage) => void load(nextPage)}
             />
           ) : null}
-          <Typography variant="body2" color="text.secondary">
-            Усього: {total}
-          </Typography>
+          {total !== null ? (
+            <Typography variant="body2" color="text.secondary">
+              Усього: {total}
+            </Typography>
+          ) : null}
         </Stack>
         <RequestDetailsDialog
           request={selected}

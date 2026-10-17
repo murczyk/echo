@@ -23,7 +23,7 @@
 
 - **Affected route:** `/admin/ai/requests` (administrators only).
 - **Expected observable result:** the server returns 20 requests per page. “SHOW MORE” appends the next page; numbered navigation replaces the entries. The final page can contain fewer than 20 entries and hides “SHOW MORE”. Refresh returns to the newest page.
-- **API:** `/api/admin/ai-agent/requests/list` returns `pageSize`, `total`, and `pageStartIds` on the initial request. Subsequent requests pass `pageStartId` and return null metadata. Requests use descending UUIDv7 creation order and inclusive page boundaries, so new requests do not shift previously established pages. Search, column filters, and sorting apply to the loaded entries.
+- **API:** `/api/admin/ai-agent/requests/list` fetches at most 21 requests and returns 20 items plus at most two `pageStartIds`: the current and next page boundaries. Subsequent requests pass `pageStartId`; numbered navigation discovers one additional page at a time. `total` is available only when the initial page contains the entire history. Requests use descending UUIDv7 creation order and inclusive page boundaries, so new requests do not shift previously established pages. Search, column filters, and sorting apply to the loaded entries.
 - **Loading/error behavior:** pagination is disabled while loading; failures preserve existing entries, show an error toast, and allow retry. Stale responses cannot replace current entries. Request deep links open independently of the displayed page.
 - **Source implementation:** `wdintel-rs/src/ai_agent/admin.rs`, `wdintel-web/src/ts/react/routes/admin-ai-agent/index.tsx`.
 - **Existing tests:** `wdintel-web/tests/e2e/admin-ai-requests.spec.ts`.
