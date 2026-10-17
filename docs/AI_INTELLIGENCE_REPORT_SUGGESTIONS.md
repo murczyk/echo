@@ -43,6 +43,13 @@ most 1,000 characters; new numeric or coordinate tokens are rejected as content
 validation failures. Multiple variants are displayed in a small carousel and are
 inserted only when the operator clicks the selected text.
 
+GPT-5, GPT-6, and o-series engines use `max_completion_tokens` and omit
+`temperature`. Quick suggestions disable reasoning only for explicitly
+supported aliases and their dated snapshots; other engines retain their
+provider's reasoning default. Ordinary chat requests keep their existing
+reasoning behavior. See the [OpenAI reasoning guide](https://developers.openai.com/api/docs/guides/reasoning?api-mode=chat)
+for model-specific effort support.
+
 Source material, style examples, and prompts are never written to the database
 or application logs. Each authorized attempt stores its bounded outcome,
 duration, validated suggestions, bounded raw model response, and safe error

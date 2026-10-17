@@ -4,11 +4,11 @@ pub mod types;
 pub use client::AiEngineClient;
 
 use crate::config::{
-    AI_AGENT_OPENAI_GPT_6_LUNA, AI_AGENT_OPENAI_GPT_6_SOL,
-    AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX, AI_CHAT_PROMPT_MAX_CHARS,
-    AI_CHAT_ROLE_ASSISTANT, AI_CHAT_ROLE_USER, AI_CHAT_TITLE_MAX_CHARS,
-    AI_ENGINE_ERROR_BODY_MAX_CHARS, AI_ENGINE_MODEL_NAME_MAX_CHARS,
-    AI_ENGINE_NAME_MAX_CHARS, AI_ENGINE_REQUEST_TIMEOUT_SEC,
+    AI_CHAT_PROMPT_MAX_CHARS, AI_CHAT_ROLE_ASSISTANT, AI_CHAT_ROLE_USER,
+    AI_CHAT_TITLE_MAX_CHARS, AI_ENGINE_ERROR_BODY_MAX_CHARS,
+    AI_ENGINE_MODEL_NAME_MAX_CHARS, AI_ENGINE_NAME_MAX_CHARS,
+    AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES,
+    AI_ENGINE_OPENAI_REASONING_NONE_MODELS, AI_ENGINE_REQUEST_TIMEOUT_SEC,
     AI_ENGINE_TOKEN_MAX_CHARS, AI_ENGINE_URL_MAX_CHARS,
 };
 use crate::entities::{
@@ -890,20 +890,18 @@ async fn request_ai_response_with_options(
     response_format: Option<serde_json::Value>,
 ) -> Result<AiEngineResponse, AppError> {
     let structured_output = response_format.is_some();
-    let openai_reasoning = ai_engine
-        .model_name
-        .starts_with(AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX)
-        || matches!(
-            ai_engine.model_name.as_str(),
-            AI_AGENT_OPENAI_GPT_6_SOL | AI_AGENT_OPENAI_GPT_6_LUNA
-        );
+    let openai_reasoning = AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES
+        .iter()
+        .any(|prefix| ai_engine.model_name.starts_with(prefix));
     let body = serde_json::to_value(OpenAiChatCompletionReq {
         model_name: ai_engine.model_name.clone(),
         messages,
         temperature: if openai_reasoning { None } else { temperature },
         max_tokens: if openai_reasoning { None } else { max_tokens },
         max_completion_tokens: if openai_reasoning { max_tokens } else { None },
-        reasoning_effort: openai_reasoning.then_some("none"),
+        reasoning_effort: structured_output
+            .then(|| structured_reasoning_effort(&ai_engine.model_name))
+            .flatten(),
         response_format,
     })
     .c(h!())?;
@@ -943,6 +941,22 @@ async fn request_ai_response_with_options(
         finish_reason: choice.finish_reason,
         model_name: response.model,
     })
+}
+
+fn structured_reasoning_effort(name: &str) -> Option<&'static str> {
+    AI_ENGINE_OPENAI_REASONING_NONE_MODELS
+        .iter()
+        .any(|alias| {
+            name == *alias
+                || name
+                    .strip_prefix(alias)
+                    .and_then(|suffix| suffix.strip_prefix('-'))
+                    .is_some_and(|date| {
+                        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                            .is_ok()
+                    })
+        })
+        .then_some("none")
 }
 
 fn chat_completions_url(base_url: &str) -> Result<Url, AppError> {

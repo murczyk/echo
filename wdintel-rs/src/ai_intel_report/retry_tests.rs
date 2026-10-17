@@ -2,12 +2,15 @@
 use super::tests::{engine_record, read_json_request};
 use super::{
     generate_quick_suggestion_with_review, load_settings,
-    SuggestionAttemptReview, SuggestionResult,
+    record_suggestion_attempt, SuggestionAttemptReview, SuggestionResult,
 };
-use crate::entities::{ai_intel_report_engine_budget, signal_message};
+use crate::entities::{
+    ai_intel_report_attempt, ai_intel_report_engine_budget, signal_message,
+};
 use crate::types::Env;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
+    IntoActiveModel, QueryFilter,
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -118,6 +121,13 @@ async fn configure(
     (primary.id, fallback.id, login.id, source.id)
 }
 
+async fn disable_fallback(env: &Env) {
+    let mut settings =
+        load_settings(&env.dbx).await.unwrap().into_active_model();
+    settings.fallback_ai_engine_id = Set(None);
+    settings.update(&env.dbx).await.unwrap();
+}
+
 #[tokio::test]
 #[serial_test::serial]
 async fn exhausted_primary_uses_fallback_budget_and_same_prompt_once() {
@@ -190,48 +200,55 @@ async fn only_successful_primary_results_skip_fallback() {
         ),
         (500, Some("upstream error"), true),
     ] {
-        let primary = inference_server(
-            status,
-            completion("stop", content),
-            Duration::ZERO,
-        )
-        .await;
-        let fallback = inference_server(
-            200,
-            completion(
-                "stop",
-                Some(r#"{"suggestions":["Перевірка обладнання"]}"#),
-            ),
-            Duration::ZERO,
-        )
-        .await;
-        let (primary_id, fallback_id, login_id, source_id) =
-            configure(&env, &primary, &fallback, 2, 2, 3).await;
-        let mut review = SuggestionAttemptReview::default();
-        let result = generate_quick_suggestion_with_review(
-            &env,
-            login_id,
-            source_id,
-            &mut review,
-        )
-        .await
-        .unwrap();
-        assert!(
-            matches!(result, SuggestionResult::Suggestions(values) if values == ["Перевірка обладнання"])
-        );
-        assert_eq!(
-            review.ai_engine_id,
-            Some(if uses_fallback {
-                fallback_id
-            } else {
-                primary_id
-            })
-        );
-        assert_eq!(primary.requests.lock().unwrap().len(), 1);
-        assert_eq!(
-            fallback.requests.lock().unwrap().len(),
-            usize::from(uses_fallback)
-        );
+        for fallback_enabled in [true, false] {
+            let primary = inference_server(
+                status,
+                completion("stop", content),
+                Duration::ZERO,
+            )
+            .await;
+            let fallback = inference_server(
+                200,
+                completion(
+                    "stop",
+                    Some(r#"{"suggestions":["Перевірка обладнання"]}"#),
+                ),
+                Duration::ZERO,
+            )
+            .await;
+            let (primary_id, fallback_id, login_id, source_id) =
+                configure(&env, &primary, &fallback, 2, 2, 3).await;
+            if !fallback_enabled {
+                disable_fallback(&env).await;
+            }
+            let mut review = SuggestionAttemptReview::default();
+            let result = generate_quick_suggestion_with_review(
+                &env,
+                login_id,
+                source_id,
+                &mut review,
+            )
+            .await;
+            assert_eq!(result.is_ok(), !uses_fallback || fallback_enabled);
+            if let Ok(result) = result {
+                assert!(
+                    matches!(result, SuggestionResult::Suggestions(values) if values == ["Перевірка обладнання"])
+                );
+            }
+            assert_eq!(
+                review.ai_engine_id,
+                Some(if uses_fallback && fallback_enabled {
+                    fallback_id
+                } else {
+                    primary_id
+                })
+            );
+            assert_eq!(primary.requests.lock().unwrap().len(), 1);
+            assert_eq!(
+                fallback.requests.lock().unwrap().len(),
+                usize::from(uses_fallback && fallback_enabled)
+            );
+        }
     }
 }
 
@@ -255,10 +272,7 @@ async fn unreachable_primary_uses_fallback_only_when_configured() {
         let (primary_id, fallback_id, login_id, source_id) =
             configure(&env, &primary, &fallback, 2, 2, 3).await;
         if !fallback_enabled {
-            let mut settings =
-                load_settings(&env.dbx).await.unwrap().into_active_model();
-            settings.fallback_ai_engine_id = Set(None);
-            settings.update(&env.dbx).await.unwrap();
+            disable_fallback(&env).await;
         }
         primary.task.abort();
         assert!((&mut primary.task).await.unwrap_err().is_cancelled());
@@ -290,22 +304,68 @@ async fn unreachable_primary_uses_fallback_only_when_configured() {
 #[serial_test::serial]
 async fn fallback_exhaustion_fails_without_a_third_call() {
     let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
-    let primary =
-        inference_server(200, completion("length", None), Duration::ZERO).await;
-    let fallback =
-        inference_server(200, completion("length", None), Duration::ZERO).await;
-    let (_, _, login_id, source_id) =
-        configure(&env, &primary, &fallback, 2, 2, 3).await;
-    let result = generate_quick_suggestion_with_review(
-        &env,
-        login_id,
-        source_id,
-        &mut SuggestionAttemptReview::default(),
-    )
-    .await;
-    assert!(result.is_err());
-    assert_eq!(primary.requests.lock().unwrap().len(), 1);
-    assert_eq!(fallback.requests.lock().unwrap().len(), 1);
+    for (status, reason, content, raw_response) in [
+        (200, "length", None, Some("")),
+        (200, "stop", Some("not json"), Some("not json")),
+        (
+            200,
+            "stop",
+            Some(r#"{"suggestions":["Перевірка обладнання 123"]}"#),
+            Some(r#"{"suggestions":["Перевірка обладнання 123"]}"#),
+        ),
+        (200, "stop", None, None),
+        (500, "stop", Some("upstream error"), None),
+    ] {
+        let primary = inference_server(
+            200,
+            completion("length", Some("primary partial response")),
+            Duration::ZERO,
+        )
+        .await;
+        let fallback = inference_server(
+            status,
+            completion(reason, content),
+            Duration::ZERO,
+        )
+        .await;
+        let (_, fallback_id, login_id, source_id) =
+            configure(&env, &primary, &fallback, 2, 2, 3).await;
+        let mut review = SuggestionAttemptReview::default();
+        let result = generate_quick_suggestion_with_review(
+            &env,
+            login_id,
+            source_id,
+            &mut review,
+        )
+        .await
+        .map_err(anyhow::Error::from);
+        assert!(result.is_err());
+        assert_eq!(primary.requests.lock().unwrap().len(), 1);
+        assert_eq!(fallback.requests.lock().unwrap().len(), 1);
+        record_suggestion_attempt(
+            &env.dbx,
+            login_id,
+            source_id,
+            Duration::ZERO,
+            &review,
+            &result,
+        )
+        .await
+        .unwrap();
+        let attempt = ai_intel_report_attempt::Entity::find()
+            .filter(
+                ai_intel_report_attempt::Column::SourceMessageId.eq(source_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(attempt.ai_engine_id, Some(fallback_id));
+        assert_eq!(attempt.raw_response.as_deref(), raw_response);
+        assert_eq!(attempt.outcome, "failed");
+        assert_eq!(attempt.suggestions, serde_json::json!([]));
+        assert!(attempt.error.is_some());
+    }
 }
 
 #[tokio::test]
