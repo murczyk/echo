@@ -13,12 +13,6 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 use uuid::Uuid;
 
 #[derive(FromQueryResult)]
-struct AttemptPageStart {
-    id: Uuid,
-    total: i64,
-}
-
-#[derive(FromQueryResult)]
 struct AttemptRow {
     id: Uuid,
     login_id: Uuid,
@@ -48,22 +42,24 @@ async fn list_attempt_page(
     db: &impl ConnectionTrait,
     req: &AiIntelReportAttemptListReq,
 ) -> anyhow::Result<AiIntelReportAttemptListRsp> {
-    let pages = if req.page_start_id.is_none() {
-        Some(attempt_page_starts(db).await.c(h!())?)
-    } else {
-        None
-    };
     let page_start_id = req
         .page_start_id
         .as_deref()
         .map(Uuid::parse_str)
         .transpose()
-        .c(h!())?
-        .or_else(|| pages.as_ref()?.first().map(|page| page.id));
-    let rows = if pages.as_ref().is_some_and(Vec::is_empty) {
-        Vec::new()
+        .c(h!())?;
+    let mut rows = load_attempt_rows(db, page_start_id).await.c(h!())?;
+    let mut page_start_ids = page_start_id
+        .or_else(|| rows.first().map(|row| row.id))
+        .map(|id| id.to_string())
+        .into_iter()
+        .collect::<Vec<_>>();
+    let total = if rows.len() > AI_INTEL_REPORT_ADMIN_ATTEMPT_PAGE_SIZE as usize
+    {
+        page_start_ids.push(rows.pop().c(h!())?.id.to_string());
+        None
     } else {
-        load_attempt_rows(db, page_start_id).await.c(h!())?
+        page_start_id.is_none().then_some(rows.len() as i64)
     };
     let items = rows
         .into_iter()
@@ -73,36 +69,9 @@ async fn list_attempt_page(
     Ok(AiIntelReportAttemptListRsp {
         items,
         page_size: AI_INTEL_REPORT_ADMIN_ATTEMPT_PAGE_SIZE,
-        total: pages.as_ref().map(|pages| {
-            pages.first().map(|page| page.total).unwrap_or_default()
-        }),
-        page_start_ids: pages.map(|pages| {
-            pages.into_iter().map(|page| page.id.to_string()).collect()
-        }),
+        total,
+        page_start_ids: Some(page_start_ids),
     })
-}
-
-async fn attempt_page_starts(
-    db: &impl ConnectionTrait,
-) -> anyhow::Result<Vec<AttemptPageStart>> {
-    AttemptPageStart::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        r#"
-select id, total
-from (
-    select id,
-           row_number() over (order by created_at desc, id desc) as position,
-           count(*) over () as total
-    from ai_intel_report_attempt
-) attempts
-where (position - 1) % $1 = 0
-order by position
-"#,
-        [AI_INTEL_REPORT_ADMIN_ATTEMPT_PAGE_SIZE.into()],
-    ))
-    .all(db)
-    .await
-    .c(h!())
 }
 
 async fn load_attempt_rows(
@@ -131,7 +100,7 @@ order by attempt.created_at desc, attempt.id desc
 limit $1
 "#,
     );
-    let mut values = vec![AI_INTEL_REPORT_ADMIN_ATTEMPT_PAGE_SIZE.into()];
+    let mut values = vec![(AI_INTEL_REPORT_ADMIN_ATTEMPT_PAGE_SIZE + 1).into()];
     if let Some(id) = page_start_id {
         values.push(id.into());
     }
@@ -167,7 +136,10 @@ mod tests {
     use super::*;
     use crate::entities::ai_intel_report_attempt;
     use chrono::{Duration, Utc};
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, TransactionTrait};
+    use sea_orm::{
+        ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
+        QueryFilter, TransactionTrait,
+    };
 
     #[tokio::test]
     #[serial_test::serial]
@@ -207,11 +179,14 @@ mod tests {
         }
         expected.sort_by(|left, right| right.cmp(left));
         let first = list_attempt_page(&txn, &req).await.unwrap();
-        assert_eq!(first.total, Some(45));
+        assert_eq!(first.total, None);
         assert_eq!(first.page_size, 20);
         assert_eq!(first.items.len(), 20);
-        let starts = first.page_start_ids.unwrap();
-        assert_eq!(starts.len(), 3);
+        let mut starts = first.page_start_ids.unwrap();
+        assert_eq!(
+            starts,
+            vec![expected[0].1.to_string(), expected[20].1.to_string()]
+        );
         ai_intel_report_attempt::ActiveModel {
             id: Set(Uuid::now_v7()),
             login_id: Set(login.id),
@@ -225,29 +200,51 @@ mod tests {
         .await
         .unwrap();
         let mut loaded = first.items;
-        for (index, start) in starts.into_iter().enumerate().skip(1) {
-            req.page_start_id = Some(start);
+        while starts.len() == 2 {
+            req.page_start_id = starts.pop();
             let next = list_attempt_page(&txn, &req).await.unwrap();
-            assert_eq!(next.items.len(), if index == 1 { 20 } else { 5 });
+            assert_eq!(
+                next.items.len(),
+                if loaded.len() == 20 { 20 } else { 5 }
+            );
             assert_eq!(next.total, None);
-            assert_eq!(next.page_start_ids, None);
+            starts = next.page_start_ids.unwrap();
+            assert_eq!(starts.first(), next.items.first().map(|item| &item.id));
             loaded.extend(next.items);
         }
+        assert_eq!(starts.len(), 1);
         assert_eq!(
             loaded
                 .into_iter()
                 .map(|attempt| attempt.id)
                 .collect::<Vec<_>>(),
             expected
-                .into_iter()
+                .iter()
                 .map(|(_, id)| id.to_string())
                 .collect::<Vec<_>>()
         );
         req.page_start_id = None;
-        assert_eq!(
-            list_attempt_page(&txn, &req).await.unwrap().total,
-            Some(46)
-        );
+        let refreshed = list_attempt_page(&txn, &req).await.unwrap();
+        assert_eq!(refreshed.total, None);
+        assert_eq!(refreshed.items[0].source_message_id, 100);
+        ai_intel_report_attempt::Entity::delete_many()
+            .filter(
+                ai_intel_report_attempt::Column::Id
+                    .is_not_in(expected[25..].iter().map(|(_, id)| *id)),
+            )
+            .exec(&txn)
+            .await
+            .unwrap();
+        let full = list_attempt_page(&txn, &req).await.unwrap();
+        assert_eq!(full.items.len(), 20);
+        assert_eq!(full.total, Some(20));
+        assert_eq!(full.page_start_ids, Some(vec![expected[25].1.to_string()]));
+        let missing = Uuid::now_v7().to_string();
+        req.page_start_id = Some(missing.clone());
+        let empty = list_attempt_page(&txn, &req).await.unwrap();
+        assert!(empty.items.is_empty());
+        assert_eq!(empty.total, None);
+        assert_eq!(empty.page_start_ids, Some(vec![missing]));
         txn.rollback().await.unwrap();
     }
 }

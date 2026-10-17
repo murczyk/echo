@@ -67,10 +67,12 @@ both model calls. Empty content with `finish_reason=length` still triggers the
 fallback. HTTP failures, per-attempt timeouts, malformed output, unsupported
 facts, and an expired overall deadline fail without another model call.
 
-Attempt history loads twenty entries per page, with a total count, numbered
-navigation, and “SHOW MORE” to append the next page. Refresh returns to the
-newest page. New attempts do not shift established page boundaries. Table
-search, filters, and sorting apply to loaded entries.
+Attempt history loads twenty entries per page, discovering the next cursor
+with one lookahead row. Numbered navigation covers discovered pages, and
+“SHOW MORE” appends the next page. A total count appears only when the initial
+page contains the entire history. Refresh returns to the newest page. New
+attempts do not shift established page boundaries. Table search, filters, and
+sorting apply to loaded entries.
 
 ## Deployment
 

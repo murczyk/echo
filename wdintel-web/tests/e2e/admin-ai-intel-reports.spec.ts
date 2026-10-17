@@ -22,7 +22,7 @@ async function installReports(page: Page) {
     legacyCommentCutoff: 1,
     updatedAt: 1,
   };
-  const attempts: AiIntelReportAttemptItem[] = Array.from({ length: 565 }, (_, index) => ({
+  const attempts: AiIntelReportAttemptItem[] = Array.from({ length: 65 }, (_, index) => ({
     id: `attempt-${index + 1}`,
     loginId: 'operator',
     login: 'operator',
@@ -113,10 +113,8 @@ async function installReports(page: Page) {
       json: {
         items: attempts.slice(start, start + 20),
         pageSize: 20,
-        total: pageStartId ? null : attempts.length,
-        pageStartIds: pageStartId
-          ? null
-          : attempts.filter((_, index) => index % 20 === 0).map((attempt) => attempt.id),
+        total: null,
+        pageStartIds: [attempts[start]?.id, attempts[start + 20]?.id].filter(Boolean),
       },
     });
   });
@@ -185,7 +183,7 @@ test('per-model budgets, primary, fallback and all timeouts persist and survive 
   await expect(fallbackBudget).toHaveValue('2048');
 });
 
-test('report attempt history appends pages and navigates beyond the previous 500-attempt limit', async ({
+test('report attempt history discovers bounded cursors and revisits discovered pages', async ({
   page,
 }) => {
   const state = await installReports(page);
@@ -194,15 +192,22 @@ test('report attempt history appends pages and navigates beyond the previous 500
     .getByRole('region', { name: 'Спроби швидких пропозицій', exact: true })
     .locator('tbody tr');
   await expect(rows).toHaveCount(20);
-  await expect(page.getByText('Усього: 565', { exact: true })).toBeVisible();
+  await expect(page.getByText('Усього:', { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Go to page 3', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'SHOW MORE', exact: true }).click();
   await expect(rows).toHaveCount(40);
   expect(state.starts).toEqual([null, 'attempt-21']);
-  await page.getByRole('button', { name: 'Go to page 29', exact: true }).click();
+  await page.getByRole('button', { name: 'Go to page 3', exact: true }).click();
+  await expect(rows).toHaveCount(20);
+  await page.getByRole('button', { name: 'Go to page 4', exact: true }).click();
   await expect(rows).toHaveCount(5);
-  await expect(page.getByText('Attempt failure 561', { exact: true })).toBeVisible();
+  await expect(page.getByText('Attempt failure 61', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'SHOW MORE', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Go to page 28', exact: true }).click();
+  await page.getByRole('button', { name: 'Go to page 2', exact: true }).click();
+  await expect(rows).toHaveCount(20);
+  await page.getByRole('button', { name: 'Go to page 4', exact: true }).click();
+  await expect(rows).toHaveCount(5);
+  await page.getByRole('button', { name: 'Go to page 3', exact: true }).click();
   await expect(rows).toHaveCount(20);
   await page.getByRole('button', { name: 'SHOW MORE', exact: true }).click();
   await expect(rows).toHaveCount(25);
@@ -212,9 +217,12 @@ test('report attempt history appends pages and navigates beyond the previous 500
   expect(state.starts).toEqual([
     null,
     'attempt-21',
-    'attempt-561',
-    'attempt-541',
-    'attempt-561',
+    'attempt-41',
+    'attempt-61',
+    'attempt-21',
+    'attempt-61',
+    'attempt-41',
+    'attempt-61',
     null,
   ]);
 });

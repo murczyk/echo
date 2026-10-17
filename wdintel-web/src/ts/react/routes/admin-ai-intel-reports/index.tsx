@@ -318,7 +318,7 @@ function AttemptsHistory() {
   const [selectedAttempt, setSelectedAttempt] = useState<AiIntelReportAttemptItem | null>(null);
   const [pageStartIds, setPageStartIds] = useState<string[]>([]);
   const [pageSize, setPageSize] = useState(0);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [firstPage, setFirstPage] = useState(1);
   const [attemptsLoading, setAttemptsLoading] = useState(true);
@@ -343,8 +343,17 @@ function AttemptsHistory() {
       );
       if (version !== loadVersion.current) return;
       setAttempts((current) => (append ? [...current, ...response.items] : response.items));
-      if (response.pageStartIds !== null) setPageStartIds(response.pageStartIds);
-      if (response.total !== null) setTotal(response.total);
+      if (response.pageStartIds !== null) {
+        const starts = response.pageStartIds;
+        setPageStartIds((current) => [
+          ...current.slice(0, nextPage - 1),
+          ...starts,
+          ...(nextPage > 1 && starts.length === 2 && starts[1] === current[nextPage]
+            ? current.slice(nextPage + 1)
+            : []),
+        ]);
+      }
+      setTotal(response.total);
       setPageSize(response.pageSize);
       setPage(nextPage);
       if (!append) setFirstPage(nextPage);
@@ -407,9 +416,11 @@ function AttemptsHistory() {
                 onChange={(_, nextPage) => void loadAttempts(nextPage)}
               />
             ) : null}
-            <Typography variant="body2" color="text.secondary">
-              Усього: {total}
-            </Typography>
+            {total !== null ? (
+              <Typography variant="body2" color="text.secondary">
+                Усього: {total}
+              </Typography>
+            ) : null}
           </Stack>
         </Stack>
       </TableStateProvider>
