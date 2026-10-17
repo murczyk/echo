@@ -109,7 +109,7 @@ test('shares unread state across Duty and Analysis and clears it from an unfilte
   await dutyPage.goto('/rer-duty-neo');
   await analysisPage.goto('/rer-analysis-neo');
   const dutyColumn = dutyPage.locator('[data-duty-feed-column]');
-  await dutyColumn.locator('[data-group-island]').click();
+  await dutyColumn.getByRole('button', { name: 'Розгорнути список груп' }).click();
   const dutyList = dutyColumn.locator('[data-group-panel]');
   const analysisList = analysisPage.locator('[data-analysis-group-list]:visible').first();
   await expect(dutyList.locator('[data-group-unread]')).toHaveCount(0);
@@ -144,7 +144,7 @@ test('keeps a filtered Duty group unread at its visible tail', async ({ page }) 
   const state = { messageFeeds: [['mf-filtered', { freqsSelected: ['100'] }]] };
   await page.goto(`/rer-duty-neo?state=${encodeURIComponent(JSON.stringify(state))}`);
   const column = page.locator('[data-duty-feed-column]');
-  await column.locator('[data-group-island]').click();
+  await column.getByRole('button', { name: 'Розгорнути список груп' }).click();
   await column.getByRole('button', { name: /Group Alpha, 1 / }).click();
   await reachPhysicalTail(column);
   await page.waitForTimeout(400);
@@ -173,8 +173,8 @@ test('coalesces visible Duty panels and stays silent while every panel is closed
   await page.goto(`/rer-duty-neo?state=${encodeURIComponent(JSON.stringify(state))}`);
   const columns = page.locator('[data-duty-feed-column]');
 
-  await columns.nth(0).locator('[data-group-island]').click();
-  await columns.nth(1).locator('[data-group-island]').click();
+  await columns.nth(0).getByRole('button', { name: 'Розгорнути список груп' }).click();
+  await columns.nth(1).getByRole('button', { name: 'Розгорнути список груп' }).click();
   await expect.poll(() => requestCount).toBe(1);
 
   await dispatchInboxBurst(page);

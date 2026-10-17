@@ -552,6 +552,7 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
         alignItems: 'center',
         gap: 1,
         zIndex: 1,
+        transition: 'transform 180ms cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
       {!loadingNewer && isPresent(arrowResultMessage) && (

@@ -486,12 +486,7 @@ export function RerDutyNeoWorkspace({
                     const columnView: FeedColumnModel['view'] = {
                       ...column.view,
                       scrollTrackingEnabled: true,
-                      // A lone desktop feed owns its scroll action; only multi-feed layouts need
-                      // to reserve horizontal space for the workspace-level create action.
-                      workspaceFabAvoidance:
-                        !editorOpen && messageFeeds.length > 1 && index === messageFeeds.length - 1
-                          ? 'left'
-                          : 'none',
+                      workspaceFabAvoidance: 'none',
                       initialScrollAnchorSnapshot:
                         feedScrollAnchorsRef.current.get(feed.id) ?? null,
                       onScrollAnchorSnapshotChange: handleScrollAnchorSnapshotChange,

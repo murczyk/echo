@@ -105,25 +105,24 @@ test.describe('Analysis group feed navigation', () => {
     const selectedVisual = await selectedGroup.evaluate((element) => {
       const style = getComputedStyle(element);
       const markerStyle = getComputedStyle(element, '::before');
-      const primaryProbe = document.createElement('span');
-      primaryProbe.style.color = 'var(--echo-color-primary)';
-      element.append(primaryProbe);
-      const primaryColor = getComputedStyle(primaryProbe).color;
-      primaryProbe.remove();
       return {
         backgroundColor: style.backgroundColor,
         borderColor: style.borderColor,
-        markerBackgroundColor: markerStyle.backgroundColor,
-        markerHeight: markerStyle.height,
-        markerWidth: markerStyle.width,
-        primaryColor,
+        markerContent: markerStyle.content,
       };
     });
     expect(selectedVisual.borderColor).toBe('rgba(0, 0, 0, 0)');
-    expect(selectedVisual.backgroundColor).not.toBe(selectedVisual.primaryColor);
-    expect(selectedVisual.markerBackgroundColor).toBe(selectedVisual.primaryColor);
-    expect(selectedVisual.markerWidth).toBe('3px');
-    expect(selectedVisual.markerHeight).toBe('24px');
+    expect(selectedVisual.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(selectedVisual.markerContent).toBe('none');
+    const titleColor = await page.locator('#analysis-groups-title').evaluate((title) => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--echo-color-text-muted)';
+      document.body.append(probe);
+      const mutedColor = getComputedStyle(probe).color;
+      probe.remove();
+      return { color: getComputedStyle(title).color, mutedColor };
+    });
+    expect(titleColor.color).toBe(titleColor.mutedColor);
     await expect(groupNavigation).toHaveCSS('border-right-width', '1px');
     await expect(groupNavigation).toHaveCSS('border-right-style', 'solid');
     expect((await groupNavigation.boundingBox())?.width).toBeLessThan(400);

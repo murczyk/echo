@@ -15,14 +15,6 @@ type Props = {
   title?: string;
 };
 
-function focusableElements(container: HTMLElement): HTMLElement[] {
-  return Array.from(
-    container.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    ),
-  );
-}
-
 export function GroupPanel({
   id,
   open,
@@ -60,20 +52,23 @@ export function GroupPanel({
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [close, open]);
 
+  useEffect(() => {
+    if (!open || variant !== 'overlay') return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      if (panelRef.current?.contains(event.target) || triggerRef?.current?.contains(event.target)) {
+        return;
+      }
+      onClose();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [onClose, open, triggerRef, variant]);
+
   if (!open) return null;
 
   return (
     <div className="group-navigation-panel-layer" data-variant={variant}>
-      {variant === 'overlay' ? (
-        <button
-          type="button"
-          className="group-navigation-backdrop"
-          data-group-panel-backdrop
-          aria-label="Закрити список груп"
-          tabIndex={-1}
-          onClick={close}
-        />
-      ) : null}
       <aside
         ref={panelRef}
         id={id}
@@ -81,28 +76,16 @@ export function GroupPanel({
         data-group-panel
         data-variant={variant}
         role={variant === 'overlay' ? 'dialog' : undefined}
-        aria-modal={variant === 'overlay' ? true : undefined}
         aria-labelledby={titleId}
         tabIndex={-1}
-        onKeyDown={(event) => {
-          if (variant !== 'overlay' || event.key !== 'Tab' || panelRef.current === null) return;
-          const focusable = focusableElements(panelRef.current);
-          if (focusable.length === 0) return;
-          const first = focusable[0];
-          const last = focusable[focusable.length - 1];
-          if (event.shiftKey && document.activeElement === first) {
-            event.preventDefault();
-            last.focus();
-          } else if (!event.shiftKey && document.activeElement === last) {
-            event.preventDefault();
-            first.focus();
-          }
-        }}
       >
-        <h2 id={titleId} className="group-navigation-panel-title">
-          {title}
-        </h2>
-        <GroupList groups={groups} scope={scope} onSelect={onSelect} labelledBy={titleId} />
+        <GroupList
+          groups={groups}
+          scope={scope}
+          onSelect={onSelect}
+          title={title}
+          titleId={titleId}
+        />
       </aside>
     </div>
   );

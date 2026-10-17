@@ -68,10 +68,37 @@ async function installGroupNavigationMocks(page: Page) {
 }
 
 test.describe('Duty group feed navigation', () => {
+  test('resolves the selected group name while the group list is closed', async ({ page }) => {
+    await page.setViewportSize({ width: 1500, height: 900 });
+    const mocks = await installGroupNavigationMocks(page);
+    const state = {
+      messageFeeds: [
+        [
+          'mf-a',
+          {},
+          {
+            adjacentFreqsRange: 0,
+            highlightSignalsEnabled: false,
+            onlyMyUnitTagsEnabled: false,
+            groupScopeMasterKey: 'group-b',
+          },
+        ],
+      ],
+    };
+
+    await page.goto(`/rer-duty-neo?state=${encodeURIComponent(JSON.stringify(state))}`);
+
+    const column = page.locator('[data-duty-feed-column]');
+    await expect(column.locator('[data-group-panel]')).toHaveCount(0);
+    await expect(column.locator('[data-group-island] [data-group-name]')).toHaveText('Group Beta');
+    await expect.poll(mocks.getStateRequestCount).toBe(1);
+  });
+
   test('keeps independent column scopes, aggregate filters, and scoped create actions', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1500, height: 900 });
+    await page.addInitScript(() => localStorage.setItem('echo-theme-mode', 'dark'));
     const mocks = await installGroupNavigationMocks(page);
     const aggregateFilter = { groupsSelected: ['group-a', 'group-b'] };
     const state = {
@@ -85,8 +112,85 @@ test.describe('Duty group feed navigation', () => {
     await expect(columns).toHaveCount(2);
     expect(mocks.getStateRequestCount()).toBe(0);
 
-    await columns.nth(0).locator('[data-group-island]').click();
-    await expect(columns.nth(0).locator('[data-group-panel]')).toBeVisible();
+    const firstIsland = columns.nth(0).locator('[data-group-island]');
+    await expect(firstIsland).toHaveJSProperty('tagName', 'DIV');
+    await firstIsland.click();
+    await expect(columns.nth(0).locator('[data-group-panel]')).toHaveCount(0);
+    const firstGroupsToggle = columns
+      .nth(0)
+      .getByRole('button', { name: 'Розгорнути список груп' });
+    await expect(firstGroupsToggle).toHaveCSS('border-radius', '0px');
+    await expect(firstGroupsToggle).toHaveCSS('border-top-width', '0px');
+    await expect(firstGroupsToggle).toHaveCSS('border-bottom-width', '0px');
+    await expect(firstGroupsToggle).toHaveCSS('border-left-width', '0px');
+    await expect(firstGroupsToggle).toHaveCSS('border-right-width', '1px');
+    expect(
+      await firstGroupsToggle.evaluate((button) => {
+        const header = button.closest('[data-duty-feed-header-layout]')?.parentElement;
+        return {
+          button: getComputedStyle(button).borderRightColor,
+          header: header == null ? null : getComputedStyle(header).borderTopColor,
+        };
+      }),
+    ).toEqual({
+      button: 'rgba(148, 163, 184, 0.28)',
+      header: 'rgba(148, 163, 184, 0.28)',
+    });
+    await firstGroupsToggle.click();
+    await expect(
+      columns.nth(0).getByRole('button', { name: 'Згорнути список груп' }),
+    ).toBeVisible();
+    const firstGroupPanel = columns.nth(0).locator('[data-group-panel]');
+    await expect(firstGroupPanel).toBeVisible();
+    expect(
+      await columns.nth(0).evaluate((column) => {
+        const header = column.querySelector('[data-duty-feed-header-layout]');
+        const panel = column.querySelector('[data-group-panel]');
+        return (
+          header != null &&
+          panel != null &&
+          panel.getBoundingClientRect().top >= header.getBoundingClientRect().bottom
+        );
+      }),
+    ).toBe(true);
+    const panelStyle = await firstGroupPanel.evaluate((panel) => {
+      const probe = document.createElement('span');
+      probe.style.backgroundColor =
+        'color-mix(in srgb, var(--echo-color-text) 4%, var(--echo-color-surface-inactive))';
+      document.body.append(probe);
+      const contextualBackground = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const style = getComputedStyle(panel);
+      return {
+        background: style.backgroundColor,
+        borderWidth: style.borderWidth,
+        contextualBackground,
+      };
+    });
+    expect(panelStyle.background).toBe(panelStyle.contextualBackground);
+    expect(panelStyle.borderWidth).toBe('0px');
+    const selectedMarker = await firstGroupPanel
+      .locator('[data-group-list-item][data-selected="true"]')
+      .evaluate((item) => getComputedStyle(item, '::before').content);
+    expect(selectedMarker).toBe('none');
+    const islandStyle = await firstIsland.evaluate((island) => {
+      const probe = document.createElement('span');
+      probe.style.backgroundColor =
+        'color-mix(in srgb, var(--echo-color-text) 8%, var(--echo-color-surface-inactive))';
+      document.body.append(probe);
+      const contextualBackground = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const style = getComputedStyle(island);
+      return {
+        background: style.backgroundColor,
+        boxShadow: style.boxShadow,
+        cursor: style.cursor,
+        contextualBackground,
+      };
+    });
+    expect(islandStyle.background).toBe(islandStyle.contextualBackground);
+    expect(islandStyle.boxShadow).not.toBe('none');
+    expect(islandStyle.cursor).toBe('default');
     const avatars = columns.nth(0).locator('[data-group-panel] [data-group-avatar]');
     expect(
       await avatars.nth(1).evaluate((avatar) => getComputedStyle(avatar).backgroundColor),
@@ -103,7 +207,7 @@ test.describe('Duty group feed navigation', () => {
     await expect(scopedFilterPanel.getByText('Групи', { exact: true })).toHaveCount(0);
     await columns.nth(0).getByRole('button', { name: 'Фільтри' }).click();
 
-    await columns.nth(1).locator('[data-group-island]').click();
+    await columns.nth(1).getByRole('button', { name: 'Розгорнути список груп' }).click();
     await columns
       .nth(1)
       .getByRole('button', { name: /Group Beta, 3 непрочитаних/ })
@@ -112,7 +216,7 @@ test.describe('Duty group feed navigation', () => {
     await expect(columns.nth(1).getByText('Alpha-only message')).toHaveCount(0);
     expect(mocks.getStateRequestCount()).toBeGreaterThan(0);
 
-    await columns.nth(0).locator('[data-group-island]').click();
+    await columns.nth(0).getByRole('button', { name: 'Розгорнути список груп' }).click();
     await columns
       .nth(0)
       .getByRole('button', { name: /Всі групи, 5 непрочитаних/ })
@@ -131,7 +235,7 @@ test.describe('Duty group feed navigation', () => {
       ),
     ).toBe(true);
 
-    await columns.nth(0).locator('[data-group-island]').click();
+    await columns.nth(0).getByRole('button', { name: 'Розгорнути список груп' }).click();
     await columns
       .nth(0)
       .getByRole('button', { name: /Group Alpha, 2 непрочитаних/ })
@@ -157,9 +261,25 @@ test.describe('Duty group feed navigation', () => {
     const before = await scroller.evaluate((element) => element.scrollTop);
     await expect(column.getByRole('button', { name: 'Додати повідомлення' })).toBeVisible();
 
-    await column.locator('[data-group-island]').click();
+    await column.getByRole('button', { name: 'Розгорнути список груп' }).click();
     await expect(column.locator('[data-group-panel][data-variant="overlay"]')).toBeVisible();
-    await expect(column.locator('[data-group-panel-backdrop]')).toBeVisible();
+    await expect(column.locator('[data-group-panel-backdrop]')).toHaveCount(0);
+    await expect(column.locator('[data-group-panel]')).toHaveCSS(
+      'animation-name',
+      'group-navigation-panel-enter',
+    );
+    await expect(column.locator('[data-group-panel]')).toHaveCSS('animation-duration', '0.2s');
+    expect(
+      await column.evaluate((element) => {
+        const header = element.querySelector('[data-duty-feed-header-layout]');
+        const panel = element.querySelector('[data-group-panel]');
+        return (
+          header != null &&
+          panel != null &&
+          panel.getBoundingClientRect().top >= header.getBoundingClientRect().bottom
+        );
+      }),
+    ).toBe(true);
     await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(before);
   });
 
@@ -214,9 +334,9 @@ test.describe('Duty group feed navigation', () => {
 
     await page.goto('/rer-duty-neo');
     const column = page.locator('[data-duty-feed-column]');
-    await column.locator('[data-group-island]').click();
+    await column.getByRole('button', { name: 'Розгорнути список груп' }).click();
     await column.getByRole('button', { name: /Group Alpha, 2 непрочитаних/ }).click();
-    await column.locator('[data-group-island]').click();
+    await column.getByRole('button', { name: 'Розгорнути список груп' }).click();
     await column.getByRole('button', { name: /Group Beta, 3 непрочитаних/ }).click();
     await expect(column.locator('[data-group-name]').first()).toHaveText('Group Beta');
     releaseGroupA();

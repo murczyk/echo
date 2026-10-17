@@ -38,19 +38,12 @@ export function AnalysisLeftPanel({ page, leftPanelVisible, fullHeight = false }
         aria-labelledby={fullHeight ? undefined : 'analysis-groups-title'}
         className="flex min-h-0 flex-1 flex-col px-3 py-2"
       >
-        {!fullHeight ? (
-          <h2
-            id="analysis-groups-title"
-            className="m-0 px-2 pb-1 !text-sm !leading-5 font-medium text-black/60 dark:text-white/60"
-          >
-            Групи
-          </h2>
-        ) : null}
         <GroupList
           groups={page.groupNavigation.groups}
           scope={page.groupNavigation.scope}
           onSelect={selectGroup}
-          labelledBy={fullHeight ? undefined : 'analysis-groups-title'}
+          title={fullHeight ? undefined : 'Групи'}
+          titleId={fullHeight ? undefined : 'analysis-groups-title'}
         />
       </section>
     </aside>

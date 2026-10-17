@@ -126,6 +126,27 @@ describe('group navigation UI', () => {
     expect(buttons[1].getAttribute('aria-label')).toContain('128 непрочитаних');
   });
 
+  it('owns the shared list title and accessible label', async () => {
+    await act(async () => {
+      root.render(
+        <GroupList
+          groups={[allGroups, kitkat]}
+          scope={{ kind: 'all' }}
+          onSelect={vi.fn()}
+          title="Групи"
+          titleId="shared-groups-title"
+        />,
+      );
+    });
+
+    const title = container.querySelector('[data-group-list-title]');
+    expect(title?.textContent).toBe('Групи');
+    expect(title?.id).toBe('shared-groups-title');
+    expect(container.querySelector('nav')?.getAttribute('aria-labelledby')).toBe(
+      'shared-groups-title',
+    );
+  });
+
   it('exposes selected and unread state and delegates selection', async () => {
     const groups = [allGroups, kitkat];
     const onSelect = vi.fn();
@@ -142,19 +163,15 @@ describe('group navigation UI', () => {
     expect(groups).toEqual([allGroups, kitkat]);
   });
 
-  it('closes on Escape and backdrop and restores focus to the island', async () => {
+  it('closes on Escape and outside click without rendering a modal backdrop', async () => {
     function Harness() {
       const [open, setOpen] = useState(false);
       const triggerRef = useRef<HTMLButtonElement>(null);
       return (
         <>
-          <GroupIsland
-            group={kitkat}
-            expanded={open}
-            onOpen={() => setOpen(true)}
-            buttonRef={triggerRef}
-            panelId="test-groups"
-          />
+          <button ref={triggerRef} type="button" onClick={() => setOpen(true)}>
+            Групи
+          </button>
           <GroupPanel
             id="test-groups"
             open={open}
@@ -164,42 +181,56 @@ describe('group navigation UI', () => {
             onClose={() => setOpen(false)}
             triggerRef={triggerRef}
           />
+          <button type="button">Повідомлення</button>
         </>
       );
     }
 
     await act(async () => root.render(<Harness />));
-    const island = container.querySelector<HTMLButtonElement>('[data-group-island]')!;
-    await act(async () => island.click());
-    expect(container.querySelector('[data-group-panel]')).not.toBeNull();
+    const trigger = container.querySelector<HTMLButtonElement>('button')!;
+    await act(async () => trigger.click());
+    const panel = container.querySelector('[data-group-panel]');
+    expect(panel).not.toBeNull();
+    expect(panel?.getAttribute('aria-modal')).toBeNull();
+    expect(container.querySelector('[data-group-panel-backdrop]')).toBeNull();
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       await Promise.resolve();
     });
     expect(container.querySelector('[data-group-panel]')).toBeNull();
-    expect(document.activeElement).toBe(island);
+    expect(document.activeElement).toBe(trigger);
 
-    await act(async () => island.click());
+    await act(async () => trigger.click());
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('[data-group-panel-backdrop]')!.click();
+      const outside = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Повідомлення',
+      )!;
+      outside.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
       await Promise.resolve();
     });
     expect(container.querySelector('[data-group-panel]')).toBeNull();
-    expect(document.activeElement).toBe(island);
   });
 
   it('truncates long names without removing the accessible full name', async () => {
     const longName = 'Надзвичайно довга назва групи для вузької колонки';
     await act(async () => {
-      root.render(
-        <GroupIsland group={{ ...kitkat, name: longName }} expanded={false} onOpen={vi.fn()} />,
-      );
+      root.render(<GroupIsland group={{ ...kitkat, name: longName }} />);
     });
 
-    const island = container.querySelector<HTMLButtonElement>('[data-group-island]')!;
-    expect(island.getAttribute('aria-label')).toContain(longName);
+    const island = container.querySelector<HTMLElement>('[data-group-island]')!;
+    expect(island.textContent).toContain(longName);
     expect(island.querySelector('[data-group-name]')?.getAttribute('title')).toBe(longName);
     expect(island.querySelector('[data-group-name]')?.className).toContain('group-navigation-name');
+  });
+
+  it('renders the current group island as non-interactive context', async () => {
+    await act(async () => {
+      root.render(<GroupIsland group={kitkat} />);
+    });
+
+    const island = container.querySelector<HTMLElement>('[data-group-island]')!;
+    expect(island.tagName).toBe('DIV');
+    expect(island.closest('button')).toBeNull();
   });
 });

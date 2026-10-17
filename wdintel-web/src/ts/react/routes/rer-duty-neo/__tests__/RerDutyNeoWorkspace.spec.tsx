@@ -552,7 +552,7 @@ describe('RerDutyNeoWorkspace', () => {
     }
     expect(
       renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.view.workspaceFabAvoidance,
-    ).toBe('left');
+    ).toBe('none');
     expect(
       Array.from(renderedFeedColumns.values()).every(
         (column) => typeof column.actions.onCreateMessage === 'function',
@@ -583,7 +583,7 @@ describe('RerDutyNeoWorkspace', () => {
       expect(renderedFeedColumns.get(`feed-${index}`)?.view.workspaceFabAvoidance).toBe('none');
     }
     expect(renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS}`)?.view.workspaceFabAvoidance).toBe(
-      'left',
+      'none',
     );
     expect(
       Array.from(renderedFeedColumns.values()).every(

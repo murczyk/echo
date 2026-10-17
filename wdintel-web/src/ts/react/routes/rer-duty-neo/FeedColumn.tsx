@@ -36,7 +36,7 @@ import {
   type GroupScope,
 } from '../shared/group-navigation';
 import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
-import { POWER_FLOATING_CONTROL_EDGE_INSET } from '../shared/manage-message/floating-control-geometry';
+import { DUTY_SCROLL_FAB_STACK_OFFSET } from './duty-scroll-fab-position';
 
 export type FeedColumnProps = {
   column: FeedColumnModel;
@@ -86,6 +86,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   const groupAckControllerRef = useRef<AbortController | null>(null);
   const navigation = useGroupFeedNavigation({
     enabled: showGroups,
+    resolveSelectedGroupWhenHidden: true,
     scope: groupNavigation.scope,
     onSelect: () => {},
     onError: groupNavigation.onError,
@@ -415,25 +416,15 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         position: 'relative',
         scrollSnapAlign: narrowScreen ? 'start' : undefined,
         scrollSnapStop: narrowScreen ? 'always' : undefined,
-        '& [data-duty-column-create-message]': {
-          opacity: narrowScreen ? 1 : 0,
-          visibility: narrowScreen ? 'visible' : 'hidden',
-          transition: 'opacity 120ms ease',
-        },
-        '&:hover [data-duty-column-create-message], &:focus-within [data-duty-column-create-message]':
-          {
-            opacity: 1,
-            visibility: 'visible',
+        ...(!narrowScreen && {
+          '&:has([data-duty-column-create-message]) [data-duty-feed-scroll-button]': {
+            transform: `translateY(-${DUTY_SCROLL_FAB_STACK_OFFSET}px)`,
           },
-        '@media (hover: none), (pointer: coarse)': {
-          '& [data-duty-column-create-message]': {
-            opacity: 1,
-            visibility: 'visible',
+        }),
+        '@media (prefers-reduced-motion: reduce)': {
+          '& [data-duty-feed-scroll-button]': {
+            transition: 'none',
           },
-        },
-        '&:has([data-duty-feed-scroll-button]) [data-duty-column-create-message] .MuiFab-root': {
-          right: 'auto',
-          left: POWER_FLOATING_CONTROL_EDGE_INSET,
         },
       }}
     >
@@ -441,17 +432,20 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         narrowScreen={narrowScreen}
         feedCount={feedCount}
         canRemove={canRemove}
+        showGroups={showGroups}
         showFilters={showFilters}
         showNotificationPanel={showNotificationPanel}
         showKeywordsPanel={showKeywordsPanel}
         dutyNotificationBellState={dutyNotificationBellState}
         onCreateFeed={onCreateFeed}
+        onToggleGroups={onToggleGroups}
         onToggleFilters={onToggleFilters}
         onToggleNotificationPanel={onToggleNotificationPanel}
         onToggleKeywordsPanel={onToggleKeywordsPanel}
         onToggleDutyNotifications={handleBellToggleDutyNotifications}
         onRemoveColumn={handleCloseAction}
         headerRef={headerRef}
+        groupsTriggerRef={groupsTriggerRef}
         filtersPanelRef={filtersPanelRef}
         notificationPanelRef={notificationPanelRef}
         keywordsPanelRef={keywordsPanelRef}
@@ -475,24 +469,24 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           transform: 'translateX(-50%)',
         }}
       >
-        <GroupIsland
-          group={selectedGroup}
-          expanded={showGroups}
-          onOpen={onToggleGroups}
-          buttonRef={groupsTriggerRef}
-          panelId={`duty-group-panel-${feed.id}`}
+        <GroupIsland group={selectedGroup} />
+      </Box>
+      <Box
+        data-duty-feed-body
+        className="flex flex-col flex-1 min-h-0"
+        sx={{ position: 'relative' }}
+      >
+        <FeedColumnContent ref={contentRef} column={contentColumn} />
+        <GroupPanel
+          id={`duty-group-panel-${feed.id}`}
+          open={showGroups}
+          groups={navigation.groups}
+          scope={groupNavigation.scope}
+          onSelect={handleGroupSelect}
+          onClose={() => setShowGroups(false)}
+          triggerRef={groupsTriggerRef}
         />
       </Box>
-      <FeedColumnContent ref={contentRef} column={contentColumn} />
-      <GroupPanel
-        id={`duty-group-panel-${feed.id}`}
-        open={showGroups}
-        groups={navigation.groups}
-        scope={groupNavigation.scope}
-        onSelect={handleGroupSelect}
-        onClose={() => setShowGroups(false)}
-        triggerRef={groupsTriggerRef}
-      />
       {actions.onCreateMessage && !panelOpen ? (
         <Box
           data-duty-column-create-message
