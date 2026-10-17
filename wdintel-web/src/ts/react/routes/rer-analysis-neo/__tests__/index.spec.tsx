@@ -69,7 +69,19 @@ const manageMessageDrawerPropsHistory = vi.hoisted(
 );
 
 vi.mock('@mui/material', () => ({
-  Badge: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Badge: ({
+    children,
+    variant,
+    invisible,
+  }: {
+    children: ReactNode;
+    variant?: string;
+    invisible?: boolean;
+  }) => (
+    <div data-badge-variant={variant} data-badge-invisible={String(invisible)}>
+      {children}
+    </div>
+  ),
   Box: forwardRef<HTMLDivElement, { children?: ReactNode } & Record<string, unknown>>(
     function BoxMock({ children, component = 'div', sx: _sx, ...props }, ref) {
       const Component = component as keyof HTMLElementTagNameMap;
@@ -93,8 +105,26 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  Button: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-    <button type="button" onClick={onClick}>
+  Button: ({
+    children,
+    onClick,
+    startIcon,
+    'aria-label': ariaLabel,
+    'data-analysis-filter-toggle': analysisFilterToggle,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    startIcon?: ReactNode;
+    'aria-label'?: string;
+    'data-analysis-filter-toggle'?: boolean;
+  } & Record<string, unknown>) => (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      data-analysis-filter-toggle={analysisFilterToggle || undefined}
+    >
+      {startIcon}
       {children}
     </button>
   ),
@@ -1186,6 +1216,31 @@ describe('RerAnalysisNeoPage', () => {
     expect(page.loadFilterSection).toHaveBeenCalledWith('tags');
     expect(page.loadFilterSection).toHaveBeenCalledWith('senders');
     expect(page.loadFilterSection).not.toHaveBeenCalledWith('groups');
+    root.unmount();
+  });
+
+  it('shows active filters as a dot without a numeric badge', async () => {
+    const page = buildPage();
+    page.queryState = {
+      ...emptyQueryState(),
+      sendersSelected: ['sender-a'],
+    };
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    const filterButton = container.querySelector<HTMLButtonElement>(
+      '[data-analysis-filter-toggle]',
+    );
+    expect(filterButton?.getAttribute('aria-label')).toBe('Фільтри (активні)');
+    expect(
+      filterButton?.querySelector('[data-badge-variant]')?.getAttribute('data-badge-variant'),
+    ).toBe('dot');
+    expect(filterButton?.textContent).toBe('Фільтри');
     root.unmount();
   });
 

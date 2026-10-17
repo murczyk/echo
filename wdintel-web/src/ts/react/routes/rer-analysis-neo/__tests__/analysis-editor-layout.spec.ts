@@ -57,6 +57,18 @@ describe('analysisWorkspaceColumns', () => {
 });
 
 describe('shouldInlineAnalysisLeftPanel', () => {
+  it('uses the viewport width before the workspace has been measured', () => {
+    expect(
+      shouldInlineAnalysisLeftPanel({
+        layoutWidth: null,
+        viewportWidth: 1440,
+        desktop: true,
+        leftPanelOpen: true,
+        editorOpen: false,
+      }),
+    ).toBe(true);
+  });
+
   it.each([
     { width: 1599, editor: true, expected: false },
     { width: 1600, editor: true, expected: true },

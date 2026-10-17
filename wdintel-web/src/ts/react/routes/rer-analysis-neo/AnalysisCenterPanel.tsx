@@ -102,10 +102,14 @@ export function AnalysisCenterPanel({
     hideGroupSelection: page.groupNavigation.scope.kind === 'group',
     radioFeaturesAllowed: page.radioFeaturesAllowed,
   });
-  const filterButtonLabel =
-    activeFilterCount > 0 ? `Фільтри, активних розділів: ${activeFilterCount}` : 'Фільтри';
+  const filterButtonLabel = activeFilterCount > 0 ? 'Фільтри (активні)' : 'Фільтри';
   const filterIcon = (
-    <Badge color="primary" badgeContent={activeFilterCount} invisible={activeFilterCount === 0}>
+    <Badge
+      color="error"
+      variant="dot"
+      invisible={activeFilterCount === 0}
+      data-analysis-active-filter-indicator={activeFilterCount > 0 ? '' : undefined}
+    >
       <FilterAltOutlinedIcon fontSize="small" />
     </Badge>
   );

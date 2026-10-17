@@ -21,6 +21,7 @@ import {
   createResetQueryState,
   adjustQueryDateRangeForDirectMessage,
   hasMeaningfulUiFiltersBeyondDateRange,
+  hasQueryStateInWindow,
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
   normalizeQueryState,
@@ -63,6 +64,11 @@ import {
   useGroupFeedNavigation,
   type GroupScope,
 } from '../shared/group-navigation';
+import {
+  extractAnalysisScopeFilters,
+  persistAnalysisScopeFilters,
+  readAnalysisScopeFilters,
+} from './analysis-scope-filter-state';
 
 function groupScopesEqual(left: GroupScope, right: GroupScope): boolean {
   return (
@@ -151,11 +157,24 @@ export function useRerAnalysisNeoPage(
   const [initialPanelQueryState] = useState(parseAnalysisPanelQueryStateFromWindow);
   const [initialNow] = useState(() => new Date());
   const [initialParsedQueryState] = useState(parseQueryStateFromWindow);
-  const [initialQueryState] = useState<AnalysisQueryState>(() =>
-    initState(initialParsedQueryState, initialNow, initialRadioFeaturesAllowed),
-  );
+  const [initialGroupScope] = useState(readAnalysisGroupScopeFromUrl);
+  const [initialHasQueryState] = useState(hasQueryStateInWindow);
+  const [initialQueryState] = useState<AnalysisQueryState>(() => {
+    const state = initState(initialParsedQueryState, initialNow, initialRadioFeaturesAllowed);
+    if (initialHasQueryState) return state;
+    const storedFilters = readAnalysisScopeFilters(initialGroupScope);
+    if (storedFilters == null) return state;
+    return normalizeQueryState({
+      ...state,
+      ...storedFilters,
+      groupsSelected:
+        initialGroupScope.kind === 'group'
+          ? []
+          : (storedFilters.groupsSelected ?? state.groupsSelected),
+    });
+  });
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
-  const [groupScope, setGroupScope] = useState<GroupScope>(readAnalysisGroupScopeFromUrl);
+  const [groupScope, setGroupScope] = useState<GroupScope>(initialGroupScope);
   const groupScopeTransitionRequestedRef = useRef(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentUserStatus, setCurrentUserStatus] = useState<'loading' | 'success' | 'error'>(
@@ -565,7 +584,25 @@ export function useRerAnalysisNeoPage(
     ) => {
       clearTargetMessageContext();
       setTargetMessageUid(null);
-      if (!groupScopesEqual(groupScope, scope)) groupScopeTransitionRequestedRef.current = true;
+      if (!groupScopesEqual(groupScope, scope)) {
+        groupScopeTransitionRequestedRef.current = true;
+        persistAnalysisScopeFilters(groupScope, queryState);
+        const storedFilters = readAnalysisScopeFilters(scope);
+        const defaultFilters = extractAnalysisScopeFilters(
+          createResetQueryState(new Date(), radioFeaturesAllowed),
+        );
+        setQueryState((current) =>
+          normalizeQueryState({
+            ...current,
+            ...defaultFilters,
+            ...storedFilters,
+            groupsSelected:
+              scope.kind === 'group'
+                ? []
+                : (storedFilters?.groupsSelected ?? defaultFilters.groupsSelected ?? []),
+          }),
+        );
+      }
       setGroupScope(scope);
       writeAnalysisGroupScopeToUrl(scope, options);
       if (scope.kind !== 'group' || oldestUnreadMessageRef == null) return;
@@ -574,8 +611,12 @@ export function useRerAnalysisNeoPage(
       setTargetMessageFocusActive(true);
       setTargetMessageLoading(true);
     },
-    [clearTargetMessageContext, groupScope],
+    [clearTargetMessageContext, groupScope, queryState, radioFeaturesAllowed],
   );
+
+  useEffect(() => {
+    persistAnalysisScopeFilters(groupScope, queryState);
+  }, [groupScope, queryState]);
   const groupNavigation = useGroupFeedNavigation({
     enabled: leftPanelOpen,
     resolveSelectedGroupWhenHidden: true,
@@ -627,11 +668,21 @@ export function useRerAnalysisNeoPage(
       if (!groupScopesEqual(groupScope, nextGroupScope)) {
         groupScopeTransitionRequestedRef.current = true;
       }
+      persistAnalysisScopeFilters(groupScope, queryState);
+      const historyState = initState(parseQueryStateFromWindow(), new Date(), radioFeaturesAllowed);
+      setQueryState((current) =>
+        normalizeQueryState({
+          ...historyState,
+          messageTimeBasis: current.messageTimeBasis,
+          radioFeaturesAllowed: current.radioFeaturesAllowed,
+          groupsSelected: nextGroupScope.kind === 'group' ? [] : historyState.groupsSelected,
+        }),
+      );
       setGroupScope(nextGroupScope);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [clearTargetMessageContext, groupScope]);
+  }, [clearTargetMessageContext, groupScope, queryState, radioFeaturesAllowed]);
 
   const onLinkedMessageMounted = useCallback((messageId: number) => {
     if (pendingLinkedMessageLandingRef.current?.messageId === messageId) {

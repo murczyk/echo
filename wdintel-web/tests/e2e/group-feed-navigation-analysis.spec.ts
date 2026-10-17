@@ -143,7 +143,8 @@ test.describe('Analysis group feed navigation', () => {
     );
 
     const filterToggle = page.locator('[data-analysis-filter-toggle]');
-    await expect(filterToggle).toHaveAttribute('aria-label', 'Фільтри, активних розділів: 1');
+    await expect(filterToggle).toHaveAttribute('aria-label', 'Фільтри (активні)');
+    await expect(filterToggle.locator('[data-analysis-active-filter-indicator]')).toBeVisible();
     await filterToggle.click();
 
     const filterPanel = page.locator('[data-analysis-filter-panel]:visible');
@@ -330,6 +331,42 @@ test.describe('Analysis group feed navigation', () => {
       ),
     ).toBe(true);
     expect(mocks.getStateRequestCount()).toBeGreaterThan(0);
+  });
+
+  test('keeps and restores filters independently for every group scope', async ({ page }) => {
+    await page.setViewportSize({ width: 1500, height: 900 });
+    await installGroupNavigationMocks(page);
+    await page.goto('/rer-analysis-neo');
+
+    await page.locator('[data-analysis-filter-toggle]').click();
+    const filterPanel = page.locator('[data-analysis-filter-panel]:visible');
+    const importantSection = filterPanel.locator('[data-section-id="important"]');
+    await importantSection.getByText('Важливе', { exact: true }).click();
+    await importantSection.getByRole('checkbox', { name: 'Важливі' }).check();
+    await expect(page).toHaveURL(/(?:\?|&)orImportant=true(?:&|$)/);
+
+    const groupList = page.locator('[data-analysis-group-list]:visible').first();
+    await groupList.getByRole('button', { name: /Group Beta, 3 непрочитаних/ }).click();
+    await expect(importantSection.getByRole('checkbox', { name: 'Важливі' })).not.toBeChecked();
+    await importantSection.getByRole('checkbox', { name: 'Збережені' }).check();
+    await expect(page).toHaveURL(/(?:\?|&)orBookmarked=true(?:&|$)/);
+    await expect(page).not.toHaveURL(/(?:\?|&)orImportant=true(?:&|$)/);
+
+    await groupList.getByRole('button', { name: /Всі групи, 5 непрочитаних/ }).click();
+    await expect(importantSection.getByRole('checkbox', { name: 'Важливі' })).toBeChecked();
+    await expect(importantSection.getByRole('checkbox', { name: 'Збережені' })).not.toBeChecked();
+
+    await groupList.getByRole('button', { name: /Group Beta, 3 непрочитаних/ }).click();
+    await expect(importantSection.getByRole('checkbox', { name: 'Збережені' })).toBeChecked();
+    await page.reload();
+    await page.locator('[data-analysis-filter-toggle]').click();
+    const reloadedImportantSection = page
+      .locator('[data-analysis-filter-panel]:visible')
+      .locator('[data-section-id="important"]');
+    await reloadedImportantSection.getByText('Важливе', { exact: true }).click();
+    await expect(
+      reloadedImportantSection.getByRole('checkbox', { name: 'Збережені' }),
+    ).toBeChecked();
   });
 
   test('hides the previous group messages while the selected group loads', async ({ page }) => {

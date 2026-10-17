@@ -331,7 +331,18 @@ let latest: AnalysisPageViewModel | null = null;
 
 describe('useRerAnalysisNeoPage', () => {
   beforeEach(() => {
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        clear: () => storage.clear(),
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
     window.history.replaceState({}, '', window.location.pathname);
+    window.localStorage.clear();
     container = document.createElement('div');
     document.body.appendChild(container);
     latest = null;
@@ -412,29 +423,93 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.radioFeaturesAllowed).toBe(true);
   });
 
-  it('scopes the effective inbox request without mutating the aggregate group filter', async () => {
+  it('keeps independent filters for all groups and a selected group', async () => {
     renderHook(['Rer']);
     await act(async () => {
-      latest?.updateQueryState({ groupsSelected: ['group-a', 'group-c'] });
+      latest?.updateQueryState({
+        groupsSelected: ['group-a', 'group-c'],
+        freqsSelected: ['111.1'],
+      });
     });
     await act(async () => {
       latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
     });
 
-    expect(latest?.queryState.groupsSelected).toEqual(['group-a', 'group-c']);
+    expect(latest?.queryState.groupsSelected).toEqual([]);
+    expect(latest?.queryState.freqsSelected).toEqual([]);
     expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.groupsSelected).toEqual([
       'group-b',
     ]);
     expect(new URL(window.location.href).searchParams.get('group')).toBe('group-b');
 
     await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+    await act(async () => {
       latest?.selectGroupScope({ kind: 'all' });
     });
+    expect(latest?.queryState.groupsSelected).toEqual(['group-a', 'group-c']);
+    expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
     expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.groupsSelected).toEqual([
       'group-a',
       'group-c',
     ]);
     expect(new URL(window.location.href).searchParams.has('group')).toBe(false);
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+    expect(latest?.queryState.groupsSelected).toEqual([]);
+    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
+  });
+
+  it('restores a selected group filter from browser storage', async () => {
+    renderHook(['Rer']);
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+
+    act(() => root?.unmount());
+    root = null;
+    latest = null;
+    window.history.replaceState({}, '', '/rer-analysis-neo?group=group-b');
+    renderHook(['Rer']);
+
+    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
+    expect(latest?.queryState.groupsSelected).toEqual([]);
+  });
+
+  it('ignores malformed stored group filters', () => {
+    window.localStorage.setItem(
+      'rer-analysis-neo-scope-filters-v1',
+      JSON.stringify({
+        version: 1,
+        scopes: { 'group:group-b': { callsignsSelected: 'not-an-array' } },
+      }),
+    );
+    window.history.replaceState({}, '', '/rer-analysis-neo?group=group-b');
+
+    renderHook(['Rer']);
+
+    expect(latest?.queryState.callsignsSelected).toEqual([]);
+  });
+
+  it('restores the group scope filter from browser history', async () => {
+    renderHook(['Rer']);
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['111.1'] });
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+
+    window.history.replaceState({}, '', '/rer-analysis-neo?freqs=111.1');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+
+    expect(latest?.groupNavigation.scope).toEqual({ kind: 'all' });
+    expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
   });
 
   it('keeps a group scope transition pending until that scope commits its messages', async () => {
