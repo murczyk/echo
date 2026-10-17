@@ -995,8 +995,15 @@ mod tests {
         }
     }
 
+    // Regression: https://github.com/echoua/echo/issues/3821
     #[tokio::test]
     async fn structured_request_uses_one_bounded_schema_call() {
+        for name in ["test-model", "gpt-5.6-luna", "gpt-6-sol", "gpt-6-luna"] {
+            assert_structured_request(name).await;
+        }
+    }
+
+    async fn assert_structured_request(name: &'static str) {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .unwrap();
@@ -1004,9 +1011,18 @@ mod tests {
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let request = read_json_request(&mut stream).await;
-            assert_eq!(request["model"], "test-model");
-            assert_eq!(request["temperature"], 0.0);
-            assert_eq!(request["max_tokens"], 512);
+            assert_eq!(request["model"], name);
+            if name == "test-model" {
+                assert_eq!(request["temperature"], 0.0);
+                assert_eq!(request["max_tokens"], 512);
+                assert!(request.get("max_completion_tokens").is_none());
+                assert!(request.get("reasoning_effort").is_none());
+            } else {
+                assert!(request.get("temperature").is_none());
+                assert!(request.get("max_tokens").is_none());
+                assert_eq!(request["max_completion_tokens"], 512);
+                assert_eq!(request["reasoning_effort"], "none");
+            }
             assert_eq!(request["messages"].as_array().unwrap().len(), 2);
             assert_eq!(
                 request["messages"][0]["content"],
@@ -1034,7 +1050,8 @@ mod tests {
             );
             stream.write_all(response.as_bytes()).await.unwrap();
         });
-        let ai_engine = engine_record(format!("http://{address}/v1"));
+        let mut ai_engine = engine_record(format!("http://{address}/v1"));
+        ai_engine.model_name = name.to_string();
 
         let response = request_suggestion_with_timeout(
             &crate::ai_engine::AiEngineClient::new(

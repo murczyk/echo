@@ -4,11 +4,12 @@ pub mod types;
 pub use client::AiEngineClient;
 
 use crate::config::{
-    AI_CHAT_PROMPT_MAX_CHARS, AI_CHAT_ROLE_ASSISTANT, AI_CHAT_ROLE_USER,
-    AI_CHAT_TITLE_MAX_CHARS, AI_ENGINE_ERROR_BODY_MAX_CHARS,
-    AI_ENGINE_MODEL_NAME_MAX_CHARS, AI_ENGINE_NAME_MAX_CHARS,
-    AI_ENGINE_REQUEST_TIMEOUT_SEC, AI_ENGINE_TOKEN_MAX_CHARS,
-    AI_ENGINE_URL_MAX_CHARS,
+    AI_AGENT_OPENAI_GPT_6_LUNA, AI_AGENT_OPENAI_GPT_6_SOL,
+    AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX, AI_CHAT_PROMPT_MAX_CHARS,
+    AI_CHAT_ROLE_ASSISTANT, AI_CHAT_ROLE_USER, AI_CHAT_TITLE_MAX_CHARS,
+    AI_ENGINE_ERROR_BODY_MAX_CHARS, AI_ENGINE_MODEL_NAME_MAX_CHARS,
+    AI_ENGINE_NAME_MAX_CHARS, AI_ENGINE_REQUEST_TIMEOUT_SEC,
+    AI_ENGINE_TOKEN_MAX_CHARS, AI_ENGINE_URL_MAX_CHARS,
 };
 use crate::entities::{
     ai_callsign_settings, ai_chat, ai_chat_message, ai_engine,
@@ -59,6 +60,10 @@ struct OpenAiChatCompletionReq {
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     response_format: Option<serde_json::Value>,
 }
@@ -885,11 +890,20 @@ async fn request_ai_response_with_options(
     response_format: Option<serde_json::Value>,
 ) -> Result<AiEngineResponse, AppError> {
     let structured_output = response_format.is_some();
+    let openai_reasoning = ai_engine
+        .model_name
+        .starts_with(AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX)
+        || matches!(
+            ai_engine.model_name.as_str(),
+            AI_AGENT_OPENAI_GPT_6_SOL | AI_AGENT_OPENAI_GPT_6_LUNA
+        );
     let body = serde_json::to_value(OpenAiChatCompletionReq {
         model_name: ai_engine.model_name.clone(),
         messages,
-        temperature,
-        max_tokens,
+        temperature: if openai_reasoning { None } else { temperature },
+        max_tokens: if openai_reasoning { None } else { max_tokens },
+        max_completion_tokens: if openai_reasoning { max_tokens } else { None },
+        reasoning_effort: openai_reasoning.then_some("none"),
         response_format,
     })
     .c(h!())?;
