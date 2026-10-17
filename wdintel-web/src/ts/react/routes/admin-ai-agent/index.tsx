@@ -21,6 +21,7 @@ import {
   FormControlLabel,
   InputLabel,
   MenuItem,
+  Pagination,
   Select,
   Stack,
   Switch,
@@ -28,7 +29,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MaterialReactTable } from 'material-react-table';
 
 import type { AiEngineItem } from '../../../../Bindings';
@@ -661,10 +662,12 @@ const REQUESTS_DEFAULT_COLUMN_VISIBILITY = {
 function RequestsTable({
   requests,
   loading,
+  firstRowIndex,
   onView,
 }: {
   requests: AiAgentAuditRequest[];
   loading: boolean;
+  firstRowIndex: number;
   onView: (request: AiAgentAuditRequest) => void;
 }) {
   const tableStateContext = useTableStateContext();
@@ -789,6 +792,7 @@ function RequestsTable({
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
+        Cell: ({ row }) => firstRowIndex + row.index + 1,
         muiTableBodyCellProps: () => ({
           sx: { justifyContent: 'center', ...CUSTOM_CELL_STYLES },
         }),
@@ -825,6 +829,12 @@ function RequestsTable({
 
 function RequestsPage() {
   const [requests, setRequests] = useState<AiAgentAuditRequest[]>([]);
+  const [pageStartIds, setPageStartIds] = useState<string[]>([]);
+  const [pageSize, setPageSize] = useState(0);
+  const [total, setTotal] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [firstPage, setFirstPage] = useState(1);
+  const loadVersion = useRef(0);
   const [selected, setSelected] = useState<AiAgentAuditRequestDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -837,20 +847,43 @@ function RequestsPage() {
     };
     void load().then(openDeepLink);
     window.addEventListener('popstate', openDeepLink);
-    return () => window.removeEventListener('popstate', openDeepLink);
+    return () => {
+      loadVersion.current += 1;
+      window.removeEventListener('popstate', openDeepLink);
+    };
   }, []);
 
-  async function load() {
+  async function load(nextPage = 1, append = false) {
+    const version = ++loadVersion.current;
     setLoading(true);
     setError(null);
     try {
-      setRequests(await listAiAgentAuditRequests());
+      const response = await listAiAgentAuditRequests(
+        nextPage === 1 ? null : pageStartIds[nextPage - 1],
+      );
+      if (version !== loadVersion.current) return;
+      setRequests((current) => (append ? [...current, ...response.items] : response.items));
+      if (response.pageStartIds !== null) {
+        const starts = response.pageStartIds;
+        setPageStartIds((current) => [
+          ...current.slice(0, nextPage - 1),
+          ...starts,
+          ...(nextPage > 1 && starts.length === 2 && starts[1] === current[nextPage]
+            ? current.slice(nextPage + 1)
+            : []),
+        ]);
+      }
+      setTotal(response.total);
+      setPageSize(response.pageSize);
+      setPage(nextPage);
+      if (!append) setFirstPage(nextPage);
     } catch (loadError) {
+      if (version !== loadVersion.current) return;
       const message = `Не вдалося завантажити запити: ${errorMessage(loadError)}`;
       setError(message);
       notify({ severity: 'error', message });
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   }
 
@@ -896,8 +929,33 @@ function RequestsPage() {
         <RequestsTable
           requests={requests}
           loading={loading}
+          firstRowIndex={(firstPage - 1) * pageSize}
           onView={(request) => void openRequest(request.id)}
         />
+        <Stack spacing={1} alignItems="center">
+          {page < pageStartIds.length ? (
+            <PowerButton
+              variant="outlined"
+              disabled={loading}
+              onClick={() => void load(page + 1, true)}
+            >
+              SHOW MORE
+            </PowerButton>
+          ) : null}
+          {pageStartIds.length > 1 ? (
+            <Pagination
+              count={pageStartIds.length}
+              page={page}
+              disabled={loading}
+              onChange={(_, nextPage) => void load(nextPage)}
+            />
+          ) : null}
+          {total !== null ? (
+            <Typography variant="body2" color="text.secondary">
+              Усього: {total}
+            </Typography>
+          ) : null}
+        </Stack>
         <RequestDetailsDialog
           request={selected}
           onClose={() => setSelected(null)}

@@ -32,6 +32,7 @@ pub use super::ai_chat_message::Entity as AiChatMessage;
 pub use super::ai_engine::Entity as AiEngine;
 pub use super::ai_gov_ua_settings::Entity as AiGovUaSettings;
 pub use super::ai_intel_report_attempt::Entity as AiIntelReportAttempt;
+pub use super::ai_intel_report_engine_budget::Entity as AiIntelReportEngineBudget;
 pub use super::ai_intel_report_settings::Entity as AiIntelReportSettings;
 pub use super::ai_position_coordinate::Entity as AiPositionCoordinate;
 pub use super::ai_position_feedback::Entity as AiPositionFeedback;

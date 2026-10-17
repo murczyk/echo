@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20261016_131615_ai_intel_report_generation_limits": {
+      "changes": [
+        { "table": "public.ai_intel_report_settings", "strategy": "excluded" },
+        { "table": "public.ai_intel_report_engine_budget", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261015_184629_attachment_search_message_change": {
       "changes": [
         { "table": "public.attachment_search_change", "strategy": "excluded" },

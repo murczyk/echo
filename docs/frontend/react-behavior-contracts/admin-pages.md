@@ -19,6 +19,25 @@
 - **Source implementation:** `wdintel-web/src/ts/react/routes/admin-ai-agent/engine-eligibility.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-ai-agent/__tests__/engine-eligibility.spec.ts`
 
+## AI request history pagination
+
+- **Affected route:** `/admin/ai/requests` (administrators only).
+- **Expected observable result:** the server returns 20 requests per page. “SHOW MORE” appends the next page; numbered navigation replaces the entries. The final page can contain fewer than 20 entries and hides “SHOW MORE”. Refresh returns to the newest page.
+- **API:** `/api/admin/ai-agent/requests/list` fetches at most 21 requests and returns 20 items plus at most two `pageStartIds`: the current and next page boundaries. Subsequent requests pass `pageStartId`; numbered navigation discovers one additional page at a time. `total` is available only when the initial page contains the entire history. Requests use descending UUIDv7 creation order and inclusive page boundaries, so new requests do not shift previously established pages. Search, column filters, and sorting apply to the loaded entries.
+- **Loading/error behavior:** pagination is disabled while loading; failures preserve existing entries, show an error toast, and allow retry. Stale responses cannot replace current entries. Request deep links open independently of the displayed page.
+- **Source implementation:** `wdintel-rs/src/ai_agent/admin.rs`, `wdintel-web/src/ts/react/routes/admin-ai-agent/index.tsx`.
+- **Existing tests:** `wdintel-web/tests/e2e/admin-ai-requests.spec.ts`.
+
+## Intelligence-report settings and attempt pagination
+
+- **Affected route:** `/admin/ai/intelligence-reports` (administrators only).
+- **Expected observable result:** every configured model has an editable token budget (512 by default), with radio buttons selecting distinct primary and optional fallback engines. Unavailable engines remain visible but cannot be selected. Budgets survive model selection changes and save/reload. Primary, fallback, and total timeouts are editable (twenty seconds by default); the overall deadline includes both calls and preparation. The server validates positive integer limits, up to 32,768 tokens and 180 seconds. Older save requests preserve optional settings.
+- **Fallback behavior:** only primary token exhaustion (`finish_reason=length`, including an empty response) invokes the fallback once. HTTP errors, timeouts, malformed responses, and content validation failures do not retry. Fallback exhaustion fails without a third attempt.
+- **Pagination:** twenty attempts per page; each request fetches at most 21 attempts and returns at most two `pageStartIds` for the current and next pages. “SHOW MORE” appends, numbered navigation replaces entries and discovers one additional page at a time, refresh returns to the newest page, and the last page hides “SHOW MORE”. `total` is available only when the initial page contains the entire history. Attempts use descending `(created_at, id)` order with inclusive server page boundaries; new attempts do not shift existing boundaries. Search, sorting, and column filters apply to loaded entries.
+- **Loading/error behavior:** pagination is disabled while loading; failed requests preserve entries and allow retry, and stale responses cannot overwrite the current page. Save failures preserve editable limits and show an error toast.
+- **Source implementation:** `wdintel-rs/src/ai_intel_report/attempts.rs`, `wdintel-web/src/ts/react/routes/admin-ai-intel-reports/index.tsx`.
+- **Existing tests:** `wdintel-web/tests/e2e/admin-ai-intel-reports.spec.ts`, `wdintel-rs/src/ai_intel_report/settings_tests.rs`, `wdintel-rs/src/ai_intel_report/retry_tests.rs`.
+
 ## API integration deletion
 
 - **Status:** inferred characterization

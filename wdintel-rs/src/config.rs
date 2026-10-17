@@ -264,12 +264,14 @@ pub const AI_INTEL_REPORT_EXAMPLE_LIMIT: usize = 6;
 pub const AI_INTEL_REPORT_EXAMPLE_SOURCE_MAX_CHARS: usize = 1_500;
 pub const AI_INTEL_REPORT_SOURCE_MATERIALS_MAX_CHARS: usize = 12_000;
 pub const AI_INTEL_REPORT_PROMPT_MAX_CHARS: usize = 24_000;
-pub const AI_INTEL_REPORT_OUTPUT_MAX_TOKENS: u32 = 512;
+pub const AI_INTEL_REPORT_OUTPUT_MAX_TOKENS: i32 = 512;
+pub const AI_INTEL_REPORT_OUTPUT_TOKEN_LIMIT: i32 = 32_768;
 pub const AI_INTEL_REPORT_OUTPUT_MAX_CHARS: usize = 1_000;
 pub const AI_INTEL_REPORT_SUGGESTION_LIMIT: usize = 3;
-pub const AI_INTEL_REPORT_TIMEOUT_SECS: u64 = 20;
+pub const AI_INTEL_REPORT_TIMEOUT_SECS: i32 = 20;
+pub const AI_INTEL_REPORT_TIMEOUT_LIMIT_SECS: i32 = 180;
 pub const AI_INTEL_REPORT_EXAMPLE_REPORT_MAX_CHARS: usize = 160;
-pub const AI_INTEL_REPORT_ADMIN_ATTEMPT_LIMIT: u64 = 500;
+pub const AI_INTEL_REPORT_ADMIN_ATTEMPT_PAGE_SIZE: i32 = 20;
 pub const AI_INTEL_REPORT_ATTEMPT_ERROR_MAX_CHARS: usize = 4_000;
 pub const AI_INTEL_REPORT_ATTEMPT_RAW_RESPONSE_MAX_CHARS: usize = 8_000;
 pub const AI_INTEL_REPORT_PROMPT: &str = include_str!(
@@ -384,8 +386,7 @@ pub const AI_AGENT_REVIEW_RETRY_BASE_SEC: i64 = 10;
 pub const AI_AGENT_REVIEW_RETRY_MAX_SEC: i64 = 15 * 60;
 pub const AI_AGENT_REVIEW_CLAIM_LEASE_SEC: i64 = 10 * 60;
 pub const AI_AGENT_SSE_POLL_MS: u64 = 500;
-pub const AI_AGENT_ADMIN_REQUEST_LIMIT_DEFAULT: i32 = 100;
-pub const AI_AGENT_ADMIN_REQUEST_LIMIT_MAX: i32 = 500;
+pub const AI_AGENT_ADMIN_REQUEST_PAGE_SIZE: i32 = 20;
 pub const AI_AGENT_DISPATCHER_PORT_DEFAULT: u16 = 22031;
 pub const AI_AGENT_DISPATCHER_IDENTITY_FILE: &str =
     "/etc/echo/ai-agent/dispatcher_ed25519";
@@ -1253,6 +1254,7 @@ DELETE FROM ai_callsign_feedback;
 DELETE FROM ai_callsign_feedback_summary;
 DELETE FROM ai_callsign_override;
 DELETE FROM ai_callsign_action;
+DELETE FROM ai_intel_report_engine_budget;
 DELETE FROM ai_position_feedback;
 DELETE FROM ai_position_link_job;
 DELETE FROM ai_position_knowledge_job;
@@ -1260,6 +1262,10 @@ DELETE FROM ai_position_knowledge;
 UPDATE ai_intel_report_settings
 SET quick_suggestion_enabled = false,
     quick_ai_engine_id = NULL,
+    fallback_ai_engine_id = NULL,
+    primary_timeout_secs = NULL,
+    fallback_timeout_secs = NULL,
+    total_timeout_secs = NULL,
     legacy_comment_cutoff = (now() at time zone 'utc'),
     updated_at = (now() at time zone 'utc')
 WHERE id = 1;

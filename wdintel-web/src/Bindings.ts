@@ -5532,9 +5532,19 @@ export type SendAiChatMessageReq = {
   prompt: string;
 };
 
+export type AiIntelReportEngineBudgetItem = {
+  aiEngineId: string;
+  maxTokens: number;
+};
+
 export type AiIntelReportSettingsItem = {
   quickSuggestionEnabled: boolean;
   quickAiEngineId: string | null;
+  fallbackAiEngineId: string | null;
+  engineBudgets: Array<AiIntelReportEngineBudgetItem>;
+  primaryTimeoutSecs: number;
+  fallbackTimeoutSecs: number;
+  totalTimeoutSecs: number;
   legacyCommentCutoff: number;
   updatedAt: number;
 };
@@ -5542,6 +5552,11 @@ export type AiIntelReportSettingsItem = {
 export type SaveAiIntelReportSettingsReq = {
   quickSuggestionEnabled: boolean;
   quickAiEngineId: string | null;
+  fallbackAiEngineId: string | null | null;
+  engineBudgets: Array<AiIntelReportEngineBudgetItem> | null;
+  primaryTimeoutSecs: number | null;
+  fallbackTimeoutSecs: number | null;
+  totalTimeoutSecs: number | null;
 };
 
 export type QuickIntelReportSuggestionReq = {
@@ -5567,8 +5582,15 @@ export type AiIntelReportAttemptItem = {
   createdAt: number;
 };
 
+export type AiIntelReportAttemptListReq = {
+  pageStartId: string | null;
+};
+
 export type AiIntelReportAttemptListRsp = {
   items: Array<AiIntelReportAttemptItem>;
+  pageSize: number;
+  total: number | null;
+  pageStartIds: Array<string> | null;
 };
 
 export type AiAgentActivityPresentation = {
@@ -5990,7 +6012,7 @@ export type AiAgentContainerListRsp = {
 export type AiAgentAdminRequestListReq = {
   state: string | null;
   suspicious: boolean | null;
-  limit: number | null;
+  pageStartId: string | null;
 };
 
 export type AiAgentSecurityReviewItem = {
@@ -6025,6 +6047,9 @@ export type AiAgentAdminRequestItem = {
 
 export type AiAgentAdminRequestListRsp = {
   items: Array<AiAgentAdminRequestItem>;
+  pageSize: number;
+  total: number | null;
+  pageStartIds: Array<string> | null;
 };
 
 export type AiAgentRequestEventItem = {
