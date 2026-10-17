@@ -13,13 +13,8 @@ import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
 import { useObservedWidth } from '../../hooks/use-observed-width';
 import { shouldUseActiveFeedLayout } from './duty-editor-layout';
+import { DUTY_SINGLE_FEED_MAX_WIDTH_PX } from './duty-layout';
 import { MessageFeedSkeletons, type AnchorSnapshot } from '../shared/message-feed';
-
-function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
-  if (narrow) return '100%';
-  if (feedCount <= 1) return '960px';
-  return '100%';
-}
 
 function DutyNeoInitialLoadingSkeletonFeedHeader({
   feedCount,
@@ -185,7 +180,6 @@ function DutyNeoInitialLoadingSkeleton({
   narrow: boolean;
 }) {
   const skeletonFeedCount = narrow ? 1 : Math.max(1, feedCount);
-  const skeletonMaxWidth = dutyFeedColumnMaxWidth(skeletonFeedCount, narrow);
   const skeletonMessageCount = narrow ? 4 : 5;
   return (
     <Box className="flex flex-1 min-h-0 h-full w-full overflow-hidden">
@@ -193,7 +187,7 @@ function DutyNeoInitialLoadingSkeleton({
         className="flex flex-1 min-w-0 min-h-0 h-full flex-col"
         sx={{
           width: '100%',
-          maxWidth: skeletonMaxWidth,
+          maxWidth: skeletonFeedCount === 1 ? DUTY_SINGLE_FEED_MAX_WIDTH_PX : '100%',
           mx: 'auto',
         }}
       >

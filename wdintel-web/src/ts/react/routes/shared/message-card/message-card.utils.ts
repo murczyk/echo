@@ -389,7 +389,7 @@ export function resolveMessageCardEtalonDisplayModel(
   const renderedNetworks = resolveMessageCardRenderedNetworks(msg.networkIds, options);
   const locationDisplayValue = normalizeLocationDisplayValue(msg.location);
   const etalonBindingValue = resolveEtalonBindingDisplayValue(msg, options);
-  const headerUnit = options.featureStrictNetworks ? null : normalizeLabel(msg.unit) || null;
+  const headerUnit = normalizeLabel(msg.unit) || null;
 
   if (renderedNetworks.length > 0) {
     const displayValue = renderedNetworks.map((network) => network.label).join('\n');
@@ -469,7 +469,7 @@ export function hideMessageCardNetworks(
     return {
       ...displayModel,
       primaryKind: 'location',
-      headerUnit: null,
+      headerUnit: unit || null,
       displayValue: locationDisplayValue,
       copyEtalonValue: null,
       copyLocationValue: locationDisplayValue,
@@ -481,7 +481,7 @@ export function hideMessageCardNetworks(
   return {
     ...displayModel,
     primaryKind: 'empty',
-    headerUnit: null,
+    headerUnit: unit || null,
     displayValue: NO_DATA_LABEL,
     copyEtalonValue: null,
     copyLocationValue: null,

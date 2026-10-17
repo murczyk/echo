@@ -460,9 +460,7 @@ test('#3615 uses real upward wheel input to page an underfilled OFF feed @regres
     .poll(() => scroller.evaluate((element) => element.scrollHeight <= element.clientHeight + 1))
     .toBe(true);
 
-  const bounds = await scroller.boundingBox();
-  if (!bounds) throw new Error('Duty feed scroller is not visible');
-  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await scroller.getByText('Card 198', { exact: true }).hover();
   await page.mouse.wheel(0, -240);
 
   await expect.poll(() => olderCursors).toEqual([196]);
@@ -582,9 +580,7 @@ test('#3615 uses real downward wheel input to page an underfilled historical win
     .poll(() => scroller.evaluate((element) => element.scrollHeight <= element.clientHeight + 1))
     .toBe(true);
 
-  const bounds = await scroller.boundingBox();
-  if (!bounds) throw new Error('Duty feed scroller is not visible');
-  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await scroller.getByText('Card 178', { exact: true }).hover();
   await page.mouse.wheel(0, 240);
 
   await expect.poll(() => newerCursors).toEqual([180]);

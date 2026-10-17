@@ -40,6 +40,10 @@ test.describe('@smoke @regression', () => {
       await expect(timestamp).toHaveAttribute('title', expected[0]);
       await expect(timestamp).toContainText(expected[1]);
       await expect(card.locator('[title="Час від отримання повідомлення"]')).toBeVisible();
+      await expect(card.locator('[data-message-card-timestamp-footer="true"]')).toHaveCSS(
+        'position',
+        'static',
+      );
 
       await page.setViewportSize({ width: 375, height: 900 });
       await card.evaluate((element) => {
@@ -48,6 +52,10 @@ test.describe('@smoke @regression', () => {
       });
       await expect(timestamp).toContainText(expected[1]);
       await expect(card.locator('[title="Час від отримання повідомлення"]')).toBeVisible();
+      await expect(card.locator('[data-message-card-timestamp-footer="true"]')).toHaveCSS(
+        'position',
+        'static',
+      );
     });
   }
 

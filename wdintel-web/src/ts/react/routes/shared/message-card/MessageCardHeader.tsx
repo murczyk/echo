@@ -19,6 +19,7 @@ import DeskIcon from '@mui/icons-material/Desk';
 import DeskOutlinedIcon from '@mui/icons-material/DeskOutlined';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
+import GroupsIcon from '@mui/icons-material/Groups';
 import FlagIcon from '@mui/icons-material/Flag';
 import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
 import LaunchIcon from '@mui/icons-material/Launch';
@@ -62,7 +63,6 @@ dayjs.extend(customParseFormat);
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
-const MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX = 28;
 const MESSAGE_CARD_COMPACT_ACTIONS_MAX_WIDTH_PX = 520;
 
 export type MessageCardDisplayMode = 'duty' | 'analysis';
@@ -176,13 +176,11 @@ function HeaderText({
   nowrap = false,
   wrap = false,
   className,
-  headerUnit = false,
 }: {
   children: ReactNode;
   nowrap?: boolean;
   wrap?: boolean;
   className?: string;
-  headerUnit?: boolean;
 }) {
   const classes = [
     'message-card-text',
@@ -193,11 +191,7 @@ function HeaderText({
     .filter(Boolean)
     .join(' ');
   return (
-    <span
-      className={classes}
-      data-message-card-text="body2"
-      data-message-card-header-unit={headerUnit ? 'true' : undefined}
-    >
+    <span className={classes} data-message-card-text="body2">
       {children}
     </span>
   );
@@ -1408,7 +1402,7 @@ function MessageCardHeaderComponent({
   const rightHeaderContentRef = useRef<HTMLDivElement | null>(null);
   const headerColumnGap = 16;
   const [compactActions, setCompactActions] = useState(false);
-  const explicitUnit = etalonDisplayModel.headerUnit;
+  const explicitUnit = etalonDisplayModel.headerUnit ?? '—';
   const displaysCreationTime = messageTimeBasis === 'creation';
   const timestampLabel = displaysCreationTime
     ? 'Дата і час створення повідомлення'
@@ -1445,15 +1439,15 @@ function MessageCardHeaderComponent({
       data-message-card-display-mode={displayMode}
       data-message-card-actions-compact={compactActions ? 'true' : undefined}
       className="message-card-header-row w-full"
-      style={{ minHeight: MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX }}
     >
       <div className="message-card-header-identity">
         <div ref={leftHeaderContentRef} data-message-card-header-left="true" className="min-w-0">
-          {explicitUnit != null ? (
-            <HeaderText wrap headerUnit>
-              {explicitUnit}
-            </HeaderText>
-          ) : null}
+          <div className="message-card-header-unit" data-message-card-header-unit-row="true">
+            <span className="message-card-header-meta__icon message-card-header-meta__icon--group">
+              <GroupsIcon titleAccess="Підрозділ" />
+            </span>
+            <HeaderText wrap>{explicitUnit}</HeaderText>
+          </div>
           {dateTimeBlock}
         </div>
       </div>
