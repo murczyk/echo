@@ -84,6 +84,16 @@ async function installGroupNavigationMocks(
 }
 
 test.describe('Analysis group feed navigation', () => {
+  test('separates the map from the tab bar with the content spacing', async ({ page }) => {
+    await page.setViewportSize({ width: 1234, height: 877 });
+    await installGroupNavigationMocks(page);
+    await page.goto('/rer-analysis-neo');
+
+    await page.getByRole('tab', { name: 'Мапа', exact: true }).click();
+
+    await expect(page.getByRole('tabpanel', { name: 'Мапа' })).toHaveCSS('padding-top', '8px');
+  });
+
   test('keeps group navigation visible beside contextual filters', async ({ page }) => {
     await page.setViewportSize({ width: 1234, height: 877 });
     await installGroupNavigationMocks(page);

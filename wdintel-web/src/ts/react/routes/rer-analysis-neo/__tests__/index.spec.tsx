@@ -204,7 +204,10 @@ vi.mock('@mui/material/styles', () => ({
   useTheme: () => ({
     breakpoints: { down: (key: string) => key },
     palette: {
+      mode: 'dark',
+      action: { selected: '#2c2c2c' },
       background: { default: '#121212' },
+      common: { black: '#000000', white: '#ffffff' },
       text: { primary: '#ffffff' },
     },
   }),

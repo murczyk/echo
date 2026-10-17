@@ -528,6 +528,7 @@ export function AnalysisCenterPanel({
             minHeight: 0,
             px: 0,
             pb: 0,
+            pt: { xs: 0.5, lg: 1 },
             display: centerTab === 'map' ? 'flex' : 'none',
             overflow: 'hidden',
           }}
