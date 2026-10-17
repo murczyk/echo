@@ -48,19 +48,24 @@ test('AI request pages discover bounded cursors and allow navigation to the fina
   await page.goto('/admin/ai/requests');
   const rows = page.locator('tbody tr');
   await expect(rows).toHaveCount(20);
+  await expect(rows.first().getByRole('cell').first()).toHaveText('1');
   await expect(page.getByText('Усього:', { exact: false })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Go to page 3', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'SHOW MORE', exact: true }).click();
   await expect(rows).toHaveCount(40);
+  await expect(rows.last().getByRole('cell').first()).toHaveText('40');
   expect(state.starts).toEqual([null, 'request-21']);
   await page.getByRole('button', { name: 'Go to page 3', exact: true }).click();
   await expect(rows).toHaveCount(20);
+  await expect(rows.first().getByRole('cell').first()).toHaveText('41');
   await page.getByRole('button', { name: 'Go to page 4', exact: true }).click();
   await expect(rows).toHaveCount(5);
+  await expect(rows.first().getByRole('cell').first()).toHaveText('61');
   await expect(page.getByText('Audit prompt 61', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'SHOW MORE', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Go to page 2', exact: true }).click();
   await expect(rows).toHaveCount(20);
+  await expect(rows.first().getByRole('cell').first()).toHaveText('21');
   await expect(page.getByText('Audit prompt 21', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Go to page 4', exact: true }).click();
   await expect(rows).toHaveCount(5);
@@ -68,9 +73,12 @@ test('AI request pages discover bounded cursors and allow navigation to the fina
   await expect(rows).toHaveCount(20);
   await page.getByRole('button', { name: 'SHOW MORE', exact: true }).click();
   await expect(rows).toHaveCount(25);
+  await expect(rows.first().getByRole('cell').first()).toHaveText('41');
+  await expect(rows.last().getByRole('cell').first()).toHaveText('65');
   await expect(page.getByRole('button', { name: 'SHOW MORE', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Оновити', exact: true }).click();
   await expect(rows).toHaveCount(20);
+  await expect(rows.first().getByRole('cell').first()).toHaveText('1');
   await expect(page.getByText('Audit prompt 1', { exact: true })).toBeVisible();
   expect(state.starts).toEqual([
     null,
