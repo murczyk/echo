@@ -1,3 +1,4 @@
+// Regression coverage for https://github.com/echoua/echo/issues/3821.
 use super::tests::{engine_record, read_json_request};
 use super::{
     generate_quick_suggestion_with_review, load_settings,
@@ -172,22 +173,22 @@ async fn exhausted_primary_uses_fallback_budget_and_same_prompt_once() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn other_primary_results_do_not_invoke_fallback() {
+async fn only_successful_primary_results_skip_fallback() {
     let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
-    for (status, content, succeeds) in [
+    for (status, content, uses_fallback) in [
         (
             200,
             Some(r#"{"suggestions":["Перевірка обладнання"]}"#),
-            true,
+            false,
         ),
-        (200, None, false),
-        (200, Some("not json"), false),
+        (200, None, true),
+        (200, Some("not json"), true),
         (
             200,
             Some(r#"{"suggestions":["Перевірка обладнання 123"]}"#),
-            false,
+            true,
         ),
-        (500, Some("upstream error"), false),
+        (500, Some("upstream error"), true),
     ] {
         let primary = inference_server(
             status,
@@ -204,7 +205,7 @@ async fn other_primary_results_do_not_invoke_fallback() {
             Duration::ZERO,
         )
         .await;
-        let (primary_id, _, login_id, source_id) =
+        let (primary_id, fallback_id, login_id, source_id) =
             configure(&env, &primary, &fallback, 2, 2, 3).await;
         let mut review = SuggestionAttemptReview::default();
         let result = generate_quick_suggestion_with_review(
@@ -213,10 +214,75 @@ async fn other_primary_results_do_not_invoke_fallback() {
             source_id,
             &mut review,
         )
+        .await
+        .unwrap();
+        assert!(
+            matches!(result, SuggestionResult::Suggestions(values) if values == ["Перевірка обладнання"])
+        );
+        assert_eq!(
+            review.ai_engine_id,
+            Some(if uses_fallback {
+                fallback_id
+            } else {
+                primary_id
+            })
+        );
+        assert_eq!(primary.requests.lock().unwrap().len(), 1);
+        assert_eq!(
+            fallback.requests.lock().unwrap().len(),
+            usize::from(uses_fallback)
+        );
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn unreachable_primary_uses_fallback_only_when_configured() {
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    for fallback_enabled in [true, false] {
+        let mut primary =
+            inference_server(200, completion("stop", None), Duration::ZERO)
+                .await;
+        let fallback = inference_server(
+            200,
+            completion(
+                "stop",
+                Some(r#"{"suggestions":["Перевірка обладнання"]}"#),
+            ),
+            Duration::ZERO,
+        )
         .await;
-        assert_eq!(result.is_ok(), succeeds);
-        assert_eq!(review.ai_engine_id, Some(primary_id));
-        assert!(fallback.requests.lock().unwrap().is_empty());
+        let (primary_id, fallback_id, login_id, source_id) =
+            configure(&env, &primary, &fallback, 2, 2, 3).await;
+        if !fallback_enabled {
+            let mut settings =
+                load_settings(&env.dbx).await.unwrap().into_active_model();
+            settings.fallback_ai_engine_id = Set(None);
+            settings.update(&env.dbx).await.unwrap();
+        }
+        primary.task.abort();
+        assert!((&mut primary.task).await.unwrap_err().is_cancelled());
+        let mut review = SuggestionAttemptReview::default();
+        let result = generate_quick_suggestion_with_review(
+            &env,
+            login_id,
+            source_id,
+            &mut review,
+        )
+        .await;
+        assert_eq!(result.is_ok(), fallback_enabled);
+        assert_eq!(
+            review.ai_engine_id,
+            Some(if fallback_enabled {
+                fallback_id
+            } else {
+                primary_id
+            })
+        );
+        assert_eq!(
+            fallback.requests.lock().unwrap().len(),
+            usize::from(fallback_enabled)
+        );
     }
 }
 
@@ -254,10 +320,12 @@ async fn attempt_timeouts_and_shared_deadline_bound_both_calls() {
         total_timeout,
         fallback_calls,
         total_expires,
+        succeeds,
     ) in [
-        (1200, 0, 1, 2, 3, 0, false),
-        (0, 1200, 2, 1, 3, 1, false),
-        (600, 1200, 2, 2, 1, 1, true),
+        (1200, 0, 1, 2, 3, 1, false, true),
+        (0, 1200, 2, 1, 3, 1, false, false),
+        (600, 1200, 2, 2, 1, 1, true, false),
+        (1200, 0, 2, 2, 1, 0, true, false),
     ] {
         let primary = inference_server(
             200,
@@ -291,11 +359,17 @@ async fn attempt_timeouts_and_shared_deadline_bound_both_calls() {
             &mut SuggestionAttemptReview::default(),
         )
         .await;
-        let error = result.err().expect("generation must time out");
-        assert_eq!(
-            format!("{error:?}").contains("загальний ліміт часу"),
-            total_expires
-        );
+        if succeeds {
+            assert!(
+                matches!(result.unwrap(), SuggestionResult::Suggestions(values) if values == ["Перевірка обладнання"])
+            );
+        } else {
+            let error = result.err().expect("generation must time out");
+            assert_eq!(
+                format!("{error:?}").contains("загальний ліміт часу"),
+                total_expires
+            );
+        }
         assert!(started.elapsed() < Duration::from_secs(3));
         assert_eq!(fallback.requests.lock().unwrap().len(), fallback_calls);
     }

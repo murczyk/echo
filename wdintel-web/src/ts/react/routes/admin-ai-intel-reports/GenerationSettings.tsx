@@ -143,8 +143,9 @@ export function GenerationSettings({
         </Table>
       </TableContainer>
       <Typography variant="body2" color="text.secondary">
-        Бюджет включає токени міркування та текст відповіді. Резервна модель запускається лише після
-        вичерпання бюджету основної моделі.
+        Бюджет включає токени міркування та текст відповіді. Резервна модель запускається після
+        помилки, перевищення ліміту часу або вичерпання бюджету основної моделі, якщо залишився
+        загальний час.
       </Typography>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
         {TIMEOUT_FIELDS.map(({ key, label }) => (

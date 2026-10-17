@@ -231,34 +231,41 @@ async fn generate_enabled_suggestion(
         prepare_suggestion_input(env, login_id, signal_message_id)
             .await
             .c(h!())?;
-    let mut response = request_engine_suggestion(
+    let result = request_engine_suggestion(
         env,
         primary_id,
         &user_prompt,
+        &source_materials,
         settings
             .primary_timeout_secs
             .unwrap_or(AI_INTEL_REPORT_TIMEOUT_SECS),
         review,
     )
-    .await
-    .c(h!())?;
-    if response.finish_reason.as_deref() == Some("length") {
-        if let Some(fallback_id) = settings.fallback_ai_engine_id {
-            response = request_engine_suggestion(
+    .await;
+    let suggestions = match (result, settings.fallback_ai_engine_id) {
+        (Ok(suggestions), _) => suggestions,
+        (Err(error), Some(fallback_id)) => {
+            log::warn!(
+                "Primary intelligence-report attempt failed; trying fallback: primary_id={}, fallback_id={}: {:?}",
+                primary_id,
+                fallback_id,
+                error,
+            );
+            request_engine_suggestion(
                 env,
                 fallback_id,
                 &user_prompt,
+                &source_materials,
                 settings
                     .fallback_timeout_secs
                     .unwrap_or(AI_INTEL_REPORT_TIMEOUT_SECS),
                 review,
             )
             .await
-            .c(h!())?;
+            .c(h!())?
         }
-    }
-    let suggestions =
-        validate_suggestion_response(&response, &source_materials).c(h!())?;
+        (Err(error), None) => Err(error).c(h!())?,
+    };
     Ok(SuggestionResult::Suggestions(suggestions))
 }
 
@@ -306,9 +313,10 @@ async fn request_engine_suggestion(
     env: &Env,
     engine_id: Uuid,
     user_prompt: &str,
+    source_materials: &[String],
     timeout_secs: i32,
     review: &mut SuggestionAttemptReview,
-) -> Result<AiEngineResponse, AppError> {
+) -> Result<Vec<String>, AppError> {
     review.ai_engine_id = Some(engine_id);
     review.raw_response = None;
     let engine = find_eligible_engine(&env.dbx, engine_id).await.c(h!())?;
@@ -328,7 +336,7 @@ async fn request_engine_suggestion(
         &response.content,
         AI_INTEL_REPORT_ATTEMPT_RAW_RESPONSE_MAX_CHARS,
     ));
-    Ok(response)
+    Ok(validate_suggestion_response(&response, source_materials).c(h!())?)
 }
 
 async fn request_suggestion(
