@@ -480,6 +480,11 @@ mod m20261014_144721_attachment_search_change;
 mod m20261015_184629_attachment_search_message_change;
 mod m20261016_131615_ai_intel_report_generation_limits;
 
+mod m20261016_165725_transcription_source;
+
+mod m20261016_172232_transcription_source_integration;
+mod m20261017_135230_migrate_transcription_sources;
+
 pub struct Migrator;
 
 mod m20261008_051638_ai_position_highlight_flags;
@@ -1148,6 +1153,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20261015_150117_signal_group_fetch_new_messages::Migration),
             Box::new(m20261015_184629_attachment_search_message_change::Migration),
             Box::new(m20261016_131615_ai_intel_report_generation_limits::Migration),
+            Box::new(m20261016_165725_transcription_source::Migration),
+            Box::new(m20261016_172232_transcription_source_integration::Migration),
+            Box::new(m20261017_135230_migrate_transcription_sources::Migration),
         ]
     }
 }

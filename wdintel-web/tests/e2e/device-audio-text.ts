@@ -667,10 +667,10 @@ test.describe('@regression real device audio transcription', () => {
     try {
       const denied = page.waitForResponse(
         (response) =>
-          response.url().endsWith('/api/device/audio/transcription/status') &&
-          response.status() === 403,
+          response.url().endsWith('/api/device/audio/detail') && response.status() === 403,
       );
       await audioFixtureSql('main', `UPDATE login SET roles='[]'::jsonb WHERE id='${actor.id}';`);
+      await page.getByRole('button', { name: 'Перечитати транскрипцію', exact: true }).click();
       await denied;
       await expect(field(page)).toHaveValue('retained after revocation');
       await expect(field(page)).toHaveAttribute('readonly', '');
@@ -722,10 +722,7 @@ test.describe('@regression real device audio transcription', () => {
       .locator('button')
       .filter({ hasText: /parent-cyber/ })
       .evaluate((element) => element.click());
-    await page
-      .locator('a')
-      .filter({ hasText: 'Вийти' })
-      .evaluate((element) => element.click());
+    await page.locator('a').filter({ hasText: 'Вийти' }).dispatchEvent('click');
     await expect(page).toHaveURL(/\/login/);
     expect(unloads).toBe(0);
     expect(
@@ -929,7 +926,10 @@ test('@regression device ASR completes before opening and preserves manual fallb
       '2020-01-01T00:00:00Z',
       toneWav(1),
     );
-    await audioFixtureSql('files', `DELETE FROM device_audio_asr_job WHERE audio_id='${old.id}';`);
+    await audioFixtureSql(
+      'files',
+      `UPDATE device_audio SET automatic_transcription_pending=NULL WHERE id='${old.id}';`,
+    );
     const before = await audioAsrFixture();
     await audioAsrFixture({ mode: 'delayed', delay_seconds: 1 });
     await audioFixtureSql(
@@ -1105,7 +1105,7 @@ test('@regression device ASR interactive cached historical admission coalesces t
         .toBe('ready');
       await audioFixtureSql(
         'files',
-        `DELETE FROM device_audio_asr_job WHERE audio_id='${audio.id}';`,
+        `UPDATE device_audio SET automatic_transcription_pending=NULL WHERE id='${audio.id}';`,
       );
     }
     const initial = await audioDetail(backend.reader, device.id, old.id);
@@ -1228,8 +1228,8 @@ test('@regression device ASR interactive viewer retry observes cross-session ter
       .toBe('no_speech');
     const before = await audioAsrFixture();
     const firstGeneration = await audioFixtureSql(
-      'files',
-      `SELECT generation FROM device_audio_asr_job WHERE audio_id='${audio.id}';`,
+      'main',
+      `SELECT queue.reprocess_count FROM echo_gpu_transcription_queue queue JOIN transcription_source source ON source.id=queue.source_id WHERE source.source_key='${(await audioFixtureSql('files', `SELECT storage_key FROM device_audio WHERE id='${audio.id}';`)).trim()}';`,
     );
     const otherSession = await backend.login('parent-admin');
     const otherContext = await browser.newContext({
@@ -1265,8 +1265,8 @@ test('@regression device ASR interactive viewer retry observes cross-session ter
     });
     expect(
       await audioFixtureSql(
-        'files',
-        `SELECT generation FROM device_audio_asr_job WHERE audio_id='${audio.id}';`,
+        'main',
+        `SELECT queue.reprocess_count FROM echo_gpu_transcription_queue queue JOIN transcription_source source ON source.id=queue.source_id WHERE source.source_key='${(await audioFixtureSql('files', `SELECT storage_key FROM device_audio WHERE id='${audio.id}';`)).trim()}';`,
       ),
     ).toBe(firstGeneration);
     expect((await audioAsrFixture()).inferences).toBe(before.inferences);
@@ -1296,6 +1296,9 @@ test('@regression device ASR interactive viewer retry observes cross-session ter
     );
     expect((await nativeState(player)).paused).toBe(false);
     expect((await audioAsrFixture()).inferences - before.inferences).toBe(1);
+    await otherPage.reload();
+    await otherPage.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await selectAudio(otherPage, audio.id);
     await expect(field(otherPage)).toHaveValue('Автоматична транскрипція');
     console.log(
       JSON.stringify({
@@ -1316,13 +1319,12 @@ test('@regression device ASR interactive viewer retry observes cross-session ter
   }
 });
 
-test('@regression device ASR interactive unknown outcome blocks both retries and is released only by verified fixture recovery', async ({
+test('@regression device ASR lost response recovers through the native queue without operator recovery', async ({
   browser,
 }) => {
   test.setTimeout(90_000);
   const backend = await localAudioBackend();
-  let context: Awaited<ReturnType<typeof browser.newContext>> | undefined;
-  let audioId: string | undefined;
+  const context = await browser.newContext({ storageState: await backend.reader.storageState() });
   try {
     const device = await backend.createDevice();
     await audioAsrFixture({ mode: 'lost_response', delay_seconds: 1 });
@@ -1333,83 +1335,36 @@ test('@regression device ASR interactive unknown outcome blocks both retries and
     const audio = await receiveAudio(
       backend.source,
       device.id,
-      'unknown.wav',
+      'lost.wav',
       '2020-01-01T00:00:00Z',
       toneWav(15),
     );
-    audioId = audio.id;
     await expect
       .poll(
         async () =>
           (await audioDetail(backend.reader, device.id, audio.id)).automaticTranscription.state,
         { timeout: 20_000 },
       )
-      .toBe('outcome_unknown');
-    const before = await audioAsrFixture();
-    context = await browser.newContext({ storageState: await backend.reader.storageState() });
+      .toBe('retry_wait');
     const page = await context.newPage();
     await page.goto(`/devices/${device.id}`);
     await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
-    const player = await selectAudio(page, audio.id);
-    await ready(player);
-    await expect(page.locator('[data-device-audio-asr-status]')).toHaveText(
-      'Потрібна операторська перевірка',
-    );
+    await selectAudio(page, audio.id);
     await expect(
       page.getByRole('button', { name: 'Повторити транскрибацію', exact: true }),
     ).toHaveCount(0);
-    await post(backend.reader, '/api/device/audio/playback/prepare', {
-      deviceId: device.id,
-      audioId: audio.id,
-      retry: true,
-    });
-    const rejected = await backend.reader.post('/api/device/audio/transcription/retry', {
-      data: { device_id: device.id, audio_id: audio.id },
-    });
-    expect(rejected.status()).toBe(409);
-    expect((await rejected.json()).code).toBe('recovery_required');
-    expect((await audioAsrFixture()).inferences).toBe(before.inferences);
-    console.log(
-      JSON.stringify({
-        scenario: 'unknown-quarantine',
-        additionalDispatches: 0,
-        fixtureActive: before.active,
-      }),
-    );
+    await audioAsrFixture({ mode: 'success' });
+    await expect(field(page)).toHaveValue('Автоматична транскрипція', { timeout: 30_000 });
+    expect(
+      (await audioDetail(backend.reader, device.id, audio.id)).automaticTranscription.state,
+    ).toBe('succeeded');
   } finally {
     await audioFixtureSql(
       'main',
       'UPDATE system_settings SET enable_audio_transcription=false WHERE deleted=false;',
     );
-    await context?.close();
-    if (audioId) {
-      const attempt = await audioFixtureSql(
-        'files',
-        `SELECT attempt_id FROM device_audio_asr_job WHERE audio_id='${audioId}' AND state='outcome_unknown';`,
-      );
-      if (attempt) {
-        expect((await audioAsrFixture()).active).toBe(0);
-        expect(attempt).toMatch(/^[0-9a-f-]{36}$/);
-        const { execFileSync } = await import('node:child_process');
-        const { resolve } = await import('node:path');
-        execFileSync(
-          resolve('..', 'target/debug/wdintel-rs'),
-          [
-            '--mode=test',
-            'oneoff-recover-device-audio-transcription',
-            '--audio-id',
-            audioId,
-            '--expected-attempt-id',
-            attempt,
-            '--verification-note',
-            'Owned loopback fixture reports inference completed and zero active calls.',
-            '--yes',
-          ],
-          { env: process.env, stdio: 'pipe' },
-        );
-      }
-    }
     await audioAsrFixture({ mode: 'success' });
+    await context.close();
     await backend.dispose();
   }
 });

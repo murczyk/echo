@@ -21,7 +21,7 @@ mod text_tests;
 #[path = "processing_tests.rs"]
 mod processing_tests;
 
-pub(super) async fn native_audio_bytes() -> web::Bytes {
+pub(crate) async fn native_audio_bytes() -> web::Bytes {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("original.wav");
     let output = tokio::process::Command::new("ffmpeg")
@@ -51,7 +51,7 @@ pub(super) async fn native_audio_bytes() -> web::Bytes {
     tokio::fs::read(path).await.unwrap().into()
 }
 
-pub(super) async fn receive_command(
+pub(crate) async fn receive_command(
     runtime: &DeviceAudioRuntime,
     actor: Uuid,
     device: Uuid,
@@ -82,7 +82,7 @@ pub(super) async fn receive_command(
     }
 }
 
-pub(super) async fn enabled_audio_device(
+pub(crate) async fn enabled_audio_device(
     env: &crate::types::Env,
 ) -> (Uuid, Uuid) {
     system_settings::ActiveModel {

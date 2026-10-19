@@ -14,7 +14,7 @@ import uuid
 from email.parser import BytesParser
 from pathlib import Path
 
-MODES = {"success", "no_speech", "safe_rejection", "overloaded", "proxy_unavailable", "delayed", "lost_response", "chunk_error"}
+MODES = {"success", "no_speech", "safe_rejection", "overloaded", "proxy_unavailable", "delayed", "lost_response", "chunk_error", "http_error", "invalid_response", "missing_id", "oversized_response", "upload_not_found"}
 MAX_UPLOAD = 101 * 1024 * 1024
 
 
@@ -31,10 +31,11 @@ class Fixture:
         self.events = []
 
     def configure(self, control):
-        if (set(control) - {"mode", "delay_seconds", "fail_on_guess", "overload_status", "retry_after"} or
+        if (set(control) - {"mode", "delay_seconds", "fail_on_guess", "overload_status", "retry_after", "http_status"} or
                 control.get("mode", "success") not in MODES or
                 not 0 <= float(control.get("delay_seconds", 0.1)) <= 300 or
                 control.get("overload_status", 503) not in (429, 503) or
+                control.get("http_status", 400) not in (400, 401, 403, 408, 429, 500, 503, 504) or
                 (control.get("retry_after") is not None and
                  (not isinstance(control["retry_after"], int) or not 0 <= control["retry_after"] <= 3600)) or
                 not isinstance(control.get("fail_on_guess", 2), int) or control.get("fail_on_guess", 2) < 1):
@@ -120,8 +121,10 @@ def handler(fixture, role):
                     self.upload(body)
                 elif role == "rust" and self.path == "/api/v1/audio/get":
                     with fixture.lock:
-                        audio_id = fixture.checksums.get(json.loads(body)["sha256"])
-                    self.reply(200 if audio_id else 404, {"uuid": audio_id})
+                        audio_id = None if fixture.control["mode"] == "upload_not_found" else fixture.checksums.get(json.loads(body)["sha256"])
+                    with fixture.lock:
+                        missing_id = fixture.control["mode"] == "missing_id"
+                    self.reply(200 if missing_id or audio_id else 404, {} if missing_id else {"uuid": audio_id})
                 elif role == "python" and self.path == "/api/guess":
                     request = json.loads(body)
                     if not isinstance(request["message"], str):
@@ -133,6 +136,11 @@ def handler(fixture, role):
                 self.reply(400, {"error": "malformed fixture request"})
 
         def upload(self, body):
+            with fixture.lock:
+                unavailable = fixture.control["mode"] == "upload_not_found"
+            if unavailable:
+                self.reply(404, {"error": "upload endpoint unavailable"})
+                return
             header = f"Content-Type: {self.headers.get('Content-Type', '')}\r\nMIME-Version: 1.0\r\n\r\n".encode()
             message = BytesParser(policy=email.policy.default).parsebytes(header + body)
             files = [part for part in message.iter_parts() if part.get_param("name", header="content-disposition") == "file"]
@@ -172,6 +180,15 @@ def handler(fixture, role):
                 return
             if control["mode"] == "chunk_error" and control["ordinal"] == control["fail_on_guess"]:
                 self.reply(500, {"error": "injected later chunk failure"})
+                return
+            if control["mode"] == "http_error":
+                self.reply(control["http_status"], {"error": "injected provider response"})
+                return
+            if control["mode"] == "invalid_response":
+                self.reply(200, {"unexpected": True})
+                return
+            if control["mode"] == "oversized_response":
+                self.reply(200, {"audio_id": audio_id, "full_phrase": "x" * 8192, "segments": []})
                 return
             text = "" if control["mode"] == "no_speech" else "Автоматична транскрипція"
             segments = [] if not text else [{"i": 0, "start": 0.0, "end": 1.0, "text": text,

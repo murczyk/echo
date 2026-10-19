@@ -150,3 +150,5 @@ public.rer_csv_import_message
 
 # Explicit inbox unit selection; analytics consumes the reconciled unit links.
 public.sigint_inbox_item_unit_selection
+
+public.transcription_source

@@ -259,6 +259,7 @@ pub use super::tag::Entity as Tag;
 pub use super::tag_keyword::Entity as TagKeyword;
 pub use super::tag_suggestion_worker_queue::Entity as TagSuggestionWorkerQueue;
 pub use super::tags_ordering::Entity as TagsOrdering;
+pub use super::transcription_source::Entity as TranscriptionSource;
 pub use super::url_visit_notification::Entity as UrlVisitNotification;
 pub use super::user_settings::Entity as UserSettings;
 pub use super::whatsapp_group::Entity as WhatsappGroup;

@@ -1254,6 +1254,7 @@ async fn cleanup_failed_direct_submit_uploads(
 ) {
     cleanup_replacement_uploads(env, replacements).await;
     crate::messenger::media::delete_stored_media_files(
+        &env.dbx,
         &upload_result.media,
         &[],
         &env.config,
@@ -1590,6 +1591,7 @@ async fn finish_direct_submit(
     }
     if !media_to_delete_after_commit.is_empty() || !ocr_result_keys.is_empty() {
         crate::messenger::media::delete_stored_media_files(
+            &env.dbx,
             &media_to_delete_after_commit,
             &ocr_result_keys,
             &env.config,
@@ -2548,7 +2550,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn direct_edit_removes_transcription_work_for_deleted_media() {
+    async fn direct_edit_retains_shared_transcription_after_media_deletion() {
         let env = cleanup().await.unwrap();
         let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
             .await
@@ -2561,7 +2563,7 @@ mod tests {
         .await
         .unwrap();
         let media_id = Uuid::now_v7();
-        signal_message_media::ActiveModel {
+        let media = signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(created.signal_message_id),
             signal_message_uuid: Set(
@@ -2583,7 +2585,12 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
-        echo_gpu_client::enqueue(&env.dbx, media_id).await.unwrap();
+        let (source, _) = crate::transcription::service::enqueue(
+            &env.dbx,
+            &crate::transcriber::media_queue::source_key(&media),
+        )
+        .await
+        .unwrap();
 
         let mut payload = direct_submit_payload("updated body");
         payload.deleted_media_ids = Some(vec![media_id.to_string()]);
@@ -2601,10 +2608,10 @@ mod tests {
             .await
             .unwrap()
             .is_none());
-        assert!(echo_gpu_client::lookup(&env.dbx, media_id)
+        assert!(echo_gpu_client::lookup(&env.dbx, source)
             .await
             .unwrap()
-            .is_none());
+            .is_some());
     }
 
     #[tokio::test]

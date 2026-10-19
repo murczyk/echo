@@ -111,6 +111,11 @@ async fn new_env_with_initialization(
     let (s3_config, s3) = build_runtime_storage(&config, mode);
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
+    if initialize && mode != Mode::Test {
+        crate::transcription::service::ensure_sources_registered(&dbx)
+            .await
+            .c(h!())?;
+    }
     if initialize {
         crate::ai_agent::dispatcher::import_legacy_config(
             &dbx,
@@ -1946,6 +1951,20 @@ pub async fn main_bgworker(
         true,
         true,
         &mut background_tasks,
+    );
+    let sync_env = env.clone();
+    let sync_cancel = cancel_token.clone();
+    spawn_named_worker(
+        "device_transcription_sync",
+        &mut transcriber_tasks,
+        async move {
+            crate::devices::audio::transcription::run(
+                sync_env.device_audio.clone(),
+                sync_env.echo_gpu_client.clone(),
+                sync_cancel,
+            )
+            .await;
+        },
     );
     let transcriber_worker_id = Uuid::now_v7();
     info!(

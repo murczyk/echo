@@ -232,6 +232,13 @@ impl StagedMediaAttachments {
             .iter()
             .filter(|attachment| !committed_media.contains(&attachment.id))
         {
+            let key = storage::join_paths(
+                crate::config::S3_MEDIA_ROOT_PREFIX,
+                &attachment.storage_key,
+            );
+            if !crate::transcription::service::may_delete(dbx, &key).await {
+                continue;
+            }
             delete_staged_object_best_effort(config, s3, attachment).await;
             if attachment.thumbnail_source_lease.is_some() {
                 crate::messenger::media_thumbnail::remove_uncommitted_media_thumbnail_files_best_effort(
@@ -1050,6 +1057,7 @@ pub async fn delete_uploaded_attachment_files(
 }
 
 pub async fn delete_stored_media_files(
+    dbx: &sea_orm::DatabaseConnection,
     media: &[signal_message_media::Model],
     ocr_result_keys: &[String],
     config: &Config,
@@ -1088,6 +1096,12 @@ pub async fn delete_stored_media_files(
         }
         for object_key in object_keys {
             let remote_key = s3_config.prefixed_key(&object_key);
+            if is_audio_media(media)
+                || !crate::transcription::service::may_delete(dbx, &remote_key)
+                    .await
+            {
+                continue;
+            }
             if let Err(e) = s3.delete(&remote_key).await {
                 error!(
                     "failed to delete stored attachment file {}: {:?}",
@@ -1289,23 +1303,36 @@ pub(crate) async fn ensure_media_access(
 }
 
 pub fn is_audio_media(media: &signal_message_media::Model) -> bool {
-    let ct = media
-        .content_type
+    is_audio_metadata(
+        &media.content_type,
+        media.file_ext.as_deref(),
+        media.file_name.as_deref(),
+    )
+}
+
+fn is_audio_metadata(
+    content_type: &str,
+    file_ext: Option<&str>,
+    file_name: Option<&str>,
+) -> bool {
+    let ct = content_type
         .split(';')
         .next()
-        .unwrap_or(&media.content_type)
+        .unwrap_or(content_type)
         .trim()
         .to_ascii_lowercase();
     if ct.starts_with("audio/") {
         return true;
     }
-    if ct.starts_with("image/") || is_video_media(media) {
+    if ct.starts_with("image/")
+        || is_video_metadata(content_type, file_ext, file_name)
+    {
         return false;
     }
     if ct.contains("mpeg") || ct.contains("mp3") {
         return true;
     }
-    if let Some(ext) = media.file_ext.as_deref() {
+    if let Some(ext) = file_ext {
         if matches!(
             ext.to_ascii_lowercase().as_str(),
             "mp3"
@@ -1323,7 +1350,7 @@ pub fn is_audio_media(media: &signal_message_media::Model) -> bool {
             return true;
         }
     }
-    if let Some(name) = media.file_name.as_deref() {
+    if let Some(name) = file_name {
         let name = name.to_ascii_lowercase();
         if name.ends_with(".mp3")
             || name.ends_with(".mpeg")
@@ -1873,6 +1900,94 @@ mod tests {
 
         assert!(s3.as_ref().unwrap().stat(&remote_key).await.is_err());
         assert!(path.exists());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn staged_finalization_3825_cleans_only_unregistered_audio() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        env.dbx
+            .execute_unprepared(
+                r#"
+insert into system_settings (
+    rer_analysis_units_exact_match_only_default, rer_duty_test_enabled,
+    rer_duty_test_since_ms, rer_duty_test_limit, rer_duty_poll_interval_sec,
+    messenger_media_cache_enabled, messenger_media_cache_min_free_gib
+) values (true, false, 0, 1, 5, true, 0)
+"#,
+            )
+            .await
+            .unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let upload = temporary.path().join("recording.ogg");
+        tokio::fs::write(&upload, b"staged audio").await.unwrap();
+        let mut config = env.config.clone();
+        config.storage_dir = temporary.path().display().to_string();
+        config.messenger_media_cache =
+            Some(crate::config::MessengerMediaCacheConfig {
+                enabled: true,
+                min_free_space_bytes: 0,
+                ..Default::default()
+            });
+        config.s3_config = Some(crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        });
+        let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        for (name, content_type, registered) in [
+            ("discarded.ogg", "audio/ogg", false),
+            ("retained.ogg", "audio/ogg", true),
+            ("retained.txt", "text/plain", true),
+        ] {
+            let staged = stage_media_attachments(
+                &env.dbx,
+                &[MediaUploadInput {
+                    path: upload.display().to_string(),
+                    name: Some(name.into()),
+                    content_type: Some(content_type.into()),
+                }],
+                &config,
+                &s3,
+                UploadedAttachmentDeletion::Preserve,
+                None,
+            )
+            .await
+            .unwrap();
+            let attachment = &staged.attachments[0];
+            let key =
+                storage::S3Config::from(config.s3_config.as_ref().unwrap())
+                    .prefixed_key(&attachment.storage_key);
+            let cached = crate::messenger::media_local_cache::ready_object(
+                &config,
+                &attachment.storage_key,
+                attachment.size_bytes as u64,
+                attachment.is_encrypted,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            if registered {
+                crate::transcription::service::enqueue(&env.dbx, &key)
+                    .await
+                    .unwrap();
+            }
+            staged.finalize_after_commit(&config, &s3, &env.dbx).await;
+            let stored = s3.as_ref().unwrap().stat(&key).await;
+            if registered {
+                assert!(stored.is_ok());
+            } else {
+                assert_eq!(
+                    stored.unwrap_err().kind(),
+                    opendal::ErrorKind::NotFound
+                );
+            }
+            assert_eq!(cached.exists(), registered);
+            assert!(upload.exists());
+        }
     }
 
     #[serial]

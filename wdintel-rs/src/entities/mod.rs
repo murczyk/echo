@@ -262,6 +262,7 @@ pub mod tag;
 pub mod tag_keyword;
 pub mod tag_suggestion_worker_queue;
 pub mod tags_ordering;
+pub mod transcription_source;
 pub mod url_visit_notification;
 pub mod user_settings;
 pub mod whatsapp_group;

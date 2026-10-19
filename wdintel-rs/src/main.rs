@@ -80,6 +80,7 @@ pub mod telemetry;
 pub mod terminal;
 pub mod tests;
 pub mod transcriber;
+pub mod transcription;
 pub mod ts;
 pub(crate) mod tus;
 pub mod types;
@@ -1014,18 +1015,6 @@ pub struct OneoffBackfillAudioTranscriberPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
-pub struct OneoffBackfillDeviceAudioTranscriberPs {
-    #[arg(long, conflicts_with = "resume")]
-    pub device_id: Option<Uuid>,
-    #[arg(long, conflicts_with = "resume")]
-    pub dry_run: bool,
-    #[arg(long)]
-    pub yes: bool,
-    #[arg(long)]
-    pub resume: Option<Uuid>,
-}
-
-#[derive(clap::Args, Debug, Clone)]
 pub struct OneoffRecoverDeviceAudioTranscriptionPs {
     #[arg(long)]
     pub audio_id: Uuid,
@@ -1254,9 +1243,6 @@ enum Cmd {
     OneoffMigrateLargeMediaToPlaintext(OneoffMigrateLargeMediaToPlaintextPs),
     OneoffAuditMediaStorage(OneoffAuditMediaStoragePs),
     OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
-    OneoffBackfillDeviceAudioTranscriber(
-        OneoffBackfillDeviceAudioTranscriberPs,
-    ),
     OneoffRecoverDeviceAudioTranscription(
         OneoffRecoverDeviceAudioTranscriptionPs,
     ),
@@ -1765,20 +1751,11 @@ async fn async_main(
             .map_err(Into::into);
     }
 
-    if let Cmd::OneoffBackfillDeviceAudioTranscriber(options) = action {
-        let exit =
-            devices::audio::transcription::backfill_oneoff(mode, options)
-                .await
-                .c(h!())?;
-        std::process::exit(exit);
-    }
-
     utils::worker_watch::spawn_metrics_logger();
 
     match action {
         Cmd::AiControlPanel(_) | Cmd::AiEvalSearchQuery | Cmd::AiEvalMaps
-        | Cmd::OneoffReplicateHistoricalAttachments
-        | Cmd::OneoffBackfillDeviceAudioTranscriber(_) => unreachable!(),
+        | Cmd::OneoffReplicateHistoricalAttachments => unreachable!(),
         Cmd::Server(ps) => {
             server::main_server(mode, ps, token, shutdown_handle.clone()).await
         }

@@ -6,6 +6,11 @@
         { "table": "public.ai_intel_report_engine_budget", "strategy": "excluded" }
       ]
     },
+    "echo:m20261017_135230_migrate_transcription_sources": { "changes": [] },
+    "echo:m20261016_172232_transcription_source_integration": { "changes": [] },
+    "echo:m20261016_165725_transcription_source": {
+      "changes": [{ "table": "public.transcription_source", "strategy": "excluded" }]
+    },
     "echo:m20261015_184629_attachment_search_message_change": {
       "changes": [
         { "table": "public.attachment_search_change", "strategy": "excluded" },
