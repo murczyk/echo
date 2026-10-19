@@ -36,6 +36,8 @@ export type AnalysisReportState = {
   babakNewCallsignMinMentions: number;
   interceptionKeepFullMessage: boolean;
   interceptionKeepOldColors: boolean;
+  report1217IncludeWithoutComments: boolean;
+  report1217OnlyThisUnitComments: boolean;
   open: boolean;
   reoAdjacentFreqsDistance: number;
   reoFileType: ReoReportFileType;
@@ -72,6 +74,8 @@ export function createDefaultReportState(): AnalysisReportState {
     babakNewCallsignMinMentions: BABAK_NEW_CALLSIGN_MIN_MENTIONS_DEFAULT,
     interceptionKeepFullMessage: false,
     interceptionKeepOldColors: false,
+    report1217IncludeWithoutComments: true,
+    report1217OnlyThisUnitComments: true,
     open: false,
     reoAdjacentFreqsDistance: 0,
     reoFileType: 'Docx',
@@ -173,9 +177,14 @@ export function buildReportRequest(
       nolimit: true,
       withoutModelTags: state.withoutModelTags,
     },
-    reportTagsOnlyThisUnit: state.reportTagsOnlyThisUnit,
+    reportTagsOnlyThisUnit:
+      state.template === 'report_1217'
+        ? state.report1217OnlyThisUnitComments
+        : state.reportTagsOnlyThisUnit,
     tagReportSortBy: state.template === 'tags' ? state.tagReportSortBy : null,
     report1213LinkedNetworksOnly: null,
+    report1217IncludeWithoutComments:
+      state.template === 'report_1217' ? state.report1217IncludeWithoutComments : null,
     withoutComments: state.template === 'babak' ? state.withoutComments : null,
     babakNewCallsignMinMentions:
       state.template === 'babak' ? state.babakNewCallsignMinMentions : null,

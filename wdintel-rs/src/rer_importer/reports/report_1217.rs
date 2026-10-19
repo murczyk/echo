@@ -72,9 +72,15 @@ pub async fn report_docx_kind_report_1217(
     )
     .await
     .c(h!())?;
-    let networks = collect_networks(&env.dbx, user_login, messages)
-        .await
-        .c(h!())?;
+    let networks = collect_networks(
+        &env.dbx,
+        user_login,
+        messages,
+        req.report_1217_include_without_comments.unwrap_or(true),
+        req.report_tags_only_this_unit.unwrap_or(true),
+    )
+    .await
+    .c(h!())?;
     let record_count = networks
         .iter()
         .map(|network| network.interceptions.len())
@@ -126,18 +132,32 @@ async fn collect_networks(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
     messages: Vec<Report1217Message>,
+    include_without_comments: bool,
+    only_this_unit_comments: bool,
 ) -> anyhow::Result<Vec<Report1217Network>> {
-    let logins = crate::users::get_organism_login_ids_by_id(dbx, login)
-        .await
-        .c(h!())?;
+    let logins = if only_this_unit_comments {
+        Some(
+            crate::users::get_organism_login_ids_by_id(dbx, login)
+                .await
+                .c(h!())?,
+        )
+    } else {
+        None
+    };
     let mut interceptions_by_network: BTreeMap<
         i64,
         Vec<Report1217Interception>,
     > = BTreeMap::new();
     for batch in messages.chunks(REPORT_1217_BATCH_SIZE) {
-        collect_batch(dbx, &logins, batch, &mut interceptions_by_network)
-            .await
-            .c(h!())?;
+        collect_batch(
+            dbx,
+            logins.as_deref(),
+            batch,
+            include_without_comments,
+            &mut interceptions_by_network,
+        )
+        .await
+        .c(h!())?;
     }
     let mut networks = vec![];
     let network_ids =
@@ -167,8 +187,9 @@ async fn collect_networks(
 
 async fn collect_batch(
     dbx: &DatabaseConnection,
-    logins: &[uuid::Uuid],
+    logins: Option<&[uuid::Uuid]>,
     messages: &[Report1217Message],
+    include_without_comments: bool,
     interceptions_by_network: &mut BTreeMap<i64, Vec<Report1217Interception>>,
 ) -> anyhow::Result<()> {
     let ids = messages
@@ -186,6 +207,14 @@ async fn collect_batch(
         else {
             continue;
         };
+        let comment = comments
+            .get(&message.id)
+            .cloned()
+            .unwrap_or_default()
+            .join("\n");
+        if !include_without_comments && comment.trim().is_empty() {
+            continue;
+        }
         let body = message
             .body_noheader
             .clone()
@@ -197,11 +226,7 @@ async fn collect_batch(
         let interception = Report1217Interception {
             id: message.id,
             timestamp: message.timestamp,
-            comment: comments
-                .get(&message.id)
-                .cloned()
-                .unwrap_or_default()
-                .join("\n"),
+            comment,
             body,
         };
         for network_id in network_ids {
@@ -216,13 +241,12 @@ async fn collect_batch(
 
 async fn load_comments(
     dbx: &DatabaseConnection,
-    logins: &[uuid::Uuid],
+    logins: Option<&[uuid::Uuid]>,
     ids: &[i64],
 ) -> anyhow::Result<BTreeMap<i64, Vec<String>>> {
-    let rows =
-        crate::sigint::comments::find_report_comments(dbx, ids, Some(logins))
-            .await
-            .c(h!())?;
+    let rows = crate::sigint::comments::find_report_comments(dbx, ids, logins)
+        .await
+        .c(h!())?;
     let mut comments: BTreeMap<i64, Vec<String>> = BTreeMap::new();
     for comment in rows {
         comments

@@ -216,7 +216,7 @@ const reportTemplateOptions: Array<{ id: ReportTemplateId; title: string; descri
   {
     id: 'report_1217',
     title: 'Звіт 1.2.17',
-    description: 'Перехоплення за радіомережами з коментарями мого підрозділу',
+    description: 'Перехоплення за радіомережами з коментарями',
   },
   {
     id: 'active_networks',
@@ -605,6 +605,21 @@ export function AnalysisReportDialog({
                 label="Лише теги/коментарі мого підрозділу"
                 onChange={(value) => onUpdate({ reportTagsOnlyThisUnit: value })}
                 sx={analysisReportTagsCheckboxSx}
+              />
+            </Stack>
+          ) : null}
+
+          {report.template === 'report_1217' ? (
+            <Stack spacing={1}>
+              <ReportCheckboxLabel
+                checked={report.report1217IncludeWithoutComments}
+                label="Включати перехоплення без коментарів"
+                onChange={(value) => onUpdate({ report1217IncludeWithoutComments: value })}
+              />
+              <ReportCheckboxLabel
+                checked={report.report1217OnlyThisUnitComments}
+                label="Лише коментарі мого підрозділу"
+                onChange={(value) => onUpdate({ report1217OnlyThisUnitComments: value })}
               />
             </Stack>
           ) : null}

@@ -3407,6 +3407,7 @@ export type ReportPreviewReq = {
   reportTagsOnlyThisUnit: boolean | null;
   tagReportSortBy: TagReportSortBy | null;
   report1213LinkedNetworksOnly: boolean | null;
+  report1217IncludeWithoutComments: boolean | null;
   withoutComments: boolean | null;
   babakNewCallsignMinMentions: number | null;
   interceptionKeepFullMessage: boolean | null;
