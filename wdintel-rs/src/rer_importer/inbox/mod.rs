@@ -9519,7 +9519,7 @@ mod tests {
         let all_groups_req = InboxMessagesReq {
             selected_groups: None,
             selected_senders: None,
-            ..matching_sender_req
+            ..matching_sender_req.clone()
         };
         let all_groups_messages =
             get_inbox_messages(&login.id, &logins, &env, &all_groups_req)
@@ -9552,5 +9552,35 @@ mod tests {
             vec![datasource_group.group_master_key, other_group.master_key];
         expected.sort();
         assert_eq!(memberships, expected);
+        for selected_senders in
+            [None, matching_sender_req.selected_senders.clone()]
+        {
+            let scoped_req = InboxMessagesReq {
+                selected_senders,
+                ..matching_sender_req.clone()
+            };
+            let scoped_messages =
+                get_inbox_messages(&login.id, &logins, &env, &scoped_req)
+                    .await
+                    .unwrap();
+            assert_eq!(scoped_messages.len(), 1);
+            assert_eq!(
+                scoped_messages[0].1.sender.as_deref(),
+                Some("sender-c")
+            );
+            assert_eq!(
+                scoped_messages[0].1.group_master_key.as_deref(),
+                matching_sender_req
+                    .selected_groups
+                    .as_ref()
+                    .unwrap()
+                    .first()
+                    .map(String::as_str)
+            );
+            let mut memberships =
+                scoped_messages[0].1.group_master_keys.clone().unwrap();
+            memberships.sort();
+            assert_eq!(memberships, expected);
+        }
     }
 }

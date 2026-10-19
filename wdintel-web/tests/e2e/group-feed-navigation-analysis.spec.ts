@@ -84,6 +84,81 @@ async function installGroupNavigationMocks(
 }
 
 test.describe('Analysis group feed navigation', () => {
+  test('@regression #3727 preserves the Analysis draft when browsing another group', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 900 });
+    await installGroupNavigationMocks(page);
+    await page.goto('/rer-analysis-neo?group=group-a');
+    await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+    const text = page.getByRole('textbox', { name: 'Текст повідомлення' });
+    await text.fill('Unsaved Analysis draft');
+    await expect(page.getByRole('combobox', { name: 'Група', exact: true })).toHaveValue('group-a');
+    await page
+      .locator('[data-analysis-group-list]:visible')
+      .first()
+      .getByRole('button', { name: /Group Beta, 3 непрочитаних/ })
+      .click();
+    await expect(page).toHaveURL(/group=group-b/);
+    await expect(text).toHaveValue('Unsaved Analysis draft');
+    await expect(page.getByRole('combobox', { name: 'Група', exact: true })).toHaveValue('group-a');
+  });
+
+  test('@regression #3727 applies restored scope filters to the unread-message window', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        'rer-analysis-neo-scope-filters-v1',
+        JSON.stringify({
+          version: 1,
+          scopes: { 'group:group-b': 'senders=sender-b&search=Target' },
+        }),
+      ),
+    );
+    const inbox = inboxResponse(['group-b']);
+    await installAnalysisNeoApiMocks(page, {
+      signalGroups: ['group-a', 'group-b'],
+      inboxResponse: inbox,
+    });
+    await page.route('**/api/rer-importer/group-feed-state', (route) =>
+      route.fulfill({
+        json: {
+          groups: groups.map((group) => ({
+            master_key: group.masterKey,
+            name: group.name,
+            color_key: group.colorKey,
+            ignore_operativny: false,
+            unread_count: group.unreadCount,
+            oldest_unread_message_ref:
+              group.masterKey === 'group-b' ? 'analysis-group-feed-201' : null,
+            last_read_created_at_order: null,
+            last_read_message_id: null,
+            last_activity_at: null,
+            latest_cursor: null,
+          })),
+        },
+      }),
+    );
+    const windows: Array<{ selected_senders: string[] | null; search?: string | null }> = [];
+    await page.route('**/api/rer-importer/get-inbox', (route) => {
+      const request = route.request().postDataJSON();
+      if (request.around_message_ref) windows.push(request);
+      return route.fulfill({ json: inbox });
+    });
+    await page.goto('/rer-analysis-neo?group=group-a&search=Alpha');
+    await page
+      .locator('[data-analysis-group-list]:visible')
+      .first()
+      .getByRole('button', { name: /Group Beta, 3 непрочитаних/ })
+      .click();
+    await expect.poll(() => windows.length).toBeGreaterThan(0);
+    await expect(page).toHaveURL(/senders=sender-b/);
+    expect(windows.at(-1)?.selected_senders).toEqual(['sender-b']);
+    expect(windows.at(-1)?.search).toBe('Target');
+  });
+
   test('separates the map from the tab bar with the content spacing', async ({ page }) => {
     await page.setViewportSize({ width: 1234, height: 877 });
     await installGroupNavigationMocks(page);

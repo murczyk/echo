@@ -15,8 +15,10 @@ message membership and the timestamp, then stores the original database precisio
 An older receipt cannot move the watermark backwards. Concurrent feed receipts
 for one group are serialized in the shared store.
 Messages shared by several accessible groups advance each returned membership;
-the displayed group name is not the membership source. Transient receipt failures
-can retry on reload or further reading without an automatic conflict retry loop.
+membership is not narrowed by display-group or sender filters, and inaccessible
+groups are never returned. The displayed group name is not the membership source.
+Transient receipt failures can retry on reload or further reading without an
+automatic conflict retry loop.
 
 Visible rows are retained while group metadata loads so a late unread-state
 response still acknowledges messages already being read. Closing group navigation
@@ -24,6 +26,12 @@ does not pause reading, including in the all-groups feed. Hidden tabs and inacti
 Duty columns do not start read receipts. Ordinary navigation to the oldest unread
 message scrolls to it without a linked-message outline; explicit message links and
 editor highlights keep their existing appearance.
+Analysis's unread-message window uses the destination group's restored filters,
+including sender and text search, rather than the page's initial URL filters.
+
+An open creation draft keeps its original group when navigation changes on Duty
+or Analysis. Starting another creation intent still asks before discarding a dirty
+draft; ordinary group browsing never clears or silently retargets it.
 
 Duty shows one quiet “Непрочитані повідомлення” divider before the first unread
 row. Its position stays fixed for the current group/filter/load session while
@@ -43,6 +51,7 @@ stale linked-message outline even when no loading phase preceded it; editor
 highlighting remains independent.
 
 Coverage: `wdintel-rs/src/rer_importer/group_feed_state.rs`,
+`wdintel-rs/src/rer_importer/inbox/mod.rs`,
 `wdintel-web/src/ts/react/routes/shared/group-navigation/__tests__/group-feed-state-store.spec.ts`,
 `wdintel-web/src/ts/react/routes/shared/message-feed/__tests__/MessageFeed.spec.tsx`,
 `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/FeedColumnContent.spec.tsx`,

@@ -68,6 +68,39 @@ async function installGroupNavigationMocks(page: Page) {
 }
 
 test.describe('Duty group feed navigation', () => {
+  test('@regression #3727 preserves the draft and its group when the source column changes scope', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 900 });
+    await installGroupNavigationMocks(page);
+    const state = {
+      messageFeeds: [
+        ['mf-a', {}, { groupScopeMasterKey: 'group-a' }],
+        ['mf-b', {}, { groupScopeMasterKey: 'group-b' }],
+      ],
+    };
+    await page.goto(`/rer-duty-neo?state=${encodeURIComponent(JSON.stringify(state))}`);
+    const column = page.locator('[data-duty-feed-id="mf-a"][data-duty-feed-column]');
+    await column.getByRole('button', { name: 'Додати повідомлення' }).click();
+    const text = page.getByRole('textbox', { name: 'Текст повідомлення' });
+    await text.fill('Unsaved group Alpha draft');
+    await expect(page.getByRole('combobox', { name: 'Група', exact: true })).toHaveValue('group-a');
+
+    await column.getByRole('button', { name: 'Розгорнути список груп' }).click();
+    await column.getByRole('button', { name: /Group Beta, 3 непрочитаних/ }).click();
+
+    await expect(column.locator('[data-group-island] [data-group-name]')).toHaveText('Group Beta');
+    await expect(text).toHaveValue('Unsaved group Alpha draft');
+    await expect(page.getByRole('combobox', { name: 'Група', exact: true })).toHaveValue('group-a');
+    await column
+      .getByRole('button', { name: 'Створити розвіддонесення', exact: true })
+      .first()
+      .click();
+    await expect(page.getByRole('dialog', { name: 'Відхилити незбережені зміни?' })).toBeVisible();
+    await page.getByRole('button', { name: 'Продовжити редагування' }).click();
+    await expect(text).toHaveValue('Unsaved group Alpha draft');
+  });
+
   test('hides only the source unread divider after a successful message submission', async ({
     page,
   }) => {

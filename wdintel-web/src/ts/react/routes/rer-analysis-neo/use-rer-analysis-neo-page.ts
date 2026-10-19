@@ -248,6 +248,7 @@ export function useRerAnalysisNeoPage(
     initialPanelQueryState.rightPanelOpen ? 'callsigns' : null,
   );
   const [targetMessageUid, setTargetMessageUid] = useState(parseMessageUidFromWindow);
+  const [targetMessageQueryState, setTargetMessageQueryState] = useState(initialQueryState);
   const [highlightTargetMessage, setHighlightTargetMessage] = useState(true);
   const [targetMessageWindow, setTargetMessageWindow] = useState<InboxWindowRsp | null>(null);
   const [targetMessageLoading, setTargetMessageLoading] = useState(targetMessageUid !== null);
@@ -383,11 +384,13 @@ export function useRerAnalysisNeoPage(
     () =>
       effectiveRadioQuery(
         {
-          ...initialQueryState,
+          ...targetMessageQueryState,
           deviceNamesSelected:
-            deviceAccess.status === 'denied' ? [] : initialQueryState.deviceNamesSelected,
+            deviceAccess.status === 'denied' ? [] : targetMessageQueryState.deviceNamesSelected,
           onlyWithNetwork:
-            rerReportFilterAccess.status === 'denied' ? false : initialQueryState.onlyWithNetwork,
+            rerReportFilterAccess.status === 'denied'
+              ? false
+              : targetMessageQueryState.onlyWithNetwork,
           groupsSelected:
             groupScope.kind === 'group' ? [groupScope.masterKey] : queryState.groupsSelected,
           freqsSelected: queryState.freqsSelected,
@@ -398,7 +401,7 @@ export function useRerAnalysisNeoPage(
         radioFeaturesAllowed,
       ),
     [
-      initialQueryState,
+      targetMessageQueryState,
       radioFeaturesAllowed,
       deviceAccess.status,
       rerReportFilterAccess.status,
@@ -414,7 +417,7 @@ export function useRerAnalysisNeoPage(
 
   const directMessageDefaultsPending =
     currentUserStatus === 'loading' ||
-    (rerReportFilterAccessPending && initialQueryState.onlyWithNetwork) ||
+    (rerReportFilterAccessPending && targetMessageQueryState.onlyWithNetwork) ||
     queryStateWithResolvedRoleDate !== queryState ||
     queryState.messageTimeBasis !== dutySettings.messageSortBy;
 
@@ -587,6 +590,7 @@ export function useRerAnalysisNeoPage(
     ) => {
       clearTargetMessageContext();
       setTargetMessageUid(null);
+      let nextQueryState = queryState;
       if (!groupScopesEqual(groupScope, scope)) {
         groupScopeTransitionRequestedRef.current = true;
         persistAnalysisScopeFilters(groupScope, queryState);
@@ -594,21 +598,27 @@ export function useRerAnalysisNeoPage(
         const defaultFilters = extractAnalysisScopeFilters(
           createResetQueryState(new Date(), radioFeaturesAllowed),
         );
-        setQueryState((current) =>
-          normalizeQueryState({
-            ...current,
-            ...defaultFilters,
-            ...storedFilters,
-            groupsSelected:
-              scope.kind === 'group'
-                ? []
-                : (storedFilters?.groupsSelected ?? defaultFilters.groupsSelected ?? []),
-          }),
-        );
+        nextQueryState = normalizeQueryState({
+          ...queryState,
+          ...defaultFilters,
+          ...storedFilters,
+          groupsSelected:
+            scope.kind === 'group'
+              ? []
+              : (storedFilters?.groupsSelected ?? defaultFilters.groupsSelected ?? []),
+        });
+        setQueryState(nextQueryState);
       }
       setGroupScope(scope);
       writeAnalysisGroupScopeToUrl(scope, options);
       if (scope.kind !== 'group' || oldestUnreadMessageRef == null) return;
+      setTargetMessageQueryState(nextQueryState);
+      directQueryBoundaryRef.current = {
+        fromDateTimeStr: nextQueryState.fromDateTimeStr,
+        toDateTimeStr: nextQueryState.toDateTimeStr,
+        search: nextQueryState.search,
+        searchMode: nextQueryState.searchMode,
+      };
       setHighlightTargetMessage(false);
       setTargetMessageUid(oldestUnreadMessageRef);
       setTargetMessageContextActive(true);

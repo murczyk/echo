@@ -841,6 +841,24 @@ pub async fn aggregate_to_inbox_messages(
             signal_message_group::Column::GroupMasterKey
                 .eq_any(sigint_groups.clone()),
         );
+    let membership_rows = group_query
+        .clone()
+        .select_only()
+        .column(signal_message_group::Column::SignalMessageId)
+        .column(signal_message_group::Column::GroupMasterKey)
+        .into_tuple::<(i64, Option<String>)>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let mut group_memberships: HashMap<i64, BTreeSet<String>> = HashMap::new();
+    for (message_id, group_master_key) in membership_rows {
+        if let Some(group_master_key) = group_master_key {
+            group_memberships
+                .entry(message_id)
+                .or_default()
+                .insert(group_master_key);
+        }
+    }
     if let Some(selected_groups) = req.selected_groups.as_ref() {
         if !selected_groups.is_empty() {
             group_query = group_query.filter(
@@ -1183,12 +1201,10 @@ pub async fn aggregate_to_inbox_messages(
                     .as_ref()
                     .and_then(|(entry, _)| entry.group_master_key.clone()),
                 group_master_keys: Some(
-                    groups_map
-                        .get(&message.id)
+                    group_memberships
+                        .remove(&message.id)
                         .into_iter()
                         .flatten()
-                        .filter_map(|(entry, _)| entry.group_master_key.clone())
-                        .unique()
                         .collect(),
                 ),
                 sender,

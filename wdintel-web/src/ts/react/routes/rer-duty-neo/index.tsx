@@ -91,6 +91,9 @@ export function RerDutyNeoPage({
   const [editorSourceFeedId, setEditorSourceFeedId] = useState<string | null>(null);
   const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const [createMessageGroupMasterKey, setCreateMessageGroupMasterKey] = useState<string | null>(
+    null,
+  );
   const [editTarget, setEditTarget] = useState<{ id: number; message: InboxMessage } | null>(null);
   const [editAsReport, setEditAsReport] = useState(false);
   const [editTargetLoadState, setEditTargetLoadState] = useState<ReportEditLoadState>({
@@ -574,6 +577,7 @@ export function RerDutyNeoPage({
           setEditTarget(null);
           setEditAsReport(false);
           setReportSource(null);
+          setCreateMessageGroupMasterKey(sourceFeed?.groupScopeMasterKey ?? null);
           setCreateMessageOpen(true);
         },
         focusTarget,
@@ -590,9 +594,7 @@ export function RerDutyNeoPage({
     setEditorSourceMessageId(null);
   }, [cancelReportEditLoad]);
   const editorIntentKey = createMessageOpen
-    ? `create-message:${editorSourceFeedId ?? 'unknown'}:${
-        messageFeeds.find((feed) => feed.id === editorSourceFeedId)?.groupScopeMasterKey ?? 'all'
-      }`
+    ? `create-message:${editorSourceFeedId ?? 'unknown'}:${createMessageGroupMasterKey ?? 'all'}`
     : reportSource
       ? `create-report:${reportSource.id}`
       : editTarget
@@ -812,12 +814,7 @@ export function RerDutyNeoPage({
             hideNetworks={hideNetworks || !networkVisibilityReady}
             open={editorOpen}
             intentKey={editorIntentKey ?? 'closed'}
-            initialGroupMasterKey={
-              createMessageOpen
-                ? (messageFeeds.find((feed) => feed.id === editorSourceFeedId)
-                    ?.groupScopeMasterKey ?? null)
-                : null
-            }
+            initialGroupMasterKey={createMessageOpen ? createMessageGroupMasterKey : null}
             presentation={editorPresentation}
             adaptiveEmbeddedForm
             fillEmbeddedSurface

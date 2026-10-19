@@ -58,6 +58,9 @@ export function RerAnalysisNeoPage({
   const analysisDebugEnabled = useAnalysisDebugEnabled();
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const [createMessageGroupMasterKey, setCreateMessageGroupMasterKey] = useState<string | null>(
+    null,
+  );
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const editorRef = useRef<ManageMessageEditorHandle>(null);
@@ -98,9 +101,7 @@ export function RerAnalysisNeoPage({
   const leftPanelVisible = page.leftPanelOpen;
   const requestedRightPanelVisible = page.rightPanelOpen;
   const editorIntentKey = createMessageOpen
-    ? `create-message:${
-        page.groupNavigation.scope.kind === 'group' ? page.groupNavigation.scope.masterKey : 'all'
-      }`
+    ? `create-message:${createMessageGroupMasterKey ?? 'all'}`
     : page.reportSource
       ? `create-report:${page.reportSource.id}`
       : page.editorMessage
@@ -242,7 +243,14 @@ export function RerAnalysisNeoPage({
         page.groupNavigation.scope.kind === 'group' ? page.groupNavigation.scope.masterKey : 'all';
       requestEditorIntent(
         `create-message:${scopeKey}`,
-        () => setCreateMessageOpen(true),
+        () => {
+          setCreateMessageGroupMasterKey(
+            page.groupNavigation.scope.kind === 'group'
+              ? page.groupNavigation.scope.masterKey
+              : null,
+          );
+          setCreateMessageOpen(true);
+        },
         focusTarget,
       );
     },
@@ -506,11 +514,7 @@ export function RerAnalysisNeoPage({
                     focusFallbackRef={createMessageFabRef}
                     cyberEchoEnabled={page.cyberEchoEnabled}
                     currentUser={page.currentUser}
-                    initialGroupMasterKey={
-                      page.groupNavigation.scope.kind === 'group'
-                        ? page.groupNavigation.scope.masterKey
-                        : null
-                    }
+                    initialGroupMasterKey={createMessageOpen ? createMessageGroupMasterKey : null}
                     editTarget={page.editorMessage}
                     editAsReport={page.editorEditAsReport}
                     editTargetLoadState={page.editTargetLoadState}
