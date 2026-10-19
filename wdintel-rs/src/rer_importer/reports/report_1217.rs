@@ -5,9 +5,7 @@ use crate::config::{
     REPORT_1217_FONT, REPORT_1217_FONT_SIZE, REPORT_1217_FORM,
     REPORT_1217_PAGE_MARGINS, REPORT_1217_PAGE_SIZE, REPORT_1217_TITLE,
 };
-use crate::entities::{
-    sigint_comment, sigint_inbox_item, sigint_network, signal_message,
-};
+use crate::entities::{sigint_inbox_item, sigint_network, signal_message};
 use crate::error::AppError;
 use crate::rer_importer::report_chunking::{
     build_filtered_inbox_report_chunk_query, inbox_report_chunk_req,
@@ -221,23 +219,16 @@ async fn load_comments(
     logins: &[uuid::Uuid],
     ids: &[i64],
 ) -> anyhow::Result<BTreeMap<i64, Vec<String>>> {
-    let rows = sigint_comment::Entity::find()
-        .select_only()
-        .columns([
-            sigint_comment::Column::SignalMessageId,
-            sigint_comment::Column::Comment,
-        ])
-        .filter(sigint_comment::Column::SignalMessageId.is_in(ids.to_vec()))
-        .filter(sigint_comment::Column::LoginId.is_in(logins.to_vec()))
-        .order_by_asc(sigint_comment::Column::CreatedAt)
-        .order_by_asc(sigint_comment::Column::Id)
-        .into_tuple::<(i64, String)>()
-        .all(dbx)
-        .await
-        .c(h!())?;
+    let rows =
+        crate::sigint::comments::find_report_comments(dbx, ids, Some(logins))
+            .await
+            .c(h!())?;
     let mut comments: BTreeMap<i64, Vec<String>> = BTreeMap::new();
-    for (id, comment) in rows {
-        comments.entry(id).or_default().push(comment);
+    for comment in rows {
+        comments
+            .entry(comment.source_message_id)
+            .or_default()
+            .push(comment.comment);
     }
     Ok(comments)
 }

@@ -1,6 +1,8 @@
 use super::*;
+use crate::entities::sea_orm_active_enums::IntelProductRelationKind;
 use crate::entities::{
-    datasource_group, login, sigint_inbox_item_network, signal_message_group,
+    datasource_group, intel_product, login, sigint_comment,
+    sigint_inbox_item_network, signal_message_group,
 };
 use crate::functest::tests::*;
 use crate::rer_importer::types::InboxMessagesSortBy;
@@ -60,6 +62,37 @@ async fn seed_message(
         .await
         .unwrap();
     }
+    message.id
+}
+
+async fn seed_linked_comment(
+    dbx: &DatabaseConnection,
+    login_id: uuid::Uuid,
+    source_message_id: i64,
+    created_at: NaiveDateTime,
+    comment: &str,
+) -> i64 {
+    let message = mk_signal_message(
+        dbx,
+        signal_message::ActiveModel {
+            login_id: Set(Some(login_id)),
+            body: Set(Some(comment.to_string())),
+            created_at: Set(created_at),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    intel_product::ActiveModel {
+        intel_message_id: Set(message.id),
+        source_message_id: Set(source_message_id),
+        created_at: Set(created_at),
+        relation_kind: Set(IntelProductRelationKind::Comment),
+        ..Default::default()
+    }
+    .insert(dbx)
+    .await
+    .unwrap();
     message.id
 }
 
@@ -161,11 +194,51 @@ async fn echo_3827_report_respects_networks_filters_and_organism_comments() {
                 login_id: Set(author),
                 signal_message_id: Set(signal_message_id),
                 comment: Set(comment.to_string()),
+                created_at: Set(timestamp),
                 ..Default::default()
             },
         )
         .await
         .unwrap();
+    }
+    for (index, (author, source_message_id, comment)) in [
+        (login.id, message_id, "New linked comment"),
+        (peer.id, message_id, "Edited linked comment"),
+        (foreign_login.id, message_id, "Foreign linked comment"),
+        (
+            foreign_login.id,
+            uncommented_id,
+            "Foreign-only linked comment",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let created_at =
+            timestamp + chrono::Duration::minutes(index as i64 + 1);
+        let linked_id = seed_linked_comment(
+            &env.dbx,
+            author,
+            source_message_id,
+            created_at,
+            comment,
+        )
+        .await;
+        if author == peer.id {
+            mk_sigint_comment(
+                &env.dbx,
+                sigint_comment::ActiveModel {
+                    login_id: Set(author),
+                    signal_message_id: Set(source_message_id),
+                    comment: Set("Stale migrated comment".to_string()),
+                    created_at: Set(created_at),
+                    migrated_signal_message_id: Set(Some(linked_id)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
     }
     let request = InboxMessagesReq {
         since_date_inclusive_ms: Some(timestamp.and_utc().timestamp_millis()),
@@ -192,7 +265,7 @@ async fn echo_3827_report_respects_networks_filters_and_organism_comments() {
     assert_eq!(networks[1].interceptions.len(), 1);
     assert_eq!(
         networks[0].interceptions[0].comment,
-        "Own comment\nPeer comment"
+        "Own comment\nPeer comment\nNew linked comment\nEdited linked comment"
     );
     assert!(networks[0].interceptions[1].comment.is_empty());
     let mut bytes = std::io::Cursor::new(Vec::new());
@@ -211,9 +284,14 @@ async fn echo_3827_report_respects_networks_filters_and_organism_comments() {
     assert!(document.contains("18.10.2026 10:06"));
     assert!(document.contains("Intercept first"));
     assert!(document.contains("Uncommented interception"));
+    assert!(document.contains("New linked comment"));
+    assert!(document.contains("Edited linked comment"));
     for excluded in [
         "Foreign comment",
         "Foreign-only comment",
+        "Foreign linked comment",
+        "Foreign-only linked comment",
+        "Stale migrated comment",
         "Undefined network",
         "Outside period",
         "Outside group",
