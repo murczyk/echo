@@ -282,30 +282,6 @@ order by
     .c(h!())
 }
 
-pub async fn acknowledge_group_feed_tail(
-    dbx: &DatabaseConnection,
-    login: Uuid,
-    group_master_key: &str,
-    cursor: GroupFeedCursor,
-) -> anyhow::Result<GroupFeedStateRecord> {
-    let txn = dbx.begin().await.c(h!())?;
-    if !is_group_accessible(&txn, login, group_master_key)
-        .await
-        .c(h!())?
-    {
-        anyhow::bail!("group is not accessible");
-    }
-
-    upsert_read_state(&txn, login, group_master_key, &cursor)
-        .await
-        .c(h!())?;
-    let state = load_group_state(&txn, login, group_master_key)
-        .await
-        .c(h!())?;
-    txn.commit().await.c(h!())?;
-    Ok(state)
-}
-
 async fn is_group_accessible(
     txn: &DatabaseTransaction,
     login: Uuid,
@@ -700,7 +676,7 @@ mod tests {
             created_at: second.created_at,
             message_id: second.id,
         };
-        acknowledge_group_feed_tail(
+        acknowledge_current_group_feed_tail(
             &env.dbx,
             login.id,
             &group.master_key,
@@ -708,7 +684,7 @@ mod tests {
         )
         .await
         .unwrap();
-        acknowledge_group_feed_tail(
+        acknowledge_current_group_feed_tail(
             &env.dbx,
             login.id,
             &group.master_key,
@@ -741,7 +717,7 @@ mod tests {
             created_at: message.created_at,
             message_id: message.id,
         };
-        acknowledge_group_feed_tail(
+        acknowledge_current_group_feed_tail(
             &env.dbx,
             login.id,
             &group.master_key,

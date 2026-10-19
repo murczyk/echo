@@ -11,7 +11,6 @@ type Props = {
   onSelect: (scope: GroupScope) => void;
   onClose: () => void;
   triggerRef?: RefObject<HTMLButtonElement | null>;
-  variant?: 'overlay' | 'inline';
   title?: string;
 };
 
@@ -23,7 +22,6 @@ export function GroupPanel({
   onSelect,
   onClose,
   triggerRef,
-  variant = 'overlay',
   title = 'Групи',
 }: Props) {
   const panelRef = useRef<HTMLElement>(null);
@@ -53,7 +51,7 @@ export function GroupPanel({
   }, [close, open]);
 
   useEffect(() => {
-    if (!open || variant !== 'overlay') return;
+    if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
       if (!(event.target instanceof Node)) return;
       if (panelRef.current?.contains(event.target) || triggerRef?.current?.contains(event.target)) {
@@ -63,19 +61,19 @@ export function GroupPanel({
     };
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [onClose, open, triggerRef, variant]);
+  }, [onClose, open, triggerRef]);
 
   if (!open) return null;
 
   return (
-    <div className="group-navigation-panel-layer" data-variant={variant}>
+    <div className="group-navigation-panel-layer" data-variant="overlay">
       <aside
         ref={panelRef}
         id={id}
         className="group-navigation-panel"
         data-group-panel
-        data-variant={variant}
-        role={variant === 'overlay' ? 'dialog' : undefined}
+        data-variant="overlay"
+        role="dialog"
         aria-labelledby={titleId}
         tabIndex={-1}
       >

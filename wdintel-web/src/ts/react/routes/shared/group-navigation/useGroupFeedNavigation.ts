@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'r
 
 import type { AcknowledgeGroupFeedReq } from '../../../../../Bindings';
 import { HttpRequestError } from '../../../services/api/client';
-import { useInboxChangedMessageIds } from '../useInboxChangedMessageIds';
 import { groupFeedStateStore, type GroupFeedStateStore } from './group-feed-state-store';
 import type {
   GroupFeedNavigationModel,
@@ -15,7 +14,7 @@ type Options = {
   resolveSelectedGroupWhenHidden?: boolean;
   scope: GroupScope;
   allUnreadCount?: number;
-  onSelect: (scope: GroupScope) => void;
+  onSelect: (scope: GroupScope, oldestUnreadMessageRef: string | null) => void;
   onError: (error: unknown) => void;
   store?: GroupFeedStateStore;
 };
@@ -35,25 +34,6 @@ export function useGroupFeedNavigation({
   useEffect(() => {
     if (!enabled) return;
     return store.addVisibleConsumer();
-  }, [enabled, store]);
-
-  useInboxChangedMessageIds({
-    onMessageIds: useCallback(() => {
-      store.invalidate();
-    }, [store]),
-  });
-
-  useEffect(() => {
-    if (!enabled) return;
-    const revalidate = () => {
-      if (document.visibilityState === 'visible') void store.revalidateIfStale();
-    };
-    window.addEventListener('focus', revalidate);
-    document.addEventListener('visibilitychange', revalidate);
-    return () => {
-      window.removeEventListener('focus', revalidate);
-      document.removeEventListener('visibilitychange', revalidate);
-    };
   }, [enabled, store]);
 
   useEffect(() => {
@@ -124,16 +104,26 @@ export function useGroupFeedNavigation({
     [onError, store],
   );
 
+  const select = useCallback(
+    (scope: GroupScope) => {
+      const selected = groups.find((group) =>
+        scope.kind === 'all'
+          ? group.kind === 'all'
+          : group.kind === 'group' && group.masterKey === scope.masterKey,
+      );
+      onSelect(scope, selected?.kind === 'group' ? selected.oldestUnreadMessageRef : null);
+    },
+    [groups, onSelect],
+  );
+
   return {
     groups,
     scope,
     ready: !snapshot.stale,
     loading: snapshot.loading,
     error: snapshot.error,
-    select: onSelect,
-    refresh: store.refresh,
+    select,
     acknowledge,
     selectedGroup,
-    selectedCursor: selectedGroup.latestCursor,
   };
 }

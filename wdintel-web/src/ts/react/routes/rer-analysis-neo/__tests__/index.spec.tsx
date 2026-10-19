@@ -499,7 +499,6 @@ function buildPage() {
       loading: false,
       error: null,
       select: vi.fn(),
-      refresh: vi.fn(),
       acknowledge: vi.fn(),
       selectedGroup: {
         kind: 'all',
@@ -509,7 +508,6 @@ function buildPage() {
         oldestUnreadMessageRef: null,
         latestCursor: null,
       },
-      selectedCursor: null,
     },
     includeOnlyNewFreqs: false,
     inboxReq: null,
@@ -1162,7 +1160,6 @@ describe('RerAnalysisNeoPage', () => {
       groups: [page.groupNavigation.groups[0], group],
       scope: { kind: 'group', masterKey: 'group-b' },
       selectedGroup: group,
-      selectedCursor: group.latestCursor,
     };
     useRerAnalysisNeoPageMock.mockReturnValue(page);
     const container = document.createElement('div');
@@ -1199,7 +1196,6 @@ describe('RerAnalysisNeoPage', () => {
       groups: [page.groupNavigation.groups[0], group],
       scope: { kind: 'group', masterKey: 'group-b' },
       selectedGroup: group,
-      selectedCursor: group.latestCursor,
     };
     useRerAnalysisNeoPageMock.mockReturnValue(page);
     const container = document.createElement('div');

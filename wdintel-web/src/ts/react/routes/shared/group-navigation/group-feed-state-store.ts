@@ -4,6 +4,7 @@ import {
   fetchGroupFeedStates,
 } from '../../../services/api/group-feed-state';
 import { HttpRequestError } from '../../../services/api/client';
+import { inboxChangedEvents } from '../useInboxChangedMessageIds';
 
 const DEFAULT_TTL_MS = 15_000;
 const DEFAULT_EVENT_DEBOUNCE_MS = 150;
@@ -125,6 +126,13 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
 
   const revalidateIfStale = () => refresh(false);
 
+  const onInboxChanged = (event: Event) => {
+    if (inboxChangedEvents((event as CustomEvent<unknown>).detail).length > 0) invalidate();
+  };
+  const onFocus = () => {
+    if (document.visibilityState === 'visible') void revalidateIfStale();
+  };
+
   const addVisibleConsumer = () => {
     visibleConsumers += 1;
     void revalidateIfStale();
@@ -182,8 +190,19 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
 
   return {
     subscribe(listener: () => void) {
+      if (listeners.size === 0 && typeof window !== 'undefined') {
+        window.addEventListener('echo-inbox-changed', onInboxChanged);
+        window.addEventListener('focus', onFocus);
+        document.addEventListener('visibilitychange', onFocus);
+      }
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size > 0 || typeof window === 'undefined') return;
+        window.removeEventListener('echo-inbox-changed', onInboxChanged);
+        window.removeEventListener('focus', onFocus);
+        document.removeEventListener('visibilitychange', onFocus);
+      };
     },
     getSnapshot: () => snapshot,
     addVisibleConsumer,

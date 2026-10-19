@@ -89,7 +89,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     resolveSelectedGroupWhenHidden: true,
     scope: groupNavigation.scope,
     allUnreadCount: view.bottomUnreadCount ?? 0,
-    onSelect: () => {},
+    onSelect: groupNavigation.onSelect,
     onError: groupNavigation.onError,
   });
   const dutyGroups = useMemo(
@@ -360,11 +360,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       : navigation.selectedGroup;
   const handleGroupSelect = useCallback(
     (scope: GroupScope) => {
-      const selected = dutyGroups.find((group) =>
-        scope.kind === 'all'
-          ? group.kind === 'all'
-          : group.kind === 'group' && group.masterKey === scope.masterKey,
-      );
       setShowGroups(false);
       if (
         scope.kind === groupNavigation.scope.kind &&
@@ -374,12 +369,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       ) {
         return;
       }
-      groupNavigation.onSelect(
-        scope,
-        selected?.kind === 'group' ? selected.oldestUnreadMessageRef : null,
-      );
+      navigation.select(scope);
     },
-    [dutyGroups, groupNavigation],
+    [groupNavigation.scope, navigation.select],
   );
   const handleVisibleMessages = useCallback(
     (ids: readonly number[]) => {

@@ -11,15 +11,7 @@ export function AnalysisLeftPanel({ page, leftPanelVisible, fullHeight = false }
   if (!leftPanelVisible) return null;
 
   const selectGroup = (scope: GroupScope) => {
-    const selected = page.groupNavigation.groups.find((group) =>
-      scope.kind === 'all'
-        ? group.kind === 'all'
-        : group.kind === 'group' && group.masterKey === scope.masterKey,
-    );
-    page.selectGroupScope(
-      scope,
-      selected?.kind === 'group' ? selected.oldestUnreadMessageRef : null,
-    );
+    page.groupNavigation.select(scope);
     if (fullHeight) page.toggleLeftPanel();
   };
 

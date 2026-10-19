@@ -109,4 +109,63 @@ describe('useGroupFeedNavigation', () => {
     });
     expect(fetchStates).toHaveBeenCalledTimes(1);
   });
+
+  it('#3727 passes the destination unread reference to the owning page', async () => {
+    const store = createGroupFeedStateStore({
+      fetchStates: async () => [{ ...serverGroup, oldestUnreadMessageRef: 'unread-1' }],
+    });
+    const onSelect = vi.fn();
+    let navigation: ReturnType<typeof useGroupFeedNavigation> | null = null;
+    function SelectionHarness() {
+      navigation = useGroupFeedNavigation({
+        enabled: true,
+        scope: { kind: 'group', masterKey: 'g-1' },
+        onSelect,
+        onError: vi.fn(),
+        store,
+      });
+      return null;
+    }
+    await act(async () => root.render(<SelectionHarness />));
+
+    navigation!.select({ kind: 'group', masterKey: 'g-1' });
+    expect(onSelect).toHaveBeenLastCalledWith({ kind: 'group', masterKey: 'g-1' }, 'unread-1');
+    navigation!.select({ kind: 'all' });
+    expect(onSelect).toHaveBeenLastCalledWith({ kind: 'all' }, null);
+  });
+
+  it('#3727 invalidates a closed subscribed store without fetching until it opens', async () => {
+    let unreadCount = 4;
+    const store = createGroupFeedStateStore({
+      fetchStates: async () => [{ ...serverGroup, unreadCount }],
+    });
+    const unsubscribeFirst = store.subscribe(() => {});
+    const unsubscribe = store.subscribe(() => {});
+    unsubscribeFirst();
+    try {
+      await store.ensureLoaded();
+      window.dispatchEvent(
+        new CustomEvent('echo-inbox-changed', { detail: { messageIds: ['invalid'] } }),
+      );
+      expect(store.getSnapshot().stale).toBe(false);
+
+      unreadCount = 5;
+      window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [1] } }));
+      expect(store.getSnapshot().stale).toBe(true);
+      expect(store.getSnapshot().loading).toBe(false);
+      expect(store.getSnapshot().groups[0].unreadCount).toBe(4);
+
+      const release = store.addVisibleConsumer();
+      try {
+        await store.ensureLoaded();
+        expect(store.getSnapshot().groups[0].unreadCount).toBe(5);
+      } finally {
+        release();
+      }
+    } finally {
+      unsubscribe();
+    }
+    window.dispatchEvent(new CustomEvent('echo-inbox-changed', { detail: { messageIds: [2] } }));
+    expect(store.getSnapshot().stale).toBe(false);
+  });
 });

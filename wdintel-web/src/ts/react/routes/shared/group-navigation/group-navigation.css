@@ -140,12 +140,6 @@
   pointer-events: none;
 }
 
-.group-navigation-panel-layer[data-variant='inline'] {
-  position: relative;
-  z-index: auto;
-  block-size: 100%;
-}
-
 .group-navigation-panel {
   position: relative;
   z-index: 1;
@@ -170,11 +164,6 @@
 
 .group-navigation-panel[data-variant='overlay'] {
   animation: group-navigation-panel-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.group-navigation-panel[data-variant='inline'] {
-  inline-size: 100%;
-  box-shadow: none;
 }
 
 .group-navigation-list-title {

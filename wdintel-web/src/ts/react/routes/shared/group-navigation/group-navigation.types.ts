@@ -1,8 +1,4 @@
-import type {
-  AcknowledgeGroupFeedReq,
-  GroupFeedCursorDto,
-  GroupFeedState,
-} from '../../../../../Bindings';
+import type { AcknowledgeGroupFeedReq, GroupFeedState } from '../../../../../Bindings';
 
 export type GroupScope = { kind: 'all' } | { kind: 'group'; masterKey: string };
 
@@ -24,8 +20,6 @@ export type GroupFeedNavigationModel = {
   loading: boolean;
   error: unknown;
   select: (scope: GroupScope) => void;
-  refresh: () => Promise<void>;
   acknowledge: (request: AcknowledgeGroupFeedReq, signal?: AbortSignal) => Promise<GroupFeedState>;
   selectedGroup: GroupNavigationItem;
-  selectedCursor: GroupFeedCursorDto | null;
 };
