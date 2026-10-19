@@ -2540,7 +2540,7 @@ function AdminDirectionsNeoPageBody() {
         disableRestoreFocus
       >
         <DialogTitle>Редагувати групу</DialogTitle>
-        <DialogContent className="space-y-4">
+        <DialogContent sx={{ '& > :not(:last-child)': { mb: 2 } }}>
           {editDialog?.error ? <PowerAlert severity="error">{editDialog.error}</PowerAlert> : null}
           <div className="text-sm text-muted-foreground">Група: {editDialog?.groupName}</div>
           {editDialog ? (
@@ -2746,7 +2746,7 @@ function AdminDirectionsNeoPageBody() {
         disableRestoreFocus
       >
         <DialogTitle>Редагувати орфан групу</DialogTitle>
-        <DialogContent className="space-y-4">
+        <DialogContent sx={{ '& > :not(:last-child)': { mb: 2 } }}>
           {orphanEditDialog?.error ? (
             <PowerAlert severity="error">{orphanEditDialog.error}</PowerAlert>
           ) : null}

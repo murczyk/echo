@@ -25,7 +25,7 @@ describe('GroupColorPicker', () => {
     container.remove();
   });
 
-  it('renders the controlled palette and reports a selected color', async () => {
+  it('reports the selected dropdown color without changing the controlled value', async () => {
     const onChange = vi.fn();
     await act(async () => {
       root.render(
@@ -35,14 +35,20 @@ describe('GroupColorPicker', () => {
       );
     });
 
-    const options = container.querySelectorAll<HTMLButtonElement>('[data-group-color]');
-    expect(options).toHaveLength(16);
-    expect(container.querySelector('[data-group-color="blue"]')?.getAttribute('aria-pressed')).toBe(
-      'true',
+    const trigger = container.querySelector<HTMLElement>('[role="combobox"]');
+    expect(trigger).not.toBeNull();
+    expect(trigger?.textContent).toContain('Синій');
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+    await act(async () => {
+      trigger!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+    const option = document.querySelector<HTMLElement>(
+      '[role="option"][data-group-color="deep_purple"]',
     );
-
-    await act(async () => options[3].click());
+    expect(option).not.toBeNull();
+    await act(async () => option!.click());
     expect(onChange).toHaveBeenCalledWith('deep_purple');
+    expect(trigger?.textContent).toContain('Синій');
   });
 
   it.each(['light', 'dark'] as const)('keeps every %s palette color readable', (mode) => {

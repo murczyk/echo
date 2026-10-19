@@ -1,4 +1,5 @@
-import { Box, ButtonBase, FormControl, FormLabel, Tooltip } from '@mui/material';
+import { useId } from 'react';
+import { Box, FormControl, InputLabel, MenuItem, Select } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import type { SignalGroupColor } from '../../../../../Bindings';
@@ -31,43 +32,41 @@ type Props = {
 
 export function GroupColorPicker({ value, onChange, disabled = false }: Props) {
   const theme = useTheme();
+  const labelId = useId();
 
   return (
-    <FormControl component="fieldset" disabled={disabled}>
-      <FormLabel component="legend">Колір групи</FormLabel>
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-        {signalGroupColors.map((colorKey) => {
-          const selected = colorKey === value;
-          return (
-            <Tooltip key={colorKey} title={colorNames[colorKey]}>
-              <ButtonBase
-                data-group-color={colorKey}
-                aria-label={colorNames[colorKey]}
-                aria-pressed={selected}
-                disabled={disabled}
-                onClick={() => onChange(colorKey)}
+    <FormControl
+      size="small"
+      disabled={disabled}
+      sx={{ display: 'flex', width: 220, maxWidth: '100%' }}
+    >
+      <InputLabel id={labelId}>Колір групи</InputLabel>
+      <Select
+        labelId={labelId}
+        label="Колір групи"
+        value={value}
+        onChange={(event) => onChange(event.target.value as SignalGroupColor)}
+        MenuProps={{ PaperProps: { sx: { maxHeight: 320 } } }}
+      >
+        {signalGroupColors.map((colorKey) => (
+          <MenuItem key={colorKey} value={colorKey} data-group-color={colorKey}>
+            <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box
+                component="span"
+                aria-hidden="true"
                 sx={{
-                  width: 36,
-                  height: 36,
-                  border: 2,
-                  borderColor: selected ? 'primary.main' : 'transparent',
+                  width: 18,
+                  height: 18,
+                  flexShrink: 0,
                   borderRadius: '50%',
-                  opacity: disabled ? 0.5 : 1,
+                  backgroundColor: resolveGroupColor(theme, colorKey).backgroundColor,
                 }}
-              >
-                <Box
-                  sx={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: '50%',
-                    backgroundColor: resolveGroupColor(theme, colorKey).backgroundColor,
-                  }}
-                />
-              </ButtonBase>
-            </Tooltip>
-          );
-        })}
-      </Box>
+              />
+              {colorNames[colorKey]}
+            </Box>
+          </MenuItem>
+        ))}
+      </Select>
     </FormControl>
   );
 }
