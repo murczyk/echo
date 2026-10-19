@@ -1862,6 +1862,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn rollback_cleanup_removes_staged_object_and_preserves_source() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let temp = tempfile::tempdir().unwrap();
@@ -2082,6 +2083,7 @@ insert into system_settings (
     }
 
     #[tokio::test]
+    #[serial]
     async fn partial_missing_discard_deletes_successfully_staged_sources() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let temp = tempfile::tempdir().unwrap();

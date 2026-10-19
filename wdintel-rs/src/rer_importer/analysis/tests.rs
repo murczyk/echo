@@ -28,6 +28,113 @@ struct GroupFixture {
     datasource_group: datasource_group::Model,
 }
 
+#[serial]
+#[tokio::test]
+async fn issue_3780_message_group_lookup_preserves_access_and_scope() {
+    let env = cleanup().await.unwrap();
+    let allowed = mk_signal_group(&env.dbx, Default::default())
+        .await
+        .unwrap()
+        .master_key;
+    let denied = mk_signal_group(&env.dbx, Default::default())
+        .await
+        .unwrap()
+        .master_key;
+    let mut ids = Vec::new();
+    for groups in [
+        vec![
+            Some(allowed.clone()),
+            Some(allowed.clone()),
+            Some(denied.clone()),
+        ],
+        vec![Some(denied.clone())],
+        vec![None],
+    ] {
+        let message = mk_signal_message(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        for group in groups {
+            mk_signal_message_group(
+                &env.dbx,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(message.id),
+                    group_master_key: Set(group),
+                    datasource_group_id: Set(None),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        ids.push(message.id);
+    }
+
+    for lookup_by_message in [false, true] {
+        for (keys, scope, expected) in [
+            (vec![allowed.clone()], None, vec![ids[0]]),
+            (vec![denied.clone()], None, vec![ids[0], ids[1]]),
+            (
+                vec![allowed.clone(), denied.clone()],
+                None,
+                vec![ids[0], ids[1]],
+            ),
+            (vec![], None, vec![]),
+            (
+                vec![allowed.clone()],
+                Some(AnalyticsMessageIdScope::From(ids[1])),
+                vec![],
+            ),
+            (
+                vec![allowed.clone()],
+                Some(AnalyticsMessageIdScope::Inclusive {
+                    min_id: ids[0],
+                    max_id: ids[0],
+                }),
+                vec![ids[0]],
+            ),
+            (
+                vec![allowed.clone()],
+                Some(AnalyticsMessageIdScope::Empty),
+                vec![],
+            ),
+            (
+                vec![allowed.clone(), denied.clone()],
+                Some(AnalyticsMessageIdScope::From(ids[1])),
+                vec![ids[1]],
+            ),
+            (
+                vec![allowed.clone(), denied.clone()],
+                Some(AnalyticsMessageIdScope::Inclusive {
+                    min_id: ids[0],
+                    max_id: ids[0],
+                }),
+                vec![ids[0]],
+            ),
+            (
+                vec![allowed.clone(), denied.clone()],
+                Some(AnalyticsMessageIdScope::Empty),
+                vec![],
+            ),
+        ] {
+            let actual = signal_message::Entity::find()
+                .select_only()
+                .column(signal_message::Column::Id)
+                .filter(signal_message::Column::Id.is_in(ids.clone()))
+                .filter(message_in_groups_exists_with_correlation(
+                    keys,
+                    scope.as_ref(),
+                    lookup_by_message,
+                ))
+                .order_by_asc(signal_message::Column::Id)
+                .into_tuple::<i64>()
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
+}
+
 #[tokio::test]
 #[ignore = "requires the isolated callsign benchmark database"]
 async fn capture_callsign_page_production_builder_plans() {
