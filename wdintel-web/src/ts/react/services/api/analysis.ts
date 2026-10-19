@@ -180,7 +180,9 @@ function analysisStatsReqBody(req: AnalysisStatsReq) {
 }
 
 function reportPreviewReqBody(req: ReportPreviewReq): JsonValue {
-  const body = transformCamelToSnake(req) as Record<string, unknown>;
+  const { report1217IncludeWithoutComments, ...report } = req;
+  const body = transformCamelToSnake(report) as Record<string, unknown>;
+  body.report_1217_include_without_comments = report1217IncludeWithoutComments;
 
   if (req.reportType == null) {
     body.report_type = null;
