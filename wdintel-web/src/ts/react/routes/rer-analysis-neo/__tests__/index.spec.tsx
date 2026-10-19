@@ -641,7 +641,7 @@ function buildPage() {
     toggleLeftPanel: vi.fn(),
     openLeftPanel: vi.fn(),
     selectGroupScope: vi.fn(),
-    acknowledgeGroupAtNewest: vi.fn(),
+    onVisibleGroupMessages: vi.fn(),
     toggleReportTaskRunLogs: vi.fn(),
     toggleRightPanel: vi.fn(),
     toggleUnitFromMap: vi.fn(),

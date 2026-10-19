@@ -439,7 +439,7 @@ export function AnalysisCenterPanel({
             onViewportCaptureChange={page.setMessageViewportCapture}
             onVisiblePageChange={page.setVisibleMessagesPageIndex}
             onPageNavigationHandled={page.clearMessagePageNavigationTarget}
-            onChronologicalNewestReached={page.acknowledgeGroupAtNewest}
+            onVisibleMessages={page.onVisibleGroupMessages}
             scrollResetKey={`${page.queryState.fromDateTimeStr}|${page.queryState.toDateTimeStr}|${
               page.groupNavigation.scope.kind === 'group'
                 ? page.groupNavigation.scope.masterKey

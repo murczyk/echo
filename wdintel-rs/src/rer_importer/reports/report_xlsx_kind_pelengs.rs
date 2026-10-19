@@ -601,6 +601,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                     created_at_order: None,
                     has_date_in_header: false,
                     group_master_key: None,
+                    group_master_keys: None,
                     sender: m.sender.clone(),
                     extended_form: None,
                     message_comments: vec![],

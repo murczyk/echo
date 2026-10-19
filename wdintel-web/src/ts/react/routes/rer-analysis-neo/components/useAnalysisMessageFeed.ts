@@ -43,7 +43,7 @@ type Options = {
   onLoadMoreMessages: () => Promise<boolean>;
   onVisiblePageChange: (pageIndex: number) => void;
   onPageNavigationHandled: () => void;
-  onChronologicalNewestReached?: () => void;
+  onVisibleMessages?: (ids: readonly number[]) => void;
 };
 
 export function useAnalysisMessageFeed({
@@ -65,7 +65,7 @@ export function useAnalysisMessageFeed({
   onLoadMoreMessages,
   onVisiblePageChange,
   onPageNavigationHandled,
-  onChronologicalNewestReached,
+  onVisibleMessages,
 }: Options) {
   const onFirstVisibleMessage = useCallback(
     (_id: number, index: number) => {
@@ -77,19 +77,8 @@ export function useAnalysisMessageFeed({
               Math.floor((firstLoadedMessageIndex + index) / ANALYSIS_MESSAGES_PAGE_SIZE),
             ),
       );
-      if (newestFirst && index === 0 && !hasMoreBeforeWindow && !isLoading) {
-        onChronologicalNewestReached?.();
-      }
     },
-    [
-      directMessageNavigation,
-      firstLoadedMessageIndex,
-      hasMoreBeforeWindow,
-      isLoading,
-      newestFirst,
-      onChronologicalNewestReached,
-      onVisiblePageChange,
-    ],
+    [directMessageNavigation, firstLoadedMessageIndex, onVisiblePageChange],
   );
   const pageMessageId =
     pageNavigationTarget === null
@@ -182,12 +171,7 @@ export function useAnalysisMessageFeed({
     onLoadNewer: directMessageNavigation ? load(below) : onLoadMoreMessages,
     unreadPrefetchNeeded: !isLoading && hasMoreBelow,
     onFirstVisibleMessage,
-    onReachedBottom:
-      !newestFirst && !hasMoreBelow && !isLoading
-        ? () => {
-            onChronologicalNewestReached?.();
-          }
-        : undefined,
+    onVisibleMessages,
   };
   return {
     scrollOptions,

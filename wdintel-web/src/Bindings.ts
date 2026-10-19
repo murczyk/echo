@@ -431,6 +431,7 @@ export type InboxMessage = {
   createdAtOrder: number | null;
   hasDateInHeader: boolean;
   groupMasterKey: string | null;
+  groupMasterKeys: Array<string> | null;
   sender: string | null;
   extendedForm: string | null;
   messageComments: Array<MessageComment>;
@@ -717,6 +718,8 @@ export type GroupFeedState = {
   ignoreOperativny: boolean;
   unreadCount: number;
   oldestUnreadMessageRef: string | null;
+  lastReadCreatedAtOrder: number | null;
+  lastReadMessageId: number | null;
   lastActivityAt: number | null;
   latestCursor: GroupFeedCursorDto | null;
   colorKey: SignalGroupColor;

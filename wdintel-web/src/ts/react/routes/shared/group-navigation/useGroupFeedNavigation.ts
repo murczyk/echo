@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 
 import type { AcknowledgeGroupFeedReq } from '../../../../../Bindings';
+import { HttpRequestError } from '../../../services/api/client';
 import { useInboxChangedMessageIds } from '../useInboxChangedMessageIds';
 import { groupFeedStateStore, type GroupFeedStateStore } from './group-feed-state-store';
 import type {
@@ -38,9 +39,8 @@ export function useGroupFeedNavigation({
 
   useInboxChangedMessageIds({
     onMessageIds: useCallback(() => {
-      if (!enabled) return;
       store.invalidate();
-    }, [enabled, store]),
+    }, [store]),
   });
 
   useEffect(() => {
@@ -63,14 +63,12 @@ export function useGroupFeedNavigation({
   }, [onError, snapshot.error]);
 
   const groups = useMemo<GroupNavigationItem[]>(() => {
-    const aggregateUnreadCount =
-      allUnreadCount ?? snapshot.groups.reduce((sum, group) => sum + group.unreadCount, 0);
     return [
       {
         kind: 'all',
         masterKey: null,
         name: 'Всі групи',
-        unreadCount: aggregateUnreadCount,
+        unreadCount: allUnreadCount ?? 0,
         oldestUnreadMessageRef: null,
         latestCursor: null,
       },
@@ -86,6 +84,7 @@ export function useGroupFeedNavigation({
     !enabled &&
     scope.kind === 'group' &&
     selectedGroupFromState == null &&
+    !snapshot.loading &&
     snapshot.stale &&
     snapshot.error == null;
 
@@ -104,6 +103,8 @@ export function useGroupFeedNavigation({
           ignoreOperativny: false,
           unreadCount: 0,
           oldestUnreadMessageRef: null,
+          lastReadCreatedAtOrder: null,
+          lastReadMessageId: null,
           lastActivityAt: null,
           latestCursor: null,
         })
@@ -114,7 +115,9 @@ export function useGroupFeedNavigation({
       try {
         return await store.acknowledge(request, signal);
       } catch (error) {
-        if (!signal?.aborted) onError(error);
+        if (!signal?.aborted && !(error instanceof HttpRequestError && error.status === 409)) {
+          onError(error);
+        }
         throw error;
       }
     },

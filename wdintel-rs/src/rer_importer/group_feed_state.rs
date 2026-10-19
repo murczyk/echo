@@ -38,6 +38,8 @@ pub struct GroupFeedState {
     pub ignore_operativny: bool,
     pub unread_count: i64,
     pub oldest_unread_message_ref: Option<String>,
+    pub last_read_created_at_order: Option<i64>,
+    pub last_read_message_id: Option<i64>,
     pub last_activity_at: Option<i64>,
     pub latest_cursor: Option<GroupFeedCursorDto>,
     pub color_key: SignalGroupColor,
@@ -374,47 +376,41 @@ async fn load_group_state(
 }
 
 #[derive(FromQueryResult)]
-struct LatestGroupCursorRow {
+struct GroupMessageCursorRow {
     created_at: NaiveDateTime,
     message_id: i64,
 }
 
-async fn load_latest_group_cursor(
+async fn load_group_message_cursor(
     txn: &DatabaseTransaction,
     group_master_key: &str,
+    message_id: i64,
 ) -> anyhow::Result<Option<GroupFeedCursor>> {
-    Ok(
-        LatestGroupCursorRow::find_by_statement(
-            Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                r#"
-select messages.created_at, messages.id as message_id
-from (
-    select distinct
-        signal_message.created_at,
-        signal_message.id
-    from signal_message_group
-    join signal_message
-        on signal_message.id = signal_message_group.signal_message_id
-    join sigint_inbox_item
-        on sigint_inbox_item.id = signal_message.id
-    where signal_message_group.group_master_key = $1
-        and signal_message.deleted = false
-) messages
-order by messages.created_at desc, messages.id desc
-limit 1
-            "#,
-                [group_master_key.into()],
-            ),
-        )
-        .one(txn)
-        .await
-        .c(h!())?
-        .map(|row| GroupFeedCursor {
-            created_at: row.created_at,
-            message_id: row.message_id,
-        }),
+    Ok(GroupMessageCursorRow::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+select signal_message.created_at, signal_message.id as message_id
+from signal_message
+join sigint_inbox_item on sigint_inbox_item.id = signal_message.id
+where signal_message.id = $2
+    and signal_message.deleted = false
+    and exists (
+        select 1 from signal_message_group
+        where signal_message_group.signal_message_id = $2
+            and signal_message_group.group_master_key = $1
     )
+            "#,
+            [group_master_key.into(), message_id.into()],
+        ),
+    )
+    .one(txn)
+    .await
+    .c(h!())?
+    .map(|row| GroupFeedCursor {
+        created_at: row.created_at,
+        message_id: row.message_id,
+    }))
 }
 
 pub async fn acknowledge_current_group_feed_tail(
@@ -432,19 +428,22 @@ pub async fn acknowledge_current_group_feed_tail(
         return Err(AppError::Forbidden("group is not accessible".to_string()));
     }
 
-    let latest_cursor = load_latest_group_cursor(&txn, group_master_key)
-        .await
-        .c(h!())?;
-    if latest_cursor.as_ref() != Some(&cursor) {
+    let stored_cursor =
+        load_group_message_cursor(&txn, group_master_key, cursor.message_id)
+            .await
+            .c(h!())?;
+    let Some(stored_cursor) = stored_cursor.filter(|stored| {
+        stored.created_at.and_utc().timestamp_millis()
+            == cursor.created_at.and_utc().timestamp_millis()
+    }) else {
         return Err(AppError::ConflictJson {
             body: serde_json::json!({
-                "message": "group feed tail has changed",
-                "latest_cursor": latest_cursor.map(cursor_to_dto),
+                "message": "group feed message has changed",
             }),
         });
-    }
+    };
 
-    upsert_read_state(&txn, login, group_master_key, &cursor)
+    upsert_read_state(&txn, login, group_master_key, &stored_cursor)
         .await
         .c(h!())?;
     let state = load_group_state(&txn, login, group_master_key)
@@ -489,6 +488,14 @@ fn record_to_dto(record: GroupFeedStateRecord) -> GroupFeedState {
         oldest_unread_message_ref: record
             .oldest_unread_message_ref
             .map(|reference| reference.to_string()),
+        last_read_created_at_order: record
+            .last_read_cursor
+            .as_ref()
+            .map(|cursor| cursor.created_at.and_utc().timestamp_micros()),
+        last_read_message_id: record
+            .last_read_cursor
+            .as_ref()
+            .map(|cursor| cursor.message_id),
         last_activity_at: record
             .last_activity_cursor
             .as_ref()
@@ -862,15 +869,16 @@ where login_id = $1
     }
 
     #[tokio::test]
-    async fn acknowledge_rejects_a_stale_or_non_tail_cursor() {
+    async fn acknowledge_advances_through_unread_messages() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let group = find_test_signal_group(&env.dbx).await.unwrap();
         list_group_feed_states(&env.dbx, login.id).await.unwrap();
         let first = add_message(&env.dbx, &group.master_key, at(9)).await;
-        add_message(&env.dbx, &group.master_key, at(10)).await;
+        let second = add_message(&env.dbx, &group.master_key, at(10)).await;
+        add_message(&env.dbx, &group.master_key, at(11)).await;
 
-        let result = acknowledge_current_group_feed_tail(
+        let state = acknowledge_current_group_feed_tail(
             &env.dbx,
             login.id,
             &group.master_key,
@@ -879,12 +887,116 @@ where login_id = $1
                 message_id: first.id,
             },
         )
-        .await;
+        .await
+        .unwrap();
 
-        assert!(matches!(
-            result,
-            Err(crate::error::AppError::ConflictJson { .. })
-        ));
+        assert_eq!(state.unread_count, 2);
+        assert_eq!(state.last_read_cursor.unwrap().message_id, first.id);
+
+        let state = acknowledge_current_group_feed_tail(
+            &env.dbx,
+            login.id,
+            &group.master_key,
+            GroupFeedCursor {
+                created_at: second.created_at,
+                message_id: second.id,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(state.unread_count, 1);
+        assert_eq!(state.last_read_cursor.unwrap().message_id, second.id);
+        let state = acknowledge_current_group_feed_tail(
+            &env.dbx,
+            login.id,
+            &group.master_key,
+            GroupFeedCursor {
+                created_at: first.created_at,
+                message_id: first.id,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(state.unread_count, 1);
+        assert_eq!(state.last_read_cursor.unwrap().message_id, second.id);
+    }
+
+    #[tokio::test]
+    async fn acknowledge_accepts_a_millisecond_cursor_for_microsecond_storage()
+    {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        list_group_feed_states(&env.dbx, login.id).await.unwrap();
+        let created_at = at(12) + chrono::Duration::microseconds(123_456);
+        let message =
+            add_message(&env.dbx, &group.master_key, created_at).await;
+        let cursor = cursor_from_dto(GroupFeedCursorDto {
+            created_at: created_at.and_utc().timestamp_millis(),
+            message_id: message.id,
+        })
+        .unwrap();
+
+        let state = acknowledge_current_group_feed_tail(
+            &env.dbx,
+            login.id,
+            &group.master_key,
+            cursor,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(state.unread_count, 0);
+        let state = record_to_dto(state);
+        assert_eq!(
+            state.last_read_created_at_order,
+            Some(created_at.and_utc().timestamp_micros())
+        );
+        assert_eq!(state.last_read_message_id, Some(message.id));
+    }
+
+    #[tokio::test]
+    async fn acknowledge_rejects_a_message_outside_the_group_or_a_forged_timestamp(
+    ) {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        list_group_feed_states(&env.dbx, login.id).await.unwrap();
+        let message = add_message(&env.dbx, &group.master_key, at(13)).await;
+        let other_group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let foreign_message =
+            add_message(&env.dbx, &other_group.master_key, at(13)).await;
+
+        for cursor in [
+            GroupFeedCursor {
+                created_at: at(14),
+                message_id: message.id,
+            },
+            GroupFeedCursor {
+                created_at: at(13),
+                message_id: -1,
+            },
+            GroupFeedCursor {
+                created_at: at(13),
+                message_id: foreign_message.id,
+            },
+        ] {
+            let result = acknowledge_current_group_feed_tail(
+                &env.dbx,
+                login.id,
+                &group.master_key,
+                cursor,
+            )
+            .await;
+            assert!(matches!(result, Err(AppError::ConflictJson { .. })));
+        }
     }
 
     #[tokio::test]

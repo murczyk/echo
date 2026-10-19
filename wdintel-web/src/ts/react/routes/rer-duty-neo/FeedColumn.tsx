@@ -32,6 +32,7 @@ import {
   GroupPanel,
   isDutyGroupViewAcknowledgeable,
   useGroupFeedNavigation,
+  useGroupFeedReadReceipts,
   type GroupNavigationItem,
   type GroupScope,
 } from '../shared/group-navigation';
@@ -83,14 +84,47 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   const notificationPanelRef = useRef<HTMLDivElement | null>(null);
   const keywordsPanelRef = useRef<HTMLDivElement | null>(null);
   const groupsTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const groupAckControllerRef = useRef<AbortController | null>(null);
   const navigation = useGroupFeedNavigation({
     enabled: showGroups,
     resolveSelectedGroupWhenHidden: true,
     scope: groupNavigation.scope,
+    allUnreadCount: view.bottomUnreadCount ?? 0,
     onSelect: () => {},
     onError: groupNavigation.onError,
   });
+  const dutyGroups = useMemo(
+    () => navigation.groups.filter((group) => group.kind === 'all' || !group.ignoreOperativny),
+    [navigation.groups],
+  );
+  const onVisibleGroupMessages = useGroupFeedReadReceipts({
+    enabled:
+      view.scrollTrackingEnabled !== false &&
+      !feed.loading &&
+      isDutyGroupViewAcknowledgeable(feed.filter) &&
+      feed.adjacentFreqsRange === 0 &&
+      !feed.highlightSignalsEnabled &&
+      !feed.onlyMyUnitTagsEnabled,
+    groups: dutyGroups,
+    messages: feed.items,
+    acknowledge: navigation.acknowledge,
+  });
+  const lastUnavailableGroupRef = useRef<string | null>(null);
+  useEffect(() => {
+    const scope = groupNavigation.scope;
+    if (scope.kind !== 'group') {
+      lastUnavailableGroupRef.current = null;
+      return;
+    }
+    if (!navigation.ready) return;
+    if (dutyGroups.some((group) => group.kind === 'group' && group.masterKey === scope.masterKey)) {
+      lastUnavailableGroupRef.current = null;
+      return;
+    }
+    if (lastUnavailableGroupRef.current === scope.masterKey) return;
+    lastUnavailableGroupRef.current = scope.masterKey;
+    groupNavigation.onError(new Error('Обрана група більше недоступна.'));
+    groupNavigation.onSelect({ kind: 'all' }, null);
+  }, [dutyGroups, groupNavigation, navigation.ready]);
   const [notificationStorageSyncKey, setNotificationStorageSyncKey] = useState(0);
   const [notificationStatusVersion, setNotificationStatusVersion] = useState(0);
   const [notificationStorageError, setNotificationStorageError] = useState<string | null>(null);
@@ -315,34 +349,18 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
 
   useEffect(() => () => clearFeedColumnFab(feed.id), [feed.id]);
 
-  useEffect(() => {
-    groupAckControllerRef.current?.abort();
-    groupAckControllerRef.current = null;
-  }, [feed.filter, feed.groupScopeMasterKey]);
-  useEffect(
-    () => () => {
-      groupAckControllerRef.current?.abort();
-    },
-    [],
-  );
-
   const selectedGroup: GroupNavigationItem =
-    groupNavigation.scope.kind === 'group' && navigation.selectedGroup.kind === 'all'
+    groupNavigation.scope.kind === 'group' &&
+    navigation.selectedGroup.kind === 'group' &&
+    navigation.selectedGroup.name === groupNavigation.scope.masterKey
       ? {
-          kind: 'group',
-          masterKey: groupNavigation.scope.masterKey,
+          ...navigation.selectedGroup,
           name: groupNavigation.groupName,
-          colorKey: 'blue_grey',
-          ignoreOperativny: false,
-          unreadCount: 0,
-          oldestUnreadMessageRef: null,
-          lastActivityAt: null,
-          latestCursor: null,
         }
       : navigation.selectedGroup;
   const handleGroupSelect = useCallback(
     (scope: GroupScope) => {
-      const selected = navigation.groups.find((group) =>
+      const selected = dutyGroups.find((group) =>
         scope.kind === 'all'
           ? group.kind === 'all'
           : group.kind === 'group' && group.masterKey === scope.masterKey,
@@ -361,44 +379,21 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         selected?.kind === 'group' ? selected.oldestUnreadMessageRef : null,
       );
     },
-    [groupNavigation, navigation.groups],
+    [dutyGroups, groupNavigation],
   );
-  const handleReachedBottom = useCallback(
-    (context: Parameters<NonNullable<typeof actions.onReachedBottom>>[0]) => {
-      const result = actions.onReachedBottom?.(context);
-      if (
-        result === false ||
-        groupNavigation.scope.kind !== 'group' ||
-        navigation.selectedCursor == null ||
-        !isDutyGroupViewAcknowledgeable(feed.filter) ||
-        feed.adjacentFreqsRange !== 0 ||
-        feed.highlightSignalsEnabled ||
-        feed.onlyMyUnitTagsEnabled
-      ) {
-        return result;
-      }
-      groupAckControllerRef.current?.abort();
-      const controller = new AbortController();
-      groupAckControllerRef.current = controller;
-      void navigation
-        .acknowledge(
-          {
-            masterKey: groupNavigation.scope.masterKey,
-            cursor: navigation.selectedCursor,
-          },
-          controller.signal,
-        )
-        .catch(() => {});
-      return result;
+  const handleVisibleMessages = useCallback(
+    (ids: readonly number[]) => {
+      actions.onVisibleMessages?.(ids);
+      onVisibleGroupMessages(ids);
     },
-    [actions, feed, groupNavigation.scope, navigation],
+    [actions.onVisibleMessages, onVisibleGroupMessages],
   );
   const contentColumn = useMemo<FeedColumnModel>(
     () => ({
       ...column,
-      actions: { ...actions, onReachedBottom: handleReachedBottom },
+      actions: { ...actions, onVisibleMessages: handleVisibleMessages },
     }),
-    [actions, column, handleReachedBottom],
+    [actions, column, handleVisibleMessages],
   );
 
   return (
@@ -480,7 +475,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         <GroupPanel
           id={`duty-group-panel-${feed.id}`}
           open={showGroups}
-          groups={navigation.groups}
+          groups={dutyGroups}
           scope={groupNavigation.scope}
           onSelect={handleGroupSelect}
           onClose={() => setShowGroups(false)}

@@ -309,6 +309,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
 // See ./AGENTS.md before adding structural component abstractions.
 type DutyMessageListProps = {
   items: [number, InboxMessage][];
+  unreadBoundaryMessageId?: number | null;
   feedId: string;
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
@@ -358,6 +359,7 @@ type DutyMessageListProps = {
 const DutyMessageList = memo(
   function DutyMessageList({
     items,
+    unreadBoundaryMessageId,
     feedId,
     feedCount,
     tagsLayout,
@@ -405,6 +407,16 @@ const DutyMessageList = memo(
           const mountCard = mountedItemIds == null || mountedItemIds.has(id);
           return (
             <MessageFeedItem id={id} data-duty-message-id={id}>
+              {mountCard && id === unreadBoundaryMessageId ? (
+                <div
+                  className="message-feed-unread-divider"
+                  data-duty-unread-divider
+                  role="separator"
+                  aria-label="Непрочитані повідомлення"
+                >
+                  Непрочитані повідомлення
+                </div>
+              ) : null}
               {mountCard ? (
                 <DutyMessageCardItem
                   id={id}
@@ -461,6 +473,7 @@ const DutyMessageList = memo(
   },
   (prev, next) =>
     prev.items === next.items &&
+    prev.unreadBoundaryMessageId === next.unreadBoundaryMessageId &&
     prev.feedId === next.feedId &&
     prev.feedCount === next.feedCount &&
     prev.tagsLayout === next.tagsLayout &&
@@ -704,6 +717,7 @@ export const FeedColumnContent = memo(
       onPhysicalBottomChange,
       onArrowClick,
       onVisibleMessageIds,
+      onVisibleMessages,
     } = actions;
     const networks = useMemo(
       () => (networkMap ? Object.values(networkMap) : undefined),
@@ -743,6 +757,7 @@ export const FeedColumnContent = memo(
       onAtBottomChange,
       onPhysicalBottomChange,
       onVisibleMessageIds,
+      onVisibleMessages,
       resetKey: feed.referenceTimeMs ?? feed.id,
       unreadPrefetchNeeded,
       pendingNewerFlushNeeded,
@@ -803,6 +818,7 @@ export const FeedColumnContent = memo(
       ) : (
         <DutyMessageList
           items={feed.items}
+          unreadBoundaryMessageId={view.unreadBoundaryMessageId}
           feedId={feed.id}
           feedCount={feedCount}
           tagsLayout={tagsLayout}
@@ -950,6 +966,7 @@ export const FeedColumnContent = memo(
       prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||
       prevView.pendingNewerFlushNeeded !== nextView.pendingNewerFlushNeeded ||
       prevView.editorHighlightedMessageId !== nextView.editorHighlightedMessageId ||
+      prevView.unreadBoundaryMessageId !== nextView.unreadBoundaryMessageId ||
       prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
     ) {
       return false;
@@ -1004,7 +1021,8 @@ export const FeedColumnContent = memo(
       prevActions.onAtBottomChange !== nextActions.onAtBottomChange ||
       prevActions.onPhysicalBottomChange !== nextActions.onPhysicalBottomChange ||
       prevActions.onArrowClick !== nextActions.onArrowClick ||
-      prevActions.onVisibleMessageIds !== nextActions.onVisibleMessageIds
+      prevActions.onVisibleMessageIds !== nextActions.onVisibleMessageIds ||
+      prevActions.onVisibleMessages !== nextActions.onVisibleMessages
     ) {
       return false;
     }

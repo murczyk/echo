@@ -236,6 +236,24 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(highlighted()).toBeNull();
   });
 
+  it('clears a linked highlight when live messages arrive without a loading phase', async () => {
+    const feedRef = createRef<MessageFeedHandle>();
+    const renderFeed = (items: number[]) => (
+      <MessageFeed
+        ref={feedRef}
+        items={items}
+        getMessageId={getId}
+        scrollOptions={{ hasReachedStart: true, onLoadOlder: () => undefined }}
+        renderMessage={renderMessage}
+      />
+    );
+    await act(async () => root.render(renderFeed([1, 2])));
+    await act(async () => feedRef.current?.highlightLinkedMessage(2));
+    expect(container.querySelector('[data-message-feed-highlighted]')).not.toBeNull();
+    await act(async () => root.render(renderFeed([1, 2, 3])));
+    expect(container.querySelector('[data-message-feed-highlighted]')).toBeNull();
+  });
+
   it('clears a linked highlight when an already-buffered newer chunk is flushed', async () => {
     const feedRef = createRef<MessageFeedHandle>();
     const renderFeed = (items: number[], pendingNewerFlushNeeded: boolean) => (

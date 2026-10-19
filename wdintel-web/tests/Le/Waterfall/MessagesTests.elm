@@ -26,6 +26,7 @@ messageStub =
     , extendedForm = Nothing
     , freq = Just "461.3400"
     , groupMasterKey = Just "fsUEaAfYdDM8F1uQ+0AZwFRFXj13DaXuLLnRce4ykpA="
+    , groupMasterKeys = Nothing
     , imageRecognized = []
     , images = []
     , media = []

@@ -76,7 +76,7 @@ type Props = {
   onLoadPreviousMessages: () => Promise<boolean>;
   onVisiblePageChange: (pageIndex: number) => void;
   onPageNavigationHandled: () => void;
-  onChronologicalNewestReached?: () => void;
+  onVisibleMessages?: (ids: readonly number[]) => void;
   onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   onSaveMessageUpdate: (
@@ -143,7 +143,7 @@ function AnalysisMessagesPaneComponent({
   onLoadPreviousMessages,
   onVisiblePageChange,
   onPageNavigationHandled,
-  onChronologicalNewestReached,
+  onVisibleMessages,
   onOpenPointsOnMap,
   onAddPointHighlightBlacklist,
   onSaveMessageUpdate,
@@ -179,6 +179,7 @@ function AnalysisMessagesPaneComponent({
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const debugSnapshotTimerRef = useRef<number | null>(null);
   const feedRef = useRef<MessageFeedHandle>(null);
+  const highlightedNavigationTargetRef = useRef<number | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
   const {
@@ -207,7 +208,7 @@ function AnalysisMessagesPaneComponent({
     onLoadMoreMessages,
     onVisiblePageChange,
     onPageNavigationHandled,
-    onChronologicalNewestReached,
+    onVisibleMessages,
   });
   const recordDebugScrollSnapshot = useCallback(() => {
     const container = scrollerRef.current;
@@ -255,11 +256,20 @@ function AnalysisMessagesPaneComponent({
   );
 
   useEffect(() => {
-    if (directMessageNavigation == null) return;
+    if (directMessageNavigation == null) {
+      highlightedNavigationTargetRef.current = null;
+      return;
+    }
     if (messages.length === 0) return;
     const targetId = directMessageNavigation.targetMessageId;
     if (feedRef.current?.getItemElement(targetId)) {
-      feedRef.current.highlightLinkedMessage(targetId);
+      if (
+        directMessageNavigation.highlightTarget !== false &&
+        (directMessageNavigation.focusActive || highlightedNavigationTargetRef.current !== targetId)
+      ) {
+        feedRef.current.highlightLinkedMessage(targetId);
+        highlightedNavigationTargetRef.current = targetId;
+      }
       if (directMessageNavigation.focusActive) onLinkedMessageMounted?.(targetId);
     }
   }, [directMessageNavigation, messages, onLinkedMessageMounted]);

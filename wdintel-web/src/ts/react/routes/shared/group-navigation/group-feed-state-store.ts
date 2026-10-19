@@ -3,6 +3,7 @@ import {
   acknowledgeGroupFeedTail,
   fetchGroupFeedStates,
 } from '../../../services/api/group-feed-state';
+import { HttpRequestError } from '../../../services/api/client';
 
 const DEFAULT_TTL_MS = 15_000;
 const DEFAULT_EVENT_DEBOUNCE_MS = 150;
@@ -53,6 +54,7 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
   let lastFetchedAt = 0;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let inFlight: InFlightRequest | null = null;
+  const acknowledgements = new Map<string, Promise<GroupFeedState>>();
 
   const emit = () => listeners.forEach((listener) => listener());
   const update = (next: Partial<GroupFeedStateSnapshot>) => {
@@ -141,9 +143,20 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
     };
   };
 
-  const acknowledge = async (request: AcknowledgeGroupFeedReq, signal?: AbortSignal) => {
-    const group = await acknowledgeRequest(request, signal);
+  const applyAcknowledgement = async (request: AcknowledgeGroupFeedReq, signal?: AbortSignal) => {
     if (signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
+    let group: GroupFeedState;
+    try {
+      group = await acknowledgeRequest(request, signal);
+    } catch (error) {
+      if (error instanceof HttpRequestError && error.status === 409 && !signal?.aborted) {
+        invalidate({ schedule: false });
+        await refresh(true, true);
+      }
+      throw error;
+    }
+    if (signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
+    if (inFlight !== null) invalidate();
     const groupIndex = snapshot.groups.findIndex((item) => item.masterKey === group.masterKey);
     const groups = [...snapshot.groups];
     if (groupIndex === -1) groups.push(group);
@@ -152,12 +165,19 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
     return group;
   };
 
-  const dispose = () => {
-    visibleConsumers = 0;
-    generation += 1;
-    clearDebounce();
-    abortInFlight();
-    listeners.clear();
+  const acknowledge = (request: AcknowledgeGroupFeedReq, signal?: AbortSignal) => {
+    const previous = acknowledgements.get(request.masterKey);
+    const run = () => applyAcknowledgement(request, signal);
+    const pending = previous ? previous.catch(() => {}).then(run) : run();
+    acknowledgements.set(request.masterKey, pending);
+    void pending
+      .finally(() => {
+        if (acknowledgements.get(request.masterKey) === pending) {
+          acknowledgements.delete(request.masterKey);
+        }
+      })
+      .catch(() => {});
+    return pending;
   };
 
   return {
@@ -172,7 +192,6 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
     ensureLoaded: () => refresh(false, true),
     refresh: () => refresh(true),
     acknowledge,
-    dispose,
   };
 }
 

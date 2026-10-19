@@ -156,6 +156,7 @@ function MessageFeedInner<T>(
   });
   const [linkedHighlightedMessageId, setLinkedHighlightedMessageId] = useState<number | null>(null);
   const highlightedElementRef = useRef<HTMLElement | null>(null);
+  const highlightedWindowRef = useRef<readonly number[] | null>(null);
   const highlightLoadStartRef = useRef<{ items: readonly T[]; ids: readonly number[] } | null>(
     null,
   );
@@ -180,7 +181,9 @@ function MessageFeedInner<T>(
     }
     if (
       linkedHighlightedMessageId !== null &&
-      !visibleItemIds.includes(linkedHighlightedMessageId)
+      (!visibleItemIds.includes(linkedHighlightedMessageId) ||
+        (highlightedWindowRef.current !== null &&
+          !areNumberArraysEqual(highlightedWindowRef.current, visibleItemIds)))
     ) {
       setLinkedHighlightedMessageId(null);
     }
@@ -206,10 +209,11 @@ function MessageFeedInner<T>(
     (id: number) => {
       if (!scroll.getItemElement(id)) return false;
       highlightLoadStartRef.current = null;
+      highlightedWindowRef.current = visibleItemIds;
       setLinkedHighlightedMessageId(id);
       return true;
     },
-    [scroll.getItemElement],
+    [scroll.getItemElement, visibleItemIds],
   );
   const [atNewestEdge, setAtNewestEdge] = useState(false);
   const newestEdge = newestNavigation?.edge;

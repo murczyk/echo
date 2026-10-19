@@ -67,6 +67,8 @@ pub struct InboxMessage {
     #[serde(default)]
     pub has_date_in_header: bool,
     pub group_master_key: Option<String>,
+    #[serde(default)]
+    pub group_master_keys: Option<Vec<String>>,
     pub sender: Option<String>,
     pub extended_form: Option<String>,
     #[serde(default)]
@@ -202,6 +204,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             created_at_order: None,
             has_date_in_header: false,
             group_master_key: payload.group_master_key,
+            group_master_keys: None,
             sender: payload.sender,
             extended_form: payload.extended_form,
             message_comments: vec![],

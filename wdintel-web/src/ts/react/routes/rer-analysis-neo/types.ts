@@ -67,6 +67,7 @@ export type AnalysisDirectMessageNavigation = {
   targetMessageIndex: number;
   totalCount: number;
   focusActive: boolean;
+  highlightTarget?: boolean;
   contextLoading?: boolean;
   newestFirst: boolean;
   canLoadEarlier: boolean;
@@ -387,7 +388,7 @@ export type AnalysisPageActions = {
   toggleLeftPanel: () => void;
   openLeftPanel: () => void;
   selectGroupScope: (scope: GroupScope, oldestUnreadMessageRef?: string | null) => void;
-  acknowledgeGroupAtNewest: () => void;
+  onVisibleGroupMessages: (ids: readonly number[]) => void;
   toggleRightPanel: () => void;
   selectOnlyFreq: (freq: string) => void;
   openPointsOnMap: (etalons: string[], message: InboxMessage) => void;

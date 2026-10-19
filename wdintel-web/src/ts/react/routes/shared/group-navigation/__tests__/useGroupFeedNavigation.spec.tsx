@@ -17,6 +17,8 @@ const serverGroup: GroupFeedState = {
   ignoreOperativny: false,
   unreadCount: 4,
   oldestUnreadMessageRef: null,
+  lastReadCreatedAtOrder: null,
+  lastReadMessageId: null,
   lastActivityAt: null,
   latestCursor: null,
 };

@@ -59,7 +59,7 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
   }: {
     activeFeedId: string | null;
     createMessageFeed: () => void;
-    openCreateMessageComposer: () => void;
+    openCreateMessageComposer: (feedId: string) => void;
     buildFeedColumnModel: (feed: any) => any;
     messageFeeds: any[];
   }) => (
@@ -69,11 +69,19 @@ vi.mock('../RerDutyNeoWorkspace', () => ({
         {String(buildFeedColumnModel(messageFeeds[0]).messageCard.hideNetworks)}
       </output>
       {messageFeeds.map((feed) => (
-        <output key={feed.id} data-testid={`editor-highlight-${feed.id}`}>
+        <output
+          key={feed.id}
+          data-testid={`editor-highlight-${feed.id}`}
+          data-unread-boundary={buildFeedColumnModel(feed).view.unreadBoundaryMessageId ?? 'none'}
+        >
           {buildFeedColumnModel(feed).view.editorHighlightedMessageId ?? 'none'}
         </output>
       ))}
-      <button type="button" aria-label="Додати повідомлення" onClick={openCreateMessageComposer}>
+      <button
+        type="button"
+        aria-label="Додати повідомлення"
+        onClick={() => openCreateMessageComposer(messageFeeds[0].id)}
+      >
         Додати повідомлення
       </button>
       <button type="button" aria-label="Додати стрічку" onClick={createMessageFeed}>
@@ -619,6 +627,37 @@ describe('RerDutyNeoPage creation workflow', () => {
       message: 'Повідомлення успішно створено.',
       severity: 'success',
     });
+
+    await act(async () => root.unmount());
+  });
+
+  it('hides only the source column unread divider after successful creation (#3727)', async () => {
+    const { container, root, state } = await renderPage((state) => {
+      state.messageFeeds.forEach((feed) => {
+        feed.unreadCount = 1;
+      });
+    });
+    const boundary = (feedId: string) =>
+      container
+        .querySelector(`[data-testid="editor-highlight-${feedId}"]`)
+        ?.getAttribute('data-unread-boundary');
+    expect(boundary('feed-1')).toBe('42');
+    expect(boundary('feed-2')).toBe('42');
+
+    await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
+    await click(container.querySelector('button[aria-label="Створити повідомлення"]'));
+    expect(boundary('feed-1')).toBe('42');
+    expect(boundary('feed-2')).toBe('42');
+
+    nextCreatedResponse.value = { signal_message_id: 101 };
+    await click(container.querySelector('button[aria-label="Створити повідомлення"]'));
+    expect(boundary('feed-1')).toBe('none');
+    expect(boundary('feed-2')).toBe('42');
+
+    state.messageFeeds[0].filter = { ...state.messageFeeds[0].filter, groupsSelected: ['g-3'] };
+    await act(async () => root.render(<RerDutyNeoPage authUserName="tester" />));
+    expect(boundary('feed-1')).toBe('42');
+    expect(boundary('feed-2')).toBe('42');
 
     await act(async () => root.unmount());
   });

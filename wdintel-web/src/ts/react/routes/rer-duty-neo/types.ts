@@ -38,6 +38,7 @@ export type FeedColumnModel = {
     scrollTrackingEnabled?: boolean;
     loadingNewer?: boolean;
     editorHighlightedMessageId?: number | null;
+    unreadBoundaryMessageId?: number | null;
     explicitNavigationLoading?: boolean;
     arrowResultMessage?: string | null;
     bottomUnreadCount?: number;
@@ -129,5 +130,6 @@ export type FeedColumnModel = {
     onArrowClick?: () => void;
     /** Called when the visible range changes; pass message IDs in view so parent can add them to readIds. When user reaches bottom, called with all IDs and atBottom: true so badge clears. */
     onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
+    onVisibleMessages?: (ids: readonly number[]) => void;
   };
 };

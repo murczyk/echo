@@ -1182,6 +1182,15 @@ pub async fn aggregate_to_inbox_messages(
                 group_master_key: group_entry
                     .as_ref()
                     .and_then(|(entry, _)| entry.group_master_key.clone()),
+                group_master_keys: Some(
+                    groups_map
+                        .get(&message.id)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|(entry, _)| entry.group_master_key.clone())
+                        .unique()
+                        .collect(),
+                ),
                 sender,
                 extended_form: m_comment.as_ref().map(|x| x.comment.clone()),
                 message_comments: message_comments_by_id

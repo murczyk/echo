@@ -96,6 +96,7 @@ message textMarked callsigns networkIds =
     , createdAtOrder = Nothing
     , hasDateInHeader = False
     , groupMasterKey = Nothing
+    , groupMasterKeys = Nothing
     , sender = Nothing
     , extendedForm = Nothing
     , messageComments = []

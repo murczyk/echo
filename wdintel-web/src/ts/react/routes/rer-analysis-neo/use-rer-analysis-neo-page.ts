@@ -62,6 +62,7 @@ import { mergeMessageWindow } from '../shared/message-feed/windowing';
 import {
   isAnalysisGroupViewAcknowledgeable,
   useGroupFeedNavigation,
+  useGroupFeedReadReceipts,
   type GroupScope,
 } from '../shared/group-navigation';
 import {
@@ -247,6 +248,7 @@ export function useRerAnalysisNeoPage(
     initialPanelQueryState.rightPanelOpen ? 'callsigns' : null,
   );
   const [targetMessageUid, setTargetMessageUid] = useState(parseMessageUidFromWindow);
+  const [highlightTargetMessage, setHighlightTargetMessage] = useState(true);
   const [targetMessageWindow, setTargetMessageWindow] = useState<InboxWindowRsp | null>(null);
   const [targetMessageLoading, setTargetMessageLoading] = useState(targetMessageUid !== null);
   const [targetMessageContextLoading, setTargetMessageContextLoading] = useState(false);
@@ -607,6 +609,7 @@ export function useRerAnalysisNeoPage(
       setGroupScope(scope);
       writeAnalysisGroupScopeToUrl(scope, options);
       if (scope.kind !== 'group' || oldestUnreadMessageRef == null) return;
+      setHighlightTargetMessage(false);
       setTargetMessageUid(oldestUnreadMessageRef);
       setTargetMessageContextActive(true);
       setTargetMessageFocusActive(true);
@@ -625,32 +628,6 @@ export function useRerAnalysisNeoPage(
     onSelect: selectGroupScope,
     onError: (groupError) => setDirectMessageError(toErrorMessage(groupError)),
   });
-  const groupAckControllerRef = useRef<AbortController | null>(null);
-  const acknowledgeGroupAtNewest = useCallback(() => {
-    if (
-      groupScope.kind !== 'group' ||
-      groupNavigation.selectedCursor == null ||
-      groupNavigation.selectedGroup.unreadCount === 0 ||
-      !isAnalysisGroupViewAcknowledgeable(effectiveQueryState)
-    ) {
-      return;
-    }
-    groupAckControllerRef.current?.abort();
-    const controller = new AbortController();
-    groupAckControllerRef.current = controller;
-    void groupNavigation
-      .acknowledge(
-        { masterKey: groupScope.masterKey, cursor: groupNavigation.selectedCursor },
-        controller.signal,
-      )
-      .catch(() => {});
-  }, [effectiveQueryState, groupNavigation, groupScope]);
-
-  useEffect(() => {
-    groupAckControllerRef.current?.abort();
-  }, [groupScope]);
-  useEffect(() => () => groupAckControllerRef.current?.abort(), []);
-
   useEffect(() => {
     if (!groupNavigation.ready || groupScope.kind !== 'group') return;
     const groupIsAvailable = groupNavigation.groups.some(
@@ -748,6 +725,18 @@ export function useRerAnalysisNeoPage(
   });
   const groupScopeTransitionPending =
     groupScopeTransitionRequestedRef.current && !data.messagesLoadedForCurrentQuery;
+  const onVisibleGroupMessages = useGroupFeedReadReceipts({
+    enabled:
+      centerTab === 'messages' &&
+      !groupScopeTransitionPending &&
+      !data.messagesLoading &&
+      !targetMessageLoading &&
+      !targetMessageContextLoading &&
+      isAnalysisGroupViewAcknowledgeable(effectiveQueryState),
+    groups: groupNavigation.groups,
+    messages: data.messages,
+    acknowledge: groupNavigation.acknowledge,
+  });
   useEffect(() => {
     if (data.messagesLoadedForCurrentQuery) {
       groupScopeTransitionRequestedRef.current = false;
@@ -1426,6 +1415,7 @@ export function useRerAnalysisNeoPage(
       targetMessageIndex,
       totalCount: targetMessageWindow.messagesBefore + targetMessageWindow.messagesAfter + 1,
       focusActive: targetMessageFocusActive,
+      highlightTarget: highlightTargetMessage,
       contextLoading,
       newestFirst,
       canLoadEarlier: data.focusedHasMoreEarlier,
@@ -1446,6 +1436,7 @@ export function useRerAnalysisNeoPage(
     data.loadFocusedEarlier,
     data.loadFocusedLater,
     newestFirst,
+    highlightTargetMessage,
     targetMessageWindow,
     targetMessageContextActive,
     targetMessageContextLoading,
@@ -1639,7 +1630,7 @@ export function useRerAnalysisNeoPage(
     toggleLeftPanel,
     openLeftPanel,
     selectGroupScope,
-    acknowledgeGroupAtNewest,
+    onVisibleGroupMessages,
     toggleRightPanel,
     toggleUnitFromMap,
     saveEditor: editor.saveEditor,

@@ -464,8 +464,7 @@ export function RerDutyNeoPage({
         if (signal.aborted) return false;
         for (const id of targetIds) {
           const element = columnRefsRef.current[feedId]?.scrollToMessage?.(id, 'auto');
-          if (!element) continue;
-          if (columnRefsRef.current[feedId]?.highlightLinkedMessage?.(id)) return true;
+          if (element) return true;
         }
         return false;
       },
@@ -530,7 +529,7 @@ export function RerDutyNeoPage({
     },
     [setGroupScope],
   );
-  const buildFeedColumnModel = useDutyFeedColumnModel({
+  const { buildFeedColumnModel, dismissUnreadBoundary } = useDutyFeedColumnModel({
     feeds,
     editorSourceFeedId,
     editorHighlightedMessageId,
@@ -644,6 +643,7 @@ export function RerDutyNeoPage({
 
   useEffect(() => () => cancelReportEditLoad(), [cancelReportEditLoad]);
   const handleCreatedMessage = useCallback(() => {
+    if (createMessageOpen && editorSourceFeedId) dismissUnreadBoundary(editorSourceFeedId);
     // Do not reloadFeeds(): that re-pins the scroller to the bottom.
     reloadEmptyFeeds();
     notify({
@@ -652,7 +652,14 @@ export function RerDutyNeoPage({
         : 'Повідомлення успішно створено.',
       severity: 'success',
     });
-  }, [notify, reloadEmptyFeeds, reportSource]);
+  }, [
+    createMessageOpen,
+    dismissUnreadBoundary,
+    editorSourceFeedId,
+    notify,
+    reloadEmptyFeeds,
+    reportSource,
+  ]);
 
   useEffect(() => {
     if (

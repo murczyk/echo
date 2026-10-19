@@ -1142,6 +1142,7 @@ type alias InboxMessage =
     , createdAtOrder : Maybe (Int)
     , hasDateInHeader : Bool
     , groupMasterKey : Maybe (String)
+    , groupMasterKeys : Maybe (List (String))
     , sender : Maybe (String)
     , extendedForm : Maybe (String)
     , messageComments : List (MessageComment)
@@ -1193,6 +1194,7 @@ inboxMessageEncoder struct =
         , ( "created_at_order", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.createdAtOrder )
         , ( "has_date_in_header", (Json.Encode.bool) struct.hasDateInHeader )
         , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupMasterKey )
+        , ( "group_master_keys", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.groupMasterKeys )
         , ( "sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sender )
         , ( "extended_form", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.extendedForm )
         , ( "message_comments", (Json.Encode.list (messageCommentEncoder)) struct.messageComments )
@@ -1849,6 +1851,8 @@ type alias GroupFeedState =
     , ignoreOperativny : Bool
     , unreadCount : Int
     , oldestUnreadMessageRef : Maybe (String)
+    , lastReadCreatedAtOrder : Maybe (Int)
+    , lastReadMessageId : Maybe (Int)
     , lastActivityAt : Maybe (Int)
     , latestCursor : Maybe (GroupFeedCursorDto)
     , colorKey : SignalGroupColor
@@ -1863,6 +1867,8 @@ groupFeedStateEncoder struct =
         , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
         , ( "unread_count", (Json.Encode.int) struct.unreadCount )
         , ( "oldest_unread_message_ref", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.oldestUnreadMessageRef )
+        , ( "last_read_created_at_order", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastReadCreatedAtOrder )
+        , ( "last_read_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastReadMessageId )
         , ( "last_activity_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastActivityAt )
         , ( "latest_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (groupFeedCursorDtoEncoder)) struct.latestCursor )
         , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
@@ -19506,6 +19512,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_order" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_date_in_header" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_keys" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extended_form" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_comments" (Json.Decode.list (messageCommentDecoder))))
@@ -19854,6 +19861,8 @@ groupFeedStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unread_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "oldest_unread_message_ref" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_read_created_at_order" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_read_message_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_activity_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "latest_cursor" (Json.Decode.nullable (groupFeedCursorDtoDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))

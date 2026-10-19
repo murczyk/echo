@@ -2321,6 +2321,7 @@ fn generic_submit_item_to_inbox_message(
         created_at_order: None,
         has_date_in_header: false,
         group_master_key: None,
+        group_master_keys: None,
         sender: item.sender.clone(),
         extended_form: item.comment.clone(),
         message_comments: vec![],
@@ -9509,5 +9510,45 @@ mod tests {
             matching_sender_messages[0].1.sender.as_deref(),
             Some("sender-c")
         );
+        assert_eq!(
+            matching_sender_messages[0].1.group_master_keys.as_ref(),
+            Some(&vec![datasource_group.group_master_key.clone()])
+        );
+        let all_groups_req = InboxMessagesReq {
+            selected_groups: None,
+            selected_senders: None,
+            ..matching_sender_req
+        };
+        let all_groups_messages =
+            get_inbox_messages(&login.id, &logins, &env, &all_groups_req)
+                .await
+                .unwrap();
+        assert_eq!(
+            all_groups_messages[0].1.group_master_keys.as_ref(),
+            Some(&vec![datasource_group.group_master_key.clone()])
+        );
+        let aor = find_test_aor(&env.dbx).await.unwrap();
+        mk_signal_group_aor(
+            &env.dbx,
+            signal_group_aor::ActiveModel {
+                master_key: Set(other_group.master_key.clone()),
+                aor_id: Set(aor.id),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let all_groups_messages =
+            get_inbox_messages(&login.id, &logins, &env, &all_groups_req)
+                .await
+                .unwrap();
+        let mut memberships =
+            all_groups_messages[0].1.group_master_keys.clone().unwrap();
+        memberships.sort();
+        let mut expected =
+            vec![datasource_group.group_master_key, other_group.master_key];
+        expected.sort();
+        assert_eq!(memberships, expected);
     }
 }

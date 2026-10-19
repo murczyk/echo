@@ -1,8 +1,11 @@
+import { useSyncExternalStore } from 'react';
 import type { InboxMessage, User } from '../../../../Bindings';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { FeedColumnModel } from './types';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 import type { GroupScope } from '../shared/group-navigation';
+import { groupFeedStateStore } from '../shared/group-navigation';
+import { useDutyUnreadBoundaries } from './useDutyUnreadBoundaries';
 import { useDutyFeedColumnActions, type RerDutyFeedsBundle } from './useDutyFeedColumnActions';
 import {
   clearActiveFeedFilter,
@@ -368,9 +371,17 @@ function buildFeedMessageCard(
 }
 
 /** Assembles the per-column view model consumed by the Duty workspace. */
-export function useDutyFeedColumnModel(
-  deps: DutyFeedColumnModelDeps,
-): (feed: MessageFeedState) => FeedColumnModel {
+export function useDutyFeedColumnModel(deps: DutyFeedColumnModelDeps) {
+  const groupState = useSyncExternalStore(
+    groupFeedStateStore.subscribe,
+    groupFeedStateStore.getSnapshot,
+    groupFeedStateStore.getSnapshot,
+  );
+  const { boundaries: unreadBoundaries, dismissUnreadBoundary } = useDutyUnreadBoundaries(
+    deps.feeds.messageFeeds,
+    groupState.groups,
+    !groupState.stale,
+  );
   const getStableFeedActions = useDutyFeedColumnActions({
     feeds: deps.feeds,
     openReportEditor: deps.openReportEditor,
@@ -378,9 +389,12 @@ export function useDutyFeedColumnModel(
     openReportComposer: deps.openReportComposer,
   });
 
-  return (feed: MessageFeedState) => ({
+  const buildFeedColumnModel = (feed: MessageFeedState): FeedColumnModel => ({
     feed,
-    view: buildFeedColumnView(feed, deps),
+    view: {
+      ...buildFeedColumnView(feed, deps),
+      unreadBoundaryMessageId: unreadBoundaries.get(feed.id)?.messageId ?? null,
+    },
     filterPanel: buildFeedFilterPanel(feed, deps),
     groupNavigation: {
       scope: feed.groupScopeMasterKey
@@ -402,4 +416,5 @@ export function useDutyFeedColumnModel(
     messageCard: buildFeedMessageCard(feed, deps),
     actions: getStableFeedActions(feed),
   });
+  return { buildFeedColumnModel, dismissUnreadBoundary };
 }

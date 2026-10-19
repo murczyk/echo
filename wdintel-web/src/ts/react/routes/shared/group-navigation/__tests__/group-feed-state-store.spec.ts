@@ -11,6 +11,8 @@ function group(masterKey: string, unreadCount = 0): GroupFeedState {
     ignoreOperativny: false,
     unreadCount,
     oldestUnreadMessageRef: null,
+    lastReadCreatedAtOrder: null,
+    lastReadMessageId: null,
     lastActivityAt: null,
     latestCursor: null,
   };
@@ -143,5 +145,44 @@ describe('group feed state store', () => {
 
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(store.getSnapshot().groups).toEqual([]);
+  });
+
+  it('serializes read positions shared by concurrent feeds', async () => {
+    const first = deferred<GroupFeedState>();
+    const acknowledge = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(group('g-1', 1));
+    const store = createGroupFeedStateStore({ acknowledge });
+    const older = store.acknowledge({ masterKey: 'g-1', cursor: { createdAt: 1, messageId: 1 } });
+    const newer = store.acknowledge({ masterKey: 'g-1', cursor: { createdAt: 2, messageId: 2 } });
+    await Promise.resolve();
+    expect(acknowledge).toHaveBeenCalledOnce();
+    first.resolve(group('g-1', 2));
+    await Promise.all([older, newer]);
+    expect(store.getSnapshot().groups).toEqual([group('g-1', 1)]);
+  });
+
+  it('does not restore an old unread count from a fetch started before reading', async () => {
+    const stale = deferred<GroupFeedState[]>();
+    const fetchStates = vi
+      .fn()
+      .mockResolvedValueOnce([group('g-1', 3)])
+      .mockReturnValueOnce(stale.promise)
+      .mockResolvedValueOnce([group('g-1', 4)]);
+    const store = createGroupFeedStateStore({
+      fetchStates,
+      acknowledge: async () => group('g-1', 2),
+    });
+    const release = store.addVisibleConsumer();
+    await vi.runAllTimersAsync();
+    const pending = store.refresh();
+    await store.acknowledge({ masterKey: 'g-1', cursor: { createdAt: 1, messageId: 1 } });
+    stale.resolve([group('g-1', 3)]);
+    await pending;
+    expect(store.getSnapshot().groups).toEqual([group('g-1', 2)]);
+    await vi.runAllTimersAsync();
+    expect(store.getSnapshot().groups).toEqual([group('g-1', 4)]);
+    release();
   });
 });

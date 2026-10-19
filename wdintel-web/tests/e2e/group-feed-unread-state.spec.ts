@@ -152,17 +152,57 @@ test('keeps a filtered Duty group unread at its visible tail', async ({ page }) 
   expect(acknowledgementCount).toBe(0);
 });
 
+test('refreshes a stale Duty cursor without showing an error when the feed tail moves', async ({
+  page,
+}) => {
+  let acknowledgementCount = 0;
+  let stateRequestCount = 0;
+  let tailMoved = false;
+  await installRerDutyShortStateMocks(page, {
+    signalGroups: [groupMasterKey],
+    inboxResponseForRequest: () => inboxResponse(),
+  });
+  await page.route('**/api/rer-importer/group-feed-state/acknowledge', (route) => {
+    acknowledgementCount += 1;
+    tailMoved = true;
+    return route.fulfill({
+      status: 409,
+      json: {
+        message: 'group feed tail has changed',
+        latest_cursor: { ...cursor, message_id: 141 },
+      },
+    });
+  });
+  await page.route('**/api/rer-importer/group-feed-state', (route) => {
+    stateRequestCount += 1;
+    return route.fulfill({ json: stateResponse(tailMoved ? 2 : 1) });
+  });
+  const state = {
+    messageFeeds: [['mf-conflict', {}, { groupScopeMasterKey: groupMasterKey }]],
+  };
+  await page.goto(`/rer-duty-neo?state=${encodeURIComponent(JSON.stringify(state))}`);
+  const column = page.locator('[data-duty-feed-column]');
+  await expect(column.locator('[data-group-island] [data-group-name]')).toHaveText(groupName);
+  await reachPhysicalTail(column);
+  await expect.poll(() => acknowledgementCount).toBeGreaterThan(0);
+  await expect.poll(() => stateRequestCount).toBeGreaterThan(1);
+  await column.getByRole('button', { name: 'Розгорнути список груп' }).click();
+  await expect(column.getByRole('button', { name: /Group Alpha, 2 / })).toBeVisible();
+  await expect(page.getByText('group feed tail has changed')).toHaveCount(0);
+});
+
 test('coalesces visible Duty panels and stays silent while every panel is closed', async ({
   page,
 }) => {
   let requestCount = 0;
+  let unreadCount = 1;
   await installRerDutyShortStateMocks(page, {
     signalGroups: [groupMasterKey],
     inboxResponseForRequest: () => inboxResponse(),
   });
   await page.route('**/api/rer-importer/group-feed-state', (route) => {
     requestCount += 1;
-    return route.fulfill({ json: stateResponse(1) });
+    return route.fulfill({ json: stateResponse(unreadCount) });
   });
   const state = {
     messageFeeds: [
@@ -177,13 +217,19 @@ test('coalesces visible Duty panels and stays silent while every panel is closed
   await columns.nth(1).getByRole('button', { name: 'Розгорнути список груп' }).click();
   await expect.poll(() => requestCount).toBe(1);
 
+  unreadCount = 2;
   await dispatchInboxBurst(page);
   await expect.poll(() => requestCount).toBe(2);
+  await expect(columns.nth(1).getByRole('button', { name: /Group Alpha, 2 / })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('[data-group-panel]')).toHaveCount(0);
+  unreadCount = 3;
   await dispatchInboxBurst(page);
   await page.waitForTimeout(400);
   expect(requestCount).toBe(2);
+  await columns.nth(0).getByRole('button', { name: 'Розгорнути список груп' }).click();
+  await expect.poll(() => requestCount).toBe(3);
+  await expect(columns.nth(0).getByRole('button', { name: /Group Alpha, 3 / })).toBeVisible();
 });
 
 test('falls back to all groups after Analysis access is revoked', async ({ page }) => {

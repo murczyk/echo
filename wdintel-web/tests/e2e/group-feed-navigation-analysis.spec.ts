@@ -264,6 +264,7 @@ test.describe('Analysis group feed navigation', () => {
 
     const groupList = page.locator('[data-analysis-group-list]:visible').first();
     await expect(groupList).toBeVisible();
+    await expect(groupList.getByRole('button', { name: 'Всі групи', exact: true })).toBeVisible();
     await groupList.getByRole('button', { name: /Group Beta, 3 непрочитаних/ }).click();
     await expect(page).toHaveURL(/(?:\?|&)group=group-b(?:&|$)/);
     await expect(page.getByText('Analysis Beta message')).toBeVisible();
@@ -316,7 +317,7 @@ test.describe('Analysis group feed navigation', () => {
     await page
       .locator('[data-analysis-group-list]:visible')
       .first()
-      .getByRole('button', { name: /Всі групи, 5 непрочитаних/ })
+      .getByRole('button', { name: 'Всі групи', exact: true })
       .click();
     await expect(page).not.toHaveURL(/(?:\?|&)group=/);
     await page.locator('[data-analysis-filter-toggle]').click();
@@ -351,7 +352,7 @@ test.describe('Analysis group feed navigation', () => {
     await expect(page).toHaveURL(/(?:\?|&)orBookmarked=true(?:&|$)/);
     await expect(page).not.toHaveURL(/(?:\?|&)orImportant=true(?:&|$)/);
 
-    await groupList.getByRole('button', { name: /Всі групи, 5 непрочитаних/ }).click();
+    await groupList.getByRole('button', { name: 'Всі групи', exact: true }).click();
     await expect(importantSection.getByRole('checkbox', { name: 'Важливі' })).toBeChecked();
     await expect(importantSection.getByRole('checkbox', { name: 'Збережені' })).not.toBeChecked();
 
@@ -606,7 +607,156 @@ test.describe('Analysis group feed navigation', () => {
 
       const target = page.locator('[data-message-id="201"]');
       await expect(target).toBeVisible();
-      await expect(target).toHaveAttribute('data-message-feed-highlighted', 'true');
+      await expect(target).not.toHaveAttribute('data-message-feed-highlighted', 'true');
     });
   }
+
+  for (const failFirst of [false, true]) {
+    test(`clears the unread badge ${failFirst ? 'after a failed read receipt and reload' : 'after the newest group message is viewed'}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1500, height: 900 });
+      await installGroupNavigationMocks(page);
+      let unreadCount = 1;
+      let acknowledgeCount = 0;
+      const cursor = { created_at: 1_720_000_201_000, message_id: 201 };
+      const groupState = () => ({
+        master_key: 'group-b',
+        name: 'Group Beta',
+        color_key: 'deep_purple',
+        ignore_operativny: false,
+        unread_count: unreadCount,
+        oldest_unread_message_ref: 'analysis-group-feed-201',
+        last_activity_at: cursor.created_at,
+        latest_cursor: cursor,
+      });
+      await page.route('**/api/rer-importer/group-feed-state/acknowledge', (route) => {
+        acknowledgeCount += 1;
+        if (failFirst && acknowledgeCount === 1) {
+          return route.fulfill({
+            status: 503,
+            json: { message: 'Read receipt temporarily unavailable' },
+          });
+        }
+        unreadCount = 0;
+        return route.fulfill({ json: groupState() });
+      });
+      await page.route('**/api/rer-importer/group-feed-state', (route) =>
+        route.fulfill({ json: { groups: [groupState()] } }),
+      );
+      await page.goto('/rer-analysis-neo');
+
+      const groupList = page.locator('[data-analysis-group-list]:visible').first();
+      await groupList.getByRole('button', { name: /Group Beta, 1 непрочитаних/ }).click();
+      await expect(page.locator('[data-message-id="201"]')).toBeVisible();
+      await expect.poll(() => acknowledgeCount).toBe(1);
+      if (failFirst) {
+        await expect(
+          groupList.getByRole('button', { name: /Group Beta, 1 непрочитаних/ }),
+        ).toBeVisible();
+        await page.getByRole('button', { name: 'Оновити', exact: true }).click();
+        await expect.poll(() => acknowledgeCount).toBe(2);
+      }
+      await expect(groupList.locator('[data-group-unread]')).toHaveCount(0);
+    });
+  }
+
+  test('clears unread state that arrives after the newest message is already visible', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1500, height: 900 });
+    await installGroupNavigationMocks(page);
+    let releaseState!: () => void;
+    const stateGate = new Promise<void>((resolve) => {
+      releaseState = resolve;
+    });
+    let unreadCount = 1;
+    let acknowledgeCount = 0;
+    const cursor = { created_at: 1_720_000_201_000, message_id: 201 };
+    const groupState = () => ({
+      master_key: 'group-b',
+      name: 'Group Beta',
+      color_key: 'deep_purple',
+      ignore_operativny: false,
+      unread_count: unreadCount,
+      oldest_unread_message_ref: 'analysis-group-feed-201',
+      last_activity_at: cursor.created_at,
+      latest_cursor: cursor,
+    });
+    await page.route('**/api/rer-importer/group-feed-state/acknowledge', (route) => {
+      acknowledgeCount += 1;
+      unreadCount = 0;
+      return route.fulfill({ json: groupState() });
+    });
+    await page.route('**/api/rer-importer/group-feed-state', async (route) => {
+      await stateGate;
+      await route.fulfill({ json: { groups: [groupState()] } });
+    });
+    await page.goto('/rer-analysis-neo?group=group-b');
+    await expect(page.locator('[data-message-id="201"]')).toBeVisible();
+    await page.waitForTimeout(250);
+    releaseState();
+    await expect(page.locator('[data-analysis-current-group] [data-group-name]')).toHaveText(
+      'Group Beta',
+    );
+    await expect.poll(() => acknowledgeCount).toBeGreaterThan(0);
+    await expect(
+      page.locator('[data-analysis-group-list]:visible [data-group-unread]'),
+    ).toHaveCount(0);
+  });
+
+  test('decreases the unread badge as individual group messages are read', async ({ page }) => {
+    await page.setViewportSize({ width: 1500, height: 420 });
+    const inbox = inboxResponse(['group-b']);
+    inbox.inbox_items = [201, 202, 203].map((id) => [
+      id,
+      message(id, 'group-b', Array(20).fill(`Unread message ${id}`).join('\n')),
+    ]) as InboxMessagesRspRaw['inbox_items'];
+    await installAnalysisNeoApiMocks(page, {
+      signalGroups: ['group-b'],
+      inboxResponse: inbox,
+    });
+    let unreadCount = 3;
+    const acknowledgements: number[] = [];
+    const groupState = () => ({
+      master_key: 'group-b',
+      name: 'Group Beta',
+      color_key: 'deep_purple',
+      ignore_operativny: false,
+      unread_count: unreadCount,
+      oldest_unread_message_ref: 'analysis-group-feed-201',
+      last_activity_at: 1_720_000_203_000,
+      latest_cursor: { created_at: 1_720_000_203_000, message_id: 203 },
+    });
+    await page.route('**/api/rer-importer/group-feed-state', (route) =>
+      route.fulfill({ json: { groups: [groupState()] } }),
+    );
+    await page.route('**/api/rer-importer/group-feed-state/acknowledge', (route) => {
+      const request = route.request().postDataJSON() as {
+        master_key: string;
+        cursor: { message_id: number; created_at: number };
+      };
+      expect(request.master_key).toBe('group-b');
+      expect(request.cursor.created_at).toBe(1_720_000_000_000 + request.cursor.message_id * 1000);
+      acknowledgements.push(request.cursor.message_id);
+      unreadCount = Math.min(unreadCount, 203 - request.cursor.message_id);
+      return route.fulfill({ json: groupState() });
+    });
+    await page.goto('/rer-analysis-neo?group=group-b&newestFirst=false');
+    const groupList = page.locator('[data-analysis-group-list]:visible').first();
+    await expect(
+      groupList.getByRole('button', { name: /Group Beta, 2 непрочитаних/ }),
+    ).toBeVisible();
+    for (const id of [202, 203]) {
+      await page.locator(`[data-message-id="${id}"]`).scrollIntoViewIfNeeded();
+      if (id === 202) {
+        await expect(
+          groupList.getByRole('button', { name: /Group Beta, 1 непрочитаних/ }),
+        ).toBeVisible();
+      } else {
+        await expect(groupList.locator('[data-group-unread]')).toHaveCount(0);
+      }
+    }
+    expect(acknowledgements).toEqual([201, 202, 203]);
+  });
 });
