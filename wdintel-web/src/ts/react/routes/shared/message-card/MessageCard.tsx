@@ -124,6 +124,7 @@ export type MessageCardProps = {
   authUserName: string | null;
   tagContributionsOrganismId?: number;
   groupName: string | null;
+  hideGroupName?: boolean;
   reportGroupInfos?: Record<string, SignalGroupEntry>;
   senderName: string | null;
   copiedFeedbackId: string | null;
@@ -193,6 +194,7 @@ function MessageCardComponent({
   authUserName,
   tagContributionsOrganismId,
   groupName,
+  hideGroupName = false,
   reportGroupInfos = EMPTY_GROUP_INFOS,
   senderName,
   copiedFeedbackId,
@@ -413,7 +415,7 @@ function MessageCardComponent({
           metadata={
             <MessageCardMetadata
               msg={msg}
-              groupName={groupName}
+              groupName={hideGroupName ? null : groupName}
               senderName={senderName}
               etalonDisplayModel={visibleEtalonDisplayModel}
               metadataTrigger={metadataTrigger}

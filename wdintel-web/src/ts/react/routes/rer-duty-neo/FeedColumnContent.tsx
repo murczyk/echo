@@ -123,6 +123,7 @@ type FeedColumnContentProps = {
 type DutyMessageCardItemProps = {
   id: number;
   msg: InboxMessage;
+  hideGroupName: boolean;
   feedId: string;
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
@@ -169,6 +170,7 @@ type DutyMessageCardItemProps = {
 const DutyMessageCardItem = memo(function DutyMessageCardItem({
   id,
   msg,
+  hideGroupName,
   feedId,
   feedCount,
   tagsLayout,
@@ -239,6 +241,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       authUserName={authUserName}
       tagContributionsOrganismId={tagContributionsOrganismId}
       groupName={labels.groupName}
+      hideGroupName={hideGroupName}
       reportGroupInfos={groupInfos}
       senderName={labels.senderName}
       copiedFeedbackId={copiedFeedbackId}
@@ -309,6 +312,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
 // See ./AGENTS.md before adding structural component abstractions.
 type DutyMessageListProps = {
   items: [number, InboxMessage][];
+  hideGroupName: boolean;
   unreadBoundaryMessageId?: number | null;
   feedId: string;
   feedCount?: number;
@@ -359,6 +363,7 @@ type DutyMessageListProps = {
 const DutyMessageList = memo(
   function DutyMessageList({
     items,
+    hideGroupName,
     unreadBoundaryMessageId,
     feedId,
     feedCount,
@@ -421,6 +426,7 @@ const DutyMessageList = memo(
                 <DutyMessageCardItem
                   id={id}
                   msg={msg}
+                  hideGroupName={hideGroupName}
                   feedId={feedId}
                   feedCount={feedCount}
                   tagsLayout={tagsLayout}
@@ -473,6 +479,7 @@ const DutyMessageList = memo(
   },
   (prev, next) =>
     prev.items === next.items &&
+    prev.hideGroupName === next.hideGroupName &&
     prev.unreadBoundaryMessageId === next.unreadBoundaryMessageId &&
     prev.feedId === next.feedId &&
     prev.feedCount === next.feedCount &&
@@ -818,6 +825,7 @@ export const FeedColumnContent = memo(
       ) : (
         <DutyMessageList
           items={feed.items}
+          hideGroupName={Boolean(feed.groupScopeMasterKey)}
           unreadBoundaryMessageId={view.unreadBoundaryMessageId}
           feedId={feed.id}
           feedCount={feedCount}

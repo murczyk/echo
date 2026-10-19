@@ -1200,6 +1200,7 @@ export function feedListRenderStateEqual(prev: MessageFeedState, next: MessageFe
   return (
     prev === next ||
     (prev.id === next.id &&
+      prev.groupScopeMasterKey === next.groupScopeMasterKey &&
       prev.items === next.items &&
       prev.loading === next.loading &&
       prev.loadingOlder === next.loadingOlder &&

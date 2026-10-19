@@ -453,6 +453,8 @@ test.describe('Duty group feed navigation', () => {
     await expect.poll(mocks.getStateRequestCount).toBe(1);
 
     const firstIsland = columns.nth(0).locator('[data-group-island]');
+    const cardGroups = '[data-message-card-root] [data-message-card-metadata-icon-kind="group"]';
+    await expect(columns.nth(0).locator(cardGroups)).toHaveCount(2);
     await expect(firstIsland).toHaveJSProperty('tagName', 'DIV');
     await expect(firstIsland).toHaveCSS('border-width', '1px');
     await expect(firstIsland).toHaveCSS('border-style', 'solid');
@@ -543,6 +545,8 @@ test.describe('Duty group feed navigation', () => {
       .click();
     await expect(columns.nth(0).getByText('Alpha-only message')).toBeVisible();
     await expect(columns.nth(0).getByText('Beta-only message')).toHaveCount(0);
+    await expect(columns.nth(0).locator(cardGroups)).toHaveCount(0);
+    await expect(columns.nth(1).locator(cardGroups)).toHaveCount(2);
     await columns.nth(0).getByRole('button', { name: 'Фільтри' }).click();
     const scopedFilterPanel = columns.nth(0).getByLabel('Панель фільтрів');
     await expect(scopedFilterPanel).toBeVisible();
@@ -556,6 +560,7 @@ test.describe('Duty group feed navigation', () => {
       .click();
     await expect(columns.nth(1).getByText('Beta-only message')).toBeVisible();
     await expect(columns.nth(1).getByText('Alpha-only message')).toHaveCount(0);
+    await expect(columns.nth(1).locator(cardGroups)).toHaveCount(0);
     expect(mocks.getStateRequestCount()).toBeGreaterThan(0);
 
     await columns.nth(0).getByRole('button', { name: 'Розгорнути список груп' }).click();
@@ -565,6 +570,7 @@ test.describe('Duty group feed navigation', () => {
       .click();
     await expect(columns.nth(0).getByText('Alpha-only message')).toBeVisible();
     await expect(columns.nth(0).getByText('Beta-only message')).toBeVisible();
+    await expect(columns.nth(0).locator(cardGroups)).toHaveCount(2);
     await columns.nth(0).getByRole('button', { name: 'Фільтри' }).click();
     await expect(
       columns.nth(0).getByLabel('Панель фільтрів').getByText('Групи', { exact: true }),

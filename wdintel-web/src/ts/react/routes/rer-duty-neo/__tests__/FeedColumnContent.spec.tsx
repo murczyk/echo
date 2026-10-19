@@ -147,6 +147,33 @@ describe('FeedColumnContent', () => {
     fabState.explicitNavigationLoading = false;
   });
 
+  it('shows card group metadata only in all-groups feeds (#3727)', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    column.feed.items = [[1, { ...message, groupMasterKey: 'Group Alpha', sender: 'Operator' }]];
+    await act(async () => root.render(<FeedColumnContent column={column} />));
+    expect(container.textContent).toContain('Group Alpha');
+    expect(
+      container.querySelector('[data-message-card-metadata-icon-kind="group"]'),
+    ).not.toBeNull();
+
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          column={{ ...column, feed: { ...column.feed, groupScopeMasterKey: 'Group Alpha' } }}
+        />,
+      ),
+    );
+    expect(container.textContent).not.toContain('Group Alpha');
+    expect(container.querySelector('[data-message-card-metadata-icon-kind="group"]')).toBeNull();
+    expect(container.textContent).toContain('Operator');
+
+    await act(async () => root.render(<FeedColumnContent column={column} />));
+    expect(container.textContent).toContain('Group Alpha');
+  });
+
   it('keeps the first unread divider in place while reading and receiving messages (#3727)', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
