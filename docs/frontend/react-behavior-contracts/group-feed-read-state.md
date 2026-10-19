@@ -1,5 +1,8 @@
 # Group read state
 
+See [Group feed navigation](../../group-feed-navigation.md) for route state,
+API, shared caching, avatar colors, and administration behavior.
+
 Duty and Analysis advance each group's persisted read position while messages are
 visible in an active browser tab. A row qualifies when at least half of the row
 or half of the viewport is visible for 300 ms. Counters use the server's response
@@ -26,8 +29,8 @@ does not pause reading, including in the all-groups feed. Hidden tabs and inacti
 Duty columns do not start read receipts. Ordinary navigation to the oldest unread
 message scrolls to it without a linked-message outline; explicit message links and
 editor highlights keep their existing appearance.
-Analysis's unread-message window uses the destination group's restored filters,
-including sender and text search, rather than the page's initial URL filters.
+Analysis's unread-message window uses the destination group's restored filters
+and current query state, rather than the page's initial URL filters.
 
 An open creation draft keeps its original group when navigation changes on Duty
 or Analysis. Starting another creation intent still asks before discarding a dirty
