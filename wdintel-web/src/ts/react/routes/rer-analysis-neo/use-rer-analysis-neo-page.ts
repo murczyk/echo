@@ -70,6 +70,7 @@ import {
   persistAnalysisScopeFilters,
   readAnalysisScopeFilters,
 } from './analysis-scope-filter-state';
+import { useGroupUnreadBoundary } from '../shared/group-navigation/group-unread-boundary';
 
 function groupScopesEqual(left: GroupScope, right: GroupScope): boolean {
   return (
@@ -735,6 +736,18 @@ export function useRerAnalysisNeoPage(
   });
   const groupScopeTransitionPending =
     groupScopeTransitionRequestedRef.current && !data.messagesLoadedForCurrentQuery;
+  const unreadBoundary = useGroupUnreadBoundary({
+    key: JSON.stringify([groupScope, effectiveQueryState]),
+    loading: groupScopeTransitionPending || data.messagesLoading || targetMessageLoading,
+    groups: groupNavigation.groups.flatMap((group) =>
+      group.kind === 'group' &&
+      (groupScope.kind === 'all' || group.masterKey === groupScope.masterKey)
+        ? [group]
+        : [],
+    ),
+    ready: groupNavigation.ready,
+    messages: data.messages,
+  });
   const onVisibleGroupMessages = useGroupFeedReadReceipts({
     enabled:
       centerTab === 'messages' &&
@@ -1501,6 +1514,8 @@ export function useRerAnalysisNeoPage(
     isFilterSectionStale: data.isFilterSectionStale,
     groupInfos,
     groupNavigation,
+    unreadBoundaryMessageId: unreadBoundary.messageId,
+    dismissUnreadBoundary: unreadBoundary.dismiss,
     groupsActivityPeriod: data.groupsActivityPeriod,
     groupsActivity: data.groupsActivity,
     groupsActivityLoadedFreq: data.groupsActivityLoadedFreq,

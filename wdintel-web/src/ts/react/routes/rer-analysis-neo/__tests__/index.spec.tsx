@@ -483,6 +483,8 @@ function buildPage() {
     editTargetLoadState: { status: 'idle' },
     filtersLoading: false,
     groupInfos: {},
+    unreadBoundaryMessageId: null,
+    dismissUnreadBoundary: vi.fn(),
     groupNavigation: {
       groups: [
         {

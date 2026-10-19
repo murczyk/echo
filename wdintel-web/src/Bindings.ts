@@ -429,6 +429,7 @@ export type InboxMessage = {
   timestamp: number | null;
   createdAt: number | null;
   createdAtOrder: number | null;
+  isOwn: boolean | null;
   hasDateInHeader: boolean;
   groupMasterKey: string | null;
   groupMasterKeys: Array<string> | null;

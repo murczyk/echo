@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ELLIPSIS } from '../../../../utils/misc';
 
 import type { InboxMessage, SignalGroupEntry } from '../../../../../../Bindings';
+import { UnreadMessagesDivider } from '../../../shared/group-navigation/UnreadMessagesDivider';
 
 const debugRuntime = vi.hoisted(() => {
   let recording = false;
@@ -79,6 +80,7 @@ vi.mock('@mui/material', () => ({
 vi.mock('../../../shared/message-card/MessageCard', () => ({
   AnalysisMessageCard: (props: {
     id: number;
+    unreadBoundary?: boolean;
     onCreateReport: (etalonDisplayModel: unknown, focusTarget: HTMLElement) => void;
     onEditReport?: (id: number) => void;
     onDelete: () => void;
@@ -92,6 +94,7 @@ vi.mock('../../../shared/message-card/MessageCard', () => ({
     analysisCallsignActions?: { onAddCallsign: () => void; onRemoveCallsign: () => void };
   }) => (
     <div data-testid={`message-card-${props.id}`} data-message-id={props.id}>
+      {props.unreadBoundary ? <UnreadMessagesDivider /> : null}
       <span data-testid={`sender-${props.id}`}>{props.senderName ?? ''}</span>
       <span data-testid={`tags-layout-${props.id}`}>{props.tagsLayout ?? 'unset'}</span>
       <span data-testid={`hide-bot-tags-${props.id}`}>{String(props.hideBotTags ?? false)}</span>
@@ -334,6 +337,22 @@ describe('AnalysisMessagesPane', () => {
     }
     vi.useRealTimers();
   });
+
+  it.each([false, true])(
+    '#3727 allows the unread divider to be enabled with showUnreadDivider=%s',
+    async (showUnreadDivider) => {
+      const view = await renderComponent(
+        buildProps({
+          messages: [[7, buildMessage()]],
+          unreadBoundaryMessageId: 7,
+          showUnreadDivider,
+        }),
+      );
+      rendered.push(view);
+
+      expect(view.container.querySelector('[role="separator"]') !== null).toBe(showUnreadDivider);
+    },
+  );
 
   it('records a trailing scroll snapshot during a debug session', async () => {
     vi.useFakeTimers();

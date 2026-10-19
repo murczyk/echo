@@ -94,6 +94,7 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
         if (requestGeneration !== generation || (visibleConsumers === 0 && !request.keepAlive)) {
           return;
         }
+        generation += 1;
         lastFetchedAt = now();
         update({ groups, loading: false, error: null, stale: false });
       })
@@ -153,6 +154,7 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
 
   const applyAcknowledgement = async (request: AcknowledgeGroupFeedReq, signal?: AbortSignal) => {
     if (signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
+    const requestGeneration = generation;
     let group: GroupFeedState;
     try {
       group = await acknowledgeRequest(request, signal);
@@ -164,6 +166,11 @@ export function createGroupFeedStateStore(options: StoreOptions = {}) {
       throw error;
     }
     if (signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
+    if (requestGeneration !== generation) {
+      invalidate({ schedule: false });
+      await refresh(true, true);
+      return group;
+    }
     if (inFlight !== null) invalidate();
     const groupIndex = snapshot.groups.findIndex((item) => item.masterKey === group.masterKey);
     const groups = [...snapshot.groups];

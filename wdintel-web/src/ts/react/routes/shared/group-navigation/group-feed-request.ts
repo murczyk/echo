@@ -32,24 +32,20 @@ export function applyGroupScopeToInboxRequest(
 }
 
 export function isDutyGroupViewAcknowledgeable(filter: RerDutyQueryStateWf): boolean {
-  return (
-    ![
-      filter.sendersSelected,
-      filter.deniedSenders,
-      filter.freqsSelected,
-      filter.freqsDenied,
-      filter.postsSelected,
-      filter.postsDenied,
-      filter.unitsSelected,
-      filter.unitsDenied,
-      filter.selectedUnitIds,
-      filter.deniedUnitIds,
-      filter.selectedDeviceNames,
-      filter.deniedDeviceNames,
-    ].some(hasValues) &&
-    filter.highlightKeywordsEnabled !== true &&
-    filter.highlightKeywordSetId == null
-  );
+  return ![
+    filter.sendersSelected,
+    filter.deniedSenders,
+    filter.freqsSelected,
+    filter.freqsDenied,
+    filter.postsSelected,
+    filter.postsDenied,
+    filter.unitsSelected,
+    filter.unitsDenied,
+    filter.selectedUnitIds,
+    filter.deniedUnitIds,
+    filter.selectedDeviceNames,
+    filter.deniedDeviceNames,
+  ].some(hasValues);
 }
 
 export function isAnalysisGroupViewAcknowledgeable(filter: AnalysisAcknowledgeFilter): boolean {

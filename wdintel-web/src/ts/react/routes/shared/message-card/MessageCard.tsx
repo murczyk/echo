@@ -1,4 +1,5 @@
 import { useMessageDeleteAccess, useMessageWriteAccess } from './MessageWriteAccess';
+import { UnreadMessagesDivider } from '../group-navigation/UnreadMessagesDivider';
 import { useContext } from 'react';
 import { DutyExcludeMenuContext } from './DutyExcludeMenu';
 import { useRadioFeatures } from '../RadioFeatures';
@@ -105,6 +106,7 @@ export function formatMessageCardTooltipTime(
 }
 
 export type MessageCardProps = {
+  unreadBoundary?: boolean;
   id: number;
   msg: InboxMessage;
   readOnly?: boolean;
@@ -180,6 +182,7 @@ export type MessageCardProps = {
 // Performance boundary: this component is repeated throughout Duty feeds.
 // Keep structural markup native and theme-aware; see ./AGENTS.md before adding layout wrappers.
 function MessageCardComponent({
+  unreadBoundary = false,
   id,
   msg,
   readOnly = false,
@@ -399,6 +402,7 @@ function MessageCardComponent({
       className="message-card-item list-none flex flex-col px-0 pb-[12px] mb-0"
       style={displayMode === 'analysis' ? ANALYSIS_MESSAGE_CARD_VISIBILITY_STYLE : undefined}
     >
+      {unreadBoundary ? <UnreadMessagesDivider /> : null}
       <MessageCardRoot
         data-message-card-root="true"
         data-message-card-display-mode={displayMode}

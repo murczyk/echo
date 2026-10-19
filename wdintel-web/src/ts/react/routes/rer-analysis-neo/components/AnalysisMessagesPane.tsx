@@ -37,8 +37,11 @@ import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import { notifyMessageCopySuccess } from '../../shared/message-card/message-card-copy-feedback';
 import { DEBUG_SCROLL_HEARTBEAT_MS } from '../../../../debug-recorder/config';
 import { recordAnalysisDebugScrollSnapshot, useAnalysisDebugEnabled } from '../analysis-debug';
+import { ANALYSIS_SHOW_UNREAD_DIVIDER } from '../config';
 
 type Props = {
+  showUnreadDivider?: boolean;
+  unreadBoundaryMessageId?: number | null;
   authUserName: string | null;
   currentUser: User | null;
   copiedFeedbackId: string | null;
@@ -110,6 +113,8 @@ type Props = {
 const getMessageId = ([id]: [number, InboxMessage]) => id;
 
 function AnalysisMessagesPaneComponent({
+  showUnreadDivider = ANALYSIS_SHOW_UNREAD_DIVIDER,
+  unreadBoundaryMessageId,
   authUserName,
   currentUser,
   copiedFeedbackId: copiedFeedbackIdProp,
@@ -359,6 +364,7 @@ function AnalysisMessagesPaneComponent({
         }}
         renderMessage={([id, message]) => (
           <AnalysisMessageCardItem
+            unreadBoundary={showUnreadDivider && id === unreadBoundaryMessageId}
             key={id}
             authUserName={authUserName}
             currentUserLogin={currentUserLogin}

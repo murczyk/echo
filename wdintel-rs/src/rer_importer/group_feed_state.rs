@@ -214,7 +214,8 @@ with messages as (
         signal_message_group.group_master_key,
         signal_message.created_at,
         signal_message.id,
-        signal_message.id_uuid
+        signal_message.id_uuid,
+        signal_message.login_id
     from signal_message_group
     join signal_message
         on signal_message.id = signal_message_group.signal_message_id
@@ -229,21 +230,23 @@ select
     signal_group.ignore_operativny,
     signal_group.color_key,
     count(messages.id) filter (
-        where read_state.last_read_created_at is null
+        where messages.login_id is distinct from $1
+            and (read_state.last_read_created_at is null
             or (messages.created_at, messages.id) > (
                 read_state.last_read_created_at,
                 read_state.last_read_message_id
-            )
+            ))
     )::bigint as unread_count,
     (array_agg(
         messages.id_uuid
         order by messages.created_at, messages.id
     ) filter (
-        where read_state.last_read_created_at is null
+        where messages.login_id is distinct from $1
+            and (read_state.last_read_created_at is null
             or (messages.created_at, messages.id) > (
                 read_state.last_read_created_at,
                 read_state.last_read_message_id
-            )
+            ))
     ))[1] as oldest_unread_message_ref,
     (array_agg(
         messages.created_at
@@ -641,6 +644,108 @@ mod tests {
         assert!(!states.iter().any(
             |state| state.group_master_key == inaccessible_group.master_key
         ));
+    }
+
+    #[tokio::test]
+    async fn own_submissions_are_read_without_acknowledging_other_users_messages(
+    ) {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let author = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        let reader = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("group-reader-3727".to_string()),
+                sigint_zone_id: Set(author.sigint_zone_id),
+                organism_id: Set(author.organism_id),
+                roles: Set(serde_json::json!(["Rer"])),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for login in [author.id, reader.id] {
+            list_group_feed_states(&env.dbx, login).await.unwrap();
+        }
+        let payload = || {
+            serde_json::from_value(serde_json::json!({
+                "full_body": "Own message #3727",
+                "signal_group_master_key": group.master_key,
+            }))
+            .unwrap()
+        };
+        let first = crate::sigint::direct_submit::bl::submit_signal_message(
+            &author.id,
+            &env,
+            payload(),
+        )
+        .await
+        .unwrap();
+        let author_state = list_group_feed_states(&env.dbx, author.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|state| state.group_master_key == group.master_key)
+            .unwrap();
+        let reader_state = list_group_feed_states(&env.dbx, reader.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|state| state.group_master_key == group.master_key)
+            .unwrap();
+        assert_eq!(author_state.unread_count, 0);
+        assert_eq!(author_state.oldest_unread_message_ref, None);
+        assert_eq!(
+            author_state.last_activity_cursor.unwrap().message_id,
+            first.signal_message_id
+        );
+        assert_eq!(reader_state.unread_count, 1);
+        assert_eq!(first.message.as_ref().unwrap().is_own, Some(true));
+        let reader_messages = crate::rer_importer::inbox::messages_by_id_bl(
+            &reader.id,
+            &vec![reader.id],
+            &env,
+            &[first.signal_message_id],
+            &crate::rer_importer::types::InboxMessagesReq::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(reader_messages[0].1.is_own, Some(false));
+
+        let reply = crate::sigint::direct_submit::bl::submit_signal_message(
+            &reader.id,
+            &env,
+            payload(),
+        )
+        .await
+        .unwrap();
+        crate::sigint::direct_submit::bl::submit_signal_message(
+            &author.id,
+            &env,
+            payload(),
+        )
+        .await
+        .unwrap();
+        let author_state = list_group_feed_states(&env.dbx, author.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|state| state.group_master_key == group.master_key)
+            .unwrap();
+        let reader_state = list_group_feed_states(&env.dbx, reader.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|state| state.group_master_key == group.master_key)
+            .unwrap();
+        assert_eq!(author_state.unread_count, 1);
+        assert_eq!(reader_state.unread_count, 2);
+        let reply = signal_message::Entity::find_by_id(reply.signal_message_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(author_state.oldest_unread_message_ref, reply.id_uuid);
     }
 
     #[tokio::test]

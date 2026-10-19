@@ -45,6 +45,7 @@ messageStub =
     , timestamp = Just 1726734960438
     , createdAt = Nothing
     , createdAtOrder = Nothing
+    , isOwn = Nothing
     , hasDateInHeader = False
     , unit = Just "УКХ р/м йм. 1/2 мсб 1199 мсп"
     , unitIds = []

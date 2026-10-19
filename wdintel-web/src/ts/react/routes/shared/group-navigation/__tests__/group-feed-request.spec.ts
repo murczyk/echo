@@ -122,13 +122,16 @@ describe('group feed requests', () => {
         field,
       ).toBe(false);
     });
+  });
+
+  it('#3727 keeps read receipts enabled for keyword highlighting without content filters', () => {
     expect(
       isDutyGroupViewAcknowledgeable({
         ...emptyDutyFilter,
-        highlightKeywordsEnabled: true,
-        highlightKeywordSetId: 7,
+        highlightKeywordsEnabled: null,
+        highlightKeywordSetId: 1,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('recognizes Analysis content filters as acknowledgement-unsafe', () => {

@@ -1,40 +1,10 @@
 import { useCallback, useState } from 'react';
-import type { GroupFeedState, InboxMessage } from '../../../../Bindings';
+import type { GroupFeedState } from '../../../../Bindings';
 import type { MessageFeedState } from './utils';
-
-type UnreadBoundary = {
-  key: string;
-  groups: readonly GroupFeedState[] | null;
-  messageId: number | null;
-  dismissed?: boolean;
-};
-
-function isPersistedUnread(id: number, message: InboxMessage, group: GroupFeedState): boolean {
-  if (
-    group.oldestUnreadMessageRef != null &&
-    (group.oldestUnreadMessageRef === message.messageUuid ||
-      group.oldestUnreadMessageRef === message.messageUid)
-  )
-    return true;
-  const memberships =
-    message.groupMasterKeys ?? (message.groupMasterKey ? [message.groupMasterKey] : []);
-  if (
-    !memberships.includes(group.masterKey) ||
-    group.lastReadCreatedAtOrder === undefined ||
-    group.lastReadMessageId === undefined
-  )
-    return false;
-  const order =
-    message.createdAtOrder ?? (message.createdAt == null ? null : message.createdAt * 1000);
-  if (order == null) return false;
-  if (group.lastReadCreatedAtOrder === null) return true;
-  return (
-    order > group.lastReadCreatedAtOrder ||
-    (order === group.lastReadCreatedAtOrder &&
-      group.lastReadMessageId != null &&
-      id > group.lastReadMessageId)
-  );
-}
+import {
+  resolveGroupUnreadBoundary,
+  type GroupUnreadBoundary as UnreadBoundary,
+} from '../shared/group-navigation/group-unread-boundary';
 
 function resolveUnreadBoundary(
   feed: MessageFeedState,
@@ -51,29 +21,21 @@ function resolveUnreadBoundary(
     feed.highlightSignalsEnabled,
     feed.onlyMyUnitTagsEnabled,
   ]);
-  const boundary = previous?.key === key ? previous : { key, groups: null, messageId: null };
-  if (feed.loading || boundary.dismissed) return boundary;
-  const unreadGroups =
-    boundary.groups ??
-    (ready
-      ? groups.filter(
-          (group) =>
-            !group.ignoreOperativny &&
-            (!feed.groupScopeMasterKey || group.masterKey === feed.groupScopeMasterKey) &&
-            group.unreadCount > 0,
-        )
-      : null);
-  const messageId =
-    boundary.messageId ??
-    feed.items.find(
-      ([id, message]) =>
-        (feed.unreadCount > 0 && !feed.readIds.has(id)) ||
-        unreadGroups?.some((group) => isPersistedUnread(id, message, group)),
-    )?.[0] ??
-    null;
-  return unreadGroups === boundary.groups && messageId === boundary.messageId
-    ? boundary
-    : { key, groups: unreadGroups, messageId };
+  return resolveGroupUnreadBoundary(
+    {
+      key,
+      loading: feed.loading,
+      ready,
+      messages: feed.items,
+      groups: groups.filter(
+        (group) =>
+          !group.ignoreOperativny &&
+          (!feed.groupScopeMasterKey || group.masterKey === feed.groupScopeMasterKey),
+      ),
+      isLocallyUnread: (id) => feed.unreadCount > 0 && !feed.readIds.has(id),
+    },
+    previous,
+  );
 }
 
 export function useDutyUnreadBoundaries(

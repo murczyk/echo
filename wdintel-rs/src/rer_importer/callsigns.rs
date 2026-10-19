@@ -2312,6 +2312,7 @@ mod tests {
             timestamp: None,
             created_at: None,
             created_at_order: None,
+            is_own: None,
             has_date_in_header: false,
             group_master_key: None,
             group_master_keys: None,

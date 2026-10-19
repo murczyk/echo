@@ -37,6 +37,7 @@ pub enum InboxLocationSubmitMode {
 #[derive(Debug, FromQueryResult)]
 pub struct InboxMessageDesc {
     pub id: i64,
+    pub login_id: Option<uuid::Uuid>,
     pub id_uuid: Option<uuid::Uuid>,
     pub message_uid: Option<String>,
     pub body: Option<String>,
@@ -1196,6 +1197,7 @@ pub async fn aggregate_to_inbox_messages(
                 created_at_order: Some(
                     message.created_at.and_utc().timestamp_micros(),
                 ),
+                is_own: Some(message.login_id == Some(*login)),
                 has_date_in_header: crate::rer_importer::body_noheader::leading_header_has_calendar_date(&body),
                 group_master_key: group_entry
                     .as_ref()

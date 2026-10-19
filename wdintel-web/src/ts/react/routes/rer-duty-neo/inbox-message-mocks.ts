@@ -58,6 +58,7 @@ export function minimalInboxMessage(overrides: Partial<InboxMessage> = {}): Inbo
     createdAtOrder: overrides.createdAt == null ? 1000 : overrides.createdAt * 1000,
     groupMasterKey: null,
     groupMasterKeys: null,
+    isOwn: null,
     sender: null,
     extendedForm: null,
     post: null,

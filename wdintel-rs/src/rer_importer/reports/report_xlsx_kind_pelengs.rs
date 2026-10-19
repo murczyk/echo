@@ -599,6 +599,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                         .map(|x| x.and_utc().timestamp_millis()),
                     created_at: None,
                     created_at_order: None,
+                    is_own: None,
                     has_date_in_header: false,
                     group_master_key: None,
                     group_master_keys: None,

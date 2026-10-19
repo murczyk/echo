@@ -224,6 +224,8 @@ export type AnalysisPageState = {
   isFilterSectionStale: (section: AnalysisFilterSectionId) => boolean;
   groupInfos: Record<string, SignalGroupEntry>;
   groupNavigation: GroupFeedNavigationModel;
+  unreadBoundaryMessageId: number | null;
+  dismissUnreadBoundary: () => void;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   includeOnlyNewFreqs: boolean;
   inboxReq: InboxMessagesReq | null;

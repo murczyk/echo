@@ -40,6 +40,7 @@ function filterOtherMessageComments(
   });
 }
 type AnalysisMessageCardItemProps = {
+  unreadBoundary?: boolean;
   authUserName: string | null;
   currentUserLogin: string | null;
   copiedFeedbackId: string | null;
@@ -89,6 +90,7 @@ type AnalysisMessageCardItemProps = {
 };
 
 export const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
+  unreadBoundary,
   authUserName,
   currentUserLogin,
   copiedFeedbackId,
@@ -142,6 +144,7 @@ export const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
 
   return (
     <AnalysisMessageCard
+      unreadBoundary={unreadBoundary}
       id={id}
       msg={message}
       referenceTimeMs={referenceTimeMs}

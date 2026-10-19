@@ -94,6 +94,7 @@ message textMarked callsigns networkIds =
     , timestamp = Nothing
     , createdAt = Nothing
     , createdAtOrder = Nothing
+    , isOwn = Nothing
     , hasDateInHeader = False
     , groupMasterKey = Nothing
     , groupMasterKeys = Nothing

@@ -27,6 +27,7 @@ import { isNullOrUndefined, isPresent } from '../../utils/misc';
 import type { FeedColumnModel } from './types';
 import { resolveDutyScrollFabPosition } from './duty-scroll-fab-position';
 import { PowerChip } from '../../components/PowerChip';
+import { UnreadMessagesDivider } from '../shared/group-navigation/UnreadMessagesDivider';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
@@ -412,16 +413,7 @@ const DutyMessageList = memo(
           const mountCard = mountedItemIds == null || mountedItemIds.has(id);
           return (
             <MessageFeedItem id={id} data-duty-message-id={id}>
-              {mountCard && id === unreadBoundaryMessageId ? (
-                <div
-                  className="message-feed-unread-divider"
-                  data-duty-unread-divider
-                  role="separator"
-                  aria-label="Непрочитані повідомлення"
-                >
-                  Непрочитані повідомлення
-                </div>
-              ) : null}
+              {mountCard && id === unreadBoundaryMessageId ? <UnreadMessagesDivider duty /> : null}
               {mountCard ? (
                 <DutyMessageCardItem
                   id={id}

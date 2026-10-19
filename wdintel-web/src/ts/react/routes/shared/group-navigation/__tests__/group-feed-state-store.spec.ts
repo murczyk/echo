@@ -147,6 +147,90 @@ describe('group feed state store', () => {
     expect(store.getSnapshot().groups).toEqual([]);
   });
 
+  it.each(['pending', 'completed'] as const)(
+    '#3727 preserves new unread state when an older receipt arrives after a %s refresh',
+    async (refreshState) => {
+      const receipt = deferred<GroupFeedState>();
+      const refreshResponse = deferred<GroupFeedState[]>();
+      const fetchStates = vi
+        .fn()
+        .mockResolvedValueOnce([group('g-1', 1)])
+        .mockReturnValueOnce(refreshResponse.promise)
+        .mockResolvedValue([group('g-1', 1)]);
+      const store = createGroupFeedStateStore({
+        fetchStates,
+        acknowledge: () => receipt.promise,
+      });
+      const release = store.addVisibleConsumer();
+      await vi.runAllTimersAsync();
+      const pending = store.acknowledge({
+        masterKey: 'g-1',
+        cursor: { createdAt: 1, messageId: 1 },
+      });
+      store.invalidate({ schedule: false });
+      const refresh = store.refresh();
+      if (refreshState === 'completed') {
+        refreshResponse.resolve([group('g-1', 1)]);
+        await refresh;
+      }
+
+      receipt.resolve(group('g-1', 0));
+      await pending;
+      expect(store.getSnapshot().groups).toEqual([group('g-1', 1)]);
+      refreshResponse.resolve([group('g-1', 0)]);
+      await refresh;
+      expect(store.getSnapshot().groups).toEqual([group('g-1', 1)]);
+      release();
+    },
+  );
+
+  it('#3727 revalidates an invalidated receipt even with group navigation closed', async () => {
+    const receipt = deferred<GroupFeedState>();
+    const store = createGroupFeedStateStore({
+      fetchStates: async () => [group('g-1', 1)],
+      acknowledge: () => receipt.promise,
+    });
+    await store.ensureLoaded();
+    const pending = store.acknowledge({
+      masterKey: 'g-1',
+      cursor: { createdAt: 1, messageId: 1 },
+    });
+    store.invalidate();
+    receipt.resolve(group('g-1', 0));
+    await pending;
+
+    expect(store.getSnapshot().groups).toEqual([group('g-1', 1)]);
+    expect(store.getSnapshot().stale).toBe(false);
+  });
+
+  it('#3727 preserves a new unread message fetched by a GET already running at receipt dispatch', async () => {
+    const receipt = deferred<GroupFeedState>();
+    const refreshResponse = deferred<GroupFeedState[]>();
+    const fetchStates = vi
+      .fn()
+      .mockResolvedValueOnce([group('g-1', 1)])
+      .mockReturnValueOnce(refreshResponse.promise)
+      .mockResolvedValue([group('g-1', 1)]);
+    const store = createGroupFeedStateStore({
+      fetchStates,
+      acknowledge: () => receipt.promise,
+    });
+    const release = store.addVisibleConsumer();
+    await vi.runAllTimersAsync();
+    const refresh = store.refresh();
+    const pending = store.acknowledge({
+      masterKey: 'g-1',
+      cursor: { createdAt: 1, messageId: 1 },
+    });
+    refreshResponse.resolve([group('g-1', 1)]);
+    await refresh;
+    receipt.resolve(group('g-1', 0));
+    await pending;
+
+    expect(store.getSnapshot().groups).toEqual([group('g-1', 1)]);
+    release();
+  });
+
   it('serializes read positions shared by concurrent feeds', async () => {
     const first = deferred<GroupFeedState>();
     const acknowledge = vi

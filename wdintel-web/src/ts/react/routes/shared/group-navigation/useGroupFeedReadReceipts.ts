@@ -93,7 +93,7 @@ export function useGroupFeedReadReceipts({
     );
     const positions = new Map<string, ReadPosition>();
     for (const [id, message] of messages) {
-      if (!visible.has(id) || message.createdAt == null) {
+      if (!visible.has(id) || message.createdAt == null || message.isOwn === true) {
         continue;
       }
       const position = {

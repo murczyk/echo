@@ -540,6 +540,7 @@ export function RerAnalysisNeoPage({
                       });
                     }}
                     onCreated={async () => {
+                      if (!page.reportSource) page.dismissUnreadBoundary();
                       page.reload({ preserveMessagePage: true });
                       notify({
                         message: page.reportSource

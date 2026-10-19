@@ -412,6 +412,7 @@ export function AnalysisCenterPanel({
           }}
         >
           <AnalysisMessagesPane
+            unreadBoundaryMessageId={page.unreadBoundaryMessageId}
             editorHighlightedMessageId={editorHighlightedMessageId}
             authUserName={page.authUserName}
             currentUser={page.currentUser}
