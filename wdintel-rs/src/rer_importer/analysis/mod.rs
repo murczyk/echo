@@ -261,29 +261,60 @@ pub(super) fn message_in_groups_exists_with_scope(
     keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> SimpleExpr {
+    message_in_groups_exists_with_correlation(keys, scope, false)
+}
+
+pub(super) fn message_in_groups_exists_with_correlation(
+    keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    lookup_by_message: bool,
+) -> SimpleExpr {
     if keys.is_empty() {
         return Expr::cust("FALSE");
     }
 
-    let subquery = signal_message_group::Entity::find()
-        .select_only()
-        .expr(Expr::value(1))
-        .filter(
-            Expr::col((
-                signal_message_group::Entity,
-                signal_message_group::Column::SignalMessageId,
-            ))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
-        )
-        .filter(signal_message_group::Column::GroupMasterKey.eq_any(keys));
+    let subquery = signal_message_group::Entity::find().select_only().filter(
+        Expr::col((
+            signal_message_group::Entity,
+            signal_message_group::Column::SignalMessageId,
+        ))
+        .equals((signal_message::Entity, signal_message::Column::Id)),
+    );
     let subquery = match scope {
         Some(scope) => subquery.filter(scope.condition((
             signal_message_group::Entity,
             signal_message_group::Column::SignalMessageId,
         ))),
         None => subquery,
+    };
+
+    if lookup_by_message {
+        let access_groups = Alias::new("access_groups");
+        // Keep group filtering outside the message-ID lookup so PostgreSQL
+        // does not probe the group-first index once per allowed group.
+        let subquery = subquery
+            .column(signal_message_group::Column::GroupMasterKey)
+            .offset(0)
+            .into_query();
+        return Expr::exists(
+            Query::select()
+                .expr(Expr::value(1))
+                .from_subquery(subquery, access_groups.clone())
+                .and_where(sea_query::extension::postgres::PgExpr::eq_any(
+                    Expr::col((
+                        access_groups,
+                        signal_message_group::Column::GroupMasterKey,
+                    )),
+                    keys,
+                ))
+                .to_owned(),
+        );
     }
-    .into_query();
+
+    let subquery = subquery
+        .expr(Expr::value(1))
+        .filter(signal_message_group::Column::GroupMasterKey.eq_any(keys))
+        .into_query();
 
     Expr::exists(subquery)
 }
