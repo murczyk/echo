@@ -41,7 +41,9 @@ export function effectiveRadioReport(
     template:
       report.template === 'summary_table'
         ? 'kmz'
-        : ['pelengs', 'reo', 'mouse', 'report_125', 'posts_docx'].includes(report.template)
+        : ['pelengs', 'reo', 'mouse', 'report_125', 'report_1217', 'posts_docx'].includes(
+              report.template,
+            )
           ? 'tags'
           : report.template,
   };

@@ -630,6 +630,12 @@ view user model shared route =
                     (ReportTemplateSelect RTReport1213)
                     "Звіт 1.2.13"
                     "Стислий звіт по радіомережах з частотою, часом, позивним вузла та координатами"
+                , HtmlX.viewIf model.radioFeaturesAllowed <|
+                  templateCard
+                    (model.reportTemplate == RTReport1217)
+                    (ReportTemplateSelect RTReport1217)
+                    "Звіт 1.2.17"
+                    "Перехоплення за радіомережами з коментарями мого підрозділу"
                 ]
 
             , HtmlX.viewIf (model.radioFeaturesAllowed && model.reportTemplate == RTTags) <|

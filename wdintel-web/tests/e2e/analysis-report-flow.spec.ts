@@ -43,6 +43,42 @@ async function openReportsDialog(page: Page) {
 }
 
 test.describe('Analysis report characterization @regression', () => {
+  test('launches report 1.2.17 with the current analysis filters', async ({ page }) => {
+    await installAnalysisNeoApiMocks(page, {
+      userRoles: ['Rer', 'AdvancedReports'],
+      inboxResponse: createLoadedInboxResponse(),
+    });
+    const launchBodies: unknown[] = [];
+    await page.route('**/api/rer/report-docx-task-launch', async (route) => {
+      launchBodies.push(route.request().postDataJSON());
+      await route.fulfill({ contentType: 'application/json', body: '1217' });
+    });
+    await page.route('**/api/report-history/status', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify(
+          reportHistoryRow(1217, {
+            report_kind: 'report_1217',
+            status: 'planned',
+            bgtask_id: null,
+          }),
+        ),
+      });
+    });
+    await page.goto('/rer-analysis-neo?freqs=123.4');
+    const dialog = await openReportsDialog(page);
+    await dialog.getByRole('button', { name: /Звіт 1\.2\.17/ }).click();
+    await dialog.getByRole('button', { name: 'Завантажити docx/xlsx' }).click();
+    await expect.poll(() => launchBodies.length).toBe(1);
+    expect(launchBodies[0]).toEqual(
+      expect.objectContaining({
+        kind: 'report_1217',
+        report_type: null,
+        req: expect.objectContaining({ selected_freqs: ['123.4'] }),
+      }),
+    );
+  });
+
   test('@smoke launches the selected report, renders progress logs, and downloads the result', async ({
     page,
   }) => {
