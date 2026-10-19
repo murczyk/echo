@@ -4115,6 +4115,8 @@ mod tests {
         .unwrap();
         clear_iggy_events(&env, integration.id).await;
 
+        env.dbx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres,
+            "insert into transcription_source(id,source_key) values($1,$2) on conflict do nothing",[media.id.into(),crate::transcriber::media_queue::source_key(&media).into()])).await.unwrap();
         echo_gpu_transcription_queue::ActiveModel {
             source_id: Set(media.id),
             state: Set("completed".to_string()),

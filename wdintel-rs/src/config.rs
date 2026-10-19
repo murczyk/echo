@@ -471,9 +471,7 @@ pub const AI_AGENT_MATTERMOST_CHAT_RETRY_MAX_SEC: i64 = 15 * 60;
 pub const AI_AGENT_MATTERMOST_CHAT_CLAIM_LEASE_SEC: i64 = 30;
 pub const AI_AGENT_MATTERMOST_CHAT_PROMPT_MAX_CHARS: usize = 12 * 1024;
 pub const ECHO_AUDIO_TRANSCRIPTION_CONCURRENCY: usize = 1;
-pub const ECHO_AUDIO_TRANSCRIPTION_RETENTION_DAYS: i64 = 2;
 pub const ECHO_AUDIO_TRANSCRIPTION_MAX_BYTES: i64 = 104_857_600;
-pub const ECHO_AUDIO_TRANSCRIPTION_CLEANUP_BATCH_SIZE: u64 = 100;
 pub const ECHO_AUDIO_TRANSCRIPTION_BACKFILL_BATCH_SIZE: u64 = 200;
 pub const ECHO_AUDIO_TRANSCRIPTION_ACTIVE_SLEEP_MS: u64 = 100;
 pub const ECHO_AUDIO_TRANSCRIPTION_IDLE_SLEEP_MS: u64 = 5_000;
@@ -1286,6 +1284,8 @@ SET quick_suggestion_enabled = false,
     updated_at = (now() at time zone 'utc')
 WHERE id = 1;
 DELETE FROM echo_gpu_transcription_queue;
+DELETE FROM echo_gpu_audio_chunk;
+DELETE FROM transcription_source;
 DELETE FROM gpu_config;
 DELETE FROM secret_group_user;
 DELETE FROM palitra_highlight_blacklist;

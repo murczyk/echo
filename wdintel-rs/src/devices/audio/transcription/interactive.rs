@@ -1,16 +1,13 @@
 use super::super::{bl, types::*, DeviceAudioRuntime};
 use super::{
-    admission, guards::MainGuard, query, status, ActorAudioCommand,
-    AdmissionOutcome, StatusCommand,
+    admission, guards::MainGuard, status, ActorAudioCommand, AdmissionOutcome,
+    StatusCommand,
 };
-use crate::file_registry::entities::device_audio_asr_job as job;
+use crate::file_registry::entities::device_audio as audio;
 use crate::{error::AppError, h, types::ShortContext};
-use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, DatabaseTransaction, EntityTrait, IntoActiveModel,
-    QuerySelect, Set, TransactionTrait,
+    ColumnTrait, EntityTrait, QueryFilter, QuerySelect, TransactionTrait,
 };
-use uuid::Uuid;
 
 pub(crate) async fn open(
     runtime: &DeviceAudioRuntime,
@@ -78,21 +75,19 @@ async fn admit(
     let main = MainGuard::acquire(runtime, target.device_id, true)
         .await
         .c(h!())?;
+    main.authorize_read(command.actor_id).await.c(h!())?;
     let files = runtime.file_database().c(h!())?.begin().await.c(h!())?;
     let enabled = admission::lock_setting(&files, target.device_id)
         .await
         .c(h!())?;
-    let source = query::source(&files, target, true)
+    let row = audio::Entity::find_by_id(target.audio_id)
+        .filter(audio::Column::DeviceId.eq(target.device_id))
+        .lock_exclusive()
+        .one(&files)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)
         .c(h!())?;
-    let current = job::Entity::find_by_id(target.audio_id)
-        .lock_exclusive()
-        .one(&files)
-        .await
-        .c(h!())?;
-    main.authorize_read(command.actor_id).await.c(h!())?;
     if !main.active() {
         return if retry {
             Err(AppError::Forbidden(
@@ -103,11 +98,11 @@ async fn admit(
             Ok(AdmissionOutcome::NotEligible)
         };
     }
-    if !enabled || !main.global_enabled {
+    if !main.global_enabled || !enabled {
         return if retry {
             Err(conflict(
                 "transcription_disabled",
-                "Автотранскрибацію вимкнено",
+                "Транскрибація недоступна",
             ))
             .c(h!())
         } else {
@@ -115,16 +110,52 @@ async fn admit(
         };
     }
     runtime.byte_store().c(h!())?;
-    let outcome = if source.has_automatic {
-        AdmissionOutcome::AlreadyCompleted
-    } else if let Some(current) = current {
-        transition(&files, current, retry).await.c(h!())?
-    } else if retry {
-        return Err(conflict(
-            "retry_not_available",
-            "Спочатку відкрийте аудіо",
-        ))
-        .c(h!());
+    if row.automatic_transcription_pending.is_some() {
+        return Ok(AdmissionOutcome::AlreadyActive);
+    }
+    if !retry && row.automatic_transcribed_at.is_some() {
+        return Ok(AdmissionOutcome::AlreadyCompleted);
+    }
+    let mut outcome = AdmissionOutcome::Queued;
+    if retry {
+        // Do not hold files row locks while entering shared source coordination.
+        files.commit().await.c(h!())?;
+        let (source, _) = crate::transcription::service::enqueue(
+            &runtime.dbx,
+            &row.storage_key,
+        )
+        .await
+        .c(h!())?;
+        let task = echo_gpu_client::lookup(&runtime.dbx, source)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .c(h!())?
+            .0;
+        if matches!(task.state.as_str(), "terminal" | "completed") {
+            if !crate::transcriber::reprocess::request_for_device(
+                &runtime.dbx,
+                runtime.file_database().c(h!())?,
+                source,
+            )
+            .await
+            .c(h!())?
+            {
+                outcome = AdmissionOutcome::AlreadyActive;
+            }
+        } else {
+            outcome = AdmissionOutcome::AlreadyActive;
+            audio::Entity::update_many()
+                .col_expr(
+                    audio::Column::AutomaticTranscriptionPending,
+                    sea_orm::sea_query::Expr::value(0),
+                )
+                .filter(audio::Column::Id.eq(row.id))
+                .filter(audio::Column::AutomaticTranscriptionPending.is_null())
+                .exec(runtime.file_database().c(h!())?)
+                .await
+                .c(h!())?;
+        }
     } else {
         admission::publish(
             &files,
@@ -135,93 +166,8 @@ async fn admit(
         )
         .await
         .c(h!())?;
-        let current = job::Entity::find_by_id(target.audio_id)
-            .one(&files)
-            .await
-            .c(h!())?
-            .ok_or(AppError::NotFound)
-            .c(h!())?;
-        promote(&files, current).await.c(h!())?;
-        AdmissionOutcome::Queued
-    };
-    main.commit_files(files).await.c(h!())?;
-    if matches!(
-        outcome,
-        AdmissionOutcome::Queued | AdmissionOutcome::AlreadyActive
-    ) {
-        runtime.asr_wake.notify_one();
+        main.commit_files(files).await.c(h!())?;
     }
+    runtime.asr_wake.notify_one();
     Ok(outcome)
-}
-
-async fn transition(
-    files: &DatabaseTransaction,
-    current: job::Model,
-    retry: bool,
-) -> anyhow::Result<AdmissionOutcome> {
-    match current.state.as_str() {
-        "outcome_unknown" if retry => Err(conflict(
-            "recovery_required",
-            "Потрібна операторська перевірка",
-        ))
-        .c(h!()),
-        "preparing" | "running" | "outcome_unknown" => {
-            Ok(AdmissionOutcome::AlreadyActive)
-        }
-        "queued" | "retry_wait" | "policy_pending" => {
-            promote(files, current).await.c(h!())?;
-            Ok(AdmissionOutcome::AlreadyActive)
-        }
-        "succeeded" => Ok(AdmissionOutcome::AlreadyCompleted),
-        "failed" | "no_speech" if retry => {
-            enqueue_generation(files, current).await.c(h!())?;
-            Ok(AdmissionOutcome::Queued)
-        }
-        "suppressed" if !retry => {
-            enqueue_generation(files, current).await.c(h!())?;
-            Ok(AdmissionOutcome::Queued)
-        }
-        _ if retry => Err(conflict(
-            "retry_not_available",
-            "Повтор транскрибації недоступний",
-        ))
-        .c(h!()),
-        _ => Ok(AdmissionOutcome::NotEligible),
-    }
-}
-
-async fn promote(
-    files: &DatabaseTransaction,
-    current: job::Model,
-) -> anyhow::Result<()> {
-    if current.priority == 0 {
-        return Ok(());
-    }
-    let mut current = current.into_active_model();
-    current.priority = Set(0);
-    current.trigger = Set("interactive".into());
-    current.updated_at = Set(Utc::now().fixed_offset());
-    current.update(files).await.c(h!())?;
-    Ok(())
-}
-
-async fn enqueue_generation(
-    files: &DatabaseTransaction,
-    current: job::Model,
-) -> anyhow::Result<()> {
-    let now = Utc::now().fixed_offset();
-    let mut current = current.into_active_model();
-    query::clear_attempt(&mut current);
-    current.state = Set("queued".into());
-    current.priority = Set(0);
-    current.trigger = Set("interactive".into());
-    current.generation = Set(Uuid::new_v4());
-    current.status_version = Set(Uuid::new_v4());
-    current.attempt_count = Set(0);
-    current.generation_started_at = Set(now);
-    current.next_attempt_at = Set(Some(now));
-    current.updated_at = Set(now);
-    current.error_code = Set(None);
-    current.update(files).await.c(h!())?;
-    Ok(())
 }

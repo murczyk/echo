@@ -810,10 +810,10 @@ test.describe('@regression real device audio processing races', () => {
     try {
       const deniedTranscription = page.waitForResponse(
         (response) =>
-          response.url().endsWith('/api/device/audio/transcription/status') &&
-          response.status() === 403,
+          response.url().endsWith('/api/device/audio/detail') && response.status() === 403,
       );
       await audioFixtureSql('main', `UPDATE login SET roles='[]'::jsonb WHERE id='${actor.id}';`);
+      await click(page, 'Перечитати транскрипцію');
       await (await deniedTranscription).finished();
       await expect(field(page)).toHaveAttribute('readonly', '');
       release.resolve();

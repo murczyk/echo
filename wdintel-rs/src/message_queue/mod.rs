@@ -653,7 +653,14 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(echo_gpu_client::lookup(&txn, media.id)
+        let source = crate::transcription::service::source_id(
+            &txn,
+            &crate::transcriber::media_queue::source_key(&media),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(echo_gpu_client::lookup(&txn, source)
             .await
             .unwrap()
             .is_some());
@@ -669,7 +676,7 @@ mod tests {
                     &media,
                 ));
         s3.as_ref().unwrap().stat(&remote_key).await.unwrap();
-        assert!(echo_gpu_client::lookup(&env.dbx, media.id)
+        assert!(echo_gpu_client::lookup(&env.dbx, source)
             .await
             .unwrap()
             .is_some());

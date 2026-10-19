@@ -98,24 +98,33 @@ it.each([
   'failed',
   'outcome_unknown',
   'cancelled',
-] as const)(
-  'keeps polling %s at one second and merges unchanged-version capabilities',
-  async (terminal) => {
-    const first = response(terminal);
-    api.status.mockResolvedValueOnce(first).mockResolvedValue({
-      snapshot: null,
-      availability: { ...first.availability, deviceEnabled: false },
-    });
+] as const)('stops polling %s and still permits an explicit refresh', async (terminal) => {
+  const first = response(terminal);
+  api.status.mockResolvedValueOnce(first).mockResolvedValue({
+    snapshot: null,
+    availability: { ...first.availability, deviceEnabled: false },
+  });
+  await act(async () => root.render(<Harness />));
+  await act(async () => vi.advanceTimersByTimeAsync(10000));
+  expect(api.status).toHaveBeenCalledTimes(1);
+  await act(async () => state.refresh());
+  expect(api.status).toHaveBeenCalledTimes(2);
+  expect(state.availability?.deviceEnabled).toBe(false);
+  expect(merge).toHaveBeenLastCalledWith(
+    first.snapshot,
+    expect.objectContaining({ deviceEnabled: false }),
+  );
+});
+
+it.each(['queued', 'preparing', 'running', 'retry_wait'] as const)(
+  'polls pending %s until the saved result is ready',
+  async (pending) => {
+    api.status.mockResolvedValueOnce(response(pending)).mockResolvedValue(response('succeeded'));
     await act(async () => root.render(<Harness />));
-    await act(async () => vi.advanceTimersByTimeAsync(999));
-    expect(api.status).toHaveBeenCalledTimes(1);
-    await act(async () => vi.advanceTimersByTimeAsync(1));
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(state.snapshot?.text).toBe('auto');
+    await act(async () => vi.advanceTimersByTimeAsync(10000));
     expect(api.status).toHaveBeenCalledTimes(2);
-    expect(state.availability?.deviceEnabled).toBe(false);
-    expect(merge).toHaveBeenLastCalledWith(
-      first.snapshot,
-      expect.objectContaining({ deviceEnabled: false }),
-    );
   },
 );
 

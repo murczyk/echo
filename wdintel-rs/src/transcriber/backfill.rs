@@ -74,6 +74,9 @@ async fn scan_confirmed(
     if !dry_run && !confirmed {
         return Ok(None);
     }
+    crate::transcription::service::ensure_sources_registered(dbx)
+        .await
+        .context(h!())?;
     Ok(Some(scan(dbx, since, dry_run).await.context(h!())?))
 }
 
@@ -134,19 +137,31 @@ async fn scan(
             }
             counts.eligible += 1;
             let outcome = if dry_run {
-                match echo_gpu_client::lookup(dbx, media.id)
-                    .await
-                    .context(h!())?
+                match match crate::transcription::service::source_id(
+                    dbx,
+                    &super::media_queue::source_key(&media),
+                )
+                .await
+                .context(h!())?
                 {
+                    Some(source) => echo_gpu_client::lookup(dbx, source)
+                        .await
+                        .context(h!())?,
+                    None => None,
+                } {
                     Some(item) => echo_gpu_client::EnqueueOutcome::Existing(
                         item.state().context(h!())?,
                     ),
                     None => echo_gpu_client::EnqueueOutcome::Queued,
                 }
             } else {
-                echo_gpu_client::enqueue(dbx, media.id)
-                    .await
-                    .context(h!())?
+                crate::transcription::service::enqueue(
+                    dbx,
+                    &super::media_queue::source_key(&media),
+                )
+                .await
+                .context(h!())?
+                .1
             };
             record_outcome(&mut counts, outcome, !dry_run);
         }
@@ -203,14 +218,20 @@ pub async fn requeue_terminal(
         return Ok(());
     }
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-    let updated = echo_gpu_client::requeue_terminal(
+    let config = crate::config::read_config(mode).c(h!())?;
+    let files = crate::file_registry::connect_runtime(&config, mode)
+        .await
+        .c(h!())?;
+    let updated = super::reprocess::request_if_state(
         &dbx,
+        files.as_ref().map(|files| files.connection()),
         ps.source_id,
+        "terminal",
         &ps.reason,
-        &ps.requester,
+        Some(&ps.requester),
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
     println!("requeued={updated} source_id={}", ps.source_id);
     Ok(())
 }
@@ -224,14 +245,20 @@ pub async fn retranscribe_completed(
         return Ok(());
     }
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-    let updated = echo_gpu_client::retranscribe_completed(
+    let config = crate::config::read_config(mode).c(h!())?;
+    let files = crate::file_registry::connect_runtime(&config, mode)
+        .await
+        .c(h!())?;
+    let updated = super::reprocess::request_if_state(
         &dbx,
+        files.as_ref().map(|files| files.connection()),
         ps.source_id,
+        "completed",
         &ps.reason,
-        &ps.requester,
+        Some(&ps.requester),
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
     println!("retranscribed={updated} source_id={}", ps.source_id);
     Ok(())
 }
@@ -293,6 +320,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn database_scan_is_inclusive_batched_and_confirmation_safe() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
@@ -408,6 +436,21 @@ mod tests {
                 .unwrap()
                 .queued,
             201
+        );
+
+        echo_gpu_client::enqueue(&env.dbx, exact_id).await.unwrap();
+        for dry_run in [true, false] {
+            let error = scan_confirmed(&env.dbx, since, dry_run, true)
+                .await
+                .unwrap_err();
+            assert!(format!("{error:#}").contains("Run database migrations"));
+        }
+        assert_eq!(
+            echo_gpu_client::queue_status(&env.dbx)
+                .await
+                .unwrap()
+                .queued,
+            202
         );
     }
 }

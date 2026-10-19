@@ -51,7 +51,8 @@ def seed_actors(root, environment):
     if fixtures["actors"]:
         return
     query = lambda statement: shared.sql(root, environment, statement, environment["main_db"])
-    query("UPDATE system_settings SET devices_section_enabled=true,enable_audio_transcription=false;")
+    query("UPDATE system_settings SET devices_section_enabled=true,enable_audio_transcription=false,"
+          "api_rate_limit_replenish_interval_ms=1,api_rate_limit_burst_size=1000;")
     run = environment["run"]
     roles = '["Admin","Api","Cyber","CyberViewer"]'
     zone = query(f"INSERT INTO sigint_zone(name) VALUES('audio-{run}') RETURNING id;")
@@ -96,6 +97,7 @@ def start(root, environment):
     for role in ("a", "b"):
         shared.spawn(root, environment, f"api-{role}")
         shared.wait_url(f"http://127.0.0.1:{environment[f'api_{role}_port']}/api/ping", 120)
+    shared.spawn(root, environment, "bgworker")
     shared.spawn(root, environment, "front")
     shared.wait_url(f"http://127.0.0.1:{environment['front_port']}", 120)
     shared.spawn(root, environment, "proxy")
@@ -117,7 +119,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("prepare", "start", "stop", "run-role"))
     parser.add_argument("--root")
-    parser.add_argument("--role", choices=("asr", "redis", "api-a", "api-b", "front", "proxy"))
+    parser.add_argument("--role", choices=("asr", "redis", "api-a", "api-b", "bgworker", "front", "proxy"))
     args = parser.parse_args()
     os.umask(0o077)
     if args.command == "prepare":

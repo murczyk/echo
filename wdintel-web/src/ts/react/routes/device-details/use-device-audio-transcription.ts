@@ -117,7 +117,12 @@ export function useDeviceAudioTranscription(
         if (!controller.signal.aborted) {
           if (retry) update({ retrying: false });
           if (refreshRequested || retryRequested) void poll();
-          else
+          else if (
+            failures ||
+            ['queued', 'preparing', 'running', 'retry_wait'].includes(
+              latest.current.snapshot?.state ?? '',
+            )
+          )
             timer = setTimeout(
               () => void poll(),
               failures ? Math.min(1000 * 2 ** Math.min(failures, 4), 10000) : 1000,

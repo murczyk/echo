@@ -3,59 +3,16 @@ use super::{
     ActorAudioCommand, StatusCommand,
 };
 use crate::file_registry::entities::{
-    device_audio as audio, device_audio_asr_job as job,
-    device_audio_asr_setting as setting,
+    device_audio as audio, device_audio_asr_setting as setting,
 };
 use crate::{devices::access, error::AppError, h, types::ShortContext};
-use sea_orm::{
-    sea_query::{Expr, ExprTrait},
-    AccessMode, ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult,
-    IsolationLevel, JoinType, QueryFilter, QuerySelect, TransactionTrait,
-};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-#[derive(FromQueryResult)]
 struct Metadata {
-    version: Option<Uuid>,
     state: Option<String>,
-    retry_at: Option<chrono::DateTime<chrono::FixedOffset>>,
     has_automatic: bool,
-}
-
-async fn metadata<C: ConnectionTrait>(
-    db: &C,
-    command: ActorAudioCommand,
-) -> anyhow::Result<Metadata> {
-    audio::Entity::find_by_id(command.target.audio_id)
-        .filter(audio::Column::DeviceId.eq(command.target.device_id))
-        .join(
-            JoinType::LeftJoin,
-            audio::Entity::belongs_to(job::Entity)
-                .from(audio::Column::Id)
-                .to(job::Column::AudioId)
-                .into(),
-        )
-        .select_only()
-        .column_as(
-            Expr::col((job::Entity, job::Column::StatusVersion)),
-            "version",
-        )
-        .column_as(Expr::col((job::Entity, job::Column::State)), "state")
-        .column_as(
-            Expr::col((job::Entity, job::Column::NextAttemptAt)),
-            "retry_at",
-        )
-        .column_as(
-            Expr::col((audio::Entity, audio::Column::AutomaticTranscription))
-                .is_not_null(),
-            "has_automatic",
-        )
-        .into_model::<Metadata>()
-        .one(db)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
-        .c(h!())
 }
 
 pub(crate) async fn status(
@@ -71,44 +28,112 @@ pub(crate) async fn status(
     )
     .await
     .c(h!())?;
-    let files = runtime
-        .file_database()
-        .c(h!())?
-        .begin_with_config(
-            Some(IsolationLevel::RepeatableRead),
-            Some(AccessMode::ReadOnly),
-        )
+    let row = audio::Entity::find_by_id(target.audio_id)
+        .filter(audio::Column::DeviceId.eq(target.device_id))
+        .one(runtime.file_database().c(h!())?)
         .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
         .c(h!())?;
-    let metadata = metadata(&files, command.audio).await.c(h!())?;
-    let version = metadata.version.unwrap_or_else(Uuid::nil);
-    let snapshot = if command.known_version == Some(version) {
-        None
+    // Saved text/no-speech is complete locally. Native diagnostics are optional.
+    let task = if row.automatic_transcription_pending.is_some()
+        || row.automatic_transcribed_at.is_none()
+    {
+        match native(runtime, &row.storage_key).await {
+            Ok(task) => task,
+            Err(error) => {
+                log::warn!(
+                    "device transcription diagnostics unavailable: {error:#}"
+                );
+                None
+            }
+        }
     } else {
-        let text = audio::Entity::find_by_id(target.audio_id)
-            .select_only()
-            .column(audio::Column::AutomaticTranscription)
-            .into_tuple::<Option<String>>()
-            .one(&files)
-            .await
-            .c(h!())?
-            .flatten();
-        Some(DeviceAudioAutomaticTranscriptionSnapshot {
-            version,
-            text,
-            state: public_state(&metadata),
-            retry_at: metadata.retry_at.map(|value| value.to_rfc3339()),
-            message: message(metadata.state.as_deref()).map(str::to_owned),
-        })
+        None
     };
-    files.commit().await.c(h!())?;
+    let mut state = if row.automatic_transcription_pending.is_some() {
+        match task.as_ref().map(|task| task.state.as_str()) {
+            Some("processing") => "running",
+            Some("retrying") => "retry_wait",
+            _ => "queued",
+        }
+    } else if row.automatic_transcribed_at.is_some() {
+        if row.automatic_transcription.is_some() {
+            "succeeded"
+        } else {
+            "no_speech"
+        }
+    } else if task.as_ref().is_some_and(|task| task.state == "terminal") {
+        "failed"
+    } else {
+        "not_requested"
+    };
+    let metadata = Metadata {
+        state: Some(state.into()),
+        has_automatic: row.automatic_transcription.is_some(),
+    };
     let availability = availability(runtime, command.audio, &metadata)
         .await
         .c(h!())?;
+    if row.automatic_transcribed_at.is_none()
+        && row.automatic_transcription_pending.is_none()
+        && availability.blocked_reason.as_deref() == Some("Пристрій архівовано")
+    {
+        state = "cancelled";
+    }
+    let retry_at = task
+        .as_ref()
+        .and_then(|task| task.next_retry_at)
+        .map(|at| at.and_utc().to_rfc3339());
+    let digest = Sha256::digest(
+        format!(
+            "{:?}|{:?}|{:?}|{}|{:?}",
+            row.automatic_transcription,
+            row.automatic_transcribed_at,
+            row.automatic_transcription_pending,
+            state,
+            retry_at
+        )
+        .as_bytes(),
+    );
+    let version = Uuid::from_bytes(digest[..16].try_into().c(h!())?);
+    let snapshot = (command.known_version != Some(version)).then(|| {
+        DeviceAudioAutomaticTranscriptionSnapshot {
+            version,
+            text: row.automatic_transcription,
+            state: public_state(state),
+            retry_at,
+            message: match state {
+                "failed" => Some("Не вдалося виконати транскрибацію".into()),
+                "no_speech" => Some("Мовлення не виявлено".into()),
+                "retry_wait" => Some("Транскрибацію буде повторено".into()),
+                _ => None,
+            },
+        }
+    });
     Ok(DeviceAudioTranscriptionStatusRsp {
         snapshot,
         availability,
     })
+}
+
+async fn native(
+    runtime: &DeviceAudioRuntime,
+    key: &str,
+) -> anyhow::Result<
+    Option<echo_gpu_client::entities::echo_gpu_transcription_queue::Model>,
+> {
+    let Some(source) =
+        crate::transcription::service::source_id(&runtime.dbx, key)
+            .await
+            .c(h!())?
+    else {
+        return Ok(None);
+    };
+    Ok(echo_gpu_client::lookup(&runtime.dbx, source)
+        .await
+        .c(h!())?
+        .map(|task| task.0))
 }
 
 async fn availability(
@@ -141,10 +166,7 @@ async fn availability(
     .c(h!())?;
     let editable =
         !device.archived && access::require_audio_edit(&actor.roles).is_ok();
-    let blocked_reason = if metadata.state.as_deref() == Some("outcome_unknown")
-    {
-        Some("Потрібна операторська перевірка")
-    } else if device.archived {
+    let blocked_reason = if device.archived {
         Some("Пристрій архівовано")
     } else if !global_enabled {
         Some("Сервіс транскрибації вимкнено")
@@ -170,36 +192,16 @@ async fn availability(
     })
 }
 
-fn public_state(metadata: &Metadata) -> DeviceAudioAutomaticTranscriptionState {
+fn public_state(state: &str) -> DeviceAudioAutomaticTranscriptionState {
     use DeviceAudioAutomaticTranscriptionState::*;
-    if metadata.has_automatic {
-        return AudioAsrSucceeded;
-    }
-    match metadata.state.as_deref() {
-        Some("policy_pending" | "queued") => AudioAsrQueued,
-        Some("preparing") => AudioAsrPreparing,
-        Some("running") => AudioAsrRunning,
-        Some("retry_wait") => AudioAsrRetryWait,
-        Some("succeeded") => AudioAsrSucceeded,
-        Some("no_speech") => AudioAsrNoSpeech,
-        Some("failed") => AudioAsrFailed,
-        Some("outcome_unknown") => AudioAsrOutcomeUnknown,
-        Some("cancelled") => AudioAsrCancelled,
-        _ => AudioAsrNotRequested,
-    }
-}
-
-fn message(state: Option<&str>) -> Option<&'static str> {
     match state {
-        Some("policy_pending") => {
-            Some("Очікуємо перевірки налаштувань транскрибації")
-        }
-        Some("suppressed") => Some("Автотранскрибацію не було заплановано"),
-        Some("retry_wait") => Some("Транскрибацію буде повторено"),
-        Some("no_speech") => Some("Мовлення не виявлено"),
-        Some("failed") => Some("Не вдалося виконати транскрибацію"),
-        Some("outcome_unknown") => Some("Потрібна операторська перевірка"),
-        Some("cancelled") => Some("Транскрибацію скасовано"),
-        _ => None,
+        "queued" => AudioAsrQueued,
+        "running" => AudioAsrRunning,
+        "retry_wait" => AudioAsrRetryWait,
+        "succeeded" => AudioAsrSucceeded,
+        "no_speech" => AudioAsrNoSpeech,
+        "failed" => AudioAsrFailed,
+        "cancelled" => AudioAsrCancelled,
+        _ => AudioAsrNotRequested,
     }
 }
