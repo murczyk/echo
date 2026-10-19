@@ -125,9 +125,10 @@ wd source → files audio. Новий target не може бути стерти
 
 За одного завдання на ключ зберігаються всі native поля, крім source_id,
 включно з текстом, станом, спробами, timestamps, кешем і reprocess audit.
-Кілька завдань на один ключ об’єднуються лише тоді, коли всі completed,
-тексти побайтово однакові (включно з NULL для no-speech), а решта даних
-сумісна. Залишається найраніше завдання за (created_at, id).
+Кілька завдань на один ключ об’єднуються в усіх станах (queued, processing,
+retrying, completed, terminal), коли їхні стани збігаються, тексти побайтово
+однакові (включно з NULL), а решта даних сумісна. Це включає ще не розпочаті
+queued-завдання без тексту й спроб. Залишається найраніше завдання за (created_at, id).
 Допустимі відмінності історії: IDs, created_at, updated_at, finished_at,
 started_transcription_at, transcription_scope_id, selected_audio_id,
 actual_instance_id та worker_id. Інші поля, зокрема attempts,

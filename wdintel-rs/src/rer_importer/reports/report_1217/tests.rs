@@ -149,7 +149,7 @@ async fn echo_3827_report_respects_networks_filters_and_organism_comments() {
     let message_id = seed_message(
         &env.dbx,
         &group,
-        timestamp,
+        timestamp + chrono::Duration::minutes(1),
         "Intercept first\nSecond line",
         &networks,
     )
@@ -157,9 +157,17 @@ async fn echo_3827_report_respects_networks_filters_and_organism_comments() {
     let uncommented_id = seed_message(
         &env.dbx,
         &group,
-        timestamp + chrono::Duration::minutes(1),
+        timestamp,
         "Uncommented interception",
         &networks[..1],
+    )
+    .await;
+    let no_comments_id = seed_message(
+        &env.dbx,
+        &group,
+        timestamp + chrono::Duration::minutes(2),
+        "No comments at all",
+        &networks[1..],
     )
     .await;
     seed_message(&env.dbx, &group, timestamp, "Undefined network", &[]).await;
@@ -255,19 +263,24 @@ async fn echo_3827_report_respects_networks_filters_and_organism_comments() {
     let messages = load_report_messages(&env.dbx, &login.id, &env, &request)
         .await
         .unwrap();
-    let networks = collect_networks(&env.dbx, &login.id, messages)
+    let networks = collect_networks(&env.dbx, &login.id, messages, true, true)
         .await
         .unwrap();
     assert_eq!(networks.len(), 2);
     assert_eq!(networks[0].name, "Network A");
     assert_eq!(networks[0].interceptions.len(), 2);
     assert_eq!(networks[1].name, "Network B");
-    assert_eq!(networks[1].interceptions.len(), 1);
+    assert_eq!(networks[1].interceptions.len(), 2);
+    assert_eq!(networks[1].interceptions[0].id, message_id);
+    assert_eq!(networks[1].interceptions[1].id, no_comments_id);
+    assert!(networks[1].interceptions[1].comment.is_empty());
     assert_eq!(
-        networks[0].interceptions[0].comment,
+        networks[0].interceptions[1].comment,
         "Own comment\nPeer comment\nNew linked comment\nEdited linked comment"
     );
-    assert!(networks[0].interceptions[1].comment.is_empty());
+    assert!(networks[0].interceptions[0].comment.is_empty());
+    assert_eq!(networks[0].interceptions[0].id, uncommented_id);
+    assert_eq!(networks[0].interceptions[1].id, message_id);
     let mut bytes = std::io::Cursor::new(Vec::new());
     build_docx(&networks, &request)
         .unwrap()
@@ -284,6 +297,11 @@ async fn echo_3827_report_respects_networks_filters_and_organism_comments() {
     assert!(document.contains("18.10.2026 10:06"));
     assert!(document.contains("Intercept first"));
     assert!(document.contains("Uncommented interception"));
+    assert!(document.contains("No comments at all"));
+    assert!(
+        document.find("Uncommented interception").unwrap()
+            < document.find("Intercept first").unwrap()
+    );
     assert!(document.contains("New linked comment"));
     assert!(document.contains("Edited linked comment"));
     for excluded in [
@@ -300,4 +318,37 @@ async fn echo_3827_report_respects_networks_filters_and_organism_comments() {
     ] {
         assert!(!document.contains(excluded), "{excluded}");
     }
+    let messages = load_report_messages(&env.dbx, &login.id, &env, &request)
+        .await
+        .unwrap();
+    let networks = collect_networks(&env.dbx, &login.id, messages, false, true)
+        .await
+        .unwrap();
+    assert_eq!(networks.len(), 2);
+    for network in networks {
+        assert_eq!(network.interceptions.len(), 1);
+        assert_eq!(network.interceptions[0].id, message_id);
+    }
+    let messages = load_report_messages(&env.dbx, &login.id, &env, &request)
+        .await
+        .unwrap();
+    let networks =
+        collect_networks(&env.dbx, &login.id, messages, false, false)
+            .await
+            .unwrap();
+    assert_eq!(networks.len(), 2);
+    assert_eq!(networks[0].interceptions.len(), 2);
+    assert_eq!(networks[0].interceptions[0].id, uncommented_id);
+    assert_eq!(
+        networks[0].interceptions[0].comment,
+        "Foreign-only comment\nForeign-only linked comment"
+    );
+    assert!(networks[0].interceptions[1]
+        .comment
+        .contains("Foreign comment"));
+    assert!(networks[0].interceptions[1]
+        .comment
+        .contains("Foreign linked comment"));
+    assert_eq!(networks[1].interceptions.len(), 1);
+    assert_eq!(networks[1].interceptions[0].id, message_id);
 }

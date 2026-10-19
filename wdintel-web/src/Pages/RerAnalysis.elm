@@ -217,6 +217,8 @@ init user route _ =
             , reportTagsOnlyThisUnit = False
             , reportTagsOnlyThisUnitForReport = False
             , report1213LinkedNetworksOnly = True
+            , report1217IncludeWithoutComments = True
+            , report1217OnlyThisUnitComments = True
             , reportWithoutComments = False
             , reportBabakNewCallsignMinMentions = Config.babakNewCallsignMinMentionsDefault
             , reportDigestOmitExoId = False
@@ -4188,6 +4190,16 @@ update user shared route msg model =
             , E.none
             )
 
+        Report1217IncludeWithoutCommentsToggle ->
+            ( { model | report1217IncludeWithoutComments = not model.report1217IncludeWithoutComments }
+            , E.none
+            )
+
+        Report1217OnlyThisUnitCommentsToggle ->
+            ( { model | report1217OnlyThisUnitComments = not model.report1217OnlyThisUnitComments }
+            , E.none
+            )
+
         ReportDigestForm1217Toggle ->
             ( { model | reportDigestForm1217 = not model.reportDigestForm1217 }
             , E.none
@@ -4237,7 +4249,14 @@ update user shared route msg model =
                         { kind = reportTemplateToString model.reportTemplate
                         , reportType = reportTemplateToApiType model model.reportTemplate
                         , req = getInboxReq model
-                        , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnitForReport
+                        , reportTagsOnlyThisUnit =
+                            Just
+                                (if model.reportTemplate == RTReport1217 then
+                                    model.report1217OnlyThisUnitComments
+
+                                 else
+                                    model.reportTagsOnlyThisUnitForReport
+                                )
                         , tagReportSortBy =
                             if model.reportTemplate == RTTags then
                                 Just (if model.radioFeaturesAllowed then model.reportTagSortBySelect.selected else B.ByTime)
@@ -4247,6 +4266,12 @@ update user shared route msg model =
                         , report1213LinkedNetworksOnly =
                             if model.reportTemplate == RTReport1213 then
                                 Just model.report1213LinkedNetworksOnly
+
+                            else
+                                Nothing
+                        , report1217IncludeWithoutComments =
+                            if model.reportTemplate == RTReport1217 then
+                                Just model.report1217IncludeWithoutComments
 
                             else
                                 Nothing

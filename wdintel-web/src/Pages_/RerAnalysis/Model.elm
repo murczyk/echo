@@ -145,6 +145,8 @@ type alias Model =
     , reportTagsOnlyThisUnit : Bool
     , reportTagsOnlyThisUnitForReport : Bool
     , report1213LinkedNetworksOnly : Bool
+    , report1217IncludeWithoutComments : Bool
+    , report1217OnlyThisUnitComments : Bool
     , reportWithoutComments : Bool
     , reportBabakNewCallsignMinMentions : Int
     , reportDigestOmitExoId : Bool

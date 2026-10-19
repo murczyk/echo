@@ -639,7 +639,7 @@ view user model shared route =
                     (model.reportTemplate == RTReport1217)
                     (ReportTemplateSelect RTReport1217)
                     "Звіт 1.2.17"
-                    "Перехоплення за радіомережами з коментарями мого підрозділу"
+                    "Перехоплення за радіомережами з коментарями"
                 ]
 
             , HtmlX.viewIf (model.radioFeaturesAllowed && model.reportTemplate == RTTags) <|
@@ -690,6 +690,40 @@ view user model shared route =
                                 "не обрано"
                                 options2
                         )
+                    ]
+
+            , HtmlX.viewIf (model.radioFeaturesAllowed && model.reportTemplate == RTReport1217) <|
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ div [ class "form-check" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.report1217IncludeWithoutComments
+                            , id "report-1217-include-without-comments"
+                            , onClick Report1217IncludeWithoutCommentsToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-1217-include-without-comments"
+                            ]
+                            [ text "Включати перехоплення без коментарів" ]
+                        ]
+                    , div [ class "form-check mt-2" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.report1217OnlyThisUnitComments
+                            , id "report-1217-only-this-unit-comments"
+                            , onClick Report1217OnlyThisUnitCommentsToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-1217-only-this-unit-comments"
+                            ]
+                            [ text "Лише коментарі мого підрозділу" ]
+                        ]
                     ]
 
             , HtmlX.viewIf (model.reportTemplate == RTSposob) <|
