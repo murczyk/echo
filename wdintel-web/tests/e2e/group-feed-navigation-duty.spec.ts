@@ -210,49 +210,59 @@ test.describe('Duty group feed navigation', () => {
     await expect(page.locator('[data-message-feed-highlighted]')).toHaveCount(0);
   });
 
-  test('records reading for every accessible membership of a shared message', async ({ page }) => {
-    await installGroupNavigationMocks(page);
-    const unread = new Set(['group-a', 'group-b']);
-    const groupState = (masterKey: string) => ({
-      master_key: masterKey,
-      name: masterKey === 'group-a' ? 'Group Alpha' : 'Group Beta',
-      color_key: 'blue',
-      ignore_operativny: false,
-      unread_count: unread.has(masterKey) ? 1 : 0,
-      oldest_unread_message_ref: null,
-      last_activity_at: 1_720_000_201_000,
-      latest_cursor: { created_at: 1_720_000_201_000, message_id: 201 },
-    });
-    await page.route('**/api/rer-importer/group-feed-state', (route) =>
-      route.fulfill({ json: { groups: groups.map((group) => groupState(group.masterKey)) } }),
-    );
-    await page.route('**/api/rer-importer/get-inbox', (route) =>
-      route.fulfill({
-        json: {
-          ...inboxResponse(['group-b']),
-          inbox_items: [
-            [
-              201,
-              {
-                ...message(201, 'group-a', 'Shared group message'),
-                group_master_keys: ['group-a', 'group-b', 'inaccessible-group'],
-              },
+  for (const hiddenMembership of [false, true]) {
+    test(`@regression #3727 records reading for every accessible membership of a shared message${hiddenMembership ? ' including a Duty-hidden group' : ''}`, async ({
+      page,
+    }) => {
+      await installGroupNavigationMocks(page);
+      const unread = new Set(['group-a', 'group-b']);
+      const groupState = (masterKey: string) => ({
+        master_key: masterKey,
+        name: masterKey === 'group-a' ? 'Group Alpha' : 'Group Beta',
+        color_key: 'blue',
+        ignore_operativny: hiddenMembership && masterKey === 'group-b',
+        unread_count: unread.has(masterKey) ? 1 : 0,
+        oldest_unread_message_ref: null,
+        last_activity_at: 1_720_000_201_000,
+        latest_cursor: { created_at: 1_720_000_201_000, message_id: 201 },
+      });
+      await page.route('**/api/rer-importer/group-feed-state', (route) =>
+        route.fulfill({ json: { groups: groups.map((group) => groupState(group.masterKey)) } }),
+      );
+      await page.route('**/api/rer-importer/get-inbox', (route) =>
+        route.fulfill({
+          json: {
+            ...inboxResponse(['group-b']),
+            inbox_items: [
+              [
+                201,
+                {
+                  ...message(201, 'group-a', 'Shared group message'),
+                  group_master_keys: ['group-a', 'group-b', 'inaccessible-group'],
+                },
+              ],
             ],
-          ],
-        },
-      }),
-    );
-    const acknowledgements: string[] = [];
-    await page.route('**/api/rer-importer/group-feed-state/acknowledge', (route) => {
-      const request = route.request().postDataJSON();
-      acknowledgements.push(request.master_key);
-      unread.delete(request.master_key);
-      return route.fulfill({ json: groupState(request.master_key) });
+          },
+        }),
+      );
+      const acknowledgements: string[] = [];
+      await page.route('**/api/rer-importer/group-feed-state/acknowledge', (route) => {
+        const request = route.request().postDataJSON();
+        acknowledgements.push(request.master_key);
+        unread.delete(request.master_key);
+        return route.fulfill({ json: groupState(request.master_key) });
+      });
+      await page.goto('/rer-duty-neo');
+      await expect(page.getByText('Shared group message')).toBeVisible();
+      await expect.poll(() => [...acknowledgements].sort()).toEqual(['group-a', 'group-b']);
+      await page.getByRole('button', { name: 'Розгорнути список груп' }).click();
+      const panel = page.locator('[data-group-panel]');
+      await expect(panel.getByRole('button', { name: /Group Alpha/ })).toBeVisible();
+      await expect(panel.getByRole('button', { name: /Group Beta/ })).toHaveCount(
+        hiddenMembership ? 0 : 1,
+      );
     });
-    await page.goto('/rer-duty-neo');
-    await expect(page.getByText('Shared group message')).toBeVisible();
-    await expect.poll(() => [...acknowledgements].sort()).toEqual(['group-a', 'group-b']);
-  });
+  }
 
   test('records reading with all groups selected while navigation is closed', async ({
     page,

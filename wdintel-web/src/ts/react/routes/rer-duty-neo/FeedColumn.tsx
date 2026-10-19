@@ -104,7 +104,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       feed.adjacentFreqsRange === 0 &&
       !feed.highlightSignalsEnabled &&
       !feed.onlyMyUnitTagsEnabled,
-    groups: dutyGroups,
+    groups: navigation.groups,
     messages: feed.items,
     acknowledge: navigation.acknowledge,
   });
