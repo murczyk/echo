@@ -3257,7 +3257,7 @@ export type ZoneDatasourceGroupAddReq = {
 
 export type ZoneDatasourceGroupUpdateReq = {
   id: number;
-  colorKey: SignalGroupColor;
+  colorKey: SignalGroupColor | null;
   isSecret: boolean;
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
@@ -7268,7 +7268,7 @@ export type LinkEchoOperatorReq = {
 
 export type GroupUpdateReq = {
   masterKey: string;
-  colorKey: SignalGroupColor;
+  colorKey: SignalGroupColor | null;
   shortNote: string | null;
   longNote: string | null;
   areaOfResponsibilityId: number | null;

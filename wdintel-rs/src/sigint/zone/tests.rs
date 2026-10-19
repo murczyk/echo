@@ -287,7 +287,7 @@ async fn test_bl_szd_group_update_01() {
     .unwrap();
     let req = ZoneDatasourceGroupUpdateReq {
         id: szd.id,
-        color_key: SignalGroupColor::Blue,
+        color_key: Some(SignalGroupColor::Blue),
         is_secret: false,
         interseption_kind: None,
         disable_network_assignment: None,
@@ -340,6 +340,30 @@ async fn test_bl_szd_group_update_01() {
             .unwrap(),
         1
     );
+
+    for omit_color in [true, false] {
+        let mut payload = serde_json::to_value(&req).unwrap();
+        if omit_color {
+            payload.as_object_mut().unwrap().remove("color_key");
+        } else {
+            payload["color_key"] = serde_json::Value::Null;
+        }
+        payload["short_note"] = serde_json::json!("Legacy client edit");
+        let legacy_req: ZoneDatasourceGroupUpdateReq =
+            serde_json::from_value(payload)
+                .expect("legacy zone group edits must not require color_key");
+        let updated =
+            bl_szd_group_update(&legacy_req, &szd, &txn).await.unwrap();
+        assert_eq!(updated.color_key, SignalGroupColor::Blue);
+        assert_eq!(updated.short_note.as_deref(), Some("Legacy client edit"));
+        let group =
+            signal_group::Entity::find_by_id(szd.group_master_key.clone())
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(group.color_key.as_deref(), Some("blue"));
+    }
 
     txn.rollback().await.unwrap();
 }
@@ -413,7 +437,7 @@ async fn test_secret_group_update_preserves_ai_managed_logins() {
 
     let req = ZoneDatasourceGroupUpdateReq {
         id: szd.id,
-        color_key: SignalGroupColor::DeepPurple,
+        color_key: Some(SignalGroupColor::DeepPurple),
         is_secret: true,
         interseption_kind: None,
         disable_network_assignment: None,

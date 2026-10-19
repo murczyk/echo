@@ -8442,7 +8442,7 @@ zoneDatasourceGroupAddReqEncoder struct =
 
 type alias ZoneDatasourceGroupUpdateReq =
     { id : Int
-    , colorKey : SignalGroupColor
+    , colorKey : Maybe (SignalGroupColor)
     , isSecret : Bool
     , interseptionKind : Maybe (InterseptionKind)
     , disableNetworkAssignment : Maybe (Bool)
@@ -8462,7 +8462,7 @@ zoneDatasourceGroupUpdateReqEncoder : ZoneDatasourceGroupUpdateReq -> Json.Encod
 zoneDatasourceGroupUpdateReqEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
-        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
+        , ( "color_key", (Maybe.withDefault Json.Encode.null << Maybe.map (signalGroupColorEncoder)) struct.colorKey )
         , ( "is_secret", (Json.Encode.bool) struct.isSecret )
         , ( "interseption_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (interseptionKindEncoder)) struct.interseptionKind )
         , ( "disable_network_assignment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.disableNetworkAssignment )
@@ -18681,7 +18681,7 @@ linkEchoOperatorReqEncoder struct =
 
 type alias GroupUpdateReq =
     { masterKey : String
-    , colorKey : SignalGroupColor
+    , colorKey : Maybe (SignalGroupColor)
     , shortNote : Maybe (String)
     , longNote : Maybe (String)
     , areaOfResponsibilityId : Maybe (Int)
@@ -18697,7 +18697,7 @@ groupUpdateReqEncoder : GroupUpdateReq -> Json.Encode.Value
 groupUpdateReqEncoder struct =
     Json.Encode.object
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
-        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
+        , ( "color_key", (Maybe.withDefault Json.Encode.null << Maybe.map (signalGroupColorEncoder)) struct.colorKey )
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.shortNote )
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.longNote )
         , ( "area_of_responsibility_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.areaOfResponsibilityId )
@@ -24073,7 +24073,7 @@ zoneDatasourceGroupUpdateReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupUpd
 zoneDatasourceGroupUpdateReqDecoder =
     Json.Decode.succeed ZoneDatasourceGroupUpdateReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (Json.Decode.nullable (signalGroupColorDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (Json.Decode.nullable (interseptionKindDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.nullable (Json.Decode.bool))))
@@ -30238,7 +30238,7 @@ groupUpdateReqDecoder : Json.Decode.Decoder GroupUpdateReq
 groupUpdateReqDecoder =
     Json.Decode.succeed GroupUpdateReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (Json.Decode.nullable (signalGroupColorDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_id" (Json.Decode.nullable (Json.Decode.int))))

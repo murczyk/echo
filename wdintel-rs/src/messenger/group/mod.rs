@@ -566,11 +566,25 @@ where
 pub async fn set_signal_group_color<C>(
     db: &C,
     master_key: &str,
-    color: types::SignalGroupColor,
+    color: Option<types::SignalGroupColor>,
 ) -> anyhow::Result<types::SignalGroupColor>
 where
     C: ConnectionTrait,
 {
+    let Some(color) = color else {
+        let color = signal_group::Entity::find_by_id(master_key)
+            .select_only()
+            .column(signal_group::Column::ColorKey)
+            .into_tuple::<Option<String>>()
+            .one(db)
+            .await
+            .c(h!())?
+            .c(h!())?;
+        return types::SignalGroupColor::from_optional_db_value(
+            color.as_deref(),
+        )
+        .c(h!());
+    };
     let result = signal_group::Entity::update_many()
         .col_expr(
             signal_group::Column::ColorKey,

@@ -80,7 +80,7 @@ type LinkEchoOperatorReqBody = {
 
 type GroupUpdateReqBody = {
   master_key: string;
-  color_key: SignalGroupColor;
+  color_key: GroupUpdateReq['colorKey'];
   short_note: string | null;
   long_note: string | null;
   area_of_responsibility_id: number | null;

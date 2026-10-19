@@ -282,7 +282,7 @@ type ZoneDatasourceGroupAddReqBody = {
 
 type ZoneDatasourceGroupUpdateReqBody = {
   id: number;
-  color_key: SignalGroupColor;
+  color_key: ZoneDatasourceGroupUpdateReq['colorKey'];
   is_secret: boolean;
   interseption_kind: InterseptionKind | null;
   disable_network_assignment: boolean | null;

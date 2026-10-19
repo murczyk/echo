@@ -94,7 +94,7 @@ pub struct ZoneDatasourceGroupListRsp {
 )]
 pub struct ZoneDatasourceGroupUpdateReq {
     pub id: i64,
-    pub color_key: SignalGroupColor,
+    pub color_key: Option<SignalGroupColor>,
     pub is_secret: bool,
     pub interseption_kind: Option<InterseptionKind>,
     pub disable_network_assignment: Option<bool>,

@@ -75,7 +75,7 @@ async fn test_bl_group_update_add_second_aor() {
 
     let req1 = GroupUpdateReq {
         master_key: group.master_key.clone(),
-        color_key: SignalGroupColor::Blue,
+        color_key: Some(SignalGroupColor::Blue),
         short_note: Some("Test group".to_string()),
         long_note: None,
         area_of_responsibility_id: None,
@@ -134,7 +134,7 @@ async fn test_bl_group_update_add_second_aor() {
 
     let req2 = GroupUpdateReq {
         master_key: group.master_key.clone(),
-        color_key: SignalGroupColor::DeepPurple,
+        color_key: Some(SignalGroupColor::DeepPurple),
         short_note: Some("Test group updated".to_string()),
         long_note: Some("Added second AOR".to_string()),
         area_of_responsibility_id: None,
@@ -193,6 +193,24 @@ async fn test_bl_group_update_add_second_aor() {
         res2.group_data.long_note,
         Some("Added second AOR".to_string())
     );
+
+    for omit_color in [true, false] {
+        let mut payload = serde_json::to_value(&req2).unwrap();
+        if omit_color {
+            payload.as_object_mut().unwrap().remove("color_key");
+        } else {
+            payload["color_key"] = serde_json::Value::Null;
+        }
+        payload["short_note"] = serde_json::json!("Legacy client edit");
+        let req: GroupUpdateReq = serde_json::from_value(payload)
+            .expect("legacy group edits must not require color_key");
+        let updated = bl_group_update(&req, &txn).await.unwrap();
+        assert_eq!(updated.group.color_key.as_deref(), Some("deep_purple"));
+        assert_eq!(
+            updated.group_data.short_note.as_deref(),
+            Some("Legacy client edit")
+        );
+    }
 
     txn.rollback().await.unwrap();
 }
@@ -260,7 +278,7 @@ async fn test_bl_group_update_disable_network_assignment_invalidates_all_history
 
     let req = GroupUpdateReq {
         master_key: group.master_key.clone(),
-        color_key: SignalGroupColor::Teal,
+        color_key: Some(SignalGroupColor::Teal),
         short_note: None,
         long_note: None,
         area_of_responsibility_id: None,

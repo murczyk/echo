@@ -602,7 +602,7 @@ mod tests {
         crate::messenger::group::set_signal_group_color(
             &env.dbx,
             &group.master_key,
-            SignalGroupColor::Cyan,
+            Some(SignalGroupColor::Cyan),
         )
         .await
         .unwrap();
