@@ -2,6 +2,30 @@
 
 - Read README.md to understand the general project purpose
 
+## Deployment and real-environment approval
+
+- Require explicit user approval naming the operation and target before deploying
+  or otherwise changing a real environment. This includes staging and production;
+  `echo-staging` is a real environment.
+- A request to investigate or fix a deployment authorizes investigation and local
+  preparation, not deployment or remote repair. SSH access, credentials, and an
+  unlocked session are not permission to change the environment.
+- Generic messages such as "please proceed", "continue", or "looks good" count
+  as approval only when directly answering an explicit approval question naming
+  the operation and target. Silence or an agent's announcement is not approval.
+- Finish local changes and relevant validation before requesting approval. State
+  the target, proposed operation or commands, and expected impact, then wait for
+  the user's answer. Reuse approval only within its expressly authorized scope.
+- This gate also applies to indirect changes through recipes, scripts, skills,
+  and CI: package installation, release activation, configuration changes,
+  service restarts, migrations, database writes, analytics reconciliation,
+  resnapshots, and rollbacks. A check that writes heartbeat or health metadata
+  is a mutation too. A documented procedure or skill is not user approval.
+- Keep remote investigation read-only until mutations are approved. If an
+  operation fails or partially completes, report its state and obtain approval
+  for recovery actions outside the approved scope; do not expand the scope
+  automatically.
+
 ## Documentation scope
 
 - Keep `README.md` and `docs/README.md` human-readable, system-level overviews.
