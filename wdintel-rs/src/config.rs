@@ -670,6 +670,16 @@ pub const RER_CALLSIGN_MATCH_KEY_SQL: &str = concat!(
 );
 pub const RER_CALLSIGN_QUERY_PARAM_CHUNK_SIZE: usize = 30_000;
 pub const RER_REPORT_ENRICHMENT_ID_BATCH_SIZE: usize = 20_000;
+pub const REPORT_1217_BATCH_SIZE: usize = 20_000;
+pub const REPORT_1217_COLUMN_WIDTHS: [usize; 2] = [2300, 7339];
+pub const REPORT_1217_PAGE_SIZE: (u32, u32) = (11906, 16838);
+pub const REPORT_1217_PAGE_MARGINS: (i32, i32, i32, i32) =
+    (1417, 850, 850, 850);
+pub const REPORT_1217_FONT: &str = "Times New Roman";
+pub const REPORT_1217_FONT_SIZE: usize = 20;
+pub const REPORT_1217_FORM: &str = "Форма №1.2.17/ОСУВ";
+pub const REPORT_1217_TITLE: &str =
+    "Донесення за результатами ведення радіоелектронної розвідки";
 pub const RER_BABAK_CANDIDATE_PAGE_SIZE: u64 = 5_000;
 pub const RER_BABAK_CANDIDATE_STREAM_MAX_GROUPS: usize = 32;
 pub const RER_BABAK_CANDIDATE_STREAM_CONCURRENCY: usize = 8;

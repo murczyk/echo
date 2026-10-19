@@ -28,6 +28,7 @@ mod network_frequencies;
 mod posts;
 mod reo;
 mod report_1213;
+mod report_1217;
 mod report_125;
 mod report_xlsx_kind_pelengs;
 mod rer;
@@ -54,14 +55,16 @@ mod kinds {
     pub const NETWORK_FREQUENCIES: &str = "network_frequencies";
     pub const REPORT_125: &str = "report_125";
     pub const REPORT_1213: &str = "report_1213";
+    pub const REPORT_1217: &str = "report_1217";
 
-    pub const ADVANCED_REPORT_KINDS: [&str; 6] = [
+    pub const ADVANCED_REPORT_KINDS: [&str; 7] = [
         REO,
         DIGEST,
         ACTIVE_NETWORKS,
         NETWORK_FREQUENCIES,
         REPORT_125,
         REPORT_1213,
+        REPORT_1217,
     ];
 }
 
@@ -339,6 +342,15 @@ pub(crate) async fn report_docx_generate_file(
         .c(h!())?;
     } else if req.kind == kinds::REPORT_1213 {
         self::report_1213::report_docx_kind_report_1213(
+            &user_login,
+            env,
+            &req,
+            &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == kinds::REPORT_1217 {
+        self::report_1217::report_docx_kind_report_1217(
             &user_login,
             env,
             &req,
@@ -761,6 +773,33 @@ mod tests {
         let mut login = login.into_active_model();
         login.roles = Set(roles);
         login.update(dbx).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn echo_3827_report_1217_requires_advanced_report_permissions() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        assert!(ensure_report_launch_permissions(
+            &env.dbx,
+            &login.id,
+            kinds::REPORT_1217
+        )
+        .await
+        .is_err());
+        for role in
+            ["UnitsEditor", "CallsignsEditor", "AdvancedReports", "Admin"]
+        {
+            set_roles(&env.dbx, login.id, serde_json::json!(["Rer", role]))
+                .await;
+            ensure_report_launch_permissions(
+                &env.dbx,
+                &login.id,
+                kinds::REPORT_1217,
+            )
+            .await
+            .unwrap();
+        }
     }
 
     #[actix_web::test]
