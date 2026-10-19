@@ -4390,6 +4390,9 @@ update user shared route msg model =
                         RTReport1213 ->
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
+                        RTReport1217 ->
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
+
                 fname =
                     case ( model.reportTemplate, model.to.datePosix ) of
                         ( RTRerReport, Just tillPosix ) ->
@@ -4967,6 +4970,9 @@ reportTemplateToApiType model template =
             Nothing
 
         RTReport1213 ->
+            Nothing
+
+        RTReport1217 ->
             Nothing
 
 

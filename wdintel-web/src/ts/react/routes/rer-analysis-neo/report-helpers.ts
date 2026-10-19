@@ -22,6 +22,7 @@ export type ReportTemplateId =
   | 'sposob'
   | 'active_networks'
   | 'report_125'
+  | 'report_1217'
   | 'summary_table'
   | 'kmz'
   | 'geojson';
@@ -150,6 +151,7 @@ export function reportTemplateToType(state: AnalysisReportState): ReportType | n
     case 'active_networks':
       return { ActiveNetworks: { aorIds: state.activeNetworksAorIds } };
     case 'report_125':
+    case 'report_1217':
       return null;
     case 'summary_table':
       return null;
@@ -259,6 +261,8 @@ export function reportTemplateToUiTitle(state: AnalysisReportState): string {
       return 'активні радіомережі';
     case 'report_125':
       return 'звіт 1.2.5';
+    case 'report_1217':
+      return 'звіт 1.2.17';
     case 'rer_report':
       return 'РЕР звіт';
     case 'sposob':

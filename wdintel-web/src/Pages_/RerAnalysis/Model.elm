@@ -280,6 +280,7 @@ type ReportTemplate
     | RTSummaryTable
     | RTReport125
     | RTReport1213
+    | RTReport1217
 
 
 type FilterName

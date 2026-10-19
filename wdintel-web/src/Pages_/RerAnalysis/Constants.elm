@@ -94,3 +94,6 @@ reportTemplateToString x =
 
         RTReport1213 ->
             "report_1213"
+
+        RTReport1217 ->
+            "report_1217"
