@@ -288,7 +288,7 @@ pub(super) fn message_in_groups_exists_with_correlation(
         None => subquery,
     };
 
-    if lookup_by_message {
+    if lookup_by_message && keys.len() > 1 {
         let access_groups = Alias::new("access_groups");
         // Keep group filtering outside the message-ID lookup so PostgreSQL
         // does not probe the group-first index once per allowed group.
@@ -313,10 +313,14 @@ pub(super) fn message_in_groups_exists_with_correlation(
 
     let subquery = subquery
         .expr(Expr::value(1))
-        .filter(signal_message_group::Column::GroupMasterKey.eq_any(keys))
-        .into_query();
+        .filter(signal_message_group::Column::GroupMasterKey.eq_any(keys));
+    let subquery = if lookup_by_message {
+        subquery.offset(0)
+    } else {
+        subquery
+    };
 
-    Expr::exists(subquery)
+    Expr::exists(subquery.into_query())
 }
 
 fn message_in_groups_with_senders_exists(

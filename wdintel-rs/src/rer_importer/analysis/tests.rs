@@ -73,6 +73,11 @@ async fn issue_3780_message_group_lookup_preserves_access_and_scope() {
         for (keys, scope, expected) in [
             (vec![allowed.clone()], None, vec![ids[0]]),
             (vec![denied.clone()], None, vec![ids[0], ids[1]]),
+            (
+                vec![allowed.clone(), denied.clone()],
+                None,
+                vec![ids[0], ids[1]],
+            ),
             (vec![], None, vec![]),
             (
                 vec![allowed.clone()],
@@ -89,6 +94,24 @@ async fn issue_3780_message_group_lookup_preserves_access_and_scope() {
             ),
             (
                 vec![allowed.clone()],
+                Some(AnalyticsMessageIdScope::Empty),
+                vec![],
+            ),
+            (
+                vec![allowed.clone(), denied.clone()],
+                Some(AnalyticsMessageIdScope::From(ids[1])),
+                vec![ids[1]],
+            ),
+            (
+                vec![allowed.clone(), denied.clone()],
+                Some(AnalyticsMessageIdScope::Inclusive {
+                    min_id: ids[0],
+                    max_id: ids[0],
+                }),
+                vec![ids[0]],
+            ),
+            (
+                vec![allowed.clone(), denied.clone()],
                 Some(AnalyticsMessageIdScope::Empty),
                 vec![],
             ),
