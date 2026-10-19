@@ -1,5 +1,5 @@
 import type {
-  AiIntelReportAttemptItem,
+  AiIntelReportAttemptListReq,
   AiIntelReportAttemptListRsp,
   AiIntelReportSettingsItem,
   QuickIntelReportSuggestionReq,
@@ -18,11 +18,11 @@ export async function saveAiIntelReportSettings(
   return postJson<AiIntelReportSettingsItem>('/api/admin/ai-intel-report/settings', req);
 }
 
-export async function listAiIntelReportAttempts(): Promise<AiIntelReportAttemptItem[]> {
-  const response = await getJson<AiIntelReportAttemptListRsp>(
-    '/api/admin/ai-intel-report/attempts',
-  );
-  return response.items;
+export async function listAiIntelReportAttempts(
+  pageStartId: string | null = null,
+): Promise<AiIntelReportAttemptListRsp> {
+  const req: AiIntelReportAttemptListReq = { pageStartId };
+  return postJson<AiIntelReportAttemptListRsp>('/api/admin/ai-intel-report/attempts/list', req);
 }
 
 export async function quickIntelReportSuggestion(

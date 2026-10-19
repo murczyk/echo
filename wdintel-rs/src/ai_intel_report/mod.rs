@@ -1,21 +1,33 @@
 use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
+mod attempts;
+#[cfg(test)]
+mod retry_tests;
+mod settings;
+#[cfg(test)]
+mod settings_tests;
 pub mod types;
+
+pub use attempts::list_attempts;
+pub(crate) use settings::ensure_engine_not_used;
+#[cfg(test)]
+use settings::load_settings_item;
+use settings::{find_eligible_engine, load_settings};
+pub use settings::{get_settings, save_settings};
 
 use crate::ai_engine::{
     request_structured_ai_response, AiEngineMessage, AiEngineResponse,
 };
 use crate::config::{
     AI_CHAT_ROLE_SYSTEM, AI_CHAT_ROLE_USER,
-    AI_INTEL_REPORT_ADMIN_ATTEMPT_LIMIT,
     AI_INTEL_REPORT_ATTEMPT_ERROR_MAX_CHARS,
     AI_INTEL_REPORT_ATTEMPT_RAW_RESPONSE_MAX_CHARS,
     AI_INTEL_REPORT_BUCKET_CANDIDATE_LIMIT,
     AI_INTEL_REPORT_BUCKET_EXAMPLE_LIMIT, AI_INTEL_REPORT_EXAMPLE_LIMIT,
     AI_INTEL_REPORT_EXAMPLE_REPORT_MAX_CHARS,
     AI_INTEL_REPORT_EXAMPLE_SOURCE_MAX_CHARS, AI_INTEL_REPORT_HISTORY_DAYS,
-    AI_INTEL_REPORT_OUTPUT_MAX_CHARS, AI_INTEL_REPORT_OUTPUT_MAX_TOKENS,
-    AI_INTEL_REPORT_PROMPT, AI_INTEL_REPORT_PROMPT_MAX_CHARS,
-    AI_INTEL_REPORT_SETTINGS_ID, AI_INTEL_REPORT_SOURCE_MATERIALS_MAX_CHARS,
+    AI_INTEL_REPORT_OUTPUT_MAX_CHARS, AI_INTEL_REPORT_PROMPT,
+    AI_INTEL_REPORT_PROMPT_MAX_CHARS,
+    AI_INTEL_REPORT_SOURCE_MATERIALS_MAX_CHARS,
     AI_INTEL_REPORT_SUGGESTION_LIMIT, AI_INTEL_REPORT_TIMEOUT_SECS,
     SYSTEM_LOGIN_NAME,
 };
@@ -29,24 +41,20 @@ use crate::sigint::direct_submit::query::{
     find_copyable_signal_messages_for_copy, message_has_copy_access,
 };
 use crate::types::{Deserialize, Env, Serialize, ShortContext};
-use crate::users::{ensure_admin, has_any_role, login_id_from_identity};
+use crate::users::{has_any_role, login_id_from_identity};
 use actix_identity::Identity;
-use actix_web::{get, post, web::Json, HttpResponse};
+use actix_web::{post, web::Json, HttpResponse};
 use chrono::{Duration, Utc};
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseBackend, DatabaseConnection, EntityTrait, FromQueryResult,
-    IntoActiveModel, QueryFilter, QueryOrder, Statement,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, FromQueryResult, QueryFilter, QueryOrder,
+    Statement,
 };
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
-use types::{
-    AiIntelReportAttemptItem, AiIntelReportAttemptListRsp,
-    AiIntelReportSettingsItem, QuickIntelReportSuggestionReq,
-    QuickIntelReportSuggestionRsp, SaveAiIntelReportSettingsReq,
-};
+use types::{QuickIntelReportSuggestionReq, QuickIntelReportSuggestionRsp};
 use uuid::Uuid;
 
 lazy_static! {
@@ -91,108 +99,6 @@ enum SuggestionResult {
 struct SuggestionAttemptReview {
     ai_engine_id: Option<Uuid>,
     raw_response: Option<String>,
-}
-
-#[derive(Debug, FromQueryResult)]
-struct SuggestionAttemptRow {
-    id: Uuid,
-    login_id: Uuid,
-    login: String,
-    ai_engine_id: Option<Uuid>,
-    ai_engine_name: Option<String>,
-    source_message_id: i64,
-    outcome: String,
-    suggestions: serde_json::Value,
-    raw_response: Option<String>,
-    error: Option<String>,
-    duration_ms: i64,
-    created_at: chrono::NaiveDateTime,
-}
-
-#[get("/api/admin/ai-intel-report/settings")]
-pub async fn get_settings(
-    env: actix_web::web::Data<Env>,
-    user: Identity,
-) -> Result<Json<AiIntelReportSettingsItem>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
-    Ok(Json(load_settings_item(&env.dbx).await.c(h!())?))
-}
-
-#[post("/api/admin/ai-intel-report/settings")]
-pub async fn save_settings(
-    env: actix_web::web::Data<Env>,
-    user: Identity,
-    req: Json<SaveAiIntelReportSettingsReq>,
-) -> Result<Json<AiIntelReportSettingsItem>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let req = req.into_inner();
-    let quick_ai_engine_id = req
-        .quick_ai_engine_id
-        .as_deref()
-        .map(parse_uuid)
-        .transpose()
-        .c(h!())?;
-    if req.quick_suggestion_enabled && quick_ai_engine_id.is_none() {
-        return Err(AppError::BL {
-            msg: "Оберіть ШІ движок для швидких розвіддонесень".to_string(),
-        });
-    }
-    if let Some(ai_engine_id) = quick_ai_engine_id {
-        ensure_engine_eligible(&env.dbx, ai_engine_id)
-            .await
-            .c(h!())?;
-    }
-    let settings = load_settings(&env.dbx).await.c(h!())?;
-    let mut settings = settings.into_active_model();
-    settings.quick_suggestion_enabled = Set(req.quick_suggestion_enabled);
-    settings.quick_ai_engine_id = Set(quick_ai_engine_id);
-    settings.updated_at = Set(Utc::now().naive_utc());
-    settings.update(&env.dbx).await.c(h!())?;
-    Ok(Json(load_settings_item(&env.dbx).await.c(h!())?))
-}
-
-#[get("/api/admin/ai-intel-report/attempts")]
-pub async fn list_attempts(
-    env: actix_web::web::Data<Env>,
-    user: Identity,
-) -> Result<Json<AiIntelReportAttemptListRsp>, AppError> {
-    ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let sql = r#"
-select
-    attempt.id,
-    attempt.login_id,
-    actor.login,
-    attempt.ai_engine_id,
-    engine.name as ai_engine_name,
-    attempt.source_message_id,
-    attempt.outcome,
-    attempt.suggestions,
-    attempt.raw_response,
-    attempt.error,
-    attempt.duration_ms,
-    attempt.created_at
-from ai_intel_report_attempt attempt
-inner join login actor on actor.id = attempt.login_id
-left join ai_engine engine on engine.id = attempt.ai_engine_id
-order by attempt.created_at desc, attempt.id desc
-limit $1
-"#;
-    let rows = SuggestionAttemptRow::find_by_statement(
-        Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            sql,
-            vec![(AI_INTEL_REPORT_ADMIN_ATTEMPT_LIMIT as i64).into()],
-        ),
-    )
-    .all(&env.dbx)
-    .await
-    .c(h!())?;
-    let items = rows
-        .into_iter()
-        .map(suggestion_attempt_item)
-        .collect::<anyhow::Result<Vec<_>>>()
-        .c(h!())?;
-    Ok(Json(AiIntelReportAttemptListRsp { items }))
 }
 
 #[post("/api/1.1/intelligence-reports/quick-suggestion")]
@@ -262,32 +168,6 @@ async fn ensure_quick_suggestion_role(
     has_any_role(dbx, login_id, vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED]).await
 }
 
-pub(crate) async fn ensure_engine_not_used<C>(
-    dbx: &C,
-    ai_engine_id: Uuid,
-) -> Result<(), AppError>
-where
-    C: ConnectionTrait,
-{
-    let is_used = ai_intel_report_settings::Entity::find()
-        .filter(
-            ai_intel_report_settings::Column::QuickSuggestionEnabled.eq(true),
-        )
-        .filter(
-            ai_intel_report_settings::Column::QuickAiEngineId.eq(ai_engine_id),
-        )
-        .one(dbx)
-        .await
-        .c(h!())?
-        .is_some();
-    if is_used {
-        return Err(AppError::BL {
-            msg: "ШІ движок використовується швидкими розвіддонесеннями. Спочатку вимкніть пропозиції або виберіть інший движок.".to_string(),
-        });
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 async fn generate_quick_suggestion(
     env: &Env,
@@ -309,14 +189,90 @@ async fn generate_quick_suggestion_with_review(
     signal_message_id: i64,
     review: &mut SuggestionAttemptReview,
 ) -> Result<SuggestionResult, AppError> {
+    let started = tokio::time::Instant::now();
     let settings = load_settings(&env.dbx).await.c(h!())?;
     if !settings.quick_suggestion_enabled {
         return Ok(SuggestionResult::Disabled);
     }
-    let ai_engine_id = settings.quick_ai_engine_id.c(h!())?;
-    review.ai_engine_id = Some(ai_engine_id);
-    let ai_engine =
-        find_eligible_engine(&env.dbx, ai_engine_id).await.c(h!())?;
+    let timeout = settings
+        .total_timeout_secs
+        .unwrap_or(AI_INTEL_REPORT_TIMEOUT_SECS);
+    let deadline = started
+        + std::time::Duration::from_secs(u64::try_from(timeout).c(h!())?);
+    tokio::time::timeout_at(
+        deadline,
+        generate_enabled_suggestion(
+            env,
+            login_id,
+            signal_message_id,
+            &settings,
+            review,
+        ),
+    )
+    .await
+    .map_err(|_| AppError::ServiceUnavailable {
+        msg: "Формування розвіддонесення перевищило загальний ліміт часу"
+            .into(),
+        retry_after_secs: 1,
+    })
+    .c(h!())?
+}
+
+async fn generate_enabled_suggestion(
+    env: &Env,
+    login_id: Uuid,
+    signal_message_id: i64,
+    settings: &ai_intel_report_settings::Model,
+    review: &mut SuggestionAttemptReview,
+) -> Result<SuggestionResult, AppError> {
+    let primary_id = settings.quick_ai_engine_id.c(h!())?;
+    review.ai_engine_id = Some(primary_id);
+    let (source_materials, user_prompt) =
+        prepare_suggestion_input(env, login_id, signal_message_id)
+            .await
+            .c(h!())?;
+    let result = request_engine_suggestion(
+        env,
+        primary_id,
+        &user_prompt,
+        &source_materials,
+        settings
+            .primary_timeout_secs
+            .unwrap_or(AI_INTEL_REPORT_TIMEOUT_SECS),
+        review,
+    )
+    .await;
+    let suggestions = match (result, settings.fallback_ai_engine_id) {
+        (Ok(suggestions), _) => suggestions,
+        (Err(_), Some(fallback_id)) => {
+            log::warn!(
+                "Primary intelligence-report attempt failed; trying fallback: primary_id={}, fallback_id={}",
+                primary_id,
+                fallback_id,
+            );
+            request_engine_suggestion(
+                env,
+                fallback_id,
+                &user_prompt,
+                &source_materials,
+                settings
+                    .fallback_timeout_secs
+                    .unwrap_or(AI_INTEL_REPORT_TIMEOUT_SECS),
+                review,
+            )
+            .await
+            .c(h!())?
+        }
+        (Err(error), None) => Err(error).c(h!())?,
+    };
+    Ok(SuggestionResult::Suggestions(suggestions))
+}
+
+async fn prepare_suggestion_input(
+    env: &Env,
+    login_id: Uuid,
+    signal_message_id: i64,
+) -> Result<(Vec<String>, String), AppError> {
     let allowed_groups = crate::messenger::group::get_identity_sigint_groups(
         &env.dbx, &login_id,
     )
@@ -349,29 +305,52 @@ async fn generate_quick_suggestion_with_review(
     .c(h!())?;
     let user_prompt =
         build_user_prompt(source_materials.clone(), style_examples).c(h!())?;
-    let response =
-        request_suggestion(&env.ai_engine_client, &ai_engine, user_prompt)
-            .await
-            .c(h!())?;
+    Ok((source_materials, user_prompt))
+}
+
+async fn request_engine_suggestion(
+    env: &Env,
+    engine_id: Uuid,
+    user_prompt: &str,
+    source_materials: &[String],
+    timeout_secs: i32,
+    review: &mut SuggestionAttemptReview,
+) -> Result<Vec<String>, AppError> {
+    review.ai_engine_id = Some(engine_id);
+    review.raw_response = None;
+    let engine = find_eligible_engine(&env.dbx, engine_id).await.c(h!())?;
+    let max_tokens = settings::load_engine_budget(&env.dbx, engine_id)
+        .await
+        .c(h!())?;
+    let response = request_suggestion(
+        &env.ai_engine_client,
+        &engine,
+        user_prompt.to_string(),
+        max_tokens,
+        timeout_secs,
+    )
+    .await
+    .c(h!())?;
     review.raw_response = Some(truncate_chars(
         &response.content,
         AI_INTEL_REPORT_ATTEMPT_RAW_RESPONSE_MAX_CHARS,
     ));
-    let suggestions =
-        validate_suggestion_response(&response, &source_materials).c(h!())?;
-    Ok(SuggestionResult::Suggestions(suggestions))
+    Ok(validate_suggestion_response(&response, source_materials).c(h!())?)
 }
 
 async fn request_suggestion(
     ai_client: &crate::ai_engine::AiEngineClient,
     ai_engine: &ai_engine::Model,
     user_prompt: String,
+    max_tokens: i32,
+    timeout_secs: i32,
 ) -> Result<AiEngineResponse, AppError> {
     request_suggestion_with_timeout(
         ai_client,
         ai_engine,
         user_prompt,
-        std::time::Duration::from_secs(AI_INTEL_REPORT_TIMEOUT_SECS),
+        u32::try_from(max_tokens).c(h!())?,
+        std::time::Duration::from_secs(u64::try_from(timeout_secs).c(h!())?),
     )
     .await
 }
@@ -380,6 +359,7 @@ async fn request_suggestion_with_timeout(
     ai_client: &crate::ai_engine::AiEngineClient,
     ai_engine: &ai_engine::Model,
     user_prompt: String,
+    max_tokens: u32,
     timeout: std::time::Duration,
 ) -> Result<AiEngineResponse, AppError> {
     let messages = vec![
@@ -423,7 +403,7 @@ async fn request_suggestion_with_timeout(
             ai_engine,
             messages,
             0.0,
-            AI_INTEL_REPORT_OUTPUT_MAX_TOKENS,
+            max_tokens,
             response_format,
         ),
     )
@@ -939,82 +919,6 @@ async fn record_suggestion_attempt(
     Ok(())
 }
 
-fn suggestion_attempt_item(
-    row: SuggestionAttemptRow,
-) -> anyhow::Result<AiIntelReportAttemptItem> {
-    Ok(AiIntelReportAttemptItem {
-        id: row.id.to_string(),
-        login_id: row.login_id.to_string(),
-        login: row.login,
-        ai_engine_id: row.ai_engine_id.map(|id| id.to_string()),
-        ai_engine_name: row.ai_engine_name,
-        source_message_id: row.source_message_id,
-        outcome: row.outcome,
-        suggestions: serde_json::from_value(row.suggestions).c(h!())?,
-        raw_response: row.raw_response,
-        error: row.error,
-        duration_ms: row.duration_ms,
-        created_at: row.created_at.and_utc().timestamp_millis(),
-    })
-}
-
-async fn load_settings(
-    dbx: &DatabaseConnection,
-) -> Result<ai_intel_report_settings::Model, AppError> {
-    Ok(ai_intel_report_settings::Entity::find_by_id(
-        AI_INTEL_REPORT_SETTINGS_ID,
-    )
-    .one(dbx)
-    .await
-    .c(h!())?
-    .c(h!())?)
-}
-
-async fn load_settings_item(
-    dbx: &DatabaseConnection,
-) -> Result<AiIntelReportSettingsItem, AppError> {
-    let settings = load_settings(dbx).await.c(h!())?;
-    Ok(AiIntelReportSettingsItem {
-        quick_suggestion_enabled: settings.quick_suggestion_enabled,
-        quick_ai_engine_id: settings
-            .quick_ai_engine_id
-            .map(|id| id.to_string()),
-        legacy_comment_cutoff: settings
-            .legacy_comment_cutoff
-            .and_utc()
-            .timestamp_millis(),
-        updated_at: settings.updated_at.and_utc().timestamp_millis(),
-    })
-}
-
-async fn ensure_engine_eligible(
-    dbx: &DatabaseConnection,
-    ai_engine_id: Uuid,
-) -> Result<(), AppError> {
-    find_eligible_engine(dbx, ai_engine_id).await.map(|_| ())
-}
-
-async fn find_eligible_engine(
-    dbx: &DatabaseConnection,
-    ai_engine_id: Uuid,
-) -> Result<ai_engine::Model, AppError> {
-    ai_engine::Entity::find_by_id(ai_engine_id)
-        .filter(ai_engine::Column::Enabled.eq(true))
-        .filter(ai_engine::Column::CallsignEnabled.eq(true))
-        .one(dbx)
-        .await
-        .c(h!())?
-        .ok_or_else(|| AppError::BL {
-            msg: "Обраний ШІ движок вимкнено або він не підтримує обробку розвіддонесень".to_string(),
-        })
-}
-
-fn parse_uuid(value: &str) -> Result<Uuid, AppError> {
-    Uuid::parse_str(value).map_err(|_| AppError::BL {
-        msg: "Некоректний UUID ШІ движка".to_string(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1031,6 +935,7 @@ mod tests {
         ai_engine, ai_intel_report_attempt, datasource_group, intel_product,
         sigint_comment, signal_group, signal_message,
     };
+    use crate::rer_importer::intel_product_filter;
     use chrono::{Duration, Utc};
     use sea_orm::{
         ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
@@ -1039,9 +944,8 @@ mod tests {
     use std::time::Duration as StdDuration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use uuid::Uuid;
-    use crate::rer_importer::intel_product_filter;
 
-    fn engine_record(url: String) -> ai_engine::Model {
+    pub(super) fn engine_record(url: String) -> ai_engine::Model {
         let now = Utc::now().naive_utc();
         ai_engine::Model {
             id: Uuid::now_v7(),
@@ -1058,7 +962,7 @@ mod tests {
         }
     }
 
-    async fn read_json_request(
+    pub(super) async fn read_json_request(
         stream: &mut tokio::net::TcpStream,
     ) -> serde_json::Value {
         let mut request = Vec::new();
@@ -1090,8 +994,41 @@ mod tests {
         }
     }
 
+    // Regression: https://github.com/echoua/echo/issues/3821
     #[tokio::test]
     async fn structured_request_uses_one_bounded_schema_call() {
+        for (name, completion_tokens, effort) in [
+            ("test-model", false, None),
+            ("gpt-4.1", false, None),
+            ("gpt-5", true, None),
+            ("gpt-5-2025-08-07", true, None),
+            ("gpt-5-mini", true, None),
+            ("gpt-5-mini-2025-08-07", true, None),
+            ("gpt-5-nano", true, None),
+            ("gpt-5-nano-2025-08-07", true, None),
+            ("gpt-5.1", true, Some("none")),
+            ("gpt-5.2-pro", true, None),
+            ("gpt-5.2-pro-2025-12-11", true, None),
+            ("gpt-5.6-luna", true, Some("none")),
+            ("gpt-5.6-sol", true, Some("none")),
+            ("gpt-6-sol", true, Some("none")),
+            ("gpt-6-sol-2026-09-01", true, Some("none")),
+            ("gpt-6-luna", true, Some("none")),
+            ("gpt-6-luna-2026-09-01", true, Some("none")),
+            ("gpt-6.1-sol", true, None),
+            ("gpt-6.1-sol-2026-10-01", true, None),
+            ("gpt-6-astra", true, None),
+            ("o3-mini", true, None),
+        ] {
+            assert_structured_request(name, completion_tokens, effort).await;
+        }
+    }
+
+    async fn assert_structured_request(
+        name: &'static str,
+        completion_tokens: bool,
+        effort: Option<&'static str>,
+    ) {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .unwrap();
@@ -1099,18 +1036,11 @@ mod tests {
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let request = read_json_request(&mut stream).await;
-            assert_eq!(request["model"], "test-model");
-            assert_eq!(request["temperature"], 0.0);
-            assert_eq!(request["max_tokens"], 512);
-            assert_eq!(request["messages"].as_array().unwrap().len(), 2);
-            assert_eq!(
-                request["messages"][0]["content"],
-                super::AI_INTEL_REPORT_PROMPT
-            );
-            assert_eq!(request["response_format"]["type"], "json_schema");
-            assert_eq!(
-                request["response_format"]["json_schema"]["strict"],
-                true
+            assert_structured_request_body(
+                &request,
+                name,
+                completion_tokens,
+                effort,
             );
             let response = serde_json::json!({
                 "model": "served-test-model",
@@ -1128,17 +1058,36 @@ mod tests {
                 response
             );
             stream.write_all(response.as_bytes()).await.unwrap();
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_json_request(&mut stream).await;
+            assert_eq!(request["model"], name);
+            for parameter in [
+                "reasoning_effort",
+                "temperature",
+                "max_tokens",
+                "max_completion_tokens",
+                "response_format",
+            ] {
+                assert!(
+                    request.get(parameter).is_none(),
+                    "{name}: {parameter}"
+                );
+            }
+            stream.write_all(response.as_bytes()).await.unwrap();
         });
-        let ai_engine = engine_record(format!("http://{address}/v1"));
+        let mut ai_engine = engine_record(format!("http://{address}/v1"));
+        ai_engine.model_name = name.to_string();
 
+        let ai_client = crate::ai_engine::AiEngineClient::new(
+            sea_orm::DatabaseConnection::default(),
+            None,
+        )
+        .unwrap();
         let response = request_suggestion_with_timeout(
-            &crate::ai_engine::AiEngineClient::new(
-                sea_orm::DatabaseConnection::default(),
-                None,
-            )
-            .unwrap(),
+            &ai_client,
             &ai_engine,
             "{}".to_string(),
+            512,
             StdDuration::from_secs(1),
         )
         .await
@@ -1147,7 +1096,46 @@ mod tests {
         assert_eq!(response.content, r#"{"suggestions":["Політ БпЛА."]}"#);
         assert_eq!(response.finish_reason.as_deref(), Some("stop"));
         assert_eq!(response.model_name.as_deref(), Some("served-test-model"));
+        let chat_response = crate::ai_engine::request_ai_response(
+            &ai_client,
+            &ai_engine,
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(chat_response, response.content);
         server.await.unwrap();
+    }
+
+    fn assert_structured_request_body(
+        request: &serde_json::Value,
+        name: &str,
+        completion_tokens: bool,
+        effort: Option<&str>,
+    ) {
+        assert_eq!(request["model"], name);
+        if !completion_tokens {
+            assert_eq!(request["temperature"], 0.0);
+            assert_eq!(request["max_tokens"], 512);
+            assert!(request.get("max_completion_tokens").is_none());
+        } else {
+            assert!(request.get("temperature").is_none());
+            assert!(request.get("max_tokens").is_none());
+            assert_eq!(request["max_completion_tokens"], 512);
+        }
+        assert_eq!(
+            request
+                .get("reasoning_effort")
+                .and_then(serde_json::Value::as_str),
+            effort
+        );
+        assert_eq!(request["messages"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            request["messages"][0]["content"],
+            super::AI_INTEL_REPORT_PROMPT
+        );
+        assert_eq!(request["response_format"]["type"], "json_schema");
+        assert_eq!(request["response_format"]["json_schema"]["strict"], true);
     }
 
     #[tokio::test]
@@ -1170,6 +1158,7 @@ mod tests {
             .unwrap(),
             &ai_engine,
             "{}".to_string(),
+            512,
             StdDuration::from_millis(25),
         )
         .await;
@@ -1470,7 +1459,8 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
-            read_json_request(&mut stream).await;
+            let request = read_json_request(&mut stream).await;
+            assert_eq!(request["max_tokens"], 4096);
             let response = serde_json::json!({
                 "model": "served-test-model",
                 "choices": [{
@@ -1496,6 +1486,14 @@ mod tests {
         let mut settings = settings.into_active_model();
         settings.quick_suggestion_enabled = Set(true);
         settings.quick_ai_engine_id = Set(Some(ai_engine.id));
+        settings.primary_timeout_secs = Set(Some(90));
+        crate::entities::ai_intel_report_engine_budget::ActiveModel {
+            ai_engine_id: Set(ai_engine.id),
+            max_tokens: Set(4096),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
         settings.update(&env.dbx).await.unwrap();
 
         let result = generate_quick_suggestion(&env, login.id, report.id)

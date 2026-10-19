@@ -37,6 +37,8 @@ type AccountStatusReqBody = {
   account_id: number;
   aor_id: number | null;
   is_active: boolean;
+  can_read_messages: AccountStatusReq['canReadMessages'];
+  can_send_messages: AccountStatusReq['canSendMessages'];
   display_name: string;
   description: string | null;
   api_login: string | null;
@@ -84,6 +86,7 @@ type GroupUpdateReqBody = {
   interseption_kind: InterseptionKind | null;
   disable_network_assignment: boolean | null;
   is_aviation_group: boolean | null;
+  fetch_new_messages: boolean | null;
 };
 
 type AccountStatsTimelinePointLike = {
@@ -220,6 +223,8 @@ function toAccountStatusReqBody(req: AccountStatusReq): AccountStatusReqBody {
     account_id: req.accountId,
     aor_id: req.aorId,
     is_active: req.isActive,
+    can_read_messages: req.canReadMessages,
+    can_send_messages: req.canSendMessages,
     display_name: req.displayName,
     description: req.description,
     api_login: req.apiLogin,
@@ -286,6 +291,7 @@ function toGroupUpdateReqBody(req: GroupUpdateReq): GroupUpdateReqBody {
     interseption_kind: req.interseptionKind ?? null,
     disable_network_assignment: req.disableNetworkAssignment ?? null,
     is_aviation_group: req.isAviationGroup ?? null,
+    fetch_new_messages: req.fetchNewMessages ?? null,
   };
 }
 

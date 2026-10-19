@@ -1,0 +1,178 @@
+{
+  "date_utc": "2026-10-15",
+  "method": "Read-only bounded diagnostic SQL; plain gateway/source plans inspected before execution. Not a controlled concurrent before/after workload. Raw SQL/parameters retained privately only.",
+  "limits": {
+    "native_threads": 4,
+    "native_memory_bytes": 2147483648,
+    "native_execution_seconds": 8,
+    "source_execution_seconds": 5
+  },
+  "aor_membership": {
+    "type": "QueryFinish",
+    "query_duration_ms": 2539,
+    "read_rows": 102754860,
+    "read_bytes": 3409343826,
+    "memory_usage": 233271608,
+    "exception_code": 0
+  },
+  "senders_resolved_access": {
+    "type": "QueryFinish",
+    "query_duration_ms": 1524,
+    "read_rows": 47994108,
+    "read_bytes": 2796596282,
+    "memory_usage": 847765981,
+    "exception_code": 0
+  },
+  "quoted_source": [
+    {
+      "days": 1,
+      "variant": "old",
+      "timeout": false,
+      "elapsed_ms": 2367.694,
+      "shared_hits": 905089,
+      "shared_reads": 16713,
+      "temp_written": 0
+    },
+    {
+      "days": 1,
+      "variant": "direct",
+      "timeout": false,
+      "elapsed_ms": 1357.863,
+      "shared_hits": 686789,
+      "shared_reads": 775,
+      "temp_written": 0
+    },
+    {
+      "days": 8,
+      "variant": "old",
+      "timeout": true
+    },
+    {
+      "days": 8,
+      "variant": "direct",
+      "timeout": true
+    },
+    {
+      "days": 16,
+      "variant": "old",
+      "timeout": true
+    },
+    {
+      "days": 16,
+      "variant": "direct",
+      "timeout": true
+    },
+    {
+      "days": 31,
+      "variant": "old",
+      "timeout": true
+    },
+    {
+      "days": 31,
+      "variant": "direct",
+      "timeout": true
+    }
+  ],
+  "discarded_alltags_global_grouping": [
+    {
+      "days": 1,
+      "variant": "old",
+      "timeout": false,
+      "elapsed_ms": 2843.787,
+      "result_rows": 1240.0,
+      "shared_hits": 1766640,
+      "shared_reads": 7271,
+      "temp_written": 0
+    },
+    {
+      "days": 1,
+      "variant": "grouped",
+      "timeout": true
+    },
+    {
+      "days": 8,
+      "variant": "old",
+      "timeout": true
+    },
+    {
+      "days": 8,
+      "variant": "grouped",
+      "timeout": true
+    },
+    {
+      "days": 16,
+      "variant": "old",
+      "timeout": true
+    },
+    {
+      "days": 16,
+      "variant": "grouped",
+      "timeout": true
+    },
+    {
+      "days": 31,
+      "variant": "old",
+      "timeout": true
+    },
+    {
+      "days": 31,
+      "variant": "grouped",
+      "timeout": true
+    }
+  ],
+  "discarded_alltags_candidate_grouping": [
+    {
+      "days": 1,
+      "variant": "candidate_grouped",
+      "timeout": false,
+      "elapsed_ms": 2119.411,
+      "result_rows": 1240.0,
+      "shared_hits": 2475566,
+      "shared_reads": 8895,
+      "temp_written": 0
+    },
+    {
+      "days": 8,
+      "variant": "candidate_grouped",
+      "timeout": true
+    },
+    {
+      "days": 16,
+      "variant": "candidate_grouped",
+      "timeout": true
+    },
+    {
+      "days": 31,
+      "variant": "candidate_grouped",
+      "timeout": true
+    }
+  ],
+  "alltags_source_resolved_access": [
+    {
+      "days": 1,
+      "variant": "resolved",
+      "timeout": false,
+      "elapsed_ms": 2866.557,
+      "result_rows": 1240.0,
+      "shared_hits": 1766758,
+      "shared_reads": 8427,
+      "temp_written": 0
+    },
+    {
+      "days": 8,
+      "variant": "resolved",
+      "timeout": true
+    },
+    {
+      "days": 16,
+      "variant": "resolved",
+      "timeout": true
+    },
+    {
+      "days": 31,
+      "variant": "resolved",
+      "timeout": true
+    }
+  ],
+  "alltags_source_resolved_access_limit_seconds": 10
+}

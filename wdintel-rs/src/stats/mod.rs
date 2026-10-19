@@ -3929,6 +3929,7 @@ mod tests {
             or_with_coords: None,
             or_without_coords: None,
             search: None,
+            search_mode: None,
             selected_tags: None,
             denied_tags: None,
             tag_presence: None,

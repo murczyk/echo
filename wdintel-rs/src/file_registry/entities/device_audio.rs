@@ -8,13 +8,9 @@ use serde::{Deserialize, Serialize};
 )]
 #[sea_orm(table_name = "device_audio")]
 pub struct Model {
-    #[sea_orm(
-        primary_key,
-        auto_increment = false,
-        unique_key = "device_audio_asr_identity_key"
-    )]
+    #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    #[sea_orm(unique_key = "device_audio_asr_identity_key")]
+    #[sea_orm(unique_key = "device_audio_device_name_key")]
     pub device_id: Uuid,
     #[sea_orm(unique)]
     pub ingest_id: Uuid,
@@ -44,12 +40,11 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub automatic_transcription: Option<String>,
     pub automatic_transcribed_at: Option<DateTime>,
+    pub automatic_transcription_pending: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::device_audio_asr_job::Entity")]
-    DeviceAudioAsrJob,
     #[sea_orm(
         belongs_to = "super::device_audio_ingest::Entity",
         from = "(Column::IngestId, Column::Id, Column::DeviceId, Column::StorageKey)",
@@ -58,12 +53,6 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     DeviceAudioIngest,
-}
-
-impl Related<super::device_audio_asr_job::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::DeviceAudioAsrJob.def()
-    }
 }
 
 impl Related<super::device_audio_ingest::Entity> for Entity {

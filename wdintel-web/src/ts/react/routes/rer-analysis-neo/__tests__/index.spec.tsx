@@ -288,7 +288,7 @@ vi.mock('.././components/AnalysisMessagesPane', () => ({
       etalonDisplayModel: unknown,
       focusTarget: HTMLElement,
     ) => void;
-    onEditReport?: (messageId: number) => void;
+    onEditReport?: (reportId: number, sourceMessageId: number) => void;
   }) => {
     messagesPanePropsHistory.push(props);
     return (
@@ -306,7 +306,7 @@ vi.mock('.././components/AnalysisMessagesPane', () => ({
         <button
           type="button"
           aria-label="analysis-edit-report"
-          onClick={() => props.onEditReport?.(91)}
+          onClick={() => props.onEditReport?.(91, 42)}
         />
       </div>
     );
@@ -650,6 +650,51 @@ describe('RerAnalysisNeoPage', () => {
     vi.restoreAllMocks();
   });
 
+  it('shows only skeletons while initial messages load', async () => {
+    const page = buildPage();
+    page.hasLoadedInitialMessages = false;
+    page.messagesLoading = true;
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.textContent).toContain('skeleton');
+    expect(container.querySelector('[data-testid="circular-progress"]')).toBeNull();
+    expect(container.querySelector('[data-testid="messages-pane"]')).toBeNull();
+  });
+
+  it('shows message skeletons during a refresh without replacing the mounted feed', async () => {
+    const page = buildPage();
+    page.messages = [[42, { text: 'Existing message' }]] as never;
+    page.messagesLoading = true;
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const mountedPane = container.querySelector('[data-testid="messages-pane"]');
+    expect(messagesPanePropsHistory.at(-1)?.isLoading).toBe(true);
+    expect(mountedPane).not.toBeNull();
+
+    page.messagesLoading = false;
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+    expect(messagesPanePropsHistory.at(-1)?.isLoading).toBe(false);
+    expect(container.querySelector('[data-testid="messages-pane"]')).toBe(mountedPane);
+  });
+
   it('refreshes analysis after creating a message', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -783,6 +828,7 @@ describe('RerAnalysisNeoPage', () => {
     const drawer = manageMessageDrawerPropsHistory.at(-1);
     expect(drawer?.open).toBe(true);
     expect(drawer?.editTarget).toBe(editorMessage);
+    expect(messagesPanePropsHistory.at(-1)?.editorHighlightedMessageId).toBe(42);
 
     await act(async () => {
       await drawer?.onSubmitEdit?.(42, { messageUid: 'm-updated' });
@@ -817,6 +863,7 @@ describe('RerAnalysisNeoPage', () => {
     const drawer = manageMessageDrawerPropsHistory.at(-1);
     expect(drawer?.open).toBe(true);
     expect(drawer?.reportSource).toBe(reportSource);
+    expect(messagesPanePropsHistory.at(-1)?.editorHighlightedMessageId).toBe(42);
 
     await act(async () => {
       await drawer?.onCreated?.({ signal_message_id: 91 });
@@ -1109,6 +1156,28 @@ describe('RerAnalysisNeoPage', () => {
     expect(page.setCenterTab).toHaveBeenCalledWith('messages');
     expect(page.openEditor).toHaveBeenCalledWith(42);
     expect(manageMessageDrawerPropsHistory.at(-1)?.initialFocusTarget).toBe(editButton);
+    root.unmount();
+  });
+
+  it('highlights the source card while editing its related report', async () => {
+    const page = buildPage();
+    page.openReportEditor.mockImplementation((reportId: number) => {
+      page.editTargetLoadState = { status: 'loading', reportId };
+    });
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="analysis-edit-report"]')?.click();
+    });
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(page.openReportEditor).toHaveBeenCalledWith(91);
+    expect(messagesPanePropsHistory.at(-1)?.editorHighlightedMessageId).toBe(42);
     root.unmount();
   });
 

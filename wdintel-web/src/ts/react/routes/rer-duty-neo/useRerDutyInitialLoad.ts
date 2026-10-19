@@ -191,17 +191,24 @@ export function useRerDutyInitialLoad(params: Params) {
           beforeIdNoninclusive: effectiveBeforeId,
         });
         let responses: InboxMessagesRsp[];
+        let historicalReadThrough: MessageCursor | null = null;
         if (initialTarget) {
           const newerReq = current.buildReqForFeed(effectiveFeed, {
             loadLatest: false,
             sinceIdNoninclusive: initialTarget.beforeIdNoninclusive,
           });
-          const [olderResponse, newerResponse, targetResponse] = await Promise.all([
+          const latestReq = current.buildReqForFeed(effectiveFeed, { loadLatest: true });
+          const [olderResponse, newerResponse, targetResponse, latestResponse] = await Promise.all([
             fetchInboxMessages(inboxReq),
             fetchInboxMessages(newerReq),
             fetchMessagesByIdsWithMetadata(initialTarget.messageIds, inboxReq),
+            fetchInboxMessages(latestReq),
           ]);
           responses = [olderResponse, newerResponse, targetResponse];
+          const newestItem = latestResponse.inboxItems.at(-1);
+          historicalReadThrough = newestItem
+            ? messageOrderCursor(newestItem[0], newestItem[1])
+            : null;
         } else {
           responses = [await fetchInboxMessages(inboxReq)];
         }
@@ -226,7 +233,7 @@ export function useRerDutyInitialLoad(params: Params) {
           if (tail) {
             current.installFeedUnreadCursorAndBaseline(
               effectiveFeed,
-              messageOrderCursor(tail[0], tail[1]),
+              historicalReadThrough ?? messageOrderCursor(tail[0], tail[1]),
             );
           } else if (pollCursor) {
             current.installFeedUnreadCursorAndBaseline(effectiveFeed, pollCursor);
@@ -244,6 +251,7 @@ export function useRerDutyInitialLoad(params: Params) {
                   referenceTimeMs: Date.now(),
                   pendingNewerItems: [],
                   evictedNewerTailId: null,
+                  historicalReadThrough: initialTarget ? historicalReadThrough : null,
                   ...(preserveUnread && previousFeed
                     ? preserveUnreadState(previousFeed, items)
                     : {

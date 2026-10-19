@@ -114,13 +114,17 @@ async fn file_registry_schema_and_entity_round_trip() {
 #[serial_test::serial]
 async fn verified_content_reuse_migration_preserves_original_publication() {
     let (config, database_url) = isolated_file_registry_config().await;
-    run_migrations(&config, Mode::Debug).await.unwrap();
     {
         let db = connect_runtime(&config, Mode::Debug)
             .await
             .unwrap()
             .unwrap();
         let connection = db.connection();
+        let applied_count = migrate_through(
+            connection,
+            "m20261012_094502_device_audio_asr_scan_indexes",
+        )
+        .await;
         let tx = connection.begin().await.unwrap();
         let tree = insert_file_entry_tree(&tx).await;
         let file = file_entry::Entity::find_by_id(tree.file_id)
@@ -142,13 +146,14 @@ async fn verified_content_reuse_migration_preserves_original_publication() {
             })
             .unwrap();
         let rollback_steps =
-            u32::try_from(migrations.len() - reuse_migration_index).unwrap();
+            u32::try_from(applied_count - reuse_migration_index).unwrap();
         wdfiles_migration::Migrator::down(connection, Some(rollback_steps))
             .await
             .unwrap();
         wdfiles_migration::Migrator::up(connection, Some(rollback_steps))
             .await
             .unwrap();
+        run_migrations(&config, Mode::Debug).await.unwrap();
         assert_file_content_schema(connection).await;
         let content = file_content::Entity::find_by_id((file.id, 1))
             .one(connection)
@@ -164,6 +169,18 @@ async fn verified_content_reuse_migration_preserves_original_publication() {
         assert_eq!(upload.status, FileContentUploadStatus::Completed);
     }
     sqlx::Postgres::drop_database(&database_url).await.unwrap();
+}
+
+async fn migrate_through(connection: &DatabaseConnection, name: &str) -> usize {
+    let count = wdfiles_migration::Migrator::migrations()
+        .iter()
+        .position(|migration| migration.name() == name)
+        .unwrap()
+        + 1;
+    wdfiles_migration::Migrator::up(connection, Some(count as u32))
+        .await
+        .unwrap();
+    count
 }
 
 #[tokio::test]
@@ -664,6 +681,10 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20261008_183827_file_preview_archive_members".to_string(),
             "m20261010_130006_device_audio_asr".to_string(),
             "m20261012_094502_device_audio_asr_scan_indexes".to_string(),
+            "m20261016_165725_device_audio_transcription_pending".to_string(),
+            "m20261016_172538_retire_device_audio_asr_executor".to_string(),
+            "m20261017_101924_drop_device_audio_transcription_backfill"
+                .to_string(),
         ]
     );
 }

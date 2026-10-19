@@ -55,8 +55,8 @@ it('saves and clears only the custom name (#3575)', async () => {
       .querySelector('form')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
   );
-  expect(fetchMock.mock.calls[1][0]).toBe('/api/user/display-name');
-  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ display_name: 'Сокіл' });
+  const firstSave = fetchMock.mock.calls.find(([url]) => url === '/api/user/display-name');
+  expect(JSON.parse(firstSave![1].body)).toEqual({ display_name: 'Сокіл' });
   expect(host.querySelector('input')?.value).toBe('actual-login');
   await changeName('');
   await act(async () =>
@@ -64,7 +64,8 @@ it('saves and clears only the custom name (#3575)', async () => {
       .querySelector('form')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
   );
-  expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ display_name: null });
+  const saves = fetchMock.mock.calls.filter(([url]) => url === '/api/user/display-name');
+  expect(JSON.parse(saves[1][1].body)).toEqual({ display_name: null });
 });
 
 it('keeps the edited name and exposes a failed save (#3575)', async () => {

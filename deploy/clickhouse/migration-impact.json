@@ -1,10 +1,56 @@
 {
   "migrations": {
+    "echo:m20261016_131615_ai_intel_report_generation_limits": {
+      "changes": [
+        { "table": "public.ai_intel_report_settings", "strategy": "excluded" },
+        { "table": "public.ai_intel_report_engine_budget", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261017_135230_migrate_transcription_sources": { "changes": [] },
+    "echo:m20261016_172232_transcription_source_integration": { "changes": [] },
+    "echo:m20261016_165725_transcription_source": {
+      "changes": [{ "table": "public.transcription_source", "strategy": "excluded" }]
+    },
+    "echo:m20261015_184629_attachment_search_message_change": {
+      "changes": [
+        { "table": "public.attachment_search_change", "strategy": "excluded" },
+        { "table": "public.attachment_search_message_change", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261015_150117_signal_group_fetch_new_messages": {
+      "changes": [
+        { "table": "public.signal_group", "strategy": "replicated_snapshot", "targeted_resnapshot": true }
+      ]
+    },
+    "echo:m20261015_092940_messenger_alerts": {
+      "changes": [
+        { "table": "public.login", "strategy": "replicated_snapshot", "targeted_resnapshot": true },
+        { "table": "public.datasource", "strategy": "replicated_snapshot", "targeted_resnapshot": true },
+        { "table": "public.user_settings", "strategy": "replicated_snapshot", "targeted_resnapshot": true },
+        { "table": "public.messenger_alert_settings", "strategy": "excluded" },
+        { "table": "public.messenger_alert_delivery", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261014_144721_attachment_search_change": {
       "changes": [{ "table": "public.attachment_search_change", "strategy": "excluded" }]
     },
     "echo:m20261014_140818_attachment_chunk_summary_index": { "changes": [] },
     "echo:m20261014_124732_attachment_document_updated_at_index": { "changes": [] },
+    "echo:m20261012_120000_notification_inbox": {
+      "changes": [
+        { "table": "public.notification_event", "strategy": "excluded" },
+        { "table": "public.notification_receipt", "strategy": "excluded" },
+        { "table": "public.notification_read_boundary", "strategy": "excluded" },
+        { "table": "public.notification_read_boundary_receipt", "strategy": "excluded" },
+        { "table": "public.notification_read_boundary_completed", "strategy": "excluded" },
+        { "table": "public.importance_operation", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261013_090000_notification_read_boundary_completed_repair": {
+      "changes": [
+        { "table": "public.notification_read_boundary_completed", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261013_094137_inbox_unit_selection": {
       "changes": [{ "table": "public.sigint_inbox_item_unit_selection", "strategy": "excluded" }]
     },
@@ -802,6 +848,7 @@
     }
   },
   "dependencies": {
+    "echo-im:06ac23803f4dbc7bc5e9db471609e89703870125": { "changes": [] },
     "echo-im:80589feab5a9afbe6e474f76b39cc563506c9262": { "changes": [] },
     "echo-im:f9b21242397b9cb04c9c98213f1c5217f1f1e273": {
       "changes": [

@@ -1,3 +1,4 @@
+import { GenerationSettings } from './GenerationSettings';
 import { AuthorLabel } from '../../components/AuthorLabel';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
@@ -11,16 +12,13 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
   FormControlLabel,
-  InputLabel,
-  MenuItem,
-  Select,
+  Pagination,
   Stack,
   Switch,
   Typography,
 } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MaterialReactTable } from 'material-react-table';
 
 import type {
@@ -165,10 +163,12 @@ function AttemptDetailsDialog({
 function AttemptsTable({
   attempts,
   loading,
+  firstRowIndex,
   onView,
 }: {
   attempts: AiIntelReportAttemptItem[];
   loading: boolean;
+  firstRowIndex: number;
   onView: (attempt: AiIntelReportAttemptItem) => void;
 }) {
   const tableStateContext = useTableStateContext();
@@ -278,6 +278,7 @@ function AttemptsTable({
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
+        Cell: ({ row }) => firstRowIndex + row.index + 1,
         muiTableBodyCellProps: () => ({
           sx: { justifyContent: 'center', ...CUSTOM_CELL_STYLES },
         }),
@@ -312,22 +313,129 @@ function AttemptsTable({
   return <MaterialReactTable table={table} />;
 }
 
+function AttemptsHistory() {
+  const [attempts, setAttempts] = useState<AiIntelReportAttemptItem[]>([]);
+  const [selectedAttempt, setSelectedAttempt] = useState<AiIntelReportAttemptItem | null>(null);
+  const [pageStartIds, setPageStartIds] = useState<string[]>([]);
+  const [pageSize, setPageSize] = useState(0);
+  const [total, setTotal] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [firstPage, setFirstPage] = useState(1);
+  const [attemptsLoading, setAttemptsLoading] = useState(true);
+  const [attemptsError, setAttemptsError] = useState<string | null>(null);
+  const loadVersion = useRef(0);
+  const { notify } = usePowerSnackbar();
+
+  useEffect(() => {
+    void loadAttempts();
+    return () => {
+      loadVersion.current += 1;
+    };
+  }, []);
+
+  async function loadAttempts(nextPage = 1, append = false) {
+    const version = ++loadVersion.current;
+    setAttemptsLoading(true);
+    setAttemptsError(null);
+    try {
+      const response = await listAiIntelReportAttempts(
+        nextPage === 1 ? null : pageStartIds[nextPage - 1],
+      );
+      if (version !== loadVersion.current) return;
+      setAttempts((current) => (append ? [...current, ...response.items] : response.items));
+      if (response.pageStartIds !== null) {
+        const starts = response.pageStartIds;
+        setPageStartIds((current) => [
+          ...current.slice(0, nextPage - 1),
+          ...starts,
+          ...(nextPage > 1 && starts.length === 2 && starts[1] === current[nextPage]
+            ? current.slice(nextPage + 1)
+            : []),
+        ]);
+      }
+      setTotal(response.total);
+      setPageSize(response.pageSize);
+      setPage(nextPage);
+      if (!append) setFirstPage(nextPage);
+    } catch (loadError) {
+      if (version !== loadVersion.current) return;
+      const message = `Не вдалося завантажити спроби: ${errorMessage(loadError)}`;
+      setAttemptsError(message);
+      notify({ severity: 'error', message });
+    } finally {
+      if (version === loadVersion.current) setAttemptsLoading(false);
+    }
+  }
+
+  return (
+    <section aria-label="Спроби швидких пропозицій">
+      <TableStateProvider
+        tableId="admin-ai-intel-report-attempts"
+        defaultColumnOrder={ATTEMPTS_DEFAULT_COLUMN_ORDER}
+        defaultColumnVisibility={ATTEMPTS_DEFAULT_COLUMN_VISIBILITY}
+        defaultEnableColumnOrdering={false}
+      >
+        <Stack spacing={2}>
+          <TablePageToolbar
+            title="Спроби швидких пропозицій"
+            withGlobalTextFilter
+            internalActionsDisabled={attemptsLoading && attempts.length === 0}
+            actions={
+              <PowerButton
+                startIcon={<RefreshIcon />}
+                variant="outlined"
+                onClick={() => void loadAttempts()}
+                disabled={attemptsLoading}
+              >
+                Оновити
+              </PowerButton>
+            }
+          />
+          {attemptsError ? <PowerAlert severity="error">{attemptsError}</PowerAlert> : null}
+          <AttemptsTable
+            attempts={attempts}
+            loading={attemptsLoading}
+            firstRowIndex={(firstPage - 1) * pageSize}
+            onView={setSelectedAttempt}
+          />
+          <Stack spacing={1} alignItems="center">
+            {page < pageStartIds.length ? (
+              <PowerButton
+                variant="outlined"
+                disabled={attemptsLoading}
+                onClick={() => void loadAttempts(page + 1, true)}
+              >
+                SHOW MORE
+              </PowerButton>
+            ) : null}
+            {pageStartIds.length > 1 ? (
+              <Pagination
+                count={pageStartIds.length}
+                page={page}
+                disabled={attemptsLoading}
+                onChange={(_, nextPage) => void loadAttempts(nextPage)}
+              />
+            ) : null}
+            {total !== null ? (
+              <Typography variant="body2" color="text.secondary">
+                Усього: {total}
+              </Typography>
+            ) : null}
+          </Stack>
+        </Stack>
+      </TableStateProvider>
+      <AttemptDetailsDialog attempt={selectedAttempt} onClose={() => setSelectedAttempt(null)} />
+    </section>
+  );
+}
+
 export function AdminAiIntelReportsPage() {
   const [settings, setSettings] = useState<AiIntelReportSettingsItem | null>(null);
   const [engines, setEngines] = useState<AiEngineItem[]>([]);
-  const [attempts, setAttempts] = useState<AiIntelReportAttemptItem[]>([]);
-  const [selectedAttempt, setSelectedAttempt] = useState<AiIntelReportAttemptItem | null>(null);
   const [loading, setLoading] = useState(true);
-  const [attemptsLoading, setAttemptsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [attemptsError, setAttemptsError] = useState<string | null>(null);
   const { notify } = usePowerSnackbar();
-  const eligibleEngines = useMemo(
-    () => engines.filter((engine) => engine.enabled && engine.callsignEnabled),
-    [engines],
-  );
-
   useEffect(() => {
     void load();
   }, []);
@@ -335,39 +443,19 @@ export function AdminAiIntelReportsPage() {
   async function load() {
     setLoading(true);
     setError(null);
-    setAttemptsError(null);
-    const [settingsResult, attemptsResult] = await Promise.allSettled([
-      Promise.all([getAiIntelReportSettings(), listAiEngines()]),
-      listAiIntelReportAttempts(),
-    ]);
-    if (settingsResult.status === 'fulfilled') {
-      const [nextSettings, nextEngines] = settingsResult.value;
+    try {
+      const [nextSettings, nextEngines] = await Promise.all([
+        getAiIntelReportSettings(),
+        listAiEngines(),
+      ]);
       setSettings(nextSettings);
       setEngines(nextEngines);
-    } else {
-      setError(`Не вдалося завантажити налаштування: ${errorMessage(settingsResult.reason)}`);
-    }
-    if (attemptsResult.status === 'fulfilled') {
-      setAttempts(attemptsResult.value);
-    } else {
-      const message = `Не вдалося завантажити спроби: ${errorMessage(attemptsResult.reason)}`;
-      setAttemptsError(message);
-      notify({ severity: 'error', message });
-    }
-    setLoading(false);
-  }
-
-  async function refreshAttempts() {
-    setAttemptsLoading(true);
-    setAttemptsError(null);
-    try {
-      setAttempts(await listAiIntelReportAttempts());
     } catch (loadError) {
-      const message = `Не вдалося завантажити спроби: ${errorMessage(loadError)}`;
-      setAttemptsError(message);
+      const message = `Не вдалося завантажити налаштування: ${errorMessage(loadError)}`;
+      setError(message);
       notify({ severity: 'error', message });
     } finally {
-      setAttemptsLoading(false);
+      setLoading(false);
     }
   }
 
@@ -377,6 +465,16 @@ export function AdminAiIntelReportsPage() {
       setError('Оберіть ШІ движок для швидких розвіддонесень.');
       return;
     }
+    const limits = [
+      settings.primaryTimeoutSecs,
+      settings.fallbackTimeoutSecs,
+      settings.totalTimeoutSecs,
+      ...settings.engineBudgets.map((budget) => budget.maxTokens),
+    ];
+    if (limits.some((value) => !Number.isInteger(value) || value < 1)) {
+      setError('Бюджети токенів і ліміти часу мають бути додатними цілими числами.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -384,6 +482,11 @@ export function AdminAiIntelReportsPage() {
         await saveAiIntelReportSettings({
           quickSuggestionEnabled: settings.quickSuggestionEnabled,
           quickAiEngineId: settings.quickAiEngineId,
+          fallbackAiEngineId: settings.fallbackAiEngineId,
+          engineBudgets: settings.engineBudgets,
+          primaryTimeoutSecs: settings.primaryTimeoutSecs,
+          fallbackTimeoutSecs: settings.fallbackTimeoutSecs,
+          totalTimeoutSecs: settings.totalTimeoutSecs,
         }),
       );
       notify({ severity: 'success', message: 'Налаштування розвіддонесень збережено.' });
@@ -429,31 +532,12 @@ export function AdminAiIntelReportsPage() {
               }
               label="Пропонувати розвіддонесення швидким алгоритмом"
             />
-            <FormControl fullWidth disabled={saving || !settings.quickSuggestionEnabled}>
-              <InputLabel id="quick-intel-report-engine-label">ШІ движок</InputLabel>
-              <Select
-                labelId="quick-intel-report-engine-label"
-                label="ШІ движок"
-                value={settings.quickAiEngineId ?? ''}
-                onChange={(event) =>
-                  setSettings((current) =>
-                    current ? { ...current, quickAiEngineId: event.target.value || null } : current,
-                  )
-                }
-              >
-                <MenuItem value="">Не вибрано</MenuItem>
-                {eligibleEngines.map((engine) => (
-                  <MenuItem key={engine.id} value={engine.id}>
-                    {engine.name} · {engine.modelName}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            {eligibleEngines.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                Немає увімкнених движків із підтримкою позивних і розвіддонесень.
-              </Typography>
-            ) : null}
+            <GenerationSettings
+              settings={settings}
+              engines={engines}
+              saving={saving}
+              onChange={setSettings}
+            />
             <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
               <PowerButton
                 variant="contained"
@@ -467,37 +551,7 @@ export function AdminAiIntelReportsPage() {
           </Stack>
         </CardContent>
       </Card>
-      <TableStateProvider
-        tableId="admin-ai-intel-report-attempts"
-        defaultColumnOrder={ATTEMPTS_DEFAULT_COLUMN_ORDER}
-        defaultColumnVisibility={ATTEMPTS_DEFAULT_COLUMN_VISIBILITY}
-        defaultEnableColumnOrdering={false}
-      >
-        <Stack spacing={2}>
-          <TablePageToolbar
-            title="Спроби швидких пропозицій"
-            withGlobalTextFilter
-            internalActionsDisabled={attemptsLoading && attempts.length === 0}
-            actions={
-              <PowerButton
-                startIcon={<RefreshIcon />}
-                variant="outlined"
-                onClick={() => void refreshAttempts()}
-                disabled={attemptsLoading}
-              >
-                Оновити
-              </PowerButton>
-            }
-          />
-          {attemptsError ? <PowerAlert severity="error">{attemptsError}</PowerAlert> : null}
-          <AttemptsTable
-            attempts={attempts}
-            loading={attemptsLoading}
-            onView={setSelectedAttempt}
-          />
-        </Stack>
-      </TableStateProvider>
-      <AttemptDetailsDialog attempt={selectedAttempt} onClose={() => setSelectedAttempt(null)} />
+      <AttemptsHistory />
     </Stack>
   );
 }

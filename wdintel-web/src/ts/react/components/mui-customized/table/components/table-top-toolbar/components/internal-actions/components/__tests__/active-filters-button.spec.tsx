@@ -142,7 +142,7 @@ describe('ActiveFiltersButton', () => {
     }
   });
 
-  it('shows the active badge from the live MRT table state even when the prop snapshot is empty', async () => {
+  it('uses controlled filters after they are cleared while MRT retains a stale snapshot', async () => {
     const table = buildTable();
     const view = await renderComponent(
       <ActiveFiltersButton table={table} columnFilters={[]} globalFilter="" />,
@@ -151,14 +151,53 @@ describe('ActiveFiltersButton', () => {
 
     expect(
       view.container.querySelector('[data-testid="badge"]')?.getAttribute('data-invisible'),
-    ).toBe('false');
+    ).toBe('true');
     expect(view.container.textContent).toContain('filter-icon');
   });
 
-  it('can clear the live table filter from the popup', async () => {
+  it('updates the badge when controlled global search clears while a column filter remains', async () => {
+    const table = buildTable({
+      getState: () => ({
+        columnFilters: [{ id: 'callsign', value: 'STALE' }],
+        globalFilter: 'stale search',
+      }),
+    });
+    const view = await renderComponent(
+      <ActiveFiltersButton
+        table={table}
+        columnFilters={[{ id: 'callsign', value: 'WOLF' }]}
+        globalFilter="search"
+      />,
+    );
+    rendered.push(view);
+
+    expect(
+      view.container.querySelector('[data-testid="badge"]')?.getAttribute('data-invisible'),
+    ).toBe('false');
+
+    await act(async () => {
+      view.root.render(
+        <ActiveFiltersButton
+          table={table}
+          columnFilters={[{ id: 'callsign', value: 'WOLF' }]}
+          globalFilter=""
+        />,
+      );
+    });
+
+    expect(
+      view.container.querySelector('[data-testid="badge"]')?.getAttribute('data-invisible'),
+    ).toBe('false');
+  });
+
+  it('clears the controlled table filter from the popup', async () => {
     const table = buildTable();
     const view = await renderComponent(
-      <ActiveFiltersButton table={table} columnFilters={[]} globalFilter="" />,
+      <ActiveFiltersButton
+        table={table}
+        columnFilters={[{ id: 'callsign', value: 'WOLF' }]}
+        globalFilter=""
+      />,
     );
     rendered.push(view);
 

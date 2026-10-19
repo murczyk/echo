@@ -1,0 +1,30 @@
+# Group message ingestion
+
+In `/admin/directions-neo`, assigned and orphan group editors expose
+«Отримувати нові повідомлення з месенджера». This stores the nullable
+`signal_group.fetch_new_messages` flag. The column has no SQL default; `NULL`
+means enabled. The setting applies to the group across messenger accounts.
+
+When explicitly `false`, the receiver acknowledges new echo_im messages without
+queueing them. Update snapshots still reach the queue: edits and deletions of
+previously imported messages continue through reconciliation, including legacy
+links. Queued snapshots with no existing link are discarded before processing
+attachments. Eligibility is checked when processing starts and again before a
+new import after staging media.
+
+Automatic recovery advances past disabled groups without recording their
+messages as missing. Scheduled recovery resolves already imported messages and
+retains deleted/duplicate terminal statuses; attempts to import missing messages
+fail with an explanation while the flag is disabled. Recovery rechecks the
+setting before staging media and within the import transaction.
+
+Manual message creation in the web UI and group metadata synchronization
+(including renames and deletions) remain available. Turning the setting on
+resumes consumption of new messages; it does not schedule a historical import.
+
+The migration declares `replicated_snapshot` with `targeted_resnapshot: true`
+for `public.signal_group`. Deployment automatically reconciles only that table's
+PeerDB mapping, including quiet and empty tables, then refreshes current-state
+views and the PostgreSQL gateway. Require the analytics health check to pass
+before deploying the next server; retry interrupted reconciliation with
+`/opt/echo-peerdb/current/bin/source-verify-deploy.sh`.

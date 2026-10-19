@@ -28,6 +28,113 @@ struct GroupFixture {
     datasource_group: datasource_group::Model,
 }
 
+#[serial]
+#[tokio::test]
+async fn issue_3780_message_group_lookup_preserves_access_and_scope() {
+    let env = cleanup().await.unwrap();
+    let allowed = mk_signal_group(&env.dbx, Default::default())
+        .await
+        .unwrap()
+        .master_key;
+    let denied = mk_signal_group(&env.dbx, Default::default())
+        .await
+        .unwrap()
+        .master_key;
+    let mut ids = Vec::new();
+    for groups in [
+        vec![
+            Some(allowed.clone()),
+            Some(allowed.clone()),
+            Some(denied.clone()),
+        ],
+        vec![Some(denied.clone())],
+        vec![None],
+    ] {
+        let message = mk_signal_message(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        for group in groups {
+            mk_signal_message_group(
+                &env.dbx,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(message.id),
+                    group_master_key: Set(group),
+                    datasource_group_id: Set(None),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        ids.push(message.id);
+    }
+
+    for lookup_by_message in [false, true] {
+        for (keys, scope, expected) in [
+            (vec![allowed.clone()], None, vec![ids[0]]),
+            (vec![denied.clone()], None, vec![ids[0], ids[1]]),
+            (
+                vec![allowed.clone(), denied.clone()],
+                None,
+                vec![ids[0], ids[1]],
+            ),
+            (vec![], None, vec![]),
+            (
+                vec![allowed.clone()],
+                Some(AnalyticsMessageIdScope::From(ids[1])),
+                vec![],
+            ),
+            (
+                vec![allowed.clone()],
+                Some(AnalyticsMessageIdScope::Inclusive {
+                    min_id: ids[0],
+                    max_id: ids[0],
+                }),
+                vec![ids[0]],
+            ),
+            (
+                vec![allowed.clone()],
+                Some(AnalyticsMessageIdScope::Empty),
+                vec![],
+            ),
+            (
+                vec![allowed.clone(), denied.clone()],
+                Some(AnalyticsMessageIdScope::From(ids[1])),
+                vec![ids[1]],
+            ),
+            (
+                vec![allowed.clone(), denied.clone()],
+                Some(AnalyticsMessageIdScope::Inclusive {
+                    min_id: ids[0],
+                    max_id: ids[0],
+                }),
+                vec![ids[0]],
+            ),
+            (
+                vec![allowed.clone(), denied.clone()],
+                Some(AnalyticsMessageIdScope::Empty),
+                vec![],
+            ),
+        ] {
+            let actual = signal_message::Entity::find()
+                .select_only()
+                .column(signal_message::Column::Id)
+                .filter(signal_message::Column::Id.is_in(ids.clone()))
+                .filter(message_in_groups_exists_with_correlation(
+                    keys,
+                    scope.as_ref(),
+                    lookup_by_message,
+                ))
+                .order_by_asc(signal_message::Column::Id)
+                .into_tuple::<i64>()
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
+}
+
 #[tokio::test]
 #[ignore = "requires the isolated callsign benchmark database"]
 async fn capture_callsign_page_production_builder_plans() {
@@ -376,6 +483,7 @@ fn mk_analysis_stats_req(
         or_with_coords: None,
         or_without_coords: None,
         search: None,
+        search_mode: None,
         selected_tags: None,
         denied_tags: None,
         tag_presence: None,
@@ -2137,6 +2245,7 @@ fn analytics_senders_selected_networks_use_scoped_flat_joins() {
         vec!["group".to_string()],
         Some(&scope),
         None,
+        None,
     )
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
@@ -2181,6 +2290,7 @@ fn postgres_senders_selected_networks_keep_correlated_filter() {
         vec!["group".to_string()],
         None,
         None,
+        None,
     )
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
@@ -2207,6 +2317,7 @@ fn postgres_senders_creation_breakdown_qualifies_created_at() {
         test_dt(1970, 1, 1, 0, 0),
         test_dt(1970, 1, 2, 0, 0),
         vec!["group".to_string()],
+        None,
         None,
         None,
     )
@@ -2304,6 +2415,222 @@ async fn rer_analysis_search_matches_plain_prefix() {
     );
 }
 
+#[tokio::test]
+#[serial]
+async fn analysis_search_modes_match_case_insensitively_in_counts_and_inbox_3780(
+) {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let login = find_test_login(&fixture.env.dbx).await.unwrap();
+    let mut ids = Vec::new();
+    for (index, text) in
+        ["нора", "НОРА!", "панорама", "норма", "нормальний", "норою"]
+            .into_iter()
+            .enumerate()
+    {
+        ids.push(
+            mk_analysis_message(
+                &fixture.env.dbx,
+                text,
+                "155.2750",
+                test_dt(2026, 3, 1, 10, index as u32),
+                &[&fixture.alpha],
+                &[],
+                false,
+            )
+            .await
+            .unwrap()
+            .id,
+        );
+    }
+    for (mode, expected_indexes) in [
+        (None, vec![0, 1, 3, 4, 5]),
+        (Some(AnalysisSearchMode::Fuzzy), vec![0, 1, 3, 4, 5]),
+        (Some(AnalysisSearchMode::Exact), vec![0, 1]),
+        (Some(AnalysisSearchMode::Substring), vec![0, 1, 2]),
+    ] {
+        let mut req = analysis_stats_req0(&fixture);
+        req.search = Some("НоРа".into());
+        req.search_mode = mode;
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            expected_indexes.len() as i64,
+            "{mode:?}"
+        );
+        let inbox_req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(req.since_date_inclusive_ms),
+            till_date_inclusive_ms: Some(req.till_date_noninclusive_ms - 1),
+            search: req.search.clone(),
+            search_mode: mode,
+            selected_groups: Some(vec![fixture
+                .alpha
+                .signal_group
+                .master_key
+                .clone()]),
+            ..Default::default()
+        };
+        let actual = inbox_map_item_ids(&fixture.env, &login.id, &inbox_req)
+            .await
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        let expected = expected_indexes
+            .iter()
+            .map(|index| ids[*index])
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(actual, expected, "{mode:?}");
+    }
+    let mut req = analysis_stats_req0(&fixture);
+    req.search_mode = Some(AnalysisSearchMode::Exact);
+    for (query, expected) in
+        [("нора -панорама", 2), ("нора or норма", 3), ("\"нора\"", 2)]
+    {
+        req.search = Some(query.into());
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            expected,
+            "{query}"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn analysis_search_highlights_follow_selected_mode_3780() {
+    use crate::rer_importer::highlight::ContentNode;
+
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let login = find_test_login(&fixture.env.dbx).await.unwrap();
+    let text =
+        "🙂 НоРа,НОРА! норою панорама норма БА123З foo_bar fooXbar 100% 1000";
+    let mut ids = Vec::new();
+    for body in [text, "панорама"] {
+        ids.push(
+            mk_analysis_message(
+                &fixture.env.dbx,
+                body,
+                "155.2750",
+                test_dt(2026, 3, 1, 10, 0),
+                &[&fixture.alpha],
+                &[],
+                false,
+            )
+            .await
+            .unwrap()
+            .id,
+        );
+    }
+    for (mode, query, expected) in [
+        (None, "НоРа", vec!["НоРа", "НОРА", "норою"]),
+        (
+            Some(AnalysisSearchMode::Exact),
+            "НоРа",
+            vec!["НоРа", "НОРА"],
+        ),
+        (
+            Some(AnalysisSearchMode::Exact),
+            "\"НоРа\"",
+            vec!["НоРа", "НОРА"],
+        ),
+        (
+            Some(AnalysisSearchMode::Exact),
+            "НоРа or absent -норою",
+            vec!["НоРа", "НОРА"],
+        ),
+        (
+            Some(AnalysisSearchMode::Substring),
+            "НоРа",
+            vec!["НоРа", "НОРА", "нора"],
+        ),
+        (
+            Some(AnalysisSearchMode::Substring),
+            "\"НоРа\"",
+            vec!["НоРа", "НОРА", "нора"],
+        ),
+        (
+            Some(AnalysisSearchMode::Substring),
+            "НоРа or absent -норма",
+            vec!["НоРа", "НОРА", "нора"],
+        ),
+        (Some(AnalysisSearchMode::Exact), "\"БА%З\"", vec!["БА123З"]),
+        (
+            Some(AnalysisSearchMode::Substring),
+            "\"БА%З\"",
+            vec!["БА123З"],
+        ),
+        (
+            Some(AnalysisSearchMode::Substring),
+            "foo_bar",
+            vec!["foo_bar"],
+        ),
+        (Some(AnalysisSearchMode::Substring), "100%", vec!["100%"]),
+    ] {
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+            till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms - 1),
+            selected_groups: Some(vec![fixture
+                .alpha
+                .signal_group
+                .master_key
+                .clone()]),
+            search: Some(query.into()),
+            search_mode: mode,
+            highlight_searchres: Some(true),
+            ..Default::default()
+        };
+        let messages = crate::rer_importer::inbox::get_inbox_messages(
+            &login.id,
+            &vec![login.id],
+            &fixture.env,
+            &req,
+        )
+        .await
+        .unwrap();
+        assert!(
+            messages.iter().any(|(id, _)| *id == ids[0]),
+            "{mode:?}: {query}"
+        );
+        if mode == Some(AnalysisSearchMode::Substring) && expected.len() == 3 {
+            assert!(messages.iter().any(|(id, _)| *id == ids[1]), "{query}");
+        }
+        for (id, message) in messages {
+            let highlights = message
+                .text_marked
+                .unwrap()
+                .into_iter()
+                .filter_map(|node| match node {
+                    ContentNode::CNHighlightC(highlight) => Some(highlight),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let actual = highlights
+                .iter()
+                .map(|highlight| highlight.text.as_str())
+                .collect::<Vec<_>>();
+            if id == ids[0] {
+                assert_eq!(actual, expected, "{mode:?}: {query}");
+            } else if id == ids[1] {
+                assert_eq!(mode, Some(AnalysisSearchMode::Substring));
+                assert_eq!(actual, vec!["нора"]);
+                assert_eq!((highlights[0].begin, highlights[0].end), (2, 6));
+            }
+            for highlight in highlights {
+                assert_eq!(
+                    message
+                        .text
+                        .chars()
+                        .skip(highlight.begin)
+                        .take(highlight.end - highlight.begin)
+                        .collect::<String>(),
+                    highlight.text,
+                );
+            }
+        }
+    }
+}
+
 async fn seed_search_pagination_messages(
     fixture: &RerAnalysisFixture,
     login: &uuid::Uuid,
@@ -2384,6 +2711,7 @@ async fn postgres_search_pages_preserve_filters_details_and_cursors_3780() {
                     test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
                 ),
                 search: Some("Берез".into()),
+                search_mode: None,
                 selected_groups: Some(vec![fixture
                     .alpha
                     .signal_group
@@ -2705,6 +3033,114 @@ async fn rer_analysis_aor_filter_hides_groups_outside_selected_aor() {
             .unwrap(),
         0
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_aor_membership_preserves_union_counts_and_cursors_3780() {
+    let fixture = mk_aor_filter_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    for (index, (groups, networks)) in [
+        (vec![&fixture.group_x], vec![]),
+        (vec![&fixture.group_y], vec![fixture.network_k.network.id]),
+        (
+            vec![&fixture.group_x, &fixture.group_y],
+            vec![fixture.network_k.network.id, fixture.network_l.network.id],
+        ),
+        (vec![&fixture.group_y], vec![fixture.network_l.network.id]),
+        (vec![&fixture.group_y], vec![]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        mk_analysis_message(
+            db,
+            &format!("membership-{index}"),
+            "901.3",
+            test_dt(2026, 3, 2, 10, index as u32),
+            &groups,
+            &networks,
+            false,
+        )
+        .await
+        .unwrap();
+    }
+    let login = crate::users::login_id_by_name(db, "Tester").await.unwrap();
+    let mut req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(
+            test_dt(2026, 3, 1, 0, 0).and_utc().timestamp_millis(),
+        ),
+        till_date_inclusive_ms: Some(
+            test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+        ),
+        selected_aors: Some(vec![fixture.aor_a.id]),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    for selected_group in
+        [None, Some(fixture.group_y.signal_group.master_key.clone())]
+    {
+        req.selected_groups = selected_group.map(|group| vec![group]);
+        let mut expected =
+            crate::rer_importer::inbox::query::build_filtered_inbox_query(
+                db,
+                &login,
+                &fixture.env,
+                &req,
+            )
+            .await
+            .unwrap()
+            .select_only()
+            .column(signal_message::Column::Id)
+            .into_tuple::<i64>()
+            .all(db)
+            .await
+            .unwrap();
+        expected.sort_unstable();
+        expected.dedup();
+        assert_eq!(
+            expected.len(),
+            if req.selected_groups.is_some() { 2 } else { 3 }
+        );
+        let candidates =
+            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login,
+                &fixture.env,
+                &req,
+                db,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(candidates, expected);
+        let digest = crate::rer_importer::inbox::query::build_analytics_inbox_digest_query(&login, &fixture.env, &req, db, 90_000).await.unwrap().unwrap();
+        let quantity: i64 = db
+            .query_one_raw(Statement::from_string(DbBackend::Postgres, digest))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get("", "count")
+            .unwrap();
+        assert_eq!(quantity, expected.len() as i64);
+        let cursor_req = InboxMessagesReq {
+            nolimit: Some(false),
+            since_id_noninclusive: Some(expected[0]),
+            ..req.clone()
+        };
+        let candidates =
+            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login,
+                &fixture.env,
+                &cursor_req,
+                db,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(candidates, expected[1..]);
+    }
 }
 
 #[tokio::test]
@@ -8395,6 +8831,67 @@ async fn rer_analysis_analytics_tag_count_matches_postgres_query() {
             .unwrap(),
         expected
     );
+
+    // #3780: sender pushdown must preserve ownership and duplicate-row counts.
+    mk_sigint_inbox_item_tag(
+        db,
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+            tag_id: Set(public_tag.id),
+            login_id: Set(Some(login.id)),
+            model: Set(Some("duplicate-association".into())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let (login_id, groups) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+    let access = stats::resolve_analytics_tag_access(db, &login_id, true)
+        .await
+        .unwrap();
+    let scope = AnalyticsMessageIdScope::From(1);
+    for selected in [
+        vec![public_tag.id, owner_tag.id],
+        vec![public_tag.id, inaccessible_tag.id],
+    ] {
+        for without_model in [false, true] {
+            let mut req = analysis_stats_req0(&fixture);
+            req.selected_tags = Some(selected.clone());
+            req.filter_tags_option = Some(TagFilterOption::AllTags);
+            req.without_model_tags = Some(without_model);
+            req.report_tags_only_this_unit = Some(true);
+            for scope in [None, Some(&scope)] {
+                let mut results = Vec::new();
+                for access in [None, Some(&access)] {
+                    let query = stats::build_sender_breakdown_query(
+                        &Json(req.clone()),
+                        &login_id,
+                        dt_from_millis(req.since_date_inclusive_ms).unwrap(),
+                        dt_from_millis(req.till_date_noninclusive_ms).unwrap(),
+                        groups.clone(),
+                        scope,
+                        None,
+                        access,
+                    )
+                    .unwrap();
+                    let count: i64 = db
+                        .query_all_raw(query.build(DbBackend::Postgres))
+                        .await
+                        .unwrap()
+                        .iter()
+                        .map(|row| row.try_get::<i64>("", "count").unwrap())
+                        .sum();
+                    results.push(count);
+                }
+                assert_eq!(results[0], results[1]);
+                assert_eq!(
+                    results[1],
+                    i64::from(selected[1] == owner_tag.id && without_model)
+                );
+            }
+        }
+    }
 }
 
 #[tokio::test]

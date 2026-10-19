@@ -78,6 +78,8 @@ pub async fn edit_account(
     id: i64,
     aor_id: Option<i64>,
     set_active: bool,
+    can_read_messages: Option<bool>,
+    can_send_messages: Option<bool>,
     display_name: String,
     description: Option<String>,
     api_login: Option<String>,
@@ -87,7 +89,8 @@ pub async fn edit_account(
 ) -> anyhow::Result<()> {
     let api_login = api_login
         .map(|api_login| Uuid::parse_str(&api_login))
-        .transpose()?;
+        .transpose()
+        .c(h!())?;
     let txn = dbx.begin().await.cae(h!())?;
     let mut account = datasource::Entity::find_by_id(id)
         .one(&txn)
@@ -95,6 +98,12 @@ pub async fn edit_account(
         .c(h!())?
         .c(h!())?
         .into_active_model();
+    if let Some(can_read_messages) = can_read_messages {
+        account.can_read_messages = Set(Some(can_read_messages));
+    }
+    if let Some(can_send_messages) = can_send_messages {
+        account.can_send_messages = Set(Some(can_send_messages));
+    }
     account.default_aor_id = Set(aor_id);
     account.display_name = Set(display_name);
     account.description = Set(description);
@@ -237,6 +246,8 @@ pub async fn link_account(
         datasource.update(txn).await.c(h!())?.id
     } else {
         datasource::ActiveModel {
+            can_read_messages: NotSet,
+            can_send_messages: NotSet,
             echo_client_lock_id: Set(Some(lock.id as i64)),
             id: NotSet,
             status: NotSet,
@@ -605,6 +616,8 @@ where
         pub display_name: String,
         pub description: Option<String>,
         pub status: AccountStatus,
+        pub can_read_messages: Option<bool>,
+        pub can_send_messages: Option<bool>,
         pub created_at: DateTime,
         pub client_id: Option<i32>,
         pub account_id: Option<i32>,
@@ -653,6 +666,8 @@ where
         .column(datasource::Column::DisplayName)
         .column(datasource::Column::Description)
         .column(datasource::Column::Status)
+        .column(datasource::Column::CanReadMessages)
+        .column(datasource::Column::CanSendMessages)
         .column(datasource::Column::CreatedAt)
         .column(echo_client_lock::Column::ClientId)
         .column(echo_client_lock::Column::AccountId)
@@ -707,6 +722,8 @@ where
 
         datasources.push(EchoAccountF1 {
             id: a.id,
+            can_read_messages: a.can_read_messages,
+            can_send_messages: a.can_send_messages,
             area_of_responsibility,
             status: a.status.into_value().value.into_owned(),
             created_at: a.created_at.and_utc().timestamp_millis(),
@@ -755,6 +772,8 @@ where
             let aor = ods.default_aor_id.and_then(|id| aors.get(&id).cloned());
             datasources.push(EchoAccountF1 {
                 id: ods.id,
+                can_read_messages: ods.can_read_messages,
+                can_send_messages: ods.can_send_messages,
                 area_of_responsibility: aor,
                 status: ods.status.into_value().value.into_owned(),
                 created_at: ods.created_at.and_utc().timestamp_millis(),
@@ -1011,6 +1030,13 @@ pub async fn bl_group_update(
     } else {
         group
     };
+    crate::sigint::zone::bl::update_group_fetch_new_messages_if_present(
+        req.fetch_new_messages,
+        &group.master_key,
+        txn,
+    )
+    .await
+    .c(h!())?;
     crate::sigint::zone::bl::update_group_aviation_if_present(
         req.is_aviation_group,
         &group.master_key,

@@ -147,7 +147,7 @@ test('@regression device ASR settings reconciles lost acknowledgement and enforc
   }
 });
 
-test('@regression device ASR settings disable prevents queued new and open dispatches but retains running result while archive cancels publication', async ({
+test('@regression device ASR settings disable prevents new admission while accepted work finishes while archive cancels publication', async ({
   browser,
 }) => {
   test.setTimeout(120_000);
@@ -165,7 +165,10 @@ test('@regression device ASR settings disable prevents queued new and open dispa
       '2020-01-01T00:00:00Z',
       toneWav(1),
     );
-    await audioFixtureSql('files', `DELETE FROM device_audio_asr_job WHERE audio_id='${old.id}';`);
+    await audioFixtureSql(
+      'files',
+      `UPDATE device_audio SET automatic_transcription_pending=NULL WHERE id='${old.id}';`,
+    );
     const page = await context.newPage();
     await openSettings(page, device.id);
     await audioAsrFixture({ mode: 'delayed', delay_seconds: 10 });
@@ -213,8 +216,14 @@ test('@regression device ASR settings disable prevents queued new and open dispa
       'Автотранскрибацію пристрою вимкнено',
     );
     await page.waitForTimeout(2500);
-    expect((await audioAsrFixture()).inferences - before.inferences).toBe(1);
-    for (const audio of [old, queued, disabled])
+    await expect
+      .poll(
+        async () => (await audioDetail(editor, device.id, queued.id)).automaticTranscription.state,
+        { timeout: 20_000 },
+      )
+      .toBe('succeeded');
+    expect((await audioAsrFixture()).inferences - before.inferences).toBe(2);
+    for (const audio of [old, disabled])
       expect(
         (await audioDetail(editor, device.id, audio.id)).automaticTranscription.text,
       ).toBeNull();
@@ -242,7 +251,7 @@ test('@regression device ASR settings disable prevents queued new and open dispa
       (await audioDetail(editor, archivedDevice.id, willArchive.id)).automaticTranscription.text,
     ).toBeNull();
     const after = await audioAsrFixture();
-    expect(after.inferences - before.inferences).toBe(2);
+    expect(after.inferences - before.inferences).toBe(3);
     console.log(
       JSON.stringify({
         scenario: 'settings-disable-and-archive',

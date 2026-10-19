@@ -833,13 +833,15 @@ function normalizeUserStatus(value: AiAgentAdminUserItem): AiAgentUserStatus {
   };
 }
 
-export async function listAiAgentAuditRequests(): Promise<AiAgentAuditRequest[]> {
-  const req: AiAgentAdminRequestListReq = { state: null, suspicious: null, limit: 200 };
+export async function listAiAgentAuditRequests(
+  pageStartId: string | null = null,
+): Promise<Omit<AiAgentAdminRequestListRsp, 'items'> & { items: AiAgentAuditRequest[] }> {
+  const req: AiAgentAdminRequestListReq = { state: null, suspicious: null, pageStartId };
   const response = await postJson<AiAgentAdminRequestListRsp>(
     '/api/admin/ai-agent/requests/list',
     req,
   );
-  return response.items.map((request) => normalizeAuditRequest(request));
+  return { ...response, items: response.items.map((request) => normalizeAuditRequest(request)) };
 }
 
 export async function listAiAgentEchoProxies(): Promise<AiAgentEchoProxy[]> {

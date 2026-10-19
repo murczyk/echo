@@ -654,7 +654,9 @@ async fn run_request_inner(
     let mut checkpoint = checkpoint_provider(env, &ai_engine, &runtime_profile)
         .await
         .c(h!())?;
-    if execution_policy.is_some() {
+    if execution_policy.is_some()
+        && provider_transport == access::AgentProviderTransport::EchoGateway
+    {
         checkpoint = Some(CheckpointProvider {
             ai_engine_id: ai_engine.id,
             model_name: ai_engine.model_name.clone(),

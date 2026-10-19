@@ -1,4 +1,3 @@
-import React from 'react';
 import { Box, TextField, Autocomplete } from '@mui/material';
 import { useFormContext, Controller } from 'react-hook-form';
 import { FormSectionWrapper } from './FormSectionWrapper';
@@ -8,6 +7,7 @@ import { ParserFieldFeedback } from '../MessageParserFeedback';
 
 type Props = {
   radioFeaturesAllowed: boolean;
+  hideNetworks: boolean;
   isEditMode: boolean;
   busy: boolean;
   recentValues: any;
@@ -24,6 +24,7 @@ type Props = {
 
 export function NetworkSection({
   radioFeaturesAllowed,
+  hideNetworks,
   isEditMode,
   busy,
   recentValues,
@@ -44,8 +45,12 @@ export function NetworkSection({
     formState: { errors },
   } = useFormContext<MessageFormData>();
 
+  if (hideNetworks && !radioFeaturesAllowed) return null;
+
   return (
-    <FormSectionWrapper title={radioFeaturesAllowed ? 'Мережа та радіо' : 'Мережа'}>
+    <FormSectionWrapper
+      title={hideNetworks ? 'Радіо' : radioFeaturesAllowed ? 'Мережа та радіо' : 'Мережа'}
+    >
       <Box
         sx={{
           display: 'grid',
@@ -98,93 +103,108 @@ export function NetworkSection({
           </ParserFieldFeedback>
         ) : null}
 
-        <ParserFieldFeedback field="network_name" label="мережу">
-          <Controller
-            name="network_name"
-            control={control}
-            render={({ field }) => {
-              const recentNames = (recentValues?.network_name || []) as string[];
-              const topOpts: NetworkSearchResult[] = [];
-              const otherOpts: NetworkSearchResult[] = [];
+        {!hideNetworks ? (
+          <ParserFieldFeedback field="network_name" label="мережу">
+            <Controller
+              name="network_name"
+              control={control}
+              render={({ field }) => {
+                const recentNames = (recentValues?.network_name || []) as string[];
+                const topOpts: NetworkSearchResult[] = [];
+                const otherOpts: NetworkSearchResult[] = [];
 
-              networkNameOptions.forEach((opt) => {
-                if (!recentNames.includes(opt.name)) {
-                  otherOpts.push(opt);
-                }
-              });
+                networkNameOptions.forEach((opt) => {
+                  if (!recentNames.includes(opt.name)) {
+                    otherOpts.push(opt);
+                  }
+                });
 
-              recentNames.forEach((name) => {
-                const matchingReals = networkNameOptions.filter((opt) => opt.name === name);
-                if (matchingReals.length > 0) {
-                  topOpts.push(...matchingReals);
-                } else {
-                  topOpts.push({ id: -1, name, unit_ids: null, freqs: [] } as NetworkSearchResult);
-                }
-              });
+                recentNames.forEach((name) => {
+                  const matchingReals = networkNameOptions.filter((opt) => opt.name === name);
+                  if (matchingReals.length > 0) {
+                    topOpts.push(...matchingReals);
+                  } else {
+                    topOpts.push({
+                      id: -1,
+                      name,
+                      unit_ids: null,
+                      freqs: [],
+                    } as NetworkSearchResult);
+                  }
+                });
 
-              const allOpts = [
-                ...(selectedNetwork ? [selectedNetwork] : []),
-                ...topOpts,
-                ...otherOpts,
-              ];
-              const uniqueOpts = Array.from(
-                new Map(
-                  allOpts.map((item) => [item.id === -1 ? item.name : item.id, item]),
-                ).values(),
-              );
-              const optionLabel = (option: string | NetworkSearchResult) => {
-                if (typeof option === 'string') return option;
-                const unitNames = (option.unit_ids ?? [])
-                  .map((unitId) => networkUnitNamesById[unitId]?.trim())
-                  .filter((unitName): unitName is string => Boolean(unitName));
-                return [option.name, ...unitNames].filter(Boolean).join(' — ');
-              };
-              return (
-                <Autocomplete
-                  freeSolo
-                  forcePopupIcon
-                  noOptionsText="Немає варіантів"
-                  options={uniqueOpts}
-                  getOptionLabel={optionLabel}
-                  isOptionEqualToValue={(option, value) => {
-                    if (typeof option !== 'string' && typeof value !== 'string') {
-                      return option.id === value.id;
+                const allOpts = [
+                  ...(selectedNetwork ? [selectedNetwork] : []),
+                  ...topOpts,
+                  ...otherOpts,
+                ];
+                const uniqueOpts = Array.from(
+                  new Map(
+                    allOpts.map((item) => [item.id === -1 ? item.name : item.id, item]),
+                  ).values(),
+                );
+                const optionLabel = (option: string | NetworkSearchResult) => {
+                  if (typeof option === 'string') return option;
+                  const unitNames = (option.unit_ids ?? [])
+                    .map((unitId) => networkUnitNamesById[unitId]?.trim())
+                    .filter((unitName): unitName is string => Boolean(unitName));
+                  return [option.name, ...unitNames].filter(Boolean).join(' — ');
+                };
+                return (
+                  <Autocomplete
+                    freeSolo
+                    forcePopupIcon
+                    noOptionsText="Немає варіантів"
+                    options={uniqueOpts}
+                    getOptionLabel={optionLabel}
+                    isOptionEqualToValue={(option, value) => {
+                      if (typeof option !== 'string' && typeof value !== 'string') {
+                        return option.id === value.id;
+                      }
+                      const optionName = typeof option === 'string' ? option : option.name;
+                      const valueName = typeof value === 'string' ? value : value.name;
+                      return optionName === valueName;
+                    }}
+                    value={selectedNetwork ?? field.value ?? ''}
+                    inputValue={
+                      selectedNetwork ? optionLabel(selectedNetwork) : (field.value ?? '')
                     }
-                    const optionName = typeof option === 'string' ? option : option.name;
-                    const valueName = typeof value === 'string' ? value : value.name;
-                    return optionName === valueName;
-                  }}
-                  value={selectedNetwork ?? field.value ?? ''}
-                  inputValue={selectedNetwork ? optionLabel(selectedNetwork) : (field.value ?? '')}
-                  loading={networkNameLoading}
-                  disabled={busy}
-                  onInputChange={(_, newValue, reason) => {
-                    if (reason === 'input') {
-                      setNetworkNameInput(newValue);
-                      field.onChange(newValue);
-                      setSelectedNetwork(null);
-                      if (radioFeaturesAllowed && newValue) {
+                    loading={networkNameLoading}
+                    disabled={busy}
+                    onInputChange={(_, newValue, reason) => {
+                      if (reason === 'input') {
+                        setNetworkNameInput(newValue);
+                        field.onChange(newValue);
+                        setSelectedNetwork(null);
+                        if (radioFeaturesAllowed && newValue) {
+                          setValue('network_signal_name', 'DMR', { shouldValidate: true });
+                        }
+                      }
+                    }}
+                    onChange={(_, newValue) => {
+                      const network = typeof newValue === 'string' ? null : newValue;
+                      const name = network ? network.name : newValue || '';
+                      field.onChange(name);
+                      setSelectedNetwork(network);
+                      if (radioFeaturesAllowed && name) {
                         setValue('network_signal_name', 'DMR', { shouldValidate: true });
                       }
-                    }
-                  }}
-                  onChange={(_, newValue) => {
-                    const network = typeof newValue === 'string' ? null : newValue;
-                    const name = network ? network.name : newValue || '';
-                    field.onChange(name);
-                    setSelectedNetwork(network);
-                    if (radioFeaturesAllowed && name) {
-                      setValue('network_signal_name', 'DMR', { shouldValidate: true });
-                    }
-                  }}
-                  renderInput={(params) => (
-                    <TextField {...params} label="Мережа" size="small" fullWidth disabled={busy} />
-                  )}
-                />
-              );
-            }}
-          />
-        </ParserFieldFeedback>
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Мережа"
+                        size="small"
+                        fullWidth
+                        disabled={busy}
+                      />
+                    )}
+                  />
+                );
+              }}
+            />
+          </ParserFieldFeedback>
+        ) : null}
       </Box>
     </FormSectionWrapper>
   );

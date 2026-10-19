@@ -13,6 +13,7 @@ import {
   appendWindowedMessageItems,
   feedNewerSinceId,
   feedPendingNewerItems,
+  historicalReadMessageIds,
   mergePendingNewerItems,
   messageOrderCursor,
   messageOrderTimestamp,
@@ -421,7 +422,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
           return Boolean(
             latestFeed &&
             runParams.getFeedLoadGeneration(feedId) === requestGeneration &&
-            latestFeed.items.at(-1)?.[0] === loadedTailId &&
+            feedNewerSinceId(latestFeed) === requestedSinceId &&
             runParams.getFeedCountSignature(latestFeed) === requestSignature,
           );
         };
@@ -484,7 +485,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
             return;
           }
           runParams.clearPollingFailure(`${feedId}:newer`);
-          const previousTailId = loadedTailId;
+          const previousTailId = latestFeed.items.at(-1)?.[0] ?? loadedTailId;
           const pendingBefore = feedPendingNewerItems(latestFeed);
           const navigationStillValid = runParams.isFollowTailValid(
             feedId,
@@ -648,6 +649,11 @@ export function useRerDutyDirectionalLoads(params: Params) {
                 const next = previous.map((feed) => {
                   if (feed.id !== feedId) return feed;
                   const pendingNewerItems = mergePendingNewerItems(feed, response.inboxItems);
+                  const historicalReadIds = historicalReadMessageIds(feed, pendingNewerItems);
+                  const readIds =
+                    historicalReadIds.length > 0
+                      ? new Set([...feed.readIds, ...historicalReadIds])
+                      : feed.readIds;
                   const evictedNewerTailId =
                     resolvesEvictedNewerTail &&
                     feed.evictedNewerTailId === latestFeed.evictedNewerTailId
@@ -660,17 +666,16 @@ export function useRerDutyDirectionalLoads(params: Params) {
                     return feed;
                   }
                   const pendingUnreadCount = pendingNewerItems.filter(
-                    ([id]) => !feed.readIds.has(id),
+                    ([id]) => !readIds.has(id),
                   ).length;
-                  const loadedUnreadCount = feed.items.filter(
-                    ([id]) => !feed.readIds.has(id),
-                  ).length;
+                  const loadedUnreadCount = feed.items.filter(([id]) => !readIds.has(id)).length;
                   const localUnreadCount =
                     loadedUnreadCount + (feed.windowedUnreadItems?.size ?? 0) + pendingUnreadCount;
                   return {
                     ...feed,
                     evictedNewerTailId,
                     pendingNewerItems,
+                    readIds,
                     unreadCount: Math.max(feed.unreadCount, localUnreadCount),
                   };
                 });

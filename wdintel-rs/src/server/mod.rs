@@ -23,6 +23,7 @@ pub mod discord;
 mod healthcheck;
 pub mod middleware;
 pub mod monitoring;
+mod read_deadline;
 #[cfg(test)]
 mod upload_http_audit;
 pub use admin::RestartEchoRequest;
@@ -110,6 +111,11 @@ async fn new_env_with_initialization(
     let (s3_config, s3) = build_runtime_storage(&config, mode);
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
+    if initialize && mode != Mode::Test {
+        crate::transcription::service::ensure_sources_registered(&dbx)
+            .await
+            .c(h!())?;
+    }
     if initialize {
         crate::ai_agent::dispatcher::import_legacy_config(
             &dbx,
@@ -693,6 +699,15 @@ fn spawn_background_workers(
         )
         .await;
     });
+    let messenger_alert_env = env.clone();
+    let messenger_alert_cancel = cancel_token.clone();
+    spawn_named_worker("messenger_alert_worker", bg_set, async move {
+        crate::messenger::alerts::worker::run(
+            messenger_alert_env,
+            messenger_alert_cancel,
+        )
+        .await;
+    });
     let operator_env = env.clone();
     spawn_named_worker("operator_inbox_worker", bg_set, async move {
         crate::operator::worker::run_operator_inbox_worker_nofail(operator_env)
@@ -1147,6 +1162,16 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::important::important_add)
             .service(crate::rer_importer::important::importants_list)
             .service(crate::rer_importer::important::important_rm)
+            .service(crate::users::messenger_profile::search)
+            .service(crate::messenger::alerts::settings_get)
+            .service(crate::messenger::alerts::settings_put)
+            .service(crate::messenger::alerts::preference_get)
+            .service(crate::messenger::alerts::preference_put)
+            .service(crate::messenger::alerts::history)
+            .service(crate::notifications::notification_list)
+            .service(crate::notifications::notification_unread_count)
+            .service(crate::notifications::notification_read)
+            .service(crate::notifications::notification_read_all)
             .service(crate::rer_importer::callsigns::callsigns_graph)
             .service(crate::rer_importer::gdoc::rer_callsign_info)
             .service(crate::rer_importer::gdoc::rer_callsign_info_batch)
@@ -1821,6 +1846,7 @@ pub async fn main_server(
             .wrap(actix_web::middleware::from_fn(
                 middleware::mk_activity_middleware(Some(redis_for_middleware)),
             ))
+            .wrap(actix_web::middleware::from_fn(read_deadline::enforce))
             .wrap(actix_web::middleware::from_fn(
                 middleware::access_log_middleware,
             ))
@@ -1925,6 +1951,20 @@ pub async fn main_bgworker(
         true,
         true,
         &mut background_tasks,
+    );
+    let sync_env = env.clone();
+    let sync_cancel = cancel_token.clone();
+    spawn_named_worker(
+        "device_transcription_sync",
+        &mut transcriber_tasks,
+        async move {
+            crate::devices::audio::transcription::run(
+                sync_env.device_audio.clone(),
+                sync_env.echo_gpu_client.clone(),
+                sync_cancel,
+            )
+            .await;
+        },
     );
     let transcriber_worker_id = Uuid::now_v7();
     info!(

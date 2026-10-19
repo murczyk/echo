@@ -500,9 +500,11 @@ pub(super) async fn publish(
     attempt: &device_audio_ingest::Model,
     media: &ProbedAudio,
 ) -> anyhow::Result<ReceiveDeviceAudioOutcome> {
-    let policy =
+    let policy = Some(
         super::transcription::publication_guard(runtime, attempt.device_id)
-            .await;
+            .await
+            .c(h!())?,
+    );
     let transaction = runtime.file_database().c(h!())?.begin().await.c(h!())?;
     let enabled = super::transcription::publication_setting(
         &transaction,
@@ -592,6 +594,7 @@ fn ready_audio(
         processing_version: Set(Uuid::new_v4()),
         automatic_transcription: Set(None),
         automatic_transcribed_at: Set(None),
+        automatic_transcription_pending: Set(None),
     })
 }
 

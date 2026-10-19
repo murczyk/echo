@@ -1,5 +1,6 @@
 pub mod backfill;
 pub mod media_queue;
+pub(crate) mod reprocess;
 pub mod types;
 pub mod worker;
 
@@ -100,12 +101,20 @@ pub async fn completed_transcriptions<C>(
 where
     C: ConnectionTrait,
 {
-    Ok(echo_gpu_client::lookup_completed(dbx, source_ids)
-        .await
-        .c(h!())?
-        .into_iter()
-        .map(|transcription| (transcription.source_id, transcription.value))
-        .collect())
+    if source_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = dbx.query_all_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        format!("select media.id, queue.transcribed_value from signal_message_media media join transcription_source source on source.source_key = {} join echo_gpu_transcription_queue queue on queue.source_id=source.id where media.id=any($1) and queue.state='completed' and queue.transcribed_value is not null", media_queue::SOURCE_KEY_SQL),
+        [source_ids.to_vec().into()])).await.c(h!())?;
+    rows.into_iter()
+        .map(|row| {
+            Ok((
+                row.try_get("", "id").c(h!())?,
+                row.try_get("", "transcribed_value").c(h!())?,
+            ))
+        })
+        .collect()
 }
 
 #[post("/api/admin/transcriber/instances/list")]
@@ -281,11 +290,15 @@ fn transcription_results_from_sql(filtered: bool) -> String {
         format!(
             r#"(
 select {TRANSCRIPTION_RESULTS_QUEUE_COLUMNS}
-from echo_gpu_transcription_queue
+from echo_gpu_transcription_queue candidate
+where exists(select 1 from transcription_source source
+    join signal_message_media media on {source_key_sql}=source.source_key
+    where source.id=candidate.source_id)
 order by created_at desc, id desc
 limit {}
 )"#,
-            crate::config::ECHO_AUDIO_TRANSCRIPTION_RESULTS_FILTER_ROW_LIMIT
+            crate::config::ECHO_AUDIO_TRANSCRIPTION_RESULTS_FILTER_ROW_LIMIT,
+            source_key_sql = media_queue::SOURCE_KEY_SQL
         )
     } else {
         "echo_gpu_transcription_queue".to_string()
@@ -293,10 +306,17 @@ limit {}
     format!(
         r#"
 from {queue_sql} queue
-left join signal_message_media media on media.id = queue.source_id
+join transcription_source source on source.id = queue.source_id
+    and source.source_key like 'message-media/%'
+join lateral (select matched.file_name from (
+    select media.id, media.file_name from signal_message_media media
+    where {source_key_sql} = source.source_key
+    offset 0 -- Keep the key lookup separate from ORDER BY/LIMIT.
+) matched order by matched.id limit 1) media on true
 left join gpu_config actual_instance on actual_instance.id = queue.actual_instance_id
 left join gpu_config selected_instance on selected_instance.id = queue.selected_instance_id
-"#
+"#,
+        source_key_sql = media_queue::SOURCE_KEY_SQL
     )
 }
 
@@ -326,7 +346,7 @@ end
 const TRANSCRIPTION_RESULT_INSTANCE_FILTER: &str = "coalesce(actual_instance.name, selected_instance.name, queue.actual_instance_id::text, queue.selected_instance_id::text, '—')";
 
 const TRANSCRIPTION_RESULT_GLOBAL_FILTER_EXPRESSIONS: &[&str] = &[
-    "coalesce(media.file_name, queue.source_id::text)",
+    "coalesce(media.file_name, source.source_key, queue.source_id::text)",
     TRANSCRIPTION_RESULT_CREATED_AT_FILTER,
     TRANSCRIPTION_RESULT_STARTED_AT_FILTER,
     TRANSCRIPTION_RESULT_COMPLETION_TIME_FILTER,
@@ -342,7 +362,7 @@ fn transcription_result_filter_expressions(
 ) -> Option<&'static [&'static str]> {
     match id {
         "attachment" => {
-            Some(&["coalesce(media.file_name, queue.source_id::text)"])
+            Some(&["coalesce(media.file_name, source.source_key, queue.source_id::text)"])
         }
         "created_at" => Some(&[TRANSCRIPTION_RESULT_CREATED_AT_FILTER]),
         "started_transcription_at" => {
@@ -841,7 +861,13 @@ pub async fn result_media(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-    let media = signal_message_media::Entity::find_by_id(source_id)
+    let key = crate::transcription::service::source_key(&env.dbx, source_id)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    let media = signal_message_media::Entity::find()
+        .from_raw_sql(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            format!("select media.* from signal_message_media media where {} = $1 order by media.id limit 1", media_queue::SOURCE_KEY_SQL), [key.into()]))
         .one(&env.dbx)
         .await
         .c(h!())?
@@ -911,6 +937,7 @@ mod tests {
     use actix_web::{cookie::Key, http::StatusCode, test, web, App};
     use sea_orm::{
         ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+        QueryOrder,
     };
 
     async fn insert_test_media(
@@ -923,7 +950,7 @@ mod tests {
         )
         .await
         .unwrap();
-        signal_message_media::ActiveModel {
+        let media = signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
             signal_message_uuid: Set(message.id_uuid),
@@ -937,7 +964,10 @@ mod tests {
         }
         .insert(&env.dbx)
         .await
-        .unwrap()
+        .unwrap();
+        env.dbx.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "insert into transcription_source(id,source_key) values($1,$2) on conflict do nothing", [media.id.into(),media_queue::source_key(&media).into()])).await.unwrap();
+        media
     }
 
     struct TranscriptionResultSeed<'a> {
@@ -956,6 +986,15 @@ mod tests {
         env: &Env,
         seed: TranscriptionResultSeed<'_>,
     ) -> echo_gpu_transcription_queue::Model {
+        if let Some(media) =
+            signal_message_media::Entity::find_by_id(seed.source_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+        {
+            env.dbx.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+                "insert into transcription_source(id,source_key) values($1,$2) on conflict do nothing", [seed.source_id.into(),media_queue::source_key(&media).into()])).await.unwrap();
+        }
         echo_gpu_transcription_queue::ActiveModel {
             id: Set(Uuid::now_v7()),
             source_id: Set(seed.source_id),
@@ -1039,6 +1078,7 @@ mod tests {
     }
 
     #[actix_web::test]
+    #[serial_test::serial]
     async fn endpoints_enforce_auth_role_feature_and_message_access() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
@@ -1193,6 +1233,32 @@ mod tests {
         .await;
         assert_eq!(response.status(), StatusCode::OK);
 
+        let (device_source, _) = crate::transcription::service::enqueue(
+            &env.dbx,
+            "device-audio/private-source",
+        )
+        .await
+        .unwrap();
+        let response = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(&format!(
+                    "/api/admin/transcriber/results/{device_source}/media"
+                ))
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let results =
+            query_transcription_results(&env.dbx, &Default::default())
+                .await
+                .unwrap();
+        assert!(!results
+            .rows
+            .iter()
+            .any(|row| row.source_id == device_source));
+
         let response = test::call_service(
             &app,
             test::TestRequest::get()
@@ -1325,7 +1391,7 @@ mod tests {
             insert_test_media(env, Some("alpha-recording.ogg")).await;
         let terminal_media =
             insert_test_media(env, Some("beta-recording.ogg")).await;
-        let pending_source_id = Uuid::now_v7();
+        let pending_source_id = insert_test_media(env, None).await.id;
         insert_transcription_result(
             env,
             TranscriptionResultSeed {
@@ -1512,7 +1578,8 @@ mod tests {
         assert_eq!(first.rows[0].started_transcription_at, None);
         let first_cursor = first.next_cursor.unwrap();
 
-        let inserted_source_id = Uuid::now_v7();
+        let inserted_source_id =
+            insert_test_media(env, Some("inserted.ogg")).await.id;
         insert_transcription_result(
             env,
             TranscriptionResultSeed {
@@ -1634,6 +1701,79 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
+    async fn result_listing_3645_handles_device_sources_and_shared_media() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        env.dbx
+            .execute_unprepared(&format!(
+                r#"
+insert into signal_message_media(id,signal_message_id,content_type,size_bytes,storage_key,file_name)
+select md5('result-media-' || n)::uuid,{message_id},'audio/ogg',1,
+    'result-load/' || (n % 200),'result-' || n || '.ogg'
+from generate_series(1,10000) n;
+insert into transcription_source(id,source_key)
+select gen_random_uuid(),'device-audio/result-load/' || n from generate_series(1,10000) n
+union all
+select gen_random_uuid(),'message-media/result-load/' || n from generate_series(0,199) n;
+insert into echo_gpu_transcription_queue(source_id,state)
+select id,'completed' from transcription_source;
+analyze signal_message_media;
+analyze transcription_source;
+analyze echo_gpu_transcription_queue;
+                "#,
+                message_id = message.id,
+            ))
+            .await
+            .unwrap();
+
+        let results = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            query_transcription_results(
+                &env.dbx,
+                &TranscriptionResultListReq {
+                    limit: Some(100),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .expect("#3645: listing must not scan all media for each device source")
+        .unwrap();
+        assert_eq!(results.total, 200);
+        assert_eq!(results.rows.len(), 100);
+        assert!(results.has_more);
+        for result in results.rows {
+            let media = signal_message_media::Entity::find()
+                .filter(
+                    signal_message_media::Column::FileName.eq(result.file_name),
+                )
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            let first = signal_message_media::Entity::find()
+                .filter(
+                    signal_message_media::Column::StorageKey
+                        .eq(media.storage_key),
+                )
+                .order_by_asc(signal_message_media::Column::Id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(media.id, first.id);
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
     async fn result_listing_is_filtered_cursor_stable_and_reconciles_starts() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
@@ -1644,11 +1784,13 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn completed_transcriptions_omit_pending_results() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
-        let completed_id = Uuid::now_v7();
-        let pending_id = Uuid::now_v7();
+        let completed_id =
+            insert_test_media(&env, Some("completed.wav")).await.id;
+        let pending_id = insert_test_media(&env, Some("pending.wav")).await.id;
         let instance = echo_gpu_client::create_instance(
             &env.dbx,
             echo_gpu_client::CreateInstance {

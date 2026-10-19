@@ -22,6 +22,7 @@ pub struct Model {
     pub disable_network_assignment: bool,
     pub interseption_kind: InterseptionKind,
     pub is_aviation_group: Option<bool>,
+    pub fetch_new_messages: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

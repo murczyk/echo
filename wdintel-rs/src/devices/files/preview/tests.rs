@@ -234,7 +234,7 @@ async fn concurrent_prepare_and_automatic_retry_keep_one_current_generation() {
         }))
     );
     assert!(failed.unwrap());
-    assert!(prepared.iter().all(Result::is_ok));
+    assert!(prepared.iter().all(Result::is_ok), "{prepared:?}");
     let current = query::current(db, job.device_id, job.file_id, job.revision)
         .await
         .unwrap()

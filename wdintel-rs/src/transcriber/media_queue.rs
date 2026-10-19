@@ -3,7 +3,9 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
 use anyhow::Context;
-use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, TransactionTrait,
+};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct QueueMediaResult {
@@ -35,14 +37,11 @@ pub(super) fn media_eligibility(
 pub async fn reconcile<C>(
     dbx: &C,
     surviving: &[signal_message_media::Model],
-    superseded_ids: &[uuid::Uuid],
+    _superseded_ids: &[uuid::Uuid],
 ) -> Result<QueueMediaResult, AppError>
 where
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionTrait,
 {
-    echo_gpu_client::delete_by_sources(dbx, superseded_ids)
-        .await
-        .context(h!())?;
     if !crate::system_settings::audio_transcription_enabled(dbx)
         .await
         .c(h!())?
@@ -66,9 +65,10 @@ where
             }
         }
         if matches!(
-            echo_gpu_client::enqueue(dbx, media.id)
+            crate::transcription::service::enqueue(dbx, &source_key(media))
                 .await
-                .context(h!())?,
+                .context(h!())?
+                .1,
             echo_gpu_client::EnqueueOutcome::Queued
         ) {
             result.queued += 1;
@@ -83,7 +83,7 @@ pub async fn reconcile_message<C>(
     superseded_ids: &[uuid::Uuid],
 ) -> Result<QueueMediaResult, AppError>
 where
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionTrait,
 {
     let message = signal_message::Entity::find_by_id(signal_message_id)
         .one(dbx)
@@ -105,6 +105,15 @@ where
     }
 }
 
+pub fn source_key(media: &signal_message_media::Model) -> String {
+    crate::storage::join_paths(
+        crate::config::S3_MEDIA_ROOT_PREFIX,
+        &crate::messenger::media::media_object_key(media),
+    )
+}
+
+pub const SOURCE_KEY_SQL: &str = "'message-media/' || ltrim(coalesce(media.storage_key, left(media.id::text,5) || '/' || media.id::text || case when media.is_encrypted then '' else '.plaintext' end),'/')";
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -112,7 +121,8 @@ mod tests {
     };
     use crate::entities::{signal_message_media, system_settings};
     use sea_orm::{
-        ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+        ActiveModelTrait, ActiveValue::Set, ConnectionTrait, EntityTrait,
+        IntoActiveModel,
     };
     use uuid::Uuid;
 
@@ -150,7 +160,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disabled_reconcile_still_deletes_superseded_queue_items() {
+    #[serial_test::serial]
+    async fn shared_storage_key_has_one_native_task() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        system_settings::ActiveModel {
+            enable_audio_transcription: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let mut media = Vec::new();
+        for _ in 0..2 {
+            let mut item = audio(8);
+            item.signal_message_id = message.id;
+            item.storage_key = Some("shared-queue-source".into());
+            media
+                .push(item.into_active_model().insert(&env.dbx).await.unwrap());
+        }
+        let result = reconcile(&env.dbx, &media, &[]).await.unwrap();
+        assert_eq!(result.queued, 1);
+        let replay = reconcile(&env.dbx, &media, &[]).await.unwrap();
+        assert_eq!(replay.queued, 0);
+        env.dbx.execute_unprepared("update echo_gpu_transcription_queue set state='completed',transcribed_value='shared transcript',finished_at=now() at time zone 'utc'").await.unwrap();
+        let texts = crate::transcriber::completed_transcriptions(
+            &env.dbx,
+            &media.iter().map(|media| media.id).collect::<Vec<_>>(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(texts.len(), 2);
+        assert!(media
+            .iter()
+            .all(|media| texts.get(&media.id).map(String::as_str)
+                == Some("shared transcript")));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn disabled_reconcile_retains_shared_native_results() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let source_id = Uuid::now_v7();
@@ -161,10 +216,11 @@ mod tests {
         assert!(echo_gpu_client::lookup(&env.dbx, source_id)
             .await
             .unwrap()
-            .is_none());
+            .is_some());
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn enabled_reconcile_is_idempotent_and_tracks_final_media_state() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
@@ -211,6 +267,13 @@ mod tests {
         assert_eq!(second.queued, 0);
         assert_eq!(second.skipped_oversized, 1);
 
+        let source = crate::transcription::service::source_id(
+            &env.dbx,
+            &super::source_key(&eligible),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         signal_message_media::Entity::delete_by_id(eligible.id)
             .exec(&env.dbx)
             .await
@@ -218,17 +281,24 @@ mod tests {
         reconcile_message(&env.dbx, message.id, &[eligible.id])
             .await
             .unwrap();
-        assert!(echo_gpu_client::lookup(&env.dbx, eligible.id)
+        assert!(echo_gpu_client::lookup(&env.dbx, source)
             .await
             .unwrap()
-            .is_none());
+            .is_some());
 
         let replacement = audio(1);
-        let replacement_id = replacement.id;
+        let replacement_key = super::source_key(&replacement);
         let mut replacement = replacement.into_active_model();
         replacement.signal_message_id = Set(message.id);
         replacement.insert(&env.dbx).await.unwrap();
         reconcile_message(&env.dbx, message.id, &[]).await.unwrap();
+        let replacement_id = crate::transcription::service::source_id(
+            &env.dbx,
+            &replacement_key,
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert!(echo_gpu_client::lookup(&env.dbx, replacement_id)
             .await
             .unwrap()
@@ -239,9 +309,16 @@ mod tests {
         message.deleted = Set(true);
         message.update(&env.dbx).await.unwrap();
         reconcile_message(&env.dbx, message_id, &[]).await.unwrap();
+        let replacement_id = crate::transcription::service::source_id(
+            &env.dbx,
+            &replacement_key,
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert!(echo_gpu_client::lookup(&env.dbx, replacement_id)
             .await
             .unwrap()
-            .is_none());
+            .is_some());
     }
 }

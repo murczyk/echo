@@ -378,7 +378,7 @@ pub struct AiAgentContainerListRsp {
 pub struct AiAgentAdminRequestListReq {
     pub state: Option<String>,
     pub suspicious: Option<bool>,
-    pub limit: Option<i32>,
+    pub page_start_id: Option<String>,
 }
 
 #[derive(
@@ -425,6 +425,9 @@ pub struct AiAgentAdminRequestItem {
 #[serde(rename_all = "camelCase")]
 pub struct AiAgentAdminRequestListRsp {
     pub items: Vec<AiAgentAdminRequestItem>,
+    pub page_size: i32,
+    pub total: Option<i64>,
+    pub page_start_ids: Option<Vec<String>>,
 }
 
 #[derive(

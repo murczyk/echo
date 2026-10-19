@@ -19,6 +19,7 @@ pub const SERVER_ACTIVITY_CONTEXT_HEADERS: &[&str] = &[
 ];
 
 pub const USER_DISPLAY_NAME_MAX_LENGTH: usize = 100;
+pub const USER_MESSENGER_PROFILE_SEARCH_LIMIT: usize = 50;
 pub const USER_AUTHOR_IDENTITIES_MAX_BATCH_SIZE: usize = 200;
 pub const API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT: i64 = 500;
 pub const API_RATE_LIMIT_BURST_SIZE_DEFAULT: i64 = 5;
@@ -78,6 +79,22 @@ pub const AI_ENGINE_URL_MAX_CHARS: usize = 2048;
 pub const AI_ENGINE_MODEL_NAME_MAX_CHARS: usize = 255;
 pub const AI_ENGINE_TOKEN_MAX_CHARS: usize = 16_384;
 pub const AI_ENGINE_ERROR_BODY_MAX_CHARS: usize = 2_000;
+pub const AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES: &[&str] =
+    &["gpt-5", "gpt-6", "o1", "o3", "o4"];
+pub const AI_ENGINE_OPENAI_REASONING_NONE_MODELS: &[&str] = &[
+    "gpt-5.1",
+    "gpt-5.2",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "gpt-5.5",
+    "gpt-5.6",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-6-sol",
+    "gpt-6-luna",
+];
 pub const AI_CHAT_PROMPT_MAX_CHARS: usize = 100_000;
 pub const AI_CHAT_TITLE_MAX_CHARS: usize = 120;
 pub const AI_CALLSIGN_FEEDBACK_PAGE_SIZE: i64 = 100;
@@ -263,12 +280,14 @@ pub const AI_INTEL_REPORT_EXAMPLE_LIMIT: usize = 6;
 pub const AI_INTEL_REPORT_EXAMPLE_SOURCE_MAX_CHARS: usize = 1_500;
 pub const AI_INTEL_REPORT_SOURCE_MATERIALS_MAX_CHARS: usize = 12_000;
 pub const AI_INTEL_REPORT_PROMPT_MAX_CHARS: usize = 24_000;
-pub const AI_INTEL_REPORT_OUTPUT_MAX_TOKENS: u32 = 512;
+pub const AI_INTEL_REPORT_OUTPUT_MAX_TOKENS: i32 = 512;
+pub const AI_INTEL_REPORT_OUTPUT_TOKEN_LIMIT: i32 = 32_768;
 pub const AI_INTEL_REPORT_OUTPUT_MAX_CHARS: usize = 1_000;
 pub const AI_INTEL_REPORT_SUGGESTION_LIMIT: usize = 3;
-pub const AI_INTEL_REPORT_TIMEOUT_SECS: u64 = 20;
+pub const AI_INTEL_REPORT_TIMEOUT_SECS: i32 = 20;
+pub const AI_INTEL_REPORT_TIMEOUT_LIMIT_SECS: i32 = 180;
 pub const AI_INTEL_REPORT_EXAMPLE_REPORT_MAX_CHARS: usize = 160;
-pub const AI_INTEL_REPORT_ADMIN_ATTEMPT_LIMIT: u64 = 500;
+pub const AI_INTEL_REPORT_ADMIN_ATTEMPT_PAGE_SIZE: i32 = 20;
 pub const AI_INTEL_REPORT_ATTEMPT_ERROR_MAX_CHARS: usize = 4_000;
 pub const AI_INTEL_REPORT_ATTEMPT_RAW_RESPONSE_MAX_CHARS: usize = 8_000;
 pub const AI_INTEL_REPORT_PROMPT: &str = include_str!(
@@ -383,8 +402,7 @@ pub const AI_AGENT_REVIEW_RETRY_BASE_SEC: i64 = 10;
 pub const AI_AGENT_REVIEW_RETRY_MAX_SEC: i64 = 15 * 60;
 pub const AI_AGENT_REVIEW_CLAIM_LEASE_SEC: i64 = 10 * 60;
 pub const AI_AGENT_SSE_POLL_MS: u64 = 500;
-pub const AI_AGENT_ADMIN_REQUEST_LIMIT_DEFAULT: i32 = 100;
-pub const AI_AGENT_ADMIN_REQUEST_LIMIT_MAX: i32 = 500;
+pub const AI_AGENT_ADMIN_REQUEST_PAGE_SIZE: i32 = 20;
 pub const AI_AGENT_DISPATCHER_PORT_DEFAULT: u16 = 22031;
 pub const AI_AGENT_DISPATCHER_IDENTITY_FILE: &str =
     "/etc/echo/ai-agent/dispatcher_ed25519";
@@ -453,9 +471,7 @@ pub const AI_AGENT_MATTERMOST_CHAT_RETRY_MAX_SEC: i64 = 15 * 60;
 pub const AI_AGENT_MATTERMOST_CHAT_CLAIM_LEASE_SEC: i64 = 30;
 pub const AI_AGENT_MATTERMOST_CHAT_PROMPT_MAX_CHARS: usize = 12 * 1024;
 pub const ECHO_AUDIO_TRANSCRIPTION_CONCURRENCY: usize = 1;
-pub const ECHO_AUDIO_TRANSCRIPTION_RETENTION_DAYS: i64 = 2;
 pub const ECHO_AUDIO_TRANSCRIPTION_MAX_BYTES: i64 = 104_857_600;
-pub const ECHO_AUDIO_TRANSCRIPTION_CLEANUP_BATCH_SIZE: u64 = 100;
 pub const ECHO_AUDIO_TRANSCRIPTION_BACKFILL_BATCH_SIZE: u64 = 200;
 pub const ECHO_AUDIO_TRANSCRIPTION_ACTIVE_SLEEP_MS: u64 = 100;
 pub const ECHO_AUDIO_TRANSCRIPTION_IDLE_SLEEP_MS: u64 = 5_000;
@@ -694,6 +710,8 @@ pub const REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS: &str =
     "Звіт містить понад 1 млн. записів. Зменшіть період або звузьте фільтри.";
 pub const RER_DUTY_TEST_REPLAY_SOURCE_MAX: i64 = 10_000;
 pub const ANALYTICS_VERIFY_TIMEOUT_MS: u64 = 15_000;
+pub const ANALYTICS_HTTP_READ_TIMEOUT_MS: u64 = 60_000;
+pub const ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS: i64 = 10;
 pub const ANALYTICS_VERIFY_PGOPTIONS: &str = "-c default_transaction_read_only=on -c statement_timeout=15000 -c application_name=echo-analytics-verify";
 pub const RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX: i64 = 31_536_000;
 pub const RER_DUTY_TEST_REPLAY_COMMENT: &str = "[duplicate]";
@@ -837,6 +855,11 @@ pub const IMPORT_DIRECTION_FINDING_UUID: &str =
 pub const REDIS_HOST: &str = "localhost";
 pub const REDIS_PORT: u16 = 6379;
 pub const MESSENGER_WORKER_LONG_SLEEP_MS: u64 = 5000;
+pub const MESSENGER_ALERT_HISTORY_PAGE_SIZE: usize = 20;
+pub const MESSENGER_ALERT_MAX_SENDERS: usize = 20;
+pub const MESSENGER_ALERT_BATCH_SIZE: usize = 20;
+pub const MESSENGER_ALERT_POLL_SECONDS: u64 = 5;
+pub const MESSENGER_ALERT_SENDER_TIMEOUT_SECONDS: i64 = 90;
 pub const MESSENGER_WORKER_IDLE_SLEEP_MS: u64 = 100;
 pub const MESSENGER_WORKER_BATCH_SIZE: u64 = 100;
 pub const MESSENGER_RECONCILE_DUPLICATE_GROUP_LINK_LIMIT: u64 = 2;
@@ -1066,6 +1089,8 @@ pub const INBOX_COUNT_INDEXED_MAX_DAYS: i64 = 7;
 pub const INBOX_COUNT_SINGLEFLIGHT_SUCCESS_TTL_MS: u64 = 5_000;
 pub const INBOX_COUNT_SINGLEFLIGHT_STALE_SECS: u64 = 60;
 pub const INBOX_COUNT_SINGLEFLIGHT_MAX_ENTRIES: usize = 2_048;
+pub const NOTIFICATION_READ_BOUNDARY_TTL_MINUTES: i64 = 15;
+pub const NOTIFICATION_READ_BOUNDARY_MAX_PER_RECIPIENT: i64 = 8;
 pub const INBOX_MESSAGES_PAGE_LIMIT: usize = 20;
 pub const ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE: usize = 1_000;
 pub const ANALYTICS_INBOX_POSTGRES_BOUNDS_MAX_DAYS: i64 = 7;
@@ -1243,6 +1268,7 @@ DELETE FROM ai_callsign_feedback;
 DELETE FROM ai_callsign_feedback_summary;
 DELETE FROM ai_callsign_override;
 DELETE FROM ai_callsign_action;
+DELETE FROM ai_intel_report_engine_budget;
 DELETE FROM ai_position_feedback;
 DELETE FROM ai_position_link_job;
 DELETE FROM ai_position_knowledge_job;
@@ -1250,10 +1276,16 @@ DELETE FROM ai_position_knowledge;
 UPDATE ai_intel_report_settings
 SET quick_suggestion_enabled = false,
     quick_ai_engine_id = NULL,
+    fallback_ai_engine_id = NULL,
+    primary_timeout_secs = NULL,
+    fallback_timeout_secs = NULL,
+    total_timeout_secs = NULL,
     legacy_comment_cutoff = (now() at time zone 'utc'),
     updated_at = (now() at time zone 'utc')
 WHERE id = 1;
 DELETE FROM echo_gpu_transcription_queue;
+DELETE FROM echo_gpu_audio_chunk;
+DELETE FROM transcription_source;
 DELETE FROM gpu_config;
 DELETE FROM secret_group_user;
 DELETE FROM palitra_highlight_blacklist;
@@ -1296,6 +1328,14 @@ DELETE FROM sigint_peleng;
 DELETE FROM freq_location;
 DELETE FROM sigint_bookmark;
 DELETE FROM sigint_comment;
+DELETE FROM notification_read_boundary_receipt;
+DELETE FROM notification_read_boundary;
+DELETE FROM notification_read_boundary_completed;
+DELETE FROM messenger_alert_delivery;
+UPDATE messenger_alert_settings SET enabled = false, sender_datasource_ids = '{}' WHERE id = 1;
+DELETE FROM notification_receipt;
+DELETE FROM notification_event;
+DELETE FROM importance_operation;
 DELETE FROM sigint_important;
 DELETE FROM ai_intel_report_attempt;
 DELETE FROM signal_message_media;
@@ -2208,6 +2248,10 @@ pub const ATTACHMENT_MAX_ATTEMPTS: i32 = 8;
 pub const ATTACHMENT_SEARCH_LIMIT: i64 = 20;
 pub const ATTACHMENT_READ_LIMIT: i64 = 4;
 pub const ATTACHMENT_MAX_QUERY_CHARS: usize = 1_000;
+pub const ATTACHMENT_SEARCH_CHANGE_LIMIT: u64 = 1_000;
+pub const ATTACHMENT_SEARCH_CHANGE_RETENTION_SECS: u64 = 24 * 60 * 60;
+pub const ATTACHMENT_SEARCH_CHANGE_CLEANUP_INTERVAL_SECS: u64 = 60;
+pub const ATTACHMENT_SEARCH_CHANGE_CLEANUP_BATCH_SIZE: u64 = 500;
 pub const ATTACHMENT_MAX_RESULT_BYTES: usize = 250 * 1024 * 1024;
 
 pub const ATTACHMENT_MAX_INSPECTION_JOBS: i64 = 32;

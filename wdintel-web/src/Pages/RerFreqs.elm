@@ -1894,6 +1894,7 @@ freqsTableConfig shared model user =
                                     , orWithCoords = False
                                     , orWithoutCoords = False
                                     , search = ""
+                                    , searchMode = Nothing
                                     , metadataCc = []
                                     , metadataSender = []
                                     , metadataReceiver = []

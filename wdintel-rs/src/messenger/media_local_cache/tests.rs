@@ -299,6 +299,7 @@ async fn copied_references_extend_retention_and_serve_ranges_during_origin_outag
         .unwrap();
     assert!(unreferenced.is_empty());
     crate::messenger::media::delete_stored_media_files(
+        &env.dbx,
         &unreferenced,
         &[],
         &env.config,
@@ -319,6 +320,7 @@ async fn copied_references_extend_retention_and_serve_ranges_during_origin_outag
         .unwrap();
     assert_eq!(unreferenced.len(), 1);
     crate::messenger::media::delete_stored_media_files(
+        &env.dbx,
         &unreferenced,
         &[],
         &env.config,
