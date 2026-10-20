@@ -27,6 +27,10 @@ import type { MessageCardBotTagAction } from '../shared/message-card/message-car
 import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 import type { MessageTimeBasis } from '../../services/api/user-settings';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
+import type {
+  GroupFeedNavigationModel,
+  GroupScope,
+} from '../shared/group-navigation/group-navigation.types';
 
 export type AnalysisReportTaskRun = {
   id: number;
@@ -63,6 +67,7 @@ export type AnalysisDirectMessageNavigation = {
   targetMessageIndex: number;
   totalCount: number;
   focusActive: boolean;
+  highlightTarget?: boolean;
   contextLoading?: boolean;
   newestFirst: boolean;
   canLoadEarlier: boolean;
@@ -162,6 +167,7 @@ export type AnalysisMessagePageCursor = {
 
 export type AnalysisReloadOptions = {
   preserveMessagePage?: boolean;
+  showMessagesLoading?: boolean;
   messagePageIndex?: number;
   refreshMessageCounts?: boolean;
 };
@@ -218,6 +224,9 @@ export type AnalysisPageState = {
   isFilterSectionEmptyLoading: (section: AnalysisFilterSectionId, optionCount: number) => boolean;
   isFilterSectionStale: (section: AnalysisFilterSectionId) => boolean;
   groupInfos: Record<string, SignalGroupEntry>;
+  groupNavigation: GroupFeedNavigationModel;
+  unreadBoundaryMessageId: number | null;
+  dismissUnreadBoundary: () => void;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   includeOnlyNewFreqs: boolean;
   inboxReq: InboxMessagesReq | null;
@@ -237,11 +246,13 @@ export type AnalysisPageState = {
   groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
   groupsActivityLoading: boolean;
   hasLoadedInitialMessages: boolean;
+  groupScopeTransitionPending: boolean;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
   botTagAction: MessageCardBotTagAction | null;
   messageComments: Record<number, MessageComment[]>;
   messagesLoading: boolean;
+  showMessagesLoading: boolean;
   messagesOverallCount: number | null;
   messagesPaging: boolean;
   messagesTotalCount: number | null;
@@ -379,6 +390,9 @@ export type AnalysisPageActions = {
   setVisibleMessagesPageIndex: (pageIndex: number) => void;
   setRightSidebarTab: (tab: AnalysisSidebarTab) => void;
   toggleLeftPanel: () => void;
+  openLeftPanel: () => void;
+  selectGroupScope: (scope: GroupScope, oldestUnreadMessageRef?: string | null) => void;
+  onVisibleGroupMessages: (ids: readonly number[]) => void;
   toggleRightPanel: () => void;
   selectOnlyFreq: (freq: string) => void;
   openPointsOnMap: (etalons: string[], message: InboxMessage) => void;

@@ -11,6 +11,10 @@ type SidePanelToggleButtonProps = {
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  size?: number;
+  borderRadius?: number;
+  embedded?: boolean;
+  dividerColor?: string;
 };
 
 const INNER_X = 3;
@@ -171,7 +175,20 @@ export function RightPanelActiveIcon(props: SvgIconProps) {
 }
 
 export const SidePanelToggleButton = forwardRef<HTMLButtonElement, SidePanelToggleButtonProps>(
-  function SidePanelToggleButton({ side, active, label, onClick, disabled = false }, ref) {
+  function SidePanelToggleButton(
+    {
+      side,
+      active,
+      label,
+      onClick,
+      disabled = false,
+      size = 40,
+      borderRadius = 1,
+      embedded = false,
+      dividerColor,
+    },
+    ref,
+  ) {
     const Icon =
       side === 'left'
         ? active
@@ -195,21 +212,27 @@ export const SidePanelToggleButton = forwardRef<HTMLButtonElement, SidePanelTogg
                 theme.palette.mode === 'dark'
                   ? theme.palette.common.white
                   : theme.palette.common.black;
+              const borderColor = dividerColor ?? theme.palette.divider;
 
               return {
-                width: 40,
-                height: 40,
+                width: size,
+                height: size,
                 boxSizing: 'border-box',
-                borderRadius: 1,
-                border: '1px solid',
-                borderColor: theme.palette.divider,
+                borderRadius,
+                border: embedded ? 0 : '1px solid',
+                borderColor,
+                ...(embedded
+                  ? side === 'left'
+                    ? { borderRight: '1px solid', borderRightColor: borderColor }
+                    : { borderLeft: '1px solid', borderLeftColor: borderColor }
+                  : {}),
                 bgcolor: 'transparent',
                 color: active ? tone : theme.palette.text.secondary,
                 transition: 'color 0.15s ease',
 
                 '&:hover': {
                   bgcolor: 'transparent',
-                  borderColor: theme.palette.divider,
+                  borderColor,
                   color: tone,
                 },
 

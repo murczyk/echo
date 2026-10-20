@@ -62,12 +62,26 @@ const manageMessageDrawerPropsHistory = vi.hoisted(
       adaptiveEmbeddedForm?: boolean;
       fillEmbeddedSurface?: boolean;
       transparentEmbeddedSurface?: boolean;
+      initialGroupMasterKey?: string | null;
       initialFocusTarget?: HTMLElement | null;
+      initialGroupMasterKey?: string | null;
     }>,
 );
 
 vi.mock('@mui/material', () => ({
-  Badge: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Badge: ({
+    children,
+    variant,
+    invisible,
+  }: {
+    children: ReactNode;
+    variant?: string;
+    invisible?: boolean;
+  }) => (
+    <div data-badge-variant={variant} data-badge-invisible={String(invisible)}>
+      {children}
+    </div>
+  ),
   Box: forwardRef<HTMLDivElement, { children?: ReactNode } & Record<string, unknown>>(
     function BoxMock({ children, component = 'div', sx: _sx, ...props }, ref) {
       const Component = component as keyof HTMLElementTagNameMap;
@@ -91,14 +105,34 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  Button: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-    <button type="button" onClick={onClick}>
+  Button: ({
+    children,
+    onClick,
+    startIcon,
+    'aria-label': ariaLabel,
+    'data-analysis-filter-toggle': analysisFilterToggle,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    startIcon?: ReactNode;
+    'aria-label'?: string;
+    'data-analysis-filter-toggle'?: boolean;
+  } & Record<string, unknown>) => (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      data-analysis-filter-toggle={analysisFilterToggle || undefined}
+    >
+      {startIcon}
       {children}
     </button>
   ),
   Chip: ({ label }: { label?: ReactNode }) => <div>{label}</div>,
   CircularProgress: () => <div data-testid="circular-progress" />,
   ClickAwayListener: ({ children }: { children: ReactNode }) => children,
+  Collapse: ({ children, in: open }: { children: ReactNode; in?: boolean }) =>
+    open ? <div>{children}</div> : null,
   Drawer: ({
     anchor,
     open,
@@ -197,7 +231,16 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('@mui/material/styles', () => ({
-  useTheme: () => ({ breakpoints: { down: (key: string) => key } }),
+  useTheme: () => ({
+    breakpoints: { down: (key: string) => key },
+    palette: {
+      mode: 'dark',
+      action: { selected: '#2c2c2c' },
+      background: { default: '#121212' },
+      common: { black: '#000000', white: '#ffffff' },
+      text: { primary: '#ffffff' },
+    },
+  }),
 }));
 
 vi.mock('@mui/material/Alert', () => ({
@@ -440,6 +483,34 @@ function buildPage() {
     editTargetLoadState: { status: 'idle' },
     filtersLoading: false,
     groupInfos: {},
+    unreadBoundaryMessageId: null,
+    dismissUnreadBoundary: vi.fn(),
+    groupNavigation: {
+      groups: [
+        {
+          kind: 'all',
+          masterKey: null,
+          name: 'Всі групи',
+          unreadCount: 0,
+          oldestUnreadMessageRef: null,
+          latestCursor: null,
+        },
+      ],
+      scope: { kind: 'all' },
+      ready: true,
+      loading: false,
+      error: null,
+      select: vi.fn(),
+      acknowledge: vi.fn(),
+      selectedGroup: {
+        kind: 'all',
+        masterKey: null,
+        name: 'Всі групи',
+        unreadCount: 0,
+        oldestUnreadMessageRef: null,
+        latestCursor: null,
+      },
+    },
     includeOnlyNewFreqs: false,
     inboxReq: null,
     isDirty: false,
@@ -456,6 +527,7 @@ function buildPage() {
     groupsActivityLoadedPeriod: null,
     groupsActivityLoading: false,
     hasLoadedInitialMessages: true,
+    groupScopeTransitionPending: false,
     mapAttrs: {
       daterange: '',
       daterangeLoading: '',
@@ -567,6 +639,9 @@ function buildPage() {
     setRightSidebarTab: vi.fn(),
     showFreqOnMap: vi.fn(),
     toggleLeftPanel: vi.fn(),
+    openLeftPanel: vi.fn(),
+    selectGroupScope: vi.fn(),
+    onVisibleGroupMessages: vi.fn(),
     toggleReportTaskRunLogs: vi.fn(),
     toggleRightPanel: vi.fn(),
     toggleUnitFromMap: vi.fn(),
@@ -586,6 +661,7 @@ describe('RerAnalysisNeoPage', () => {
   const rendered: HTMLDivElement[] = [];
 
   beforeEach(() => {
+    window.history.replaceState({}, '', window.location.pathname);
     useRerAnalysisNeoPageMock.mockReset();
     useMediaQueryMock.mockReset();
     useMediaQueryMock.mockReturnValue(false);
@@ -667,6 +743,24 @@ describe('RerAnalysisNeoPage', () => {
     expect(container.textContent).toContain('skeleton');
     expect(container.querySelector('[data-testid="circular-progress"]')).toBeNull();
     expect(container.querySelector('[data-testid="messages-pane"]')).toBeNull();
+  });
+
+  it('replaces stale group messages with skeletons while the selected group loads', async () => {
+    const page = buildPage();
+    page.messages = [[42, { text: 'Message from the previous group' }]] as never;
+    page.groupScopeTransitionPending = true;
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
+    expect(messagesPanePropsHistory.at(-1)?.isLoading).toBe(true);
   });
 
   it('shows message skeletons during a refresh without replacing the mounted feed', async () => {
@@ -766,6 +860,7 @@ describe('RerAnalysisNeoPage', () => {
     expect(container.querySelector('[data-testid="manage-message-drawer"]')).not.toBeNull();
     expect(useRerAnalysisNeoPageMock.mock.results[0]?.value.reload).toHaveBeenCalledWith({
       preserveMessagePage: true,
+      showMessagesLoading: false,
     });
     expect(notifyMock).toHaveBeenCalledWith({
       message: 'Повідомлення успішно створено.',
@@ -791,7 +886,9 @@ describe('RerAnalysisNeoPage', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
     });
 
-    expect(workspace?.style.gridTemplateColumns).toBe('0px minmax(0, 1fr) minmax(0, 1fr)');
+    expect(workspace?.style.gridTemplateColumns).toBe(
+      '0px minmax(0, 1fr) clamp(640px, 48%, 800px)',
+    );
     await act(async () => root.unmount());
   });
 
@@ -1004,6 +1101,7 @@ describe('RerAnalysisNeoPage', () => {
   it('preserves the current message page when the header refresh button is clicked', async () => {
     const page = buildPage();
     page.countsLoading = false;
+    page.messagesTotalLoading = false;
     useRerAnalysisNeoPageMock.mockReturnValue(page);
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -1044,8 +1142,105 @@ describe('RerAnalysisNeoPage', () => {
     expect(page.setCenterTab).not.toHaveBeenCalled();
     expect(manageMessageDrawerPropsHistory.at(-1)).toMatchObject({
       open: true,
-      intentKey: 'create-message',
+      intentKey: 'create-message:all',
     });
+    root.unmount();
+  });
+
+  it('prefills create with the dedicated Analysis group', async () => {
+    const page = buildPage();
+    const group = {
+      kind: 'group' as const,
+      masterKey: 'group-b',
+      name: 'Bravo',
+      ignoreOperativny: false,
+      unreadCount: 2,
+      oldestUnreadMessageRef: 'message-b',
+      lastActivityAt: 1,
+      latestCursor: { createdAt: 1, messageId: 2 },
+    };
+    page.groupNavigation = {
+      ...page.groupNavigation,
+      groups: [page.groupNavigation.groups[0], group],
+      scope: { kind: 'group', masterKey: 'group-b' },
+      selectedGroup: group,
+    };
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
+    });
+
+    expect(manageMessageDrawerPropsHistory.at(-1)).toMatchObject({
+      intentKey: 'create-message:group-b',
+      initialGroupMasterKey: 'group-b',
+    });
+    root.unmount();
+  });
+
+  it('does not load the hidden group facet for a dedicated group', async () => {
+    const page = buildPage();
+    const group = {
+      kind: 'group' as const,
+      masterKey: 'group-b',
+      name: 'Bravo',
+      ignoreOperativny: false,
+      unreadCount: 2,
+      oldestUnreadMessageRef: 'message-b',
+      lastActivityAt: 1,
+      latestCursor: { createdAt: 1, messageId: 2 },
+    };
+    page.groupNavigation = {
+      ...page.groupNavigation,
+      groups: [page.groupNavigation.groups[0], group],
+      scope: { kind: 'group', masterKey: 'group-b' },
+      selectedGroup: group,
+    };
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    const filterButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Фільтри',
+    );
+    await act(async () => filterButton?.click());
+
+    expect(page.loadFilterSection).toHaveBeenCalledWith('tags');
+    expect(page.loadFilterSection).toHaveBeenCalledWith('senders');
+    expect(page.loadFilterSection).not.toHaveBeenCalledWith('groups');
+    root.unmount();
+  });
+
+  it('shows active filters as a dot without a numeric badge', async () => {
+    const page = buildPage();
+    page.queryState = {
+      ...emptyQueryState(),
+      sendersSelected: ['sender-a'],
+    };
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    const filterButton = container.querySelector<HTMLButtonElement>(
+      '[data-analysis-filter-toggle]',
+    );
+    expect(filterButton?.getAttribute('aria-label')).toBe('Фільтри (активні)');
+    expect(
+      filterButton?.querySelector('[data-badge-variant]')?.getAttribute('data-badge-variant'),
+    ).toBe('dot');
+    expect(filterButton?.textContent).toBe('Фільтри');
     root.unmount();
   });
 
@@ -1274,7 +1469,7 @@ describe('RerAnalysisNeoPage', () => {
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
     });
-    expect(manageMessageDrawerPropsHistory.at(-1)?.intentKey).toBe('create-message');
+    expect(manageMessageDrawerPropsHistory.at(-1)?.intentKey).toBe('create-message:all');
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="analysis-create-report"]')?.click();
@@ -1308,7 +1503,7 @@ describe('RerAnalysisNeoPage', () => {
     root.unmount();
   });
 
-  it('keeps filters in the drawer while editing until the 1600px fit threshold', async () => {
+  it('hides overlay filters while editing until the 1600px fit threshold', async () => {
     const page = buildPage();
     page.editorMessage = { id: 42, message: { messageUid: 'm-42' } as never };
     useRerAnalysisNeoPageMock.mockReturnValue(page);
@@ -1335,7 +1530,7 @@ describe('RerAnalysisNeoPage', () => {
     const root = createRoot(container);
 
     await act(async () => root.render(<RerAnalysisNeoPage />));
-    expect(container.querySelector('[data-testid="analysis-drawer-left"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="analysis-drawer-left"]')).toBeNull();
 
     root.unmount();
     width = 1600;
@@ -1348,7 +1543,7 @@ describe('RerAnalysisNeoPage', () => {
     wideRoot.unmount();
   });
 
-  it('moves inline filters into the drawer without closing them', async () => {
+  it('temporarily hides overlay filters without closing them', async () => {
     const page = buildPage();
     useRerAnalysisNeoPageMock.mockReturnValue(page);
     useMediaQueryMock.mockImplementation((query) => query === '(min-width:1024px)');
@@ -1378,7 +1573,7 @@ describe('RerAnalysisNeoPage', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="create-message-fab"]')?.click();
     });
 
-    expect(container.querySelector('[data-testid="analysis-drawer-left"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="analysis-drawer-left"]')).toBeNull();
     expect(page.toggleLeftPanel).not.toHaveBeenCalled();
     root.unmount();
   });

@@ -69,11 +69,45 @@ export function useRerDutyFeedCrud(
     [messageFeeds, applyFilter],
   );
 
+  const setGroupScope = useCallback(
+    (feedId: string, groupScopeMasterKey: string | null) => {
+      const currentFeed = messageFeeds.find((feed) => feed.id === feedId);
+      if (!currentFeed || (currentFeed.groupScopeMasterKey ?? null) === groupScopeMasterKey) {
+        return;
+      }
+      markFeedReloadRequested(feedId);
+      setMessageFeeds((previous) => {
+        const next = previous.map((feed) =>
+          feed.id === feedId
+            ? {
+                ...feed,
+                groupScopeMasterKey,
+                items: [],
+                loading: true,
+                loadingOlder: false,
+                hasReachedStart: false,
+                readIds: new Set<number>(),
+                windowedUnreadItems: new Map<number, number>(),
+                unresolvedUnreadIds: undefined,
+                unresolvedUnreadCount: 0,
+                unreadCount: 0,
+                pendingNewerItems: [],
+              }
+            : feed,
+        );
+        persistStateToUrl(next);
+        return next;
+      });
+    },
+    [markFeedReloadRequested, messageFeeds, persistStateToUrl, setMessageFeeds],
+  );
+
   const createMessageFeed = useCallback(() => {
     const id = generateMessageFeedId();
     const newFeed: MessageFeedState = {
       id,
       filter: emptyFilter(),
+      groupScopeMasterKey: null,
       items: [],
       loading: true,
       loadingOlder: false,
@@ -108,5 +142,12 @@ export function useRerDutyFeedCrud(
     [messageFeeds, onFeedRemoved, setMessageFeeds, persistStateToUrl],
   );
 
-  return { applyFilter, toggleGroup, selectAllGroups, createMessageFeed, removeMessageFeed };
+  return {
+    applyFilter,
+    toggleGroup,
+    selectAllGroups,
+    setGroupScope,
+    createMessageFeed,
+    removeMessageFeed,
+  };
 }

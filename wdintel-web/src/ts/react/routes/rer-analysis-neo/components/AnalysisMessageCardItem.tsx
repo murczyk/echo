@@ -40,10 +40,12 @@ function filterOtherMessageComments(
   });
 }
 type AnalysisMessageCardItemProps = {
+  unreadBoundary?: boolean;
   authUserName: string | null;
   currentUserLogin: string | null;
   copiedFeedbackId: string | null;
   groupInfos: Record<string, SignalGroupEntry>;
+  hideGroupName?: boolean;
   id: number;
   message: InboxMessage;
   messageComments: MessageComment[];
@@ -89,11 +91,13 @@ type AnalysisMessageCardItemProps = {
 };
 
 export const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
+  unreadBoundary,
   authUserName,
   currentUserLogin,
   copiedFeedbackId,
   botTagAction,
   groupInfos,
+  hideGroupName = false,
   id,
   message,
   messageComments,
@@ -142,11 +146,13 @@ export const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
 
   return (
     <AnalysisMessageCard
+      unreadBoundary={unreadBoundary}
       id={id}
       msg={message}
       referenceTimeMs={referenceTimeMs}
       authUserName={authUserName}
       groupName={labels.groupName}
+      hideGroupName={hideGroupName}
       reportGroupInfos={groupInfos}
       senderName={labels.senderName}
       copiedFeedbackId={copiedFeedbackId}

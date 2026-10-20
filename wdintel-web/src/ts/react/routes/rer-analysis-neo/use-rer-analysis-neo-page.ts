@@ -21,6 +21,7 @@ import {
   createResetQueryState,
   adjustQueryDateRangeForDirectMessage,
   hasMeaningfulUiFiltersBeyondDateRange,
+  hasQueryStateInWindow,
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
   normalizeQueryState,
@@ -30,7 +31,9 @@ import {
   parseNewestFirstFromWindow,
   parseMessagesPageIndexFromWindow,
   parseMessageUidFromWindow,
+  readAnalysisGroupScopeFromUrl,
   removeMessageUidFromWindowUrl,
+  writeAnalysisGroupScopeToUrl,
   writeMessagesPageIndexToWindowUrl,
 } from './helpers';
 import { fetchInboxWindow } from '../../services/api/inbox-messages';
@@ -56,6 +59,25 @@ import { getAnalysisSidebarTabs, type AnalysisCenterTab, type AnalysisSidebarTab
 import { fetchAnalysisCallsignFrequencyMatches } from '../../services/api/analysis';
 import { toErrorMessage } from './use-analysis-data.shared';
 import { mergeMessageWindow } from '../shared/message-feed/windowing';
+import {
+  isAnalysisGroupViewAcknowledgeable,
+  useGroupFeedNavigation,
+  useGroupFeedReadReceipts,
+  type GroupScope,
+} from '../shared/group-navigation';
+import {
+  extractAnalysisScopeFilters,
+  persistAnalysisScopeFilters,
+  readAnalysisScopeFilters,
+} from './analysis-scope-filter-state';
+import { useGroupUnreadBoundary } from '../shared/group-navigation/group-unread-boundary';
+
+function groupScopesEqual(left: GroupScope, right: GroupScope): boolean {
+  return (
+    left.kind === right.kind &&
+    (left.kind === 'all' || (right.kind === 'group' && left.masterKey === right.masterKey))
+  );
+}
 
 function initState(
   parsedQueryState: AnalysisQueryState,
@@ -132,15 +154,29 @@ export function useRerAnalysisNeoPage(
 ): AnalysisPageViewModel {
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
-  const isStackedFiltersLayout = useMediaQuery(theme.breakpoints.down('lg'));
   const initialRadioFeaturesAllowed = canUseRadioFeatures(authUserRoles);
   const [initialPanelQueryState] = useState(parseAnalysisPanelQueryStateFromWindow);
   const [initialNow] = useState(() => new Date());
   const [initialParsedQueryState] = useState(parseQueryStateFromWindow);
-  const [initialQueryState] = useState<AnalysisQueryState>(() =>
-    initState(initialParsedQueryState, initialNow, initialRadioFeaturesAllowed),
-  );
+  const [initialGroupScope] = useState(readAnalysisGroupScopeFromUrl);
+  const [initialHasQueryState] = useState(hasQueryStateInWindow);
+  const [initialQueryState] = useState<AnalysisQueryState>(() => {
+    const state = initState(initialParsedQueryState, initialNow, initialRadioFeaturesAllowed);
+    if (initialHasQueryState) return state;
+    const storedFilters = readAnalysisScopeFilters(initialGroupScope);
+    if (storedFilters == null) return state;
+    return normalizeQueryState({
+      ...state,
+      ...storedFilters,
+      groupsSelected:
+        initialGroupScope.kind === 'group'
+          ? []
+          : (storedFilters.groupsSelected ?? state.groupsSelected),
+    });
+  });
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
+  const [groupScope, setGroupScope] = useState<GroupScope>(initialGroupScope);
+  const groupScopeTransitionRequestedRef = useRef(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentUserStatus, setCurrentUserStatus] = useState<'loading' | 'success' | 'error'>(
     'loading',
@@ -167,10 +203,12 @@ export function useRerAnalysisNeoPage(
   const [selectedCenterTab, setCenterTabState] = useState<AnalysisCenterTab>('messages');
   const [error, setError] = useState<string | null>(null);
   const [directMessageError, setDirectMessageError] = useState<string | null>(null);
-  const [leftPanelOpen, setLeftPanelOpen] = useState(
-    () => initialPanelQueryState.leftPanelOpen ?? !isStackedFiltersLayout,
+  const [leftPanelOpenOverride, setLeftPanelOpen] = useState(
+    () => initialPanelQueryState.leftPanelOpen,
   );
-  const leftPanelTouchedRef = useRef(initialPanelQueryState.leftPanelOpen != null);
+  const leftPanelStateReady = leftPanelOpenOverride != null || systemSettingsStatus === 'success';
+  const leftPanelOpen =
+    leftPanelOpenOverride ?? (systemSettingsStatus === 'success' && hideNetworks);
   const [newestFirst, setNewestFirst] = useState(parseNewestFirstFromWindow);
   const [initialMessagesPageIndex] = useState(parseMessagesPageIndexFromWindow);
   const initialMessagesPageRestoredRef = useRef(initialMessagesPageIndex === 0);
@@ -180,6 +218,7 @@ export function useRerAnalysisNeoPage(
   const [messageViewportPreservationKey, setMessageViewportPreservationKey] = useState(0);
   const [messageEdgeLoadRetryKey, setMessageEdgeLoadRetryKey] = useState(0);
   const [messageViewportPreserving, setMessageViewportPreserving] = useState(false);
+  const [showMessagesLoading, setShowMessagesLoading] = useState(true);
   const messageViewportPreservationRequestRef = useRef(0);
   const messageViewportCaptureRef = useRef<(() => void) | null>(null);
   const setMessageViewportCapture = useCallback((capture: (() => void) | null) => {
@@ -211,7 +250,9 @@ export function useRerAnalysisNeoPage(
   const [selectedSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(() =>
     initialPanelQueryState.rightPanelOpen ? 'callsigns' : null,
   );
-  const [targetMessageUid] = useState(parseMessageUidFromWindow);
+  const [targetMessageUid, setTargetMessageUid] = useState(parseMessageUidFromWindow);
+  const [targetMessageQueryState, setTargetMessageQueryState] = useState(initialQueryState);
+  const [highlightTargetMessage, setHighlightTargetMessage] = useState(true);
   const [targetMessageWindow, setTargetMessageWindow] = useState<InboxWindowRsp | null>(null);
   const [targetMessageLoading, setTargetMessageLoading] = useState(targetMessageUid !== null);
   const [targetMessageContextLoading, setTargetMessageContextLoading] = useState(false);
@@ -327,6 +368,13 @@ export function useRerAnalysisNeoPage(
       hideNetworks,
     ],
   );
+  const scopedEffectiveQueryState = useMemo(
+    () =>
+      groupScope.kind === 'group'
+        ? { ...effectiveQueryState, groupsSelected: [groupScope.masterKey] }
+        : effectiveQueryState,
+    [effectiveQueryState, groupScope],
+  );
   useEffect(() => {
     if (dutySettings.loadInProgress) return;
     setQueryState((current) =>
@@ -339,12 +387,15 @@ export function useRerAnalysisNeoPage(
     () =>
       effectiveRadioQuery(
         {
-          ...initialQueryState,
+          ...targetMessageQueryState,
           deviceNamesSelected:
-            deviceAccess.status === 'denied' ? [] : initialQueryState.deviceNamesSelected,
+            deviceAccess.status === 'denied' ? [] : targetMessageQueryState.deviceNamesSelected,
           onlyWithNetwork:
-            rerReportFilterAccess.status === 'denied' ? false : initialQueryState.onlyWithNetwork,
-          groupsSelected: queryState.groupsSelected,
+            rerReportFilterAccess.status === 'denied'
+              ? false
+              : targetMessageQueryState.onlyWithNetwork,
+          groupsSelected:
+            groupScope.kind === 'group' ? [groupScope.masterKey] : queryState.groupsSelected,
           freqsSelected: queryState.freqsSelected,
           networksSelected: hideNetworks ? [] : queryState.networksSelected,
           withoutNetwork: hideNetworks ? false : queryState.withoutNetwork,
@@ -353,7 +404,7 @@ export function useRerAnalysisNeoPage(
         radioFeaturesAllowed,
       ),
     [
-      initialQueryState,
+      targetMessageQueryState,
       radioFeaturesAllowed,
       deviceAccess.status,
       rerReportFilterAccess.status,
@@ -363,12 +414,13 @@ export function useRerAnalysisNeoPage(
       queryState.networksSelected,
       queryState.withoutNetwork,
       dutySettings.messageSortBy,
+      groupScope,
     ],
   );
 
   const directMessageDefaultsPending =
     currentUserStatus === 'loading' ||
-    (rerReportFilterAccessPending && initialQueryState.onlyWithNetwork) ||
+    (rerReportFilterAccessPending && targetMessageQueryState.onlyWithNetwork) ||
     queryStateWithResolvedRoleDate !== queryState ||
     queryState.messageTimeBasis !== dutySettings.messageSortBy;
 
@@ -409,7 +461,10 @@ export function useRerAnalysisNeoPage(
         fromDateTimeStr: period.fromDateTimeStr,
         toDateTimeStr: period.toDateTimeStr,
       }));
-      pushQueryStateToUrl(period, newestFirst, { leftPanelOpen, rightPanelOpen });
+      pushQueryStateToUrl(period, newestFirst, {
+        leftPanelOpen: leftPanelStateReady ? leftPanelOpen : null,
+        rightPanelOpen,
+      });
     };
     let periodAdjusted = false;
     const restorePeriod = () => {
@@ -533,6 +588,96 @@ export function useRerAnalysisNeoPage(
     clearTargetMessageFocus();
   }, [clearTargetMessageFocus]);
 
+  const selectGroupScope = useCallback(
+    (
+      scope: GroupScope,
+      oldestUnreadMessageRef: string | null = null,
+      options: { replace?: boolean } = {},
+    ) => {
+      clearTargetMessageContext();
+      setTargetMessageUid(null);
+      let nextQueryState = queryState;
+      if (!groupScopesEqual(groupScope, scope)) {
+        groupScopeTransitionRequestedRef.current = true;
+        persistAnalysisScopeFilters(groupScope, queryState);
+        const storedFilters = readAnalysisScopeFilters(scope);
+        const defaultFilters = extractAnalysisScopeFilters(
+          createResetQueryState(new Date(), radioFeaturesAllowed),
+        );
+        nextQueryState = normalizeQueryState({
+          ...queryState,
+          ...defaultFilters,
+          ...storedFilters,
+          groupsSelected:
+            scope.kind === 'group'
+              ? []
+              : (storedFilters?.groupsSelected ?? defaultFilters.groupsSelected ?? []),
+        });
+        setQueryState(nextQueryState);
+      }
+      setGroupScope(scope);
+      writeAnalysisGroupScopeToUrl(scope, options);
+      if (scope.kind !== 'group' || oldestUnreadMessageRef == null) return;
+      setTargetMessageQueryState(nextQueryState);
+      directQueryBoundaryRef.current = {
+        fromDateTimeStr: nextQueryState.fromDateTimeStr,
+        toDateTimeStr: nextQueryState.toDateTimeStr,
+        search: nextQueryState.search,
+        searchMode: nextQueryState.searchMode,
+      };
+      setHighlightTargetMessage(false);
+      setTargetMessageUid(oldestUnreadMessageRef);
+      setTargetMessageContextActive(true);
+      setTargetMessageFocusActive(true);
+      setTargetMessageLoading(true);
+    },
+    [clearTargetMessageContext, groupScope, queryState, radioFeaturesAllowed],
+  );
+
+  useEffect(() => {
+    persistAnalysisScopeFilters(groupScope, queryState);
+  }, [groupScope, queryState]);
+  const groupNavigation = useGroupFeedNavigation({
+    enabled: leftPanelOpen,
+    resolveSelectedGroupWhenHidden: true,
+    scope: groupScope,
+    onSelect: selectGroupScope,
+    onError: (groupError) => setDirectMessageError(toErrorMessage(groupError)),
+  });
+  useEffect(() => {
+    if (!groupNavigation.ready || groupScope.kind !== 'group') return;
+    const groupIsAvailable = groupNavigation.groups.some(
+      (group) => group.kind === 'group' && group.masterKey === groupScope.masterKey,
+    );
+    if (groupIsAvailable) return;
+    setDirectMessageError('Обрана група більше недоступна.');
+    selectGroupScope({ kind: 'all' }, null, { replace: true });
+  }, [groupNavigation.groups, groupNavigation.ready, groupScope, selectGroupScope]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      clearTargetMessageContext();
+      setTargetMessageUid(null);
+      const nextGroupScope = readAnalysisGroupScopeFromUrl();
+      if (!groupScopesEqual(groupScope, nextGroupScope)) {
+        groupScopeTransitionRequestedRef.current = true;
+      }
+      persistAnalysisScopeFilters(groupScope, queryState);
+      const historyState = initState(parseQueryStateFromWindow(), new Date(), radioFeaturesAllowed);
+      setQueryState((current) =>
+        normalizeQueryState({
+          ...historyState,
+          messageTimeBasis: current.messageTimeBasis,
+          radioFeaturesAllowed: current.radioFeaturesAllowed,
+          groupsSelected: nextGroupScope.kind === 'group' ? [] : historyState.groupsSelected,
+        }),
+      );
+      setGroupScope(nextGroupScope);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [clearTargetMessageContext, groupScope, queryState, radioFeaturesAllowed]);
+
   const onLinkedMessageMounted = useCallback((messageId: number) => {
     if (pendingLinkedMessageLandingRef.current?.messageId === messageId) {
       pendingLinkedMessageLandingRef.current.resolve(true);
@@ -582,7 +727,6 @@ export function useRerAnalysisNeoPage(
       targetMessageContextResponsePending,
     focusedWindow: targetMessageWindow,
     focusedMessageActive: targetMessageContextActive,
-    leftPanelOpen,
     centerTab,
     newestFirst,
     onBeforeRealtimeMessageListChange: preserveMessageViewportForRealtime,
@@ -592,14 +736,46 @@ export function useRerAnalysisNeoPage(
     rightSidebarVisible: rightPanelOpen,
     rightSidebarTab,
     shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
-    queryState: effectiveQueryState,
+    queryState: scopedEffectiveQueryState,
     hideNetworks,
   });
+  const groupScopeTransitionPending =
+    groupScopeTransitionRequestedRef.current && !data.messagesLoadedForCurrentQuery;
+  const unreadBoundary = useGroupUnreadBoundary({
+    key: JSON.stringify([groupScope, effectiveQueryState]),
+    loading: groupScopeTransitionPending || data.messagesLoading || targetMessageLoading,
+    groups: groupNavigation.groups.flatMap((group) =>
+      group.kind === 'group' &&
+      (groupScope.kind === 'all' || group.masterKey === groupScope.masterKey)
+        ? [group]
+        : [],
+    ),
+    ready: groupNavigation.ready,
+    messages: data.messages,
+  });
+  const onVisibleGroupMessages = useGroupFeedReadReceipts({
+    enabled:
+      centerTab === 'messages' &&
+      !groupScopeTransitionPending &&
+      !data.messagesLoading &&
+      !targetMessageLoading &&
+      !targetMessageContextLoading &&
+      isAnalysisGroupViewAcknowledgeable(effectiveQueryState),
+    groups: groupNavigation.groups,
+    messages: data.messages,
+    acknowledge: groupNavigation.acknowledge,
+  });
+  useEffect(() => {
+    if (data.messagesLoadedForCurrentQuery) {
+      groupScopeTransitionRequestedRef.current = false;
+    }
+  }, [data.messagesLoadedForCurrentQuery, groupScope]);
   dataMessagesRef.current = data.messages;
   const reload = useCallback(
     (options: Parameters<typeof data.reload>[0] = {}) => {
       const requestId = messageViewportPreservationRequestRef.current + 1;
       messageViewportPreservationRequestRef.current = requestId;
+      setShowMessagesLoading(options.showMessagesLoading !== false);
       const preserveMessagePage = options.preserveMessagePage === true;
       if (!preserveMessagePage) {
         setMessageViewportPreserving(false);
@@ -613,6 +789,7 @@ export function useRerAnalysisNeoPage(
         : options;
       void Promise.resolve(data.reload(reloadOptions)).finally(() => {
         if (messageViewportPreservationRequestRef.current === requestId) {
+          setShowMessagesLoading(true);
           if (preserveMessagePage) setMessageViewportPreserving(false);
           setMessageEdgeLoadRetryKey((current) => current + 1);
         }
@@ -878,9 +1055,9 @@ export function useRerAnalysisNeoPage(
   }, []);
 
   useEffect(() => {
-    if (leftPanelTouchedRef.current) return;
-    setLeftPanelOpen(!isStackedFiltersLayout);
-  }, [isStackedFiltersLayout]);
+    if (systemSettingsStatus !== 'success') return;
+    setLeftPanelOpen((current) => current ?? hideNetworks);
+  }, [hideNetworks, systemSettingsStatus]);
 
   const showMapDeepLinkAppliedRef = useRef(false);
   useEffect(() => {
@@ -1021,8 +1198,18 @@ export function useRerAnalysisNeoPage(
 
   useEffect(() => {
     if (deviceAccess.status === 'loading' || deviceAccess.status === 'error') return;
-    pushQueryStateToUrl(effectiveQueryState, newestFirst, { leftPanelOpen, rightPanelOpen });
-  }, [deviceAccess.status, effectiveQueryState, leftPanelOpen, newestFirst, rightPanelOpen]);
+    pushQueryStateToUrl(effectiveQueryState, newestFirst, {
+      leftPanelOpen: leftPanelStateReady ? leftPanelOpen : null,
+      rightPanelOpen,
+    });
+  }, [
+    deviceAccess.status,
+    effectiveQueryState,
+    leftPanelOpen,
+    leftPanelStateReady,
+    newestFirst,
+    rightPanelOpen,
+  ]);
 
   const toggleUnitFromMap = useCallback(
     (unitName: string | null) => {
@@ -1171,8 +1358,10 @@ export function useRerAnalysisNeoPage(
   );
 
   const toggleLeftPanel = useCallback(() => {
-    leftPanelTouchedRef.current = true;
-    setLeftPanelOpen((current) => !current);
+    setLeftPanelOpen((current) => !(current ?? leftPanelOpen));
+  }, [leftPanelOpen]);
+  const openLeftPanel = useCallback(() => {
+    setLeftPanelOpen(true);
   }, []);
 
   const toggleRightPanel = useCallback(() => {
@@ -1192,13 +1381,10 @@ export function useRerAnalysisNeoPage(
 
   useEffect(() => {
     const sections = new Set<AnalysisFilterSectionId>();
-    if (leftPanelOpen) {
-      (['tags', 'groups', 'senders'] as const).forEach((section) => sections.add(section));
-    }
     if (rightPanelOpen && rightSidebarTab === 'stats') sections.add('groups');
     if (sections.size === 0) return;
     void Promise.all(Array.from(sections, (section) => data.loadFilterSection(section)));
-  }, [data.loadFilterSection, leftPanelOpen, rightPanelOpen, rightSidebarTab]);
+  }, [data.loadFilterSection, rightPanelOpen, rightSidebarTab]);
 
   const canResetFilters = useMemo(() => {
     const queryStateKey = queryStateUiComparisonKey(queryState);
@@ -1267,6 +1453,7 @@ export function useRerAnalysisNeoPage(
       targetMessageIndex,
       totalCount: targetMessageWindow.messagesBefore + targetMessageWindow.messagesAfter + 1,
       focusActive: targetMessageFocusActive,
+      highlightTarget: highlightTargetMessage,
       contextLoading,
       newestFirst,
       canLoadEarlier: data.focusedHasMoreEarlier,
@@ -1287,6 +1474,7 @@ export function useRerAnalysisNeoPage(
     data.loadFocusedEarlier,
     data.loadFocusedLater,
     newestFirst,
+    highlightTargetMessage,
     targetMessageWindow,
     targetMessageContextActive,
     targetMessageContextLoading,
@@ -1340,12 +1528,16 @@ export function useRerAnalysisNeoPage(
     isFilterSectionEmptyLoading: data.isFilterSectionEmptyLoading,
     isFilterSectionStale: data.isFilterSectionStale,
     groupInfos,
+    groupNavigation,
+    unreadBoundaryMessageId: unreadBoundary.messageId,
+    dismissUnreadBoundary: unreadBoundary.dismiss,
     groupsActivityPeriod: data.groupsActivityPeriod,
     groupsActivity: data.groupsActivity,
     groupsActivityLoadedFreq: data.groupsActivityLoadedFreq,
     groupsActivityLoadedPeriod: data.groupsActivityLoadedPeriod,
     groupsActivityLoading: data.groupsActivityLoading,
     hasLoadedInitialMessages: data.hasLoadedInitialMessages,
+    groupScopeTransitionPending,
     includeOnlyNewFreqs: effectiveQueryState.includeOnlyNewFreqs,
     inboxReq: data.inboxReq,
     isDirty: savedFilters.isDirty,
@@ -1358,6 +1550,7 @@ export function useRerAnalysisNeoPage(
     messageActionLoading: data.messageActionLoading,
     botTagAction: data.botTagAction,
     messagesLoading: targetMessageLoading || data.messagesLoading,
+    showMessagesLoading,
     messagesOverallCount: data.messagesOverallCount,
     messagesPaging: data.messagesPaging,
     messagesTotalCount: directMessageNavigation?.totalCount ?? data.messagesTotalCount,
@@ -1476,6 +1669,9 @@ export function useRerAnalysisNeoPage(
     setSavedFilterName: savedFilters.setSavedFilterName,
     showFreqOnMap,
     toggleLeftPanel,
+    openLeftPanel,
+    selectGroupScope,
+    onVisibleGroupMessages,
     toggleRightPanel,
     toggleUnitFromMap,
     saveEditor: editor.saveEditor,

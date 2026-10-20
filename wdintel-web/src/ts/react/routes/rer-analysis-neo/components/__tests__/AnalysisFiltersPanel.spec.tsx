@@ -661,6 +661,21 @@ describe('AnalysisFiltersPanel', () => {
     ).toBe(true);
   });
 
+  it('hides only the group filter for a dedicated group feed', async () => {
+    rendered.push(
+      await renderComponent({
+        ...buildProps(),
+        hideGroupSelection: true,
+      }),
+    );
+
+    const labels = analysisFilterFieldSpy.mock.calls.map(
+      ([callProps]) => (callProps as { label?: string }).label,
+    );
+    expect(labels).not.toContain('Групи');
+    expect(labels).toContain('Відправники');
+  });
+
   it('uses the network stats label and sorts networks by it', async () => {
     const props = buildProps({
       networks: [buildNetwork(12, 'управління'), buildNetwork(13, 'відділ')],

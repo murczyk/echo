@@ -15,7 +15,7 @@ function isMessageId(messageId: unknown): messageId is number {
   return typeof messageId === 'number' && Number.isInteger(messageId);
 }
 
-function inboxChangedEvents(detail: unknown): InboxChangedEvent[] {
+export function inboxChangedEvents(detail: unknown): InboxChangedEvent[] {
   if (detail == null || typeof detail !== 'object') return [];
   const rawEvents = (detail as { events?: unknown }).events;
   if (Array.isArray(rawEvents)) {

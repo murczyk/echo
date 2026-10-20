@@ -24,6 +24,7 @@ import {
   ManageMessageDrawer,
   type ManageMessageEditorHandle,
 } from '../shared/manage-message/ManageMessageDrawer';
+import { focusAfterEditorSurfacesClose } from '../shared/manage-message/focus-restoration';
 import {
   MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
   MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
@@ -31,6 +32,10 @@ import {
 } from '../shared/manage-message/ManageMessageEditorSurface';
 import { getAnalysisCenterTabs } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
+import {
+  parseAnalysisPanelQueryStateFromWindow,
+  replaceAnalysisPanelQueryStateInUrl,
+} from './helpers';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 import { MessageDeviceAccessProvider } from '../shared/message-card/MessageDeviceAccess';
@@ -57,6 +62,14 @@ export function RerAnalysisNeoPage({
   const analysisDebugEnabled = useAnalysisDebugEnabled();
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const [createMessageGroupMasterKey, setCreateMessageGroupMasterKey] = useState<string | null>(
+    null,
+  );
+  const [initialFilterPanelOpen] = useState(
+    () => parseAnalysisPanelQueryStateFromWindow().filterPanelOpen,
+  );
+  const [filterPanelOpen, setFilterPanelOpen] = useState(initialFilterPanelOpen ?? false);
+  const filterPanelTouchedRef = useRef(initialFilterPanelOpen != null);
   const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const editorRef = useRef<ManageMessageEditorHandle>(null);
   const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
@@ -80,6 +93,7 @@ export function RerAnalysisNeoPage({
   const messagesPanelId = `${centerTabsId}-messages-panel`;
   const summaryPanelId = `${centerTabsId}-summary-panel`;
   const mapPanelId = `${centerTabsId}-map-panel`;
+  const filtersPanelId = `${centerTabsId}-filters-panel`;
   const keepDirectMessageVisible =
     page.directMessageNavigation != null &&
     page.messages.some(
@@ -95,7 +109,7 @@ export function RerAnalysisNeoPage({
   const leftPanelVisible = page.leftPanelOpen;
   const requestedRightPanelVisible = page.rightPanelOpen;
   const editorIntentKey = createMessageOpen
-    ? 'create-message'
+    ? `create-message:${createMessageGroupMasterKey ?? 'all'}`
     : page.reportSource
       ? `create-report:${page.reportSource.id}`
       : page.editorMessage
@@ -112,6 +126,35 @@ export function RerAnalysisNeoPage({
     : null;
   const rightPanelVisible = requestedRightPanelVisible && !editorOpen;
   const modalEditorOpen = editorOpen && editorPresentation === 'modal';
+  const toggleFilterPanel = useCallback(() => {
+    filterPanelTouchedRef.current = true;
+    const next = !filterPanelOpen;
+    setFilterPanelOpen(next);
+    replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: next });
+  }, [filterPanelOpen]);
+  const closeFilterPanel = useCallback(() => {
+    filterPanelTouchedRef.current = true;
+    setFilterPanelOpen(false);
+    replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: false });
+  }, []);
+  useEffect(() => {
+    if (!page.networkVisibilityReady || filterPanelTouchedRef.current) return;
+    filterPanelTouchedRef.current = true;
+    const next = !page.hideNetworks;
+    setFilterPanelOpen(editorOpen ? false : next);
+    replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: next });
+  }, [editorOpen, page.hideNetworks, page.networkVisibilityReady]);
+  useEffect(() => {
+    if (!filterPanelOpen) return;
+    const sections =
+      page.groupNavigation.scope.kind === 'group'
+        ? (['tags', 'senders'] as const)
+        : (['tags', 'groups', 'senders'] as const);
+    void Promise.all(sections.map((section) => page.loadFilterSection(section)));
+  }, [filterPanelOpen, page.groupNavigation.scope.kind, page.loadFilterSection]);
+  useEffect(() => {
+    if (editorOpen) setFilterPanelOpen(false);
+  }, [editorOpen]);
   const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth;
   const inlineLeftPanelVisible = shouldInlineAnalysisLeftPanel({
     layoutWidth,
@@ -185,7 +228,7 @@ export function RerAnalysisNeoPage({
       const applyIntent = () => {
         setEditorSourceMessageId(sourceMessageId ?? null);
         if (page.rightPanelOpen) page.toggleRightPanel();
-        if (key === 'create-message') {
+        if (key.startsWith('create-message:')) {
           if (
             isPresent(page.editorMessage) ||
             isPresent(page.reportSource) ||
@@ -214,9 +257,25 @@ export function RerAnalysisNeoPage({
       page.toggleRightPanel,
     ],
   );
-  const openCreateMessageComposer = useCallback(() => {
-    requestEditorIntent('create-message', () => setCreateMessageOpen(true));
-  }, [requestEditorIntent]);
+  const openCreateMessageComposer = useCallback(
+    (focusTarget?: HTMLElement) => {
+      const scopeKey =
+        page.groupNavigation.scope.kind === 'group' ? page.groupNavigation.scope.masterKey : 'all';
+      requestEditorIntent(
+        `create-message:${scopeKey}`,
+        () => {
+          setCreateMessageGroupMasterKey(
+            page.groupNavigation.scope.kind === 'group'
+              ? page.groupNavigation.scope.masterKey
+              : null,
+          );
+          setCreateMessageOpen(true);
+        },
+        focusTarget,
+      );
+    },
+    [page.groupNavigation.scope, requestEditorIntent],
+  );
   const openMessageEditor = useCallback(
     (messageId: number, invokingControl?: HTMLElement) => {
       const message = page.messages.find(([id]) => id === messageId)?.[1];
@@ -272,7 +331,6 @@ export function RerAnalysisNeoPage({
     openReportEditor,
   };
   const closeMessageEditor = useCallback(() => {
-    setEditorSourceMessageId(null);
     if (
       isPresent(page.editorMessage) ||
       isPresent(page.reportSource) ||
@@ -283,6 +341,20 @@ export function RerAnalysisNeoPage({
       setCreateMessageOpen(false);
     }
   }, [page.closeEditor, page.editTargetLoadState.status, page.editorMessage, page.reportSource]);
+
+  useEffect(() => {
+    if (editorOpen || editorSourceMessageId == null) return;
+    return focusAfterEditorSurfacesClose(() => {
+      const sourceItem = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-message-id]'),
+      ).find((item) => item.dataset.messageId === String(editorSourceMessageId));
+      const returnLabel = editorInitialFocusTargetRef.current?.getAttribute('aria-label');
+      const returnControl = Array.from(
+        sourceItem?.querySelectorAll<HTMLElement>('button') ?? [],
+      ).find((button) => button.getAttribute('aria-label') === returnLabel);
+      return returnControl ?? null;
+    });
+  }, [editorOpen, editorSourceMessageId]);
 
   const toggleRightPanel = useCallback(() => {
     if (!editorOpen) {
@@ -405,13 +477,7 @@ export function RerAnalysisNeoPage({
             }}
           >
             <Box sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
-              {inlineLeftPanelVisible ? (
-                <AnalysisLeftPanel
-                  page={page}
-                  leftPanelVisible
-                  isCompactLayout={isAnalysisCompactLayout}
-                />
-              ) : null}
+              {inlineLeftPanelVisible ? <AnalysisLeftPanel page={page} leftPanelVisible /> : null}
             </Box>
             <Box sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
               <PointBlacklistPaletteNamesCacheProvider>
@@ -439,6 +505,10 @@ export function RerAnalysisNeoPage({
                         summaryTabId={summaryTabId}
                         mapPanelId={mapPanelId}
                         mapTabId={mapTabId}
+                        filtersPanelId={filtersPanelId}
+                        filterPanelOpen={filterPanelOpen}
+                        onToggleFilterPanel={toggleFilterPanel}
+                        onCloseFilterPanel={closeFilterPanel}
                       />
                     </AudioTranscriptionPreferencesProvider>
                   )}
@@ -464,6 +534,7 @@ export function RerAnalysisNeoPage({
                     focusFallbackRef={createMessageFabRef}
                     cyberEchoEnabled={page.cyberEchoEnabled}
                     currentUser={page.currentUser}
+                    initialGroupMasterKey={createMessageOpen ? createMessageGroupMasterKey : null}
                     editTarget={page.editorMessage}
                     editAsReport={page.editorEditAsReport}
                     editTargetLoadState={page.editTargetLoadState}
@@ -489,7 +560,8 @@ export function RerAnalysisNeoPage({
                       });
                     }}
                     onCreated={async () => {
-                      page.reload({ preserveMessagePage: true });
+                      if (!page.reportSource) page.dismissUnreadBoundary();
+                      page.reload({ preserveMessagePage: true, showMessagesLoading: false });
                       notify({
                         message: page.reportSource
                           ? 'Розвіддонесення успішно створено.'
@@ -537,12 +609,12 @@ export function RerAnalysisNeoPage({
 
         <AnalysisFullscreenPanelDrawer
           anchor="left"
-          title="Фільтри"
-          open={!inlineLeftPanelVisible && leftPanelVisible && !modalEditorOpen}
+          title="Групи"
+          open={!inlineLeftPanelVisible && leftPanelVisible && !editorOpen}
           onClose={page.toggleLeftPanel}
-          maxPanelWidth={400}
+          maxPanelWidth={320}
         >
-          <AnalysisLeftPanel page={page} leftPanelVisible isCompactLayout={false} fullHeight />
+          <AnalysisLeftPanel page={page} leftPanelVisible fullHeight />
         </AnalysisFullscreenPanelDrawer>
 
         <AnalysisReportDialog

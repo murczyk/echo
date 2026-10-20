@@ -112,6 +112,7 @@ export type UseWindowedFeedScrollOptions = {
   viewportPreservationKey?: number;
   onViewportCaptureChange?: (capture: (() => void) | null) => void;
   onFirstVisibleMessage?: (id: number, index: number) => void;
+  onVisibleMessages?: (ids: readonly number[]) => void;
   loadEdgesOnLayout?: boolean;
   edgeLoadRetryKey?: string | number;
   positionResetKey?: string | number;

@@ -7,8 +7,8 @@ import {
 } from '../analysis-editor-layout';
 
 describe('analysisRightDockColumn', () => {
-  it('keeps the right dock width stable between editor and Analytics', () => {
-    expect(analysisRightDockColumn(true)).toBe('minmax(0, 1fr)');
+  it('caps the editor while allowing Analytics to use the available width', () => {
+    expect(analysisRightDockColumn(true)).toBe('clamp(640px, 48%, 800px)');
     expect(analysisRightDockColumn(false)).toBe('minmax(0, 1fr)');
   });
 });
@@ -28,12 +28,12 @@ describe('analysisWorkspaceColumns', () => {
     {
       left: true,
       right: false,
-      expected: '400px minmax(0, 1fr) minmax(0, 0fr)',
+      expected: '256px minmax(0, 1fr) minmax(0, 0fr)',
     },
     {
       left: true,
       right: true,
-      expected: '400px minmax(0, 1fr) minmax(0, 1fr)',
+      expected: '256px minmax(0, 1fr) minmax(0, 1fr)',
     },
   ])('builds the workspace for left=$left and right=$right', ({ left, right, expected }) => {
     expect(
@@ -52,11 +52,23 @@ describe('analysisWorkspaceColumns', () => {
         inlineRightDockVisible: true,
         editorOpen: true,
       }),
-    ).toBe('0px minmax(0, 1fr) minmax(0, 1fr)');
+    ).toBe('0px minmax(0, 1fr) clamp(640px, 48%, 800px)');
   });
 });
 
 describe('shouldInlineAnalysisLeftPanel', () => {
+  it('uses the viewport width before the workspace has been measured', () => {
+    expect(
+      shouldInlineAnalysisLeftPanel({
+        layoutWidth: null,
+        viewportWidth: 1440,
+        desktop: true,
+        leftPanelOpen: true,
+        editorOpen: false,
+      }),
+    ).toBe(true);
+  });
+
   it.each([
     { width: 1599, editor: true, expected: false },
     { width: 1600, editor: true, expected: true },

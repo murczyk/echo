@@ -64,9 +64,12 @@ pub struct InboxMessage {
     pub created_at: Option<i64>,
     #[serde(default)]
     pub created_at_order: Option<i64>,
+    pub is_own: Option<bool>,
     #[serde(default)]
     pub has_date_in_header: bool,
     pub group_master_key: Option<String>,
+    #[serde(default)]
+    pub group_master_keys: Option<Vec<String>>,
     pub sender: Option<String>,
     pub extended_form: Option<String>,
     #[serde(default)]
@@ -200,8 +203,10 @@ impl From<InboxInsertPayload> for InboxMessage {
             timestamp: payload.timestamp,
             created_at: None,
             created_at_order: None,
+            is_own: None,
             has_date_in_header: false,
             group_master_key: payload.group_master_key,
+            group_master_keys: None,
             sender: payload.sender,
             extended_form: payload.extended_form,
             message_comments: vec![],
@@ -1610,6 +1615,8 @@ pub struct SavedFilterRenameReq {
 )]
 pub struct RerDutyQueryState {
     pub waterfalls: Option<Vec<(String, RerDutyQueryStateWf)>>,
+    #[serde(default)]
+    pub group_scopes: Option<Vec<(String, String)>>,
 }
 
 #[derive(
@@ -1901,6 +1908,8 @@ mod tests {
         let message = InboxMessage::from(payload.clone());
         assert_eq!(message.created_at, None);
         assert_eq!(message.created_at_order, None);
+        assert_eq!(message.is_own, None);
+        assert_eq!(message.group_master_keys, None);
         assert!(!message.has_date_in_header);
         let payload_json = serde_json::to_value(payload).unwrap();
         let message_json = serde_json::to_value(message).unwrap();
@@ -1929,8 +1938,10 @@ mod tests {
             "created_at_order".to_string(),
             "coords_with_locality".to_string(),
             "device_name".to_string(),
+            "group_master_keys".to_string(),
             "intelligence_reports".to_string(),
             "has_date_in_header".to_string(),
+            "is_own".to_string(),
             "is_time_null".to_string(),
             "keyword_tokens".to_string(),
             "message_comments".to_string(),

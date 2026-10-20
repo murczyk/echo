@@ -200,7 +200,36 @@ describe('useAnalysisReloadOrchestrator', () => {
     await renderHook(params);
 
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledWith(
+      expect.objectContaining({ includeDefaultFilterSections: false }),
+    );
     expect(params.refreshMessageCounts).not.toHaveBeenCalled();
+  });
+
+  it('marks the rendered messages stale until the current reload scope commits them', async () => {
+    vi.useFakeTimers();
+    reloadAnalysisDataMock.reloadAnalysisData.mockImplementation(async (params) => {
+      params.setMessages([]);
+    });
+    const params = buildParams();
+
+    await renderHook(params);
+
+    expect(latestResult?.messagesLoadedForCurrentQuery).toBe(true);
+
+    await rerenderHook({
+      ...params,
+      reloadTriggerKey: 'reload-key-2',
+      queryState: { ...params.queryState, groupsSelected: ['group-b'] },
+    });
+
+    expect(latestResult?.messagesLoadedForCurrentQuery).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    expect(latestResult?.messagesLoadedForCurrentQuery).toBe(true);
   });
 
   it('#3001 aborts the previous reload scope when filters change after its foreground work finishes', async () => {

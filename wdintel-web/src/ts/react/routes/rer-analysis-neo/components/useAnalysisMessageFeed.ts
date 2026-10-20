@@ -33,6 +33,7 @@ type Options = {
   loadingBeforeWindow: boolean;
   loadingAfterWindow: boolean;
   isLoading: boolean;
+  newestFirst: boolean;
   pageNavigationTarget: number | null;
   viewportPreservationKey: number;
   edgeLoadRetryKey: number;
@@ -42,6 +43,7 @@ type Options = {
   onLoadMoreMessages: () => Promise<boolean>;
   onVisiblePageChange: (pageIndex: number) => void;
   onPageNavigationHandled: () => void;
+  onVisibleMessages?: (ids: readonly number[]) => void;
 };
 
 export function useAnalysisMessageFeed({
@@ -53,6 +55,7 @@ export function useAnalysisMessageFeed({
   loadingBeforeWindow,
   loadingAfterWindow,
   isLoading,
+  newestFirst,
   pageNavigationTarget,
   viewportPreservationKey,
   edgeLoadRetryKey,
@@ -62,6 +65,7 @@ export function useAnalysisMessageFeed({
   onLoadMoreMessages,
   onVisiblePageChange,
   onPageNavigationHandled,
+  onVisibleMessages,
 }: Options) {
   const onFirstVisibleMessage = useCallback(
     (_id: number, index: number) => {
@@ -167,6 +171,7 @@ export function useAnalysisMessageFeed({
     onLoadNewer: directMessageNavigation ? load(below) : onLoadMoreMessages,
     unreadPrefetchNeeded: !isLoading && hasMoreBelow,
     onFirstVisibleMessage,
+    onVisibleMessages,
   };
   return {
     scrollOptions,

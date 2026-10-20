@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   adjustQueryDateRangeForDirectMessage,
   createInitialQueryState,
   emptyQueryState,
+  hasQueryStateInWindow,
   parseQueryStateFromWindow,
+  readAnalysisGroupScopeFromUrl,
+  writeAnalysisGroupScopeToUrl,
 } from '../helpers';
 import type { AnalysisQueryState } from '../types';
 
@@ -20,6 +23,32 @@ function createQueryState(overrides: Partial<AnalysisQueryState> = {}): Analysis
 }
 
 describe('rer-analysis-neo URL state', () => {
+  it('round-trips a dedicated group separately from the aggregate filter state', () => {
+    const pushState = vi.fn();
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        location: { href: 'https://example.test/rer-analysis-neo?groups_selected=Alpha' },
+        history: { pushState },
+      },
+    });
+
+    expect(readAnalysisGroupScopeFromUrl()).toEqual({ kind: 'all' });
+    writeAnalysisGroupScopeToUrl({ kind: 'group', masterKey: 'group-b' });
+    expect(pushState).toHaveBeenCalledWith(
+      {},
+      '',
+      '/rer-analysis-neo?groups_selected=Alpha&group=group-b',
+    );
+
+    Object.defineProperty(window.location, 'href', {
+      configurable: true,
+      value: 'https://example.test/rer-analysis-neo?groups_selected=Alpha&group=group-b',
+    });
+    expect(readAnalysisGroupScopeFromUrl()).toEqual({ kind: 'group', masterKey: 'group-b' });
+    delete (globalThis as { window?: Window }).window;
+  });
+
   it('treats managed URL parameters as authoritative', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -36,6 +65,19 @@ describe('rer-analysis-neo URL state', () => {
       freqsSelected: [],
       tags: [],
     });
+
+    delete (globalThis as { window?: Window }).window;
+  });
+
+  it('treats the media-only URL parameter as authoritative', () => {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        location: { href: 'https://example.test/rer-analysis-neo?only_with_media=true' },
+      },
+    });
+
+    expect(hasQueryStateInWindow()).toBe(true);
 
     delete (globalThis as { window?: Window }).window;
   });

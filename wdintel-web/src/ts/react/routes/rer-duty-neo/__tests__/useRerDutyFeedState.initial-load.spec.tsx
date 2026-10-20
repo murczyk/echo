@@ -81,6 +81,100 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     });
   });
 
+  it('persists independent group scopes without changing aggregate group filters', async () => {
+    const { apiRef } = await mountLoadedFeed();
+
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((current) => [
+        {
+          ...current[0],
+          groupScopeMasterKey: 'group-a',
+          filter: { ...current[0].filter, groupsSelected: ['group-a', 'group-b'] },
+        },
+        {
+          ...current[0],
+          id: 'mf-1',
+          groupScopeMasterKey: 'group-b',
+        },
+      ]);
+      await flushMicrotasks();
+    });
+
+    expect(readPersistedDutyFilterState()).toMatchObject({
+      messageFeeds: [
+        [
+          'mf-0',
+          expect.objectContaining({ groupsSelected: ['group-a', 'group-b'] }),
+          expect.objectContaining({ groupScopeMasterKey: 'group-a' }),
+        ],
+        ['mf-1', expect.any(Object), expect.objectContaining({ groupScopeMasterKey: 'group-b' })],
+      ],
+    });
+  });
+
+  it('restores a persisted group scope before the initial request', async () => {
+    persistDutyFilterState({
+      messageFeeds: [
+        [
+          'mf-stored',
+          { ...emptyFilter(), groupsSelected: ['aggregate-group'] },
+          {
+            adjacentFreqsRange: 0,
+            highlightSignalsEnabled: false,
+            onlyMyUnitTagsEnabled: false,
+            groupScopeMasterKey: 'scoped-group',
+          },
+        ],
+      ],
+    });
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]).toMatchObject({
+      groupScopeMasterKey: 'scoped-group',
+      filter: expect.objectContaining({ groupsSelected: ['aggregate-group'] }),
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ selectedGroups: ['scoped-group'], deniedGroups: null }),
+    );
+  });
+
+  it('switches only the request group scope and restores the aggregate filter on all-groups', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((current) =>
+        current.map((feed) => ({
+          ...feed,
+          filter: { ...feed.filter, groupsSelected: ['group-a', 'group-b'] },
+        })),
+      );
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      apiRef.current!.setGroupScope('mf-0', 'group-a');
+      await flushMicrotasks();
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedGroups: ['group-a'], deniedGroups: null }),
+    );
+    expect(apiRef.current?.messageFeeds[0]?.filter.groupsSelected).toEqual(['group-a', 'group-b']);
+
+    await act(async () => {
+      apiRef.current!.setGroupScope('mf-0', null);
+      await flushMicrotasks();
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedGroups: ['group-a', 'group-b'] }),
+    );
+  });
+
   it('restores every persisted filter option before the initial request', async () => {
     persistDutyFilterState({
       messageFeeds: [

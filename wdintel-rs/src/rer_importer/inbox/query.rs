@@ -2833,6 +2833,7 @@ where
         .select_only()
         .column_as(signal_message::Column::Id, "id")
         .column_as(signal_message::Column::IdUuid, "id_uuid")
+        .column_as(signal_message::Column::LoginId, "login_id")
         .column_as(signal_message::Column::Body, "body")
         .column_as(signal_message::Column::MessageUid, "message_uid")
         .column_as(signal_message::Column::CreatedAt, "created_at")

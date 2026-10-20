@@ -27,6 +27,7 @@ export function createEmptyFeedState(
   return {
     id,
     filter,
+    groupScopeMasterKey: options.groupScopeMasterKey ?? null,
     items: [],
     loading: true,
     loadingOlder: false,

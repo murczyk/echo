@@ -8,7 +8,6 @@ import {
   ListItemText,
   Menu,
   MenuItem,
-  Skeleton,
   Stack,
   Switch,
   Tooltip,
@@ -109,11 +108,7 @@ function AnalysisSettingsMenu({ page, loading, onOpenReport }: SettingsMenuProps
           }}
         >
           <ListItemIcon>
-            {loading ? (
-              <Skeleton variant="circular" width={20} height={20} />
-            ) : (
-              <RefreshOutlinedIcon fontSize="small" />
-            )}
+            <RefreshOutlinedIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Оновити</ListItemText>
         </MenuItem>
@@ -153,8 +148,12 @@ export function AnalysisPageHeader({
       page.openReport();
     }
   };
-  const loading = page.messagesLoading || page.summaryLoading;
-  const dateRangeLoading = page.mapAttrs?.daterangeLoading === 'true';
+  const messageTransitionLoading = page.groupScopeTransitionPending || page.messagesLoading;
+  const loading =
+    page.messageViewportPreserving ||
+    messageTransitionLoading ||
+    page.messagesTotalLoading ||
+    page.summaryLoading;
   const showPagination = !isNarrowLayout;
   return (
     <PageHeader
@@ -230,11 +229,12 @@ export function AnalysisPageHeader({
                   messagesCount={page.messages.length}
                   totalCount={page.messagesTotalCount}
                   totalLoading={page.messagesTotalLoading}
-                  loading={page.messagesLoading}
+                  loading={messageTransitionLoading}
+                  preserveRangeWhileLoading
                   noMoreToLoad={page.noMoreToLoad}
                   hasMoreAfterWindow={page.hasMoreAfterWindow}
                   rangeUsesPageSize
-                  busy={page.messagesPaging || page.messagesLoading}
+                  busy={page.messagesPaging || messageTransitionLoading}
                   jumpDisabled={page.directMessageNavigation != null}
                   onFirstPage={page.loadFirstPage}
                   onLastPage={page.loadLastPage}
@@ -256,11 +256,7 @@ export function AnalysisPageHeader({
                       borderColor: 'divider',
                     }}
                   >
-                    {loading && !dateRangeLoading ? (
-                      <Skeleton variant="circular" width={20} height={20} />
-                    ) : (
-                      <RefreshOutlinedIcon sx={{ fontSize: 20 }} />
-                    )}
+                    <RefreshOutlinedIcon sx={{ fontSize: 20 }} />
                   </IconButton>
                 </span>
               </Tooltip>

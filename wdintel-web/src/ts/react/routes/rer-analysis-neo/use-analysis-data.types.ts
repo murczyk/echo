@@ -37,7 +37,6 @@ export type UseAnalysisDataProps = {
   hideNetworks?: boolean;
   focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
-  leftPanelOpen?: boolean;
   newestFirst: boolean;
   onBeforeRealtimeMessageListChange?: () => void;
   onError: (message: string) => void;
@@ -75,6 +74,7 @@ export type UseAnalysisDataResult = {
   groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
   groupsActivityLoading: boolean;
   hasLoadedInitialMessages: boolean;
+  messagesLoadedForCurrentQuery: boolean;
   inboxReq: ReturnType<typeof buildInboxReq>;
   botTagAction: MessageCardBotTagAction | null;
   loadCallsignGraph: () => Promise<void>;

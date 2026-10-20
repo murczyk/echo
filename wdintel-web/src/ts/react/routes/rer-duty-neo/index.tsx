@@ -31,6 +31,7 @@ import {
   ManageMessageDrawer,
   type ManageMessageEditorHandle,
 } from '../shared/manage-message/ManageMessageDrawer';
+import { focusAfterEditorSurfacesClose } from '../shared/manage-message/focus-restoration';
 import {
   MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
   MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
@@ -50,11 +51,20 @@ import {
   messageNavigationErrorText,
   type MessageNavigationHost,
 } from '../shared/message-navigation';
+import type { GroupScope } from '../shared/group-navigation';
 
 type DutyLinkedMessageLanding = { feedId: string; targetIds: number[] };
 
 type PendingDutyLinkedMessage = DutyLinkedMessageLanding & {
   filterSignature: string;
+  errorVersion: number;
+  sawLoading: boolean;
+  resolve: (landing: DutyLinkedMessageLanding | null) => void;
+  reject: (reason: unknown) => void;
+};
+
+type PendingDutyGroupNavigation = DutyLinkedMessageLanding & {
+  groupMasterKey: string;
   errorVersion: number;
   sawLoading: boolean;
   resolve: (landing: DutyLinkedMessageLanding | null) => void;
@@ -81,6 +91,9 @@ export function RerDutyNeoPage({
   const [editorSourceFeedId, setEditorSourceFeedId] = useState<string | null>(null);
   const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const [createMessageGroupMasterKey, setCreateMessageGroupMasterKey] = useState<string | null>(
+    null,
+  );
   const [editTarget, setEditTarget] = useState<{ id: number; message: InboxMessage } | null>(null);
   const [editAsReport, setEditAsReport] = useState(false);
   const [editTargetLoadState, setEditTargetLoadState] = useState<ReportEditLoadState>({
@@ -88,7 +101,7 @@ export function RerDutyNeoPage({
   });
   const editorRef = useRef<ManageMessageEditorHandle>(null);
   const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
-  const createMessageFabRef = useRef<HTMLButtonElement | null>(null);
+  const createMessageFabRef = useRef<HTMLElement | null>(null);
   const reportLoadControllerRef = useRef<AbortController | null>(null);
   const cancelReportEditLoad = useCallback(() => {
     reportLoadControllerRef.current?.abort();
@@ -266,6 +279,7 @@ export function RerDutyNeoPage({
     setDeleteConfirmFeedId,
     deleteConfirmId,
     applyFilter,
+    setGroupScope,
     setFeedInitialTarget,
     setWatchModeByFeedId,
     cancelFollowTail,
@@ -409,8 +423,116 @@ export function RerDutyNeoPage({
     pending.resolve({ feedId: pending.feedId, targetIds: pending.targetIds });
   }, [messageFeeds, targetFeedId, error, errorNotificationVersion]);
 
+  const groupNavigationRequestRef = useRef<{
+    feedId: string;
+    groupMasterKey: string;
+  } | null>(null);
+  const pendingGroupNavigationRef = useRef<PendingDutyGroupNavigation | null>(null);
+  const setGroupScopeRef = useRef(setGroupScope);
+  setGroupScopeRef.current = setGroupScope;
+  const groupNavigationHostRef = useRef<MessageNavigationHost<DutyLinkedMessageLanding> | null>(
+    null,
+  );
+  if (groupNavigationHostRef.current === null) {
+    groupNavigationHostRef.current = {
+      materialize: (context) => {
+        const request = groupNavigationRequestRef.current;
+        if (!request) return Promise.resolve(null);
+        const targetIds = resolveDutyTargetMessageIds(
+          '',
+          context.sigintInboxItemIds.length > 0
+            ? context.sigintInboxItemIds
+            : context.message == null
+              ? []
+              : [context.message[0]],
+        );
+        if (targetIds.length === 0) return Promise.resolve(null);
+        return new Promise<DutyLinkedMessageLanding | null>((resolve, reject) => {
+          pendingGroupNavigationRef.current = {
+            ...request,
+            targetIds,
+            errorVersion: errorNotificationVersionRef.current,
+            sawLoading: false,
+            resolve,
+            reject,
+          };
+          setFeedInitialTargetRef.current(request.feedId, {
+            beforeIdNoninclusive: targetIds[0],
+            messageIds: targetIds,
+          });
+          setGroupScopeRef.current(request.feedId, request.groupMasterKey);
+        });
+      },
+      land: async ({ feedId, targetIds }, signal) => {
+        if (signal.aborted) return false;
+        for (const id of targetIds) {
+          const element = columnRefsRef.current[feedId]?.scrollToMessage?.(id, 'auto');
+          if (element) return true;
+        }
+        return false;
+      },
+      invalidateNavigation: () => {
+        pendingGroupNavigationRef.current?.resolve(null);
+        pendingGroupNavigationRef.current = null;
+      },
+    };
+  }
+  const groupNavigationControllerRef = useRef<ReturnType<
+    typeof createMessageNavigationController<DutyLinkedMessageLanding>
+  > | null>(null);
+  if (groupNavigationControllerRef.current === null) {
+    groupNavigationControllerRef.current = createMessageNavigationController(
+      () => groupNavigationHostRef.current!,
+      (outcome) => {
+        const request = groupNavigationRequestRef.current;
+        if (outcome.status !== 'focused' && outcome.status !== 'cancelled' && request) {
+          setGroupScopeRef.current(request.feedId, request.groupMasterKey);
+        }
+        const message = messageNavigationErrorText(outcome);
+        if (message) notifyRef.current({ message, severity: 'error' });
+      },
+    );
+  }
+
+  useEffect(() => {
+    const pending = pendingGroupNavigationRef.current;
+    if (!pending) return;
+    const feed = messageFeeds.find((candidate) => candidate.id === pending.feedId);
+    if (!feed || feed.groupScopeMasterKey !== pending.groupMasterKey) {
+      groupNavigationControllerRef.current?.cancel();
+      return;
+    }
+    if (error && errorNotificationVersion !== pending.errorVersion) {
+      pendingGroupNavigationRef.current = null;
+      pending.reject(new Error(error));
+      return;
+    }
+    if (feed.loading) {
+      pending.sawLoading = true;
+      return;
+    }
+    if (!pending.sawLoading) return;
+    pendingGroupNavigationRef.current = null;
+    pending.resolve({ feedId: pending.feedId, targetIds: pending.targetIds });
+  }, [error, errorNotificationVersion, messageFeeds]);
+
+  useEffect(() => () => groupNavigationControllerRef.current?.cancel(), []);
+
   const editorHighlightedMessageId = createMessageOpen ? null : editorSourceMessageId;
-  const buildFeedColumnModel = useDutyFeedColumnModel({
+  const selectGroupScope = useCallback(
+    (feedId: string, scope: GroupScope, oldestUnreadMessageRef: string | null) => {
+      groupNavigationControllerRef.current?.cancel();
+      groupNavigationRequestRef.current = null;
+      if (scope.kind === 'all' || oldestUnreadMessageRef == null) {
+        setGroupScope(feedId, scope.kind === 'group' ? scope.masterKey : null);
+        return;
+      }
+      groupNavigationRequestRef.current = { feedId, groupMasterKey: scope.masterKey };
+      void groupNavigationControllerRef.current?.navigate(oldestUnreadMessageRef);
+    },
+    [setGroupScope],
+  );
+  const { buildFeedColumnModel, dismissUnreadBoundary } = useDutyFeedColumnModel({
     feeds,
     editorSourceFeedId,
     editorHighlightedMessageId,
@@ -427,6 +549,7 @@ export function RerDutyNeoPage({
     openReportEditor,
     openMessageEditor,
     openReportComposer,
+    selectGroupScope,
   });
 
   const activeFeedIdSafe = messageFeeds.some((feed) => feed.id === activeFeedId)
@@ -441,26 +564,37 @@ export function RerDutyNeoPage({
     flushPendingNewerMessages(activeFeedIdSafe, { urgent: true });
   }, [activeFeedIdSafe, flushPendingNewerMessages]);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
-  const openCreateMessageComposer = useCallback(() => {
-    requestEditorIntent('create-message', activeFeedIdSafe, () => {
-      cancelReportEditLoad();
-      setEditTarget(null);
-      setEditAsReport(false);
-      setReportSource(null);
-      setCreateMessageOpen(true);
-    });
-  }, [activeFeedIdSafe, cancelReportEditLoad, requestEditorIntent]);
+  const openCreateMessageComposer = useCallback(
+    (feedId: string, focusTarget?: HTMLElement) => {
+      const sourceFeed = messageFeeds.find((feed) => feed.id === feedId);
+      const scopeKey = sourceFeed?.groupScopeMasterKey ?? 'all';
+      createMessageFabRef.current = focusTarget ?? null;
+      requestEditorIntent(
+        `create-message:${feedId}:${scopeKey}`,
+        feedId,
+        () => {
+          cancelReportEditLoad();
+          setEditTarget(null);
+          setEditAsReport(false);
+          setReportSource(null);
+          setCreateMessageGroupMasterKey(sourceFeed?.groupScopeMasterKey ?? null);
+          setCreateMessageOpen(true);
+        },
+        focusTarget,
+      );
+    },
+    [cancelReportEditLoad, messageFeeds, requestEditorIntent],
+  );
   const closeMessageEditor = useCallback(() => {
     cancelReportEditLoad();
     setCreateMessageOpen(false);
     setEditTarget(null);
     setEditAsReport(false);
     setReportSource(null);
-    setEditorSourceFeedId(null);
     setEditorSourceMessageId(null);
   }, [cancelReportEditLoad]);
   const editorIntentKey = createMessageOpen
-    ? 'create-message'
+    ? `create-message:${editorSourceFeedId ?? 'unknown'}:${createMessageGroupMasterKey ?? 'all'}`
     : reportSource
       ? `create-report:${reportSource.id}`
       : editTarget
@@ -473,6 +607,19 @@ export function RerDutyNeoPage({
   const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const editorEmbeddedOpen = editorOpen && editorPresentation === 'embedded';
   const previousCanWriteRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    if (editorOpen || editorSourceFeedId == null) return;
+    return focusAfterEditorSurfacesClose(() => {
+      const sourceColumn = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-duty-feed-column]'),
+      ).find((column) => column.dataset.dutyFeedId === editorSourceFeedId);
+      const createMessageButton =
+        sourceColumn?.querySelector<HTMLElement>('[aria-label="Додати повідомлення"]') ?? null;
+      createMessageFabRef.current = createMessageButton;
+      return document.activeElement === document.body ? createMessageButton : null;
+    });
+  }, [editorOpen, editorSourceFeedId]);
 
   useEffect(() => {
     if (deviceAccess.status === 'loading') return;
@@ -498,6 +645,7 @@ export function RerDutyNeoPage({
 
   useEffect(() => () => cancelReportEditLoad(), [cancelReportEditLoad]);
   const handleCreatedMessage = useCallback(() => {
+    if (createMessageOpen && editorSourceFeedId) dismissUnreadBoundary(editorSourceFeedId);
     // Do not reloadFeeds(): that re-pins the scroller to the bottom.
     reloadEmptyFeeds();
     notify({
@@ -506,7 +654,14 @@ export function RerDutyNeoPage({
         : 'Повідомлення успішно створено.',
       severity: 'success',
     });
-  }, [notify, reloadEmptyFeeds, reportSource]);
+  }, [
+    createMessageOpen,
+    dismissUnreadBoundary,
+    editorSourceFeedId,
+    notify,
+    reloadEmptyFeeds,
+    reportSource,
+  ]);
 
   useEffect(() => {
     if (
@@ -609,7 +764,6 @@ export function RerDutyNeoPage({
                     buildFeedColumnModel={buildFeedColumnModel}
                     columnRefsRef={columnRefsRef}
                     createMessageFeed={createMessageFeed}
-                    createMessageFabRef={createMessageFabRef}
                     openCreateMessageComposer={openCreateMessageComposer}
                     isInitialLoading={isInitialLoading}
                     messageFeeds={messageFeeds}
@@ -660,6 +814,7 @@ export function RerDutyNeoPage({
             hideNetworks={hideNetworks || !networkVisibilityReady}
             open={editorOpen}
             intentKey={editorIntentKey ?? 'closed'}
+            initialGroupMasterKey={createMessageOpen ? createMessageGroupMasterKey : null}
             presentation={editorPresentation}
             adaptiveEmbeddedForm
             fillEmbeddedSurface

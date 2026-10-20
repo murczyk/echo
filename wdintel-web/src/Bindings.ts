@@ -429,8 +429,10 @@ export type InboxMessage = {
   timestamp: number | null;
   createdAt: number | null;
   createdAtOrder: number | null;
+  isOwn: boolean | null;
   hasDateInHeader: boolean;
   groupMasterKey: string | null;
+  groupMasterKeys: Array<string> | null;
   sender: string | null;
   extendedForm: string | null;
   messageComments: Array<MessageComment>;
@@ -706,6 +708,33 @@ export type UnreadCountersRsp = {
   newerMsgCount: number;
 };
 
+export type GroupFeedCursorDto = {
+  createdAt: number;
+  messageId: number;
+};
+
+export type GroupFeedState = {
+  masterKey: string;
+  name: string;
+  ignoreOperativny: boolean;
+  unreadCount: number;
+  oldestUnreadMessageRef: string | null;
+  lastReadCreatedAtOrder: number | null;
+  lastReadMessageId: number | null;
+  lastActivityAt: number | null;
+  latestCursor: GroupFeedCursorDto | null;
+  colorKey: SignalGroupColor;
+};
+
+export type GroupFeedStatesRsp = {
+  groups: Array<GroupFeedState>;
+};
+
+export type AcknowledgeGroupFeedReq = {
+  masterKey: string;
+  cursor: GroupFeedCursorDto;
+};
+
 export type SignalGroupReq = {
   masterKey: string;
 };
@@ -714,6 +743,25 @@ export type SignalGroupStats = {
   activityLastDay: number;
   activityLastWeek: number;
 };
+
+export type SignalGroupColor =
+  | 'red'
+  | 'pink'
+  | 'purple'
+  | 'deep_purple'
+  | 'indigo'
+  | 'blue'
+  | 'light_blue'
+  | 'cyan'
+  | 'teal'
+  | 'green'
+  | 'light_green'
+  | 'lime'
+  | 'amber'
+  | 'orange'
+  | 'deep_orange'
+  | 'blue_grey'
+;
 
 export type SignalGroupStatsTimelineReq = {
   masterKeys: Array<string>;
@@ -801,6 +849,7 @@ export type SignalGroupEntry = {
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
+  colorKey: SignalGroupColor;
 };
 
 export type OrphanSignalGroupEntry = {
@@ -817,6 +866,7 @@ export type OrphanSignalGroupEntry = {
   groupStats: SignalGroupStats;
   groupAdminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
+  colorKey: SignalGroupColor;
 };
 
 export type SignalProfileEntry = {
@@ -1229,6 +1279,7 @@ export type SavedFilterRenameReq = {
 
 export type RerDutyQueryState = {
   waterfalls: Array<[string, RerDutyQueryStateWf]> | null;
+  groupScopes: Array<[string, string]> | null;
 };
 
 export type RerDutyQueryStateWf = {
@@ -3243,6 +3294,7 @@ export type ZoneDatasourceGroup = {
   shortNote: string | null;
   longNote: string | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
+  colorKey: SignalGroupColor;
 };
 
 export type ZoneDatasourceGroupsReq = {
@@ -3269,6 +3321,7 @@ export type ZoneDatasourceGroupAddReq = {
 
 export type ZoneDatasourceGroupUpdateReq = {
   id: number;
+  colorKey: SignalGroupColor | null;
   isSecret: boolean;
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
@@ -7280,6 +7333,7 @@ export type LinkEchoOperatorReq = {
 
 export type GroupUpdateReq = {
   masterKey: string;
+  colorKey: SignalGroupColor | null;
   shortNote: string | null;
   longNote: string | null;
   areaOfResponsibilityId: number | null;
@@ -7299,6 +7353,7 @@ export type GroupEntryF1 = {
   longNote: string | null;
   groupStats: SignalGroupStats;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
+  colorKey: SignalGroupColor;
 };
 
 export type GroupAdminData = {
