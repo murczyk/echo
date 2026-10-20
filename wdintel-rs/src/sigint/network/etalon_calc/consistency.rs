@@ -402,7 +402,7 @@ where
     }
 
     // Step 6: Match messages to networks
-    let res = match_network_ids_for_messages(
+    let mut res = match_network_ids_for_messages(
         messages,
         groups_map,
         &group_bounds_map,
@@ -413,8 +413,72 @@ where
         &network_posts,
     )
     .context(h!())?;
+    filter_networks_by_parsed_units(db, &mut res, &network_units)
+        .await
+        .c(h!())?;
 
     Ok(res)
+}
+
+async fn filter_networks_by_parsed_units<C>(
+    db: &C,
+    network_ids_by_item: &mut HashMap<i64, Vec<i64>>,
+    network_units: &HashMap<i64, Vec<sigint_unit::Model>>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let item_ids = network_ids_by_item
+        .iter()
+        .filter(|(_, network_ids)| network_ids.len() > 1)
+        .map(|(item_id, _)| *item_id)
+        .collect::<Vec<_>>();
+    for item_ids in item_ids.chunks(ETALON_CALC_QUERY_PARAM_CHUNK_SIZE) {
+        let parsed_unit_links = sigint_inbox_item_unit::Entity::find()
+            .select_only()
+            .column(sigint_inbox_item_unit::Column::ItemId)
+            .column(sigint_inbox_item_unit::Column::UnitId)
+            .filter(
+                sigint_inbox_item_unit::Column::ItemId.is_in(item_ids.to_vec()),
+            )
+            .filter(
+                sigint_inbox_item_unit::Column::Kind
+                    .eq(sea_orm_active_enums::SigintInboxItemUnitKind::Parsed),
+            )
+            .into_tuple::<(i64, i64)>()
+            .all(db)
+            .await
+            .c(h!())?;
+        let mut parsed_units_by_item: HashMap<i64, HashSet<i64>> =
+            HashMap::new();
+        for (item_id, unit_id) in parsed_unit_links {
+            parsed_units_by_item
+                .entry(item_id)
+                .or_default()
+                .insert(unit_id);
+        }
+        for (item_id, parsed_unit_ids) in parsed_units_by_item {
+            let Some(network_ids) = network_ids_by_item.get_mut(&item_id)
+            else {
+                continue;
+            };
+            let matched_network_ids = network_ids
+                .iter()
+                .copied()
+                .filter(|network_id| {
+                    network_units.get(network_id).is_some_and(|units| {
+                        units
+                            .iter()
+                            .any(|unit| parsed_unit_ids.contains(&unit.id))
+                    })
+                })
+                .collect::<Vec<_>>();
+            if !matched_network_ids.is_empty() {
+                *network_ids = matched_network_ids;
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn load_network_units_by_network_id<'a, 'async_trait, C>(
@@ -883,7 +947,232 @@ fn log_network_mismatches(checked: usize, mismatches: &NetworkMismatchSummary) {
 mod tests {
     use super::*;
     use crate::functest::tests::*;
+    use sea_orm_active_enums::SigintInboxItemUnitKind;
     use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn parsed_units_trim_saved_networks_and_derived_units() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let db = &env.dbx;
+        let timestamp = Utc::now().naive_utc();
+        let group_aor = signal_group_aor::Entity::find()
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut units = Vec::new();
+        for name in ["1 омсбр", "2 омсбр", "3 омсбр", "4 омсбр", "5 омсбр"]
+        {
+            units.push(
+                mk_sigint_unit(
+                    db,
+                    sigint_unit::ActiveModel {
+                        name: Set(name.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        let network_unit_indices = [vec![0, 3], vec![1, 3], vec![2], vec![4]];
+        let networks = networks_for_parsed_unit_filter(
+            db,
+            &units,
+            &network_unit_indices,
+            group_aor.aor_id,
+            timestamp,
+        )
+        .await;
+        let cases = [
+            (vec![], vec![0, 1, 2]),
+            (vec![0], vec![0]),
+            (vec![3], vec![0, 1]),
+            (vec![0, 1], vec![0, 1]),
+            (vec![0, 4], vec![0]),
+            (vec![4], vec![0, 1, 2]),
+        ];
+        let mut inbox_items = Vec::new();
+        for _ in &cases {
+            let inbox_item = mk_sigint_inbox_item(
+                db,
+                sigint_inbox_item::ActiveModel {
+                    freq: Set(Some("146.4500".to_string())),
+                    datetime: Set(Some(timestamp)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_signal_message_group(
+                db,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(inbox_item.id),
+                    group_master_key: Set(Some(group_aor.master_key.clone())),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            inbox_items.push(inbox_item);
+        }
+        let initial = super::super::calculate_sigint_inbox_item_networks(
+            inbox_items.clone(),
+            db,
+        )
+        .await
+        .unwrap();
+        for inbox_item in &inbox_items {
+            assert_eq!(initial[&inbox_item.id].len(), 3);
+        }
+        for (inbox_item, (parsed_indices, _)) in inbox_items.iter().zip(&cases)
+        {
+            for &unit_index in parsed_indices {
+                sigint_inbox_item_unit::ActiveModel {
+                    item_id: Set(inbox_item.id),
+                    item_uuid: Set(inbox_item.id_uuid),
+                    unit_id: Set(units[unit_index].id),
+                    kind: Set(SigintInboxItemUnitKind::Parsed),
+                    ..Default::default()
+                }
+                .insert(db)
+                .await
+                .unwrap();
+            }
+        }
+        for _ in 0..2 {
+            let calculated =
+                super::super::calculate_sigint_inbox_item_networks(
+                    inbox_items.clone(),
+                    db,
+                )
+                .await
+                .unwrap();
+            for (inbox_item, (_, expected_indices)) in
+                inbox_items.iter().zip(&cases)
+            {
+                assert_parsed_unit_network_links(
+                    db,
+                    inbox_item,
+                    &calculated[&inbox_item.id],
+                    expected_indices,
+                    &networks,
+                    &network_unit_indices,
+                    &units,
+                )
+                .await;
+            }
+        }
+    }
+
+    async fn networks_for_parsed_unit_filter(
+        db: &DatabaseConnection,
+        units: &[sigint_unit::Model],
+        network_unit_indices: &[Vec<usize>],
+        aor_id: i64,
+        timestamp: NaiveDateTime,
+    ) -> Vec<sigint_network::Model> {
+        let mut networks = Vec::new();
+        for (index, unit_indices) in network_unit_indices.iter().enumerate() {
+            let network =
+                mk_sigint_network(db, Default::default()).await.unwrap();
+            mk_sigint_network_freq(
+                db,
+                sigint_network_freq::ActiveModel {
+                    network_id: Set(network.id),
+                    freq: Set(if index == 3 { "147.4500" } else { "146.4500" }
+                        .to_string()),
+                    active_from: Set(timestamp - chrono::Duration::days(1)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_network_aor(
+                db,
+                sigint_network_aor::ActiveModel {
+                    network_id: Set(network.id),
+                    aor_id: Set(aor_id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            for &unit_index in unit_indices {
+                mk_sigint_network_unit(
+                    db,
+                    sigint_network_unit::ActiveModel {
+                        network_id: Set(network.id),
+                        unit_id: Set(units[unit_index].id),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            networks.push(network);
+        }
+        networks
+    }
+
+    async fn assert_parsed_unit_network_links(
+        db: &DatabaseConnection,
+        inbox_item: &sigint_inbox_item::Model,
+        calculated_network_ids: &[i64],
+        expected_indices: &[usize],
+        networks: &[sigint_network::Model],
+        network_unit_indices: &[Vec<usize>],
+        units: &[sigint_unit::Model],
+    ) {
+        let expected_network_ids = expected_indices
+            .iter()
+            .map(|&index| networks[index].id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            calculated_network_ids
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>(),
+            expected_network_ids
+        );
+        let saved_network_ids = sigint_inbox_item_network::Entity::find()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .eq(inbox_item.id),
+            )
+            .select_only()
+            .column(sigint_inbox_item_network::Column::SigintNetworkId)
+            .into_tuple::<i64>()
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(
+            saved_network_ids.into_iter().collect::<BTreeSet<_>>(),
+            expected_network_ids
+        );
+        let expected_unit_ids = expected_indices
+            .iter()
+            .flat_map(|&index| &network_unit_indices[index])
+            .map(|&index| units[index].id)
+            .collect::<BTreeSet<_>>();
+        let derived_unit_ids = sigint_inbox_item_unit::Entity::find()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(inbox_item.id))
+            .filter(
+                sigint_inbox_item_unit::Column::Kind
+                    .eq(SigintInboxItemUnitKind::Network),
+            )
+            .select_only()
+            .column(sigint_inbox_item_unit::Column::UnitId)
+            .into_tuple::<i64>()
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(
+            derived_unit_ids.into_iter().collect::<BTreeSet<_>>(),
+            expected_unit_ids
+        );
+    }
 
     #[serial]
     #[tokio::test]
