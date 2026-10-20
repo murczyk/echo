@@ -525,6 +525,7 @@ mod tests {
     use crate::functest::tests::*;
     use chrono::{NaiveDate, NaiveDateTime};
     use sea_orm::sea_query::Expr;
+    use serial_test::serial;
 
     fn at(second: u32) -> NaiveDateTime {
         NaiveDate::from_ymd_opt(2035, 1, 1)
@@ -573,6 +574,7 @@ mod tests {
         message
     }
 
+    #[serial]
     #[tokio::test]
     async fn group_feed_state_returns_persisted_color() {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -596,6 +598,7 @@ mod tests {
         assert_eq!(state.color_key, SignalGroupColor::Cyan);
     }
 
+    #[serial]
     #[tokio::test]
     async fn first_list_initializes_existing_messages_as_read() {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -616,6 +619,7 @@ mod tests {
         );
     }
 
+    #[serial]
     #[tokio::test]
     async fn new_messages_increment_only_their_accessible_group() {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -646,6 +650,7 @@ mod tests {
         ));
     }
 
+    #[serial]
     #[tokio::test]
     async fn own_submissions_are_read_without_acknowledging_other_users_messages(
     ) {
@@ -748,6 +753,7 @@ mod tests {
         assert_eq!(author_state.oldest_unread_message_ref, reply.id_uuid);
     }
 
+    #[serial]
     #[tokio::test]
     async fn oldest_unread_uses_created_at_then_id() {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -768,6 +774,7 @@ mod tests {
         assert_eq!(state.oldest_unread_message_ref, first.id_uuid);
     }
 
+    #[serial]
     #[tokio::test]
     async fn acknowledgement_is_monotonic_and_idempotent() {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -811,6 +818,7 @@ mod tests {
         assert_eq!(state.unread_count, 0);
     }
 
+    #[serial]
     #[tokio::test]
     async fn deleted_boundary_message_does_not_move_cursor_backwards() {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -847,6 +855,7 @@ mod tests {
         assert_eq!(state.unread_count, 0);
     }
 
+    #[serial]
     #[tokio::test]
     async fn concurrent_initialization_creates_one_row_per_user_and_group() {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -882,6 +891,7 @@ where login_id = $1
         assert_eq!(counts.rows, counts.groups);
     }
 
+    #[serial]
     #[tokio::test]
     async fn group_feed_state_excludes_inaccessible_groups() {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -905,6 +915,7 @@ where login_id = $1
         }));
     }
 
+    #[serial]
     #[tokio::test]
     async fn group_feed_state_requires_base_role() {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -923,6 +934,7 @@ where login_id = $1
             .is_err());
     }
 
+    #[serial]
     #[tokio::test]
     async fn acknowledge_rejects_inaccessible_group() {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -949,6 +961,7 @@ where login_id = $1
         .is_err());
     }
 
+    #[serial]
     #[tokio::test]
     async fn acknowledge_advances_through_unread_messages() {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -1002,6 +1015,7 @@ where login_id = $1
         assert_eq!(state.last_read_cursor.unwrap().message_id, second.id);
     }
 
+    #[serial]
     #[tokio::test]
     async fn acknowledge_accepts_a_millisecond_cursor_for_microsecond_storage()
     {
@@ -1036,6 +1050,7 @@ where login_id = $1
         assert_eq!(state.last_read_message_id, Some(message.id));
     }
 
+    #[serial]
     #[tokio::test]
     async fn acknowledge_rejects_a_message_outside_the_group_or_a_forged_timestamp(
     ) {
@@ -1080,6 +1095,7 @@ where login_id = $1
         }
     }
 
+    #[serial]
     #[tokio::test]
     async fn acknowledge_returns_the_committed_count() {
         let (env, _guard) = cleanup_locked().await.unwrap();

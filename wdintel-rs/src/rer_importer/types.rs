@@ -1908,6 +1908,8 @@ mod tests {
         let message = InboxMessage::from(payload.clone());
         assert_eq!(message.created_at, None);
         assert_eq!(message.created_at_order, None);
+        assert_eq!(message.is_own, None);
+        assert_eq!(message.group_master_keys, None);
         assert!(!message.has_date_in_header);
         let payload_json = serde_json::to_value(payload).unwrap();
         let message_json = serde_json::to_value(message).unwrap();
@@ -1936,8 +1938,10 @@ mod tests {
             "created_at_order".to_string(),
             "coords_with_locality".to_string(),
             "device_name".to_string(),
+            "group_master_keys".to_string(),
             "intelligence_reports".to_string(),
             "has_date_in_header".to_string(),
+            "is_own".to_string(),
             "is_time_null".to_string(),
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
