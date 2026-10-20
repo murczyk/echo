@@ -1,6 +1,7 @@
 module Pages_.RerAnalysis.MainBody exposing (view)
 
 import Bindings as B
+import Core.Auth
 import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -412,6 +413,9 @@ view user model shared route =
 
         reportConstructorBlockBody =
             let
+                hasAdvancedReportAccess =
+                    List.any (\role -> Core.Auth.hasRole role user) [ "UnitsEditor", "CallsignsEditor", "AdvancedReports" ]
+
                 templateCard active toMsg title description =
                     div
                         [ class "border rounded-lg p-6 cursor-pointer transition-all duration-200 hover:shadow-md min-h-[140px] flex flex-col justify-between relative"
@@ -630,6 +634,12 @@ view user model shared route =
                     (ReportTemplateSelect RTReport1213)
                     "Звіт 1.2.13"
                     "Стислий звіт по радіомережах з частотою, часом, позивним вузла та координатами"
+                , HtmlX.viewIf (model.radioFeaturesAllowed && hasAdvancedReportAccess) <|
+                  templateCard
+                    (model.reportTemplate == RTReport1217)
+                    (ReportTemplateSelect RTReport1217)
+                    "Звіт 1.2.17"
+                    "Перехоплення за радіомережами з коментарями"
                 ]
 
             , HtmlX.viewIf (model.radioFeaturesAllowed && model.reportTemplate == RTTags) <|
@@ -680,6 +690,40 @@ view user model shared route =
                                 "не обрано"
                                 options2
                         )
+                    ]
+
+            , HtmlX.viewIf (model.radioFeaturesAllowed && model.reportTemplate == RTReport1217) <|
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ div [ class "form-check" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.report1217IncludeWithoutComments
+                            , id "report-1217-include-without-comments"
+                            , onClick Report1217IncludeWithoutCommentsToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-1217-include-without-comments"
+                            ]
+                            [ text "Включати перехоплення без коментарів" ]
+                        ]
+                    , div [ class "form-check mt-2" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.report1217OnlyThisUnitComments
+                            , id "report-1217-only-this-unit-comments"
+                            , onClick Report1217OnlyThisUnitCommentsToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-1217-only-this-unit-comments"
+                            ]
+                            [ text "Лише коментарі мого підрозділу" ]
+                        ]
                     ]
 
             , HtmlX.viewIf (model.reportTemplate == RTSposob) <|

@@ -148,6 +148,14 @@ async fn ambiguous_and_missing_mapping_fail_before_any_durable_change() {
     for id in collisions {
         echo_gpu_client::enqueue(&env.dbx, id).await.unwrap();
     }
+    env.dbx
+        .execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update echo_gpu_transcription_queue set state='retrying' where source_id=$1",
+            [collisions[1].into()],
+        ))
+        .await
+        .unwrap();
     let before = native_snapshot(&env).await;
     let error = migrate_sources(&env.dbx).await.unwrap_err();
     assert!(format!("{error:#}")
@@ -173,6 +181,74 @@ async fn ambiguous_and_missing_mapping_fail_before_any_durable_change() {
         .await
         .unwrap()
         .is_some());
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn conversion_merges_compatible_duplicates_in_every_state() {
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    let mut keepers = Vec::new();
+    let mut sources = Vec::new();
+    for state in ["queued", "retrying", "terminal", "processing", "completed"] {
+        let key = format!("duplicate-{state}");
+        let first = media_source(&env, &key).await;
+        let second = media_source(&env, &key).await;
+        for id in [first, second] {
+            echo_gpu_client::enqueue(&env.dbx, id).await.unwrap();
+        }
+        env.dbx
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update echo_gpu_transcription_queue set state=$2 where source_id=any($1)",
+                [vec![first, second].into(), state.into()],
+            ))
+            .await
+            .unwrap();
+        env.dbx
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update echo_gpu_transcription_queue set created_at=created_at-interval '1 day' where source_id=$1",
+                [first.into()],
+            ))
+            .await
+            .unwrap();
+        let keeper = echo_gpu_client::lookup(&env.dbx, first)
+            .await
+            .unwrap()
+            .unwrap();
+        keepers.push(keeper.0.id);
+        sources.push((format!("message-media/{key}"), keeper, first, second));
+    }
+    let before: Vec<_> = native_snapshot(&env)
+        .await
+        .into_iter()
+        .filter(|row| {
+            keepers.iter().any(|id| row["id"] == serde_json::json!(id))
+        })
+        .collect();
+    for _ in 0..2 {
+        migrate_sources(&env.dbx).await.unwrap();
+        assert_eq!(native_snapshot(&env).await, before);
+    }
+    for (key, mut keeper, first, second) in sources {
+        let source_id = super::service::source_id(&env.dbx, &key)
+            .await
+            .unwrap()
+            .unwrap();
+        keeper.0.source_id = source_id;
+        let migrated = echo_gpu_client::lookup(&env.dbx, source_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(migrated.0, keeper.0);
+        for id in [first, second] {
+            assert!(media::Entity::find_by_id(id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .is_some());
+        }
+    }
 }
 
 #[actix_web::test]

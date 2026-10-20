@@ -155,6 +155,31 @@ source_reconciliation_failure_is_transient "$lock_output"
 wait "$locker_pid"
 [[ -z $(gateway_refresh_plan) ]]
 
+gateway_oid=$(postgres_psql --dbname "$test_database" -Atqc \
+  "SELECT 'public.echo_test'::regclass::oid")
+printf '%s\n' \
+  "INSERT INTO source_column_metadata VALUES ('public', 'echo_test', 'echo_test', 'source_only', 4, NULL);" \
+  >>"$metadata_sql"
+sudo -u postgres psql -X --host /var/run/postgresql \
+  --dbname "$test_database" -v ON_ERROR_STOP=1 \
+  -c 'ALTER TABLE ch_current.echo_test ADD COLUMN imported_only text' >/dev/null
+if mismatch_output=$(gateway_refresh_plan 2>&1); then
+  printf 'gateway refresh unexpectedly accepted mismatched columns\n' >&2
+  exit 1
+fi
+[[ "$mismatch_output" == *'source and imported ClickHouse columns differ'* ]]
+[[ "$mismatch_output" == *'source only: echo_test.source_only'* ]]
+[[ "$mismatch_output" == *'imported only: echo_test.imported_only'* ]]
+[[ $(postgres_psql --dbname "$test_database" -Atqc \
+  "SELECT 'public.echo_test'::regclass::oid") == "$gateway_oid" ]]
+[[ $(postgres_psql --dbname "$test_database" -Atqc \
+  "SELECT to_regnamespace('echo_clickhouse_refresh_expected') IS NULL") == t ]]
+sed -i '$d' "$metadata_sql"
+sudo -u postgres psql -X --host /var/run/postgresql \
+  --dbname "$test_database" -v ON_ERROR_STOP=1 \
+  -c 'ALTER TABLE ch_current.echo_test DROP COLUMN imported_only' >/dev/null
+[[ -z $(gateway_refresh_plan) ]]
+
 sudo -u postgres psql -X --host /var/run/postgresql \
   --dbname "$test_database" -v ON_ERROR_STOP=1 \
   -c 'ALTER TABLE ch_current.echo_test ADD COLUMN note text' >/dev/null

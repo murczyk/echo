@@ -101,4 +101,41 @@ for script in source-reconcile-tables source-reconcile-if-needed \
   [[ ! -e "$case_dir/operations" ]]
 done
 
+cat >>"$case_dir/bin/lib.sh" <<'LIB'
+require_source_replication_role() { :; }
+source_exclusions_match() { return 1; }
+log() { printf '[test] %s\n' "$*"; }
+LIB
+cat >"$case_dir/bin/source-resnapshot-table.sh" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$*" == '--manifest --published-only' ]]
+((ECHO_TEST_REPAIR_STATUS == 0)) || exit "$ECHO_TEST_REPAIR_STATUS"
+touch "$ECHO_TEST_REPAIRED"
+MOCK
+cat >"$case_dir/bin/source-sync-exclusions.sh" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ -f "$ECHO_TEST_REPAIRED" ]] || exit 90
+printf 'selection changed\n' >>"$ECHO_TEST_OPERATIONS"
+MOCK
+chmod +x "$case_dir/bin/source-resnapshot-table.sh" "$case_dir/bin/source-sync-exclusions.sh"
+
+for repair_status in 0 3; do
+  rm -f "$case_dir/repaired" "$case_dir/operations"
+  status=0
+  ECHO_TEST_FINGERPRINT="$case_dir/fingerprint" \
+  ECHO_TEST_REPAIRED="$case_dir/repaired" \
+  ECHO_TEST_OPERATIONS="$case_dir/operations" \
+  ECHO_TEST_REPAIR_STATUS=$repair_status \
+    bash "$case_dir/bin/source-sync-exclusions-if-needed.sh" --yes \
+    >"$case_dir/output" 2>&1 || status=$?
+  [[ "$status" == "$repair_status" ]]
+  if ((repair_status == 0)); then
+    [[ $(cat "$case_dir/operations") == 'selection changed' ]]
+  else
+    [[ ! -e "$case_dir/operations" ]]
+  fi
+done
+
 printf 'Source preflight and query failure tests passed\n'

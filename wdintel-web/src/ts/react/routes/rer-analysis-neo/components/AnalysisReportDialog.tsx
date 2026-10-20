@@ -214,6 +214,11 @@ const reportTemplateOptions: Array<{ id: ReportTemplateId; title: string; descri
       'Таблиця пеленгів із необов’язковим зазначенням об’єктів пеленгації за формою 1.2.5',
   },
   {
+    id: 'report_1217',
+    title: 'Звіт 1.2.17',
+    description: 'Перехоплення за радіомережами з коментарями',
+  },
+  {
     id: 'active_networks',
     title: 'Активні радіомережі',
     description: 'Доступно лише для розширених ролей звітів',
@@ -353,7 +358,7 @@ export function AnalysisReportDialog({
   const visibleReportTemplateOptions = availableReportTemplateOptions.filter(
     (option) =>
       radioFeaturesAllowed ||
-      !['pelengs', 'reo', 'mouse', 'report_125', 'posts_docx'].includes(option.id),
+      !['pelengs', 'reo', 'mouse', 'report_125', 'report_1217', 'posts_docx'].includes(option.id),
   );
   const isBabakOrInterception = report.template === 'babak' || report.template === 'interception';
   const disableBabakUnitCommentsFilter = report.template === 'babak' && report.withoutComments;
@@ -514,8 +519,9 @@ export function AnalysisReportDialog({
                       key={option.id}
                       variant={report.template === option.id ? 'contained' : 'outlined'}
                       disabled={
-                        ['reo', 'digest', 'report_125', 'active_networks'].includes(option.id) &&
-                        !hasAdvancedReportAccess
+                        ['reo', 'digest', 'report_125', 'report_1217', 'active_networks'].includes(
+                          option.id,
+                        ) && !hasAdvancedReportAccess
                       }
                       onClick={() => onUpdate({ template: option.id })}
                       sx={{
@@ -599,6 +605,21 @@ export function AnalysisReportDialog({
                 label="Лише теги/коментарі мого підрозділу"
                 onChange={(value) => onUpdate({ reportTagsOnlyThisUnit: value })}
                 sx={analysisReportTagsCheckboxSx}
+              />
+            </Stack>
+          ) : null}
+
+          {report.template === 'report_1217' ? (
+            <Stack spacing={1}>
+              <ReportCheckboxLabel
+                checked={report.report1217IncludeWithoutComments}
+                label="Включати перехоплення без коментарів"
+                onChange={(value) => onUpdate({ report1217IncludeWithoutComments: value })}
+              />
+              <ReportCheckboxLabel
+                checked={report.report1217OnlyThisUnitComments}
+                label="Лише коментарі мого підрозділу"
+                onChange={(value) => onUpdate({ report1217OnlyThisUnitComments: value })}
               />
             </Stack>
           ) : null}

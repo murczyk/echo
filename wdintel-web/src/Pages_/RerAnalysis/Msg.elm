@@ -134,6 +134,8 @@ type Msg
     | ReportTagsOnlyThisUnitToggle
     | ReportTagsOnlyThisUnitForReportToggle
     | Report1213LinkedNetworksOnlyToggle
+    | Report1217IncludeWithoutCommentsToggle
+    | Report1217OnlyThisUnitCommentsToggle
     | ReportWithoutCommentsToggle
     | ReportBabakNewCallsignMinMentionsInput String
     | ReportDigestOmitExoIdToggle

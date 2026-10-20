@@ -312,6 +312,7 @@ WHERE namespace.nspname IN (
 DO $do$
 DECLARE
   expected_tables integer;
+  column_difference text;
 BEGIN
   IF EXISTS (
     SELECT target_table
@@ -330,18 +331,30 @@ BEGIN
   THEN
     RAISE EXCEPTION 'source publication and ClickHouse view counts differ';
   END IF;
-  IF EXISTS (
-    (SELECT target_table, column_name FROM source_column_metadata
-     EXCEPT
-     SELECT table_name, column_name FROM information_schema.columns
-     WHERE table_schema = 'echo_clickhouse_refresh_expected')
+  WITH imported_columns AS (
+    SELECT table_name AS target_table, column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'echo_clickhouse_refresh_expected'
+  ), differing_columns AS (
+    SELECT 'source only' AS side, missing.* FROM (
+      SELECT target_table, column_name FROM source_column_metadata
+      EXCEPT
+      SELECT target_table, column_name FROM imported_columns
+    ) missing
     UNION ALL
-    (SELECT table_name, column_name FROM information_schema.columns
-     WHERE table_schema = 'echo_clickhouse_refresh_expected'
-     EXCEPT
-     SELECT target_table, column_name FROM source_column_metadata)
-  ) THEN
-    RAISE EXCEPTION 'source and imported ClickHouse columns differ';
+    SELECT 'imported only' AS side, extra.* FROM (
+      SELECT target_table, column_name FROM imported_columns
+      EXCEPT
+      SELECT target_table, column_name FROM source_column_metadata
+    ) extra
+  )
+  SELECT string_agg(format('%s: %I.%I', side, target_table, column_name),
+                    E'\n' ORDER BY side, target_table, column_name)
+  INTO column_difference
+  FROM differing_columns;
+  IF column_difference IS NOT NULL THEN
+    RAISE EXCEPTION 'source and imported ClickHouse columns differ'
+      USING DETAIL = column_difference;
   END IF;
 END
 $do$;

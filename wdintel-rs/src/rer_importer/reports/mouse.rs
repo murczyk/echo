@@ -2081,6 +2081,7 @@ mod tests {
             report_tags_only_this_unit: Some(false),
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
+            report_1217_include_without_comments: None,
             without_comments: Some(false),
             babak_new_callsign_min_mentions: None,
             interception_keep_full_message: None,

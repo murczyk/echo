@@ -301,28 +301,30 @@ describe('AnalysisReportDialog', () => {
     act(() => view.root.unmount());
   });
 
-  it('shows report 1.2.5 as an advanced report option', () => {
+  it.each(['Звіт 1.2.5', 'Звіт 1.2.17'])('restricts %s to advanced report roles', (title) => {
     const view = renderDialog();
-    const report125Button = Array.from(
+    const reportButton = Array.from(
       view.container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((button) => button.textContent?.includes('Звіт 1.2.5'));
+    ).find((button) => button.textContent?.includes(title));
 
-    expect(report125Button).toBeTruthy();
-    expect(report125Button?.disabled).toBe(true);
+    expect(reportButton).toBeTruthy();
+    expect(reportButton?.disabled).toBe(true);
 
-    act(() => {
-      view.root.render(
-        createElement(AnalysisReportDialog, {
-          ...view.props,
-          currentUser: { roles: ['Rer', 'AdvancedReports'] } as never,
-        }),
-      );
-    });
+    for (const role of ['UnitsEditor', 'CallsignsEditor', 'AdvancedReports', 'Admin']) {
+      act(() => {
+        view.root.render(
+          createElement(AnalysisReportDialog, {
+            ...view.props,
+            currentUser: { roles: ['Rer', role] } as never,
+          }),
+        );
+      });
 
-    const enabledReport125Button = Array.from(
-      view.container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((button) => button.textContent?.includes('Звіт 1.2.5'));
-    expect(enabledReport125Button?.disabled).toBe(false);
+      const enabledReportButton = Array.from(
+        view.container.querySelectorAll<HTMLButtonElement>('button'),
+      ).find((button) => button.textContent?.includes(title));
+      expect(enabledReportButton?.disabled).toBe(false);
+    }
 
     act(() => {
       view.root.unmount();

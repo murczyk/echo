@@ -65,8 +65,7 @@ begin
     join echo_gpu_transcription_queue task on task.id=mapping.id
     join echo_gpu_transcription_queue keeper on keeper.id=mapping.keeper_id
     where mapping.id<>mapping.keeper_id and (
-        task.state<>'completed' or keeper.state<>'completed'
-        or convert_to(task.transcribed_value,'UTF8') is distinct from convert_to(keeper.transcribed_value,'UTF8')
+        convert_to(task.transcribed_value,'UTF8') is distinct from convert_to(keeper.transcribed_value,'UTF8')
         or (to_jsonb(task)-separate_history) is distinct from (to_jsonb(keeper)-separate_history)
     )
     order by mapping.id limit 1;
