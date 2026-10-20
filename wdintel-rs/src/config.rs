@@ -79,6 +79,22 @@ pub const AI_ENGINE_URL_MAX_CHARS: usize = 2048;
 pub const AI_ENGINE_MODEL_NAME_MAX_CHARS: usize = 255;
 pub const AI_ENGINE_TOKEN_MAX_CHARS: usize = 16_384;
 pub const AI_ENGINE_ERROR_BODY_MAX_CHARS: usize = 2_000;
+pub const AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES: &[&str] =
+    &["gpt-5", "gpt-6", "o1", "o3", "o4"];
+pub const AI_ENGINE_OPENAI_REASONING_NONE_MODELS: &[&str] = &[
+    "gpt-5.1",
+    "gpt-5.2",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "gpt-5.5",
+    "gpt-5.6",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-6-sol",
+    "gpt-6-luna",
+];
 pub const AI_CHAT_PROMPT_MAX_CHARS: usize = 100_000;
 pub const AI_CHAT_TITLE_MAX_CHARS: usize = 120;
 pub const AI_CALLSIGN_FEEDBACK_PAGE_SIZE: i64 = 100;
@@ -264,12 +280,14 @@ pub const AI_INTEL_REPORT_EXAMPLE_LIMIT: usize = 6;
 pub const AI_INTEL_REPORT_EXAMPLE_SOURCE_MAX_CHARS: usize = 1_500;
 pub const AI_INTEL_REPORT_SOURCE_MATERIALS_MAX_CHARS: usize = 12_000;
 pub const AI_INTEL_REPORT_PROMPT_MAX_CHARS: usize = 24_000;
-pub const AI_INTEL_REPORT_OUTPUT_MAX_TOKENS: u32 = 512;
+pub const AI_INTEL_REPORT_OUTPUT_MAX_TOKENS: i32 = 512;
+pub const AI_INTEL_REPORT_OUTPUT_TOKEN_LIMIT: i32 = 32_768;
 pub const AI_INTEL_REPORT_OUTPUT_MAX_CHARS: usize = 1_000;
 pub const AI_INTEL_REPORT_SUGGESTION_LIMIT: usize = 3;
-pub const AI_INTEL_REPORT_TIMEOUT_SECS: u64 = 20;
+pub const AI_INTEL_REPORT_TIMEOUT_SECS: i32 = 20;
+pub const AI_INTEL_REPORT_TIMEOUT_LIMIT_SECS: i32 = 180;
 pub const AI_INTEL_REPORT_EXAMPLE_REPORT_MAX_CHARS: usize = 160;
-pub const AI_INTEL_REPORT_ADMIN_ATTEMPT_LIMIT: u64 = 500;
+pub const AI_INTEL_REPORT_ADMIN_ATTEMPT_PAGE_SIZE: i32 = 20;
 pub const AI_INTEL_REPORT_ATTEMPT_ERROR_MAX_CHARS: usize = 4_000;
 pub const AI_INTEL_REPORT_ATTEMPT_RAW_RESPONSE_MAX_CHARS: usize = 8_000;
 pub const AI_INTEL_REPORT_PROMPT: &str = include_str!(
@@ -290,6 +308,7 @@ pub const AI_AGENT_ROLE_API: &str = "ApiAgent";
 pub const AI_AGENT_ROLE_RER: &str = "Rer";
 pub const ROLE_CYBER: &str = "Cyber";
 pub const ROLE_CYBER_VIEWER: &str = "CyberViewer";
+pub const ROLE_CYBER_VIEWER_RESTRICTED: &str = "CyberViewerRestricted";
 pub const AI_AGENT_ROLE_CYBER: &str = "Cyber";
 pub const AI_AGENT_CORRELATION_HEADER: &str = "X-Echo-Agent-Session";
 pub const AI_AGENT_BOOTSTRAP_REDIS_PREFIX: &str = "ai-agent:bootstrap:";
@@ -383,8 +402,7 @@ pub const AI_AGENT_REVIEW_RETRY_BASE_SEC: i64 = 10;
 pub const AI_AGENT_REVIEW_RETRY_MAX_SEC: i64 = 15 * 60;
 pub const AI_AGENT_REVIEW_CLAIM_LEASE_SEC: i64 = 10 * 60;
 pub const AI_AGENT_SSE_POLL_MS: u64 = 500;
-pub const AI_AGENT_ADMIN_REQUEST_LIMIT_DEFAULT: i32 = 100;
-pub const AI_AGENT_ADMIN_REQUEST_LIMIT_MAX: i32 = 500;
+pub const AI_AGENT_ADMIN_REQUEST_PAGE_SIZE: i32 = 20;
 pub const AI_AGENT_DISPATCHER_PORT_DEFAULT: u16 = 22031;
 pub const AI_AGENT_DISPATCHER_IDENTITY_FILE: &str =
     "/etc/echo/ai-agent/dispatcher_ed25519";
@@ -453,9 +471,7 @@ pub const AI_AGENT_MATTERMOST_CHAT_RETRY_MAX_SEC: i64 = 15 * 60;
 pub const AI_AGENT_MATTERMOST_CHAT_CLAIM_LEASE_SEC: i64 = 30;
 pub const AI_AGENT_MATTERMOST_CHAT_PROMPT_MAX_CHARS: usize = 12 * 1024;
 pub const ECHO_AUDIO_TRANSCRIPTION_CONCURRENCY: usize = 1;
-pub const ECHO_AUDIO_TRANSCRIPTION_RETENTION_DAYS: i64 = 2;
 pub const ECHO_AUDIO_TRANSCRIPTION_MAX_BYTES: i64 = 104_857_600;
-pub const ECHO_AUDIO_TRANSCRIPTION_CLEANUP_BATCH_SIZE: u64 = 100;
 pub const ECHO_AUDIO_TRANSCRIPTION_BACKFILL_BATCH_SIZE: u64 = 200;
 pub const ECHO_AUDIO_TRANSCRIPTION_ACTIVE_SLEEP_MS: u64 = 100;
 pub const ECHO_AUDIO_TRANSCRIPTION_IDLE_SLEEP_MS: u64 = 5_000;
@@ -726,6 +742,16 @@ pub const RER_CALLSIGN_MATCH_KEY_SQL: &str = concat!(
 );
 pub const RER_CALLSIGN_QUERY_PARAM_CHUNK_SIZE: usize = 30_000;
 pub const RER_REPORT_ENRICHMENT_ID_BATCH_SIZE: usize = 20_000;
+pub const REPORT_1217_BATCH_SIZE: usize = 20_000;
+pub const REPORT_1217_COLUMN_WIDTHS: [usize; 2] = [2300, 7339];
+pub const REPORT_1217_PAGE_SIZE: (u32, u32) = (11906, 16838);
+pub const REPORT_1217_PAGE_MARGINS: (i32, i32, i32, i32) =
+    (1417, 850, 850, 850);
+pub const REPORT_1217_FONT: &str = "Times New Roman";
+pub const REPORT_1217_FONT_SIZE: usize = 20;
+pub const REPORT_1217_FORM: &str = "Форма №1.2.17/ОСУВ";
+pub const REPORT_1217_TITLE: &str =
+    "Донесення за результатами ведення радіоелектронної розвідки";
 pub const RER_BABAK_CANDIDATE_PAGE_SIZE: u64 = 5_000;
 pub const RER_BABAK_CANDIDATE_STREAM_MAX_GROUPS: usize = 32;
 pub const RER_BABAK_CANDIDATE_STREAM_CONCURRENCY: usize = 8;
@@ -1324,6 +1350,7 @@ DELETE FROM ai_callsign_feedback;
 DELETE FROM ai_callsign_feedback_summary;
 DELETE FROM ai_callsign_override;
 DELETE FROM ai_callsign_action;
+DELETE FROM ai_intel_report_engine_budget;
 DELETE FROM ai_position_feedback;
 DELETE FROM ai_position_link_job;
 DELETE FROM ai_position_knowledge_job;
@@ -1331,10 +1358,16 @@ DELETE FROM ai_position_knowledge;
 UPDATE ai_intel_report_settings
 SET quick_suggestion_enabled = false,
     quick_ai_engine_id = NULL,
+    fallback_ai_engine_id = NULL,
+    primary_timeout_secs = NULL,
+    fallback_timeout_secs = NULL,
+    total_timeout_secs = NULL,
     legacy_comment_cutoff = (now() at time zone 'utc'),
     updated_at = (now() at time zone 'utc')
 WHERE id = 1;
 DELETE FROM echo_gpu_transcription_queue;
+DELETE FROM echo_gpu_audio_chunk;
+DELETE FROM transcription_source;
 DELETE FROM gpu_config;
 DELETE FROM secret_group_user;
 DELETE FROM palitra_highlight_blacklist;

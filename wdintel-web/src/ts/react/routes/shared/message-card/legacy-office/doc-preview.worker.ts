@@ -2,7 +2,7 @@ import { buildDocPreview } from './doc-preview';
 import { LegacyOfficePreviewError, LegacyOfficePreviewErrorCode } from './legacy-office-errors';
 import type { DocPreviewResult } from './legacy-office-preview.types';
 
-type Request = { requestId: string; request: { buffer: ArrayBuffer } };
+type Request = { requestId: string; request: { buffer: ArrayBuffer; maxBytes?: number } };
 type Response = { requestId: string; ok: boolean; value?: DocPreviewResult; error?: string };
 
 self.addEventListener('message', (event: MessageEvent<Request>) => {
@@ -11,7 +11,7 @@ self.addEventListener('message', (event: MessageEvent<Request>) => {
     self.postMessage({
       requestId,
       ok: true,
-      value: buildDocPreview(request.buffer),
+      value: buildDocPreview(request.buffer, request.maxBytes),
     } satisfies Response);
   } catch (error) {
     const code =

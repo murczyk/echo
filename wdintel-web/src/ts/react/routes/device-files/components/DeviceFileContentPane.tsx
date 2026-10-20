@@ -6,7 +6,8 @@ import PendingActionsOutlinedIcon from '@mui/icons-material/PendingActionsOutlin
 import { CircularProgress } from '@mui/material';
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 
-import type { DeviceFileSelection } from '../device-file-archive';
+import { isDeviceArchive, type DeviceFileSelection } from '../device-file-archive';
+import { DeviceArchiveTree } from './DeviceArchiveTree';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerSnackbarProvider } from '../../../components/PowerSnackbar';
@@ -27,11 +28,6 @@ const DeviceFileImagePreview = lazy(() =>
   import('./DeviceFileImagePreview').then((module) => ({ default: module.DeviceFileImagePreview })),
 );
 
-const ZipFilePreview = lazy(() =>
-  import('../../shared/message-card/renderers/ZipDocumentPreview').then((module) => ({
-    default: module.ZipFilePreview,
-  })),
-);
 const MapFilePreview = lazy(() =>
   import('../../shared/message-card/renderers/MapFilePreview').then((module) => ({
     default: module.MapFilePreview,
@@ -83,14 +79,6 @@ function FilePreview({
     );
   if (kind === 'converted-map')
     return <DeviceFileGeodataPreview source={preview.source} lifecycle={lifecycle} />;
-  if (kind === 'zip')
-    return (
-      <ZipFilePreview
-        source={preview.source}
-        lifecycle={lifecycle}
-        checkAccess={preview.checkAccess}
-      />
-    );
   if (kind === 'map')
     return (
       <MapFilePreview
@@ -209,6 +197,7 @@ function SelectedFilePane({
   revisionPinned = false,
   citation,
   mobile,
+  onSelectFile,
 }: {
   deviceId: string;
   file: DeviceFileSelection;
@@ -216,6 +205,7 @@ function SelectedFilePane({
   revisionPinned?: boolean;
   citation?: AiAgentFileCitation;
   mobile: boolean;
+  onSelectFile: (file: DeviceFileSelection) => void;
 }) {
   const preview = useDeviceFilePreview({ deviceId, file });
   const [zoom, setZoom] = useState(100);
@@ -231,7 +221,22 @@ function SelectedFilePane({
     preview.source &&
     getFilePreviewKind(preview.source) === 'document' &&
     getDocumentPreviewCapabilities(getDocumentFileKind(preview.source)).zoomable;
-  const content = <SelectedFileContent preview={preview} zoom={zoom} />;
+  const archive = isDeviceArchive(file);
+  const content = archive ? (
+    <ul className="m-0 list-none p-echo-sm">
+      <DeviceArchiveTree
+        key={`${deviceId}/${file.fileId}/${file.revision}`}
+        deviceId={deviceId}
+        file={file}
+        depth={0}
+        initialExpanded
+        showStatus
+        onSelectFile={onSelectFile}
+      />
+    </ul>
+  ) : (
+    <SelectedFileContent preview={preview} zoom={zoom} />
+  );
   return (
     <>
       <DeviceFileContentHeader
@@ -246,7 +251,8 @@ function SelectedFilePane({
       />
       <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-echo-background/50">
         {(preview.state === 'ready' || preview.state === 'empty') &&
-          !file.archiveMember &&
+          !archive &&
+          !file.archiveOrigin &&
           file.kind === 'file' &&
           file.fileId &&
           file.revision != null && (
@@ -298,6 +304,7 @@ function SelectedFilePane({
 export function DeviceFileContentPane({
   deviceId,
   file,
+  onSelectFile,
   sessionScoped = false,
   revisionPinned = false,
   citation,
@@ -305,22 +312,30 @@ export function DeviceFileContentPane({
 }: {
   deviceId: string;
   file: DeviceFileSelection | null;
+  onSelectFile?: (file: DeviceFileSelection) => void;
   sessionScoped?: boolean;
   revisionPinned?: boolean;
   citation?: AiAgentFileCitation;
   mobile?: boolean;
 }) {
+  const key = `${deviceId}/${file?.fileId}/${file?.revision}`;
+  const [selection, setSelection] = useState<{ key: string; file: DeviceFileSelection } | null>(
+    null,
+  );
+  useEffect(() => setSelection(null), [key, file]);
+  const selected = !onSelectFile && selection?.key === key ? selection.file : file;
   return (
     <section
       aria-labelledby="device-file-content-title"
       data-testid="device-file-content-pane"
       className="flex h-full min-h-0 min-w-0 flex-col"
     >
-      {file !== null ? (
+      {selected !== null ? (
         <PowerSnackbarProvider>
           <SelectedFilePane
             deviceId={deviceId}
-            file={file}
+            file={selected}
+            onSelectFile={onSelectFile ?? ((file) => setSelection({ key, file }))}
             sessionScoped={sessionScoped}
             revisionPinned={revisionPinned}
             citation={citation}

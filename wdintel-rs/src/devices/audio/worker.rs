@@ -262,6 +262,14 @@ async fn remove_abandoned(
     if !confirm_claim(runtime, &claim).await.c(h!())? {
         return Ok(None);
     }
+    if !crate::transcription::service::may_delete(
+        &runtime.dbx,
+        &claim.storage_key,
+    )
+    .await
+    {
+        return Ok(None);
+    }
     store.operator.delete(&claim.storage_key).await.c(h!())?;
     Ok(Some(claim))
 }

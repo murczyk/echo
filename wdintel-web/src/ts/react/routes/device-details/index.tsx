@@ -37,6 +37,7 @@ import { selectDeviceSyncSession } from './url-state';
 import { DeviceSyncSessionsSidebar } from './components/DeviceSyncSessionsSidebar';
 import { DeviceSyncSessionFilter } from './components/DeviceSyncSessionFilter';
 import { useDeviceFileErrorNotification } from '../device-files/use-device-file-error-notification';
+import { useDeviceFilesPanelResize } from './use-device-files-panel-resize';
 
 function DeviceHeaderTitle({
   deviceName,
@@ -112,6 +113,7 @@ export function DeviceDetailsPage({
   }, [deviceId, linkedFile?.fileId, linkedFile?.revision]);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(syncId !== null);
+  const filesPanel = useDeviceFilesPanelResize(rightPanelOpen, !isMobileLayout);
   const [tagFilter, setTagFilter] = useState<DeviceAnalyticsTagFilter>({
     tagIds: [],
     tagMatch: 'any',
@@ -336,6 +338,7 @@ export function DeviceDetailsPage({
       ) : null}
 
       <div
+        ref={filesPanel.containerRef}
         className={
           isMobileLayout
             ? 'relative flex min-h-0 flex-1 overflow-hidden'
@@ -343,7 +346,7 @@ export function DeviceDetailsPage({
         }
         style={
           {
-            '--device-columns': `${leftPanelVisible ? (activeTab === 'files' || activeTab === 'audio' ? '320px ' : 'minmax(360px, 420px) ') : ''}minmax(0, 1fr)${rightPanelOpen ? ' 344px' : ''}`,
+            '--device-columns': `${leftPanelVisible ? (activeTab === 'files' ? `${filesPanel.width}px ` : activeTab === 'audio' ? '320px ' : 'minmax(360px, 420px) ') : ''}minmax(0, 1fr)${rightPanelOpen ? ' 344px' : ''}`,
           } as CSSProperties
         }
       >
@@ -359,15 +362,28 @@ export function DeviceDetailsPage({
           <>
             {!isMobileLayout && activeTab === 'files' ? (
               <div
+                id="device-files-sidebar-panel"
                 hidden={!leftPanelVisible}
-                className="min-w-0 echo-lg:min-h-0 echo-lg:overflow-hidden"
+                className="relative min-w-0 echo-lg:min-h-0"
               >
                 <DeviceFilesSidebar
+                  active={leftPanelVisible}
                   files={files}
                   tagsState={tagsState}
                   tagFilter={tagFilter}
                   onTagFilterChange={setTagFilter}
                 />
+                <div
+                  role="separator"
+                  tabIndex={0}
+                  aria-label="Ширина панелі файлів"
+                  aria-orientation="vertical"
+                  aria-controls="device-files-sidebar-panel"
+                  {...filesPanel.separatorProps}
+                  className="group absolute inset-y-0 left-full z-10 flex w-echo-lg touch-none cursor-col-resize select-none justify-center outline-none"
+                >
+                  <span className="w-px bg-echo-primary opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100" />
+                </div>
               </div>
             ) : !isMobileLayout && activeTab === 'audio' && leftPanelVisible ? (
               <DeviceAudioSidebar audio={guardedAudio} settings={audioSettings} />
@@ -404,6 +420,7 @@ export function DeviceDetailsPage({
                 }
                 activeTab={activeTab}
                 selectedFile={files.selectedFile}
+                onSelectFile={files.selectFile}
                 revisionPinned={files.revisionPinned}
                 citation={fileCitation}
                 journal={journal}

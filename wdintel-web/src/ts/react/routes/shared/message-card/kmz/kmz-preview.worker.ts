@@ -1,6 +1,6 @@
 import { parseKmzPreview } from './kmz-preview-parser';
 
-type Request = { buffer: ArrayBuffer; format: 'kml' | 'kmz' };
+type Request = { buffer: ArrayBuffer; format: 'kml' | 'kmz'; maxBytes?: number };
 
 self.addEventListener('message', (event: MessageEvent<{ requestId: string; request: Request }>) => {
   const { requestId, request } = event.data;
@@ -8,7 +8,7 @@ self.addEventListener('message', (event: MessageEvent<{ requestId: string; reque
     self.postMessage({
       requestId,
       ok: true,
-      value: parseKmzPreview(request.buffer, request.format),
+      value: parseKmzPreview(request.buffer, request.format, request.maxBytes),
     });
   } catch (error) {
     self.postMessage({

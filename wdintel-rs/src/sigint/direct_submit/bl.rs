@@ -318,15 +318,15 @@ where
         }
         None => unit_v2,
     };
-    let text =
-        if crate::system_settings::sigint_comment_parsing_enabled(&env.dbx)
+    let comment_parsing_enabled =
+        crate::system_settings::sigint_comment_parsing_enabled(&env.dbx)
             .await
-            .c(h!())?
-        {
-            crate::sigint::parser::extract_text_without_top_comment(body)?
-        } else {
-            crate::rer_importer::body_noheader::extract_text(body)?
-        };
+            .c(h!())?;
+    let text = if comment_parsing_enabled {
+        crate::sigint::parser::extract_text_without_top_comment(body)?
+    } else {
+        crate::rer_importer::body_noheader::extract_text(body)?
+    };
     let timezone = crate::config::get_tz();
     let local_now = chrono::Local::now().with_timezone(&timezone);
     let extracted_dt =
@@ -341,12 +341,16 @@ where
             .map(|datetime| datetime.to_rfc3339_opts(SecondsFormat::Secs, true))
     });
     let is_time_null = extracted_dt.map(|dt| !dt.has_time);
-    let comment_blacklist =
-        crate::sigint::comments::load_blacklist(dbx).await?;
-    let comments = crate::sigint::parser::parse_comments_with_blacklist(
-        body,
-        &comment_blacklist,
-    );
+    let comments = if comment_parsing_enabled {
+        let comment_blacklist =
+            crate::sigint::comments::load_blacklist(dbx).await.c(h!())?;
+        crate::sigint::parser::parse_comments_with_blacklist(
+            body,
+            &comment_blacklist,
+        )
+    } else {
+        crate::sigint::parser::ParsedComments::default()
+    };
 
     Ok(DirectSubmitParseRsp {
         ai_callsign_warning: None,
@@ -1254,6 +1258,7 @@ async fn cleanup_failed_direct_submit_uploads(
 ) {
     cleanup_replacement_uploads(env, replacements).await;
     crate::messenger::media::delete_stored_media_files(
+        &env.dbx,
         &upload_result.media,
         &[],
         &env.config,
@@ -1590,6 +1595,7 @@ async fn finish_direct_submit(
     }
     if !media_to_delete_after_commit.is_empty() || !ocr_result_keys.is_empty() {
         crate::messenger::media::delete_stored_media_files(
+            &env.dbx,
             &media_to_delete_after_commit,
             &ocr_result_keys,
             &env.config,
@@ -1832,6 +1838,55 @@ mod tests {
             Err(AppError::Form(_))
         ));
         assert!(validate_signal_group_master_key(None, true).is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn direct_submit_parse_3758_respects_comment_parsing_setting() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        let settings = system_settings::ActiveModel {
+            sigint_comment_parsing_enabled: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let comment = "Важлива аналітична примітка";
+        let body = "19.10.2026, 13:59\n149.5000\n\n- Прийом.";
+
+        for enabled in [false, true, false] {
+            let mut settings = settings.clone().into_active_model();
+            settings.sigint_comment_parsing_enabled = Set(enabled);
+            settings.update(&env.dbx).await.unwrap();
+            for body in [
+                format!("{comment}\n\n{body}"),
+                format!("{body}\n\nКоментар: {comment}"),
+            ] {
+                let parsed = parse_signal_message(
+                    &login,
+                    &env,
+                    DirectSubmitParsePayload {
+                        full_body: body,
+                        include_ai_callsigns: false,
+                        signal_group_master_key: Some(
+                            TEST_SIGNAL_GROUP_KEY.to_string(),
+                        ),
+                    },
+                )
+                .await
+                .unwrap();
+
+                assert_eq!(
+                    parsed.comment.as_deref(),
+                    enabled.then_some(comment)
+                );
+                assert_eq!(parsed.freq.as_deref(), Some("149.5000"));
+                assert!(parsed.text.contains("- Прийом."));
+            }
+        }
     }
 
     #[tokio::test]
@@ -2548,7 +2603,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn direct_edit_removes_transcription_work_for_deleted_media() {
+    async fn direct_edit_retains_shared_transcription_after_media_deletion() {
         let env = cleanup().await.unwrap();
         let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
             .await
@@ -2561,7 +2616,7 @@ mod tests {
         .await
         .unwrap();
         let media_id = Uuid::now_v7();
-        signal_message_media::ActiveModel {
+        let media = signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(created.signal_message_id),
             signal_message_uuid: Set(
@@ -2583,7 +2638,12 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
-        echo_gpu_client::enqueue(&env.dbx, media_id).await.unwrap();
+        let (source, _) = crate::transcription::service::enqueue(
+            &env.dbx,
+            &crate::transcriber::media_queue::source_key(&media),
+        )
+        .await
+        .unwrap();
 
         let mut payload = direct_submit_payload("updated body");
         payload.deleted_media_ids = Some(vec![media_id.to_string()]);
@@ -2601,10 +2661,10 @@ mod tests {
             .await
             .unwrap()
             .is_none());
-        assert!(echo_gpu_client::lookup(&env.dbx, media_id)
+        assert!(echo_gpu_client::lookup(&env.dbx, source)
             .await
             .unwrap()
-            .is_none());
+            .is_some());
     }
 
     #[tokio::test]

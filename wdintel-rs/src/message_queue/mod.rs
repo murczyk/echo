@@ -511,6 +511,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn media_staging_finishes_before_waiting_for_the_update_lock() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
@@ -551,6 +552,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn unchanged_active_edit_hash_skips_object_upload() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
@@ -582,6 +584,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn queue_ingestion_enqueues_stored_geodata_before_commit() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
@@ -646,6 +649,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn queue_ingestion_enqueues_stored_audio_before_commit() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
@@ -693,7 +697,14 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(echo_gpu_client::lookup(&txn, media.id)
+        let source = crate::transcription::service::source_id(
+            &txn,
+            &crate::transcriber::media_queue::source_key(&media),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(echo_gpu_client::lookup(&txn, source)
             .await
             .unwrap()
             .is_some());
@@ -709,7 +720,7 @@ mod tests {
                     &media,
                 ));
         s3.as_ref().unwrap().stat(&remote_key).await.unwrap();
-        assert!(echo_gpu_client::lookup(&env.dbx, media.id)
+        assert!(echo_gpu_client::lookup(&env.dbx, source)
             .await
             .unwrap()
             .is_some());

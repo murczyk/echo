@@ -2042,6 +2042,59 @@ export type FileEntryKind =
   | 'file'
 ;
 
+export type DeviceArchiveState =
+  | 'missing_content'
+  | 'not_prepared'
+  | 'queued'
+  | 'running'
+  | 'retry_wait'
+  | 'ready'
+  | 'failed'
+;
+
+export type DeviceArchiveReason =
+  | 'password_protected'
+  | 'invalid_archive'
+  | 'unsupported_format'
+  | 'source_too_large'
+  | 'unsafe_path'
+  | 'path_conflict'
+  | 'integrity_mismatch'
+  | 'safety_limit'
+  | 'retry_exhausted'
+  | 'storage_unavailable'
+  | 'internal_error'
+;
+
+export type DeviceFileContentRef = {
+  deviceId: string;
+  fileId: string;
+  revision: number;
+};
+
+export type DeviceArchiveOrigin = {
+  archiveId: string;
+  sourceFileId: string;
+  sourceRevision: number;
+};
+
+export type DeviceArchiveSummary = {
+  archiveId: string | null;
+  rootEntryId: string | null;
+  state: DeviceArchiveState;
+  reason: DeviceArchiveReason | null;
+  message: string | null;
+  limitName: string | null;
+};
+
+export type DeviceArchiveStatus = {
+  source: DeviceFileContentRef;
+  archive: DeviceArchiveSummary;
+  nextAttemptAt: string | null;
+  pollAfterMs: number;
+  updatedAt: string | null;
+};
+
 export type DeviceArchivedFilter =
   | 'active_only'
   | 'archived_only'
@@ -2151,6 +2204,10 @@ export type FileBreadcrumb = {
 };
 
 export type DeviceFileTreeEntry = {
+  archive: DeviceArchiveSummary | null;
+  isArchive: boolean;
+  archiveOrigin: DeviceArchiveOrigin | null;
+  virtualPath: string | null;
   entryId: string;
   parentEntryId: string;
   kind: FileEntryKind;
@@ -2172,11 +2229,15 @@ export type DeviceFileTreeEntry = {
 };
 
 export type DeviceFile = {
+  archive: DeviceArchiveSummary | null;
+  isArchive: boolean;
+  archiveOrigin: DeviceArchiveOrigin | null;
+  virtualPath: string | null;
   fileId: string;
   deviceId: string;
   parentEntryId: string;
   rootEntryId: string;
-  absolutePath: string;
+  absolutePath: string | null;
   hasContent: boolean;
   name: string;
   pathComponents: Array<string>;
@@ -2257,6 +2318,7 @@ export type CountDeviceFileSubtreesRsp = {
 };
 
 export type BrowseDeviceFilesReq = {
+  archiveRevision: number | null;
   syncId: string | null;
   deviceId: string;
   parentEntryId: string;
@@ -2298,6 +2360,7 @@ export type SearchDeviceFilesRsp = {
 };
 
 export type DeviceFileJournalEntry = {
+  archive: DeviceArchiveSummary | null;
   fileId: string;
   name: string;
   absolutePath: string;
@@ -3407,6 +3470,7 @@ export type ReportPreviewReq = {
   reportTagsOnlyThisUnit: boolean | null;
   tagReportSortBy: TagReportSortBy | null;
   report1213LinkedNetworksOnly: boolean | null;
+  report1217IncludeWithoutComments: boolean | null;
   withoutComments: boolean | null;
   babakNewCallsignMinMentions: number | null;
   interceptionKeepFullMessage: boolean | null;
@@ -5532,9 +5596,19 @@ export type SendAiChatMessageReq = {
   prompt: string;
 };
 
+export type AiIntelReportEngineBudgetItem = {
+  aiEngineId: string;
+  maxTokens: number;
+};
+
 export type AiIntelReportSettingsItem = {
   quickSuggestionEnabled: boolean;
   quickAiEngineId: string | null;
+  fallbackAiEngineId: string | null;
+  engineBudgets: Array<AiIntelReportEngineBudgetItem>;
+  primaryTimeoutSecs: number;
+  fallbackTimeoutSecs: number;
+  totalTimeoutSecs: number;
   legacyCommentCutoff: number;
   updatedAt: number;
 };
@@ -5542,6 +5616,11 @@ export type AiIntelReportSettingsItem = {
 export type SaveAiIntelReportSettingsReq = {
   quickSuggestionEnabled: boolean;
   quickAiEngineId: string | null;
+  fallbackAiEngineId: string | null | null;
+  engineBudgets: Array<AiIntelReportEngineBudgetItem> | null;
+  primaryTimeoutSecs: number | null;
+  fallbackTimeoutSecs: number | null;
+  totalTimeoutSecs: number | null;
 };
 
 export type QuickIntelReportSuggestionReq = {
@@ -5567,8 +5646,15 @@ export type AiIntelReportAttemptItem = {
   createdAt: number;
 };
 
+export type AiIntelReportAttemptListReq = {
+  pageStartId: string | null;
+};
+
 export type AiIntelReportAttemptListRsp = {
   items: Array<AiIntelReportAttemptItem>;
+  pageSize: number;
+  total: number | null;
+  pageStartIds: Array<string> | null;
 };
 
 export type AiAgentActivityPresentation = {
@@ -5990,7 +6076,7 @@ export type AiAgentContainerListRsp = {
 export type AiAgentAdminRequestListReq = {
   state: string | null;
   suspicious: boolean | null;
-  limit: number | null;
+  pageStartId: string | null;
 };
 
 export type AiAgentSecurityReviewItem = {
@@ -6025,6 +6111,9 @@ export type AiAgentAdminRequestItem = {
 
 export type AiAgentAdminRequestListRsp = {
   items: Array<AiAgentAdminRequestItem>;
+  pageSize: number;
+  total: number | null;
+  pageStartIds: Array<string> | null;
 };
 
 export type AiAgentRequestEventItem = {

@@ -158,6 +158,9 @@ fn base_file_entry(
     timestamp: NaiveDateTime,
 ) -> file_entry::ActiveModel {
     file_entry::ActiveModel {
+        is_archive: sea_orm::ActiveValue::NotSet,
+        archive_relative_path: sea_orm::ActiveValue::NotSet,
+        archive_file_id: sea_orm::ActiveValue::NotSet,
         id: Set(id),
         device_id: Set(device_id),
         parent_id: Set(parent_id),
@@ -190,6 +193,7 @@ async fn clear_file_entries(db: &DatabaseConnection) {
     db.execute_unprepared(
         r#"
         truncate table
+            file_archive,
             file_analysis_run_item,
             file_analysis_run,
             file_device_source_state,
@@ -354,18 +358,20 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
         .await;
     }
 
-    let basic = access::login_with_roles(&owner, &["Basic"]);
-    assert!(matches!(
-        bl::list_roots(
-            &env.dbx,
-            env.file_registry_db().unwrap(),
-            &basic,
-            tree.device_id,
-        )
-        .await
-        .unwrap_err(),
-        AppError::Forbidden(_),
-    ));
+    for role in ["Basic", "CyberViewerRestricted"] {
+        let denied = access::login_with_roles(&owner, &[role]);
+        assert!(matches!(
+            bl::list_roots(
+                &env.dbx,
+                env.file_registry_db().unwrap(),
+                &denied,
+                tree.device_id,
+            )
+            .await
+            .unwrap_err(),
+            AppError::Forbidden(_),
+        ));
+    }
 
     let admin = access::login_with_roles(&owner, &[ROLE_ADMIN]);
     assert_stage_eight_browse_composition(
@@ -3465,6 +3471,7 @@ mod types_tests {
         });
         let directory_scope = DirectoryScope::Directory {
             entry: DirectoryEntry {
+                revision: None, sync_id: None,
                 entry_id: directory_id,
                 device_id,
                 parent_entry_id: root_id,
@@ -4135,6 +4142,8 @@ mod query_ancestors_tests {
     ) -> DirectoryScope {
         DirectoryScope::Directory {
             entry: DirectoryEntry {
+                revision: None,
+                sync_id: None,
                 entry_id: current_id,
                 device_id,
                 parent_entry_id: root_id,
@@ -4149,6 +4158,9 @@ mod query_ancestors_tests {
 
     fn root_model(device_id: Uuid, root_id: Uuid) -> file_entry::Model {
         file_entry::Model {
+            is_archive: None,
+            archive_relative_path: None,
+            archive_file_id: None,
             id: root_id,
             device_id,
             parent_id: None,
@@ -4180,6 +4192,9 @@ mod query_ancestors_tests {
         hierarchy_path: &str,
     ) -> file_entry::Model {
         file_entry::Model {
+            is_archive: None,
+            archive_relative_path: None,
+            archive_file_id: None,
             id,
             device_id,
             parent_id: Some(parent_id),
@@ -4225,6 +4240,9 @@ mod query_ancestors_tests {
         name: &str,
     ) -> file_entry::Model {
         file_entry::Model {
+            is_archive: None,
+            archive_relative_path: None,
+            archive_file_id: None,
             id,
             device_id,
             parent_id: Some(parent_id),
@@ -4334,6 +4352,9 @@ mod query_model_tests {
     fn root_model() -> file_entry::Model {
         let timestamp = timestamp();
         file_entry::Model {
+            is_archive: None,
+            archive_relative_path: None,
+            archive_file_id: None,
             id: Uuid::from_u128(1),
             device_id: Uuid::from_u128(2),
             parent_id: None,

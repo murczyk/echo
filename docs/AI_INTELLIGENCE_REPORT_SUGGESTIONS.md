@@ -2,8 +2,12 @@
 
 The quick path prepares a draft while an operator opens a new intelligence
 report. It is available to RER and Cyber users, is disabled by default, and
-makes one logical OpenAI-compatible structured-output request with no reducer,
-content retry, or fallback model call. The [government transport](ai/government-inference.md)
+makes an OpenAI-compatible structured-output request to the primary engine.
+If the primary attempt fails, a configured fallback engine gets one retry
+with the same prompt and its own token budget and attempt timeout, bounded by
+the remaining overall time. A successful primary response skips fallback;
+without a configured fallback, the primary error is returned. Any fallback
+failure ends generation without a third attempt. The [government transport](ai/government-inference.md)
 may renew authorization and retry an initial HTTP 401 once. The selected system prompt is compiled from
 `ai-eval/2026-08-19-intelligence-report-prompt/prompt.txt`.
 
@@ -28,12 +32,23 @@ product as the strongest prompt example without forcing it into the generated
 variants.
 
 The request is capped at 12,000 current-source characters, 1,500 characters
-per example source, 24,000 total prompt characters, and 512 output tokens. A
-hard twenty-second timeout wraps the single model request. The response must be
+per example source and 24,000 total prompt characters. Output defaults to 512
+tokens per engine, including reasoning tokens. The primary attempt, fallback
+attempt, and overall generation each default to twenty seconds. The overall
+deadline includes preparation and both attempts; starting a fallback does not
+reset it. Administrators can set each engine's budget to 1–32,768 tokens and
+each timeout to 1–180 seconds. The response must be
 strict JSON containing one to three distinct nonempty paragraphs totaling at
-most 1,000 characters; new numeric or coordinate tokens are rejected instead
-of retried. Multiple variants are displayed in a small carousel and are
+most 1,000 characters; new numeric or coordinate tokens are rejected as content
+validation failures. Multiple variants are displayed in a small carousel and are
 inserted only when the operator clicks the selected text.
+
+GPT-5, GPT-6, and o-series engines use `max_completion_tokens` and omit
+`temperature`. Quick suggestions disable reasoning only for explicitly
+supported aliases and their dated snapshots; other engines retain their
+provider's reasoning default. Ordinary chat requests keep their existing
+reasoning behavior. See the [OpenAI reasoning guide](https://developers.openai.com/api/docs/guides/reasoning?api-mode=chat)
+for model-specific effort support.
 
 Source material, style examples, and prompts are never written to the database
 or application logs. Each authorized attempt stores its bounded outcome,
@@ -45,10 +60,30 @@ request duration.
 
 Administrators configure the feature at `/admin/ai/intelligence-reports`.
 Only enabled engines with the `callsign_enabled` capability are selectable.
+The page lists every configured model with its editable token budget and
+primary/fallback radio buttons. The primary and optional fallback must differ;
+budgets stay attached to their engines when selections change. Per-attempt
+and overall timeouts are configured independently. Existing installations
+retain their primary engine, have no fallback, and use 512 tokens per engine
+and twenty-second timeouts until configured. Increasing a token budget does
+not increase the 1,000-character limit for validated suggestions.
 An engine cannot lose that capability or be deleted while an enabled quick
 report setting uses it. The same screen lists the latest attempts and exposes
 their validated suggestions, raw model responses, and failure diagnostics
-without source messages or prompts.
+without source messages or prompts. Each logical request records the last
+engine attempted and its bounded response; duration includes preparation and
+both model calls. Primary failures, including token exhaustion
+(`finish_reason=length`, even with empty content), HTTP or connection errors,
+per-attempt timeouts, malformed output, and unsupported facts, invoke the
+configured fallback once if time remains before the overall deadline. An
+expired overall deadline ends generation without another model call.
+
+Attempt history loads twenty entries per page, discovering the next cursor
+with one lookahead row. Numbered navigation covers discovered pages, and
+“SHOW MORE” appends the next page. A total count appears only when the initial
+page contains the entire history. Refresh returns to the newest page. New
+attempts do not shift established page boundaries. Table search, filters, and
+sorting apply to loaded entries.
 
 ## Deployment
 

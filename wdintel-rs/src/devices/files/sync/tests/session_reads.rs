@@ -1,8 +1,315 @@
 use super::*;
 use crate::devices::files::{
+    archive::{
+        access as archive_access, hydrate, test_support as archive_fixture,
+    },
     sessions::{listing, read, types::*},
     types::*,
 };
+
+async fn archive_member(
+    db: &DatabaseConnection,
+    archive: Uuid,
+    name: &str,
+) -> file_entry::Model {
+    let revisions = sea_orm::sea_query::Query::select()
+        .column(file_revision::Column::Id)
+        .from(file_revision::Entity)
+        .and_where(file_revision::Column::OriginArchiveId.eq(archive))
+        .and_where(file_revision::Column::Name.eq(name))
+        .to_owned();
+    file_entry::Entity::find()
+        .filter(file_entry::Column::Id.in_subquery(revisions))
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap()
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn archive_history_survives_next_sync_without_changing_source_facts_3778()
+{
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device_id) = sync_fixture(&env, "archive-history").await;
+    let files = env.file_registry_db().unwrap();
+    let db = files.connection();
+    let mut item = raw_item(r"C:\bundle.zip");
+    item.extension = Some("zip".into());
+    item.mime_type = Some("application/zip".into());
+    let first = automatic(
+        &env.dbx,
+        files,
+        &actor,
+        device_id,
+        vec![item.clone(), raw_item(r"C:\Report.txt")],
+    )
+    .await
+    .unwrap();
+    let (id, _) = accepted_result(&first.results[0]);
+    let file_id = Uuid::parse_str(id).unwrap();
+    let source = file_entry::Entity::find_by_id(file_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    crate::file_registry::test_support::publish_content(db, &source, actor.id)
+        .await;
+    let old_archive = archive_fixture::publish(
+        db,
+        device_id,
+        file_id,
+        1,
+        ["nested.zip", "Report.txt"],
+    )
+    .await;
+    let nested = archive_member(db, old_archive, "nested.zip").await;
+    let old_nested = archive_fixture::publish(
+        db,
+        device_id,
+        nested.id,
+        1,
+        ["old.txt", "report.txt"],
+    )
+    .await;
+    let old_member = archive_member(db, old_nested, "old.txt").await;
+    let old_bytes =
+        archive_access::find_published_content(db, device_id, old_member.id, 1)
+            .await
+            .unwrap()
+            .unwrap();
+    item.file_metadata_modified_at = Some("2026-07-25T10:00:00+02:00".into());
+    let second = automatic(
+        &env.dbx,
+        files,
+        &actor,
+        device_id,
+        vec![item, raw_item(r"C:\Report.txt")],
+    )
+    .await
+    .unwrap();
+    assert_eq!(accepted_result(&second.results[0]), (id, 2));
+    let source = file_entry::Entity::find_by_id(file_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    crate::file_registry::test_support::publish_content(db, &source, actor.id)
+        .await;
+    let new_archive = archive_fixture::publish(
+        db,
+        device_id,
+        file_id,
+        2,
+        ["nested.zip", "new.txt"],
+    )
+    .await;
+    assert_ne!(old_archive, new_archive);
+    let new_nested = archive_member(db, new_archive, "nested.zip").await;
+    archive_fixture::publish(
+        db,
+        device_id,
+        new_nested.id,
+        2,
+        ["new-inner.txt", "Report.txt"],
+    )
+    .await;
+    assert_eq!(nested.id, new_nested.id);
+    for (sync, revision, archive) in [
+        (&first.sync.sync_id, 1, old_archive),
+        (&second.sync.sync_id, 2, new_archive),
+    ] {
+        assert_archive_session(
+            &env, &actor, device_id, sync, &source, revision, archive,
+        )
+        .await;
+    }
+    let summary =
+        crate::devices::analytics::query::device_summary(db, device_id)
+            .await
+            .unwrap();
+    assert_eq!(summary.total_file_count, 2);
+    assert_eq!(summary.files_with_content_count, 1);
+    let retained =
+        archive_access::find_published_content(db, device_id, old_member.id, 1)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(retained.object_key, old_bytes.object_key);
+    assert_eq!(retained.source_sha256, old_bytes.source_sha256);
+    assert!(archive_access::find_published_content(
+        db,
+        device_id,
+        old_member.id,
+        2
+    )
+    .await
+    .unwrap()
+    .is_none());
+    assert_eq!(
+        file_entry::Entity::find()
+            .filter(file_entry::Column::ArchiveFileId.is_null())
+            .filter(file_entry::Column::ParentId.is_null())
+            .count(db)
+            .await
+            .unwrap(),
+        1
+    );
+    let mut item = raw_item(r"C:\bundle.zip");
+    item.extension = Some("zip".into());
+    item.mime_type = Some("application/zip".into());
+    item.file_metadata_modified_at = Some("2026-07-26T10:00:00+02:00".into());
+    let third = automatic(&env.dbx, files, &actor, device_id, vec![item])
+        .await
+        .unwrap();
+    let source = file_entry::Entity::find_by_id(file_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    crate::file_registry::test_support::publish_content(db, &source, actor.id)
+        .await;
+    archive_fixture::publish(
+        db,
+        device_id,
+        file_id,
+        3,
+        ["plain.txt", "other.txt"],
+    )
+    .await;
+    for (sync, revision, expected) in [
+        (None, None, 404),
+        (Some(&first.sync.sync_id), None, 200),
+        (Some(&third.sync.sync_id), None, 404),
+        (None, Some(1), 200),
+        (None, Some(0), 400),
+        (None, Some(99), 404),
+    ] {
+        let body = serde_json::from_value(json!({
+            "device_id": device_id, "parent_entry_id": nested.id,
+            "sync_id": sync, "archive_revision": revision
+        }))
+        .unwrap();
+        let response = crate::devices::files::archive::tree::browse(
+            &env.dbx, files, &actor, &body,
+        )
+        .await;
+        let details = response.as_ref().err().map(|error| format!("{error:?}"));
+        let status = match response {
+            Ok(Some(_)) => 200,
+            Ok(None) => panic!("archive browse unexpectedly fell through"),
+            Err(error) => actix_web::ResponseError::error_response(&error)
+                .status()
+                .as_u16(),
+        };
+        assert_eq!(
+            status, expected,
+            "sync={sync:?}, revision={revision:?}: {details:?}"
+        );
+    }
+    assert_latest_session_archive(
+        &env,
+        &actor,
+        device_id,
+        file_id,
+        &second.sync.sync_id,
+    )
+    .await;
+}
+
+async fn assert_latest_session_archive(
+    env: &Env,
+    actor: &login::Model,
+    device: Uuid,
+    file: Uuid,
+    sync: &str,
+) {
+    let files = env.file_registry_db().unwrap();
+    let db = files.connection();
+    db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+        "insert into file_revision(id,revision,device_id,sync_id,name,absolute_path,mime_type,extension,file_metadata_created_at,file_metadata_modified_at,created_at,source_sequence,analysis_input_revision,is_archive)
+         select id,4,device_id,$2,name,absolute_path,mime_type,extension,file_metadata_created_at,file_metadata_modified_at,now(),(select max(source_sequence)+1 from file_revision where device_id=r.device_id),analysis_input_revision,is_archive from file_revision r where id=$1 and revision=3",
+        [file.into(), Uuid::parse_str(sync).unwrap().into()])).await.unwrap();
+    db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+        "update file_entry set revision=4,sync_id=$2,content_path=null where id=$1",[file.into(), Uuid::parse_str(sync).unwrap().into()])).await.unwrap();
+    let source = file_entry::Entity::find_by_id(file)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    crate::file_registry::test_support::publish_content(db, &source, actor.id)
+        .await;
+    archive_fixture::publish(db, device, file, 4, ["final.txt", "last.txt"])
+        .await;
+    let search = read::search(
+        &env.dbx,
+        files,
+        actor,
+        request(
+            device,
+            sync,
+            json!({"scope_entry_id":source.parent_id.unwrap()}),
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(search.entries.iter().any(|entry| entry.name == "final.txt"));
+    assert!(!search.entries.iter().any(|entry| matches!(
+        entry.name.as_str(),
+        "nested.zip" | "new-inner.txt" | "new.txt"
+    )));
+    let body = request(device, sync, json!({"parent_entry_id":file}));
+    let browse = crate::devices::files::archive::tree::browse(
+        &env.dbx, files, actor, &body,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(browse.entries.iter().all(|entry| entry.revision == Some(4)));
+}
+
+async fn assert_archive_session(
+    env: &Env,
+    actor: &login::Model,
+    device: Uuid,
+    sync: &str,
+    source: &file_entry::Model,
+    revision: i64,
+    archive: Uuid,
+) {
+    let files = env.file_registry_db().unwrap();
+    let mut page = read::browse(
+        &env.dbx,
+        files,
+        actor,
+        request(
+            device,
+            sync,
+            json!({"parent_entry_id": source.parent_id.unwrap()}),
+        ),
+    )
+    .await
+    .unwrap();
+    hydrate::tree(files.connection(), device, &mut page.entries)
+        .await
+        .unwrap();
+    assert_eq!(page.entries.len(), 2);
+    let selected = page
+        .entries
+        .iter()
+        .find(|entry| entry.file_id.as_deref() == Some(&source.id.to_string()))
+        .unwrap();
+    assert_eq!(selected.revision, Some(revision));
+    assert_eq!(selected.archive.as_ref().unwrap().archive_id, Some(archive));
+    assert_eq!(page.breadcrumbs[0].name, "C:\\");
+    let summary =
+        read::summary(&env.dbx, files, actor, request(device, sync, json!({})))
+            .await
+            .unwrap();
+    assert_eq!(summary.total_file_count, 2);
+    assert_eq!(summary.files_with_content_count, 1);
+    assert_eq!(summary.analyzed_file_count, 0);
+}
 
 fn request<T: serde::de::DeserializeOwned>(
     device_id: Uuid,

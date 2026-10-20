@@ -2878,7 +2878,7 @@ version = "0.1.1"
 
 [[package]]
 name = "echo-docs"
-version = "0.1.1-rc.202610111534"
+version = "0.1.1-rc.202610191828"
 
 [[package]]
 name = "echo-gpu-client"
@@ -2967,7 +2967,7 @@ source = "git+ssh://git@github.com/echoua/echo-im.git?rev=06ac23803f4dbc7bc5e9db
 
 [[package]]
 name = "echo-install"
-version = "0.1.1-rc.202610111534"
+version = "0.1.1-rc.202610191828"
 dependencies = [
  "anyhow",
  "echo-install-utils",
@@ -3011,7 +3011,7 @@ dependencies = [
 
 [[package]]
 name = "echo-messengers"
-version = "0.1.1-rc.202610111534"
+version = "0.1.1-rc.202610191828"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3765,7 +3765,7 @@ dependencies = [
 
 [[package]]
 name = "goi-echo-worker"
-version = "0.1.1-rc.202610111534"
+version = "0.1.1-rc.202610191828"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -9961,7 +9961,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202610111534"
+version = "0.1.1-rc.202610191828"
 dependencies = [
  "actix-files",
  "actix-identity",
@@ -9982,6 +9982,7 @@ dependencies = [
  "chrono-tz",
  "clap",
  "content_disposition",
+ "crc32fast",
  "crossterm 0.27.0",
  "csv",
  "ctor",
@@ -9997,6 +9998,7 @@ dependencies = [
  "echo-migration",
  "elm_rs",
  "env_logger 0.11.9",
+ "flate2",
  "fs2",
  "fs_extra",
  "futures",
@@ -10024,6 +10026,7 @@ dependencies = [
  "once_cell",
  "opencv",
  "opendal",
+ "openssl",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -10039,6 +10042,7 @@ dependencies = [
  "ratatui 0.27.0",
  "redis 1.0.5",
  "regex",
+ "reqsign",
  "reqwest 0.12.28",
  "rust-argon2",
  "rust_xlsxwriter",

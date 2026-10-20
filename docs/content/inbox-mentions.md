@@ -1,4 +1,7 @@
-# Personal inbox mentions
++++
+title = "Personal inbox mentions"
+weight = 46
++++
 
 Marking a message important can optionally create a personal inbox mention for
 each currently active user with effective access to the selected source group.

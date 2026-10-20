@@ -1,4 +1,5 @@
 use self::types::*;
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::entities::*;
 use crate::types::*;
 use crate::users::{ensure_admin, has_any_role, login_id_from_identity};
@@ -23,7 +24,13 @@ pub async fn aor_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Admin", "UnitsEditor", "Rer", "CyberViewer", "Api"],
+        vec![
+            "Admin",
+            "UnitsEditor",
+            "Rer",
+            ROLE_CYBER_VIEWER_RESTRICTED,
+            "Api",
+        ],
     )
     .await?;
 
@@ -262,7 +269,7 @@ pub async fn update_aor_report_order(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Admin", "Rer", "CyberViewer"],
+        vec!["Admin", "Rer", ROLE_CYBER_VIEWER_RESTRICTED],
     )
     .await
     .c(h!())?;

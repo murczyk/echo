@@ -46,7 +46,7 @@ async fn legacy_snapshot(connection: &DatabaseConnection) -> Vec<String> {
         let rows = connection
             .query_all_raw(Statement::from_string(
                 DbBackend::Postgres,
-                format!("select row_to_json(t)::text as row from {table} t order by id"),
+                format!("select (to_jsonb(t)-'origin_archive_id'-'is_archive'-'archive_file_id'-'archive_relative_path'-'archive_member_index')::text as row from {table} t order by id"),
             ))
             .await
             .unwrap();
@@ -528,8 +528,9 @@ async fn device_audio_asr_upgrade_preserves_history_and_guards_rollback() {
         transaction.commit().await.unwrap();
         let before = audio_history_snapshot(connection).await;
 
-        run_migrations(&config, Mode::Debug).await.unwrap();
-        run_migrations(&config, Mode::Debug).await.unwrap();
+        wdfiles_migration::Migrator::up(connection, Some(1))
+            .await
+            .unwrap();
         assert!(table_exists(connection, "device_audio_asr_job").await,
             "ASR migration must create the durable queue without backfilling history");
         assert_eq!(audio_history_snapshot(connection).await, before);
@@ -554,8 +555,30 @@ async fn device_audio_asr_upgrade_preserves_history_and_guards_rollback() {
         );
         transaction.rollback().await.unwrap();
         assert_asr_constraints(connection, &fixture).await;
-        assert_asr_backfill_constraints(connection, migration.as_ref()).await;
+        assert_asr_rollback_refused(connection, migration.as_ref(), "insert into device_audio_asr_setting (device_id,enabled,updated_at) values (gen_random_uuid(),false,now())").await;
         assert_asr_rollback_refused(connection, migration.as_ref(), "update device_audio set automatic_transcription='автоматичний', automatic_transcribed_at=now()").await;
+        assert_eq!(audio_history_snapshot(connection).await, before);
+        connection.execute_unprepared("insert into device_audio_asr_backfill (run_id,state,started_at) values (gen_random_uuid(),'ready',now()); insert into device_audio_asr_backfill_item (run_id,audio_id,audio_created_at) select run_id,id,created_at from device_audio_asr_backfill cross join device_audio").await.unwrap();
+        run_migrations(&config, Mode::Debug).await.unwrap();
+        assert!(
+            !table_exists(connection, "device_audio_asr_backfill_item").await
+        );
+        assert!(!table_exists(connection, "device_audio_asr_backfill").await);
+        assert!(!table_exists(connection, "device_audio_asr_job").await);
+        assert!(!table_exists(connection, "device_audio_asr_scheduler").await);
+        let transaction = connection.begin().await.unwrap();
+        transaction.execute_unprepared("update device_audio set automatic_transcription=null,automatic_transcribed_at=now()").await.unwrap();
+        reject(
+            &transaction,
+            "update device_audio set automatic_transcription=' '",
+        )
+        .await;
+        reject(
+            &transaction,
+            "update device_audio set automatic_transcribed_at='infinity'",
+        )
+        .await;
+        transaction.rollback().await.unwrap();
         assert_eq!(audio_history_snapshot(connection).await, before);
     }
     sqlx::Postgres::drop_database(&database_url).await.unwrap();
@@ -565,7 +588,7 @@ async fn audio_history_snapshot(
     connection: &DatabaseConnection,
 ) -> Vec<String> {
     connection.query_all_raw(Statement::from_string(DbBackend::Postgres,
-        "select (to_jsonb(a) - 'automatic_transcription' - 'automatic_transcribed_at')::text as row from device_audio a order by id".to_string()))
+        "select (to_jsonb(a) - 'automatic_transcription' - 'automatic_transcribed_at' - 'automatic_transcription_pending')::text as row from device_audio a order by id".to_string()))
         .await.unwrap().into_iter().map(|row| row.try_get("", "row").unwrap()).collect()
 }
 
@@ -662,59 +685,17 @@ async fn assert_asr_constraints(
     transaction.rollback().await.unwrap();
 }
 
-async fn assert_asr_backfill_constraints(
-    connection: &DatabaseConnection,
-    migration: &dyn sea_orm_migration::MigrationTrait,
-) {
-    let insert_run = "insert into device_audio_asr_backfill (run_id,state,started_at) values (gen_random_uuid(),'ready',now())";
-    assert_asr_rollback_refused(connection, migration, insert_run).await;
-    assert_asr_rollback_refused(connection, migration, "insert into device_audio_asr_setting (device_id,enabled,updated_at) values (gen_random_uuid(),false,now())").await;
-    let transaction = connection.begin().await.unwrap();
-    transaction.execute_unprepared(insert_run).await.unwrap();
-    // A deleted source must retain snapshot membership for skipped accounting.
-    transaction.execute_unprepared("insert into device_audio_asr_backfill_item (run_id,audio_id,audio_created_at) select run_id,gen_random_uuid(),now() from device_audio_asr_backfill").await.unwrap();
-    reject(&transaction, "insert into device_audio_asr_backfill_item select * from device_audio_asr_backfill_item").await;
-    reject(
-        &transaction,
-        "update device_audio_asr_backfill_item set run_id=gen_random_uuid()",
-    )
-    .await;
-    reject(
-        &transaction,
-        "update device_audio_asr_backfill_item set outcome='skipped'",
-    )
-    .await;
-    transaction.execute_unprepared("update device_audio_asr_backfill_item set outcome='skipped',reason_code='source_missing',finished_at=now()").await.unwrap();
-    reject(
-        &transaction,
-        "update device_audio_asr_backfill set checked=1",
-    )
-    .await;
-    reject(
-        &transaction,
-        "update device_audio_asr_backfill set cursor_created_at=now()",
-    )
-    .await;
-    transaction
-        .execute_unprepared(
-            "update device_audio_asr_backfill set checked=1,skipped=1",
-        )
-        .await
-        .unwrap();
-    transaction.rollback().await.unwrap();
-}
-
 #[tokio::test]
 #[serial_test::serial]
 async fn device_audio_asr_down_refuses_concurrently_committed_result() {
     let (config, database_url) = isolated_file_registry_config().await;
-    run_migrations(&config, Mode::Debug).await.unwrap();
     {
         let db = connect_runtime(&config, Mode::Debug)
             .await
             .unwrap()
             .unwrap();
         let connection = db.connection();
+        migrate_through(connection, "m20261010_130006_device_audio_asr").await;
         let transaction = connection.begin().await.unwrap();
         let fixture = AudioFixture::new();
         insert_ingest(&transaction, &fixture, "rollback-race.wav").await;

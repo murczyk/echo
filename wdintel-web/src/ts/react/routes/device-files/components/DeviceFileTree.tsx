@@ -1,32 +1,16 @@
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import {
-  Box,
-  CircularProgress,
-  Collapse,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Stack,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import { useEffect, useRef, type CSSProperties } from 'react';
+import { Collapse, List, Tooltip } from '@mui/material';
 
 import type { DeviceFileRoot, DeviceFileTreeEntry } from '../../../../../Bindings';
-import { PowerAlert } from '../../../components/PowerAlert';
-import { PowerButton } from '../../../components/PowerButton';
 import { PowerChip } from '../../../components/PowerChip';
-import { PowerIconButton } from '../../../components/PowerIconButton';
 import { DeviceAnalyticsTagBadges } from './DeviceAnalyticsTagBadges';
 import type { DeviceFilesState } from '../use-device-files';
-import type { DeviceFileTreeBranch } from '../use-device-file-tree';
 import { isDeviceArchive } from '../device-file-archive';
 import { DeviceArchiveTree } from './DeviceArchiveTree';
+import { DeviceFileTreePage } from './DeviceFileTreePage';
+import { DeviceFileTreeRow } from './DeviceFileTreeRow';
 
 const fileCountFormatter = new Intl.NumberFormat('uk-UA');
 
@@ -35,7 +19,6 @@ type DirectoryNode = {
   rootEntryId: string;
   name: string;
   scopeLabel: string;
-  secondary: string | null;
 };
 
 type DirectoryProps = {
@@ -58,15 +41,15 @@ function DirectoryFileCount({ fileCount }: { fileCount: number | null }) {
 
   return (
     <Tooltip title="Файлів у каталозі та вкладених каталогах">
-      <Box aria-label={description} sx={{ flexShrink: 0, ml: 1, display: 'inline-flex' }}>
+      <span aria-label={description} className="inline-flex shrink-0">
         <PowerChip
           label={fileCountFormatter.format(fileCount)}
           color="default"
           interactive={false}
-          minWidth={32}
-          sx={{ height: 22, fontVariantNumeric: 'tabular-nums' }}
+          minWidth={24}
+          sx={{ height: 20, fontVariantNumeric: 'tabular-nums' }}
         />
-      </Box>
+      </span>
     </Tooltip>
   );
 }
@@ -77,7 +60,6 @@ function toDirectoryNode(entry: DeviceFileTreeEntry, parent: DirectoryNode): Dir
     rootEntryId: parent.rootEntryId,
     name: entry.name,
     scopeLabel: joinScopeLabel(parent.scopeLabel, entry.name),
-    secondary: null,
   };
 }
 
@@ -91,119 +73,20 @@ function DeviceFileRow({
   files: DeviceFilesState;
 }) {
   const selected = files.selectedFile?.entryId === entry.entryId;
-  const row = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (selected) row.current?.scrollIntoView({ block: 'nearest' });
-  }, [selected]);
   return (
-    <Box
-      component="li"
-      className="max-echo-lg:pl-[min(calc(var(--device-tree-depth)*8px+8px),40px)]!"
-      style={{ '--device-tree-depth': depth } as CSSProperties}
-      sx={{
-        minWidth: 0,
-        display: 'flex',
-        alignItems: 'center',
-        pl: 1 + depth * 2,
-        pr: 0.5,
-        py: 0.25,
-      }}
-    >
-      <ListItemButton
-        ref={row}
-        data-testid={`device-file-${entry.entryId}`}
-        aria-current={selected ? 'true' : undefined}
-        component="button"
+    <li className="min-w-0">
+      <DeviceFileTreeRow
+        name={entry.name}
+        depth={depth}
+        entryId={entry.entryId}
         selected={selected}
-        aria-pressed={selected}
-        aria-description={entry.hasContent ? undefined : 'Контент файлу відсутній'}
+        hasContent={entry.hasContent}
         onClick={() => files.selectFile(entry)}
-        className={`min-h-echo-control-md min-w-0 rounded-echo-sm! ${selected ? 'bg-echo-primary/15!' : ''} ${entry.hasContent ? '' : 'opacity-55'}`}
-      >
-        <Box className="max-echo-lg:hidden" sx={{ width: 36, flexShrink: 0 }} />
-        <InsertDriveFileOutlinedIcon
-          fontSize="small"
-          color={selected ? 'primary' : 'action'}
-          sx={{ mr: 1 }}
-        />
-        <ListItemText
-          primary={
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-              <Typography
-                variant="body2"
-                color={selected ? 'primary' : 'text.primary'}
-                noWrap
-                title={entry.name}
-                sx={{ minWidth: 0 }}
-              >
-                {entry.name}
-              </Typography>
-              <DeviceAnalyticsTagBadges tags={entry.tags} />
-            </Stack>
-          }
-          sx={{ minWidth: 0, my: 0 }}
-        />
-      </ListItemButton>
-    </Box>
+        icon={<InsertDriveFileOutlinedIcon color={selected ? 'primary' : 'action'} />}
+        trailing={<DeviceAnalyticsTagBadges tags={entry.tags} />}
+      />
+    </li>
   );
-}
-
-function BranchStatus({
-  node,
-  branch,
-  files,
-  depth,
-}: {
-  node: DirectoryNode;
-  branch: DeviceFileTreeBranch | undefined;
-  files: DeviceFilesState;
-  depth: number;
-}) {
-  if (branch?.loading) {
-    return (
-      <Box component="li" className="max-echo-lg:pl-echo-lg!" sx={{ py: 1, pl: 5 + depth * 2 }}>
-        <CircularProgress size={20} aria-label={`Завантаження каталогу ${node.name}`} />
-      </Box>
-    );
-  }
-
-  if (branch?.error) {
-    return (
-      <Box
-        component="li"
-        className="max-echo-lg:pl-echo-lg!"
-        sx={{ px: 1, pl: 2 + depth * 2, py: 0.5 }}
-      >
-        <PowerAlert
-          severity="error"
-          autoHideDuration={null}
-          action={
-            <PowerButton size="small" onClick={() => void files.tree.retryBranch(node.entryId)}>
-              Повторити
-            </PowerButton>
-          }
-        >
-          {branch.error.message}
-        </PowerAlert>
-      </Box>
-    );
-  }
-
-  if (branch && !branch.refreshing && branch.entries.length === 0) {
-    return (
-      <Typography
-        component="li"
-        className="max-echo-lg:pl-echo-lg!"
-        variant="caption"
-        color="text.secondary"
-        sx={{ display: 'block', py: 0.75, pl: 5 + depth * 2, pr: 1 }}
-      >
-        {files.contentFilter === null ? 'Каталог порожній' : 'Немає файлів за вибраним фільтром'}
-      </Typography>
-    );
-  }
-
-  return null;
 }
 
 function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
@@ -216,67 +99,32 @@ function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
     subtreeFileCount === null ? null : fileCountDescription(subtreeFileCount);
 
   return (
-    <Box
-      component="li"
-      style={{ '--device-tree-depth': depth } as CSSProperties}
-      sx={{ minWidth: 0 }}
-    >
-      <Box
-        className="max-echo-lg:pl-[min(calc(var(--device-tree-depth)*8px),32px)]!"
-        sx={{ minWidth: 0, display: 'flex', alignItems: 'center', pl: depth * 2, pr: 0.5 }}
-      >
-        <PowerIconButton
-          size="small"
-          aria-expanded={expanded}
-          aria-controls={childrenId}
-          aria-label={`${expanded ? 'Згорнути' : 'Розгорнути'} каталог ${node.name}`}
-          onClick={() => files.tree.toggleDirectory(node.entryId)}
-          sx={{ flexShrink: 0 }}
-        >
-          {expanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
-        </PowerIconButton>
-        <ListItemButton
-          selected={selected}
-          aria-pressed={selected}
-          aria-expanded={expanded}
-          aria-controls={childrenId}
-          aria-label={`Вибрати каталог ${node.name} як область пошуку${
-            subtreeFileCountDescription === null ? '' : `; ${subtreeFileCountDescription}`
-          }`}
-          onClick={() => {
-            files.tree.toggleDirectory(node.entryId);
-            files.selectSearchScope({
-              entryId: node.entryId,
-              rootEntryId: node.rootEntryId,
-              label: node.scopeLabel,
-            });
-          }}
-          sx={{ minWidth: 0, py: 0.5, px: 0.75, borderRadius: 1 }}
-        >
-          <ListItemIcon sx={{ minWidth: 32 }}>
-            {expanded ? (
-              <FolderOpenOutlinedIcon fontSize="small" />
-            ) : (
-              <FolderOutlinedIcon fontSize="small" />
-            )}
-          </ListItemIcon>
-          <ListItemText
-            primary={node.name}
-            secondary={node.secondary}
-            primaryTypographyProps={{ noWrap: true, title: node.name, variant: 'body2' }}
-            secondaryTypographyProps={{ noWrap: true, title: node.secondary ?? undefined }}
-            sx={{ minWidth: 0, my: 0 }}
-          />
-          <DirectoryFileCount fileCount={subtreeFileCount} />
-          {branch?.refreshing ? (
-            <CircularProgress size={16} aria-label="Оновлення каталогу" />
-          ) : null}
-        </ListItemButton>
-      </Box>
+    <li className="min-w-0">
+      <DeviceFileTreeRow
+        name={node.name}
+        depth={depth}
+        selected={selected}
+        expanded={expanded}
+        childrenId={childrenId}
+        label={`Вибрати каталог ${node.name} як область пошуку${
+          subtreeFileCountDescription === null ? '' : `; ${subtreeFileCountDescription}`
+        }`}
+        toggleLabel={`${expanded ? 'Згорнути' : 'Розгорнути'} каталог ${node.name}`}
+        onToggle={() => files.tree.toggleDirectory(node.entryId)}
+        onClick={() => {
+          files.tree.toggleDirectory(node.entryId);
+          files.selectSearchScope({
+            entryId: node.entryId,
+            rootEntryId: node.rootEntryId,
+            label: node.scopeLabel,
+          });
+        }}
+        icon={expanded ? <FolderOpenOutlinedIcon /> : <FolderOutlinedIcon />}
+        trailing={<DirectoryFileCount fileCount={subtreeFileCount} />}
+      />
 
       <Collapse in={expanded} timeout="auto" unmountOnExit id={childrenId}>
         <List component="ul" dense disablePadding>
-          <BranchStatus node={node} branch={branch} files={files} depth={depth} />
           {branch?.entries.map((entry) =>
             entry.kind === 'directory' ? (
               <DeviceFileDirectory
@@ -290,55 +138,37 @@ function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
                 key={`${entry.entryId}/${entry.revision}/${files.archiveEpoch}`}
                 deviceId={files.deviceId}
                 file={entry}
+                filters={{
+                  tagIds: files.tagFilter.tagIds,
+                  tagMatch: files.tagFilter.tagMatch,
+                  untagged: files.tagFilter.untagged,
+                  hasContent: files.contentFilter,
+                }}
                 depth={depth + 1}
                 selectedEntryId={files.selectedFile?.entryId}
+                expandedEntryIds={files.tree.expandedEntryIds}
+                revealedBranches={files.tree.branches}
                 onSelectFile={files.selectFile}
+                onAccessDenied={files.clearSelectedFile}
               />
             ) : (
               <DeviceFileRow key={entry.entryId} entry={entry} depth={depth + 1} files={files} />
             ),
           )}
-          {branch?.loadMoreError ? (
-            <Box
-              component="li"
-              className="max-echo-lg:pl-echo-lg!"
-              sx={{ px: 1, pl: 2 + depth * 2, py: 0.5 }}
-            >
-              <PowerAlert
-                severity="error"
-                autoHideDuration={null}
-                action={
-                  <PowerButton
-                    size="small"
-                    onClick={() => void files.tree.loadMoreBranch(node.entryId)}
-                  >
-                    Повторити
-                  </PowerButton>
-                }
-              >
-                {branch.loadMoreError.message}
-              </PowerAlert>
-            </Box>
-          ) : null}
-          {branch?.nextCursor !== null && branch?.nextCursor !== undefined ? (
-            <Box
-              component="li"
-              className="max-echo-lg:pl-echo-lg!"
-              sx={{ py: 0.75, pl: 5 + depth * 2, pr: 1 }}
-            >
-              <PowerButton
-                size="small"
-                variant="text"
-                disabled={branch.loadingMore}
-                onClick={() => void files.tree.loadMoreBranch(node.entryId)}
-              >
-                {branch.loadingMore ? 'Завантаження…' : 'Показати ще'}
-              </PowerButton>
-            </Box>
+          {branch?.nextCursor &&
+          !branch.loading &&
+          !branch.refreshing &&
+          !branch.loadingMore &&
+          !branch.error &&
+          !branch.loadMoreError ? (
+            <DeviceFileTreePage
+              cursor={branch.nextCursor}
+              onLoadMore={() => void files.tree.loadMoreBranch(node.entryId)}
+            />
           ) : null}
         </List>
       </Collapse>
-    </Box>
+    </li>
   );
 }
 
@@ -348,7 +178,6 @@ function rootToNode(root: DeviceFileRoot): DirectoryNode {
     rootEntryId: root.entryId,
     name: root.name,
     scopeLabel: root.name,
-    secondary: 'Windows',
   };
 }
 
@@ -359,26 +188,6 @@ export function DeviceFileTree({ files }: { files: DeviceFilesState }) {
       data-testid="device-files-tree"
       aria-busy={files.tree.refreshing}
     >
-      {files.counts.loading ? (
-        <div className="flex justify-end px-echo-sm pb-echo-sm">
-          <CircularProgress size={16} aria-label="Завантаження кількості файлів" />
-        </div>
-      ) : null}
-      {files.counts.error ? (
-        <div className="px-echo-sm pb-echo-sm">
-          <PowerAlert
-            severity="warning"
-            autoHideDuration={null}
-            action={
-              <PowerButton size="small" onClick={files.counts.retry}>
-                Повторити
-              </PowerButton>
-            }
-          >
-            {files.counts.error.message}
-          </PowerAlert>
-        </div>
-      ) : null}
       <List component="ul" dense disablePadding aria-label="Синхронізовані файлові корені">
         {files.roots.map((root) => (
           <DeviceFileDirectory key={root.entryId} node={rootToNode(root)} depth={0} files={files} />

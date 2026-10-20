@@ -65,6 +65,25 @@ pub(in crate::devices) async fn load(
             .ok_or(AppError::NotFound)
             .c(h!())?;
     let current_revision = file.revision.c(h!())?;
+    let selected_revision = req.revision.unwrap_or(current_revision);
+    if file.archive_file_id.is_some() {
+        super::archive::access::find_published_content(
+            db,
+            device,
+            file.id,
+            selected_revision,
+        )
+        .await?
+        .ok_or(AppError::NotFound)?;
+        if req.revision.is_none() {
+            use sea_orm::{DbBackend, Statement};
+            let visible=db.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+                "select 1 from file_revision r join file_archive job on job.id=r.origin_archive_id and job.state='ready' join file_archive root on root.id=job.root_id join file_entry source on source.id=root.source_file_id and source.revision=root.source_revision where r.id=$1 and r.revision=$2",[file.id.into(),selected_revision.into()])).await?;
+            if visible.is_none() {
+                return Err(AppError::NotFound.into());
+            }
+        }
+    }
     let mut path = ltree::hierarchy_entry_ids(&file.hierarchy_path).c(h!())?;
     path.pop();
     let root_entry_id = path.first().c(h!())?.to_string();
@@ -83,6 +102,13 @@ pub(in crate::devices) async fn load(
             .ok_or(AppError::NotFound)
             .c(h!())?;
         let entry = entries.swap_remove(index);
+        let entry = if entry.kind == FileEntryKind::File
+            || entry.archive_file_id.is_some()
+        {
+            pinned_revision(db, entry, Some(selected_revision)).await?
+        } else {
+            entry
+        };
         if entry.parent_id.is_none() {
             continue;
         }
@@ -95,8 +121,12 @@ pub(in crate::devices) async fn load(
     }
     let file = pinned_revision(db, file, req.revision).await.c(h!())?;
     names.push(file.name.clone());
+    let mut file = map_tree_entry(map_tree_model(file).c(h!())?, names, vec![]);
+    super::archive::hydrate::tree(db, device, &mut ancestors).await?;
+    super::archive::hydrate::tree(db, device, std::slice::from_mut(&mut file))
+        .await?;
     Ok(LocateDeviceFileRsp {
-        file: map_tree_entry(map_tree_model(file).c(h!())?, names, vec![]),
+        file,
         ancestors,
         root_entry_id,
         current_revision,
@@ -127,8 +157,9 @@ async fn pinned_revision(
             .c(h!())?;
     file.revision = Some(revision.revision);
     file.sync_id = Some(revision.sync_id);
+    file.is_archive = revision.is_archive;
     file.name = revision.name;
-    file.absolute_path = Some(revision.absolute_path);
+    file.absolute_path = revision.absolute_path;
     file.extension = revision.extension;
     file.mime_type = revision.mime_type;
     file.file_metadata_created_at = revision

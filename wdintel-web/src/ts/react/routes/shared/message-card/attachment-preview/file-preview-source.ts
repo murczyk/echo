@@ -6,6 +6,7 @@ export type FilePreviewSource<Geodata = unknown> = {
   sizeBytes: number | null;
   originalHref: string;
   mediaHref?: string;
+  maxPreviewBytes?: number;
   geodata?: Geodata;
 };
 

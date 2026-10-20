@@ -128,7 +128,7 @@ async fn device_document_search_revisions_and_lease_fencing_3064() {
         .unwrap()
         .into_active_model();
     revision.revision = Set(2);
-    revision.source_sequence = Set(100);
+    revision.source_sequence = Set(Some(100));
     revision.name = Set("changed.txt".into());
     revision.insert(db).await.unwrap();
     let mut current = file.clone().into_active_model();
@@ -236,7 +236,7 @@ async fn device_document_reuse_and_citations_survive_new_generations_3064() {
         .unwrap()
         .into_active_model();
     revision.revision = Set(2);
-    revision.source_sequence = Set(100);
+    revision.source_sequence = Set(Some(100));
     revision.insert(db).await.unwrap();
     let mut content = file_content::Entity::find_by_id((file.id, 1))
         .one(db)

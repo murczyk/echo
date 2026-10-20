@@ -168,7 +168,7 @@ export function canViewNetworkActivityTab(user: User | null): boolean {
 }
 
 export function canViewNetworkRelationsTab(user: User | null): boolean {
-  return hasAnyRole(user?.roles, ['Rer', 'CyberViewer', 'Api', 'ApiAgent']);
+  return hasAnyRole(user?.roles, ['Rer', 'CyberViewerRestricted', 'Api', 'ApiAgent']);
 }
 
 function canManageNetworkActions(roles: readonly string[] | null | undefined): boolean {

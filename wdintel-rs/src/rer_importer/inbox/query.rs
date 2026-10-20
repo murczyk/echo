@@ -76,38 +76,6 @@ fn message_has_media_exists(
     Expr::exists(media_query)
 }
 
-fn message_is_accessible_exists(
-    sigint_groups: Vec<String>,
-    scope: Option<&AnalyticsMessageIdScope>,
-    force_nested_loop: bool,
-) -> SimpleExpr {
-    let mut access_query = Query::select();
-    access_query
-        .expr(Expr::value(1))
-        .from(signal_message_group::Entity)
-        .and_where(
-            Expr::col((
-                signal_message_group::Entity,
-                signal_message_group::Column::SignalMessageId,
-            ))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
-        )
-        .and_where(
-            signal_message_group::Column::GroupMasterKey.eq_any(sigint_groups),
-        );
-    if let Some(scope) = scope {
-        access_query.and_where(scope.condition((
-            signal_message_group::Entity,
-            signal_message_group::Column::SignalMessageId,
-        )));
-    }
-    if force_nested_loop {
-        access_query.offset(0);
-    }
-
-    Expr::exists(access_query.to_owned())
-}
-
 fn message_source_group_is_not_ignored_exists() -> SimpleExpr {
     let query = datasource_group::Entity::find()
         .select_only()
@@ -617,7 +585,7 @@ where
             scope.context(h!())?,
         );
     } else {
-        q = q.filter(message_is_accessible_exists(
+        q = q.filter(message_in_groups_exists_with_correlation(
             sigint_groups.clone(),
             scope,
             purpose == InboxQueryPurpose::IndexedDigest,
@@ -2127,7 +2095,7 @@ pub(crate) async fn build_inbox_page_details_query<C: ConnectionTrait>(
     let query = build_inbox_query_base(req, InboxQueryPurpose::Messages)
         .filter(signal_message::Column::Id.is_in(ids.to_vec()))
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(message_is_accessible_exists(groups, None, false));
+        .filter(message_in_groups_exists(groups));
     finish_inbox_query(dbx, login, req, query, false)
         .await
         .c(h!())

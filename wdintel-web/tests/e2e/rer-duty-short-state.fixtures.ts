@@ -84,6 +84,7 @@ function serverInfoResponse() {
     feature_delta: true,
     feature_analysis_map: true,
     feature_strict_networks: false,
+    feature_my_admin_groups_edit: false,
     version: 'test',
   };
 }

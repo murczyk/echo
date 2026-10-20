@@ -18,7 +18,7 @@ pub(super) const COLUMNS: &str = "src.device_id::text as device_id,src.id::text 
  coalesce(gen.summary_state,'pending') as summary_state,
  coalesce(gen.position_state,'pending') as position_state,null::text as snippet,''::text as citation";
 
-pub(super) const JOINS: &str = "join file_entry entry on entry.id=src.id
+pub(super) const JOINS: &str = "join file_entry entry on entry.id=src.id and entry.archive_file_id is null
  left join file_content content on content.file_id=src.id and content.revision=src.revision
  left join file_document doc on doc.file_id=src.id and doc.revision=src.revision
  left join file_document_generation gen on gen.id=doc.published_generation";
@@ -75,8 +75,16 @@ pub(crate) async fn search(
         });
     }
     let mut values = vec![Value::from(allowed)];
-    let mut filters = vec!["src.device_id=any($1)".to_string()];
     let history = req.history.unwrap_or(false);
+    let mut filters = vec![
+        "src.device_id=any($1)".to_string(),
+        if history {
+            "src.origin_archive_id is null"
+        } else {
+            "src.archive_file_id is null"
+        }
+        .to_string(),
+    ];
     if !history {
         filters.push("src.kind='file'".into());
         filters.push("src.parent_id is not null".into());

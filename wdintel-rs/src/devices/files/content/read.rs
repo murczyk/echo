@@ -32,15 +32,17 @@ pub(super) async fn download_content(
     identity: Identity,
     request: HttpRequest,
     path: web::Path<(Uuid, Uuid, i64)>,
-) -> Result<HttpResponse, AppError> {
+) -> Result<HttpResponse, actix_web::Error> {
     let login = access::resolve_current_login(&env.dbx, &identity)
         .await
-        .c(h!())?;
+        .c(h!())
+        .map_err(AppError::from)?;
     let (device_id, file_id, revision) = path.into_inner();
     let content =
         load_published_content(&env, &login, device_id, file_id, revision)
             .await
-            .c(h!())?;
+            .c(h!())
+            .map_err(AppError::from)?;
     Ok(prepare_authorized_content(
         &env,
         login.id,
@@ -49,7 +51,8 @@ pub(super) async fn download_content(
         serve_content(&env, &request, &content),
     )
     .await
-    .c(h!())?)
+    .c(h!())
+    .map_err(AppError::from)?)
 }
 
 pub(in crate::devices) async fn prepare_authorized_content<F, T>(

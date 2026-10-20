@@ -51,6 +51,7 @@ async fn fixture_with_metadata(
     let file_id = Uuid::new_v4();
     let now = Utc::now().naive_utc();
     file_entry::ActiveModel {
+        archive_file_id: sea_orm::ActiveValue::NotSet,
         id: Set(root_id),
         device_id: Set(device_id),
         parent_id: Set(None),
@@ -67,6 +68,7 @@ async fn fixture_with_metadata(
     let file = insert_entry(
         db,
         file_entry::ActiveModel {
+            archive_file_id: sea_orm::ActiveValue::NotSet,
             id: Set(file_id),
             device_id: Set(device_id),
             parent_id: Set(Some(root_id)),
@@ -120,7 +122,7 @@ async fn queued() -> (crate::file_registry::FileRegistryDb, query::Preview) {
         .unwrap();
     let generation = Uuid::new_v4();
     let sql = r#"insert into file_preview (generation,device_id,file_id,revision,source_file_id,source_revision,kind,converter_version,is_current,state,run_id,attempt,source_object_key,source_sha256,source_size_bytes,source_is_encrypted,source_name,source_extension,not_before,output_object_key,retryable,created_at,updated_at)
-select $1,r.device_id,r.id,r.revision,c.file_id,c.revision,'geodata_kmz',1,true,'queued',$1,1,c.object_key,c.source_sha256,c.source_size_bytes,c.is_encrypted,r.name,r.extension,now(),'fixture-preview/' || $1::text,false,now(),now()
+select $1,r.device_id,r.id,r.revision,c.file_id,c.revision,'geodata_kmz',2,true,'queued',$1,1,c.object_key,c.source_sha256,c.source_size_bytes,c.is_encrypted,r.name,r.extension,now(),'fixture-preview/' || $1::text,false,now(),now()
 from file_revision r join file_content c on c.file_id=r.id and c.revision=r.revision where r.device_id=$2 and r.id=$3 returning *"#;
     let job =
         query::Preview::find_by_statement(Statement::from_sql_and_values(
@@ -234,7 +236,7 @@ async fn concurrent_prepare_and_automatic_retry_keep_one_current_generation() {
         }))
     );
     assert!(failed.unwrap());
-    assert!(prepared.iter().all(Result::is_ok));
+    assert!(prepared.iter().all(Result::is_ok), "{prepared:?}");
     let current = query::current(db, job.device_id, job.file_id, job.revision)
         .await
         .unwrap()
@@ -506,7 +508,7 @@ async fn transient_budget_stops_at_three_and_preserves_failed_status_after_clean
 async fn incompatible_converter_generation_is_retired_by_prepare() {
     let (registry, job) = queued().await;
     let db = registry.connection();
-    db.execute_unprepared(&format!("update file_preview set is_current=false,state='retired' where generation='{}'; insert into file_preview select (jsonb_populate_record(null::file_preview,to_jsonb(p)||jsonb_build_object('generation',gen_random_uuid(),'converter_version',2,'is_current',true,'state','queued','output_object_key',output_object_key||'-future'))).* from file_preview p where generation='{}'",job.generation,job.generation)).await.unwrap();
+    db.execute_unprepared(&format!("update file_preview set is_current=false,state='retired' where generation='{}'; insert into file_preview select (jsonb_populate_record(null::file_preview,to_jsonb(p)||jsonb_build_object('generation',gen_random_uuid(),'converter_version',3,'is_current',true,'state','queued','output_object_key',output_object_key||'-future'))).* from file_preview p where generation='{}'",job.generation,job.generation)).await.unwrap();
     assert!(query::current(db, job.device_id, job.file_id, job.revision)
         .await
         .unwrap()
@@ -516,7 +518,7 @@ async fn incompatible_converter_generation_is_retired_by_prepare() {
             .await
             .unwrap();
     let current = query::load(db, generation).await.unwrap().unwrap();
-    assert_eq!(current.converter_version, 1);
+    assert_eq!(current.converter_version, 2);
     assert_ne!(current.generation, job.generation);
 }
 
@@ -944,11 +946,11 @@ insert into file_revision select (jsonb_populate_record(null::file_revision,to_j
     .await
     .unwrap();
     db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,r#"
-insert into file_content_upload select (jsonb_populate_record(null::file_content_upload,to_jsonb(u)||jsonb_build_object('id',$2::uuid,'revision',2,'upload_length',209715201,'object_key',$3::text,'status','open','next_cleanup_at',expires_at))).* from file_content_upload u where file_id=$1 and revision=1
+insert into file_content_upload select (jsonb_populate_record(null::file_content_upload,to_jsonb(u)||jsonb_build_object('id',$2::uuid,'revision',2,'upload_length',1000000001,'object_key',$3::text,'status','open','next_cleanup_at',expires_at))).* from file_content_upload u where file_id=$1 and revision=1
 "#,[job.file_id.into(),large_upload.into(),large_key.clone().into()])).await.unwrap();
     db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,"update file_content_upload set status='completed',next_cleanup_at=now() where id=$1",[large_upload.into()])).await.unwrap();
     db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,r#"
-insert into file_content select (jsonb_populate_record(null::file_content,to_jsonb(c)||jsonb_build_object('revision',2,'upload_id',$2::uuid,'source_size_bytes',209715201,'object_key',$3::text))).* from file_content c where file_id=$1 and revision=1
+insert into file_content select (jsonb_populate_record(null::file_content,to_jsonb(c)||jsonb_build_object('revision',2,'upload_id',$2::uuid,'source_size_bytes',1000000001,'object_key',$3::text))).* from file_content c where file_id=$1 and revision=1
 "#,[job.file_id.into(),large_upload.into(),large_key.into()])).await.unwrap();
     let session =
         RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())

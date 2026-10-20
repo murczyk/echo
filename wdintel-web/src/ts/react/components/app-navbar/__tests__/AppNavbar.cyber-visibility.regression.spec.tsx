@@ -230,24 +230,28 @@ describe('AppNavbar', () => {
   });
 
   // Regression: https://github.com/echoua/echo/issues/3568
-  it.each(['Rer', 'Cyber', 'CyberViewer'])('#3568 renders main navigation for %s', (role) => {
-    const { container } = renderComponent({
-      ...defaultProps,
-      user: { ...defaultProps.user, roles: [role] },
-    });
-    const content = container.textContent;
-    expect(content).toContain('Оперативний');
-    expect(content).toContain('Аналіз');
-    expect(content).toContain('База даних');
-    expect(content).toContain('Конвертери');
-    // Admin should not be present
-    expect(content).not.toContain('Адмін');
-  });
+  it.each(['Rer', 'Cyber', 'CyberViewer', 'CyberViewerRestricted'])(
+    '#3568 renders main navigation for %s',
+    (role) => {
+      const { container } = renderComponent({
+        ...defaultProps,
+        user: { ...defaultProps.user, roles: [role] },
+      });
+      const content = container.textContent;
+      expect(content).toContain('Оперативний');
+      expect(content).toContain('Аналіз');
+      expect(content).toContain('База даних');
+      expect(content).toContain('Конвертери');
+      // Admin should not be present
+      expect(content).not.toContain('Адмін');
+    },
+  );
 
   // Regression: https://github.com/echoua/echo/issues/3568
   it.each([
     ['Cyber'],
     ['CyberViewer'],
+    ['CyberViewerRestricted'],
     ['Cyber', 'UnitsEditor'],
     ['Rer'],
     ['Rer', 'Cyber'],
@@ -359,7 +363,7 @@ describe('AppNavbar', () => {
   });
 
   // Regression: https://github.com/echoua/echo/issues/3568
-  it.each(['Rer', 'Cyber', 'CyberViewer'])(
+  it.each(['Rer', 'Cyber', 'CyberViewer', 'CyberViewerRestricted'])(
     '#3568 keeps ApiAgent excluded from %s AI chat access',
     (role) => {
       const { container } = renderComponent({
@@ -489,6 +493,23 @@ describe('AppNavbar', () => {
     });
     expect(container.textContent).not.toContain('Транскрибація');
   });
+
+  it.each(['CyberViewerRestricted', 'CyberViewer'])(
+    'keeps operational and analysis navigation but gates devices for %s',
+    (role) => {
+      const { container } = renderComponent({
+        ...defaultProps,
+        user: { ...defaultProps.user, roles: [role] },
+        shared: {
+          ...defaultProps.shared,
+          systemSettings: { devicesSectionEnabled: true },
+        },
+      });
+      expect(container.textContent).toContain('Оперативний');
+      expect(container.textContent).toContain('Аналіз');
+      expect(Boolean(container.querySelector('a[href="/devices"]'))).toBe(role === 'CyberViewer');
+    },
+  );
 
   it('renders Devices in the database menu when the Devices section is enabled', () => {
     const { container } = renderComponent({

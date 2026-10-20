@@ -564,7 +564,10 @@ transaction. It reads the source publication metadata and casts string-backed
 JSON/JSONB and `tsvector` columns back to their PostgreSQL types, and imports
 raw ClickHouse strings as `bytea` for source binary columns. A
 source/view table or column mismatch aborts the transaction and preserves the
-previous working gateway definitions.
+previous working gateway definitions. Column-mismatch errors include a `DETAIL`
+listing source-only and imported-only columns. Run `bin/reconcile-schema.sh --check`
+on the analytics host to locate the drift between the source publication, raw
+ClickHouse tables, current views, and gateway before choosing a scoped repair.
 
 The health timer compares the source publication, raw ClickHouse tables,
 current-state views, and gateway compatibility views after each successful
@@ -1046,6 +1049,10 @@ IDs before making changes; a partial activation therefore fails closed instead
 of mixing script versions. Legacy `/opt/.../bin` commands forward to the active
 release.
 
+Before changing the selected table set, the workflows first run manifest-authorized
+targeted repairs for already-published tables. This resolves schema drift from
+earlier migrations before the exclusion reconciliation checks the gateway;
+tables that are not yet published remain for post-migration reconciliation.
 The workflows then install the packaged exclusion file when its selected table
 set differs from `/etc/echo-peerdb/tables-exclude.txt`, run migrations once
 while workers are stopped, explicitly start the serialized analytics
@@ -1107,7 +1114,10 @@ short PostgreSQL lock timeouts. Transient PostgreSQL deadlocks retry only the
 failed verification step before the mirror is left paused. Retry an
 interrupted deployment with `/opt/echo-peerdb/current/bin/source-verify-deploy.sh`
 on the source host after activating the same corrected control bundle on both
-hosts. Completed raw snapshots are reused, and retry state is retained until
+hosts. If exclusion synchronization stops on schema drift from an already-applied
+migration, run `/opt/echo-peerdb/current/bin/source-resnapshot-table.sh --manifest --published-only`
+on the source host with the corrected control bundle, then retry deployment.
+Completed raw snapshots are reused, and retry state is retained until
 global verification succeeds. Monitor retained WAL while the mirror is paused;
 do not request a full mirror resync. Use `just analytics-resnapshot-table` only
 for a standalone table repair when other tables already match. Drops, renames,

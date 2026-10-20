@@ -141,6 +141,12 @@ async fn convert_and_publish(
     db: &DatabaseConnection,
     job: &Preview,
 ) -> Result<()> {
+    if job.archive_members.is_some() {
+        return Err(crate::alpine::DeviceConversionFailure(
+            "generation_conflict",
+        )
+        .into());
+    }
     let source = read_bytes(
         env,
         &job.source_object_key,
@@ -158,17 +164,7 @@ async fn convert_and_publish(
             crate::alpine::DeviceConversionFailure("source_invalid").into()
         );
     }
-    let (source, name) = if let Some(members) = &job.archive_members {
-        let members = members.clone();
-        tokio::task::spawn_blocking(move || {
-            super::archive::extract(source, &members)
-        })
-        .await
-        .context(h!())?
-        .context(h!())?
-    } else {
-        (source, job.source_name.clone())
-    };
+    let name = job.source_name.clone();
     let converted =
         crate::alpine::convert_device_bytes_to_kmz(env, source, name)
             .await

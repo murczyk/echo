@@ -126,6 +126,7 @@ pub(super) fn directory_scope_query(
     entry_id: Uuid,
 ) -> Select<file_entry::Entity> {
     file_entry::Entity::find()
+        .filter(file_entry::Column::ArchiveFileId.is_null())
         .filter(file_entry::Column::DeviceId.eq(device_id))
         .filter(file_entry::Column::Id.eq(entry_id))
         .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::Directory))
@@ -153,6 +154,7 @@ pub(super) fn root_context_query(
     target_hierarchy_path: &str,
 ) -> Select<file_entry::Entity> {
     file_entry::Entity::find()
+        .filter(file_entry::Column::ArchiveFileId.is_null())
         .select_only()
         .column(file_entry::Column::Id)
         .filter(file_entry::Column::DeviceId.eq(device_id))
@@ -165,8 +167,9 @@ pub(in crate::devices::files) fn apply_entry_scope(
     query: Select<file_entry::Entity>,
     scope: &EntryQueryScope<'_>,
 ) -> Select<file_entry::Entity> {
-    let query =
-        query.filter(file_entry::Column::DeviceId.eq(scope.device_id()));
+    let query = query
+        .filter(file_entry::Column::DeviceId.eq(scope.device_id()))
+        .filter(super::super::archive::query::current_visibility());
 
     match scope {
         EntryQueryScope::Browse(directory) => query
@@ -183,6 +186,7 @@ pub(super) fn apply_search_scope(
     directory: &DirectoryScope,
 ) -> Select<file_entry::Entity> {
     query
+        .filter(super::super::archive::query::current_visibility())
         .filter(file_entry::Column::ParentId.is_not_null())
         .filter(ltree::descendant_expr(directory.hierarchy_path()))
         .filter(file_entry::Column::Id.ne(directory.entry_id()))

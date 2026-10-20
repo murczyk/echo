@@ -1,4 +1,5 @@
 use self::types::*;
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::config::{
     SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME, SIGINT_UNIT_LIST_DEFAULT_LIMIT,
     SIGINT_UNIT_LIST_MAX_LIMIT, SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE,
@@ -261,9 +262,13 @@ pub async fn list_units(
     req: Json<ListUnitsReq>,
 ) -> Result<Json<ListUnitsRsp>, AppError> {
     let login_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login_id, vec!["Rer", "CyberViewer", "Api"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
+    )
+    .await
+    .c(h!())?;
     let can_view_orbit =
         orbit::can_view_orbit_data(&env.dbx, &login_id).await?;
     let mut response =
@@ -298,9 +303,13 @@ pub async fn unit_status_counts(
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<UnitStatusCountsRsp>, AppError> {
     let login_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login_id, vec!["Rer", "CyberViewer", "Api"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
+    )
+    .await
+    .c(h!())?;
     Ok(Json(read_unit_status_counts(&env.dbx).await?))
 }
 
@@ -1151,9 +1160,13 @@ pub async fn list_units_by_id(
     req: Json<ListUnitsByIdReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer", "Api"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
+    )
+    .await
+    .c(h!())?;
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
     let units = units_by_id_query(req.ids.as_deref())
         .all(&env.dbx)
@@ -3616,7 +3629,7 @@ pub async fn units_search(
     req: Json<UnitSearchReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "CyberViewer"])
+    has_any_role(&env.dbx, &login, vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED])
         .await
         .c(h!())?;
     let can_view_orbit =

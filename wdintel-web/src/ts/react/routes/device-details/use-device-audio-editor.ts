@@ -151,6 +151,7 @@ function useEditorReader(
         if (!active() || request.signal.aborted) return false;
         const processingEpoch = processingRef.current?.processingEpoch();
         const permissionEpoch = processingRef.current?.beginProcessingPermissionRead(audioId);
+        const automaticVersion = state.current.detail?.automaticTranscription.version;
         let detail = await getDeviceAudioDetail({ deviceId, audioId }, { signal: request.signal });
         if (!active() || request.signal.aborted || epoch !== readEpoch.current) return false;
         if (processingEpoch !== undefined && processingRef.current)
@@ -160,6 +161,8 @@ function useEditorReader(
             permissionEpoch,
           );
         const previous = state.current;
+        if (previous.detail && previous.detail.automaticTranscription.version !== automaticVersion)
+          detail = { ...detail, automaticTranscription: previous.detail.automaticTranscription };
         const changed = snapshot
           ? conflict || detail.transcription.text !== snapshot.text
           : previous.confirmed !== null &&

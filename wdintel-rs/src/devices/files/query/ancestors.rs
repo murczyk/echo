@@ -77,6 +77,7 @@ pub(super) fn breadcrumbs_query(
     scope: &DirectoryScope,
 ) -> Select<file_entry::Entity> {
     file_entry::Entity::find()
+        .filter(file_entry::Column::ArchiveFileId.is_null())
         .filter(file_entry::Column::DeviceId.eq(scope.device_id()))
         .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::Directory))
         .filter(ltree::ancestor_expr(scope.hierarchy_path()))
@@ -175,7 +176,9 @@ fn map_entry_path_components(
             }
             path_components.push(tree_entry_name(entry).to_string());
         } else if position != 0 {
-            if context.kind() != DomainFileEntryKind::Directory {
+            if context.kind() != DomainFileEntryKind::Directory
+                && !is_archive_context(context)
+            {
                 return Err(FilesystemError::Invariant(
                     "path_context_non_directory_ancestor",
                 ));
@@ -186,6 +189,19 @@ fn map_entry_path_components(
     }
 
     Ok(path_components)
+}
+
+fn is_archive_context(context: &PathContextEntry) -> bool {
+    match context {
+        PathContextEntry::Tree(TreeEntry::File(file)) => {
+            super::super::preview::is_archive(
+                &file.name,
+                file.extension.as_deref(),
+                file.mime_type.as_deref(),
+            )
+        }
+        _ => false,
+    }
 }
 
 enum PathContextEntry {

@@ -251,7 +251,7 @@ async fn set_processed_http(
 }
 
 #[cfg(test)]
-mod acceptance_tests;
+pub(crate) mod acceptance_tests;
 #[cfg(test)]
 mod tests;
 
@@ -337,7 +337,6 @@ pub(crate) struct DeviceAudioRuntime {
     probe_permits: Arc<Semaphore>,
     decrypt_permits: Arc<Semaphore>,
     playback_decrypt_permits: Arc<Semaphore>,
-    asr_materialization_permits: Arc<Semaphore>,
     asr_wake: Arc<tokio::sync::Notify>,
     preparation: Arc<preparation::Preparation>,
     namespace_scan: Arc<tokio::sync::Mutex<Option<tokio::fs::ReadDir>>>,
@@ -359,13 +358,13 @@ pub(crate) fn build_runtime(
     storage: Option<&opendal::Operator>,
     metrics: Option<crate::telemetry::Metrics>,
 ) -> Arc<DeviceAudioRuntime> {
-    let storage = match build_byte_store(config, storage) {
+    let storage = files.and_then(|_| match build_byte_store(config, storage) {
         Ok(storage) => Some(storage),
         Err(error) => {
             log::warn!("Device audio byte storage is unavailable: {error:#}");
             None
         }
-    };
+    });
     Arc::new(DeviceAudioRuntime {
         dbx: dbx.clone(),
         files: files.cloned(),
@@ -381,9 +380,6 @@ pub(crate) fn build_runtime(
         playback_decrypt_permits: Arc::new(Semaphore::new(
             DEVICE_AUDIO_BACKGROUND_CONCURRENCY
                 + DEVICE_AUDIO_INTERACTIVE_CONCURRENCY,
-        )),
-        asr_materialization_permits: Arc::new(Semaphore::new(
-            crate::devices::config::DEVICE_AUDIO_ASR_CONCURRENCY,
         )),
         asr_wake: Arc::new(tokio::sync::Notify::new()),
         preparation: Arc::new(preparation::Preparation::new()),

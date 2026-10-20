@@ -642,6 +642,22 @@ async fn download_device_kmz(
     receipt: &str,
     host: &str,
 ) -> anyhow::Result<Bytes> {
+    download_device_kmz_limited(
+        client,
+        receipt,
+        host,
+        crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_RESULT_MAX_BYTES,
+    )
+    .await
+    .c(h!())
+}
+
+async fn download_device_kmz_limited(
+    client: &reqwest::Client,
+    receipt: &str,
+    host: &str,
+    max_bytes: u64,
+) -> anyhow::Result<Bytes> {
     let mut response = client
         .get(format!("{host}/api/download-task/{receipt}"))
         .timeout(Duration::from_secs(
@@ -654,9 +670,7 @@ async fn download_device_kmz(
         .c(h!())?;
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.c(h!())? {
-        if bytes.len().saturating_add(chunk.len()) as u64
-            > crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_RESULT_MAX_BYTES
-        {
+        if bytes.len().saturating_add(chunk.len()) as u64 > max_bytes {
             return Err(DeviceConversionFailure("result_too_large").into());
         }
         bytes.extend_from_slice(&chunk);

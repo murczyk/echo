@@ -86,6 +86,9 @@ fn analytics_root_entry(
     timestamp: NaiveDateTime,
 ) -> file_entry::ActiveModel {
     file_entry::ActiveModel {
+        is_archive: sea_orm::ActiveValue::NotSet,
+        archive_relative_path: sea_orm::ActiveValue::NotSet,
+        archive_file_id: sea_orm::ActiveValue::NotSet,
         id: Set(id),
         device_id: Set(device_id),
         parent_id: Set(None),
@@ -120,6 +123,9 @@ fn analytics_file_entry(
 ) -> file_entry::ActiveModel {
     let root_path = format!("n{}", parent_id.to_string().replace('-', ""));
     file_entry::ActiveModel {
+        is_archive: sea_orm::ActiveValue::NotSet,
+        archive_relative_path: sea_orm::ActiveValue::NotSet,
+        archive_file_id: sea_orm::ActiveValue::NotSet,
         id: Set(id),
         device_id: Set(device_id),
         parent_id: Set(Some(parent_id)),
@@ -2153,6 +2159,9 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         nested_directory_id.to_string().replace('-', ""),
     );
     file_entry::ActiveModel {
+        is_archive: sea_orm::ActiveValue::NotSet,
+        archive_relative_path: sea_orm::ActiveValue::NotSet,
+        archive_file_id: sea_orm::ActiveValue::NotSet,
         id: Set(nested_directory_id),
         device_id: Set(device.id),
         parent_id: Set(Some(root_id)),
@@ -2181,6 +2190,9 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
     crate::file_registry::test_support::insert_entry(
         file_db,
         file_entry::ActiveModel {
+            is_archive: sea_orm::ActiveValue::NotSet,
+            archive_relative_path: sea_orm::ActiveValue::NotSet,
+            archive_file_id: sea_orm::ActiveValue::NotSet,
             id: Set(nested_file_id),
             device_id: Set(device.id),
             parent_id: Set(Some(nested_directory_id)),
@@ -2596,6 +2608,7 @@ mod access_tests {
             ("Api", (false, false, false, false)),
             ("ApiAgent", (false, false, false, false)),
             ("Basic", (false, false, false, false)),
+            ("CyberViewerRestricted", (false, false, false, false)),
         ];
 
         for (role, expected_capabilities) in cases {
@@ -2617,6 +2630,22 @@ mod access_tests {
     fn access_unions_combined_device_roles() {
         let cases = vec![
             (vec![ROLE_CYBER, ROLE_ADMIN], (true, true, true, true)),
+            (
+                vec!["CyberViewerRestricted", "CyberViewer"],
+                (true, true, true, false),
+            ),
+            (
+                vec!["CyberViewerRestricted", ROLE_CYBER],
+                (true, true, true, true),
+            ),
+            (
+                vec!["CyberViewerRestricted", ROLE_ADMIN],
+                (true, true, true, true),
+            ),
+            (
+                vec!["CyberViewerRestricted", "Rer", "Full"],
+                (false, false, false, false),
+            ),
             (vec![ROLE_ADMIN, "Unrelated"], (true, true, true, true)),
             (vec![ROLE_CYBER, "Unrelated"], (true, true, true, true)),
         ];
@@ -2757,10 +2786,13 @@ mod access_tests {
         assert_eq!(organism_id(&basic).unwrap(), organism.id);
         assert!(require_message_devices(&env.dbx, &login_id).await.is_err());
         for denied_roles in [
+            vec!["CyberViewerRestricted"],
+            vec!["CyberViewerRestricted", "Rer", "Full"],
             vec!["Rer"],
             vec!["Full"],
             vec!["Api"],
             vec!["ApiAgent"],
+            vec!["ApiAgent", "CyberViewerRestricted"],
             vec!["DeviceSource"],
             vec![],
         ] {
@@ -2774,6 +2806,15 @@ mod access_tests {
                 ),
                 "{denied_roles:?}"
             );
+        }
+
+        for role in [crate::config::ROLE_CYBER_VIEWER, ROLE_CYBER, ROLE_ADMIN] {
+            let mut combined_login = login.clone().into_active_model();
+            combined_login.roles =
+                Set(json!(["ApiAgent", "CyberViewerRestricted", role]));
+            let combined_login = combined_login.update(&env.dbx).await.unwrap();
+            require_read(&combined_login.roles).unwrap();
+            require_message_devices(&env.dbx, &login_id).await.unwrap();
         }
 
         let mut login = login.into_active_model();

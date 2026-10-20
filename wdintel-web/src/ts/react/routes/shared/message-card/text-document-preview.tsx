@@ -21,6 +21,7 @@ type TextDocumentPreviewProps = {
   kindLabel: 'TXT' | 'Markdown';
   renderText: (text: string) => ReactNode;
   sizeBytes?: number | null;
+  maxBytes?: number;
   onError?: (error: unknown) => void;
   signal?: AbortSignal;
 };
@@ -264,6 +265,7 @@ export function TextDocumentPreview({
   kindLabel,
   renderText,
   sizeBytes,
+  maxBytes = MAX_TEXT_PREVIEW_BYTES,
   onError,
   signal,
 }: TextDocumentPreviewProps) {
@@ -285,22 +287,22 @@ export function TextDocumentPreview({
       if (abortController.signal.aborted) return;
 
       try {
-        if (sizeBytes != null && sizeBytes > MAX_TEXT_PREVIEW_BYTES) {
+        if (sizeBytes != null && sizeBytes > maxBytes) {
           throw new Error('TEXT_FILE_TOO_LARGE');
         }
 
         const { buffer, contentLength, contentType } = await fetchCachedDocumentResponse(
           href,
-          MAX_TEXT_PREVIEW_BYTES,
+          maxBytes,
           'TEXT_FILE_TOO_LARGE',
           abortController.signal,
         );
 
-        if (contentLength != null && contentLength > MAX_TEXT_PREVIEW_BYTES) {
+        if (contentLength != null && contentLength > maxBytes) {
           throw new Error('TEXT_FILE_TOO_LARGE');
         }
 
-        if (buffer.byteLength > MAX_TEXT_PREVIEW_BYTES) {
+        if (buffer.byteLength > maxBytes) {
           throw new Error('TEXT_FILE_TOO_LARGE');
         }
 
@@ -329,7 +331,7 @@ export function TextDocumentPreview({
       signal?.removeEventListener('abort', abort);
       abortController.abort();
     };
-  }, [href, sizeBytes, onError, signal]);
+  }, [href, sizeBytes, maxBytes, onError, signal]);
 
   if (status === 'error') {
     return (
@@ -377,11 +379,13 @@ export function TextDocumentPreview({
 export function TxtDocumentPreview({
   href,
   sizeBytes,
+  maxBytes,
   onError,
   signal,
 }: {
   href: string;
   sizeBytes?: number | null;
+  maxBytes?: number;
   onError?: (error: unknown) => void;
   signal?: AbortSignal;
 }) {
@@ -389,6 +393,7 @@ export function TxtDocumentPreview({
     <TextDocumentPreview
       href={href}
       sizeBytes={sizeBytes}
+      maxBytes={maxBytes}
       onError={onError}
       signal={signal}
       kindLabel="TXT"
@@ -417,11 +422,13 @@ export function TxtDocumentPreview({
 export function MarkdownDocumentPreview({
   href,
   sizeBytes,
+  maxBytes,
   onError,
   signal,
 }: {
   href: string;
   sizeBytes?: number | null;
+  maxBytes?: number;
   onError?: (error: unknown) => void;
   signal?: AbortSignal;
 }) {
@@ -429,6 +436,7 @@ export function MarkdownDocumentPreview({
     <TextDocumentPreview
       href={href}
       sizeBytes={sizeBytes}
+      maxBytes={maxBytes}
       onError={onError}
       signal={signal}
       kindLabel="Markdown"

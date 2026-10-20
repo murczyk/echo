@@ -159,7 +159,7 @@ pub async fn serve_assets(
 }
 
 /// S3 configuration parameters
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct S3Config {
     pub bucket: String,
     pub region: String,
@@ -1053,6 +1053,126 @@ pub fn generate_strongbox_key_b64() -> String {
 
 pub fn mk_media_url(m: &signal_message_media::Model) -> String {
     format!("/api/messenger/media/{}", m.id)
+}
+
+const ECHO_AUDIO_TRANSCRIPTION_ENVELOPE_OVERHEAD: u64 = 4096;
+const ECHO_AUDIO_TRANSCRIPTION_STORAGE_READ_TIMEOUT_SECS: u64 = 120;
+
+pub(crate) async fn read_transcription_source(
+    env: &Env,
+    key: &str,
+) -> anyhow::Result<Vec<u8>> {
+    use anyhow::Context;
+    use echo_gpu_client::WorkError;
+    use futures::AsyncReadExt;
+    let operator = env
+        .s3
+        .as_ref()
+        .ok_or_else(|| WorkError::terminal("S3 is not configured"))
+        .context(h!())?;
+    let config = env
+        .config
+        .s3_config
+        .as_ref()
+        .ok_or_else(|| WorkError::terminal("S3 is not configured"))
+        .context(h!())?;
+    let limit = crate::config::ECHO_AUDIO_TRANSCRIPTION_MAX_BYTES as u64;
+    let maximum = limit + ECHO_AUDIO_TRANSCRIPTION_ENVELOPE_OVERHEAD;
+    let data = tokio::time::timeout(
+        Duration::from_secs(ECHO_AUDIO_TRANSCRIPTION_STORAGE_READ_TIMEOUT_SECS),
+        async {
+            let reader = operator
+                .reader(key)
+                .await
+                .map_err(|error| transcription_storage_error(&error))
+                .context(h!())?;
+            let reader = reader
+                .into_futures_async_read(..)
+                .await
+                .map_err(|error| transcription_storage_error(&error))
+                .context(h!())?;
+            let mut data = Vec::new();
+            reader
+                .take(maximum + 1)
+                .read_to_end(&mut data)
+                .await
+                .map_err(|error| {
+                    if let Some(storage) = error.get_ref().and_then(|error| {
+                        error.downcast_ref::<opendal::Error>()
+                    }) {
+                        transcription_storage_error(storage)
+                    } else {
+                        WorkError::retryable(format!(
+                            "transcription object read failed: {error}"
+                        ))
+                    }
+                })
+                .context(h!())?;
+            anyhow::Ok(data)
+        },
+    )
+    .await
+    .map_err(|_| WorkError::retryable("transcription object read timed out"))
+    .context(h!())?
+    .context(h!())?;
+    if data.len() as u64 > maximum {
+        return Err(WorkError::terminal(
+            "transcription source exceeds 100 MiB",
+        )
+        .into());
+    }
+    let data = if data.starts_with(&[0xb1, 0xb8, 0xf5]) {
+        let key_material = key_from_b64(&config.strongbox_key).c(h!())?;
+        let object_aad = aad(&config.s3_bucket, key);
+        tokio::task::spawn_blocking(move || {
+            StaticStrongBox::new(key_material.clone(), vec![key_material])
+                .decrypt(&data, object_aad.as_bytes())
+                .map_err(|_| {
+                    WorkError::terminal(
+                        "transcription envelope authentication failed",
+                    )
+                })
+        })
+        .await
+        .map_err(|error| {
+            WorkError::retryable(format!(
+                "transcription decryption task failed: {error}"
+            ))
+        })
+        .context(h!())?
+        .context(h!())?
+    } else {
+        data
+    };
+    if data.is_empty() || data.len() as u64 > limit {
+        return Err(WorkError::terminal(
+            "transcription source is empty or oversized",
+        )
+        .into());
+    }
+    Ok(data)
+}
+
+fn transcription_storage_error(
+    error: &opendal::Error,
+) -> echo_gpu_client::WorkError {
+    use echo_gpu_client::WorkError;
+    use opendal::ErrorKind;
+    match error.kind() {
+        ErrorKind::NotFound => {
+            WorkError::terminal("transcription object is missing")
+        }
+        ErrorKind::PermissionDenied
+        | ErrorKind::ConfigInvalid
+        | ErrorKind::Unsupported
+        | ErrorKind::IsADirectory
+        | ErrorKind::NotADirectory => WorkError::terminal(format!(
+            "transcription storage configuration/input failed: {error}"
+        )),
+        _ => WorkError::retryable(format!(
+            "transcription object read failed: {error}"
+        )),
+    }
 }
 
 #[cfg(test)]

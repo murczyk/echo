@@ -272,7 +272,7 @@ pub async fn ensure_base_role_by_id<T>(
 where
     T: ToString + ?Sized,
 {
-    has_any_role(dbx, user_id, vec!["Rer", "CyberViewer"]).await
+    has_any_role(dbx, user_id, vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED]).await
 }
 
 pub async fn ensure_message_write(
@@ -360,6 +360,7 @@ pub(crate) fn role_matches(
                 || roles.contains(&"Rer".to_string())
                 || roles.contains(&"Cyber".to_string())
                 || roles.contains(&crate::config::ROLE_CYBER_VIEWER.to_string())
+                || roles.contains(&ROLE_CYBER_VIEWER_RESTRICTED.to_string())
                 || roles.contains(&"Basic".to_string())
         }
         "UnitsEditor" => {
@@ -382,6 +383,12 @@ pub(crate) fn role_matches(
             roles.contains(&"Admin".to_string())
                 || roles.contains(&"Cyber".to_string())
                 || roles.contains(&crate::config::ROLE_CYBER_VIEWER.to_string())
+        }
+        ROLE_CYBER_VIEWER_RESTRICTED => {
+            roles.contains(&ROLE_ADMIN.to_string())
+                || roles.contains(&ROLE_CYBER.to_string())
+                || roles.contains(&ROLE_CYBER_VIEWER.to_string())
+                || roles.contains(&ROLE_CYBER_VIEWER_RESTRICTED.to_string())
         }
         "AdvancedReports" => {
             roles.contains(&"Admin".to_string())
@@ -1789,7 +1796,7 @@ pub async fn user_sigint_groups_detailed(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Admin", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Admin", "Api"],
     )
     .await?;
     let login = login_id_from_identity(&user)?;
@@ -4669,6 +4676,50 @@ mod tests {
     fn issue_3568_cyber_inherits_basic_but_not_rer() {
         assert!(role_matches(&roles(&["Cyber"]), "Basic").unwrap());
         assert!(!role_matches(&roles(&["Cyber"]), "Rer").unwrap());
+    }
+
+    #[test]
+    fn restricted_viewer_keeps_non_device_permissions() {
+        for required in [
+            "Admin",
+            "Api",
+            "ApiAgent",
+            "Full",
+            "DeleteMsg",
+            "Rer",
+            "Bpla",
+            "Basic",
+            "UnitsEditor",
+            "NetworkEditor",
+            "CallsignsEditor",
+            "Cyber",
+            "AdvancedReports",
+            "NoAutoLogout",
+            "No2FA",
+            ROLE_CYBER_VIEWER_RESTRICTED,
+        ] {
+            assert_eq!(
+                role_matches(&roles(&[ROLE_CYBER_VIEWER_RESTRICTED]), required)
+                    .unwrap(),
+                role_matches(&roles(&[ROLE_CYBER_VIEWER]), required).unwrap(),
+                "{required}",
+            );
+        }
+        assert!(!role_matches(
+            &roles(&[ROLE_CYBER_VIEWER_RESTRICTED]),
+            ROLE_CYBER_VIEWER
+        )
+        .unwrap());
+        for extra in ["Rer", "Full", "CyberViewer", "Cyber", "Admin"] {
+            let combined = roles(&[ROLE_CYBER_VIEWER_RESTRICTED, extra]);
+            assert!(
+                role_matches(&combined, ROLE_CYBER_VIEWER_RESTRICTED).unwrap()
+            );
+            assert_eq!(
+                role_matches(&combined, ROLE_CYBER_VIEWER).unwrap(),
+                ["CyberViewer", "Cyber", "Admin"].contains(&extra),
+            );
+        }
     }
 
     #[test]

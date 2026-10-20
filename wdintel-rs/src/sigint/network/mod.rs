@@ -75,7 +75,7 @@ pub async fn network_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api", "ApiAgent"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -116,7 +116,7 @@ pub async fn network_last_activity(
     has_any_role(
         &env.dbx,
         &user_id,
-        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api", "ApiAgent"],
     )
     .await
     .context(h!())?;
@@ -414,7 +414,7 @@ pub async fn restore_network(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -559,7 +559,7 @@ pub async fn network_info_batch_freq(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api", "ApiAgent"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -580,7 +580,7 @@ pub async fn network_info_batch_id(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api", "ApiAgent"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -609,7 +609,7 @@ pub async fn find_live_networks(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api", "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api", "ApiAgent"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -1054,7 +1054,7 @@ pub async fn network_info_one(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -4759,7 +4759,7 @@ pub async fn network_callsigns_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
 
@@ -4904,7 +4904,7 @@ pub async fn network_freqs_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
     let user_id = login_id_from_identity(&user)?;
@@ -4986,7 +4986,7 @@ pub async fn network_freq_callsigns(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
 
@@ -5025,7 +5025,7 @@ pub async fn network_freq_callsigns_batch(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
 
@@ -5104,7 +5104,7 @@ pub async fn encryptions_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
     let encryptions = encryption::Entity::find()
@@ -5132,7 +5132,7 @@ pub async fn network_signals_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
 
@@ -5898,7 +5898,7 @@ pub async fn network_search(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "CyberViewer"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED],
     )
     .await
     .c(h!())?;

@@ -14,10 +14,22 @@ pub struct Model {
     pub quick_ai_engine_id: Option<Uuid>,
     pub legacy_comment_cutoff: DateTime,
     pub updated_at: DateTime,
+    pub fallback_ai_engine_id: Option<Uuid>,
+    pub primary_timeout_secs: Option<i32>,
+    pub fallback_timeout_secs: Option<i32>,
+    pub total_timeout_secs: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::ai_engine::Entity",
+        from = "Column::FallbackAiEngineId",
+        to = "super::ai_engine::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    AiEngine2,
     #[sea_orm(
         belongs_to = "super::ai_engine::Entity",
         from = "Column::QuickAiEngineId",
@@ -25,13 +37,7 @@ pub enum Relation {
         on_update = "NoAction",
         on_delete = "SetNull"
     )]
-    AiEngine,
-}
-
-impl Related<super::ai_engine::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::AiEngine.def()
-    }
+    AiEngine1,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

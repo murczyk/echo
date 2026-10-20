@@ -26,5 +26,8 @@ then
   exit 0
 fi
 
+log "Repairing published-table schemas before changing exclusions"
+"$SCRIPT_DIR/source-resnapshot-table.sh" --manifest --published-only
+
 log "Packaged table exclusions changed; reconciling before migrations"
 exec "$SCRIPT_DIR/source-sync-exclusions.sh" --yes
