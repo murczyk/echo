@@ -358,13 +358,13 @@ pub(crate) fn build_runtime(
     storage: Option<&opendal::Operator>,
     metrics: Option<crate::telemetry::Metrics>,
 ) -> Arc<DeviceAudioRuntime> {
-    let storage = match build_byte_store(config, storage) {
+    let storage = files.and_then(|_| match build_byte_store(config, storage) {
         Ok(storage) => Some(storage),
         Err(error) => {
             log::warn!("Device audio byte storage is unavailable: {error:#}");
             None
         }
-    };
+    });
     Arc::new(DeviceAudioRuntime {
         dbx: dbx.clone(),
         files: files.cloned(),

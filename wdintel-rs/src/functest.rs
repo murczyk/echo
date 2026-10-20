@@ -59,10 +59,31 @@ pub mod tests {
         MIGRATE
             .get_or_init(|| async {
                 crate::migration::run_migration_1(Mode::Test).await.unwrap();
+                let config = crate::config::read_config(Mode::Test).unwrap();
+                crate::file_registry::run_migrations(&config, Mode::Test)
+                    .await
+                    .unwrap();
             })
             .await;
         let guard = CLEANUP.lock().await;
         let env = crate::server::new_env(Mode::Test).await.context(h!())?;
+        let env = if env.file_registry_db.is_none() {
+            let mut env = env.as_ref().clone();
+            env.file_registry_db =
+                crate::file_registry::connect_runtime(&env.config, Mode::Test)
+                    .await
+                    .context(h!())?;
+            env.device_audio = crate::devices::audio::build_runtime(
+                &env.config,
+                &env.dbx,
+                env.file_registry_db.as_ref(),
+                env.s3.as_ref(),
+                env.metrics.clone(),
+            );
+            Arc::new(env)
+        } else {
+            env
+        };
         ensure_test_database(&env.dbx, &env.config).await?;
         if let Some(file_registry_db) = &env.file_registry_db {
             file_registry_db
