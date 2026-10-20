@@ -351,6 +351,50 @@ async fn disabling_preserves_accepted_work_and_archive_forbids_new_local_apply()
 
 #[actix_web::test]
 #[serial_test::serial]
+async fn pending_sync_obeys_devices_flag_without_file_registry_and_resumes() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device) = enabled_audio_device(&env).await;
+    enable_asr(&env).await;
+    let audio = accepted(&env, actor, device).await;
+    finish(&env, &audio.storage_key, Some("completed while disabled")).await;
+    env.dbx
+        .execute_unprepared(
+            "update system_settings set devices_section_enabled = false",
+        )
+        .await
+        .unwrap();
+    let mut runtime = (*env.device_audio).clone();
+    runtime.files = None;
+    let mut cursor = Some(audio.id);
+    super::reconcile::batch(&runtime, &mut cursor)
+        .await
+        .unwrap();
+    assert!(cursor.is_none());
+    super::reconcile::batch(&env.device_audio, &mut cursor)
+        .await
+        .unwrap();
+    let saved = local(&env, audio.id).await;
+    assert!(saved.automatic_transcription.is_none());
+    assert_eq!(saved.automatic_transcription_pending, Some(0));
+    env.dbx
+        .execute_unprepared(
+            "update system_settings set devices_section_enabled = true",
+        )
+        .await
+        .unwrap();
+    super::reconcile::batch(&env.device_audio, &mut cursor)
+        .await
+        .unwrap();
+    let saved = local(&env, audio.id).await;
+    assert_eq!(
+        saved.automatic_transcription.as_deref(),
+        Some("completed while disabled")
+    );
+    assert_eq!(saved.automatic_transcription_pending, None);
+}
+
+#[actix_web::test]
+#[serial_test::serial]
 async fn pending_sync_reaches_result_beyond_a_full_pending_page() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let bytes = native_audio_bytes().await;

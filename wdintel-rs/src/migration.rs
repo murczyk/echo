@@ -32,7 +32,7 @@ pub async fn run_migration_1(mode: Mode) -> Result<(), AppError> {
     echo_migration::Migrator::up(&dbx, None)
         .await
         .context(h!())?;
-    crate::file_registry::run_migrations(&config, mode)
+    crate::file_registry::migrate_if_enabled(&config, mode, &dbx)
         .await
         .context(h!())?;
     println!("Running migration: done");

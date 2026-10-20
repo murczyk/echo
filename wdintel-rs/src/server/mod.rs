@@ -19,6 +19,8 @@ use tokio_util::sync::CancellationToken;
 mod admin;
 mod analytics_health;
 mod api_rate_limit;
+#[cfg(test)]
+mod device_feature_tests;
 pub mod discord;
 mod healthcheck;
 pub mod middleware;
@@ -102,6 +104,16 @@ async fn new_env_with_initialization(
     initialize: bool,
 ) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
+    Ok(new_env_from_config(mode, initialize, config)
+        .await
+        .c(h!())?)
+}
+
+async fn new_env_from_config(
+    mode: Mode,
+    initialize: bool,
+    config: Config,
+) -> Result<Arc<Env>, AppError> {
     let metrics = crate::telemetry::Metrics::from_config(&config);
     let redis = new_redis(&config).await.c(h!())?;
     let stats_redis = new_redis_for_db(&config, config.group_stats_redis_db())
@@ -132,10 +144,11 @@ async fn new_env_with_initialization(
         .await
         .c(h!())?,
     );
-    let file_registry_db = crate::file_registry::connect_runtime(&config, mode)
-        .await
-        .c(h!())?;
-    if file_registry_db.is_none() {
+    let file_registry_db =
+        crate::file_registry::connect_if_enabled(&config, mode, &dbx)
+            .await
+            .c(h!())?;
+    if config.file_registry.is_none() {
         log_missing_file_registry_configuration(&dbx, mode).await;
     }
     let device_file_content = crate::devices::files::content::build_runtime(
@@ -546,6 +559,36 @@ fn spawn_device_file_sync_expiry_worker(
     );
 }
 
+fn spawn_device_audio_workers(
+    tasks: &mut JoinSet<()>,
+    env: Arc<Env>,
+    cancellation: CancellationToken,
+    prepare_audio: bool,
+) {
+    if env.file_registry_db.is_none() {
+        return;
+    }
+    let sync_env = env.clone();
+    let sync_cancel = cancellation.clone();
+    spawn_named_worker("device_transcription_sync", tasks, async move {
+        crate::devices::audio::transcription::run(
+            sync_env.device_audio.clone(),
+            sync_env.echo_gpu_client.clone(),
+            sync_cancel,
+        )
+        .await;
+    });
+    if prepare_audio {
+        spawn_named_worker("device_audio_preparation", tasks, async move {
+            crate::devices::audio::run_preparation(
+                env.device_audio.clone(),
+                cancellation,
+            )
+            .await;
+        });
+    }
+}
+
 fn spawn_device_file_preview_workers(
     bg_set: &mut JoinSet<()>,
     env: Arc<Env>,
@@ -855,22 +898,25 @@ fn spawn_background_workers(
             .await;
         });
     }
-    for (name, kind) in [
-        ("device_document_worker", "extract"),
-        ("device_document_summary_worker", "summary"),
-        ("device_document_position_worker", "positions"),
-        ("device_document_inspection_worker", "inspect"),
-    ] {
-        let attachment_env = env.clone();
-        let attachment_cancel = cancel_token.clone();
-        spawn_named_worker(name, bg_set, async move {
-            crate::devices::documents::worker::run(
-                attachment_env,
-                attachment_cancel,
-                kind,
-            )
-            .await;
-        });
+
+    if env.file_registry_db.is_some() {
+        for (name, kind) in [
+            ("device_document_worker", "extract"),
+            ("device_document_summary_worker", "summary"),
+            ("device_document_position_worker", "positions"),
+            ("device_document_inspection_worker", "inspect"),
+        ] {
+            let attachment_env = env.clone();
+            let attachment_cancel = cancel_token.clone();
+            spawn_named_worker(name, bg_set, async move {
+                crate::devices::documents::worker::run(
+                    attachment_env,
+                    attachment_cancel,
+                    kind,
+                )
+                .await;
+            });
+        }
     }
 
     let ocr_env = env.clone();
@@ -1862,20 +1908,13 @@ pub async fn main_server(
     }
     .run();
 
-    let audio_asr = tokio::spawn(crate::devices::audio::transcription::run(
-        env.device_audio.clone(),
-        env.echo_gpu_client.clone(),
+    let mut audio_tasks = JoinSet::new();
+    spawn_device_audio_workers(
+        &mut audio_tasks,
+        env.clone(),
         cancel_token.clone(),
-    ));
-    let audio_runtime = env.device_audio.clone();
-    let audio_cancellation = cancel_token.clone();
-    let audio_preparation = tokio::spawn(async move {
-        crate::devices::audio::run_preparation(
-            audio_runtime,
-            audio_cancellation,
-        )
-        .await;
-    });
+        true,
+    );
     let task_completion_future = async move {
         if should_start_bgworkers && mode == Mode::Live {
             std::future::pending::<()>().await;
@@ -1923,8 +1962,9 @@ pub async fn main_server(
             }
         }
     }).await.c(h!());
-    audio_asr.await.c(h!())?;
-    audio_preparation.await.c(h!())?;
+    while let Some(result) = audio_tasks.join_next().await {
+        result.c(h!())?;
+    }
     if let Some(metrics) = &env.metrics {
         metrics.shutdown();
     }
@@ -1952,19 +1992,11 @@ pub async fn main_bgworker(
         true,
         &mut background_tasks,
     );
-    let sync_env = env.clone();
-    let sync_cancel = cancel_token.clone();
-    spawn_named_worker(
-        "device_transcription_sync",
+    spawn_device_audio_workers(
         &mut transcriber_tasks,
-        async move {
-            crate::devices::audio::transcription::run(
-                sync_env.device_audio.clone(),
-                sync_env.echo_gpu_client.clone(),
-                sync_cancel,
-            )
-            .await;
-        },
+        env.clone(),
+        cancel_token.clone(),
+        false,
     );
     let transcriber_worker_id = Uuid::now_v7();
     info!(

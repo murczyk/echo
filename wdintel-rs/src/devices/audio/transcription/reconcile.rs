@@ -54,10 +54,13 @@ pub(crate) async fn run(
         if cancel.is_cancelled() {
             break;
         }
-        if let Err(error) = batch(&runtime, &mut cursor).await {
-            log::error!("device transcription sync failed: {error:#}");
-        } else if cursor.is_some() {
-            continue;
+        match batch(&runtime, &mut cursor).await {
+            Ok(false) => break,
+            Ok(true) if cursor.is_some() => continue,
+            Ok(true) => (),
+            Err(error) => {
+                log::error!("device transcription sync failed: {error:#}");
+            }
         }
         tokio::select! {
             _ = cancel.cancelled() => break,
@@ -70,7 +73,14 @@ pub(crate) async fn run(
 pub(super) async fn batch(
     runtime: &DeviceAudioRuntime,
     cursor: &mut Option<Uuid>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
+    if !crate::system_settings::devices_section_enabled(&runtime.dbx)
+        .await
+        .c(h!())?
+    {
+        *cursor = None;
+        return Ok(false);
+    }
     let mut query = audio::Entity::find()
         .filter(audio::Column::AutomaticTranscriptionPending.is_not_null())
         .order_by_asc(audio::Column::Id)
@@ -136,7 +146,7 @@ pub(super) async fn batch(
             log::error!("device transcription sync item failed: {error:#}");
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 #[cfg(test)]

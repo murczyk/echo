@@ -183,6 +183,127 @@ impl Provider {
 
 #[actix_web::test]
 #[serial_test::serial]
+async fn message_transcription_works_with_devices_disabled_without_file_registry(
+) {
+    use crate::entities::{signal_message_media, system_settings};
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let (base, _guard) =
+        crate::functest::tests::cleanup_locked().await.unwrap();
+    system_settings::ActiveModel {
+        devices_section_enabled: Set(false),
+        enable_audio_transcription: Set(true),
+        ..Default::default()
+    }
+    .insert(&base.dbx)
+    .await
+    .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let mut env = base.as_ref().clone();
+    env.config.file_registry = None;
+    env.config.storage_dir = directory.path().display().to_string();
+    env.file_registry_db = None;
+    env.device_file_content = None;
+    env.s3 = Some(
+        opendal::Operator::new(opendal::services::Memory::default())
+            .unwrap()
+            .finish(),
+    );
+    env.device_audio = crate::devices::audio::build_runtime(
+        &env.config,
+        &env.dbx,
+        None,
+        env.s3.as_ref(),
+        None,
+    );
+    let env = Arc::new(env);
+    let provider = Provider::start(&env).await;
+    let worker = Uuid::now_v7();
+    let adapter =
+        super::worker::EchoTranscriptionAdapter::new(env.clone(), worker)
+            .await
+            .unwrap();
+    let bytes =
+        crate::devices::audio::acceptance_tests::native_audio_bytes().await;
+    let config = env.config.s3_config.as_ref().unwrap();
+    let storage = crate::storage::S3Config::with_prefix(config, String::new());
+    for encrypted in [false, true] {
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
+            content_type: Set("audio/wav".into()),
+            file_ext: Set(Some("wav".into())),
+            file_name: Set(Some("recording.wav".into())),
+            size_bytes: Set(bytes.len() as i64),
+            is_encrypted: Set(encrypted),
+            storage_key: Set(Some(Uuid::now_v7().to_string())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let key = crate::transcriber::media_queue::source_key(&media);
+        if encrypted {
+            crate::storage::upload_encrypted_to_s3_with_operator(
+                &env.s3,
+                &storage,
+                &config.strongbox_key,
+                &key,
+                bytes.clone(),
+            )
+            .await
+            .unwrap();
+        } else {
+            env.s3
+                .as_ref()
+                .unwrap()
+                .write(&key, bytes.clone())
+                .await
+                .unwrap();
+        }
+        let admitted = crate::transcriber::media_queue::reconcile_message(
+            &env.dbx,
+            message.id,
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(admitted.queued, 1);
+        let result = echo_gpu_client::run_transcriber_worker_once(
+            &provider.client,
+            worker,
+            &super::worker::worker_policy(),
+            &adapter,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            result,
+            echo_gpu_client::WorkerRunResult::Completed { .. }
+        ));
+        let texts =
+            crate::transcriber::completed_transcriptions(&env.dbx, &[media.id])
+                .await
+                .unwrap();
+        assert_eq!(
+            texts.get(&media.id).map(String::as_str),
+            Some("Автоматична транскрипція")
+        );
+    }
+    assert!(!crate::system_settings::devices_section_enabled(&env.dbx)
+        .await
+        .unwrap());
+}
+
+#[actix_web::test]
+#[serial_test::serial]
 async fn session_loss_during_gpu_request_rejects_the_late_result() {
     let (base, _guard) =
         crate::functest::tests::cleanup_locked().await.unwrap();
