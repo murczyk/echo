@@ -10,6 +10,7 @@ import type { WindowedFeedScrollRefs } from '../internal/internal.types';
 import type { VisibleAnchor } from '../message-feed.types';
 
 const MAX_SYNC_ANCHOR_CORRECTIONS = 5;
+const READ_VISIBLE_FRACTION = 0.5;
 
 type AnchorRestoreOutcome = 'restored' | 'pending' | 'missing';
 
@@ -272,13 +273,30 @@ export function useWindowedFeedScrollAnchors(args: {
         if (!refs.enabledRef.current) return;
         refs.reportVisibleMessageIdsLastRunRef.current = Date.now();
         const latestAtBottom = refs.reportVisibleMessageIdsLatestArgsRef.current;
-        const { onVisibleMessageIds, onFirstVisibleMessage } = refs.callbacksRef.current;
+        const { onVisibleMessageIds, onFirstVisibleMessage, onVisibleMessages } =
+          refs.callbacksRef.current;
         if (
-          (!onVisibleMessageIds && !onFirstVisibleMessage) ||
+          (!onVisibleMessageIds && !onFirstVisibleMessage && !onVisibleMessages) ||
           refs.itemIdsRef.current.length === 0
         )
           return;
         const anchors = collectVisibleAnchors();
+        const viewport = refs.scrollerRef.current?.getBoundingClientRect();
+        if (onVisibleMessages && viewport) {
+          onVisibleMessages(
+            anchors
+              .filter(({ id }) => {
+                const card = refs.itemRefsRef.current.get(id)?.getBoundingClientRect();
+                if (!card || card.height <= 0) return false;
+                const visibleHeight =
+                  Math.min(card.bottom, viewport.bottom) - Math.max(card.top, viewport.top);
+                return (
+                  visibleHeight >= Math.min(card.height, viewport.height) * READ_VISIBLE_FRACTION
+                );
+              })
+              .map(({ id }) => id),
+          );
+        }
         const firstVisible = anchors.find((anchor) => {
           const element = refs.itemRefsRef.current.get(anchor.id);
           const scroller = refs.scrollerRef.current;

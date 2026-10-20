@@ -38,6 +38,7 @@ pub mod coordinates;
 pub mod datetime;
 pub mod frequency;
 pub mod gdoc;
+pub mod group_feed_state;
 pub mod highlight;
 pub mod import_csv;
 pub mod import_kmz;

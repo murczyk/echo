@@ -5,7 +5,7 @@ import { IconButton } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import { Typography } from '@mui/material';
 import { useEffect, useRef } from 'react';
-import type { DeviceFileTreeEntry } from '../../../../../Bindings';
+import type { DeviceFileSelection } from '../device-file-archive';
 import { PowerButton } from '../../../components/PowerButton';
 import type { useDeviceFilePreview } from '../use-device-file-preview';
 
@@ -19,7 +19,7 @@ export function DeviceFileContentHeader({
   onZoomChange,
   onFullscreen,
 }: {
-  file: DeviceFileTreeEntry;
+  file: DeviceFileSelection;
   preview: ReturnType<typeof useDeviceFilePreview>;
   sessionScoped?: boolean;
   revisionPinned?: boolean;
@@ -34,7 +34,7 @@ export function DeviceFileContentHeader({
       className={
         mobile
           ? 'flex shrink-0 flex-col items-start gap-echo-sm border-b border-echo-divider-subtle p-echo-md'
-          : 'flex min-h-echo-control-lg shrink-0 flex-wrap items-center gap-echo-md border-b border-echo-divider-subtle px-echo-lg py-echo-sm echo-sm:h-echo-control-lg echo-sm:flex-nowrap'
+          : 'flex min-h-echo-control-lg shrink-0 flex-wrap items-center gap-echo-md border-b border-echo-divider-subtle px-echo-lg py-echo-sm echo-sm:flex-nowrap'
       }
     >
       {mobile ? (
@@ -144,8 +144,9 @@ export function DeviceFileContentActions({
         }}
         disabled={!preview.canDownload || preview.downloading}
         aria-busy={preview.downloading}
+        aria-label="Скачати файл"
       >
-        Скачати файл
+        {preview.downloading ? 'Завантаження…' : 'Скачати файл'}
       </PowerButton>
     </>
   );

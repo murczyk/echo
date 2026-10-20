@@ -95,7 +95,7 @@ pub(crate) async fn readable(
     let result=crate::attachments::store::rows::<Readable,_>(env.file_registry_db().c(h!())?.connection(),r#"
       select not exists(
         select 1 from jsonb_to_recordset($1) as citation("deviceId" uuid,"fileId" uuid,revision bigint,"extractionRevision" uuid,section integer)
-        where not exists(select 1 from file_revision r where r.device_id=citation."deviceId" and r.id=citation."fileId" and r.revision=citation.revision
+        where not exists(select 1 from file_revision r where r.origin_archive_id is null and r.device_id=citation."deviceId" and r.id=citation."fileId" and r.revision=citation.revision
           and (citation."extractionRevision" is null or exists(
             select 1 from file_document_revision_generation binding where binding.file_id=r.id and binding.revision=r.revision and binding.generation=citation."extractionRevision"
               and (citation.section is null or exists(select 1 from file_document_chunk c where c.generation=binding.generation and c.ordinal=citation.section))

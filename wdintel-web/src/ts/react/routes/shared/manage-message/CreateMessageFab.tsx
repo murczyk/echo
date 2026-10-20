@@ -8,7 +8,7 @@ import {
 } from './floating-control-geometry';
 
 type Props = {
-  onClick: () => void;
+  onClick: (focusTarget?: HTMLElement) => void;
   rightInset?: number;
 };
 
@@ -24,8 +24,9 @@ export const CreateMessageFab = forwardRef<HTMLButtonElement, Props>(function Cr
       color="primary"
       aria-label="Додати повідомлення"
       onClick={(event) => {
+        const focusTarget = event.currentTarget;
         event.currentTarget.blur();
-        onClick();
+        onClick(focusTarget);
       }}
       sx={{
         position: 'absolute',

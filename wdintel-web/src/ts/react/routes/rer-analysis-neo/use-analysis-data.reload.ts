@@ -844,6 +844,7 @@ type ReloadParams = {
   shouldLoadNewCallsigns: boolean;
   setNoMoreToLoad: Setter<boolean>;
   preserveMessageTailExhaustion?: boolean;
+  showMessagesLoading?: boolean;
   setOptions: Setter<AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, CallsignInfoRes>>;
@@ -894,7 +895,9 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   params.setMessagesLoading(true);
   params.setFiltersLoading(true);
   params.setMapLoading(shouldLoadMap);
-  if (!params.preserveMessageTailExhaustion) params.setNoMoreToLoad(false);
+  if (!params.preserveMessageTailExhaustion && params.showMessagesLoading !== false) {
+    params.setNoMoreToLoad(false);
+  }
 
   try {
     const loadCriticalData = async (

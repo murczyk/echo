@@ -140,6 +140,7 @@ pub async fn zones_datasources_group_update(
         admin_login_details: rsp.admin_login_details,
         short_note: rsp.short_note,
         long_note: rsp.long_note,
+        color_key: rsp.color_key,
     }))
 }
 
@@ -223,17 +224,21 @@ pub async fn zones_datasources_group_add(
     let group_master_key = szd.group_master_key.clone();
 
     // Fetch the group name and notes
-    let group_name = signal_group::Entity::find()
+    let (group_name, color_key) = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::IsArchived.eq(false))
         .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
         .select_only()
-        .column(signal_group::Column::Name)
-        .into_tuple::<Option<String>>()
+        .columns([signal_group::Column::Name, signal_group::Column::ColorKey])
+        .into_tuple::<(Option<String>, Option<String>)>()
         .one(&txn)
         .await
         .c(h!())?
-        .flatten();
+        .c(h!())?;
+    let color_key = crate::messenger::group::types::SignalGroupColor::from_optional_db_value(
+        color_key.as_deref(),
+    )
+    .c(h!())?;
     bl::update_group_interseption_kind_if_enabled(
         req.interseption_kind,
         &group_master_key,
@@ -324,6 +329,7 @@ pub async fn zones_datasources_group_add(
             admin_logins,
             short_note,
             long_note,
+            color_key,
         },
     }))
 }

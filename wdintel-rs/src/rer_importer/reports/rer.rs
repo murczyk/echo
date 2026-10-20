@@ -844,9 +844,11 @@ fn message_body_without_headers(
     ) {
         return Ok(meow_format.body_noheader.body);
     }
-    Ok(crate::rer_importer::body_noheader::extract_text(&body)
-        .c(h!())?
-        .body)
+    Ok(
+        crate::sigint::parser::extract_text_without_top_comment(&body)
+            .c(h!())?
+            .body,
+    )
 }
 
 fn message_body_without_duplicate_comments(
@@ -2526,6 +2528,26 @@ mod tests {
         assert_eq!(
             message_body_without_headers(&message).unwrap(),
             "Перехоплення"
+        );
+    }
+
+    #[test]
+    fn issue_3821_report_body_strips_unit_header_before_datetime() {
+        let dialogue =
+            "- До вечера одно перемещение ...\n- 51 пдп 3 пдб, прием.";
+        let message = signal_message(
+            3028130,
+            &format!("51 пдп 3 пдб\n20.10.2026, 09:49\n{dialogue}"),
+        );
+
+        assert_eq!(
+            message_body_without_duplicate_comments(
+                &message,
+                &["Планування переміщення ШТг.".to_string()],
+                &[],
+            )
+            .unwrap(),
+            dialogue
         );
     }
 

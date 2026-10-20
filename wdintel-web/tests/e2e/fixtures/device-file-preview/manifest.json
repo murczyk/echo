@@ -2338,7 +2338,7 @@
       "status": "not-run",
       "hosts": ["duty", "analysis"],
       "sameBytes": true,
-      "note": "Deterministic oversized bytes for the pre-parser size limit; not a valid document. Duty/Analysis reference has not run."
+      "note": "Bounded bytes for the device pre-parser limit test, which reports 1000000001 bytes via HEAD; not a valid document. Duty/Analysis reference has not run."
     }
   },
   {
@@ -2365,7 +2365,7 @@
       "status": "not-run",
       "hosts": ["duty", "analysis"],
       "sameBytes": true,
-      "note": "Deterministic oversized bytes for the pre-parser size limit; not a valid document. Duty/Analysis reference has not run."
+      "note": "Bounded bytes for the device pre-parser limit test, which reports 1000000001 bytes via HEAD; not a valid document. Duty/Analysis reference has not run."
     }
   },
   {
@@ -2375,24 +2375,20 @@
     "extension": "zip",
     "mimeType": "application/zip",
     "category": "archive",
-    "assetPath": null,
-    "sizeBytes": 26214401,
-    "sha256": "c0194737bba07c47338b541ea7e5f813c8b1a2092145da0598237decabaaffea",
+    "assetPath": "archive-limit.zip",
+    "sizeBytes": 2169,
+    "sha256": "61d747531c29c130975d646275d7dad34d9db0db989951f2ec1b496cb422bd40",
     "codec": null,
     "mediaProbe": null,
     "expectedViewer": "limit",
     "expectedActions": ["download-original"],
     "availability": "present",
-    "byteRecipe": {
-      "kind": "repeat",
-      "byte": 65,
-      "sizeBytes": 26214401
-    },
+    "byteRecipe": null,
     "reference": {
       "status": "not-run",
       "hosts": ["duty", "analysis"],
       "sameBytes": true,
-      "note": "Deterministic oversized bytes for the pre-parser size limit; not a valid document. Duty/Analysis reference has not run."
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
     }
   }
 ]

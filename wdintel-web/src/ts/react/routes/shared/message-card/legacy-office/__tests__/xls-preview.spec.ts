@@ -216,3 +216,13 @@ describe('legacy BIFF8 XLS preview', () => {
     throw new Error('Expected CFB ownership validation to reject the mutation');
   });
 });
+
+// PR #3830: embedded CFB content must not retain a64MiB device-file cap.
+it('previews a large XLS container with the device allowance while retaining the attachment default', async () => {
+  const original = await fixtureBuffer('3dFormulas.xls');
+  const container = XLSX.CFB.read(new Uint8Array(original), { type: 'array' });
+  XLSX.CFB.utils.cfb_add(container, 'PreviewPadding', new Uint8Array(65 * 1024 * 1024));
+  const buffer = new Uint8Array(XLSX.CFB.write(container, { type: 'array' })).buffer;
+  expect(() => buildXlsPreview(buffer)).toThrowError(LegacyOfficePreviewError);
+  expect(buildXlsPreview(buffer, 1_000_000_000).sheets.length).toBeGreaterThan(0);
+}, 20000);

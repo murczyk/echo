@@ -86,6 +86,9 @@ fn analytics_root_entry(
     timestamp: NaiveDateTime,
 ) -> file_entry::ActiveModel {
     file_entry::ActiveModel {
+        is_archive: sea_orm::ActiveValue::NotSet,
+        archive_relative_path: sea_orm::ActiveValue::NotSet,
+        archive_file_id: sea_orm::ActiveValue::NotSet,
         id: Set(id),
         device_id: Set(device_id),
         parent_id: Set(None),
@@ -120,6 +123,9 @@ fn analytics_file_entry(
 ) -> file_entry::ActiveModel {
     let root_path = format!("n{}", parent_id.to_string().replace('-', ""));
     file_entry::ActiveModel {
+        is_archive: sea_orm::ActiveValue::NotSet,
+        archive_relative_path: sea_orm::ActiveValue::NotSet,
+        archive_file_id: sea_orm::ActiveValue::NotSet,
         id: Set(id),
         device_id: Set(device_id),
         parent_id: Set(Some(parent_id)),
@@ -2153,6 +2159,9 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         nested_directory_id.to_string().replace('-', ""),
     );
     file_entry::ActiveModel {
+        is_archive: sea_orm::ActiveValue::NotSet,
+        archive_relative_path: sea_orm::ActiveValue::NotSet,
+        archive_file_id: sea_orm::ActiveValue::NotSet,
         id: Set(nested_directory_id),
         device_id: Set(device.id),
         parent_id: Set(Some(root_id)),
@@ -2181,6 +2190,9 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
     crate::file_registry::test_support::insert_entry(
         file_db,
         file_entry::ActiveModel {
+            is_archive: sea_orm::ActiveValue::NotSet,
+            archive_relative_path: sea_orm::ActiveValue::NotSet,
+            archive_file_id: sea_orm::ActiveValue::NotSet,
             id: Set(nested_file_id),
             device_id: Set(device.id),
             parent_id: Set(Some(nested_directory_id)),

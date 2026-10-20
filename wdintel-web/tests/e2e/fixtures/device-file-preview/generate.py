@@ -191,6 +191,7 @@ def make_negatives():
     write("unsupported.bin", bytes(range(32)))
     write("corrupt.pdf", b"%PDF-1.7\ntruncated fixture\n")
     write("unsafe.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="64"><script>window.fixtureScriptRan=true</script><rect width="80" height="64" fill="red"/><image href="https://example.test/echo-external.png" width="80" height="64"/></svg>')
+    archive("archive-limit.zip", {"bounded.txt": bytes(2 * 1024**2)})
     archive("unsafe-members.zip", {"../escape.txt": "do not save", "/absolute.txt": "do not save", "safe.txt": "allowed member"})
     password_zip = ROOT / "password.zip"
     password_zip.unlink(missing_ok=True)
@@ -223,11 +224,12 @@ def make_manifest():
         fixture("svg-script-inert", "svg", "image", "unsafe.svg", scenario="negative", expectedViewer="image", expectedActions=["view", "zoom", "pan", "download-original"], expectedScriptExecution=False),
         fixture("missing-content", "txt", "document", "intentionally-missing.txt", scenario="negative", expectedViewer="missing", expectedActions=[]),
     ]
-    for identifier, extension, category, size in [("oversized-text", "txt", "document", 1024**2 + 1), ("oversized-document", "docx", "document", 10 * 1024**2 + 1), ("oversized-zip", "zip", "archive", 25 * 1024**2 + 1)]:
+    for identifier, extension, category, size in [("oversized-text", "txt", "document", 1024**2 + 1), ("oversized-document", "docx", "document", 10 * 1024**2 + 1)]:
         item = fixture(identifier, extension, category, "not-stored-on-disk", scenario="negative", availability="present", expectedViewer="limit", expectedActions=["download-original"])
         item.update(assetPath=None, sizeBytes=size, sha256=hashlib.sha256(b"A" * size).hexdigest(), byteRecipe={"kind": "repeat", "byte": 65, "sizeBytes": size})
-        item["reference"]["note"] = "Deterministic oversized bytes for the pre-parser size limit; not a valid document. Duty/Analysis reference has not run."
+        item["reference"]["note"] = "Bounded bytes for the device pre-parser limit test, which reports 1000000001 bytes via HEAD; not a valid document. Duty/Analysis reference has not run."
         items.append(item)
+    items.append(fixture("oversized-zip", "zip", "archive", "archive-limit.zip", scenario="negative", expectedViewer="limit", expectedActions=["download-original"]))
     MANIFEST.write_text(json.dumps(items, ensure_ascii=False, indent=2) + "\n")
 
 

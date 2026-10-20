@@ -3123,6 +3123,201 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  it('prefills an accessible initial group in create mode', async () => {
+    setRecentValues({ group: ['g-1'] });
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1', 'g-2']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+      { masterKey: 'g-1', name: 'Group 1' },
+      { masterKey: 'g-2', name: 'Group 2' },
+    ]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          initialGroupMasterKey="g-2"
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-2' });
+    root.unmount();
+  });
+
+  it('falls back to current recent-group behavior for all-groups scope', async () => {
+    setRecentValues({ group: ['g-1'] });
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+      { masterKey: 'g-1', name: 'Group 1' },
+    ]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          initialGroupMasterKey={null}
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+    root.unmount();
+  });
+
+  it('rejects an inaccessible initial group and reports an error', async () => {
+    setRecentValues({ group: ['g-1'] });
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+      { masterKey: 'g-1', name: 'Group 1' },
+    ]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          initialGroupMasterKey="missing-group"
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(autocompleteValuesByLabel.get('Група')).toBeNull();
+    expect(container.textContent).toContain('Обрана група більше недоступна.');
+    root.unmount();
+  });
+
+  it('does not overwrite edit or report group state', async () => {
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1', 'g-2']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+      { masterKey: 'g-1', name: 'Group 1' },
+      { masterKey: 'g-2', name: 'Group 2' },
+    ]);
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'copied source', parent_signal_message_ids: [42] }],
+    });
+    const editContainer = document.createElement('div');
+    document.body.appendChild(editContainer);
+    const editRoot = createRoot(editContainer);
+
+    await act(async () => {
+      editRoot.render(
+        <ManageMessageDrawer
+          open
+          initialGroupMasterKey="g-2"
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          editTarget={{ id: 10, message: buildMessage({ groupMasterKey: 'g-1' }) }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+    act(() => editRoot.unmount());
+
+    const reportContainer = document.createElement('div');
+    document.body.appendChild(reportContainer);
+    const reportRoot = createRoot(reportContainer);
+    await act(async () => {
+      reportRoot.render(
+        <ManageMessageDrawer
+          open
+          initialGroupMasterKey="g-2"
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage() }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(autocompleteValuesByLabel.get('Відправити в групу')).toBeNull();
+    act(() => reportRoot.unmount());
+  });
+
+  it('resets the initial group between create intents without leaking a draft', async () => {
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1', 'g-2']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+      { masterKey: 'g-1', name: 'Group 1' },
+      { masterKey: 'g-2', name: 'Group 2' },
+    ]);
+    const editorRef = createRef<ManageMessageEditorHandle>();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const renderIntent = (groupMasterKey: string) =>
+      root.render(
+        <ManageMessageDrawer
+          ref={editorRef}
+          open
+          intentKey={`create-message:${groupMasterKey}`}
+          initialGroupMasterKey={groupMasterKey}
+          presentation="embedded"
+          cyberEchoEnabled={false}
+          currentUser={{ roles: ['Rer'] } as User}
+          onClose={vi.fn()}
+        />,
+      );
+
+    await act(async () => {
+      renderIntent('g-1');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'draft for group one' } });
+      await Promise.resolve();
+    });
+
+    act(() => {
+      editorRef.current?.requestIntentChange({
+        key: 'create-message:g-2',
+        commit: () => renderIntent('g-2'),
+      });
+    });
+    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+
+    const discard = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Відхилити зміни',
+    );
+    await act(async () => {
+      discard?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-2' });
+    expect(textFieldPropsByLabel.get('Текст повідомлення')?.value).toBe('');
+    root.unmount();
+  });
+
   it('keeps create submission disabled until group and meaningful content are valid', async () => {
     referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
     referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);

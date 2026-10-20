@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  archiveContentHref,
-  readDeviceArchiveBytes,
-  type DeviceFileSelection,
-} from './device-file-archive';
+import type { DeviceFileSelection } from './device-file-archive';
 import { FORCED_NAVIGATION_EVENT } from '../../../browser/navigation-guard';
 import { AUTH_UNAUTHORIZED_EVENT, emitUnauthorizedEvent } from '../../auth-redirect';
 import { useOptionalPowerSnackbar } from '../../components/PowerSnackbar';
 import { HttpRequestError, isAbortError } from '../../services/api/client';
-import { deviceFileContentUrl, getDeviceFileContent } from '../../services/api/devices';
+import { deviceFileContentUrl } from '../../services/api/devices';
 import { getDeviceFilePreviewContentSize } from '../../services/api/device-file-preview';
-import { downloadBlob } from '../../utils/download-blob';
+import { useDeviceFileDownload } from './use-device-file-download';
 import {
   FilePreviewRenderError,
   normalizeFilePreviewMetadata,
@@ -18,12 +14,12 @@ import {
 } from '../shared/message-card/attachment-preview/file-preview-source';
 import { toDeviceFileLoadError } from './helpers';
 
+import { DEVICE_FILE_PREVIEW_MAX_BYTES } from './device-file-preview-config';
+
 export type DeviceFilePreviewSource = FilePreviewSource & {
   deviceId: string;
   fileId: string;
   revision: number;
-  archiveMember?: DeviceFileSelection['archiveMember'];
-  accessHref?: string;
 };
 
 export type DeviceFilePreviewState =
@@ -59,15 +55,14 @@ export function deviceFilePreviewSource(
       extension: file.extension,
       contentType: file.mimeType,
     }),
-    key: `${deviceId}/${file.fileId}/${file.revision}${file.archiveMember ? `/zip/${file.archiveMember.members.map((entry) => entry.index).join('/')}` : ''}`,
+    key: `${deviceId}/${file.fileId}/${file.revision}`,
     deviceId,
     fileId: file.fileId,
     revision: file.revision,
     sizeBytes: null,
+    maxPreviewBytes: DEVICE_FILE_PREVIEW_MAX_BYTES,
+    mediaHref: `${deviceFileContentUrl(deviceId, file.fileId, file.revision).replace(/\/content$/, '')}/preview/media`,
     originalHref: deviceFileContentUrl(deviceId, file.fileId, file.revision),
-    ...(file.archiveMember
-      ? { archiveMember: file.archiveMember, accessHref: archiveContentHref(deviceId, file) }
-      : {}),
   };
 }
 
@@ -110,7 +105,6 @@ export function useDeviceFilePreview({
     sizeBytes: null,
     attempt: 0,
   });
-  const [downloading, setDownloading] = useState(false);
   const current = useRef<PreviewSession | null>(null);
   const nextEpoch = useRef(0);
   const selectedKey = useRef(source?.key);
@@ -143,7 +137,6 @@ export function useDeviceFilePreview({
             ? error.retryable
             : !(error instanceof HttpRequestError && [413, 415].includes(error.status)),
       }));
-      setDownloading(false);
       notifyRef.current({ severity: 'error', message });
       if (error instanceof HttpRequestError && error.status === 401) emitUnauthorizedEvent();
     },
@@ -151,7 +144,6 @@ export function useDeviceFilePreview({
   );
 
   useEffect(() => {
-    setDownloading(false);
     if (!source) {
       setSnapshot({ session: null, state: 'idle', error: null, sizeBytes: null, attempt });
       return;
@@ -165,20 +157,8 @@ export function useDeviceFilePreview({
     };
     current.current = session;
     setSnapshot({ session, state: 'loading', error: null, sizeBytes: null, attempt });
-    void getDeviceFilePreviewContentSize(
-      source.accessHref ?? source.originalHref,
-      session.controller.signal,
-    )
+    void getDeviceFilePreviewContentSize(source.originalHref, session.controller.signal)
       .then(async (sizeBytes) => {
-        if (source.archiveMember && sessionIsCurrent(session)) {
-          const bytes = await readDeviceArchiveBytes(deviceId, file!, session.controller.signal);
-          await getDeviceFilePreviewContentSize(source.accessHref!, session.controller.signal);
-          if (!sessionIsCurrent(session)) return;
-          const href = URL.createObjectURL(new Blob([bytes]));
-          session.cleanups.add(() => URL.revokeObjectURL(href));
-          session.source = { ...source, originalHref: href, mediaHref: href };
-          sizeBytes = bytes.byteLength;
-        }
         if (!sessionIsCurrent(session)) return;
         setSnapshot({
           session,
@@ -211,7 +191,6 @@ export function useDeviceFilePreview({
         state: 'denied',
         error: 'Помилка доступу до файлу.',
       }));
-      setDownloading(false);
     };
     window.addEventListener(AUTH_UNAUTHORIZED_EVENT, cancel);
     window.addEventListener(FORCED_NAVIGATION_EVENT, cancel);
@@ -252,7 +231,7 @@ export function useDeviceFilePreview({
     if (!sessionIsCurrent(session)) return false;
     try {
       await getDeviceFilePreviewContentSize(
-        session!.source.accessHref ?? session!.source.originalHref,
+        session!.source.originalHref,
         session!.controller.signal,
       );
       return sessionIsCurrent(session);
@@ -261,27 +240,8 @@ export function useDeviceFilePreview({
       return false;
     }
   }, [session, sessionIsCurrent, fail]);
-  const canDownload =
-    !!source &&
-    matches &&
-    state !== 'loading' &&
-    state !== 'denied' &&
-    (!source.archiveMember || session?.source.originalHref.startsWith('blob:') === true);
-  const download = useCallback(async () => {
-    if (!canDownload || downloading || !sessionIsCurrent(session)) return;
-    setDownloading(true);
-    try {
-      const blob = await getDeviceFileContent(session!.source.originalHref, {
-        signal: session!.controller.signal,
-      });
-      if (session!.source.archiveMember && !(await checkAccess())) return;
-      if (sessionIsCurrent(session)) downloadBlob(blob, session!.source.fileName);
-    } catch (error) {
-      fail(session!, error, 'Помилка скачування файлу');
-    } finally {
-      if (sessionIsCurrent(session)) setDownloading(false);
-    }
-  }, [canDownload, downloading, session, sessionIsCurrent, fail, checkAccess]);
+  const canDownload = !!source && matches && state !== 'loading' && state !== 'denied';
+  const { downloading, download } = useDeviceFileDownload(canDownload ? source : null, onError);
 
   return {
     state,

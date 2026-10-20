@@ -12,12 +12,12 @@ self.addEventListener(
   (
     event: MessageEvent<{
       requestId: string;
-      request: { buffer: ArrayBuffer; contentType: string | null };
+      request: { buffer: ArrayBuffer; contentType: string | null; maxBytes?: number };
     }>,
   ) => {
     const { requestId, request } = event.data;
     try {
-      if (request.buffer.byteLength > MAX_CSV_FILE_BYTES)
+      if (request.buffer.byteLength > (request.maxBytes ?? MAX_CSV_FILE_BYTES))
         throw new CsvPreviewError('CSV_FILE_TOO_LARGE', 'CSV file is too large');
       const bytes = new Uint8Array(request.buffer);
       if (!isUtf16Csv(bytes, request.contentType) && isProbablyBinaryCsv(bytes))

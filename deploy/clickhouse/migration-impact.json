@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20261016_144130_signal_group_color_key": {
+      "changes": [{ "table": "public.signal_group", "strategy": "cdc_additive" }]
+    },
     "echo:m20261016_131615_ai_intel_report_generation_limits": {
       "changes": [
         { "table": "public.ai_intel_report_settings", "strategy": "excluded" },
@@ -29,6 +32,11 @@
         { "table": "public.user_settings", "strategy": "replicated_snapshot", "targeted_resnapshot": true },
         { "table": "public.messenger_alert_settings", "strategy": "excluded" },
         { "table": "public.messenger_alert_delivery", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261014_172633_user_group_feed_read_state": {
+      "changes": [
+        { "table": "public.user_group_feed_read_state", "strategy": "excluded" }
       ]
     },
     "echo:m20261014_144721_attachment_search_change": {

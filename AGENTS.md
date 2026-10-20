@@ -113,6 +113,8 @@
   `echo-migration/src` and use the style of one of existing files
 - make pure sql migrations, see
   `echo-migration/src` for examples, don't write sea orm style migrations
+- Keep migration and test-fixture SQL in `.rs` raw string literals; do not
+  create standalone `.sql` files.
 - Add new migrations to `echo-migration/src/lib.rs`
 - Afterwards run `just migrate-up` to apply the migration locally, you can undo last migration via `just migrate-down`
 - If you want to manually un-apply a migration -- don't forget to

@@ -98,6 +98,7 @@ export type Props = {
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
   intentKey?: string;
+  initialGroupMasterKey?: string | null;
   presentation?: ManageMessageEditorPresentation;
   interactionActive?: boolean;
   adaptiveEmbeddedForm?: boolean;
@@ -662,7 +663,11 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                 borderColor: 'divider',
               }}
             >
-              <Typography id={titleId} variant={adaptiveEmbeddedForm ? 'subtitle2' : 'h6'}>
+              <Typography
+                id={titleId}
+                component="h2"
+                variant={adaptiveEmbeddedForm ? 'subtitle2' : 'h6'}
+              >
                 {isReportMode
                   ? isReportEditIntent
                     ? 'Редагувати розвіддонесення'

@@ -68,6 +68,46 @@ async fn next_revision(
 
 #[actix_web::test]
 #[serial_test::serial]
+async fn archive_publish_and_reuse_enqueue_without_opening_browser_3778() {
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let file = fixture.file("automatic.zip").await;
+    let upload =
+        publish(&env, &fixture, &file, b"original archive bytes").await;
+    let object_key = &upload.object_key;
+    let count = |revision: i64| {
+        let db = fixture.db();
+        async move {
+            db.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+                "select count(*) as n from file_archive where device_id=$1 and source_file_id=$2 and source_revision=$3 and state='queued' and attempts=0 and source_object_key=$4",
+                [file.device_id.into(),file.id.into(),revision.into(),object_key.clone().into()]))
+                .await.unwrap().unwrap().try_get::<i64>("","n").unwrap()
+        }
+    };
+    assert_eq!(count(1).await, 1);
+    next_revision(&env, &fixture, &file, 2).await;
+    Arc::get_mut(&mut env).unwrap().device_file_content =
+        Some(fixture.runtime.clone());
+    let app = app!(env);
+    let cookie = cookie!(app, fixture.login.id);
+    for _ in 0..2 {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&reuse_path(&file, 2))
+                .cookie(cookie.clone())
+                .insert_header(("Tus-Resumable", "1.0.0"))
+                .set_json(body(&upload))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+    assert_eq!(count(2).await, 1);
+}
+
+#[actix_web::test]
+#[serial_test::serial]
 async fn reuse_is_idempotent_after_later_metadata_and_preserves_original_complete(
 ) {
     let (mut env, _guard) = cleanup_locked().await.unwrap();

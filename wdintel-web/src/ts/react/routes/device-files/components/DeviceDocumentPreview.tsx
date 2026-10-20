@@ -13,7 +13,7 @@ import {
   resolveMediaSummaryCoordinatePoint,
   type CoordinatePreviewPoint,
 } from '../../shared/message-card/message-coordinate-preview';
-import { deviceFileContentUrl } from '../../../services/api/devices';
+import { useDeviceFileDownload } from '../use-device-file-download';
 
 const CoordinatePreviewMapSurface = lazy(async () => ({
   default: (await import('../../shared/message-card/CoordinatePreviewMapSurface'))
@@ -31,6 +31,10 @@ export function DeviceDocumentPreview({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const pending = useRef<AbortController | null>(null);
+  const download = useDeviceFileDownload(
+    result?.document.hasContent ? source : null,
+    lifecycle?.onError,
+  );
   const { notify } = usePowerSnackbar();
   const key = JSON.stringify(source);
   const signal = lifecycle?.signal;
@@ -123,14 +127,13 @@ export function DeviceDocumentPreview({
             {documentState(result.document.positionState)}
           </p>
           {result.document.hasContent && (
-            <a
-              className="text-echo-primary underline"
-              href={deviceFileContentUrl(source.deviceId, source.fileId, source.revision)}
-              target="_blank"
-              rel="noopener noreferrer"
+            <PowerButton
+              disabled={download.downloading}
+              aria-busy={download.downloading}
+              onClick={() => void download.download()}
             >
-              Відкрити оригінал
-            </a>
+              Скачати оригінал
+            </PowerButton>
           )}
           {result.document.summary && (
             <p className="whitespace-pre-wrap">{result.document.summary}</p>

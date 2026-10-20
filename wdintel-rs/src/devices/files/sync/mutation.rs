@@ -54,7 +54,8 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             source_file_state_settled_at timestamp with time zone,
             source_file_state_settled_by text,
             source_sequence bigint,
-            analysis_input_revision bigint
+            analysis_input_revision bigint,
+            is_archive boolean
         )
     ),
     mutated_files as (
@@ -79,7 +80,8 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             current_analysis_run_id,
             source_file_state,
             source_file_state_settled_at,
-            source_file_state_settled_by
+            source_file_state_settled_by,
+            is_archive
         )
         select
             accepted.candidate_file_id,
@@ -102,12 +104,14 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             null,
             accepted.source_file_state::public.source_file_state_kind,
             accepted.source_file_state_settled_at,
-            accepted.source_file_state_settled_by
+            accepted.source_file_state_settled_by,
+            accepted.is_archive
         from accepted_input as accepted
         on conflict (device_id, absolute_path)
             where kind = 'file'::public.file_entry_kind
         do update
-        set name = excluded.name,
+        set is_archive = excluded.is_archive,
+            name = excluded.name,
             absolute_path = excluded.absolute_path,
             mime_type = excluded.mime_type,
             extension = excluded.extension,
@@ -147,7 +151,8 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             current.analysis_input_revision,
             current.source_file_state,
             current.source_file_state_settled_at,
-            current.source_file_state_settled_by
+            current.source_file_state_settled_by,
+            current.is_archive
     ),
     mutation_results as materialized (
         select
@@ -169,6 +174,7 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             mutated.source_file_state,
             mutated.source_file_state_settled_at,
             mutated.source_file_state_settled_by,
+            mutated.is_archive,
             accepted.source_sequence,
             case
                 when mutated.id = accepted.candidate_file_id then 'created'
@@ -216,7 +222,8 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             source_file_state,
             source_file_state_settled_at,
             source_file_state_settled_by,
-            created_at
+            created_at,
+            is_archive
         )
         select
             result.file_id,
@@ -234,7 +241,8 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             result.source_file_state,
             result.source_file_state_settled_at,
             result.source_file_state_settled_by,
-            result.updated_at at time zone 'UTC'
+            result.updated_at at time zone 'UTC',
+            result.is_archive
         from mutation_results as result
         returning id, revision
     ),
@@ -291,6 +299,7 @@ fn accepted_item_outcome_expr() -> SimpleExpr {
 
 #[derive(Serialize)]
 struct AcceptedMutation {
+    is_archive: bool,
     sync_id: Uuid,
     batch_index: i32,
     item_index: i32,
@@ -450,6 +459,7 @@ async fn load_current_files(
     absolute_paths: &[String],
 ) -> Result<HashMap<String, file_entry::Model>, FilesystemError> {
     let files = file_entry::Entity::find()
+        .filter(file_entry::Column::ArchiveFileId.is_null())
         .filter(file_entry::Column::DeviceId.eq(device_id))
         .filter(Expr::col(file_entry::Column::Kind).eq(SimpleExpr::Constant(
             DomainFileEntryKind::File.to_value().into(),
@@ -602,6 +612,11 @@ fn prepare_accepted_mutation(
     let source_file_state = source_state_columns(&mutation.source_file_state);
 
     Ok(AcceptedMutation {
+        is_archive: super::super::preview::is_archive(
+            &name,
+            mutation.metadata.extension.as_deref(),
+            mutation.metadata.mime_type.as_deref(),
+        ),
         sync_id: item.id,
         batch_index: item.batch_index,
         item_index: item.item_index,

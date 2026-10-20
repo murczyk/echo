@@ -45,6 +45,8 @@ pub(in crate::devices::files) fn map_directory_model(
     )?;
 
     Ok(DirectoryEntry {
+        revision: entry.revision,
+        sync_id: entry.sync_id,
         entry_id: entry.id,
         device_id: entry.device_id,
         parent_entry_id,
@@ -65,9 +67,15 @@ pub(in crate::devices::files) fn map_file_model(
     let parent_entry_id = entry
         .parent_id
         .ok_or(FilesystemError::Invariant("file_parent_missing"))?;
-    let absolute_path = entry
-        .absolute_path
-        .ok_or(FilesystemError::Invariant("file_absolute_path_missing"))?;
+    let absolute_path = match entry.absolute_path {
+        Some(path) => path,
+        None if entry.archive_file_id.is_some() => String::new(),
+        None => {
+            return Err(FilesystemError::Invariant(
+                "file_absolute_path_missing",
+            ))
+        }
+    };
     let revision = entry
         .revision
         .ok_or(FilesystemError::Invariant("file_revision_missing"))?;
@@ -166,8 +174,8 @@ fn ensure_directory_metadata_absent(
         && entry.file_metadata_created_at.is_none()
         && entry.file_metadata_modified_at.is_none()
         && entry.content_path.is_none()
-        && entry.revision.is_none()
-        && entry.sync_id.is_none()
+        && (entry.archive_file_id.is_some()
+            || (entry.revision.is_none() && entry.sync_id.is_none()))
         && entry.source_file_state.is_none()
         && entry.source_file_state_settled_at.is_none()
         && entry.source_file_state_settled_by.is_none()

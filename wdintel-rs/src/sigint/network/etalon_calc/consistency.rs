@@ -402,6 +402,8 @@ where
     }
 
     // Step 6: Match messages to networks
+    let parsed_units_by_item =
+        load_parsed_unit_ids_by_item(db, messages).await.c(h!())?;
     let res = match_network_ids_for_messages(
         messages,
         groups_map,
@@ -411,10 +413,51 @@ where
         &network_units,
         &message_units,
         &network_posts,
+        &parsed_units_by_item,
     )
     .context(h!())?;
 
     Ok(res)
+}
+
+async fn load_parsed_unit_ids_by_item<C>(
+    db: &C,
+    messages: &[InboxItem],
+) -> anyhow::Result<HashMap<i64, HashSet<i64>>>
+where
+    C: ConnectionTrait,
+{
+    let item_ids = messages
+        .iter()
+        .map(|message| message.id)
+        .collect::<Vec<_>>();
+    let mut parsed_units_by_item: HashMap<i64, HashSet<i64>> = HashMap::new();
+    for item_ids in item_ids.chunks(
+        crate::config::SIGINT_INBOX_NETWORK_PARSED_UNIT_QUERY_BATCH_SIZE,
+    ) {
+        let parsed_unit_links = sigint_inbox_item_unit::Entity::find()
+            .select_only()
+            .column(sigint_inbox_item_unit::Column::ItemId)
+            .column(sigint_inbox_item_unit::Column::UnitId)
+            .filter(
+                sigint_inbox_item_unit::Column::ItemId.is_in(item_ids.to_vec()),
+            )
+            .filter(
+                sigint_inbox_item_unit::Column::Kind
+                    .eq(sea_orm_active_enums::SigintInboxItemUnitKind::Parsed),
+            )
+            .into_tuple::<(i64, i64)>()
+            .all(db)
+            .await
+            .c(h!())?;
+        for (item_id, unit_id) in parsed_unit_links {
+            parsed_units_by_item
+                .entry(item_id)
+                .or_default()
+                .insert(unit_id);
+        }
+    }
+    Ok(parsed_units_by_item)
 }
 
 async fn load_network_units_by_network_id<'a, 'async_trait, C>(
@@ -539,6 +582,7 @@ fn match_network_ids_for_messages(
     network_units: &HashMap<i64, Vec<sigint_unit::Model>>,
     message_units: &HashMap<String, Vec<sigint_unit::Model>>,
     network_posts: &HashMap<i64, HashSet<i64>>,
+    parsed_units_by_item: &HashMap<i64, HashSet<i64>>,
 ) -> anyhow::Result<HashMap<i64, Vec<i64>>> {
     let mut freq_networks_map: HashMap<String, Vec<NetworkFreqResult>> =
         HashMap::new();
@@ -628,15 +672,21 @@ fn match_network_ids_for_messages(
                 }
             }
         }
-        matched = try_discard_by_unit(
-            msg,
-            matched,
-            network_units,
-            message_units,
-            &network_unit_names,
-        );
         matched = filter_networks_by_post(msg.post_id, matched, network_posts);
-
+        matched = try_discard_by_parsed_unit(
+            parsed_units_by_item.get(&msg.id),
+            &matched,
+            network_units,
+        )
+        .unwrap_or_else(|| {
+            try_discard_by_unit(
+                msg,
+                matched,
+                network_units,
+                message_units,
+                &network_unit_names,
+            )
+        });
         result.insert(msg.id, matched.into_iter().collect::<Vec<_>>());
     }
 
@@ -668,6 +718,24 @@ fn filter_networks_by_post(
             _ => true,
         })
         .collect()
+}
+
+fn try_discard_by_parsed_unit(
+    parsed_unit_ids: Option<&HashSet<i64>>,
+    matched_networks: &HashSet<i64>,
+    network_units: &HashMap<i64, Vec<sigint_unit::Model>>,
+) -> Option<HashSet<i64>> {
+    let parsed_unit_ids = parsed_unit_ids?;
+    let matched = matched_networks
+        .iter()
+        .copied()
+        .filter(|network_id| {
+            network_units.get(network_id).is_some_and(|units| {
+                units.iter().any(|unit| parsed_unit_ids.contains(&unit.id))
+            })
+        })
+        .collect::<HashSet<_>>();
+    (!matched.is_empty()).then_some(matched)
 }
 
 fn try_discard_by_unit(
@@ -883,7 +951,574 @@ fn log_network_mismatches(checked: usize, mismatches: &NetworkMismatchSummary) {
 mod tests {
     use super::*;
     use crate::functest::tests::*;
+    use sea_orm::sea_query::Expr;
+    use sea_orm_active_enums::SigintInboxItemUnitKind;
     use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn parsed_units_trim_saved_networks_and_derived_units() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let db = &env.dbx;
+        let timestamp = Utc::now().naive_utc();
+        let group_aor = signal_group_aor::Entity::find()
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut units = Vec::new();
+        for name in ["1 омсбр", "2 омсбр", "3 омсбр", "4 омсбр", "5 омсбр"]
+        {
+            units.push(
+                mk_sigint_unit(
+                    db,
+                    sigint_unit::ActiveModel {
+                        name: Set(name.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        let network_unit_indices = [vec![0, 3], vec![1, 3], vec![2], vec![4]];
+        let networks = networks_for_parsed_unit_filter(
+            db,
+            &units,
+            &network_unit_indices,
+            group_aor.aor_id,
+            timestamp,
+        )
+        .await;
+        let cases = [
+            (vec![], None, vec![0, 1, 2]),
+            (vec![0], None, vec![0]),
+            (vec![3], None, vec![0, 1]),
+            (vec![0, 1], None, vec![0, 1]),
+            (vec![0, 4], None, vec![0]),
+            (vec![4], None, vec![0, 1, 2]),
+            (vec![1], Some(0), vec![1]),
+            (vec![0, 1], Some(0), vec![0, 1]),
+            (vec![4], Some(0), vec![0]),
+            (vec![], Some(0), vec![0]),
+        ];
+        let mut inbox_items = Vec::new();
+        for _ in &cases {
+            let inbox_item = mk_sigint_inbox_item(
+                db,
+                sigint_inbox_item::ActiveModel {
+                    freq: Set(Some("146.4500".to_string())),
+                    datetime: Set(Some(timestamp)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_signal_message_group(
+                db,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(inbox_item.id),
+                    group_master_key: Set(Some(group_aor.master_key.clone())),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            inbox_items.push(inbox_item);
+        }
+        let initial = super::super::calculate_sigint_inbox_item_networks(
+            inbox_items.clone(),
+            db,
+        )
+        .await
+        .unwrap();
+        for inbox_item in &inbox_items {
+            assert_eq!(initial[&inbox_item.id].len(), 3);
+        }
+        for (inbox_item, (parsed_indices, name_index, _)) in
+            inbox_items.iter_mut().zip(&cases)
+        {
+            if let Some(index) = name_index {
+                let mut updated = inbox_item.clone().into_active_model();
+                updated.unit_v2 = Set(Some(units[*index].name.clone()));
+                updated.parsed_unit_v2 = Set(true);
+                *inbox_item = updated.update(db).await.unwrap();
+            }
+            for &unit_index in parsed_indices {
+                sigint_inbox_item_unit::ActiveModel {
+                    item_id: Set(inbox_item.id),
+                    item_uuid: Set(inbox_item.id_uuid),
+                    unit_id: Set(units[unit_index].id),
+                    kind: Set(SigintInboxItemUnitKind::Parsed),
+                    ..Default::default()
+                }
+                .insert(db)
+                .await
+                .unwrap();
+            }
+        }
+        for _ in 0..2 {
+            let calculated =
+                super::super::calculate_sigint_inbox_item_networks(
+                    inbox_items.clone(),
+                    db,
+                )
+                .await
+                .unwrap();
+            for (inbox_item, (_, _, expected_indices)) in
+                inbox_items.iter().zip(&cases)
+            {
+                assert_parsed_unit_network_links(
+                    db,
+                    inbox_item,
+                    &calculated[&inbox_item.id],
+                    expected_indices,
+                    &networks,
+                    &network_unit_indices,
+                    &units,
+                )
+                .await;
+            }
+        }
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn parsed_unit_recovery_and_removal_reconcile_networks_3842() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let db = &env.dbx;
+        let (units, networks, inbox_item) =
+            parsed_unit_reconciliation_fixture(db).await;
+        let alias = "fixture-unit-alias-3842";
+        let frequency_ids = cache_network_activity_for_reconciliation(
+            db,
+            &networks,
+            inbox_item.datetime.unwrap(),
+        )
+        .await;
+        crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
+            db,
+            inbox_item.id,
+            inbox_item.id_uuid,
+            Some(alias),
+            None,
+        )
+        .await
+        .unwrap();
+        crate::sigint::unit::labels::insert_label(db, units[0].id, alias)
+            .await
+            .unwrap();
+        crate::inbox::unit_resolution::mark_failures_pending_for_text(
+            db, alias,
+        )
+        .await
+        .unwrap();
+        crate::inbox::unit_resolution::run_failed_inbox_unit_worker_once(db)
+            .await
+            .unwrap();
+        assert_reconciled_networks(db, &inbox_item, &[0], &networks, &units)
+            .await;
+        let frequencies = sigint_network_freq::Entity::find()
+            .filter(
+                sigint_network_freq::Column::Id.is_in(frequency_ids.clone()),
+            )
+            .all(db)
+            .await
+            .unwrap();
+        assert!(frequencies.iter().all(|freq| freq.last_seen_dt.is_none()));
+        let queued_frequency_ids = network_recalculation_task::Entity::find()
+            .select_only()
+            .column(network_recalculation_task::Column::NetworkFreqId)
+            .into_tuple::<i64>()
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(
+            queued_frequency_ids.into_iter().collect::<BTreeSet<_>>(),
+            frequency_ids.into_iter().collect::<BTreeSet<_>>()
+        );
+
+        let txn = db.begin().await.unwrap();
+        crate::inbox::unit_resolution::sync_selected_inbox_unit(
+            &txn,
+            inbox_item.id,
+            inbox_item.id_uuid,
+            units[1].id,
+            alias,
+        )
+        .await
+        .unwrap();
+        assert_reconciled_networks(&txn, &inbox_item, &[1], &networks, &units)
+            .await;
+        txn.rollback().await.unwrap();
+        assert_reconciled_networks(db, &inbox_item, &[0], &networks, &units)
+            .await;
+
+        crate::inbox::unit_resolution::sync_selected_inbox_unit(
+            db,
+            inbox_item.id,
+            inbox_item.id_uuid,
+            units[1].id,
+            alias,
+        )
+        .await
+        .unwrap();
+        assert_reconciled_networks(db, &inbox_item, &[1], &networks, &units)
+            .await;
+
+        sigint_unit_label::Entity::delete_many()
+            .filter(sigint_unit_label::Column::Label.eq(alias))
+            .exec(db)
+            .await
+            .unwrap();
+        crate::inbox::unit_resolution::reprocess_inbox_items_for_unit(
+            db,
+            units[1].id,
+        )
+        .await
+        .unwrap();
+        assert_reconciled_networks(db, &inbox_item, &[0, 1], &networks, &units)
+            .await;
+        assert!(
+            group_stats_recalculation_task::Entity::find()
+                .count(db)
+                .await
+                .unwrap()
+                > 0
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn unit_backfill_repairs_networks_with_unchanged_parsed_ids_3842() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let db = &env.dbx;
+        let (units, networks, inbox_item) =
+            parsed_unit_reconciliation_fixture(db).await;
+        crate::sigint::unit::labels::insert_label(
+            db,
+            units[0].id,
+            inbox_item.unit_v2.as_deref().unwrap(),
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(inbox_item.id),
+            item_uuid: Set(inbox_item.id_uuid),
+            unit_id: Set(units[0].id),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        let now = Utc::now().naive_utc();
+        for _ in 0..2 {
+            assert_eq!(
+                crate::inbox::unit_resolution::backfill_inbox_unit_links(
+                    db,
+                    now - chrono::Duration::minutes(1),
+                    now + chrono::Duration::minutes(1),
+                    0,
+                    None,
+                )
+                .await
+                .unwrap(),
+                1
+            );
+            assert_reconciled_networks(
+                db,
+                &inbox_item,
+                &[0],
+                &networks,
+                &units,
+            )
+            .await;
+        }
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn parsed_units_cannot_restore_ineligible_networks_3842() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let db = &env.dbx;
+        let (units, networks, inbox_item) =
+            parsed_unit_reconciliation_fixture(db).await;
+        crate::inbox::unit_resolution::sync_selected_inbox_unit(
+            db,
+            inbox_item.id,
+            inbox_item.id_uuid,
+            units[0].id,
+            &units[0].name,
+        )
+        .await
+        .unwrap();
+        sigint_post::ActiveModel {
+            name: Set("fixture-post-3842".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        for sql in [
+            "update sigint_network set deleted = true where id = $1",
+            "update sigint_network set active_from = (now() at time zone 'utc') + interval '1 day' where id = $1",
+            "update sigint_network_freq set active_to = (now() at time zone 'utc') - interval '1 day' where network_id = $1",
+            "delete from sigint_network_aor where network_id = $1",
+            "insert into sigint_network_post (network_id, post_id) select $1, id from sigint_post where name = 'fixture-post-3842'",
+        ] {
+            let txn = db.begin().await.unwrap();
+            txn.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres, sql, [networks[0].id.into()],
+            )).await.unwrap();
+            super::super::calculate_sigint_inbox_item_networks(
+                vec![inbox_item.clone()], &txn,
+            ).await.unwrap();
+            assert_reconciled_networks(&txn, &inbox_item, &[1], &networks, &units)
+                .await;
+            txn.rollback().await.unwrap();
+        }
+    }
+
+    async fn cache_network_activity_for_reconciliation(
+        db: &DatabaseConnection,
+        networks: &[sigint_network::Model],
+        datetime: NaiveDateTime,
+    ) -> Vec<i64> {
+        sigint_network_freq::Entity::update_many()
+            .col_expr(
+                sigint_network_freq::Column::LastSeenDt,
+                Expr::value(datetime),
+            )
+            .filter(
+                sigint_network_freq::Column::NetworkId
+                    .is_in(networks.iter().map(|network| network.id)),
+            )
+            .exec(db)
+            .await
+            .unwrap();
+        network_recalculation_task::Entity::delete_many()
+            .exec(db)
+            .await
+            .unwrap();
+        sigint_network_freq::Entity::find()
+            .select_only()
+            .column(sigint_network_freq::Column::Id)
+            .filter(
+                sigint_network_freq::Column::NetworkId
+                    .is_in(networks.iter().map(|network| network.id)),
+            )
+            .into_tuple::<i64>()
+            .all(db)
+            .await
+            .unwrap()
+    }
+
+    async fn parsed_unit_reconciliation_fixture(
+        db: &DatabaseConnection,
+    ) -> (
+        Vec<sigint_unit::Model>,
+        Vec<sigint_network::Model>,
+        sigint_inbox_item::Model,
+    ) {
+        let timestamp = Utc::now().naive_utc();
+        let group_aor = signal_group_aor::Entity::find()
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut units = Vec::new();
+        for name in ["61001 омсбр", "61002 омсбр"] {
+            units.push(
+                mk_sigint_unit(
+                    db,
+                    sigint_unit::ActiveModel {
+                        name: Set(name.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        let networks = networks_for_parsed_unit_filter(
+            db,
+            &units,
+            &[vec![0], vec![1]],
+            group_aor.aor_id,
+            timestamp,
+        )
+        .await;
+        let inbox_item = mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                freq: Set(Some("146.4500".to_string())),
+                datetime: Set(Some(timestamp)),
+                unit_v2: Set(Some("fixture-unit-alias-3842".to_string())),
+                parsed_unit_v2: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            db,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(inbox_item.id),
+                group_master_key: Set(Some(group_aor.master_key)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        super::super::calculate_sigint_inbox_item_networks(
+            vec![inbox_item.clone()],
+            db,
+        )
+        .await
+        .unwrap();
+        (units, networks, inbox_item)
+    }
+
+    async fn assert_reconciled_networks<C: ConnectionTrait>(
+        db: &C,
+        inbox_item: &sigint_inbox_item::Model,
+        expected_indices: &[usize],
+        networks: &[sigint_network::Model],
+        units: &[sigint_unit::Model],
+    ) {
+        let expected = load_networks_for_inbox_items(
+            db,
+            &vec![InboxItem {
+                id: inbox_item.id,
+                timestamp: inbox_item.datetime,
+                freq: inbox_item.freq.clone(),
+                unit: inbox_item.unit_v2.clone(),
+                parsed_unit_v2: inbox_item.parsed_unit_v2,
+                post_id: inbox_item.post_id,
+            }],
+        )
+        .await
+        .unwrap();
+        assert_parsed_unit_network_links(
+            db,
+            inbox_item,
+            &expected[&inbox_item.id],
+            expected_indices,
+            networks,
+            &[vec![0], vec![1]],
+            units,
+        )
+        .await;
+    }
+
+    async fn networks_for_parsed_unit_filter(
+        db: &DatabaseConnection,
+        units: &[sigint_unit::Model],
+        network_unit_indices: &[Vec<usize>],
+        aor_id: i64,
+        timestamp: NaiveDateTime,
+    ) -> Vec<sigint_network::Model> {
+        let mut networks = Vec::new();
+        for (index, unit_indices) in network_unit_indices.iter().enumerate() {
+            let network =
+                mk_sigint_network(db, Default::default()).await.unwrap();
+            mk_sigint_network_freq(
+                db,
+                sigint_network_freq::ActiveModel {
+                    network_id: Set(network.id),
+                    freq: Set(if index == 3 { "147.4500" } else { "146.4500" }
+                        .to_string()),
+                    active_from: Set(timestamp - chrono::Duration::days(1)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_network_aor(
+                db,
+                sigint_network_aor::ActiveModel {
+                    network_id: Set(network.id),
+                    aor_id: Set(aor_id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            for &unit_index in unit_indices {
+                mk_sigint_network_unit(
+                    db,
+                    sigint_network_unit::ActiveModel {
+                        network_id: Set(network.id),
+                        unit_id: Set(units[unit_index].id),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            networks.push(network);
+        }
+        networks
+    }
+
+    async fn assert_parsed_unit_network_links<C: ConnectionTrait>(
+        db: &C,
+        inbox_item: &sigint_inbox_item::Model,
+        calculated_network_ids: &[i64],
+        expected_indices: &[usize],
+        networks: &[sigint_network::Model],
+        network_unit_indices: &[Vec<usize>],
+        units: &[sigint_unit::Model],
+    ) {
+        let expected_network_ids = expected_indices
+            .iter()
+            .map(|&index| networks[index].id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            calculated_network_ids
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>(),
+            expected_network_ids
+        );
+        let saved_network_ids = sigint_inbox_item_network::Entity::find()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .eq(inbox_item.id),
+            )
+            .select_only()
+            .column(sigint_inbox_item_network::Column::SigintNetworkId)
+            .into_tuple::<i64>()
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(
+            saved_network_ids.into_iter().collect::<BTreeSet<_>>(),
+            expected_network_ids
+        );
+        let expected_unit_ids = expected_indices
+            .iter()
+            .flat_map(|&index| &network_unit_indices[index])
+            .map(|&index| units[index].id)
+            .collect::<BTreeSet<_>>();
+        let derived_unit_ids = sigint_inbox_item_unit::Entity::find()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(inbox_item.id))
+            .filter(
+                sigint_inbox_item_unit::Column::Kind
+                    .eq(SigintInboxItemUnitKind::Network),
+            )
+            .select_only()
+            .column(sigint_inbox_item_unit::Column::UnitId)
+            .into_tuple::<i64>()
+            .all(db)
+            .await
+            .unwrap();
+        assert_eq!(
+            derived_unit_ids.into_iter().collect::<BTreeSet<_>>(),
+            expected_unit_ids
+        );
+    }
 
     #[serial]
     #[tokio::test]
@@ -1192,6 +1827,7 @@ mod tests {
             &group_bounds_map,
             &network_bounds_map,
             networks_freqs,
+            &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),

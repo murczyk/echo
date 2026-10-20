@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, CircularProgress, Stack, Typography, useMediaQuery, useTheme } from '@mui/material';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -11,15 +11,16 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 const PDF_PAGE_MAX_WIDTH_PX = 920;
 const PDF_PAGE_RENDER_LIMIT = 24;
-const PDF_DOCUMENT_OPTIONS = { useWorkerFetch: true };
-const MAX_PDF_FILE_MB = 10;
-const MAX_PDF_FILE_BYTES = MAX_PDF_FILE_MB * 1024 * 1024;
+const PDF_DOCUMENT_OPTIONS = { useWorkerFetch: true, disableAutoFetch: true, disableStream: true };
+const MAX_PDF_FILE_GB = 1;
+const MAX_PDF_FILE_BYTES = MAX_PDF_FILE_GB * 1_000_000_000;
 
-import { fetchCachedDocumentResponse } from '../document-preview-utils';
+import { emitUnauthorizedEvent } from '../../../../auth-redirect';
+import { HttpRequestError } from '../../../../services/api/client';
 
 export function formatPdfPreviewErrorMessage(error: string | null): string {
   if (error === 'PDF_FILE_TOO_LARGE') {
-    return `Файл PDF завеликий для попереднього перегляду. Максимум: ${MAX_PDF_FILE_MB} МБ.`;
+    return `Файл PDF завеликий для попереднього перегляду. Максимум: ${MAX_PDF_FILE_GB} ГБ.`;
   }
 
   return error ?? 'PDF недоступний';
@@ -44,7 +45,9 @@ export function PdfDocumentPreview({
   const [pageAspectRatio, setPageAspectRatio] = useState<number | null>(null);
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [pdfSource, setPdfSource] = useState<{ url: string; withCredentials: boolean } | null>(
+    null,
+  );
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const scale = useMemo(() => zoom / 100, [zoom]);
 
@@ -69,14 +72,16 @@ export function PdfDocumentPreview({
     setPageCount(null);
     setPageAspectRatio(null);
     setError(null);
-    setPdfBlobUrl(null);
+    setPdfSource(null);
 
     const abortController = new AbortController();
-    const abort = () => abortController.abort();
+    const abort = () => {
+      abortController.abort();
+      setPdfSource(null);
+    };
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
     let disposed = false;
-    let objectUrl: string | null = null;
 
     const load = async () => {
       if (abortController.signal.aborted) return;
@@ -85,32 +90,40 @@ export function PdfDocumentPreview({
           throw new Error('PDF_FILE_TOO_LARGE');
         }
 
-        const { buffer, contentType, contentLength } = await fetchCachedDocumentResponse(
-          href,
-          MAX_PDF_FILE_BYTES,
-          'PDF_FILE_TOO_LARGE',
-          abortController.signal,
-        );
-
+        const isLocalBlob = href.startsWith('blob:');
+        let response = await fetch(href, {
+          method: isLocalBlob ? 'GET' : 'HEAD',
+          signal: abortController.signal,
+        }).catch((error) => {
+          if (error instanceof TypeError)
+            throw new HttpRequestError(0, 'Не вдалося завантажити PDF.');
+          throw error;
+        });
+        if (isLocalBlob) await response.body?.cancel();
+        if (response.status === 405 || response.status === 501) {
+          response = await fetch(href, {
+            headers: { Range: 'bytes=0-0' },
+            signal: abortController.signal,
+          });
+          await response.body?.cancel();
+        }
+        if (!response.ok) {
+          if (response.status === 401) emitUnauthorizedEvent();
+          throw new HttpRequestError(response.status, `HTTP ${response.status}`);
+        }
+        const length =
+          response.status === 206
+            ? /^bytes \d+-\d+\/(\d+)$/.exec(response.headers.get('content-range') ?? '')?.[1]
+            : response.headers.get('content-length');
+        const contentLength = length == null ? null : Number(length);
         if (contentLength != null && contentLength > MAX_PDF_FILE_BYTES) {
           throw new Error('PDF_FILE_TOO_LARGE');
         }
-
-        if (buffer.byteLength > MAX_PDF_FILE_BYTES) {
-          throw new Error('PDF_FILE_TOO_LARGE');
+        if (contentLength == null || !Number.isSafeInteger(contentLength) || contentLength < 0) {
+          throw new Error('Сервер не повідомив розмір PDF.');
         }
-
-        objectUrl = URL.createObjectURL(
-          new Blob([buffer], {
-            type: contentType ?? 'application/pdf',
-          }),
-        );
-        if (disposed || abortController.signal.aborted) {
-          URL.revokeObjectURL(objectUrl);
-          return;
-        }
-
-        setPdfBlobUrl(objectUrl);
+        if (disposed || abortController.signal.aborted) return;
+        setPdfSource({ url: href, withCredentials: true });
       } catch (loadError) {
         if (disposed || abortController.signal.aborted) return;
         onError?.(loadError);
@@ -126,11 +139,27 @@ export function PdfDocumentPreview({
       disposed = true;
       signal?.removeEventListener('abort', abort);
       abortController.abort();
-      if (objectUrl != null) {
-        URL.revokeObjectURL(objectUrl);
-      }
     };
   }, [href, sizeBytes, onError, signal]);
+
+  const reportPdfError = useCallback(
+    (loadError: Error) => {
+      if (signal?.aborted) return;
+      const status =
+        'status' in loadError && typeof loadError.status === 'number' ? loadError.status : null;
+      if (status === 401) emitUnauthorizedEvent();
+      onError?.(
+        status != null
+          ? new HttpRequestError(status, loadError.message)
+          : /fetch|network|stream|connection|range/i.test(loadError.message)
+            ? new HttpRequestError(0, 'Не вдалося завантажити PDF. Повторіть спробу.')
+            : loadError,
+      );
+      setError(loadError.message);
+      setPdfSource(null);
+    },
+    [signal, onError],
+  );
 
   const renderedPageCount = Math.min(pageCount ?? 0, PDF_PAGE_RENDER_LIMIT);
   const isPreviewLimited = pageCount != null && pageCount > PDF_PAGE_RENDER_LIMIT;
@@ -177,9 +206,9 @@ export function PdfDocumentPreview({
           </Typography>
         </Box>
       ) : null}
-      {pdfBlobUrl != null ? (
+      {pdfSource != null ? (
         <Document
-          file={pdfBlobUrl}
+          file={pdfSource}
           loading={null}
           onLoadSuccess={(pdf) => {
             if (signal?.aborted) return;
@@ -193,13 +222,9 @@ export function PdfDocumentPreview({
                   setPageAspectRatio(viewport.height / viewport.width);
                 }
               })
-              .catch(() => {});
+              .catch(reportPdfError);
           }}
-          onLoadError={(loadError) => {
-            if (signal?.aborted) return;
-            onError?.(loadError);
-            setError(loadError instanceof Error ? loadError.message : 'Не вдалося відкрити PDF');
-          }}
+          onLoadError={reportPdfError}
           renderMode="canvas"
           options={PDF_DOCUMENT_OPTIONS}
         >
@@ -221,6 +246,7 @@ export function PdfDocumentPreview({
                 pageWidth={pageWidth}
                 pageAspectRatio={pageAspectRatio}
                 scrollContainerRef={scrollContainerRef}
+                onError={reportPdfError}
               />
             ))}
             {isPreviewLimited ? (
@@ -243,11 +269,13 @@ function LazyPdfPage({
   pageWidth,
   pageAspectRatio,
   scrollContainerRef,
+  onError,
 }: {
   pageNumber: number;
   pageWidth: number;
   pageAspectRatio: number | null;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
+  onError: (error: Error) => void;
 }) {
   const pageShellRef = useRef<HTMLDivElement | null>(null);
   const [isVisible, setIsVisible] = useState(pageNumber <= 3);
@@ -328,6 +356,10 @@ function LazyPdfPage({
         <Page
           pageNumber={pageNumber}
           width={pageWidth}
+          onLoadError={onError}
+          onRenderError={onError}
+          onGetTextError={onError}
+          onGetAnnotationsError={onError}
           renderTextLayer
           renderAnnotationLayer
           loading={

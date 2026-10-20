@@ -27,6 +27,7 @@ const entry: DeviceFileTreeEntry = {
   syncId: null,
   sourceFileState: null,
   tags: [],
+  archive: null,
 };
 let container: HTMLDivElement;
 let root: Root;
@@ -92,6 +93,37 @@ afterEach(() => {
 
 // Authorization regression for specs/002-device-file-formats/contracts/ui.md.
 describe('device file preview access', () => {
+  it('#3778 opens A to B to A with fresh revision sessions and ignores the original A response', async () => {
+    const first = deferred<Response>();
+    fetchMock
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(head('22'))
+      .mockResolvedValueOnce(head('11'));
+    await select(entry);
+    const firstSignal = latest.signal;
+    const firstError = latest.onError;
+    const firstEpoch = latest.epoch;
+    const dispose = vi.fn();
+    latest.registerCleanup(dispose);
+    await select({ ...entry, revision: 2 });
+    expect(latest.source?.key).toBe('device/file-a/2');
+    await select(entry);
+    await act(async () => {
+      first.resolve(head('999'));
+      firstError(new HttpRequestError(403, 'obsolete A'));
+    });
+    expect(firstSignal?.aborted).toBe(true);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(latest.epoch).not.toBe(firstEpoch);
+    expect(latest.source).toMatchObject({ key: 'device/file-a/1', sizeBytes: 11 });
+    expect(state()).toBe('ready');
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/device/files/device/file-a/revisions/1/content',
+      '/api/device/files/device/file-a/revisions/2/content',
+      '/api/device/files/device/file-a/revisions/1/content',
+    ]);
+  });
+
   it.each(['request', 'body'])(
     'times out a stalled image %s and opens it after Retry',
     async (stage) => {

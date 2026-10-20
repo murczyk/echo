@@ -185,8 +185,14 @@ export async function openCreateMessageDrawer(
   await expect(page.getByText(readyText, { exact: true })).toBeVisible();
   if (dutyMocks)
     await expect(page.getByText('Помилка завантаження системних налаштувань')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  await clickCreateMessage(page, host);
   await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toBeVisible();
+}
+
+export async function clickCreateMessage(page: Page, host: ImageEditorDrawerHost): Promise<void> {
+  const scope = host === 'duty' ? page.locator('[data-duty-feed-column]').first() : page;
+  if (host === 'duty') await scope.hover();
+  await scope.getByRole('button', { name: 'Додати повідомлення' }).click();
 }
 
 export async function openEditMessageDrawer(page: Page): Promise<void> {

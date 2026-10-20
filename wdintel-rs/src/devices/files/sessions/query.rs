@@ -5,13 +5,16 @@ use uuid::Uuid;
 
 // A session owns immutable revisions, while file_entry supplies their stable tree identity.
 const SESSION_CTES: &str = r#"
-with selected_revisions as materialized (
-    select revision.*, entry.parent_id, entry.hierarchy_path,
+with source_revisions as materialized (
+    select revision.*, entry.parent_id, entry.hierarchy_path, entry.kind::text as entry_kind, entry.archive_file_id, entry.archive_relative_path,
            entry.created_at as entry_created_at
     from file_revision revision
     join file_entry entry on entry.device_id = revision.device_id and entry.id = revision.id
-    where revision.device_id = $1 and revision.sync_id = any($2::uuid[])
+    where revision.origin_archive_id is null and entry.archive_file_id is null and revision.device_id = $1 and revision.sync_id = any($2::uuid[])
     /* revision window */
+), selected_revisions as materialized (
+    select * from source_revisions
+    /* derived snapshots */
 ), latest_results as (
     select distinct on (revision.id, revision.revision)
         revision.id as file_id, revision.revision, item.id, item.result_tag_ids
@@ -31,7 +34,7 @@ with selected_revisions as materialized (
         where tag.id = any(result.result_tag_ids) and tag.archived_at is null
     ) tags
 ), session_files as not materialized (
-    select revision.id, revision.device_id, revision.parent_id, 'file'::text as kind,
+    select revision.id, revision.device_id, revision.parent_id, revision.entry_kind as kind,
            revision.name, revision.absolute_path, revision.hierarchy_path::text,
            revision.mime_type, revision.extension,
            revision.file_metadata_created_at at time zone 'UTC' as file_metadata_created_at,
@@ -43,7 +46,7 @@ with selected_revisions as materialized (
            revision.source_file_state_settled_by, revision.analysis_input_revision,
            analysis.id as current_analysis_run_id,
            coalesce(tags.tag_ids, '{}'::uuid[]) as tag_ids,
-           coalesce(tags.tags, '[]'::jsonb) as tags
+           coalesce(tags.tags, '[]'::jsonb) as tags, revision.is_archive, revision.archive_file_id, revision.archive_relative_path
     from selected_revisions revision
     left join file_content content on content.file_id = revision.id and content.revision = revision.revision
     left join latest_results analysis on analysis.file_id = revision.id and analysis.revision = revision.revision
@@ -56,14 +59,14 @@ with selected_revisions as materialized (
            entry.file_metadata_created_at, entry.file_metadata_modified_at,
            entry.created_at, entry.updated_at, entry.content_path, entry.revision, entry.sync_id,
            entry.source_file_state::text, entry.source_file_state_settled_at, entry.source_file_state_settled_by,
-           entry.analysis_input_revision, entry.current_analysis_run_id, '{}'::uuid[], '[]'::jsonb
+           entry.analysis_input_revision, entry.current_analysis_run_id, '{}'::uuid[], '[]'::jsonb, entry.is_archive, entry.archive_file_id, entry.archive_relative_path
     from (
         select distinct subpath(revision.hierarchy_path, 0, depth) as hierarchy_path
         from selected_revisions revision
         cross join lateral generate_series(1, nlevel(revision.hierarchy_path) - 1) levels(depth)
     ) ancestors
     join file_entry entry on entry.device_id = $1 and entry.hierarchy_path = ancestors.hierarchy_path
-    where entry.kind = 'directory'
+    where entry.kind = 'directory' and entry.archive_file_id is null
 )
 "#;
 
@@ -71,15 +74,22 @@ pub(super) struct SessionQuery {
     values: Vec<Value>,
     revision_window: String,
     single_session: bool,
+    include_archives: bool,
 }
 
 impl SessionQuery {
     pub(super) fn new(device_id: Uuid, sync_ids: Vec<Uuid>) -> Self {
         Self {
             single_session: sync_ids.len() == 1,
+            include_archives: false,
             values: vec![device_id.into(), sync_ids.into()],
             revision_window: String::new(),
         }
+    }
+
+    pub(super) fn include_archives(mut self) -> Self {
+        self.include_archives = true;
+        self
     }
 
     pub(super) fn bind(&mut self, value: impl Into<Value>) -> String {
@@ -131,8 +141,21 @@ impl SessionQuery {
         db: &impl ConnectionTrait,
         sql: &str,
     ) -> anyhow::Result<Vec<QueryResult>> {
+        let derived = if self.include_archives {
+            r#"union all
+    select revision.*,entry.parent_id,entry.hierarchy_path,entry.kind::text,entry.archive_file_id,entry.archive_relative_path,entry.created_at
+    from file_revision revision join file_entry entry on entry.id=revision.id
+    join file_archive job on job.id=revision.origin_archive_id and job.state='ready'
+    join file_archive root on root.id=job.root_id and root.state='ready'
+    join source_revisions source on source.id=root.source_file_id and source.revision=root.source_revision
+        and not exists(select 1 from source_revisions newer where newer.id=source.id and newer.sync_id=source.sync_id and newer.revision>source.revision)
+    where revision.device_id=$1"#
+        } else {
+            ""
+        };
         let ctes = SESSION_CTES
-            .replace("/* revision window */", &self.revision_window);
+            .replace("/* revision window */", &self.revision_window)
+            .replace("/* derived snapshots */", derived);
         let ctes = if self.single_session {
             ctes.replace(
                 "revision.sync_id = any($2::uuid[])",

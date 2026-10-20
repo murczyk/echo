@@ -362,10 +362,10 @@ and `wdintel-web/tests/e2e/message-feed-unification.spec.ts`.
 - **Behavior ID:** `react-analysis-editor-refresh-integrity`
 - **Affected route/component:** `RerAnalysisNeoPage`
 - **User action or external event:** the user creates or edits a message/report, follows a linked-message edit, or refreshes the page.
-- **Expected observable result:** create/edit completion refreshes analysis data; linked and forwarded messages use the correct edit ownership; an edit result without an inline message cannot save stale local data; manual refresh preserves the current message page.
-- **Known race/idempotency constraints:** mutation completion cannot apply a stale message object after server refresh.
+- **Expected observable result:** create/edit completion refreshes analysis data; creation refreshes the current page in the background without a loading skeleton or discarding the known pagination boundary while waiting. Existing cards stay mounted and their viewport anchor is preserved away from the start; at the start, newly created matching messages become visible. Manual refresh and query changes retain their normal loading indicators. Linked and forwarded messages use the correct edit ownership; an edit result without an inline message cannot save stale local data; manual refresh preserves the current message page.
+- **Known race/idempotency constraints:** mutation completion cannot apply a stale message object after server refresh. Background creation refresh keeps edge pagination blocked until its inbox request settles; hiding the skeleton does not clear the busy state.
 - **Source implementation:** `routes/rer-analysis-neo/index.tsx`.
-- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/index.spec.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/index.spec.tsx`, `wdintel-web/tests/e2e/analysis-create-stable-feed.spec.ts`.
 
 ## Analysis mutation feedback
 

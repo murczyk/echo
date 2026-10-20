@@ -1140,8 +1140,10 @@ type alias InboxMessage =
     , timestamp : Maybe (Int)
     , createdAt : Maybe (Int)
     , createdAtOrder : Maybe (Int)
+    , isOwn : Maybe (Bool)
     , hasDateInHeader : Bool
     , groupMasterKey : Maybe (String)
+    , groupMasterKeys : Maybe (List (String))
     , sender : Maybe (String)
     , extendedForm : Maybe (String)
     , messageComments : List (MessageComment)
@@ -1191,8 +1193,10 @@ inboxMessageEncoder struct =
         , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
         , ( "created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.createdAt )
         , ( "created_at_order", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.createdAtOrder )
+        , ( "is_own", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isOwn )
         , ( "has_date_in_header", (Json.Encode.bool) struct.hasDateInHeader )
         , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupMasterKey )
+        , ( "group_master_keys", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.groupMasterKeys )
         , ( "sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sender )
         , ( "extended_form", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.extendedForm )
         , ( "message_comments", (Json.Encode.list (messageCommentEncoder)) struct.messageComments )
@@ -1829,6 +1833,76 @@ unreadCountersRspEncoder struct =
         ]
 
 
+type alias GroupFeedCursorDto =
+    { createdAt : Int
+    , messageId : Int
+    }
+
+
+groupFeedCursorDtoEncoder : GroupFeedCursorDto -> Json.Encode.Value
+groupFeedCursorDtoEncoder struct =
+    Json.Encode.object
+        [ ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "message_id", (Json.Encode.int) struct.messageId )
+        ]
+
+
+type alias GroupFeedState =
+    { masterKey : String
+    , name : String
+    , ignoreOperativny : Bool
+    , unreadCount : Int
+    , oldestUnreadMessageRef : Maybe (String)
+    , lastReadCreatedAtOrder : Maybe (Int)
+    , lastReadMessageId : Maybe (Int)
+    , lastActivityAt : Maybe (Int)
+    , latestCursor : Maybe (GroupFeedCursorDto)
+    , colorKey : SignalGroupColor
+    }
+
+
+groupFeedStateEncoder : GroupFeedState -> Json.Encode.Value
+groupFeedStateEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "ignore_operativny", (Json.Encode.bool) struct.ignoreOperativny )
+        , ( "unread_count", (Json.Encode.int) struct.unreadCount )
+        , ( "oldest_unread_message_ref", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.oldestUnreadMessageRef )
+        , ( "last_read_created_at_order", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastReadCreatedAtOrder )
+        , ( "last_read_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastReadMessageId )
+        , ( "last_activity_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastActivityAt )
+        , ( "latest_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (groupFeedCursorDtoEncoder)) struct.latestCursor )
+        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
+        ]
+
+
+type alias GroupFeedStatesRsp =
+    { groups : List (GroupFeedState)
+    }
+
+
+groupFeedStatesRspEncoder : GroupFeedStatesRsp -> Json.Encode.Value
+groupFeedStatesRspEncoder struct =
+    Json.Encode.object
+        [ ( "groups", (Json.Encode.list (groupFeedStateEncoder)) struct.groups )
+        ]
+
+
+type alias AcknowledgeGroupFeedReq =
+    { masterKey : String
+    , cursor : GroupFeedCursorDto
+    }
+
+
+acknowledgeGroupFeedReqEncoder : AcknowledgeGroupFeedReq -> Json.Encode.Value
+acknowledgeGroupFeedReqEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        , ( "cursor", (groupFeedCursorDtoEncoder) struct.cursor )
+        ]
+
+
 type alias SignalGroupReq =
     { masterKey : String
     }
@@ -1854,6 +1928,61 @@ signalGroupStatsEncoder struct =
         , ( "activity_last_week", (Json.Encode.int) struct.activityLastWeek )
         ]
 
+
+type SignalGroupColor
+    = Red
+    | Pink
+    | Purple
+    | DeepPurple
+    | Indigo
+    | Blue
+    | LightBlue
+    | Cyan
+    | Teal
+    | Green
+    | LightGreen
+    | Lime
+    | Amber
+    | Orange
+    | DeepOrange
+    | BlueGrey
+
+
+signalGroupColorEncoder : SignalGroupColor -> Json.Encode.Value
+signalGroupColorEncoder enum =
+    case enum of
+        Red ->
+            Json.Encode.string "red"
+        Pink ->
+            Json.Encode.string "pink"
+        Purple ->
+            Json.Encode.string "purple"
+        DeepPurple ->
+            Json.Encode.string "deep_purple"
+        Indigo ->
+            Json.Encode.string "indigo"
+        Blue ->
+            Json.Encode.string "blue"
+        LightBlue ->
+            Json.Encode.string "light_blue"
+        Cyan ->
+            Json.Encode.string "cyan"
+        Teal ->
+            Json.Encode.string "teal"
+        Green ->
+            Json.Encode.string "green"
+        LightGreen ->
+            Json.Encode.string "light_green"
+        Lime ->
+            Json.Encode.string "lime"
+        Amber ->
+            Json.Encode.string "amber"
+        Orange ->
+            Json.Encode.string "orange"
+        DeepOrange ->
+            Json.Encode.string "deep_orange"
+        BlueGrey ->
+            Json.Encode.string "blue_grey"
 
 type alias SignalGroupStatsTimelineReq =
     { masterKeys : List (String)
@@ -2076,6 +2205,7 @@ type alias SignalGroupEntry =
     , groupStats : SignalGroupStats
     , adminData : Maybe (GroupAdminData)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
+    , colorKey : SignalGroupColor
     }
 
 
@@ -2092,6 +2222,7 @@ signalGroupEntryEncoder struct =
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
         , ( "admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map (groupAdminDataEncoder)) struct.adminData )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
+        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
         ]
 
 
@@ -2109,6 +2240,7 @@ type alias OrphanSignalGroupEntry =
     , groupStats : SignalGroupStats
     , groupAdminData : Maybe (GroupAdminData)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
+    , colorKey : SignalGroupColor
     }
 
 
@@ -2128,6 +2260,7 @@ orphanSignalGroupEntryEncoder struct =
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
         , ( "group_admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map (groupAdminDataEncoder)) struct.groupAdminData )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
+        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
         ]
 
 
@@ -3164,6 +3297,7 @@ savedFilterRenameReqEncoder struct =
 
 type alias RerDutyQueryState =
     { waterfalls : Maybe (List (( String, RerDutyQueryStateWf )))
+    , groupScopes : Maybe (List (( String, String )))
     }
 
 
@@ -3171,6 +3305,7 @@ rerDutyQueryStateEncoder : RerDutyQueryState -> Json.Encode.Value
 rerDutyQueryStateEncoder struct =
     Json.Encode.object
         [ ( "waterfalls", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (\( a, b) -> Json.Encode.list identity [ Json.Encode.string a, rerDutyQueryStateWfEncoder b ]))) struct.waterfalls )
+        , ( "group_scopes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (\( a, b) -> Json.Encode.list identity [ Json.Encode.string a, Json.Encode.string b ]))) struct.groupScopes )
         ]
 
 
@@ -5293,6 +5428,148 @@ fileEntryKindEncoder enum =
         File ->
             Json.Encode.string "file"
 
+type DeviceArchiveState
+    = ArchiveMissingContent
+    | ArchiveNotPrepared
+    | ArchiveQueued
+    | ArchiveRunning
+    | ArchiveRetryWait
+    | ArchiveReady
+    | ArchiveFailed
+
+
+deviceArchiveStateEncoder : DeviceArchiveState -> Json.Encode.Value
+deviceArchiveStateEncoder enum =
+    case enum of
+        ArchiveMissingContent ->
+            Json.Encode.string "missing_content"
+        ArchiveNotPrepared ->
+            Json.Encode.string "not_prepared"
+        ArchiveQueued ->
+            Json.Encode.string "queued"
+        ArchiveRunning ->
+            Json.Encode.string "running"
+        ArchiveRetryWait ->
+            Json.Encode.string "retry_wait"
+        ArchiveReady ->
+            Json.Encode.string "ready"
+        ArchiveFailed ->
+            Json.Encode.string "failed"
+
+type DeviceArchiveReason
+    = ArchiveReasonPasswordProtected
+    | ArchiveReasonInvalidArchive
+    | ArchiveReasonUnsupportedFormat
+    | ArchiveReasonSourceTooLarge
+    | ArchiveReasonUnsafePath
+    | ArchiveReasonPathConflict
+    | ArchiveReasonIntegrityMismatch
+    | ArchiveReasonSafetyLimit
+    | ArchiveReasonRetryExhausted
+    | ArchiveReasonStorageUnavailable
+    | ArchiveReasonInternalError
+
+
+deviceArchiveReasonEncoder : DeviceArchiveReason -> Json.Encode.Value
+deviceArchiveReasonEncoder enum =
+    case enum of
+        ArchiveReasonPasswordProtected ->
+            Json.Encode.string "password_protected"
+        ArchiveReasonInvalidArchive ->
+            Json.Encode.string "invalid_archive"
+        ArchiveReasonUnsupportedFormat ->
+            Json.Encode.string "unsupported_format"
+        ArchiveReasonSourceTooLarge ->
+            Json.Encode.string "source_too_large"
+        ArchiveReasonUnsafePath ->
+            Json.Encode.string "unsafe_path"
+        ArchiveReasonPathConflict ->
+            Json.Encode.string "path_conflict"
+        ArchiveReasonIntegrityMismatch ->
+            Json.Encode.string "integrity_mismatch"
+        ArchiveReasonSafetyLimit ->
+            Json.Encode.string "safety_limit"
+        ArchiveReasonRetryExhausted ->
+            Json.Encode.string "retry_exhausted"
+        ArchiveReasonStorageUnavailable ->
+            Json.Encode.string "storage_unavailable"
+        ArchiveReasonInternalError ->
+            Json.Encode.string "internal_error"
+
+type alias DeviceFileContentRef =
+    { deviceId : String
+    , fileId : String
+    , revision : Int
+    }
+
+
+deviceFileContentRefEncoder : DeviceFileContentRef -> Json.Encode.Value
+deviceFileContentRefEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "file_id", (Json.Encode.string) struct.fileId )
+        , ( "revision", (Json.Encode.int) struct.revision )
+        ]
+
+
+type alias DeviceArchiveOrigin =
+    { archiveId : String
+    , sourceFileId : String
+    , sourceRevision : Int
+    }
+
+
+deviceArchiveOriginEncoder : DeviceArchiveOrigin -> Json.Encode.Value
+deviceArchiveOriginEncoder struct =
+    Json.Encode.object
+        [ ( "archive_id", (Json.Encode.string) struct.archiveId )
+        , ( "source_file_id", (Json.Encode.string) struct.sourceFileId )
+        , ( "source_revision", (Json.Encode.int) struct.sourceRevision )
+        ]
+
+
+type alias DeviceArchiveSummary =
+    { archiveId : Maybe (String)
+    , rootEntryId : Maybe (String)
+    , state : DeviceArchiveState
+    , reason : Maybe (DeviceArchiveReason)
+    , message : Maybe (String)
+    , limitName : Maybe (String)
+    }
+
+
+deviceArchiveSummaryEncoder : DeviceArchiveSummary -> Json.Encode.Value
+deviceArchiveSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "archive_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.archiveId )
+        , ( "root_entry_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.rootEntryId )
+        , ( "state", (deviceArchiveStateEncoder) struct.state )
+        , ( "reason", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceArchiveReasonEncoder)) struct.reason )
+        , ( "message", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.message )
+        , ( "limit_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.limitName )
+        ]
+
+
+type alias DeviceArchiveStatus =
+    { source : DeviceFileContentRef
+    , archive : DeviceArchiveSummary
+    , nextAttemptAt : Maybe (String)
+    , pollAfterMs : Int
+    , updatedAt : Maybe (String)
+    }
+
+
+deviceArchiveStatusEncoder : DeviceArchiveStatus -> Json.Encode.Value
+deviceArchiveStatusEncoder struct =
+    Json.Encode.object
+        [ ( "source", (deviceFileContentRefEncoder) struct.source )
+        , ( "archive", (deviceArchiveSummaryEncoder) struct.archive )
+        , ( "next_attempt_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextAttemptAt )
+        , ( "poll_after_ms", (Json.Encode.int) struct.pollAfterMs )
+        , ( "updated_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.updatedAt )
+        ]
+
+
 type DeviceArchivedFilter
     = ActiveOnly
     | ArchivedOnly
@@ -5569,7 +5846,11 @@ fileBreadcrumbEncoder struct =
 
 
 type alias DeviceFileTreeEntry =
-    { entryId : String
+    { archive : Maybe (DeviceArchiveSummary)
+    , isArchive : Bool
+    , archiveOrigin : Maybe (DeviceArchiveOrigin)
+    , virtualPath : Maybe (String)
+    , entryId : String
     , parentEntryId : String
     , kind : FileEntryKind
     , fileId : Maybe (String)
@@ -5593,7 +5874,11 @@ type alias DeviceFileTreeEntry =
 deviceFileTreeEntryEncoder : DeviceFileTreeEntry -> Json.Encode.Value
 deviceFileTreeEntryEncoder struct =
     Json.Encode.object
-        [ ( "entry_id", (Json.Encode.string) struct.entryId )
+        [ ( "archive", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceArchiveSummaryEncoder)) struct.archive )
+        , ( "is_archive", (Json.Encode.bool) struct.isArchive )
+        , ( "archive_origin", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceArchiveOriginEncoder)) struct.archiveOrigin )
+        , ( "virtual_path", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.virtualPath )
+        , ( "entry_id", (Json.Encode.string) struct.entryId )
         , ( "parent_entry_id", (Json.Encode.string) struct.parentEntryId )
         , ( "kind", (fileEntryKindEncoder) struct.kind )
         , ( "file_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileId )
@@ -5615,11 +5900,15 @@ deviceFileTreeEntryEncoder struct =
 
 
 type alias DeviceFile =
-    { fileId : String
+    { archive : Maybe (DeviceArchiveSummary)
+    , isArchive : Bool
+    , archiveOrigin : Maybe (DeviceArchiveOrigin)
+    , virtualPath : Maybe (String)
+    , fileId : String
     , deviceId : String
     , parentEntryId : String
     , rootEntryId : String
-    , absolutePath : String
+    , absolutePath : Maybe (String)
     , hasContent : Bool
     , name : String
     , pathComponents : List (String)
@@ -5639,11 +5928,15 @@ type alias DeviceFile =
 deviceFileEncoder : DeviceFile -> Json.Encode.Value
 deviceFileEncoder struct =
     Json.Encode.object
-        [ ( "file_id", (Json.Encode.string) struct.fileId )
+        [ ( "archive", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceArchiveSummaryEncoder)) struct.archive )
+        , ( "is_archive", (Json.Encode.bool) struct.isArchive )
+        , ( "archive_origin", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceArchiveOriginEncoder)) struct.archiveOrigin )
+        , ( "virtual_path", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.virtualPath )
+        , ( "file_id", (Json.Encode.string) struct.fileId )
         , ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "parent_entry_id", (Json.Encode.string) struct.parentEntryId )
         , ( "root_entry_id", (Json.Encode.string) struct.rootEntryId )
-        , ( "absolute_path", (Json.Encode.string) struct.absolutePath )
+        , ( "absolute_path", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.absolutePath )
         , ( "has_content", (Json.Encode.bool) struct.hasContent )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "path_components", (Json.Encode.list (Json.Encode.string)) struct.pathComponents )
@@ -5832,7 +6125,8 @@ countDeviceFileSubtreesRspEncoder struct =
 
 
 type alias BrowseDeviceFilesReq =
-    { syncId : Maybe (String)
+    { archiveRevision : Maybe (Int)
+    , syncId : Maybe (String)
     , deviceId : String
     , parentEntryId : String
     , includeBreadcrumbs : Maybe (Bool)
@@ -5848,7 +6142,8 @@ type alias BrowseDeviceFilesReq =
 browseDeviceFilesReqEncoder : BrowseDeviceFilesReq -> Json.Encode.Value
 browseDeviceFilesReqEncoder struct =
     Json.Encode.object
-        [ ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
+        [ ( "archive_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.archiveRevision )
+        , ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
         , ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "parent_entry_id", (Json.Encode.string) struct.parentEntryId )
         , ( "include_breadcrumbs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeBreadcrumbs )
@@ -5930,7 +6225,8 @@ searchDeviceFilesRspEncoder struct =
 
 
 type alias DeviceFileJournalEntry =
-    { fileId : String
+    { archive : Maybe (DeviceArchiveSummary)
+    , fileId : String
     , name : String
     , absolutePath : String
     , hasContent : Bool
@@ -5945,7 +6241,8 @@ type alias DeviceFileJournalEntry =
 deviceFileJournalEntryEncoder : DeviceFileJournalEntry -> Json.Encode.Value
 deviceFileJournalEntryEncoder struct =
     Json.Encode.object
-        [ ( "file_id", (Json.Encode.string) struct.fileId )
+        [ ( "archive", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceArchiveSummaryEncoder)) struct.archive )
+        , ( "file_id", (Json.Encode.string) struct.fileId )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "absolute_path", (Json.Encode.string) struct.absolutePath )
         , ( "has_content", (Json.Encode.bool) struct.hasContent )
@@ -8225,6 +8522,7 @@ type alias ZoneDatasourceGroup =
     , shortNote : Maybe (String)
     , longNote : Maybe (String)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
+    , colorKey : SignalGroupColor
     }
 
 
@@ -8246,6 +8544,7 @@ zoneDatasourceGroupEncoder struct =
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.shortNote )
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.longNote )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
+        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
         ]
 
 
@@ -8307,6 +8606,7 @@ zoneDatasourceGroupAddReqEncoder struct =
 
 type alias ZoneDatasourceGroupUpdateReq =
     { id : Int
+    , colorKey : Maybe (SignalGroupColor)
     , isSecret : Bool
     , interseptionKind : Maybe (InterseptionKind)
     , disableNetworkAssignment : Maybe (Bool)
@@ -8326,6 +8626,7 @@ zoneDatasourceGroupUpdateReqEncoder : ZoneDatasourceGroupUpdateReq -> Json.Encod
 zoneDatasourceGroupUpdateReqEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
+        , ( "color_key", (Maybe.withDefault Json.Encode.null << Maybe.map (signalGroupColorEncoder)) struct.colorKey )
         , ( "is_secret", (Json.Encode.bool) struct.isSecret )
         , ( "interseption_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (interseptionKindEncoder)) struct.interseptionKind )
         , ( "disable_network_assignment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.disableNetworkAssignment )
@@ -18546,6 +18847,7 @@ linkEchoOperatorReqEncoder struct =
 
 type alias GroupUpdateReq =
     { masterKey : String
+    , colorKey : Maybe (SignalGroupColor)
     , shortNote : Maybe (String)
     , longNote : Maybe (String)
     , areaOfResponsibilityId : Maybe (Int)
@@ -18561,6 +18863,7 @@ groupUpdateReqEncoder : GroupUpdateReq -> Json.Encode.Value
 groupUpdateReqEncoder struct =
     Json.Encode.object
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        , ( "color_key", (Maybe.withDefault Json.Encode.null << Maybe.map (signalGroupColorEncoder)) struct.colorKey )
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.shortNote )
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.longNote )
         , ( "area_of_responsibility_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.areaOfResponsibilityId )
@@ -18581,6 +18884,7 @@ type alias GroupEntryF1 =
     , longNote : Maybe (String)
     , groupStats : SignalGroupStats
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
+    , colorKey : SignalGroupColor
     }
 
 
@@ -18595,6 +18899,7 @@ groupEntryF1Encoder struct =
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.longNote )
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
+        , ( "color_key", (signalGroupColorEncoder) struct.colorKey )
         ]
 
 
@@ -19371,8 +19676,10 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_order" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_own" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_date_in_header" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_keys" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extended_form" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_comments" (Json.Decode.list (messageCommentDecoder))))
@@ -19706,6 +20013,41 @@ unreadCountersRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "newer_msg_count" (Json.Decode.int)))
 
 
+groupFeedCursorDtoDecoder : Json.Decode.Decoder GroupFeedCursorDto
+groupFeedCursorDtoDecoder =
+    Json.Decode.succeed GroupFeedCursorDto
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.int)))
+
+
+groupFeedStateDecoder : Json.Decode.Decoder GroupFeedState
+groupFeedStateDecoder =
+    Json.Decode.succeed GroupFeedState
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unread_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "oldest_unread_message_ref" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_read_created_at_order" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_read_message_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_activity_at" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "latest_cursor" (Json.Decode.nullable (groupFeedCursorDtoDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
+
+
+groupFeedStatesRspDecoder : Json.Decode.Decoder GroupFeedStatesRsp
+groupFeedStatesRspDecoder =
+    Json.Decode.succeed GroupFeedStatesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list (groupFeedStateDecoder))))
+
+
+acknowledgeGroupFeedReqDecoder : Json.Decode.Decoder AcknowledgeGroupFeedReq
+acknowledgeGroupFeedReqDecoder =
+    Json.Decode.succeed AcknowledgeGroupFeedReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (groupFeedCursorDtoDecoder)))
+
+
 signalGroupReqDecoder : Json.Decode.Decoder SignalGroupReq
 signalGroupReqDecoder =
     Json.Decode.succeed SignalGroupReq
@@ -19718,6 +20060,155 @@ signalGroupStatsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_last_day" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_last_week" (Json.Decode.int)))
 
+
+signalGroupColorDecoder : Json.Decode.Decoder SignalGroupColor
+signalGroupColorDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "red" ->
+                            Json.Decode.succeed Red
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "pink" ->
+                            Json.Decode.succeed Pink
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "purple" ->
+                            Json.Decode.succeed Purple
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "deep_purple" ->
+                            Json.Decode.succeed DeepPurple
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "indigo" ->
+                            Json.Decode.succeed Indigo
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "blue" ->
+                            Json.Decode.succeed Blue
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "light_blue" ->
+                            Json.Decode.succeed LightBlue
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "cyan" ->
+                            Json.Decode.succeed Cyan
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "teal" ->
+                            Json.Decode.succeed Teal
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "green" ->
+                            Json.Decode.succeed Green
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "light_green" ->
+                            Json.Decode.succeed LightGreen
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "lime" ->
+                            Json.Decode.succeed Lime
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "amber" ->
+                            Json.Decode.succeed Amber
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "orange" ->
+                            Json.Decode.succeed Orange
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "deep_orange" ->
+                            Json.Decode.succeed DeepOrange
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "blue_grey" ->
+                            Json.Decode.succeed BlueGrey
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 signalGroupStatsTimelineReqDecoder : Json.Decode.Decoder SignalGroupStatsTimelineReq
 signalGroupStatsTimelineReqDecoder =
@@ -20193,6 +20684,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_admin_data" (Json.Decode.nullable (groupAdminDataDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
 
 
 rerAnalysisQueryStateDecoder : Json.Decode.Decoder RerAnalysisQueryState
@@ -20272,6 +20764,7 @@ signalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_data" (Json.Decode.nullable (groupAdminDataDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
 
 
 batchMessageCommentsReqDecoder : Json.Decode.Decoder BatchMessageCommentsReq
@@ -20356,6 +20849,7 @@ rerDutyQueryStateDecoder : Json.Decode.Decoder RerDutyQueryState
 rerDutyQueryStateDecoder =
     Json.Decode.succeed RerDutyQueryState
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "waterfalls" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (rerDutyQueryStateWfDecoder)))))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string))))), Json.Decode.succeed Nothing ]))
 
 
 rerDutyQueryStateWfDecoder : Json.Decode.Decoder RerDutyQueryStateWf
@@ -21481,6 +21975,215 @@ fileEntryKindDecoder =
                 )
         ]
 
+deviceArchiveStateDecoder : Json.Decode.Decoder DeviceArchiveState
+deviceArchiveStateDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "missing_content" ->
+                            Json.Decode.succeed ArchiveMissingContent
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "not_prepared" ->
+                            Json.Decode.succeed ArchiveNotPrepared
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "queued" ->
+                            Json.Decode.succeed ArchiveQueued
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "running" ->
+                            Json.Decode.succeed ArchiveRunning
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "retry_wait" ->
+                            Json.Decode.succeed ArchiveRetryWait
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ready" ->
+                            Json.Decode.succeed ArchiveReady
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "failed" ->
+                            Json.Decode.succeed ArchiveFailed
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+deviceArchiveReasonDecoder : Json.Decode.Decoder DeviceArchiveReason
+deviceArchiveReasonDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "password_protected" ->
+                            Json.Decode.succeed ArchiveReasonPasswordProtected
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "invalid_archive" ->
+                            Json.Decode.succeed ArchiveReasonInvalidArchive
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "unsupported_format" ->
+                            Json.Decode.succeed ArchiveReasonUnsupportedFormat
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "source_too_large" ->
+                            Json.Decode.succeed ArchiveReasonSourceTooLarge
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "unsafe_path" ->
+                            Json.Decode.succeed ArchiveReasonUnsafePath
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "path_conflict" ->
+                            Json.Decode.succeed ArchiveReasonPathConflict
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "integrity_mismatch" ->
+                            Json.Decode.succeed ArchiveReasonIntegrityMismatch
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "safety_limit" ->
+                            Json.Decode.succeed ArchiveReasonSafetyLimit
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "retry_exhausted" ->
+                            Json.Decode.succeed ArchiveReasonRetryExhausted
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "storage_unavailable" ->
+                            Json.Decode.succeed ArchiveReasonStorageUnavailable
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "internal_error" ->
+                            Json.Decode.succeed ArchiveReasonInternalError
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+deviceFileContentRefDecoder : Json.Decode.Decoder DeviceFileContentRef
+deviceFileContentRefDecoder =
+    Json.Decode.succeed DeviceFileContentRef
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+
+
+deviceArchiveOriginDecoder : Json.Decode.Decoder DeviceArchiveOrigin
+deviceArchiveOriginDecoder =
+    Json.Decode.succeed DeviceArchiveOrigin
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_revision" (Json.Decode.int)))
+
+
+deviceArchiveSummaryDecoder : Json.Decode.Decoder DeviceArchiveSummary
+deviceArchiveSummaryDecoder =
+    Json.Decode.succeed DeviceArchiveSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "root_entry_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (deviceArchiveStateDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reason" (Json.Decode.nullable (deviceArchiveReasonDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit_name" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceArchiveStatusDecoder : Json.Decode.Decoder DeviceArchiveStatus
+deviceArchiveStatusDecoder =
+    Json.Decode.succeed DeviceArchiveStatus
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source" (deviceFileContentRefDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive" (deviceArchiveSummaryDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_attempt_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "poll_after_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.nullable (Json.Decode.string))))
+
+
 deviceArchivedFilterDecoder : Json.Decode.Decoder DeviceArchivedFilter
 deviceArchivedFilterDecoder =
     Json.Decode.oneOf
@@ -21692,6 +22395,10 @@ fileBreadcrumbDecoder =
 deviceFileTreeEntryDecoder : Json.Decode.Decoder DeviceFileTreeEntry
 deviceFileTreeEntryDecoder =
     Json.Decode.succeed DeviceFileTreeEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive" (Json.Decode.nullable (deviceArchiveSummaryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archive" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_origin" (Json.Decode.nullable (deviceArchiveOriginDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "virtual_path" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entry_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_entry_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (fileEntryKindDecoder)))
@@ -21715,11 +22422,15 @@ deviceFileTreeEntryDecoder =
 deviceFileDecoder : Json.Decode.Decoder DeviceFile
 deviceFileDecoder =
     Json.Decode.succeed DeviceFile
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive" (Json.Decode.nullable (deviceArchiveSummaryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archive" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_origin" (Json.Decode.nullable (deviceArchiveOriginDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "virtual_path" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_entry_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "root_entry_id" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_content" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "path_components" (Json.Decode.list (Json.Decode.string))))
@@ -21831,6 +22542,7 @@ retryDeviceFileGeodataPreviewReqDecoder =
 browseDeviceFilesReqDecoder : Json.Decode.Decoder BrowseDeviceFilesReq
 browseDeviceFilesReqDecoder =
     Json.Decode.succeed BrowseDeviceFilesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_revision" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_entry_id" (Json.Decode.string)))
@@ -21880,6 +22592,7 @@ searchDeviceFilesRspDecoder =
 deviceFileJournalEntryDecoder : Json.Decode.Decoder DeviceFileJournalEntry
 deviceFileJournalEntryDecoder =
     Json.Decode.succeed DeviceFileJournalEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive" (Json.Decode.nullable (deviceArchiveSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
@@ -23711,6 +24424,7 @@ zoneDatasourceGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
 
 
 zoneDatasourceGroupsReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupsReq
@@ -23745,6 +24459,7 @@ zoneDatasourceGroupUpdateReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupUpd
 zoneDatasourceGroupUpdateReqDecoder =
     Json.Decode.succeed ZoneDatasourceGroupUpdateReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (Json.Decode.nullable (signalGroupColorDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (Json.Decode.nullable (interseptionKindDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.nullable (Json.Decode.bool))))
@@ -29910,6 +30625,7 @@ groupUpdateReqDecoder : Json.Decode.Decoder GroupUpdateReq
 groupUpdateReqDecoder =
     Json.Decode.succeed GroupUpdateReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (Json.Decode.nullable (signalGroupColorDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_id" (Json.Decode.nullable (Json.Decode.int))))
@@ -29931,6 +30647,7 @@ groupEntryF1Decoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (signalGroupColorDecoder)))
 
 
 type DutyTagsLayout

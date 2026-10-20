@@ -37,15 +37,21 @@ import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import { notifyMessageCopySuccess } from '../../shared/message-card/message-card-copy-feedback';
 import { DEBUG_SCROLL_HEARTBEAT_MS } from '../../../../debug-recorder/config';
 import { recordAnalysisDebugScrollSnapshot, useAnalysisDebugEnabled } from '../analysis-debug';
+import { ANALYSIS_SHOW_UNREAD_DIVIDER } from '../config';
 
 type Props = {
+  showUnreadDivider?: boolean;
+  unreadBoundaryMessageId?: number | null;
   authUserName: string | null;
   currentUser: User | null;
   copiedFeedbackId: string | null;
   botTagAction?: BotTagAction | null;
   groupInfos: Record<string, SignalGroupEntry>;
+  hideGroupName?: boolean;
   paginationLoading: boolean;
   isLoading?: boolean;
+  showLoadingSkeleton?: boolean;
+  newestFirst: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   firstLoadedMessageIndex: number;
@@ -75,6 +81,7 @@ type Props = {
   onLoadPreviousMessages: () => Promise<boolean>;
   onVisiblePageChange: (pageIndex: number) => void;
   onPageNavigationHandled: () => void;
+  onVisibleMessages?: (ids: readonly number[]) => void;
   onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   onSaveMessageUpdate: (
@@ -108,13 +115,18 @@ type Props = {
 const getMessageId = ([id]: [number, InboxMessage]) => id;
 
 function AnalysisMessagesPaneComponent({
+  showUnreadDivider = ANALYSIS_SHOW_UNREAD_DIVIDER,
+  unreadBoundaryMessageId,
   authUserName,
   currentUser,
   copiedFeedbackId: copiedFeedbackIdProp,
   botTagAction,
   groupInfos,
+  hideGroupName = false,
   paginationLoading,
   isLoading = false,
+  showLoadingSkeleton = true,
+  newestFirst,
   messageComments,
   messages,
   firstLoadedMessageIndex,
@@ -140,6 +152,7 @@ function AnalysisMessagesPaneComponent({
   onLoadPreviousMessages,
   onVisiblePageChange,
   onPageNavigationHandled,
+  onVisibleMessages,
   onOpenPointsOnMap,
   onAddPointHighlightBlacklist,
   onSaveMessageUpdate,
@@ -174,8 +187,8 @@ function AnalysisMessagesPaneComponent({
   const referenceTimeMsRef = useRef<number | null>(Date.now());
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const debugSnapshotTimerRef = useRef<number | null>(null);
-  const highlightedTargetIdRef = useRef<number | null>(null);
   const feedRef = useRef<MessageFeedHandle>(null);
+  const highlightedNavigationTargetRef = useRef<number | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
   const {
@@ -194,6 +207,7 @@ function AnalysisMessagesPaneComponent({
     loadingBeforeWindow,
     loadingAfterWindow,
     isLoading,
+    newestFirst,
     pageNavigationTarget,
     viewportPreservationKey,
     edgeLoadRetryKey,
@@ -203,6 +217,7 @@ function AnalysisMessagesPaneComponent({
     onLoadMoreMessages,
     onVisiblePageChange,
     onPageNavigationHandled,
+    onVisibleMessages,
   });
   const recordDebugScrollSnapshot = useCallback(() => {
     const container = scrollerRef.current;
@@ -251,15 +266,18 @@ function AnalysisMessagesPaneComponent({
 
   useEffect(() => {
     if (directMessageNavigation == null) {
-      highlightedTargetIdRef.current = null;
+      highlightedNavigationTargetRef.current = null;
       return;
     }
     if (messages.length === 0) return;
     const targetId = directMessageNavigation.targetMessageId;
     if (feedRef.current?.getItemElement(targetId)) {
-      if (highlightedTargetIdRef.current !== targetId) {
-        highlightedTargetIdRef.current = directMessageNavigation.targetMessageId;
-        feedRef.current?.highlightLinkedMessage(targetId);
+      if (
+        directMessageNavigation.highlightTarget !== false &&
+        (directMessageNavigation.focusActive || highlightedNavigationTargetRef.current !== targetId)
+      ) {
+        feedRef.current.highlightLinkedMessage(targetId);
+        highlightedNavigationTargetRef.current = targetId;
       }
       if (directMessageNavigation.focusActive) onLinkedMessageMounted?.(targetId);
     }
@@ -327,6 +345,7 @@ function AnalysisMessagesPaneComponent({
         getMessageId={getMessageId}
         editorHighlightedMessageId={editorHighlightedMessageId}
         isLoading={isLoading}
+        showLoadingSkeleton={showLoadingSkeleton}
         loadingAbove={feedLoadingAbove || Boolean(directMessageNavigation?.contextLoading)}
         loadingBelow={
           feedLoadingBelow ||
@@ -350,12 +369,14 @@ function AnalysisMessagesPaneComponent({
         }}
         renderMessage={([id, message]) => (
           <AnalysisMessageCardItem
+            unreadBoundary={showUnreadDivider && id === unreadBoundaryMessageId}
             key={id}
             authUserName={authUserName}
             currentUserLogin={currentUserLogin}
             copiedFeedbackId={copiedFeedbackId}
             botTagAction={botTagAction}
             groupInfos={groupInfos}
+            hideGroupName={hideGroupName}
             id={id}
             message={message}
             messageComments={messageComments[id] ?? []}

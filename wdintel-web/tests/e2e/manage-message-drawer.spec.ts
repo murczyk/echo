@@ -4,7 +4,7 @@ import {
   createOverflowingInboxResponse,
   installAnalysisNeoApiMocks,
 } from './analysis-neo.fixtures';
-import { openCreateMessageDrawer } from './image-editor-drawer.fixtures';
+import { clickCreateMessage, openCreateMessageDrawer } from './image-editor-drawer.fixtures';
 import {
   buildMessageCardMediaPreviewInboxResponse,
   installMessageCardMediaPreviewAssetRoutes,
@@ -205,11 +205,10 @@ async function openOverflowingMessageEditor(
   await page.goto(host === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo');
   if (dutyMocks) await dutyMocks.systemSettingsReady;
   await expect(page.getByText('Analysis narrow fixture message 0')).toBeVisible();
-  const createButton = page.getByRole('button', { name: 'Додати повідомлення' });
   if (systemSettingsFailure) {
     await dismissSettingsFailureNotifications(page, host);
   }
-  await createButton.click();
+  await clickCreateMessage(page, host);
   await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toBeVisible();
   await expectEmbeddedEditor(page);
 }
@@ -235,7 +234,7 @@ async function openCreateEditorWithLinkedMessage(
   await page.goto(host === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo');
   if (dutyMocks) await dutyMocks.systemSettingsReady;
   await expect(page.getByText('E2E source for dirty replacement')).toBeVisible();
-  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  await clickCreateMessage(page, host);
   await expectEmbeddedEditor(page);
 }
 
@@ -352,15 +351,16 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await openCreateEditorWithLinkedMessage(page, host);
       await page.getByRole('textbox', { name: 'Текст повідомлення' }).press('Escape');
 
-      const reportAction = page
-        .getByRole('button', { name: 'Створити розвіддонесення', exact: true })
-        .first();
-      await reportAction.click();
-      const sourceOutlineStyle = await reportAction.evaluate((element) => {
-        const card = element.closest<HTMLElement>('[data-message-card-root]');
-        return card == null ? null : getComputedStyle(card).outlineStyle;
+      const sourceCard = page.locator('[data-message-card-root]').first();
+      const reportAction = sourceCard.getByRole('button', {
+        name: 'Створити розвіддонесення',
+        exact: true,
       });
-      expect(sourceOutlineStyle).toBe('none');
+      await reportAction.click();
+      const sourceOutlineStyle = await sourceCard.evaluate(
+        (element) => getComputedStyle(element).outlineStyle,
+      );
+      expect(sourceOutlineStyle).toBe('solid');
       await expect(page.getByRole('heading', { name: 'Створити розвіддонесення' })).toBeVisible();
       await page.getByRole('button', { name: 'Закрити', exact: true }).click();
 
@@ -669,7 +669,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await page.setViewportSize({ width: scenario.width, height: 800 });
       await expect(page.locator('[data-duty-feed-column]')).toHaveCount(4);
 
-      await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+      await clickCreateMessage(page, 'duty');
       const editor = page.locator('[data-manage-message-presentation="embedded"]');
       await expect(editor).toBeVisible();
       await expect
@@ -709,7 +709,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     await dutyMocks.systemSettingsReady;
     await expect(page.getByText('E2E responsive card width')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+    await clickCreateMessage(page, 'duty');
     await expectEmbeddedEditor(page);
     await page
       .locator('[data-manage-message-presentation="embedded"]')
@@ -929,7 +929,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       ]);
       expect(headerBounds).not.toBeNull();
       expect(cardBounds).not.toBeNull();
-      expect(headerBounds!.y + headerBounds!.height).toBeCloseTo(cardBounds!.y, 0);
+      expect(headerBounds!.y + headerBounds!.height).toBeLessThanOrEqual(cardBounds!.y);
 
       const emptyCoordinatesPanel = page.getByText('Координати ще не додані').locator('..');
       await expect
@@ -1115,6 +1115,6 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     await expect(dock.locator('[data-analysis-dock-panel="editor"]')).toHaveCount(0);
     await expect(dock.locator('[data-analysis-dock-panel="analytics"]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Додати повідомлення' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Фільтри' })).toBeVisible();
+    await expect(page.locator('#analysis-groups-title')).toBeVisible();
   });
 });

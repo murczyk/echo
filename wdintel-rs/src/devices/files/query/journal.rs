@@ -88,6 +88,7 @@ fn file_journal_scope_query(
     // A literal invariant lets PostgreSQL generic plans prove the predicate of
     // `file_entry_journal_idx`; binding the enum can force a full scan.
     let mut query = file_entry::Entity::find()
+        .filter(file_entry::Column::ArchiveFileId.is_null())
         .filter(file_entry::Column::DeviceId.eq(device_id))
         .filter(Expr::cust("file_entry.kind = 'file'"));
     if let Some(tag_filter) = tag_filter {

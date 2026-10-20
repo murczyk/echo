@@ -244,6 +244,81 @@ async fn shared_reprocess_replays_one_target_and_rejects_old_local_snapshot() {
 }
 #[actix_web::test]
 #[serial_test::serial]
+async fn oneoff_reprocess_preserves_device_coordination_while_disabled() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device) = enabled_audio_device(&env).await;
+    enable_asr(&env).await;
+    let audio = accepted(&env, actor, device).await;
+    let source = finish(&env, &audio.storage_key, Some("old")).await;
+    sync(&env, audio.id).await.unwrap();
+    for (index, state) in ["completed", "terminal"].into_iter().enumerate() {
+        env.dbx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres,
+            "update echo_gpu_transcription_queue set state=$2 where source_id=$1", [source.into(),state.into()])).await.unwrap();
+        env.dbx
+            .execute_unprepared(
+                "update system_settings set devices_section_enabled = false",
+            )
+            .await
+            .unwrap();
+        let ps = crate::OneoffReprocessAudioTranscriberPs {
+            source_id: source,
+            requester: "test".into(),
+            reason: "device coordination regression".into(),
+            yes: true,
+        };
+        if state == "completed" {
+            crate::transcriber::backfill::retranscribe_completed(
+                crate::types::Mode::Test,
+                ps,
+            )
+            .await
+            .unwrap();
+        } else {
+            crate::transcriber::backfill::requeue_terminal(
+                crate::types::Mode::Test,
+                ps,
+            )
+            .await
+            .unwrap();
+        }
+        let target = index as i32 + 1;
+        let task = echo_gpu_client::lookup(&env.dbx, source)
+            .await
+            .unwrap()
+            .unwrap()
+            .0;
+        assert_eq!(task.state, "queued");
+        assert_eq!(task.reprocess_count, target);
+        assert_eq!(
+            local(&env, audio.id).await.automatic_transcription_pending,
+            Some(target)
+        );
+        let text = format!("new {state}");
+        finish(&env, &audio.storage_key, Some(&text)).await;
+        let mut cursor = None;
+        assert!(!super::reconcile::batch(&env.device_audio, &mut cursor)
+            .await
+            .unwrap());
+        env.dbx
+            .execute_unprepared(
+                "update system_settings set devices_section_enabled = true",
+            )
+            .await
+            .unwrap();
+        super::reconcile::batch(&env.device_audio, &mut cursor)
+            .await
+            .unwrap();
+        let saved = local(&env, audio.id).await;
+        assert_eq!(
+            saved.automatic_transcription.as_deref(),
+            Some(text.as_str())
+        );
+        assert_eq!(saved.automatic_transcription_pending, None);
+    }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
 async fn durable_reprocess_intent_recovers_before_reset_and_keeps_old_text_on_terminal(
 ) {
     let (env, _guard) = cleanup_locked().await.unwrap();

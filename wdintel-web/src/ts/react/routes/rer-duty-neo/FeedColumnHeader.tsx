@@ -8,11 +8,12 @@ import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsAc
 import NotificationsOffOutlinedIcon from '@mui/icons-material/NotificationsOffOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SpellcheckIcon from '@mui/icons-material/Spellcheck';
-import type { MouseEvent, ReactNode, RefObject } from 'react';
+import type { MouseEvent, ReactNode, Ref, RefObject } from 'react';
 import type {
   OrganismKeywordSetDto,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
 } from '../../../../Bindings';
+import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { FeedFilterPanel, type FeedFilterPanelModel } from './FeedFilterPanel';
 import { FeedKeywordsPanel } from './FeedKeywordsPanel';
 import { FeedNotificationPanel } from './FeedNotificationPanel';
@@ -30,17 +31,20 @@ type FeedColumnHeaderProps = {
   narrowScreen: boolean;
   feedCount: number;
   canRemove: boolean;
+  showGroups: boolean;
   showFilters: boolean;
   showNotificationPanel: boolean;
   showKeywordsPanel: boolean;
   dutyNotificationBellState: DutyNotificationBellState;
   onCreateFeed?: () => void;
+  onToggleGroups: () => void;
   onToggleFilters: () => void;
   onToggleNotificationPanel: () => void;
   onToggleKeywordsPanel: () => void;
   onToggleDutyNotifications: (event: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
   onRemoveColumn: () => void;
   headerRef: RefObject<HTMLDivElement | null>;
+  groupsTriggerRef: Ref<HTMLButtonElement>;
   filtersPanelRef: RefObject<HTMLDivElement | null>;
   notificationPanelRef: RefObject<HTMLDivElement | null>;
   keywordsPanelRef: RefObject<HTMLDivElement | null>;
@@ -192,17 +196,20 @@ export function FeedColumnHeader({
   narrowScreen,
   feedCount,
   canRemove,
+  showGroups,
   showFilters,
   showNotificationPanel,
   showKeywordsPanel,
   dutyNotificationBellState,
   onCreateFeed,
+  onToggleGroups,
   onToggleFilters,
   onToggleNotificationPanel,
   onToggleKeywordsPanel,
   onToggleDutyNotifications,
   onRemoveColumn,
   headerRef,
+  groupsTriggerRef,
   filtersPanelRef,
   notificationPanelRef,
   keywordsPanelRef,
@@ -277,6 +284,17 @@ export function FeedColumnHeader({
             : {}),
         }}
       >
+        <SidePanelToggleButton
+          ref={groupsTriggerRef}
+          side="left"
+          active={showGroups}
+          label={showGroups ? 'Згорнути список груп' : 'Розгорнути список груп'}
+          onClick={onToggleGroups}
+          size={narrowScreen ? 36 : 32}
+          borderRadius={0}
+          embedded
+          dividerColor="rgba(148, 163, 184, 0.28)"
+        />
         <Box
           data-duty-feed-header-controls
           sx={{

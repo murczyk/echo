@@ -293,8 +293,10 @@ sudo wdintel-rs --mode=live oneoff-backfill-inbox-unit-links \
 
 The range uses UTC message creation time. `--start-ts` is inclusive;
 `--till-ts` is exclusive and defaults to the command's start time. The backfill
-retries stored unit text, refreshes unit links, and clears resolved failure
-references; it does not re-extract message bodies.
+retries stored unit text, refreshes unit links, recalculates network assignments
+and their derived units, and clears resolved failure references; it does not
+re-extract message bodies. See [network reconciliation](network-unit-matching.md)
+for matching rules and historical network repair.
 
 Keep the same start and end bounds when resuming. Each successful batch logs
 `last_inbox_item_id` after committing; pass that value with

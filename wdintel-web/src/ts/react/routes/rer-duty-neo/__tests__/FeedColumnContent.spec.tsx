@@ -10,6 +10,7 @@ import { FeedColumnContent, type FeedColumnContentHandle } from '../FeedColumnCo
 import { minimalInboxMessage } from '../inbox-message-mocks';
 import type { FeedColumnModel, TailAvailability } from '../types';
 import { emptyFilter, type MessageFeedState } from '../utils';
+import { useDutyUnreadBoundaries } from '../useDutyUnreadBoundaries';
 
 vi.mock('../useFeedIdleViewportOffload', () => ({
   useFeedIdleViewportOffload: () =>
@@ -144,6 +145,106 @@ describe('FeedColumnContent', () => {
     fabState.tailAvailability = 'unknown';
     fabState.hasUnrenderedNewerMessages = false;
     fabState.explicitNavigationLoading = false;
+  });
+
+  it('shows card group metadata only in all-groups feeds (#3727)', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const column = buildColumn(false);
+    column.feed.items = [[1, { ...message, groupMasterKey: 'Group Alpha', sender: 'Operator' }]];
+    await act(async () => root.render(<FeedColumnContent column={column} />));
+    expect(container.textContent).toContain('Group Alpha');
+    expect(
+      container.querySelector('[data-message-card-metadata-icon-kind="group"]'),
+    ).not.toBeNull();
+
+    await act(async () =>
+      root.render(
+        <FeedColumnContent
+          column={{ ...column, feed: { ...column.feed, groupScopeMasterKey: 'Group Alpha' } }}
+        />,
+      ),
+    );
+    expect(container.textContent).not.toContain('Group Alpha');
+    expect(container.querySelector('[data-message-card-metadata-icon-kind="group"]')).toBeNull();
+    expect(container.textContent).toContain('Operator');
+
+    await act(async () => root.render(<FeedColumnContent column={column} />));
+    expect(container.textContent).toContain('Group Alpha');
+  });
+
+  it('keeps the first unread divider in place while reading and receiving messages (#3727)', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    function UnreadColumn({ column }: { column: FeedColumnModel }) {
+      const unreadBoundaryMessageId = useDutyUnreadBoundaries(
+        [column.feed],
+        [],
+        true,
+      ).boundaries.get(column.feed.id)?.messageId;
+      return (
+        <FeedColumnContent
+          column={{ ...column, view: { ...column.view, unreadBoundaryMessageId } }}
+        />
+      );
+    }
+    const column = buildColumn(false);
+    column.feed.readIds = new Set([1]);
+    await act(async () => root.render(<UnreadColumn column={column} />));
+    expect(container.querySelector('[data-duty-unread-divider]')).toBeNull();
+    const receiving = {
+      ...column,
+      feed: {
+        ...column.feed,
+        items: [...column.feed.items, [2, message] as [number, InboxMessage]],
+        unreadCount: 1,
+      },
+    };
+    await act(async () => root.render(<UnreadColumn column={receiving} />));
+    const divider = () => container.querySelector('[data-duty-unread-divider]');
+    expect(divider()?.closest('[data-duty-message-id]')?.getAttribute('data-duty-message-id')).toBe(
+      '2',
+    );
+    const reading = {
+      ...receiving,
+      feed: { ...receiving.feed, readIds: new Set([1, 2]), unreadCount: 0 },
+    };
+    await act(async () => root.render(<UnreadColumn column={reading} />));
+    await act(async () =>
+      root.render(
+        <UnreadColumn
+          column={{
+            ...reading,
+            feed: {
+              ...reading.feed,
+              items: [...reading.feed.items, [3, message]],
+              unreadCount: 1,
+            },
+          }}
+        />,
+      ),
+    );
+    expect(container.querySelectorAll('[data-duty-unread-divider]')).toHaveLength(1);
+    expect(divider()?.closest('[data-duty-message-id]')?.getAttribute('data-duty-message-id')).toBe(
+      '2',
+    );
+    expect(container.querySelector('[data-message-feed-highlighted]')).toBeNull();
+    await act(async () =>
+      root.render(
+        <UnreadColumn
+          column={{
+            ...reading,
+            feed: {
+              ...reading.feed,
+              groupScopeMasterKey: 'another-group',
+            },
+          }}
+        />,
+      ),
+    );
+    expect(divider()).toBeNull();
   });
 
   it('uses feed-owned skeleton cards for initial and available older loading', async () => {

@@ -1,8 +1,11 @@
+#[cfg(test)]
 use std::io::{Cursor, Read};
 
 use anyhow::{Context, Result};
 
-use super::query::{supported_source, Rejection};
+#[cfg(test)]
+use super::query::supported_source;
+use super::query::Rejection;
 use crate::{devices::config::*, h};
 
 pub(super) fn indices(value: &str) -> Result<Vec<usize>> {
@@ -29,11 +32,24 @@ pub(super) fn indices(value: &str) -> Result<Vec<usize>> {
     Ok(members)
 }
 
-pub(super) fn is_archive(
+pub(in crate::devices::files) fn is_archive(
     name: &str,
     extension: Option<&str>,
     mime_type: Option<&str>,
 ) -> bool {
+    let suffix = name
+        .trim()
+        .rsplit_once('.')
+        .map(|(_, suffix)| suffix)
+        .filter(|suffix| !suffix.is_empty())
+        .or(extension)
+        .unwrap_or("")
+        .trim_start_matches('.')
+        .to_ascii_lowercase();
+    if matches!(suffix.as_str(), "docx" | "xlsx" | "kmz") {
+        return false;
+    }
+
     if matches!(
         mime_type
             .and_then(|value| value.split(';').next())
@@ -58,6 +74,7 @@ pub(super) fn is_archive(
         })
 }
 
+#[cfg(test)]
 pub(super) fn extract(
     mut bytes: Vec<u8>,
     members: &str,
@@ -75,6 +92,7 @@ pub(super) fn extract(
     Ok((bytes, name))
 }
 
+#[cfg(test)]
 fn extract_member(bytes: Vec<u8>, index: usize) -> Result<(Vec<u8>, String)> {
     let invalid = || crate::alpine::DeviceConversionFailure("source_invalid");
     if bytes.len() as u64 > DEVICE_FILE_PREVIEW_ARCHIVE_MAX_BYTES {
@@ -130,6 +148,7 @@ fn extract_member(bytes: Vec<u8>, index: usize) -> Result<(Vec<u8>, String)> {
     Ok((bytes, name))
 }
 
+#[cfg(test)]
 fn u16_at(bytes: &[u8], offset: usize) -> Option<usize> {
     Some(
         u16::from_le_bytes(bytes.get(offset..offset + 2)?.try_into().ok()?)
@@ -137,6 +156,7 @@ fn u16_at(bytes: &[u8], offset: usize) -> Option<usize> {
     )
 }
 
+#[cfg(test)]
 fn u32_at(bytes: &[u8], offset: usize) -> Option<usize> {
     Some(
         u32::from_le_bytes(bytes.get(offset..offset + 4)?.try_into().ok()?)
@@ -144,6 +164,7 @@ fn u32_at(bytes: &[u8], offset: usize) -> Option<usize> {
     )
 }
 
+#[cfg(test)]
 fn central_directory(
     bytes: &[u8],
     end: usize,
@@ -195,6 +216,7 @@ fn central_directory(
     Some((start, records))
 }
 
+#[cfg(test)]
 fn validate_directory(
     bytes: &[u8],
     end: usize,
@@ -222,6 +244,7 @@ fn validate_directory(
     Some(())
 }
 
+#[cfg(test)]
 fn single_member_archive(
     mut bytes: Vec<u8>,
     selected: usize,
@@ -276,9 +299,15 @@ mod tests {
         }
         assert!(extract(zip("route.gpx", bytes), "1").is_err());
         assert!(extract(zip("readme.txt", bytes), "0").is_err());
-        let large =
-            vec![0; DEVICE_FILE_PREVIEW_ARCHIVE_MEMBER_MAX_BYTES as usize + 1];
-        assert!(extract(zip("route.gpx", &large), "0").is_err());
+        let mut oversized = zip("route.gpx", bytes);
+        let central = oversized
+            .windows(4)
+            .position(|bytes| bytes == b"PK\x01\x02")
+            .unwrap();
+        let size = (DEVICE_FILE_PREVIEW_ARCHIVE_MEMBER_MAX_BYTES + 1) as u32;
+        oversized[central + 24..central + 28]
+            .copy_from_slice(&size.to_le_bytes());
+        assert!(extract(oversized, "0").is_err());
     }
 
     #[test]
@@ -332,4 +361,17 @@ mod tests {
             assert!(indices(value).is_err(), "{value}");
         }
     }
+}
+
+#[test]
+fn specialized_zip_containers_are_not_archive_folders() {
+    for (name, extension) in [
+        ("report.docx", "docx"),
+        ("table.xlsx", "xlsx"),
+        ("route.kmz", "kmz"),
+    ] {
+        assert!(!is_archive(name, Some(extension), Some("application/zip")));
+    }
+    assert!(is_archive("bundle.ZIP", None, None));
+    assert!(is_archive("bundle", None, Some("application/zip")));
 }

@@ -57,12 +57,14 @@ function splitFilterValues(value: string): string[] | null {
 export function buildBrowseDeviceFilesReq(params: {
   deviceId: string;
   syncId?: string | null;
+  archiveRevision?: number | null;
   parentEntryId: string;
   cursor: string | null;
   tagFilter: DeviceAnalyticsTagFilter;
   hasContent?: BrowseDeviceFilesReq['hasContent'];
 }): BrowseDeviceFilesReq {
   return {
+    archiveRevision: params.archiveRevision ?? null,
     deviceId: params.deviceId,
     syncId: params.syncId ?? null,
     parentEntryId: params.parentEntryId,

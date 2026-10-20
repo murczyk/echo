@@ -5,6 +5,7 @@ type XlsxPreviewRequest = {
   requestId: string;
   request: {
     buffer: ArrayBuffer;
+    maxBytes?: number;
   };
 };
 
@@ -31,7 +32,7 @@ self.addEventListener('message', async (event: MessageEvent<XlsxPreviewRequest>)
       requestId,
       bufferByteLength: request.buffer.byteLength,
     });
-    const value = await buildXlsxPreview(request.buffer);
+    const value = await buildXlsxPreview(request.buffer, request.maxBytes);
     debugDocumentPreview('xlsx-worker', 'success', {
       requestId,
       sheetCount: value.sheets.length,

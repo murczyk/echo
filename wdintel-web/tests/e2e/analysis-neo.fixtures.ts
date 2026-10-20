@@ -368,6 +368,11 @@ export async function installAnalysisNeoApiMocks(
       return;
     }
 
+    if (pathname === '/api/rer-importer/group-feed-state') {
+      await fulfillJson(route, { groups: [] });
+      return;
+    }
+
     if (pathname === '/api/rer-importer/inbox-item-context') {
       const reference = route.request().postDataJSON().message_uid;
       const message = options.inboxResponse?.inbox_items.find(

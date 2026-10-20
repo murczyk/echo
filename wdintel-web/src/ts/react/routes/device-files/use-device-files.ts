@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import type { BrowseDeviceFilesReq } from '../../../../Bindings';
 import type { DeviceFileSelection } from './device-file-archive';
+import { locatedFileSelection } from './device-file-archive';
 
 import { useDeviceFileCounts } from './use-device-file-counts';
 import { useDeviceFileTree } from './use-device-file-tree';
@@ -46,7 +47,7 @@ export function useDeviceFiles({
   const selectFile = useCallback(
     (file: DeviceFileSelection) => {
       setSelection({ deviceId, syncId, file, revisionPinned: false });
-      if (!file.archiveMember && syncId === null) setDeviceFileLink(file.fileId, file.revision);
+      if (syncId === null) setDeviceFileLink(file.fileId, file.revision);
     },
     [deviceId, syncId],
   );
@@ -67,6 +68,7 @@ export function useDeviceFiles({
     onDirectoryMissing: load.handleDirectoryMissing,
     tagFilter,
     onDirectoriesLoaded: enqueueLoadedDirectories,
+    onAccessDenied: clearSelectedFile,
   });
   const linkedFileId = linkedFile?.fileId;
   const linkedRevision = linkedFile?.revision ?? null;
@@ -90,6 +92,7 @@ export function useDeviceFiles({
       (linkedRevision === null || selection.file.revision === linkedRevision)
     )
       return;
+    if (selection?.file.archiveParents?.some((parent) => parent.fileId === linkedFileId)) return;
     const controller = new AbortController();
     void (async () => {
       try {
@@ -98,12 +101,12 @@ export function useDeviceFiles({
           { signal: controller.signal },
         );
         if (controller.signal.aborted) return;
-        await tree.revealFile(located, controller.signal);
-        if (!controller.signal.aborted)
+        const revealed = await tree.revealFile(located, controller.signal);
+        if (revealed && !controller.signal.aborted)
           setSelection({
             deviceId,
             syncId,
-            file: located.file,
+            file: locatedFileSelection(located),
             revisionPinned: linkedRevision !== null,
           });
       } catch (error) {
@@ -148,6 +151,7 @@ export function useDeviceFiles({
     ...load,
     deviceId,
     archiveEpoch,
+    tagFilter,
     contentFilter,
     setContentFilter,
     tree,

@@ -26,6 +26,7 @@ type Props = {
   totalCount: number | null;
   totalLoading: boolean;
   loading: boolean;
+  preserveRangeWhileLoading?: boolean;
   noMoreToLoad: boolean;
   hasMoreAfterWindow?: boolean;
   rangeUsesPageSize?: boolean;
@@ -42,6 +43,7 @@ type PaginationJumpControlProps = {
   firstDisabled: boolean;
   lastDisabled: boolean;
   rangeText: string;
+  stale: boolean;
   onFirstPage: () => void;
   onLastPage: () => void;
 };
@@ -51,6 +53,7 @@ function PaginationJumpControl({
   firstDisabled,
   lastDisabled,
   rangeText,
+  stale,
   onFirstPage,
   onLastPage,
 }: PaginationJumpControlProps) {
@@ -104,6 +107,7 @@ function PaginationJumpControl({
         aria-haspopup="menu"
         sx={{
           borderRadius: 1,
+          color: stale ? 'text.disabled' : 'inherit',
           px: 0.5,
           py: 0.25,
           '&:hover, &.Mui-focusVisible': { bgcolor: 'action.hover' },
@@ -160,6 +164,7 @@ export function AnalysisPaginationControl({
   totalCount,
   totalLoading,
   loading,
+  preserveRangeWhileLoading = false,
   noMoreToLoad,
   hasMoreAfterWindow = false,
   rangeUsesPageSize = false,
@@ -181,14 +186,21 @@ export function AnalysisPaginationControl({
             (rangeUsesPageSize ? pageSize : Math.min(messagesCount, pageSize)),
           totalCount,
         );
-  let rangeText = '';
+  let currentRangeText = '';
   if (totalUnknown) {
-    rangeText = '— з —';
+    currentRangeText = '— з —';
   } else if (messagesCount === 0) {
-    rangeText = `0 з ${totalCount}`;
+    currentRangeText = `0 з ${totalCount}`;
   } else {
-    rangeText = `${start}-${end} з ${totalCount}`;
+    currentRangeText = `${start}-${end} з ${totalCount}`;
   }
+  const [lastKnownRangeText, setLastKnownRangeText] = useState<string | null>(null);
+  useEffect(() => {
+    if (!totalUnknown) setLastKnownRangeText(currentRangeText);
+  }, [currentRangeText, totalUnknown]);
+  const showPreservedRange =
+    preserveRangeWhileLoading && (loading || totalLoading) && lastKnownRangeText !== null;
+  const rangeText = showPreservedRange ? lastKnownRangeText : currentRangeText;
 
   const lastPageIndex = totalUnknown ? null : Math.max(0, Math.ceil(totalCount / pageSize) - 1);
   const hasLoadedNextPage = rangePageIndex < pageIndex;
@@ -212,6 +224,7 @@ export function AnalysisPaginationControl({
         firstDisabled={firstDisabled}
         lastDisabled={lastDisabled}
         rangeText={rangeText}
+        stale={showPreservedRange}
         onFirstPage={onFirstPage}
         onLastPage={onLastPage}
       />

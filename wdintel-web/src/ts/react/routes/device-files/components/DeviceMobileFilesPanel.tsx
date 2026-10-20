@@ -38,6 +38,7 @@ export function DeviceMobileFilesPanel({
     <div className="flex h-full min-h-0 flex-col">
       <div className={files.selectedFile === null ? 'h-full min-h-0' : 'hidden'}>
         <DeviceFilesSidebar
+          active={files.selectedFile === null}
           fullHeight
           files={{
             ...files,
@@ -76,6 +77,7 @@ export function DeviceMobileFilesPanel({
             <DeviceFileContentPane
               deviceId={deviceId}
               file={files.selectedFile}
+              onSelectFile={files.selectFile}
               revisionPinned={files.revisionPinned}
               citation={citation}
               sessionScoped={syncId !== null}

@@ -31,7 +31,7 @@ export function useRerDutyInitialLoadTrigger(params: Params) {
         (feed.items.length === 0 || params.pendingReloadFeedIdsRef.current.has(feed.id)),
     );
     const keyFor = (feed: MessageFeedState) =>
-      `${feed.id}:${params.loadGenerationByFeedIdRef.current[feed.id] ?? 0}:${JSON.stringify(feed.filter)}`;
+      `${feed.id}:${params.loadGenerationByFeedIdRef.current[feed.id] ?? 0}:${feed.groupScopeMasterKey ?? ''}:${JSON.stringify(feed.filter)}`;
     const neededKeys = new Set(needingLoad.map(keyFor));
     startedKeysRef.current.forEach((key) => {
       if (!neededKeys.has(key)) startedKeysRef.current.delete(key);

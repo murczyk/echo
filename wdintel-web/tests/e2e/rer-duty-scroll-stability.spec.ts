@@ -322,12 +322,38 @@ test('keeps every feed position and the last scroll action inset while the edito
   await setBottomDistance(lastScroller, 200);
   const firstAnchor = await readVisibleAnchor(firstScroller);
   const lastAnchor = await readVisibleAnchor(lastScroller);
-  await expect(feeds.last().locator('[data-duty-feed-scroll-button]')).toHaveAttribute(
-    'data-duty-right-offset',
-    '59px',
-  );
+  const lastScrollControl = feeds.last().locator('[data-duty-feed-scroll-button]');
+  const lastScrollButton = lastScrollControl.getByRole('button');
+  const lastCreateButton = feeds.last().getByRole('button', { name: 'Додати повідомлення' });
+  await expect(lastScrollControl).toHaveAttribute('data-duty-right-offset', '12px');
+  await page.mouse.move(0, 0);
+  await expect(lastCreateButton).toBeVisible();
+  const readFloatingControlLayout = async () => {
+    const [scrollBox, createBox] = await Promise.all([
+      lastScrollButton.boundingBox(),
+      lastCreateButton.boundingBox(),
+    ]);
+    return scrollBox == null || createBox == null
+      ? null
+      : {
+          scrollX: Math.round(scrollBox.x),
+          scrollY: Math.round(scrollBox.y),
+          createX: Math.round(createBox.x),
+          createY: Math.round(createBox.y),
+          rightAligned:
+            Math.abs(createBox.x + createBox.width - (scrollBox.x + scrollBox.width)) <= 1,
+          verticalGap: Math.round(createBox.y - (scrollBox.y + scrollBox.height)),
+        };
+  };
+  const controlsBeforeHover = await readFloatingControlLayout();
+  expect(controlsBeforeHover).toMatchObject({ rightAligned: true, verticalGap: 13 });
 
-  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  await feeds.last().hover();
+  await expect.poll(readFloatingControlLayout).toEqual(controlsBeforeHover);
+  await expect(lastScrollControl).toHaveCSS('transition-property', 'transform');
+
+  await feeds.nth(0).hover();
+  await feeds.nth(0).getByRole('button', { name: 'Додати повідомлення' }).click();
 
   await expect(page.locator('[data-manage-message-presentation="embedded"]')).toBeVisible();
   await expect(page.locator('[data-duty-feed-column]')).toHaveCount(2);
@@ -335,7 +361,7 @@ test('keeps every feed position and the last scroll action inset while the edito
   await expectVisibleAnchor(lastScroller, lastAnchor);
   await expect(feeds.last().locator('[data-duty-feed-scroll-button]')).toHaveAttribute(
     'data-duty-right-offset',
-    '20px',
+    '12px',
   );
 });
 
@@ -389,7 +415,8 @@ test('restores every feed position through editor tabs and close @regression', a
   const firstAnchor = await readVisibleAnchor(firstScroller);
   const secondAnchor = await readVisibleAnchor(secondScroller);
 
-  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  await feeds.nth(0).hover();
+  await feeds.nth(0).getByRole('button', { name: 'Додати повідомлення' }).click();
 
   await expect(page.getByRole('tab', { name: 'Стрічка 1' })).toBeVisible();
   await expectVisibleAnchor(page.locator('[data-duty-feed-scroller="true"]'), firstAnchor);

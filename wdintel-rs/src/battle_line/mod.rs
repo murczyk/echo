@@ -33,6 +33,7 @@ use std::sync::{Arc, RwLock};
 pub mod cleanup;
 pub mod oneoff;
 pub mod peleng_distance;
+mod settlement_clusters;
 pub mod settlement_queue;
 pub mod types;
 
@@ -1574,16 +1575,16 @@ where
             .await
             .c(h!())?;
     let mut drafts = drafts.into_iter();
-    Ok(group_lengths
-        .into_iter()
-        .map(|group_length| {
-            drafts
-                .by_ref()
-                .take(group_length)
-                .map(location_result_from_draft)
-                .collect()
-        })
-        .collect())
+    let mut results = Vec::with_capacity(group_lengths.len());
+    for group_length in group_lengths {
+        let mut drafts = drafts.by_ref().take(group_length).collect::<Vec<_>>();
+        settlement_clusters::resolve_cluster(dbx, &mut drafts, &[])
+            .await
+            .c(h!())?;
+        results
+            .push(drafts.into_iter().map(location_result_from_draft).collect());
+    }
+    Ok(results)
 }
 
 async fn load_location_resolution_drafts<C>(
@@ -3001,7 +3002,7 @@ values (
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn resolves_ambiguous_locations_independently_2287() {
+    async fn resolves_ambiguous_locations_as_a_cluster_2133() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -3052,9 +3053,9 @@ values (
         .unwrap();
 
         assert_eq!(results[0].chosen_settlement_id, Some(2_287_211));
-        assert_eq!(results[1].chosen_settlement_id, Some(2_287_212));
+        assert_eq!(results[1].chosen_settlement_id, Some(2_287_213));
         assert!(
-            results[1].distance_m.unwrap() < results[0].distance_m.unwrap()
+            results[1].distance_m.unwrap() > results[0].distance_m.unwrap()
         );
         txn.rollback().await.unwrap();
     }

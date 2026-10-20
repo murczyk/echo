@@ -39,6 +39,7 @@ export type MessageFeedProps<T> = Omit<MessageFeedViewportProps<T>, 'scroll'> & 
   scrollOptions: MessageFeedScrollOptions;
   newestNavigation?: MessageFeedNewestNavigation;
   isLoading?: boolean;
+  showLoadingSkeleton?: boolean;
   loadingAbove?: boolean;
   loadingBelow?: boolean;
   hasMoreAbove?: boolean;
@@ -56,6 +57,7 @@ function MessageFeedInner<T>(
     hasMoreAbove = false,
     hasMoreBelow = false,
     isLoading = false,
+    showLoadingSkeleton = true,
     skeletonCount = 3,
     editorHighlightedMessageId = null,
     items,
@@ -74,6 +76,7 @@ function MessageFeedInner<T>(
     items,
     children: viewportProps.children,
     isLoading,
+    showLoadingSkeleton,
     loadingAbove,
     loadingBelow,
     hasMoreAbove,
@@ -100,6 +103,7 @@ function MessageFeedInner<T>(
       shown.items === items &&
       shown.children === viewportProps.children &&
       shown.isLoading === isLoading &&
+      shown.showLoadingSkeleton === showLoadingSkeleton &&
       shown.loadingAbove === loadingAbove &&
       shown.loadingBelow === loadingBelow &&
       shown.hasMoreAbove === hasMoreAbove &&
@@ -127,6 +131,7 @@ function MessageFeedInner<T>(
     items,
     viewportProps.children,
     isLoading,
+    showLoadingSkeleton,
     loadingAbove,
     loadingBelow,
     hasMoreAbove,
@@ -156,6 +161,7 @@ function MessageFeedInner<T>(
   });
   const [linkedHighlightedMessageId, setLinkedHighlightedMessageId] = useState<number | null>(null);
   const highlightedElementRef = useRef<HTMLElement | null>(null);
+  const highlightedWindowRef = useRef<readonly number[] | null>(null);
   const highlightLoadStartRef = useRef<{ items: readonly T[]; ids: readonly number[] } | null>(
     null,
   );
@@ -180,7 +186,9 @@ function MessageFeedInner<T>(
     }
     if (
       linkedHighlightedMessageId !== null &&
-      !visibleItemIds.includes(linkedHighlightedMessageId)
+      (!visibleItemIds.includes(linkedHighlightedMessageId) ||
+        (highlightedWindowRef.current !== null &&
+          !areNumberArraysEqual(highlightedWindowRef.current, visibleItemIds)))
     ) {
       setLinkedHighlightedMessageId(null);
     }
@@ -206,10 +214,11 @@ function MessageFeedInner<T>(
     (id: number) => {
       if (!scroll.getItemElement(id)) return false;
       highlightLoadStartRef.current = null;
+      highlightedWindowRef.current = visibleItemIds;
       setLinkedHighlightedMessageId(id);
       return true;
     },
-    [scroll.getItemElement],
+    [scroll.getItemElement, visibleItemIds],
   );
   const [atNewestEdge, setAtNewestEdge] = useState(false);
   const newestEdge = newestNavigation?.edge;
@@ -239,8 +248,10 @@ function MessageFeedInner<T>(
       scroll.scrollToItem,
     ],
   );
-  const showInitialSkeleton = shown.isLoading && visibleItems.length === 0;
-  const showRefreshSkeleton = shown.isLoading && visibleItems.length > 0;
+  const showInitialSkeleton =
+    shown.showLoadingSkeleton && shown.isLoading && visibleItems.length === 0;
+  const showRefreshSkeleton =
+    shown.showLoadingSkeleton && shown.isLoading && visibleItems.length > 0;
   const showAboveSkeleton = visibleItems.length > 0 && shown.hasMoreAbove;
   const showBelowSkeleton = visibleItems.length > 0 && shown.hasMoreBelow;
   return (

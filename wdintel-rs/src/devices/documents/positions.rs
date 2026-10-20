@@ -149,7 +149,7 @@ pub(crate) async fn lookup(
     ))
     .await
     .c(h!())?;
-    let evidence=rows::<Evidence,_>(&tx,&format!("select d.device_id,d.file_id,d.revision,c.generation,c.ordinal,r.name as file_name,c.locator,substring(c.text from greatest(1,coalesce((p.spans->0->>'begin')::integer,0)-400) for 2000) as context,p.name,p.name_key,p.kind,p.spans,p.coordinates from file_document_position p join file_document_chunk c on c.id=p.chunk_id join file_document d on d.published_generation=c.generation join file_entry r on r.id=d.file_id and r.revision=d.revision where {} order by p.id,d.file_id limit {bound}",filters.join(" and ")),values).await.c(h!())?;
+    let evidence=rows::<Evidence,_>(&tx,&format!("select d.device_id,d.file_id,d.revision,c.generation,c.ordinal,r.name as file_name,c.locator,substring(c.text from greatest(1,coalesce((p.spans->0->>'begin')::integer,0)-400) for 2000) as context,p.name,p.name_key,p.kind,p.spans,p.coordinates from file_document_position p join file_document_chunk c on c.id=p.chunk_id join file_document d on d.published_generation=c.generation join file_entry r on r.id=d.file_id and r.revision=d.revision and r.archive_file_id is null where {} order by p.id,d.file_id limit {bound}",filters.join(" and ")),values).await.c(h!())?;
     tx.commit().await.c(h!())?;
     let aors=crate::entities::device_aor::Entity::find().filter(crate::entities::device_aor::Column::DeviceId.is_in(devices)).filter(crate::entities::device_aor::Column::AorId.in_subquery(crate::entities::area_of_responsibility::Entity::find().select_only().column(crate::entities::area_of_responsibility::Column::Id).filter(crate::entities::area_of_responsibility::Column::Deleted.eq(false)).into_query())).all(&env.dbx).await.c(h!())?;
     evidence

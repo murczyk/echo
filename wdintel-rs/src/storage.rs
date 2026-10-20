@@ -159,7 +159,7 @@ pub async fn serve_assets(
 }
 
 /// S3 configuration parameters
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct S3Config {
     pub bucket: String,
     pub region: String,

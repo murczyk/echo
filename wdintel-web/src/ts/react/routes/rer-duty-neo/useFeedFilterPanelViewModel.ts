@@ -53,6 +53,7 @@ type FeedFilterSelectionViewModel<T> = {
 export type FeedFilterPanelViewModel = {
   isDarkMode: boolean;
   hasActiveFilter: boolean;
+  hideGroupSelection?: boolean;
   onDiscardCurrentFilter: () => void;
   groups: FeedFilterSelectionViewModel<string>;
   senders: FeedFilterSelectionViewModel<{ id: string; label: string }>;
@@ -254,6 +255,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
   return {
     isDarkMode,
     hasActiveFilter: panel.hasActiveFilter,
+    hideGroupSelection: panel.hideGroupSelection,
     onDiscardCurrentFilter: actions.onDiscardCurrentFilter,
     groups: {
       mode: groupsSelectionState.mode,
