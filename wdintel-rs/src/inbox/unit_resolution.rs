@@ -19,6 +19,7 @@ use crate::entities::{
     sigint_inbox_item_network, sigint_inbox_item_unit, sigint_network,
     sigint_network_unit, sigint_unit, sigint_unit_label, signal_message,
 };
+use crate::types::ShortContext;
 use crate::{h, orbit};
 use anyhow::Context;
 use chrono::{Duration, NaiveDateTime, Utc};
@@ -1067,10 +1068,35 @@ async fn replace_parsed_unit_links<C>(
     inbox_item_id: i64,
     item_uuid: Option<Uuid>,
     sigint_unit_ids: &[i64],
-) -> anyhow::Result<()>
+) -> anyhow::Result<bool>
 where
     C: ConnectionTrait,
 {
+    let sigint_unit_ids =
+        sigint_unit_ids.iter().copied().collect::<BTreeSet<_>>();
+    let existing_links = sigint_inbox_item_unit::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item_unit::Column::UnitId)
+        .column(sigint_inbox_item_unit::Column::ItemUuid)
+        .filter(sigint_inbox_item_unit::Column::ItemId.eq(inbox_item_id))
+        .filter(
+            sigint_inbox_item_unit::Column::Kind
+                .eq(SigintInboxItemUnitKind::Parsed),
+        )
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(db)
+        .await
+        .c(h!())?;
+    let existing_unit_ids = existing_links
+        .iter()
+        .map(|(unit_id, _)| *unit_id)
+        .collect::<BTreeSet<_>>();
+    let parsed_units_changed = existing_unit_ids != sigint_unit_ids;
+    if !parsed_units_changed
+        && existing_links.iter().all(|(_, uuid)| *uuid == item_uuid)
+    {
+        return Ok(false);
+    }
     sigint_inbox_item_unit::Entity::delete_many()
         .filter(sigint_inbox_item_unit::Column::ItemId.eq(inbox_item_id))
         .filter(
@@ -1081,9 +1107,6 @@ where
         .await
         .context(h!())?;
     let unit_links = sigint_unit_ids
-        .iter()
-        .copied()
-        .collect::<BTreeSet<_>>()
         .into_iter()
         .map(|sigint_unit_id| sigint_inbox_item_unit::ActiveModel {
             id: NotSet,
@@ -1100,6 +1123,37 @@ where
             .await
             .context(h!())?;
     }
+    Ok(parsed_units_changed)
+}
+
+async fn reconcile_inbox_item_networks<C>(
+    db: &C,
+    inbox_item_id: i64,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let Some(inbox_item) = sigint_inbox_item::Entity::find_by_id(inbox_item_id)
+        .inner_join(sigint_inbox_item_network::Entity)
+        .one(db)
+        .await
+        .c(h!())?
+    else {
+        return Ok(());
+    };
+    crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+        vec![inbox_item],
+        db,
+    )
+    .await
+    .c(h!())?;
+    crate::stats::enqueue_group_stats_recalculation_for_message(
+        db,
+        inbox_item_id,
+        format!("changed parsed units for inbox message {inbox_item_id}"),
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -1322,6 +1376,7 @@ where
         inbox_item_uuid,
         vec![UnitTextResolution::resolved(unit_name, unit_id)],
         None,
+        true,
     )
     .await
     .context(h!())?;
@@ -1411,6 +1466,7 @@ where
         inbox_item_uuid,
         resolved_unit_texts,
         None,
+        true,
     )
     .await
     .context(h!())
@@ -1451,6 +1507,7 @@ where
         inbox_item_uuid,
         resolved_unit_texts,
         Some(&mut cache.failure_metadata),
+        false,
     )
     .await
     .context(h!())
@@ -1503,6 +1560,7 @@ async fn sync_resolved_inbox_item<C>(
     inbox_item_uuid: Option<Uuid>,
     resolved_unit_texts: Vec<UnitTextResolution>,
     mut failure_metadata_cache: Option<&mut FailureMetadataCache>,
+    reconcile_networks: bool,
 ) -> anyhow::Result<Option<i64>>
 where
     C: ConnectionTrait,
@@ -1511,7 +1569,7 @@ where
         .iter()
         .filter_map(|resolution| resolution.sigint_unit_id)
         .collect_vec();
-    replace_parsed_unit_links(
+    let parsed_units_changed = replace_parsed_unit_links(
         db,
         inbox_item_id,
         inbox_item_uuid,
@@ -1519,6 +1577,11 @@ where
     )
     .await
     .context(h!())?;
+    if parsed_units_changed && reconcile_networks {
+        reconcile_inbox_item_networks(db, inbox_item_id)
+            .await
+            .c(h!())?;
+    }
 
     if resolved_unit_texts.is_empty() {
         sigint_inbox_item_failed_unit_label::Entity::delete_many()
@@ -1837,9 +1900,12 @@ pub(crate) async fn backfill_inbox_unit_links(
             .await
             .context(h!())?;
         }
-        sync_network_unit_links(&transaction, &item_ids)
-            .await
-            .context(h!())?;
+        crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+            items,
+            &transaction,
+        )
+        .await
+        .c(h!())?;
         crate::stats::enqueue_group_stats_recalculation_for_messages(
             &transaction,
             &item_ids,
@@ -1848,7 +1914,7 @@ pub(crate) async fn backfill_inbox_unit_links(
         .await
         .context(h!())?;
         transaction.commit().await.context(h!())?;
-        let batch_size = u64::try_from(items.len()).context(h!())?;
+        let batch_size = u64::try_from(item_ids.len()).context(h!())?;
         processed += batch_size;
         if let Some(progress) = progress {
             progress.inc(batch_size);
@@ -1862,7 +1928,7 @@ pub(crate) async fn backfill_inbox_unit_links(
         if let Some(progress) = progress {
             progress.set_message(format!("last inbox item {last_id}"));
         }
-        if items.len()
+        if item_ids.len()
             == usize::try_from(FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE)
                 .context(h!())?
         {
@@ -3669,6 +3735,12 @@ mod tests {
     async fn backfill_resumes_after_item_id_and_syncs_network_unit_links() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
+        let now = Utc::now().naive_utc();
+        let group_aor = crate::entities::signal_group_aor::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
         let unit = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
             Default::default(),
@@ -3693,16 +3765,48 @@ mod tests {
         .unwrap();
         let skipped_item = insert_inbox_item(&env.dbx, None, None, None).await;
         let resumed_item = insert_inbox_item(&env.dbx, None, None, None).await;
+        crate::functest::tests::mk_sigint_network_aor(
+            &env.dbx,
+            crate::entities::sigint_network_aor::ActiveModel {
+                network_id: Set(network.id),
+                aor_id: Set(group_aor.aor_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::functest::tests::mk_sigint_network_freq(
+            &env.dbx,
+            crate::entities::sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.4500".to_string()),
+                active_from: Set(now - Duration::days(1)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         crate::functest::tests::mk_signal_message_group(
             &env.dbx,
             crate::entities::signal_message_group::ActiveModel {
                 signal_message_id: Set(resumed_item.id),
+                group_master_key: Set(Some(group_aor.master_key)),
                 ..Default::default()
             },
         )
         .await
         .unwrap();
         for inbox_item_id in [skipped_item.id, resumed_item.id] {
+            sigint_inbox_item::Entity::update_many()
+                .col_expr(
+                    sigint_inbox_item::Column::Freq,
+                    Expr::value("146.4500"),
+                )
+                .col_expr(sigint_inbox_item::Column::Datetime, Expr::value(now))
+                .filter(sigint_inbox_item::Column::Id.eq(inbox_item_id))
+                .exec(&env.dbx)
+                .await
+                .unwrap();
             sigint_inbox_item_network::ActiveModel {
                 sigint_inbox_item_id: Set(inbox_item_id),
                 sigint_network_id: Set(network.id),
@@ -3712,8 +3816,6 @@ mod tests {
             .await
             .unwrap();
         }
-        let now = Utc::now().naive_utc();
-
         assert_eq!(
             backfill_inbox_unit_links(
                 &env.dbx,
