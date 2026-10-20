@@ -181,6 +181,25 @@ impl Provider {
     }
 }
 
+fn install_memory_storage(env: &mut crate::types::Env) {
+    use base64::Engine;
+
+    env.config.s3_config = Some(crate::config::S3Config {
+        s3_access_key_id: "test".to_string(),
+        s3_secret_access_key: "test".to_string(),
+        s3_endpoint: "http://127.0.0.1:1".to_string(),
+        s3_region: "us-east-1".to_string(),
+        s3_bucket: "transcription-test".to_string(),
+        strongbox_key: base64::engine::general_purpose::STANDARD
+            .encode([0; 32]),
+    });
+    env.s3 = Some(
+        opendal::Operator::new(opendal::services::Memory::default())
+            .unwrap()
+            .finish(),
+    );
+}
+
 #[actix_web::test]
 #[serial_test::serial]
 async fn message_transcription_works_with_devices_disabled_without_file_registry(
@@ -204,11 +223,7 @@ async fn message_transcription_works_with_devices_disabled_without_file_registry
     env.config.storage_dir = directory.path().display().to_string();
     env.file_registry_db = None;
     env.device_file_content = None;
-    env.s3 = Some(
-        opendal::Operator::new(opendal::services::Memory::default())
-            .unwrap()
-            .finish(),
-    );
+    install_memory_storage(&mut env);
     env.device_audio = crate::devices::audio::build_runtime(
         &env.config,
         &env.dbx,
@@ -310,11 +325,7 @@ async fn session_loss_during_gpu_request_rejects_the_late_result() {
     let temp = tempfile::tempdir().unwrap();
     let mut env = base.as_ref().clone();
     env.config.storage_dir = temp.path().display().to_string();
-    env.s3 = Some(
-        opendal::Operator::new(opendal::services::Memory::default())
-            .unwrap()
-            .finish(),
-    );
+    install_memory_storage(&mut env);
     let env = Arc::new(env);
     let provider = Provider::start(&env).await;
     provider.control("delayed").await;
@@ -435,11 +446,7 @@ async fn mixed_source_keys_use_the_same_native_provider_policy() {
     let temp = tempfile::tempdir().unwrap();
     let mut env = base.as_ref().clone();
     env.config.storage_dir = temp.path().display().to_string();
-    env.s3 = Some(
-        opendal::Operator::new(opendal::services::Memory::default())
-            .unwrap()
-            .finish(),
-    );
+    install_memory_storage(&mut env);
     let env = Arc::new(env);
     let provider = Provider::start(&env).await;
     let worker = Uuid::now_v7();
