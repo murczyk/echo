@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
+  createLoadedInboxResponse,
   createOverflowingInboxResponse,
   installAnalysisNeoApiMocks,
 } from './analysis-neo.fixtures';
@@ -514,6 +515,62 @@ test.describe('Message feed unification @regression', () => {
     await expect(scroller.locator('[data-direct-message-anchor-spacer]')).toBeAttached();
     await page.setViewportSize({ width: 390, height: 844 });
     await expect.poll(centerError).toBeLessThanOrEqual(1);
+  });
+
+  test('Analysis centers an underfilled audio context without recursive layout updates', async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    const response = createLoadedInboxResponse();
+    const message = response.inbox_items[0][1];
+    response.inbox_items = Array.from({ length: 4 }, (_, index) => [
+      3002185 + index,
+      {
+        ...message,
+        messageUid: `audio-boundary-${index}`,
+        text: index === 0 ? 'ооо. аудіо' : 'Тестове повідомлення контексту. '.repeat(8),
+        media:
+          index === 0
+            ? [
+                {
+                  id: 'audio-boundary-media',
+                  content_type: 'audio/mpeg',
+                  file_name: 'test-audio.mp3',
+                  size_bytes: 733645,
+                  href: '/tests/e2e/fixtures/device-file-preview/audio.mp3',
+                  transcription:
+                    'Рек, Ник, я Барс, прием утром достаточно 160 человек, чтобы выкупить этот молитвенный дом, только 450 рублей, если достаточно 160, если вы... Да, нормально тоже. Че там, как работает? Киловой не начали, наверное. Нет. Нет. Нет. 11 лет не было на пианино. Все... Завтра уезжает учится в Китай. 17 лет, свалил дом, и чтобы было... ... 20 городов. ... лежа ...',
+                },
+              ]
+            : [],
+      },
+    ]) as typeof response.inbox_items;
+    await installAnalysisNeoApiMocks(page, {
+      enableAudioTranscription: true,
+      inboxResponse: response,
+    });
+    await page.route('**/api/rer-importer/get-inbox-count', (route) =>
+      route.fulfill({ json: { quantity: 4, first_element_ts: null } }),
+    );
+    for (const height of [1400, 1398]) {
+      await page.setViewportSize({ width: 2560, height });
+      await page.goto('/rer-analysis-neo?m=audio-boundary-0');
+      const target = page.locator('[data-message-id="3002185"] [data-message-card-root]');
+      await expect(target).toBeVisible();
+      await expect
+        .poll(() =>
+          target.evaluate((card) => {
+            const viewport = card
+              .closest('[data-analysis-message-scroller]')!
+              .getBoundingClientRect();
+            const rect = card.getBoundingClientRect();
+            return Math.abs(rect.top + rect.height / 2 - viewport.top - viewport.height / 2);
+          }),
+        )
+        .toBeLessThanOrEqual(1);
+      expect(errors).toEqual([]);
+    }
   });
 
   for (const newestFirst of [true, false]) {
