@@ -219,7 +219,7 @@ pub async fn requeue_terminal(
     }
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let config = crate::config::read_config(mode).c(h!())?;
-    let files = crate::file_registry::connect_if_enabled(&config, mode, &dbx)
+    let files = crate::file_registry::connect_runtime(&config, mode)
         .await
         .c(h!())?;
     let updated = super::reprocess::request_if_state(
@@ -246,7 +246,7 @@ pub async fn retranscribe_completed(
     }
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let config = crate::config::read_config(mode).c(h!())?;
-    let files = crate::file_registry::connect_if_enabled(&config, mode, &dbx)
+    let files = crate::file_registry::connect_runtime(&config, mode)
         .await
         .c(h!())?;
     let updated = super::reprocess::request_if_state(
