@@ -661,6 +661,7 @@ describe('RerAnalysisNeoPage', () => {
   const rendered: HTMLDivElement[] = [];
 
   beforeEach(() => {
+    window.history.replaceState({}, '', window.location.pathname);
     useRerAnalysisNeoPageMock.mockReset();
     useMediaQueryMock.mockReset();
     useMediaQueryMock.mockReturnValue(false);

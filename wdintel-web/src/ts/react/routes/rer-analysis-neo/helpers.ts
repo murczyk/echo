@@ -42,12 +42,14 @@ export const ADJACENT_FREQS_RANGE_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
 const ONLY_WITH_MEDIA_PARAM = 'only_with_media';
 const LEFT_PANEL_OPEN_PARAM = 'leftPanelOpen';
 const RIGHT_PANEL_OPEN_PARAM = 'rightPanelOpen';
+const FILTER_PANEL_OPEN_PARAM = 'filterPanelOpen';
 const MESSAGES_PAGE_PARAM = 'messagesPage';
 const GROUP_SCOPE_PARAM = 'group';
 
 export type AnalysisPanelQueryState = {
   leftPanelOpen: boolean | null;
   rightPanelOpen: boolean | null;
+  filterPanelOpen: boolean | null;
 };
 
 function partitionUnitSelections(values: readonly string[]): {
@@ -212,13 +214,33 @@ export function writeMessagesPageIndexToWindowUrl(pageIndex: number): void {
 
 export function parseAnalysisPanelQueryStateFromWindow(): AnalysisPanelQueryState {
   if (typeof window === 'undefined') {
-    return { leftPanelOpen: null, rightPanelOpen: null };
+    return { leftPanelOpen: null, rightPanelOpen: null, filterPanelOpen: null };
   }
   const searchParams = new URL(window.location.href).searchParams;
   return {
     leftPanelOpen: parseOptionalBooleanParam(searchParams.get(LEFT_PANEL_OPEN_PARAM)),
     rightPanelOpen: parseOptionalBooleanParam(searchParams.get(RIGHT_PANEL_OPEN_PARAM)),
+    filterPanelOpen: parseOptionalBooleanParam(searchParams.get(FILTER_PANEL_OPEN_PARAM)),
   };
+}
+
+function writeAnalysisPanelQueryState(
+  searchParams: URLSearchParams,
+  state: Partial<AnalysisPanelQueryState>,
+) {
+  if (state.leftPanelOpen != null)
+    searchParams.set(LEFT_PANEL_OPEN_PARAM, String(state.leftPanelOpen));
+  if (state.rightPanelOpen != null)
+    searchParams.set(RIGHT_PANEL_OPEN_PARAM, String(state.rightPanelOpen));
+  if (state.filterPanelOpen != null)
+    searchParams.set(FILTER_PANEL_OPEN_PARAM, String(state.filterPanelOpen));
+}
+
+export function replaceAnalysisPanelQueryStateInUrl(state: Partial<AnalysisPanelQueryState>) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  writeAnalysisPanelQueryState(url.searchParams, state);
+  window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
 }
 
 export function readAnalysisGroupScopeFromUrl(): GroupScope {
@@ -363,7 +385,7 @@ export function hasMeaningfulUiFiltersBeyondDateRange(state: AnalysisQueryState)
 export function pushQueryStateToUrl(
   state: AnalysisQueryState,
   newestFirst: boolean = true,
-  panelState?: { leftPanelOpen: boolean; rightPanelOpen: boolean },
+  panelState?: Partial<AnalysisPanelQueryState>,
 ) {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
@@ -379,8 +401,7 @@ export function pushQueryStateToUrl(
     url.searchParams.delete('newestFirst');
   }
   if (panelState) {
-    url.searchParams.set(LEFT_PANEL_OPEN_PARAM, String(panelState.leftPanelOpen));
-    url.searchParams.set(RIGHT_PANEL_OPEN_PARAM, String(panelState.rightPanelOpen));
+    writeAnalysisPanelQueryState(url.searchParams, panelState);
   }
   window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
 }

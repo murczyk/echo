@@ -32,6 +32,10 @@ import {
 } from '../shared/manage-message/ManageMessageEditorSurface';
 import { getAnalysisCenterTabs } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
+import {
+  parseAnalysisPanelQueryStateFromWindow,
+  replaceAnalysisPanelQueryStateInUrl,
+} from './helpers';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 import { MessageDeviceAccessProvider } from '../shared/message-card/MessageDeviceAccess';
@@ -61,7 +65,11 @@ export function RerAnalysisNeoPage({
   const [createMessageGroupMasterKey, setCreateMessageGroupMasterKey] = useState<string | null>(
     null,
   );
-  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [initialFilterPanelOpen] = useState(
+    () => parseAnalysisPanelQueryStateFromWindow().filterPanelOpen,
+  );
+  const [filterPanelOpen, setFilterPanelOpen] = useState(initialFilterPanelOpen ?? false);
+  const filterPanelTouchedRef = useRef(initialFilterPanelOpen != null);
   const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const editorRef = useRef<ManageMessageEditorHandle>(null);
   const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
@@ -119,11 +127,23 @@ export function RerAnalysisNeoPage({
   const rightPanelVisible = requestedRightPanelVisible && !editorOpen;
   const modalEditorOpen = editorOpen && editorPresentation === 'modal';
   const toggleFilterPanel = useCallback(() => {
-    setFilterPanelOpen((current) => !current);
-  }, []);
+    filterPanelTouchedRef.current = true;
+    const next = !filterPanelOpen;
+    setFilterPanelOpen(next);
+    replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: next });
+  }, [filterPanelOpen]);
   const closeFilterPanel = useCallback(() => {
+    filterPanelTouchedRef.current = true;
     setFilterPanelOpen(false);
+    replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: false });
   }, []);
+  useEffect(() => {
+    if (!page.networkVisibilityReady || filterPanelTouchedRef.current) return;
+    filterPanelTouchedRef.current = true;
+    const next = !page.hideNetworks;
+    setFilterPanelOpen(editorOpen ? false : next);
+    replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: next });
+  }, [editorOpen, page.hideNetworks, page.networkVisibilityReady]);
   useEffect(() => {
     if (!filterPanelOpen) return;
     const sections =
@@ -133,8 +153,8 @@ export function RerAnalysisNeoPage({
     void Promise.all(sections.map((section) => page.loadFilterSection(section)));
   }, [filterPanelOpen, page.groupNavigation.scope.kind, page.loadFilterSection]);
   useEffect(() => {
-    if (editorOpen) closeFilterPanel();
-  }, [closeFilterPanel, editorOpen]);
+    if (editorOpen) setFilterPanelOpen(false);
+  }, [editorOpen]);
   const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth;
   const inlineLeftPanelVisible = shouldInlineAnalysisLeftPanel({
     layoutWidth,

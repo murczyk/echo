@@ -954,7 +954,7 @@ describe('useRerAnalysisNeoPage', () => {
     renderHook();
     await flushEffects();
 
-    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('true');
+    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('false');
     expect(new URL(window.location.href).searchParams.get('rightPanelOpen')).toBe('false');
 
     await act(async () => {
@@ -963,7 +963,7 @@ describe('useRerAnalysisNeoPage', () => {
     });
     await flushEffects();
 
-    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('false');
+    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('true');
     expect(new URL(window.location.href).searchParams.get('rightPanelOpen')).toBe('true');
     window.history.replaceState({}, '', originalUrl);
   });

@@ -89,7 +89,7 @@ test.describe('Analysis group feed navigation', () => {
   }) => {
     await page.setViewportSize({ width: 1920, height: 900 });
     await installGroupNavigationMocks(page);
-    await page.goto('/rer-analysis-neo?group=group-a');
+    await page.goto('/rer-analysis-neo?group=group-a&leftPanelOpen=true&filterPanelOpen=false');
     await page.getByRole('button', { name: 'Додати повідомлення' }).click();
     const text = page.getByRole('textbox', { name: 'Текст повідомлення' });
     await text.fill('Unsaved Analysis draft');
@@ -147,7 +147,9 @@ test.describe('Analysis group feed navigation', () => {
       if (request.around_message_ref) windows.push(request);
       return route.fulfill({ json: inbox });
     });
-    await page.goto('/rer-analysis-neo?group=group-a&search=Alpha');
+    await page.goto(
+      '/rer-analysis-neo?group=group-a&search=Alpha&leftPanelOpen=true&filterPanelOpen=false',
+    );
     await page
       .locator('[data-analysis-group-list]:visible')
       .first()
@@ -162,7 +164,7 @@ test.describe('Analysis group feed navigation', () => {
   test('separates the map from the tab bar with the content spacing', async ({ page }) => {
     await page.setViewportSize({ width: 1234, height: 877 });
     await installGroupNavigationMocks(page);
-    await page.goto('/rer-analysis-neo');
+    await page.goto('/rer-analysis-neo?leftPanelOpen=true&filterPanelOpen=false');
 
     await page.getByRole('tab', { name: 'Мапа', exact: true }).click();
 
@@ -172,7 +174,7 @@ test.describe('Analysis group feed navigation', () => {
   test('keeps group navigation visible beside contextual filters', async ({ page }) => {
     await page.setViewportSize({ width: 1234, height: 877 });
     await installGroupNavigationMocks(page);
-    await page.goto('/rer-analysis-neo?groups=group-a');
+    await page.goto('/rer-analysis-neo?groups=group-a&leftPanelOpen=true&filterPanelOpen=false');
 
     const groupNavigation = page.getByRole('complementary', { name: 'Навігація груп' });
     await expect(groupNavigation).toBeVisible();
@@ -285,7 +287,7 @@ test.describe('Analysis group feed navigation', () => {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.setViewportSize({ width: 1234, height: 877 });
     await installGroupNavigationMocks(page);
-    await page.goto('/rer-analysis-neo');
+    await page.goto('/rer-analysis-neo?leftPanelOpen=true&filterPanelOpen=false');
 
     const filterToggle = page.locator('[data-analysis-filter-toggle]');
     await filterToggle.click();
@@ -308,7 +310,7 @@ test.describe('Analysis group feed navigation', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width: 1234, height: 877 });
     await installGroupNavigationMocks(page);
-    await page.goto('/rer-analysis-neo');
+    await page.goto('/rer-analysis-neo?leftPanelOpen=true&filterPanelOpen=false');
 
     await page.locator('[data-analysis-filter-toggle]').click();
 
@@ -321,7 +323,9 @@ test.describe('Analysis group feed navigation', () => {
   test('resolves the selected group name while both side panels are closed', async ({ page }) => {
     await page.setViewportSize({ width: 1500, height: 900 });
     const mocks = await installGroupNavigationMocks(page);
-    await page.goto('/rer-analysis-neo?leftPanelOpen=false&rightPanelOpen=false&group=group-b');
+    await page.goto(
+      '/rer-analysis-neo?leftPanelOpen=false&rightPanelOpen=false&group=group-b&filterPanelOpen=false',
+    );
 
     await expect(page.locator('[data-analysis-group-list]')).toHaveCount(0);
     await expect(page.locator('[data-analysis-current-group] [data-group-name]')).toHaveText(
@@ -335,7 +339,9 @@ test.describe('Analysis group feed navigation', () => {
   test('keeps URL scope separate from aggregate filters and prefills create', async ({ page }) => {
     await page.setViewportSize({ width: 1500, height: 900 });
     const mocks = await installGroupNavigationMocks(page);
-    await page.goto('/rer-analysis-neo?groups=group-a&groups=group-b');
+    await page.goto(
+      '/rer-analysis-neo?groups=group-a&groups=group-b&leftPanelOpen=true&filterPanelOpen=false',
+    );
 
     const groupList = page.locator('[data-analysis-group-list]:visible').first();
     await expect(groupList).toBeVisible();
@@ -411,7 +417,7 @@ test.describe('Analysis group feed navigation', () => {
   test('keeps and restores filters independently for every group scope', async ({ page }) => {
     await page.setViewportSize({ width: 1500, height: 900 });
     await installGroupNavigationMocks(page);
-    await page.goto('/rer-analysis-neo');
+    await page.goto('/rer-analysis-neo?leftPanelOpen=true&filterPanelOpen=false');
 
     await page.locator('[data-analysis-filter-toggle]').click();
     const filterPanel = page.locator('[data-analysis-filter-panel]:visible');
@@ -457,7 +463,7 @@ test.describe('Analysis group feed navigation', () => {
         }
       },
     });
-    await page.goto('/rer-analysis-neo?group=group-a');
+    await page.goto('/rer-analysis-neo?group=group-a&leftPanelOpen=true&filterPanelOpen=false');
     await expect(page.getByText('Analysis Alpha message')).toBeVisible();
 
     await page
@@ -499,7 +505,7 @@ test.describe('Analysis group feed navigation', () => {
       });
     });
 
-    await page.goto('/rer-analysis-neo?group=group-a');
+    await page.goto('/rer-analysis-neo?group=group-a&leftPanelOpen=true&filterPanelOpen=false');
     const counter = page.getByRole('button', {
       name: 'Перейти до першої або останньої сторінки',
     });
@@ -618,7 +624,7 @@ test.describe('Analysis group feed navigation', () => {
   }) => {
     await page.setViewportSize({ width: 390, height: 760 });
     await installGroupNavigationMocks(page);
-    await page.goto('/rer-analysis-neo');
+    await page.goto('/rer-analysis-neo?leftPanelOpen=false&filterPanelOpen=false');
     await expect(page.locator('[data-analysis-group-list]')).toHaveCount(0);
     await expect(page.locator('[data-analysis-current-group]')).toHaveCSS('width', '128px');
     const scroller = page.locator('[data-analysis-message-scroller]');
@@ -635,7 +641,7 @@ test.describe('Analysis group feed navigation', () => {
   test('opens separate mobile drawers for groups and filters', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 760 });
     await installGroupNavigationMocks(page);
-    await page.goto('/rer-analysis-neo?leftPanelOpen=false&group=group-b');
+    await page.goto('/rer-analysis-neo?leftPanelOpen=false&group=group-b&filterPanelOpen=false');
 
     await page.locator('[data-analysis-filter-toggle]').click();
     const filterPanel = page.locator('[data-analysis-filter-panel]:visible');
@@ -669,7 +675,7 @@ test.describe('Analysis group feed navigation', () => {
           },
         }),
       );
-      await page.goto('/rer-analysis-neo');
+      await page.goto('/rer-analysis-neo?leftPanelOpen=true&filterPanelOpen=false');
       if (!newestFirst) {
         await page.getByRole('checkbox', { name: 'спочатку нові' }).click();
       }
@@ -719,7 +725,7 @@ test.describe('Analysis group feed navigation', () => {
       await page.route('**/api/rer-importer/group-feed-state', (route) =>
         route.fulfill({ json: { groups: [groupState()] } }),
       );
-      await page.goto('/rer-analysis-neo');
+      await page.goto('/rer-analysis-neo?leftPanelOpen=true&filterPanelOpen=false');
 
       const groupList = page.locator('[data-analysis-group-list]:visible').first();
       await groupList.getByRole('button', { name: /Group Beta, 1 непрочитаних/ }).click();
@@ -767,7 +773,7 @@ test.describe('Analysis group feed navigation', () => {
       await stateGate;
       await route.fulfill({ json: { groups: [groupState()] } });
     });
-    await page.goto('/rer-analysis-neo?group=group-b');
+    await page.goto('/rer-analysis-neo?group=group-b&leftPanelOpen=true&filterPanelOpen=false');
     await expect(page.locator('[data-message-id="201"]')).toBeVisible();
     await page.waitForTimeout(250);
     releaseState();
@@ -817,7 +823,9 @@ test.describe('Analysis group feed navigation', () => {
       unreadCount = Math.min(unreadCount, 203 - request.cursor.message_id);
       return route.fulfill({ json: groupState() });
     });
-    await page.goto('/rer-analysis-neo?group=group-b&newestFirst=false');
+    await page.goto(
+      '/rer-analysis-neo?group=group-b&newestFirst=false&leftPanelOpen=true&filterPanelOpen=false',
+    );
     const groupList = page.locator('[data-analysis-group-list]:visible').first();
     await expect(
       groupList.getByRole('button', { name: /Group Beta, 2 непрочитаних/ }),

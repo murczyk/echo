@@ -154,7 +154,6 @@ export function useRerAnalysisNeoPage(
 ): AnalysisPageViewModel {
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
-  const isStackedFiltersLayout = useMediaQuery(theme.breakpoints.down('lg'));
   const initialRadioFeaturesAllowed = canUseRadioFeatures(authUserRoles);
   const [initialPanelQueryState] = useState(parseAnalysisPanelQueryStateFromWindow);
   const [initialNow] = useState(() => new Date());
@@ -204,10 +203,12 @@ export function useRerAnalysisNeoPage(
   const [selectedCenterTab, setCenterTabState] = useState<AnalysisCenterTab>('messages');
   const [error, setError] = useState<string | null>(null);
   const [directMessageError, setDirectMessageError] = useState<string | null>(null);
-  const [leftPanelOpen, setLeftPanelOpen] = useState(
-    () => initialPanelQueryState.leftPanelOpen ?? !isStackedFiltersLayout,
+  const [leftPanelOpenOverride, setLeftPanelOpen] = useState(
+    () => initialPanelQueryState.leftPanelOpen,
   );
-  const leftPanelTouchedRef = useRef(initialPanelQueryState.leftPanelOpen != null);
+  const leftPanelStateReady = leftPanelOpenOverride != null || systemSettingsStatus === 'success';
+  const leftPanelOpen =
+    leftPanelOpenOverride ?? (systemSettingsStatus === 'success' && hideNetworks);
   const [newestFirst, setNewestFirst] = useState(parseNewestFirstFromWindow);
   const [initialMessagesPageIndex] = useState(parseMessagesPageIndexFromWindow);
   const initialMessagesPageRestoredRef = useRef(initialMessagesPageIndex === 0);
@@ -460,7 +461,10 @@ export function useRerAnalysisNeoPage(
         fromDateTimeStr: period.fromDateTimeStr,
         toDateTimeStr: period.toDateTimeStr,
       }));
-      pushQueryStateToUrl(period, newestFirst, { leftPanelOpen, rightPanelOpen });
+      pushQueryStateToUrl(period, newestFirst, {
+        leftPanelOpen: leftPanelStateReady ? leftPanelOpen : null,
+        rightPanelOpen,
+      });
     };
     let periodAdjusted = false;
     const restorePeriod = () => {
@@ -1051,9 +1055,9 @@ export function useRerAnalysisNeoPage(
   }, []);
 
   useEffect(() => {
-    if (leftPanelTouchedRef.current) return;
-    setLeftPanelOpen(!isStackedFiltersLayout);
-  }, [isStackedFiltersLayout]);
+    if (systemSettingsStatus !== 'success') return;
+    setLeftPanelOpen((current) => current ?? hideNetworks);
+  }, [hideNetworks, systemSettingsStatus]);
 
   const showMapDeepLinkAppliedRef = useRef(false);
   useEffect(() => {
@@ -1194,8 +1198,18 @@ export function useRerAnalysisNeoPage(
 
   useEffect(() => {
     if (deviceAccess.status === 'loading' || deviceAccess.status === 'error') return;
-    pushQueryStateToUrl(effectiveQueryState, newestFirst, { leftPanelOpen, rightPanelOpen });
-  }, [deviceAccess.status, effectiveQueryState, leftPanelOpen, newestFirst, rightPanelOpen]);
+    pushQueryStateToUrl(effectiveQueryState, newestFirst, {
+      leftPanelOpen: leftPanelStateReady ? leftPanelOpen : null,
+      rightPanelOpen,
+    });
+  }, [
+    deviceAccess.status,
+    effectiveQueryState,
+    leftPanelOpen,
+    leftPanelStateReady,
+    newestFirst,
+    rightPanelOpen,
+  ]);
 
   const toggleUnitFromMap = useCallback(
     (unitName: string | null) => {
@@ -1344,11 +1358,9 @@ export function useRerAnalysisNeoPage(
   );
 
   const toggleLeftPanel = useCallback(() => {
-    leftPanelTouchedRef.current = true;
-    setLeftPanelOpen((current) => !current);
-  }, []);
+    setLeftPanelOpen((current) => !(current ?? leftPanelOpen));
+  }, [leftPanelOpen]);
   const openLeftPanel = useCallback(() => {
-    leftPanelTouchedRef.current = true;
     setLeftPanelOpen(true);
   }, []);
 
