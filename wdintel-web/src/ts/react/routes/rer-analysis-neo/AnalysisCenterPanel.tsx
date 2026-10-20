@@ -419,6 +419,7 @@ export function AnalysisCenterPanel({
             copiedFeedbackId={page.copiedFeedbackId}
             groupInfos={page.groupInfos}
             paginationLoading={page.messagesPaging}
+            showLoadingSkeleton={page.groupScopeTransitionPending || page.showMessagesLoading}
             isLoading={
               page.groupScopeTransitionPending ||
               (page.hasLoadedInitialMessages && page.messagesLoading)

@@ -49,6 +49,7 @@ type Props = {
   groupInfos: Record<string, SignalGroupEntry>;
   paginationLoading: boolean;
   isLoading?: boolean;
+  showLoadingSkeleton?: boolean;
   newestFirst: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
@@ -122,6 +123,7 @@ function AnalysisMessagesPaneComponent({
   groupInfos,
   paginationLoading,
   isLoading = false,
+  showLoadingSkeleton = true,
   newestFirst,
   messageComments,
   messages,
@@ -341,6 +343,7 @@ function AnalysisMessagesPaneComponent({
         getMessageId={getMessageId}
         editorHighlightedMessageId={editorHighlightedMessageId}
         isLoading={isLoading}
+        showLoadingSkeleton={showLoadingSkeleton}
         loadingAbove={feedLoadingAbove || Boolean(directMessageNavigation?.contextLoading)}
         loadingBelow={
           feedLoadingBelow ||

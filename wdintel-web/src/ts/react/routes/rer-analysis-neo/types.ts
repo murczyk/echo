@@ -167,6 +167,7 @@ export type AnalysisMessagePageCursor = {
 
 export type AnalysisReloadOptions = {
   preserveMessagePage?: boolean;
+  showMessagesLoading?: boolean;
   messagePageIndex?: number;
   refreshMessageCounts?: boolean;
 };
@@ -251,6 +252,7 @@ export type AnalysisPageState = {
   botTagAction: MessageCardBotTagAction | null;
   messageComments: Record<number, MessageComment[]>;
   messagesLoading: boolean;
+  showMessagesLoading: boolean;
   messagesOverallCount: number | null;
   messagesPaging: boolean;
   messagesTotalCount: number | null;

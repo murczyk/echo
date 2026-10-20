@@ -233,6 +233,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
             ? invalidateMessagePageRequests
             : invalidateMessagePaging,
           includeDefaultFilterSections: false,
+          showMessagesLoading: options.showMessagesLoading,
           messagePageCursor,
           preserveMessageTailExhaustion:
             preserveMessagePage &&

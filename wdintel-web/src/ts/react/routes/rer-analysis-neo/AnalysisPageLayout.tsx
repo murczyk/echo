@@ -541,7 +541,7 @@ export function RerAnalysisNeoPage({
                     }}
                     onCreated={async () => {
                       if (!page.reportSource) page.dismissUnreadBoundary();
-                      page.reload({ preserveMessagePage: true });
+                      page.reload({ preserveMessagePage: true, showMessagesLoading: false });
                       notify({
                         message: page.reportSource
                           ? 'Розвіддонесення успішно створено.'

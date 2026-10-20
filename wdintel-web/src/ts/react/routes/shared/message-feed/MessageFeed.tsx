@@ -39,6 +39,7 @@ export type MessageFeedProps<T> = Omit<MessageFeedViewportProps<T>, 'scroll'> & 
   scrollOptions: MessageFeedScrollOptions;
   newestNavigation?: MessageFeedNewestNavigation;
   isLoading?: boolean;
+  showLoadingSkeleton?: boolean;
   loadingAbove?: boolean;
   loadingBelow?: boolean;
   hasMoreAbove?: boolean;
@@ -56,6 +57,7 @@ function MessageFeedInner<T>(
     hasMoreAbove = false,
     hasMoreBelow = false,
     isLoading = false,
+    showLoadingSkeleton = true,
     skeletonCount = 3,
     editorHighlightedMessageId = null,
     items,
@@ -74,6 +76,7 @@ function MessageFeedInner<T>(
     items,
     children: viewportProps.children,
     isLoading,
+    showLoadingSkeleton,
     loadingAbove,
     loadingBelow,
     hasMoreAbove,
@@ -100,6 +103,7 @@ function MessageFeedInner<T>(
       shown.items === items &&
       shown.children === viewportProps.children &&
       shown.isLoading === isLoading &&
+      shown.showLoadingSkeleton === showLoadingSkeleton &&
       shown.loadingAbove === loadingAbove &&
       shown.loadingBelow === loadingBelow &&
       shown.hasMoreAbove === hasMoreAbove &&
@@ -127,6 +131,7 @@ function MessageFeedInner<T>(
     items,
     viewportProps.children,
     isLoading,
+    showLoadingSkeleton,
     loadingAbove,
     loadingBelow,
     hasMoreAbove,
@@ -243,8 +248,10 @@ function MessageFeedInner<T>(
       scroll.scrollToItem,
     ],
   );
-  const showInitialSkeleton = shown.isLoading && visibleItems.length === 0;
-  const showRefreshSkeleton = shown.isLoading && visibleItems.length > 0;
+  const showInitialSkeleton =
+    shown.showLoadingSkeleton && shown.isLoading && visibleItems.length === 0;
+  const showRefreshSkeleton =
+    shown.showLoadingSkeleton && shown.isLoading && visibleItems.length > 0;
   const showAboveSkeleton = visibleItems.length > 0 && shown.hasMoreAbove;
   const showBelowSkeleton = visibleItems.length > 0 && shown.hasMoreBelow;
   return (

@@ -217,6 +217,7 @@ export function useRerAnalysisNeoPage(
   const [messageViewportPreservationKey, setMessageViewportPreservationKey] = useState(0);
   const [messageEdgeLoadRetryKey, setMessageEdgeLoadRetryKey] = useState(0);
   const [messageViewportPreserving, setMessageViewportPreserving] = useState(false);
+  const [showMessagesLoading, setShowMessagesLoading] = useState(true);
   const messageViewportPreservationRequestRef = useRef(0);
   const messageViewportCaptureRef = useRef<(() => void) | null>(null);
   const setMessageViewportCapture = useCallback((capture: (() => void) | null) => {
@@ -770,6 +771,7 @@ export function useRerAnalysisNeoPage(
     (options: Parameters<typeof data.reload>[0] = {}) => {
       const requestId = messageViewportPreservationRequestRef.current + 1;
       messageViewportPreservationRequestRef.current = requestId;
+      setShowMessagesLoading(options.showMessagesLoading !== false);
       const preserveMessagePage = options.preserveMessagePage === true;
       if (!preserveMessagePage) {
         setMessageViewportPreserving(false);
@@ -783,6 +785,7 @@ export function useRerAnalysisNeoPage(
         : options;
       void Promise.resolve(data.reload(reloadOptions)).finally(() => {
         if (messageViewportPreservationRequestRef.current === requestId) {
+          setShowMessagesLoading(true);
           if (preserveMessagePage) setMessageViewportPreserving(false);
           setMessageEdgeLoadRetryKey((current) => current + 1);
         }
@@ -1535,6 +1538,7 @@ export function useRerAnalysisNeoPage(
     messageActionLoading: data.messageActionLoading,
     botTagAction: data.botTagAction,
     messagesLoading: targetMessageLoading || data.messagesLoading,
+    showMessagesLoading,
     messagesOverallCount: data.messagesOverallCount,
     messagesPaging: data.messagesPaging,
     messagesTotalCount: directMessageNavigation?.totalCount ?? data.messagesTotalCount,
