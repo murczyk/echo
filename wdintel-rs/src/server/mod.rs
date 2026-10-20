@@ -945,6 +945,15 @@ fn spawn_background_workers(
         .await;
     });
     if env.file_registry_db.is_some() {
+        let archive_env = env.clone();
+        let archive_cancel = cancel_token.clone();
+        spawn_named_worker("device_file_archive", bg_set, async move {
+            crate::devices::files::archive::run_nofail(
+                archive_env,
+                archive_cancel,
+            )
+            .await;
+        });
         spawn_device_file_preview_workers(
             bg_set,
             env.clone(),
@@ -1418,6 +1427,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::files::sync_session_items)
             .service(crate::devices::files::content::routes())
             .service(crate::devices::files::preview::routes())
+            .service(crate::devices::files::archive::routes())
             .service(crate::devices::analytics::list_tags)
             .service(crate::devices::analytics::create_tag)
             .service(crate::devices::analytics::update_tag)

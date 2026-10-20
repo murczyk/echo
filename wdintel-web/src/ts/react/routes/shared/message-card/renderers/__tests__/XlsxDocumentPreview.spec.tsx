@@ -107,7 +107,7 @@ describe('XlsxDocumentPreview', () => {
 
     expect(runWorkerTask).toHaveBeenCalledWith(
       expect.any(Function),
-      { buffer: arrayBuffer },
+      { buffer: arrayBuffer, maxBytes: 10 * 1024 * 1024 },
       expect.any(AbortSignal),
       [arrayBuffer],
     );

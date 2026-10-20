@@ -23,7 +23,10 @@ use super::{
     finalizer, protocol, repository, runtime_for_test, worker,
     DeviceFileContentRuntime,
 };
-use crate::devices::config::DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING;
+use crate::devices::config::{
+    DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING,
+    DEVICE_FILE_PREVIEW_GEODATA_CONVERTER_VERSION,
+};
 use crate::devices::ROLE_CYBER;
 use crate::entities::{device, login, organism, system_settings};
 use crate::file_registry::entities::{
@@ -32,6 +35,9 @@ use crate::file_registry::entities::{
 };
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::types::Env;
+
+#[path = "archive_access_tests.rs"]
+mod archive_access_tests;
 
 async fn finalize(
     env: &Env,
@@ -159,6 +165,7 @@ impl Fixture {
         crate::file_registry::test_support::insert_entry(
             self.db(),
             file_entry::ActiveModel {
+                archive_file_id: sea_orm::ActiveValue::NotSet,
                 id: Set(id),
                 device_id: Set(self.device.id),
                 parent_id: Set(Some(self.root.id)),
@@ -271,6 +278,9 @@ macro_rules! cookie {
         response.response().cookies().next().unwrap().into_owned()
     }};
 }
+
+#[path = "../archive/access_tests.rs"]
+mod archive_http_access_tests;
 
 #[path = "reuse/acceptance_tests.rs"]
 mod reuse_tests;
@@ -2059,9 +2069,10 @@ async fn acceptance_terminal_metrics_count_only_committed_transitions() {
                     .unwrap()
                     .unwrap()
                     .into_active_model();
-            let source_sequence = *revision.source_sequence.as_ref() + 1;
+            let source_sequence =
+                revision.source_sequence.as_ref().unwrap() + 1;
             revision.revision = Set(upload.revision + 1);
-            revision.source_sequence = Set(source_sequence);
+            revision.source_sequence = Set(Some(source_sequence));
             revision.insert(fixture.db()).await.unwrap();
             file_device_source_state::ActiveModel {
                 id: Set(file.device_id),
@@ -2071,6 +2082,7 @@ async fn acceptance_terminal_metrics_count_only_committed_transitions() {
             .await
             .unwrap();
             file_entry::ActiveModel {
+                archive_file_id: sea_orm::ActiveValue::NotSet,
                 id: Set(file.id),
                 revision: Set(Some(upload.revision + 1)),
                 ..Default::default()
@@ -3268,8 +3280,8 @@ async fn acceptance_historical_endpoint_matrix_rechecks_access_and_source() {
     let result = b"exact derivative bytes";
     let result_hash = Sha256::digest(result).to_vec();
     fixture.db().execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,
-        "insert into file_preview (generation,device_id,file_id,revision,source_file_id,source_revision,kind,converter_version,is_current,state,run_id,attempt,source_object_key,source_sha256,source_size_bytes,source_is_encrypted,source_name,source_extension,not_before,output_object_key,retryable,created_at,updated_at,result_size_bytes,result_sha256,result_encrypted,expires_at,cleanup_after) select $1,r.device_id,r.id,r.revision,c.file_id,c.revision,'geodata_kmz',1,true,'ready',$1,1,c.object_key,c.source_sha256,c.source_size_bytes,c.is_encrypted,r.name,r.extension,now(),$2,false,now(),now(),$3,$4,true,now()+interval '1 day',now()+interval '1 day' from file_revision r join file_content c on c.file_id=r.id and c.revision=r.revision where r.id=$5 and r.revision=1",
-        [generation.into(), output_key.clone().into(), (result.len() as i64).into(), result_hash.into(), geodata.id.into()])).await.unwrap();
+        "insert into file_preview (generation,device_id,file_id,revision,source_file_id,source_revision,kind,converter_version,is_current,state,run_id,attempt,source_object_key,source_sha256,source_size_bytes,source_is_encrypted,source_name,source_extension,not_before,output_object_key,retryable,created_at,updated_at,result_size_bytes,result_sha256,result_encrypted,expires_at,cleanup_after) select $1,r.device_id,r.id,r.revision,c.file_id,c.revision,'geodata_kmz',$6,true,'ready',$1,1,c.object_key,c.source_sha256,c.source_size_bytes,c.is_encrypted,r.name,r.extension,now(),$2,false,now(),now(),$3,$4,true,now()+interval '1 day',now()+interval '1 day' from file_revision r join file_content c on c.file_id=r.id and c.revision=r.revision where r.id=$5 and r.revision=1",
+        [generation.into(), output_key.clone().into(), (result.len() as i64).into(), result_hash.into(), geodata.id.into(), DEVICE_FILE_PREVIEW_GEODATA_CONVERTER_VERSION.into()])).await.unwrap();
     crate::storage::upload_device_content_encrypted(
         &fixture.runtime.storage,
         &fixture.runtime.storage_config,

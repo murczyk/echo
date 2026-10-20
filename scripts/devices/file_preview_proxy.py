@@ -7,12 +7,50 @@ import json
 import select
 import socket
 import sys
+import time
 from pathlib import Path
+from urllib.parse import urlsplit
+from uuid import UUID, uuid4
 
 HOP_HEADERS = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailer", "transfer-encoding", "upgrade",
 }
+
+
+def native_download_probe(root, method, target):
+    url = urlsplit(target)
+    if method != "GET" or not url.path.endswith("/content"):
+        return lambda _status: None
+    control = root / "native-download-probe.json"
+    try:
+        probe = json.loads(control.read_text())
+    except FileNotFoundError:
+        return lambda _status: None
+    if probe["path"] != url.path:
+        return lambda _status: None
+    token = str(UUID(probe["id"]))
+    event = root / f"native-download-{token}-{uuid4()}.json"
+
+    def record(status):
+        temporary = event.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"method": method, "url": target, "status": status}))
+        temporary.chmod(0o600)
+        temporary.replace(event)
+
+    record(None)
+    deadline = time.monotonic() + 30
+    while probe.get("hold"):
+        if time.monotonic() >= deadline:
+            raise OSError("Native download probe was not released")
+        time.sleep(0.025)
+        try:
+            probe = json.loads(control.read_text())
+        except FileNotFoundError:
+            break
+        if probe["id"] != token:
+            break
+    return record
 
 
 def serve(root):
@@ -99,9 +137,11 @@ def serve(root):
                     body.extend(chunk)
                 headers = {key: value for key, value in self.headers.items() if key.lower() not in HOP_HEADERS}
                 headers["Connection"] = "close"
+                record_download = native_download_probe(root, self.command, self.path)
                 upstream = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
                 upstream.request(self.command, self.path, body, headers)
                 response = upstream.getresponse()
+                record_download(response.status)
                 self.send_response(response.status)
                 for key, value in response.getheaders():
                     if key.lower() not in HOP_HEADERS:

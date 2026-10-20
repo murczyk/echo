@@ -102,6 +102,9 @@ fn message(code: &str) -> &'static str {
             "Спробуйте підготувати перегляд пізніше"
         }
         "generation_conflict" => "Стан перегляду змінився",
+        "archive_not_ready" => {
+            "Архів ще не підготовлено для перегляду вкладень"
+        }
         "not_found" => "Файл не знайдено",
         "invalid_request" => "Некоректний запит",
         _ => "Підготовка перегляду тимчасово недоступна",
@@ -283,6 +286,11 @@ async fn status_inner(
     load_published_content(env, &login, device, file, revision)
         .await
         .map_err(|error| error.c(h!()))?;
+    let (device, file, revision) =
+        persisted_selection(env, &login, (device, file, revision), members)
+            .await
+            .map_err(|error| error.c(h!()))?;
+    let members = None;
     let db = env
         .file_registry_db()
         .map_err(|error| error.c(h!()))?
@@ -357,6 +365,11 @@ async fn prepare_inner(
     let (device, file, revision) =
         path(selected).map_err(|error| error.c(h!()))?;
     let login = login(env, identity).await.map_err(|error| error.c(h!()))?;
+    let (device, file, revision) =
+        persisted_selection(env, &login, (device, file, revision), members)
+            .await
+            .map_err(|error| error.c(h!()))?;
+    let members = None;
     let source = load_published_content(env, &login, device, file, revision)
         .await
         .map_err(|error| error.c(h!()))?;
@@ -463,6 +476,11 @@ async fn content_inner(
     load_published_content(env, &login, device, file, revision)
         .await
         .map_err(|error| error.c(h!()))?;
+    let (device, file, revision) =
+        persisted_selection(env, &login, (device, file, revision), members)
+            .await
+            .map_err(|error| error.c(h!()))?;
+    let members = None;
     let db = env
         .file_registry_db()
         .map_err(|error| error.c(h!()))?
@@ -544,4 +562,50 @@ async fn content_inner(
         return Err(reject(StatusCode::CONFLICT, "generation_conflict"));
     }
     Ok(response.body(bytes))
+}
+
+async fn persisted_selection(
+    env: &Env,
+    login: &crate::entities::login::Model,
+    target: (Uuid, Uuid, i64),
+    members: Option<&str>,
+) -> Result<(Uuid, Uuid, i64), Failure> {
+    let Some(members) = members else {
+        return Ok(target);
+    };
+    load_published_content(env, login, target.0, target.1, target.2)
+        .await
+        .map_err(|error| error.c(h!()))?;
+    let ordinals = super::archive::indices(members)
+        .map_err(database_error)
+        .map_err(|error| error.c(h!()))?;
+    let target = super::super::archive::legacy::resolve(
+        env.file_registry_db()
+            .map_err(|error| error.c(h!()))?
+            .connection(),
+        super::super::archive::types::DeviceFileContentRef {
+            device_id: target.0,
+            file_id: target.1,
+            revision: target.2,
+        },
+        &ordinals,
+    )
+    .await
+    .map_err(|error| {
+        if let Some(rejection) =
+            error.downcast_ref::<super::super::archive::query::Rejection>()
+        {
+            match rejection.0 {
+                "archive_not_ready" => {
+                    reject(StatusCode::CONFLICT, "archive_not_ready")
+                }
+                "not_found" => reject(StatusCode::NOT_FOUND, "not_found"),
+                _ => reject(StatusCode::BAD_REQUEST, "invalid_request"),
+            }
+        } else {
+            database_error(error)
+        }
+    })
+    .map_err(|error| error.c(h!()))?;
+    Ok((target.device_id, target.file_id, target.revision))
 }

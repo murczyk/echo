@@ -1,8 +1,9 @@
+import type { DeviceFileSelection } from '../../device-files/device-file-archive';
 import type { DeviceAudioSettingsState } from '../use-device-audio-settings';
 import { Box, Paper, Tab, Tabs, CircularProgress } from '@mui/material';
 import type { ReactNode } from 'react';
 
-import type { AiAgentFileCitation, DeviceFileTreeEntry } from '../../../../../Bindings';
+import type { AiAgentFileCitation } from '../../../../../Bindings';
 import { DeviceFileContentPane } from '../../device-files';
 import { DeviceFileJournal } from '../../device-files/components/DeviceFileJournal';
 import type { DeviceAnalyticsTagFilter } from '../../device-files/types';
@@ -25,6 +26,7 @@ export function DeviceDetailsTabPanel({
   mobile = false,
   activeTab,
   selectedFile,
+  onSelectFile,
   revisionPinned = false,
   citation,
   journal,
@@ -46,7 +48,8 @@ export function DeviceDetailsTabPanel({
   mobileFiles?: ReactNode;
   mobile?: boolean;
   activeTab: DeviceDetailsTab;
-  selectedFile: DeviceFileTreeEntry | null;
+  selectedFile: DeviceFileSelection | null;
+  onSelectFile?: (file: DeviceFileSelection) => void;
   revisionPinned?: boolean;
   citation?: AiAgentFileCitation;
   journal: DeviceFileJournalState;
@@ -171,6 +174,7 @@ export function DeviceDetailsTabPanel({
               <DeviceFileContentPane
                 deviceId={deviceId}
                 file={selectedFile ?? null}
+                onSelectFile={onSelectFile}
                 revisionPinned={revisionPinned}
                 citation={citation}
                 sessionScoped={syncId !== null}

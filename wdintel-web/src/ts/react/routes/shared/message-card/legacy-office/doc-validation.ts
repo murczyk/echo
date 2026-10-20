@@ -65,6 +65,7 @@ function validatePieceTable(
 export function validateWordDocument(
   wordDocument: Uint8Array,
   table: Uint8Array,
+  maxBytes = LEGACY_OFFICE_MAX_FILE_BYTES,
 ): '0Table' | '1Table' {
   if (wordDocument.byteLength < FIB_BASE_LENGTH) reject();
   const view = new DataView(wordDocument.buffer, wordDocument.byteOffset, wordDocument.byteLength);
@@ -105,7 +106,7 @@ export function validateWordDocument(
     lcbClx === 0 ||
     fcClx > table.byteLength ||
     lcbClx > table.byteLength - fcClx ||
-    wordDocument.byteLength > LEGACY_OFFICE_MAX_FILE_BYTES
+    wordDocument.byteLength > maxBytes
   )
     reject();
   validatePieceTable(wordDocument, table, fcClx, lcbClx, ccpText);

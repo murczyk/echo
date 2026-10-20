@@ -21,12 +21,14 @@ export function DocxDocumentPreview({
   href,
   zoom,
   sizeBytes,
+  maxBytes = MAX_DOCX_FILE_BYTES,
   onError,
   signal,
 }: {
   href: string;
   zoom: number;
   sizeBytes?: number | null;
+  maxBytes?: number;
   onError?: (error: unknown) => void;
   signal?: AbortSignal;
 }) {
@@ -51,22 +53,22 @@ export function DocxDocumentPreview({
       if (abortController.signal.aborted) return;
 
       try {
-        if (sizeBytes != null && sizeBytes > MAX_DOCX_FILE_BYTES) {
+        if (sizeBytes != null && sizeBytes > maxBytes) {
           throw new Error('DOCX_FILE_TOO_LARGE');
         }
 
         const { buffer, contentLength } = await fetchCachedDocumentResponse(
           href,
-          MAX_DOCX_FILE_BYTES,
+          maxBytes,
           'DOCX_FILE_TOO_LARGE',
           abortController.signal,
         );
 
-        if (contentLength != null && contentLength > MAX_DOCX_FILE_BYTES) {
+        if (contentLength != null && contentLength > maxBytes) {
           throw new Error('DOCX_FILE_TOO_LARGE');
         }
 
-        if (buffer.byteLength > MAX_DOCX_FILE_BYTES) {
+        if (buffer.byteLength > maxBytes) {
           throw new Error('DOCX_FILE_TOO_LARGE');
         }
         const result = await runWorkerTask<{ buffer: ArrayBuffer }, DocxPreviewResult>(
@@ -97,7 +99,7 @@ export function DocxDocumentPreview({
       signal?.removeEventListener('abort', abort);
       abortController.abort();
     };
-  }, [href, sizeBytes, onError, signal]);
+  }, [href, sizeBytes, maxBytes, onError, signal]);
 
   const srcDoc = useMemo(
     () => buildDocxHtmlDocument(html, pageSize, zoom, theme.palette.mode),

@@ -40,7 +40,7 @@ pub(super) async fn retain_upload_best_effort(
                 .c(h!())?
                 .c(h!())?;
         ensure!(
-            content.upload_id == upload.id
+            content.upload_id == Some(upload.id)
                 && content.object_key == upload.object_key
                 && content.source_size_bytes as u64 == upload.upload_length
                 && content.source_sha256 == upload.expected_sha256,

@@ -42,11 +42,13 @@ export function MapFileSurface({
 export async function loadMapFilePreview({
   href,
   sizeBytes,
+  maxBytes = MAX_KMZ_PREVIEW_SOURCE_BYTES,
   format,
   signal,
 }: {
   href: string;
   sizeBytes: number | null;
+  maxBytes?: number;
   format: 'kml' | 'kmz';
   signal: AbortSignal;
 }) {
@@ -60,18 +62,20 @@ export async function loadMapFilePreview({
     controller.abort();
   }, 20_000);
   try {
-    if (sizeBytes != null && sizeBytes > MAX_KMZ_PREVIEW_SOURCE_BYTES)
-      throw new Error('KMZ_SOURCE_TOO_LARGE');
+    if (sizeBytes != null && sizeBytes > maxBytes) throw new Error('KMZ_SOURCE_TOO_LARGE');
     const { buffer } = await fetchCachedDocumentResponse(
       href,
-      MAX_KMZ_PREVIEW_SOURCE_BYTES,
+      maxBytes,
       'KMZ_SOURCE_TOO_LARGE',
       controller.signal,
     );
-    return await runWorkerTask<{ buffer: ArrayBuffer; format: 'kml' | 'kmz' }, KmzPreview>(
+    return await runWorkerTask<
+      { buffer: ArrayBuffer; format: 'kml' | 'kmz'; maxBytes: number },
+      KmzPreview
+    >(
       () =>
         new Worker(new URL('../kmz/kmz-preview.worker.ts', import.meta.url), { type: 'module' }),
-      { buffer, format },
+      { buffer, format, maxBytes },
       controller.signal,
       [buffer],
       20_000,
@@ -107,6 +111,7 @@ export function MapFilePreview({
       void loadMapFilePreview({
         href: source.originalHref,
         sizeBytes: source.sizeBytes,
+        maxBytes: source.maxPreviewBytes,
         format,
         signal: controller.signal,
       })
@@ -118,7 +123,9 @@ export function MapFilePreview({
             onError(
               error instanceof Error && !(error instanceof HttpRequestError)
                 ? new FilePreviewRenderError(
-                    kmzPreviewErrorCopy(error.message),
+                    error.message === 'KMZ_SOURCE_TOO_LARGE' && source.maxPreviewBytes != null
+                      ? 'Файл завеликий для попереднього перегляду. Максимум: 1 ГБ.'
+                      : kmzPreviewErrorCopy(error.message),
                     /TIMEOUT/.test(error.message),
                   )
                 : error,
@@ -130,7 +137,16 @@ export function MapFilePreview({
       controller.abort();
       signal.removeEventListener('abort', abort);
     };
-  }, [source.key, source.originalHref, source.sizeBytes, format, signal, onError, isCurrent]);
+  }, [
+    source.key,
+    source.originalHref,
+    source.sizeBytes,
+    source.maxPreviewBytes,
+    format,
+    signal,
+    onError,
+    isCurrent,
+  ]);
   if (!preview) return <CircularProgress aria-label="Читання мапи" />;
   if (!hasMapGeometry(preview))
     return <p className="p-echo-lg">У файлі немає геометрій для попереднього перегляду.</p>;

@@ -46,7 +46,7 @@ async fn legacy_snapshot(connection: &DatabaseConnection) -> Vec<String> {
         let rows = connection
             .query_all_raw(Statement::from_string(
                 DbBackend::Postgres,
-                format!("select row_to_json(t)::text as row from {table} t order by id"),
+                format!("select (to_jsonb(t)-'origin_archive_id'-'is_archive'-'archive_file_id'-'archive_relative_path'-'archive_member_index')::text as row from {table} t order by id"),
             ))
             .await
             .unwrap();

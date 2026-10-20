@@ -70,6 +70,7 @@ pub mod tests {
                 .execute_unprepared(
                     r#"
                     truncate table
+                        public.file_archive,
                         public.device_audio_asr_setting,
                         public.device_audio,
                         public.device_audio_ingest,

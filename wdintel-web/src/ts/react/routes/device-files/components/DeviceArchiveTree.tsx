@@ -1,32 +1,44 @@
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import { CircularProgress, Collapse, ListItemButton } from '@mui/material';
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { AUTH_UNAUTHORIZED_EVENT, emitUnauthorizedEvent } from '../../../auth-redirect';
+import { CircularProgress, Collapse } from '@mui/material';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import type { BrowseDeviceFilesReq, DeviceFileTreeEntry } from '../../../../../Bindings';
+import { AUTH_UNAUTHORIZED_EVENT } from '../../../auth-redirect';
 import { FORCED_NAVIGATION_EVENT } from '../../../../browser/navigation-guard';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
-import { PowerIconButton } from '../../../components/PowerIconButton';
 import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import { HttpRequestError, isAbortError } from '../../../services/api/client';
-import { toDeviceFileLoadError } from '../helpers';
+import { browseDeviceFiles } from '../../../services/api/devices';
+import {
+  appendDeviceFileEntries,
+  buildBrowseDeviceFilesReq,
+  toDeviceFileLoadError,
+} from '../helpers';
+import type { DeviceFileTreeBranch } from '../use-device-file-tree';
 import {
   archiveMemberSelection,
   isDeviceArchive,
-  listDeviceArchive,
   type DeviceFileSelection,
 } from '../device-file-archive';
-import type { ZipEntry } from '../../shared/message-card/zip-preview.types';
+import { useDeviceArchive } from '../use-device-archive';
+import { DeviceFileTreePage } from './DeviceFileTreePage';
+import { DeviceFileTreeRow } from './DeviceFileTreeRow';
 
+type Filters = Pick<BrowseDeviceFilesReq, 'tagIds' | 'tagMatch' | 'untagged' | 'hasContent'>;
 type ArchiveTreeProps = {
   deviceId: string;
   file: DeviceFileSelection;
   depth: number;
   selectedEntryId?: string;
+  expandedEntryIds?: Set<string>;
+  revealedBranches?: Record<string, DeviceFileTreeBranch>;
   onSelectFile: (file: DeviceFileSelection) => void;
+  onAccessDenied?: () => void;
+  initialExpanded?: boolean;
+  showStatus?: boolean;
+  filters?: Filters;
 };
 
 function ArchiveFolder({
@@ -38,6 +50,8 @@ function ArchiveFolder({
   entryId,
   selected = false,
   children,
+  failed = false,
+  hasContent,
 }: {
   name: string;
   depth: number;
@@ -47,212 +61,330 @@ function ArchiveFolder({
   entryId?: string;
   selected?: boolean;
   children: ReactNode;
+  failed?: boolean;
+  hasContent?: boolean;
 }) {
-  const row = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    if (selected) row.current?.scrollIntoView({ block: 'nearest' });
-  }, [selected]);
+  const childrenId = useId();
   return (
-    <li className="min-w-0" style={{ '--device-tree-depth': depth } as CSSProperties}>
-      <div
-        className="flex min-w-0 items-center pr-echo-xs max-echo-lg:pl-[min(calc(var(--device-tree-depth)*8px),32px)]!"
-        style={{ paddingLeft: depth * 16 }}
-      >
-        <PowerIconButton
-          size="small"
-          aria-label={`${expanded ? 'Згорнути' : 'Розгорнути'} каталог ${name}`}
-          aria-expanded={expanded}
-          onClick={onToggle}
-        >
-          {expanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
-        </PowerIconButton>
-        <ListItemButton
-          ref={row}
-          component="button"
-          data-testid={entryId ? `device-file-${entryId}` : undefined}
-          selected={selected}
-          aria-current={selected ? 'true' : undefined}
-          aria-label={name}
-          aria-expanded={expanded}
-          onClick={onSelect ?? onToggle}
-          className="min-w-0 gap-echo-sm rounded-echo-sm!"
-        >
-          {expanded ? (
-            <FolderOpenOutlinedIcon fontSize="small" />
+    <li className="min-w-0">
+      <DeviceFileTreeRow
+        name={name}
+        label={name}
+        depth={depth}
+        entryId={entryId}
+        selected={selected}
+        hasContent={hasContent}
+        expanded={expanded}
+        childrenId={childrenId}
+        toggleLabel={`${expanded ? 'Згорнути' : 'Розгорнути'} ${failed || hasContent === false ? 'файл' : 'каталог'} ${name}`}
+        onToggle={onToggle}
+        onClick={onSelect ?? onToggle}
+        icon={
+          failed || hasContent === false ? (
+            <InsertDriveFileOutlinedIcon />
+          ) : expanded ? (
+            <FolderOpenOutlinedIcon />
           ) : (
-            <FolderOutlinedIcon fontSize="small" />
-          )}
-          <span className="truncate text-echo-sm" title={name}>
-            {name}
-          </span>
-        </ListItemButton>
-      </div>
-      <Collapse in={expanded} unmountOnExit>
+            <FolderOutlinedIcon />
+          )
+        }
+      />
+      <Collapse in={expanded} unmountOnExit id={childrenId}>
         <ul className="m-0 list-none p-0">{children}</ul>
       </Collapse>
     </li>
   );
 }
 
-function ArchiveDirectory({
-  entries,
-  path,
-  name,
-  ...props
-}: ArchiveTreeProps & { entries: ZipEntry[]; path: string; name: string }) {
-  const [expanded, setExpanded] = useState(false);
+function ArchiveDirectory(
+  props: ArchiveTreeProps & { directory: DeviceFileTreeEntry; archiveId: string },
+) {
+  const revealed = props.expandedEntryIds?.has(props.directory.entryId) ?? false;
+  const [expanded, setExpanded] = useState(revealed);
+  useEffect(() => {
+    if (revealed) setExpanded(true);
+  }, [revealed, props.selectedEntryId]);
   return (
     <ArchiveFolder
-      name={name}
+      name={props.directory.name}
       depth={props.depth}
       expanded={expanded}
       onToggle={() => setExpanded((value) => !value)}
     >
-      <ArchiveChildren {...props} depth={props.depth + 1} entries={entries} path={path} />
+      <ArchiveChildren {...props} depth={props.depth + 1} directoryId={props.directory.entryId} />
     </ArchiveFolder>
   );
 }
 
-function ArchiveChildren({
-  entries,
-  path,
-  ...props
-}: ArchiveTreeProps & { entries: ZipEntry[]; path: string }) {
-  return (
-    <>
-      {entries
-        .filter((entry) => {
-          const value = entry.path.replace(/\/$/, '');
-          return value.slice(0, value.lastIndexOf('/') + 1) === path;
-        })
-        .map((entry) => {
-          const name = entry.path.replace(/\/$/, '').split('/').at(-1)!;
-          if (entry.directory)
-            return (
-              <ArchiveDirectory
-                key={entry.index}
-                {...props}
-                entries={entries}
-                path={entry.path}
-                name={name}
-              />
-            );
-          const file = archiveMemberSelection(props.file, entry);
-          if (isDeviceArchive(file) && !entry.unavailableReason)
-            return <DeviceArchiveTree key={entry.index} {...props} file={file} />;
-          const selected = props.selectedEntryId === file.entryId;
-          return (
-            <li
-              key={entry.index}
-              className="min-w-0 max-echo-lg:pl-[min(calc(var(--device-tree-depth)*8px+8px),40px)]!"
-              style={
-                {
-                  paddingLeft: props.depth * 16 + 8,
-                  '--device-tree-depth': props.depth,
-                } as CSSProperties
-              }
-            >
-              <ListItemButton
-                component="button"
-                aria-label={name}
-                aria-pressed={selected}
-                selected={selected}
-                disabled={Boolean(entry.unavailableReason)}
-                title={entry.unavailableReason ?? name}
-                onClick={() => props.onSelectFile(file)}
-                className="min-w-0 gap-echo-sm rounded-echo-sm!"
-              >
-                <span className="w-9 shrink-0 max-echo-lg:hidden" />
-                <InsertDriveFileOutlinedIcon
-                  fontSize="small"
-                  color={selected ? 'primary' : 'action'}
-                />
-                <span className="truncate text-echo-sm">{name}</span>
-              </ListItemButton>
-              {entry.unavailableReason && (
-                <p className="m-0 px-echo-sm text-echo-xs text-echo-text-muted">
-                  {entry.unavailableReason}
-                </p>
-              )}
-            </li>
-          );
-        })}
-    </>
-  );
-}
-
-export function DeviceArchiveTree(props: ArchiveTreeProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  const [entries, setEntries] = useState<ZipEntry[] | null>(null);
+function ArchiveChildren(
+  props: ArchiveTreeProps & { archiveId: string; directoryId: string | null },
+) {
+  const [entries, setEntries] = useState<DeviceFileTreeEntry[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const active = useRef<AbortController | null>(null);
+  const lastCursor = useRef<string | null>(null);
+  const authorizedScope = useRef<string | null>(null);
+  const revealed = props.revealedBranches?.[props.directoryId ?? props.file.fileId!];
+  const revealedEntries =
+    revealed?.archiveRevision === props.file.revision &&
+    !revealed.error &&
+    !revealed.loading &&
+    !revealed.refreshing
+      ? revealed.entries.filter(
+          (entry) =>
+            entry.revision === props.file.revision &&
+            entry.archiveOrigin?.archiveId === props.archiveId,
+        )
+      : [];
   const { notify } = useOptionalPowerSnackbar();
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
-  const memberKey = props.file.archiveMember?.members.map((entry) => entry.index).join('/');
-  useEffect(() => {
-    if (!expanded) return;
+  const scope = JSON.stringify([
+    props.deviceId,
+    props.file.fileId,
+    props.file.revision,
+    props.archiveId,
+    props.directoryId,
+    props.filters,
+  ]);
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const load = async (after: string | null) => {
+    active.current?.abort();
     const controller = new AbortController();
+    active.current = controller;
+    lastCursor.current = after;
+    setLoading(true);
+    setError(null);
+    try {
+      const page = await browseDeviceFiles(
+        {
+          ...buildBrowseDeviceFilesReq({
+            deviceId: props.deviceId,
+            parentEntryId: props.directoryId ?? props.file.fileId!,
+            archiveRevision: props.file.revision!,
+            cursor: after,
+            hasContent: props.filters?.hasContent,
+            tagFilter: {
+              tagIds: props.filters?.tagIds ?? [],
+              tagMatch: props.filters?.tagMatch ?? 'any',
+              untagged: props.filters?.untagged ?? false,
+            },
+          }),
+          includeBreadcrumbs: false,
+        },
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted || scopeRef.current !== scope) return;
+      authorizedScope.current = scope;
+      setEntries((previous) =>
+        appendDeviceFileEntries(
+          after === null ? page.entries : appendDeviceFileEntries(previous, page.entries),
+          revealedEntries,
+        ),
+      );
+      setCursor(page.nextCursor);
+    } catch (cause) {
+      if (controller.signal.aborted || scopeRef.current !== scope || isAbortError(cause)) return;
+      const message = toDeviceFileLoadError(cause, 'Помилка завантаження каталогу').message;
+      setError(message);
+      notifyRef.current({ severity: 'error', message });
+      if (cause instanceof HttpRequestError && [401, 403, 404].includes(cause.status)) {
+        authorizedScope.current = null;
+        setEntries([]);
+        setCursor(null);
+        lastCursor.current = null;
+        props.onAccessDenied?.();
+      }
+    } finally {
+      if (!controller.signal.aborted && scopeRef.current === scope) setLoading(false);
+    }
+  };
+  useEffect(() => {
+    authorizedScope.current = null;
+    setEntries([]);
+    setCursor(null);
+    void load(null);
     const cancel = () => {
-      controller.abort();
-      setEntries(null);
-      setExpanded(false);
+      authorizedScope.current = null;
+      active.current?.abort();
+      setEntries([]);
+      setCursor(null);
+      lastCursor.current = null;
+      setError('Помилка доступу до архіву.');
+      setLoading(false);
     };
     window.addEventListener(AUTH_UNAUTHORIZED_EVENT, cancel);
     window.addEventListener(FORCED_NAVIGATION_EVENT, cancel);
-    setEntries(null);
-    setError(null);
-    void listDeviceArchive(props.deviceId, props.file, controller.signal)
-      .then((listing) => {
-        if (!controller.signal.aborted) setEntries(listing.entries);
-      })
-      .catch((cause: unknown) => {
-        if (controller.signal.aborted || isAbortError(cause)) return;
-        const message = toDeviceFileLoadError(cause, 'Помилка перегляду архіву').message;
-        setError(message);
-        notifyRef.current({ severity: 'error', message });
-        if (cause instanceof HttpRequestError && cause.status === 401) emitUnauthorizedEvent();
-      });
     return () => {
-      controller.abort();
+      active.current?.abort();
       window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, cancel);
       window.removeEventListener(FORCED_NAVIGATION_EVENT, cancel);
     };
-  }, [props.deviceId, props.file.fileId, props.file.revision, memberKey, expanded, attempt]);
+  }, [scope, attempt]);
+  useEffect(() => {
+    if (authorizedScope.current === scope && revealedEntries.length > 0)
+      setEntries((previous) => appendDeviceFileEntries(previous, revealedEntries));
+  }, [revealed, scope]);
   return (
-    <ArchiveFolder
-      name={props.file.name}
-      depth={props.depth}
-      expanded={expanded}
-      entryId={props.file.entryId}
-      selected={props.selectedEntryId === props.file.entryId}
-      onSelect={() => {
-        props.onSelectFile(props.file);
-        setExpanded(true);
-      }}
-      onToggle={() => setExpanded((value) => !value)}
-    >
-      {error ? (
+    <>
+      {entries.map((entry) => {
+        if (entry.kind === 'directory')
+          return <ArchiveDirectory key={entry.entryId} {...props} directory={entry} />;
+        const file = archiveMemberSelection(props.file, entry);
+        if (isDeviceArchive(file))
+          return (
+            <DeviceArchiveTree key={entry.entryId} {...props} file={file} initialExpanded={false} />
+          );
+        return (
+          <li key={entry.entryId} className="min-w-0">
+            <DeviceFileTreeRow
+              name={entry.name}
+              label={entry.name}
+              depth={props.depth}
+              entryId={entry.entryId}
+              hasContent={entry.hasContent}
+              selected={props.selectedEntryId === entry.entryId}
+              onClick={() => props.onSelectFile(file)}
+              icon={<InsertDriveFileOutlinedIcon />}
+            />
+          </li>
+        );
+      })}
+      {props.showStatus && loading && (
+        <li className="p-echo-sm">
+          <CircularProgress size={20} aria-label="Завантаження каталогу архіву" />
+        </li>
+      )}
+      {props.showStatus && error && (
         <li className="p-echo-sm">
           <PowerAlert
             severity="error"
             autoHideDuration={null}
             action={
-              <PowerButton onClick={() => setAttempt((value) => value + 1)}>Повторити</PowerButton>
+              <PowerButton
+                disabled={loading}
+                onClick={() =>
+                  lastCursor.current === null
+                    ? setAttempt((value) => value + 1)
+                    : void load(lastCursor.current)
+                }
+              >
+                Повторити читання
+              </PowerButton>
             }
           >
             {error}
           </PowerAlert>
         </li>
-      ) : entries === null ? (
-        <li className="p-echo-sm">
-          <CircularProgress size={20} aria-label={`Завантаження каталогу ${props.file.name}`} />
-        </li>
-      ) : entries.length === 0 ? (
-        <li className="p-echo-sm text-echo-sm text-echo-text-muted">Каталог порожній</li>
-      ) : (
-        <ArchiveChildren {...props} depth={props.depth + 1} entries={entries} path="" />
       )}
+      {props.showStatus && !loading && !error && entries.length === 0 && (
+        <li className="p-echo-sm text-echo-sm text-echo-text-muted">Каталог порожній</li>
+      )}
+      {cursor &&
+        !loading &&
+        !error &&
+        (props.showStatus ? (
+          <li className="p-echo-sm">
+            <PowerButton onClick={() => void load(cursor)}>Показати ще</PowerButton>
+          </li>
+        ) : (
+          <DeviceFileTreePage cursor={cursor} onLoadMore={() => void load(cursor)} />
+        ))}
+    </>
+  );
+}
+
+export function DeviceArchiveTree(props: ArchiveTreeProps) {
+  const revealed = props.expandedEntryIds?.has(props.file.entryId) ?? false;
+  const [expanded, setExpanded] = useState((props.initialExpanded ?? false) || revealed);
+  useEffect(() => {
+    if (revealed && props.selectedEntryId !== props.file.entryId) setExpanded(true);
+  }, [revealed, props.selectedEntryId, props.file.entryId]);
+  const key = `${props.deviceId}/${props.file.fileId}/${props.file.revision}`;
+  const [deniedKey, setDeniedKey] = useState<string | null>(null);
+  const onAccessDenied = useCallback(() => {
+    setDeniedKey(key);
+    props.onAccessDenied?.();
+  }, [key, props.onAccessDenied]);
+  const archive = useDeviceArchive(props.deviceId, props.file, expanded && deniedKey !== key);
+  useEffect(() => {
+    if (archive.denied) onAccessDenied();
+  }, [archive.denied, onAccessDenied]);
+  const denied = archive.denied || deniedKey === key;
+  const error = archive.error ?? (denied ? 'Помилка доступу до архіву.' : null);
+  const state = archive.summary?.state;
+  const ready = !denied && state === 'ready' && archive.summary?.archiveId;
+  const hasContent = archive.status ? state !== 'missing_content' : props.file.hasContent;
+  const message = !hasContent
+    ? 'Контент файлу відсутній'
+    : state === 'failed'
+      ? `${archive.summary?.message ?? 'Не вдалося підготувати архів'}${archive.summary?.limitName ? ` (${archive.summary.limitName})` : ''}`
+      : state === 'queued'
+        ? 'Очікує підготовки'
+        : state === 'retry_wait'
+          ? 'Тимчасова помилка сховища. Очікується повторна спроба'
+          : 'Готується';
+  return (
+    <ArchiveFolder
+      name={props.file.name}
+      depth={props.depth}
+      expanded={expanded}
+      failed={state === 'failed'}
+      hasContent={hasContent}
+      entryId={props.file.entryId}
+      selected={props.selectedEntryId === props.file.entryId}
+      onSelect={() => {
+        props.onSelectFile(props.file);
+        setExpanded((value) => !value);
+      }}
+      onToggle={() => setExpanded((value) => !value)}
+    >
+      {props.showStatus && error && (
+        <li className="p-echo-sm">
+          <PowerAlert
+            severity="error"
+            autoHideDuration={null}
+            action={
+              <PowerButton
+                onClick={() => {
+                  setDeniedKey(null);
+                  archive.retry();
+                }}
+              >
+                Повторити читання
+              </PowerButton>
+            }
+          >
+            {error}
+          </PowerAlert>
+        </li>
+      )}
+      {ready ? (
+        <ArchiveChildren
+          {...props}
+          onAccessDenied={onAccessDenied}
+          key={`${ready}/${JSON.stringify(props.filters)}`}
+          depth={props.depth + 1}
+          archiveId={ready}
+          directoryId={null}
+        />
+      ) : props.showStatus ? (
+        <li className="p-echo-sm text-echo-sm" role="status">
+          {message}
+          {state === 'retry_wait' && archive.status?.nextAttemptAt && (
+            <>
+              {' — '}
+              <time dateTime={archive.status.nextAttemptAt}>
+                {new Date(archive.status.nextAttemptAt).toLocaleString('uk-UA')}
+              </time>
+            </>
+          )}
+        </li>
+      ) : null}
     </ArchiveFolder>
   );
 }

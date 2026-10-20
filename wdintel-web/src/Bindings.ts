@@ -2042,6 +2042,59 @@ export type FileEntryKind =
   | 'file'
 ;
 
+export type DeviceArchiveState =
+  | 'missing_content'
+  | 'not_prepared'
+  | 'queued'
+  | 'running'
+  | 'retry_wait'
+  | 'ready'
+  | 'failed'
+;
+
+export type DeviceArchiveReason =
+  | 'password_protected'
+  | 'invalid_archive'
+  | 'unsupported_format'
+  | 'source_too_large'
+  | 'unsafe_path'
+  | 'path_conflict'
+  | 'integrity_mismatch'
+  | 'safety_limit'
+  | 'retry_exhausted'
+  | 'storage_unavailable'
+  | 'internal_error'
+;
+
+export type DeviceFileContentRef = {
+  deviceId: string;
+  fileId: string;
+  revision: number;
+};
+
+export type DeviceArchiveOrigin = {
+  archiveId: string;
+  sourceFileId: string;
+  sourceRevision: number;
+};
+
+export type DeviceArchiveSummary = {
+  archiveId: string | null;
+  rootEntryId: string | null;
+  state: DeviceArchiveState;
+  reason: DeviceArchiveReason | null;
+  message: string | null;
+  limitName: string | null;
+};
+
+export type DeviceArchiveStatus = {
+  source: DeviceFileContentRef;
+  archive: DeviceArchiveSummary;
+  nextAttemptAt: string | null;
+  pollAfterMs: number;
+  updatedAt: string | null;
+};
+
 export type DeviceArchivedFilter =
   | 'active_only'
   | 'archived_only'
@@ -2151,6 +2204,10 @@ export type FileBreadcrumb = {
 };
 
 export type DeviceFileTreeEntry = {
+  archive: DeviceArchiveSummary | null;
+  isArchive: boolean;
+  archiveOrigin: DeviceArchiveOrigin | null;
+  virtualPath: string | null;
   entryId: string;
   parentEntryId: string;
   kind: FileEntryKind;
@@ -2172,11 +2229,15 @@ export type DeviceFileTreeEntry = {
 };
 
 export type DeviceFile = {
+  archive: DeviceArchiveSummary | null;
+  isArchive: boolean;
+  archiveOrigin: DeviceArchiveOrigin | null;
+  virtualPath: string | null;
   fileId: string;
   deviceId: string;
   parentEntryId: string;
   rootEntryId: string;
-  absolutePath: string;
+  absolutePath: string | null;
   hasContent: boolean;
   name: string;
   pathComponents: Array<string>;
@@ -2257,6 +2318,7 @@ export type CountDeviceFileSubtreesRsp = {
 };
 
 export type BrowseDeviceFilesReq = {
+  archiveRevision: number | null;
   syncId: string | null;
   deviceId: string;
   parentEntryId: string;
@@ -2298,6 +2360,7 @@ export type SearchDeviceFilesRsp = {
 };
 
 export type DeviceFileJournalEntry = {
+  archive: DeviceArchiveSummary | null;
   fileId: string;
   name: string;
   absolutePath: string;

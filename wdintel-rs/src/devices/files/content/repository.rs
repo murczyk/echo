@@ -9,7 +9,6 @@ use uuid::Uuid;
 
 use super::ContentLimits;
 use crate::h;
-use crate::types::ShortContext;
 
 const RESERVATION_LOCK_SQL: &str =
     "select pg_advisory_xact_lock(hashtextextended('echo:device-file-content-reservation', 0))";
@@ -31,20 +30,10 @@ pub(in crate::devices) async fn find_published_content(
     file_id: Uuid,
     revision: i64,
 ) -> Result<Option<PublishedContent>> {
-    PublishedContent::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "select entry.name, entry.extension, entry.mime_type, content.object_key,
-                content.source_sha256, content.source_size_bytes, content.is_encrypted
-         from file_revision entry
-         join file_content content on content.file_id = entry.id
-             and content.revision = entry.revision
-         where entry.device_id = $1 and entry.id = $2
-             and entry.revision = $3",
-        [device_id.into(), file_id.into(), revision.into()],
-    ))
-    .one(db)
+    super::super::archive::access::find_published_content(
+        db, device_id, file_id, revision,
+    )
     .await
-    .c(h!())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -682,6 +671,14 @@ where id = $1 and status = 'open'
         .await
         .context("complete content upload")
         .context(h!())?;
+    super::super::archive::enqueue::ensure_in(
+        transaction,
+        upload.device_id,
+        upload.file_id,
+        upload.revision,
+    )
+    .await
+    .context(h!())?;
     Ok((
         PublishOutcome::Completed(completed(&upload)),
         Some(UploadStatus::Completed),
@@ -962,7 +959,7 @@ async fn load_target_for_update(
             r#"
 select device_id, kind::text as kind, revision, content_path
 from file_entry
-where id = $1
+where id = $1 and archive_file_id is null
 for update
 "#,
             [file_id.into()],

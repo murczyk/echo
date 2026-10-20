@@ -444,6 +444,9 @@ fn media_content_type(source: &PublishedContent) -> Option<String> {
         .unwrap_or("")
         .trim()
         .to_ascii_lowercase();
+    if mime == "application/pdf" {
+        return Some(mime);
+    }
     let mime = match mime.as_str() {
         "application/mp4" => "video/mp4",
         "application/x-matroska" => "video/x-matroska",
@@ -482,6 +485,7 @@ fn media_content_type(source: &PublishedContent) -> Option<String> {
 
 fn extension_mime(extension: &str) -> Option<&'static str> {
     Some(match extension {
+        "pdf" => "application/pdf",
         "mp4" | "m4v" | "f4v" => "video/mp4",
         "mov" => "video/quicktime",
         "webm" => "video/webm",

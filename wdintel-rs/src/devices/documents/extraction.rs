@@ -29,7 +29,7 @@ pub(super) struct Source {
 }
 
 pub(super) async fn source(env: &Env, job: &Job) -> anyhow::Result<Source> {
-    rows(env.file_registry_db().c(h!())?.connection(),"select r.name,r.extension,r.mime_type,c.object_key,c.source_size_bytes,c.is_encrypted from file_revision r join file_content c on c.file_id=r.id and c.revision=r.revision where r.id=$1 and r.revision=$2",vec![job.file_id.into(),job.revision.into()]).await.c(h!())?.pop().c(h!())
+    rows(env.file_registry_db().c(h!())?.connection(),"select r.name,r.extension,r.mime_type,c.object_key,c.source_size_bytes,c.is_encrypted from file_revision r join file_content c on c.file_id=r.id and c.revision=r.revision where r.id=$1 and r.revision=$2 and r.origin_archive_id is null",vec![job.file_id.into(),job.revision.into()]).await.c(h!())?.pop().c(h!())
 }
 
 async fn source_bytes(env: &Env, source: &Source) -> anyhow::Result<Vec<u8>> {
@@ -303,7 +303,7 @@ async fn reuse(env: &Env, job: &Job) -> anyhow::Result<bool> {
         published_generation: Uuid,
     }
     let db = env.file_registry_db().c(h!())?.connection();
-    let found=rows::<Reuse,_>(db,"select d.published_generation from file_content c join file_content prior on prior.file_id=c.file_id and prior.upload_id=c.upload_id and prior.revision<>c.revision join file_revision r on r.id=c.file_id and r.revision=c.revision join file_revision p on p.id=prior.file_id and p.revision=prior.revision join file_document d on d.file_id=prior.file_id and d.revision=prior.revision join file_document_generation g on g.id=d.published_generation where c.file_id=$1 and c.revision=$2 and lower(coalesce(r.extension,substring(r.name from '[^.]+$'))) = lower(coalesce(p.extension,substring(p.name from '[^.]+$'))) and g.parser_version=$3 and g.complete and g.summary_state='completed' and g.position_state='completed' order by d.revision desc limit 1",vec![job.file_id.into(),job.revision.into(),DEVICE_DOCUMENT_PARSER_VERSION.into()]).await.c(h!())?.pop();
+    let found=rows::<Reuse,_>(db,"select d.published_generation from file_content c join file_content prior on prior.file_id=c.file_id and prior.upload_id=c.upload_id and prior.revision<>c.revision join file_revision r on r.id=c.file_id and r.revision=c.revision join file_revision p on p.id=prior.file_id and p.revision=prior.revision join file_document d on d.file_id=prior.file_id and d.revision=prior.revision join file_document_generation g on g.id=d.published_generation where c.file_id=$1 and c.revision=$2 and r.origin_archive_id is null and p.origin_archive_id is null and lower(coalesce(r.extension,substring(r.name from '[^.]+$'))) = lower(coalesce(p.extension,substring(p.name from '[^.]+$'))) and g.parser_version=$3 and g.complete and g.summary_state='completed' and g.position_state='completed' order by d.revision desc limit 1",vec![job.file_id.into(),job.revision.into(),DEVICE_DOCUMENT_PARSER_VERSION.into()]).await.c(h!())?.pop();
     let Some(found) = found else {
         return Ok(false);
     };

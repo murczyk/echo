@@ -12,7 +12,7 @@ use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
     DbBackend, DbErr, EntityTrait, IntoActiveModel, Set, Statement,
-    TransactionTrait,
+    TransactionTrait, TryIntoModel,
 };
 use sea_orm_migration::MigratorTrait;
 use sqlx::migrate::MigrateDatabase;
@@ -127,11 +127,23 @@ async fn verified_content_reuse_migration_preserves_original_publication() {
         .await;
         let tx = connection.begin().await.unwrap();
         let tree = insert_file_entry_tree(&tx).await;
-        let file = file_entry::Entity::find_by_id(tree.file_id)
-            .one(&tx)
-            .await
-            .unwrap()
-            .unwrap();
+        let file = file_entry::ActiveModel {
+            is_archive: Set(None),
+            archive_file_id: Set(None),
+            archive_relative_path: Set(None),
+            ..file_entry_row(
+                tree.file_id,
+                tree.device_id,
+                tree.sync_id,
+                tree.directory_id,
+                &tree.directory_hierarchy_path,
+                "app.log",
+                r"C:\var\app.log",
+                tree.created_at,
+            )
+        }
+        .try_into_model()
+        .unwrap();
         let object =
             super::test_support::publish_content(&tx, &file, Uuid::now_v7())
                 .await;
@@ -161,11 +173,12 @@ async fn verified_content_reuse_migration_preserves_original_publication() {
             .unwrap()
             .unwrap();
         assert_eq!(content.object_key, object);
-        let upload = file_content_upload::Entity::find_by_id(content.upload_id)
-            .one(connection)
-            .await
-            .unwrap()
-            .unwrap();
+        let upload =
+            file_content_upload::Entity::find_by_id(content.upload_id.unwrap())
+                .one(connection)
+                .await
+                .unwrap()
+                .unwrap();
         assert_eq!(upload.status, FileContentUploadStatus::Completed);
     }
     sqlx::Postgres::drop_database(&database_url).await.unwrap();
@@ -685,6 +698,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20261016_172538_retire_device_audio_asr_executor".to_string(),
             "m20261017_101924_drop_device_audio_transcription_backfill"
                 .to_string(),
+            "m20261019_101619_file_archive_registry".to_string(),
         ]
     );
 }
@@ -848,6 +862,9 @@ async fn assert_file_entry_schema(connection: &DatabaseConnection) {
             ("source_file_state_settled_by", "YES", None, "text", "text"),
             ("analysis_input_revision", "YES", None, "bigint", "int8"),
             ("current_analysis_run_id", "YES", None, "uuid", "uuid"),
+            ("is_archive", "YES", None, "boolean", "bool"),
+            ("archive_file_id", "YES", None, "uuid", "uuid"),
+            ("archive_relative_path", "YES", None, "text", "text"),
         ],
     )
     .await;
@@ -967,7 +984,7 @@ order by table_name
             ("device_id", "NO", "uuid", "uuid"),
             ("sync_id", "NO", "uuid", "uuid"),
             ("name", "NO", "text", "text"),
-            ("absolute_path", "NO", "text", "text"),
+            ("absolute_path", "YES", "text", "text"),
             ("mime_type", "YES", "text", "text"),
             ("extension", "YES", "text", "text"),
             (
@@ -1001,8 +1018,11 @@ order by table_name
                 "timestamp with time zone",
                 "timestamptz",
             ),
-            ("source_sequence", "NO", "bigint", "int8"),
-            ("analysis_input_revision", "NO", "bigint", "int8"),
+            ("source_sequence", "YES", "bigint", "int8"),
+            ("analysis_input_revision", "YES", "bigint", "int8"),
+            ("is_archive", "YES", "boolean", "bool"),
+            ("origin_archive_id", "YES", "uuid", "uuid"),
+            ("archive_member_index", "YES", "bigint", "int8"),
         ],
     )
     .await;
@@ -1137,6 +1157,8 @@ order by type.typname, value.enumsortorder
             "file_metadata_revision_name_check".to_string(),
             "file_metadata_revision_revision_check".to_string(),
             "file_metadata_revision_source_state_check".to_string(),
+            "file_revision_archive_member_index_check".to_string(),
+            "file_revision_origin_shape_check".to_string(),
         ]
     );
     assert_eq!(
@@ -1164,6 +1186,7 @@ order by type.typname, value.enumsortorder
         vec![
             "file_metadata_revision_input_fk".to_string(),
             "file_metadata_revision_session_fk".to_string(),
+            "file_revision_archive_fk".to_string(),
             "file_revision_device_file_fk".to_string(),
         ]
     );
@@ -1216,6 +1239,8 @@ order by tablename, indexname
                 "file_metadata_revision_source_sequence_key",
             ),
             ("file_revision", "file_metadata_revision_sync_file_idx",),
+            ("file_revision", "file_revision_archive_member_idx"),
+            ("file_revision", "file_revision_archive_snapshot_idx"),
             ("file_revision", "file_revision_device_file_revision_key",),
             ("file_revision", "file_revision_name_trgm_idx"),
             ("file_revision", "file_revision_session_journal_idx"),
@@ -1252,7 +1277,10 @@ order by tgname
         .collect::<Vec<String>>();
     assert_eq!(
         revision_triggers,
-        vec!["file_metadata_revision_immutable_trg".to_string()]
+        vec![
+            "file_metadata_revision_immutable_trg".to_string(),
+            "file_revision_archive_guard".to_string()
+        ]
     );
 }
 
@@ -1327,7 +1355,7 @@ async fn assert_file_content_schema(connection: &DatabaseConnection) {
         &[
             ("file_id", "NO", None, "uuid", "uuid"),
             ("revision", "NO", None, "bigint", "int8"),
-            ("upload_id", "NO", None, "uuid", "uuid"),
+            ("upload_id", "YES", None, "uuid", "uuid"),
             ("object_key", "NO", None, "text", "text"),
             ("source_size_bytes", "NO", None, "bigint", "int8"),
             ("source_sha256", "NO", None, "bytea", "bytea"),
@@ -1339,6 +1367,7 @@ async fn assert_file_content_schema(connection: &DatabaseConnection) {
                 "timestamp with time zone",
                 "timestamptz",
             ),
+            ("origin_archive_id", "YES", None, "uuid", "uuid"),
         ],
     )
     .await;
@@ -1401,6 +1430,7 @@ order by value.enumsortorder
     assert_eq!(
         constraint_names(connection, "file_content", 'c').await,
         vec![
+            "file_content_one_origin_check".to_string(),
             "file_content_sha256_check".to_string(),
             "file_content_size_check".to_string(),
         ]
@@ -1408,13 +1438,17 @@ order by value.enumsortorder
     assert_eq!(
         constraint_names(connection, "file_content", 'f').await,
         vec![
+            "file_content_origin_archive_id_fkey".to_string(),
             "file_content_revision_fk".to_string(),
             "file_content_verified_upload_binding_fk".to_string(),
         ]
     );
     assert_eq!(
         constraint_names(connection, "file_content", 'u').await,
-        vec!["file_content_current_pointer_key".to_string(),]
+        vec![
+            "file_content_archive_source_key".to_string(),
+            "file_content_current_pointer_key".to_string(),
+        ]
     );
 
     let foreign_keys = connection
@@ -1498,6 +1532,7 @@ order by tablename, indexname
     assert_eq!(
         indexes,
         [
+            ("file_content", "file_content_archive_source_key"),
             ("file_content", "file_content_current_pointer_key"),
             ("file_content", "file_content_object_key_idx"),
             ("file_content", "file_content_pkey"),
@@ -1556,6 +1591,7 @@ order by relation.relname, trigger.tgname
     assert_eq!(
         triggers,
         [
+            ("file_content", "file_content_archive_guard"),
             ("file_content", "file_content_immutable_trg"),
             ("file_content", "file_content_verify_reuse_trg"),
             ("file_content", "file_document_content_published"),
@@ -2001,12 +2037,16 @@ async fn assert_file_entry_constraints(connection: &DatabaseConnection) {
     );
     assert_eq!(
         constraint_names(connection, "file_entry", 'u').await,
-        vec!["file_entry_device_id_id_key".to_string()]
+        vec![
+            "file_entry_archive_identity_key".to_string(),
+            "file_entry_device_id_id_key".to_string()
+        ]
     );
     assert_eq!(
         constraint_names(connection, "file_entry", 'f').await,
         vec![
             "file_entry_analysis_input_fk".to_string(),
+            "file_entry_archive_parent_fk".to_string(),
             "file_entry_current_analysis_fk".to_string(),
             "file_entry_current_content_fk".to_string(),
             "file_entry_current_revision_fk".to_string(),
@@ -2019,6 +2059,7 @@ async fn assert_file_entry_constraints(connection: &DatabaseConnection) {
         vec![
             "file_entry_absolute_path_length_check".to_string(),
             "file_entry_absolute_path_windows_check".to_string(),
+            "file_entry_archive_path_check".to_string(),
             "file_entry_content_revision_check".to_string(),
             "file_entry_directory_content_path_null_check".to_string(),
             "file_entry_directory_metadata_null_check".to_string(),
@@ -2076,6 +2117,12 @@ order by tgname
         triggers,
         vec![
             (
+                "file_entry_archive_guard".to_string(),
+                false,
+                false,
+                "CREATE TRIGGER file_entry_archive_guard BEFORE INSERT OR UPDATE ON public.file_entry FOR EACH ROW EXECUTE FUNCTION file_entry_archive_guard()".to_string(),
+            ),
+            (
                 "file_entry_current_analysis_guard_trg".to_string(),
                 true,
                 true,
@@ -2123,6 +2170,8 @@ async fn assert_file_entry_indexes(connection: &DatabaseConnection) {
     assert_eq!(
         indexes.keys().cloned().collect::<Vec<_>>(),
         vec![
+            "file_entry_archive_identity_key".to_string(),
+            "file_entry_archive_parent_idx".to_string(),
             "file_entry_children_idx".to_string(),
             "file_entry_device_absolute_path_uidx".to_string(),
             "file_entry_device_id_id_key".to_string(),
@@ -2143,10 +2192,13 @@ async fn assert_file_entry_indexes(connection: &DatabaseConnection) {
     let explicit_indexes = indexes
         .into_iter()
         .filter(|(name, _)| {
-            name != "file_entry_device_id_id_key" && name != "file_entry_pkey"
+            name != "file_entry_device_id_id_key"
+                && name != "file_entry_pkey"
+                && name != "file_entry_archive_identity_key"
         })
         .collect::<BTreeMap<_, _>>();
     let expected = [
+        ("file_entry_archive_parent_idx", "CREATE INDEX file_entry_archive_parent_idx ON public.file_entry USING btree (archive_file_id, parent_id, kind, name, id) WHERE (archive_file_id IS NOT NULL)"),
         (
             "file_entry_children_idx",
             "CREATE INDEX file_entry_children_idx ON public.file_entry USING btree (device_id, parent_id, kind, name, id) WHERE (parent_id IS NOT NULL)",
@@ -2254,15 +2306,18 @@ async fn insert_file_revision(
     created_at: NaiveDateTime,
 ) {
     let created_at_tz = created_at.and_utc().fixed_offset();
-    file_revision::ActiveModel {
+    file_revision::Entity::insert(file_revision::ActiveModel {
+        is_archive: sea_orm::ActiveValue::NotSet,
+        archive_member_index: sea_orm::ActiveValue::NotSet,
+        origin_archive_id: sea_orm::ActiveValue::NotSet,
         id: Set(file_id),
         revision: Set(1),
         device_id: Set(device_id),
         sync_id: Set(sync_id),
-        source_sequence: Set(source_sequence),
-        analysis_input_revision: Set(1),
+        source_sequence: Set(Some(source_sequence)),
+        analysis_input_revision: Set(Some(1)),
         name: Set(name.to_string()),
-        absolute_path: Set(absolute_path.to_string()),
+        absolute_path: Set(Some(absolute_path.to_string())),
         mime_type: Set(Some("text/plain".to_string())),
         extension: Set(Some("log".to_string())),
         file_metadata_created_at: Set(Some(
@@ -2275,8 +2330,8 @@ async fn insert_file_revision(
         source_file_state_settled_at: Set(None),
         source_file_state_settled_by: Set(None),
         created_at: Set(created_at_tz),
-    }
-    .insert(transaction)
+    })
+    .exec_without_returning(transaction)
     .await
     .unwrap();
 }
@@ -2327,11 +2382,12 @@ async fn assert_file_entry_entity_round_trip(connection: &DatabaseConnection) {
         .await
         .unwrap()
         .unwrap();
-    let upload = file_content_upload::Entity::find_by_id(content.upload_id)
-        .one(&transaction)
-        .await
-        .unwrap()
-        .unwrap();
+    let upload =
+        file_content_upload::Entity::find_by_id(content.upload_id.unwrap())
+            .one(&transaction)
+            .await
+            .unwrap()
+            .unwrap();
     assert_eq!(content.object_key, content_path);
     assert_eq!(content.source_size_bytes, 1);
     assert_eq!(content.source_sha256, vec![1_u8; 32]);
@@ -2394,22 +2450,22 @@ async fn insert_file_entry_tree(
         format!("{directory_hierarchy_path}.{}", uuid_label(file_id));
     insert_sync_session(transaction, sync_id, device_id, created_at).await;
 
-    root_entry(root_id, device_id, created_at)
-        .insert(transaction)
+    file_entry::Entity::insert(root_entry(root_id, device_id, created_at))
+        .exec_without_returning(transaction)
         .await
         .unwrap();
-    directory_entry(
+    file_entry::Entity::insert(directory_entry(
         directory_id,
         device_id,
         root_id,
         &root_hierarchy_path,
         "var",
         created_at,
-    )
-    .insert(transaction)
+    ))
+    .exec_without_returning(transaction)
     .await
     .unwrap();
-    file_entry_row(
+    file_entry::Entity::insert(file_entry_row(
         file_id,
         device_id,
         sync_id,
@@ -2418,8 +2474,8 @@ async fn insert_file_entry_tree(
         "app.log",
         r"C:\var\app.log",
         created_at,
-    )
-    .insert(transaction)
+    ))
+    .exec_without_returning(transaction)
     .await
     .unwrap();
     insert_file_revision(
@@ -2706,6 +2762,9 @@ fn base_file_entry(
     created_at: NaiveDateTime,
 ) -> file_entry::ActiveModel {
     file_entry::ActiveModel {
+        is_archive: sea_orm::ActiveValue::NotSet,
+        archive_relative_path: sea_orm::ActiveValue::NotSet,
+        archive_file_id: sea_orm::ActiveValue::NotSet,
         id: Set(id),
         device_id: Set(device_id),
         parent_id: Set(parent_id),

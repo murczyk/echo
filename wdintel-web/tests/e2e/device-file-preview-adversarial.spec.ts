@@ -46,7 +46,7 @@ async function expectViewerReady(pane: Locator, id: string) {
       .poll(() => pane.locator('video').evaluate((video: HTMLVideoElement) => video.readyState))
       .toBeGreaterThanOrEqual(1);
   } else if (id === 'archive-zip')
-    await expect(pane.locator('[data-zip-entry-name]').first()).toBeVisible();
+    await expect(pane.getByRole('button', { name: 'Звіт.txt', exact: true })).toBeVisible();
   else await expect(pane.locator('.leaflet-container')).toBeVisible();
 }
 
@@ -232,7 +232,7 @@ test('@regression late converter result cannot replace a newer A to B to A sessi
   }
 });
 
-for (const id of ['document-txt', 'document-xlsx', 'image-png', 'archive-zip', 'native-map-kml']) {
+for (const id of ['document-txt', 'document-xlsx', 'image-png', 'native-map-kml']) {
   test(`@regression retired ${id} GET error cannot replace A to B to A`, async ({ page }) => {
     const backend = await localFilePreviewBackend();
     let release: (() => void) | undefined;
@@ -427,6 +427,8 @@ for (const [id, outcome] of [
         .click({ noWaitAfter: true });
       const pane = page.getByTestId('device-file-content-pane');
       if (outcome === 'no-geometry') await expect(pane).toContainText('немає геометрій');
+      else if (id === 'archive-zip')
+        await expect(pane.getByRole('status')).toHaveText('Архів пошкоджено');
       else {
         await expect(pane.getByRole('alert').first()).toBeVisible();
         if (outcome === 'oversized') await expect(pane).toContainText(/ліміт|завелик/i);
@@ -508,7 +510,7 @@ test('@regression thousand-file catalogue fetches no unselected bytes or preview
   }
 });
 
-for (const id of ['document-txt', 'document-xlsx', 'image-png', 'archive-zip', 'native-map-kml']) {
+for (const id of ['document-txt', 'document-xlsx', 'image-png', 'native-map-kml']) {
   test(`@regression ${id} retries an actual truncated HTTP body`, async ({ page }) => {
     const backend = await localFilePreviewBackend();
     let partialBodies = 0;

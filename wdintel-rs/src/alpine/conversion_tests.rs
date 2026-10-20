@@ -344,7 +344,7 @@ async fn devices_download_rejects_truncated_kmz() {
 }
 
 #[actix_web::test]
-async fn devices_download_rejects_actual_bytes_above_25_mib() {
+async fn devices_download_rejects_actual_bytes_above_bound() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     for false_length in [false, true] {
         let listener =
@@ -374,9 +374,21 @@ async fn devices_download_rejects_actual_bytes_above_25_mib() {
             }
             let _ = socket.write_all(b"0\r\n\r\n").await;
         });
-        let result =
-            download_device_kmz(&reqwest::Client::new(), "owned", &host).await;
+        let result = download_device_kmz_limited(
+            &reqwest::Client::new(),
+            "owned",
+            &host,
+            25 * 1024 * 1024,
+        )
+        .await;
         server.await.unwrap();
-        assert!(result.is_err(), "chunked response above 25 MiB must be rejected regardless of Content-Length");
+        assert_eq!(
+            result
+                .unwrap_err()
+                .downcast_ref::<DeviceConversionFailure>()
+                .unwrap()
+                .0,
+            "result_too_large"
+        );
     }
 }

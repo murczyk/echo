@@ -18,11 +18,14 @@ type SheetCell = { w?: unknown; v?: unknown; t?: unknown };
 type Sheet = Record<string, SheetCell | unknown> & { '!ref'?: string };
 type Workbook = { SheetNames?: unknown; Sheets?: Record<string, Sheet> };
 
-export function buildXlsPreview(buffer: ArrayBuffer): XlsPreviewResult {
-  if (buffer.byteLength > LEGACY_OFFICE_MAX_FILE_BYTES) {
+export function buildXlsPreview(
+  buffer: ArrayBuffer,
+  maxBytes = LEGACY_OFFICE_MAX_FILE_BYTES,
+): XlsPreviewResult {
+  if (buffer.byteLength > maxBytes) {
     throw new LegacyOfficePreviewError(LegacyOfficePreviewErrorCode.FileTooLarge);
   }
-  const cfb = validateCfbContainer(buffer);
+  const cfb = validateCfbContainer(buffer, maxBytes);
   if (
     cfb.streams.has('Book') ||
     cfb.streams.has('EncryptedPackage') ||

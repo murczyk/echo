@@ -60,6 +60,9 @@ pub(in crate::devices::files) async fn find_matching_tree_entry_ids(
     let mut matching_file_query = Query::select()
         .expr(Expr::value(1))
         .from_as(file_entry::Entity, matching_file.clone())
+        .and_where(super::super::archive::query::current_visibility_for(
+            "matching_file",
+        ))
         .and_where(
             Expr::col((matching_file.clone(), file_entry::Column::DeviceId))
                 .eq(Expr::col((
@@ -126,6 +129,9 @@ pub(in crate::devices::files) async fn find_matching_tree_entry_ids(
             Alias::new("entry_id"),
         )
         .from_as(file_entry::Entity, candidate.clone())
+        .and_where(super::super::archive::query::current_visibility_for(
+            "candidate",
+        ))
         .and_where(
             Expr::col((candidate.clone(), file_entry::Column::DeviceId))
                 .eq(device_id),
