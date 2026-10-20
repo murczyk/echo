@@ -1687,6 +1687,9 @@ pub async fn new_redisb(config: &Config) -> anyhow::Result<redis::Client> {
 }
 
 fn main() -> Result<(), AppError> {
+    if let Some(result) = devices::files::archive::helper::main_if_requested() {
+        return result.map_err(Into::into);
+    }
     ring::default_provider()
         .install_default()
         .expect("failed to install default rustls ring provider");

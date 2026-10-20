@@ -355,6 +355,7 @@ pub(in crate::devices) async fn device_summary(
         .c(h!())?;
     let (total_file_count, files_with_content_count, analyzed_file_count) =
         file_entry::Entity::find()
+            .filter(file_entry::Column::ArchiveFileId.is_null())
             .select_only()
             .column_as(file_entry::Column::Id.count(), "total_file_count")
             .column_as(
@@ -406,6 +407,11 @@ where
             JoinType::InnerJoin,
             analytics_tag::Relation::DeviceFileTag.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            device_file_tag::Relation::FileEntry.def(),
+        )
+        .filter(file_entry::Column::ArchiveFileId.is_null())
         .filter(analytics_tag::Column::ArchivedAt.is_null())
         .filter(device_file_tag::Column::DeviceId.eq(device_id))
         .group_by(analytics_tag::Column::Id)
@@ -447,6 +453,11 @@ pub(super) async fn resolve_file_link_cursor(
     file_entry_id: Uuid,
 ) -> Result<Option<DeviceAnalyticsFileLink>, DbErr> {
     device_file_tag::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            device_file_tag::Relation::FileEntry.def(),
+        )
+        .filter(file_entry::Column::ArchiveFileId.is_null())
         .filter(device_file_tag::Column::DeviceId.eq(device_id))
         .filter(device_file_tag::Column::TagId.eq(tag_id))
         .filter(device_file_tag::Column::FileEntryId.eq(file_entry_id))
@@ -468,6 +479,11 @@ pub(super) async fn list_file_links(
     limit: u64,
 ) -> Result<Vec<DeviceAnalyticsFileLink>, DbErr> {
     device_file_tag::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            device_file_tag::Relation::FileEntry.def(),
+        )
+        .filter(file_entry::Column::ArchiveFileId.is_null())
         .filter(device_file_tag::Column::DeviceId.eq(device_id))
         .filter(device_file_tag::Column::TagId.eq(tag_id))
         .apply_if(after, |query, after| {
@@ -515,6 +531,7 @@ pub(super) async fn load_current_files(
         return Ok(BTreeMap::new());
     }
     file_entry::Entity::find()
+        .filter(file_entry::Column::ArchiveFileId.is_null())
         .filter(file_entry::Column::Id.is_in(file_entry_ids.iter().copied()))
         .filter(file_entry::Column::DeviceId.eq(device_id))
         .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
@@ -611,6 +628,7 @@ where
     let now = Utc::now().fixed_offset();
     file_analysis_run_item::Entity::find()
         .find_also_related(file_revision::Entity)
+        .filter(file_revision::Column::OriginArchiveId.is_null())
         .filter(file_analysis_run_item::Column::Id.eq(run_id))
         .filter(
             file_analysis_run_item::Column::FileId
@@ -648,10 +666,18 @@ where
             Ok(AnalysisRunFileRow {
                 file_id: item.file_id,
                 metadata_revision: item.metadata_revision,
-                analysis_input_revision: metadata.analysis_input_revision,
+                analysis_input_revision: metadata
+                    .analysis_input_revision
+                    .ok_or_else(|| {
+                        DbErr::RecordNotFound(
+                            "source analysis input".to_owned(),
+                        )
+                    })?,
                 state: state.to_owned(),
                 name: metadata.name,
-                absolute_path: metadata.absolute_path,
+                absolute_path: metadata.absolute_path.ok_or_else(|| {
+                    DbErr::RecordNotFound("source revision path".to_owned())
+                })?,
                 extension: metadata.extension,
                 mime_type: metadata.mime_type,
                 file_metadata_created_at: metadata.file_metadata_created_at,

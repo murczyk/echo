@@ -2,11 +2,30 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { DeviceFileTreeEntry } from '../../../../../../Bindings';
+import type { DeviceArchiveStatus, DeviceFileTreeEntry } from '../../../../../../Bindings';
 import type { useDeviceFilePreview } from '../../use-device-file-preview';
 import { DeviceFileContentPane } from '../DeviceFileContentPane';
+import { transformCamelToSnake } from '../../../../../snake-to-camel';
+
+let realArchive = false;
+const notify = vi.fn();
+vi.mock('../../../../components/PowerSnackbar', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../components/PowerSnackbar')>()),
+  useOptionalPowerSnackbar: () => ({ notify }),
+}));
 
 vi.mock('../../use-device-file-preview', () => ({ useDeviceFilePreview: () => preview }));
+vi.mock('../DeviceArchiveTree', async (importOriginal) => {
+  const { DeviceArchiveTree } = await importOriginal<typeof import('../DeviceArchiveTree')>();
+  return {
+    DeviceArchiveTree: (props: React.ComponentProps<typeof DeviceArchiveTree>) =>
+      realArchive ? (
+        <DeviceArchiveTree {...props} />
+      ) : (
+        <button onClick={() => props.onSelectFile(file)}>Open persisted member</button>
+      ),
+  };
+});
 vi.mock('../../../shared/message-card/renderers/DocumentFilePreview', () => ({
   DocumentFilePreview: ({ zoom }: { zoom: number }) => (
     <canvas data-pdf-leaf data-zoom={zoom} width={(400 * zoom) / 100} height={(600 * zoom) / 100} />
@@ -63,6 +82,8 @@ const preview: ReturnType<typeof useDeviceFilePreview> = {
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
+  realArchive = false;
+  notify.mockClear();
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -70,6 +91,8 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 async function openFullscreen() {
   await act(async () => root.render(<DeviceFileContentPane deviceId="device" file={file} />));
@@ -106,4 +129,242 @@ it('fullscreen keeps the authorized original download action available', async (
   );
   expect(download).toBeDefined();
   expect(download!.disabled).toBe(false);
+});
+
+it('#3778 keeps derived preview usable without source-only document details', async () => {
+  await act(async () => root.render(<DeviceFileContentPane deviceId="device" file={file} />));
+  expect(container.textContent).toContain('Підсумок, текст і позиції');
+  const member = {
+    ...file,
+    archiveOrigin: { archiveId: 'archive', sourceFileId: 'source', sourceRevision: 1 },
+  };
+  await act(async () => root.render(<DeviceFileContentPane deviceId="device" file={member} />));
+  expect(container.textContent).not.toContain('Підсумок, текст і позиції');
+  expect(container.querySelector('[data-pdf-leaf]')).not.toBeNull();
+  expect(
+    [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Скачати файл'),
+    )?.disabled,
+  ).toBe(false);
+});
+
+it('#3778 clears archive member selection after selecting another source and returning', async () => {
+  const archive = {
+    ...file,
+    fileId: 'archive',
+    entryId: 'archive',
+    name: 'bundle.zip',
+    extension: 'zip',
+    mimeType: 'application/zip',
+    absolutePath: 'C:\\bundle.zip',
+  };
+  const other = { ...file, fileId: 'other', entryId: 'other', absolutePath: 'C:\\other.pdf' };
+  const render = (selected: DeviceFileTreeEntry) =>
+    act(async () => root.render(<DeviceFileContentPane deviceId="device" file={selected} />));
+  await render(archive);
+  await act(async () =>
+    [...container.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Open persisted member')!
+      .click(),
+  );
+  expect(container.querySelector('#device-file-content-title')?.textContent).toContain(
+    'selected.pdf',
+  );
+  await render(other);
+  await render(archive);
+  expect(container.querySelector('#device-file-content-title')?.textContent).toContain(
+    'bundle.zip',
+  );
+});
+
+const zip: DeviceFileTreeEntry = {
+  ...file,
+  fileId: 'archive',
+  entryId: 'archive',
+  name: 'bundle.zip',
+  extension: 'zip',
+  mimeType: 'application/zip',
+  absolutePath: 'C:\\bundle.zip',
+};
+const zipStatus: DeviceArchiveStatus = {
+  source: { deviceId: 'device', fileId: 'archive', revision: 1 },
+  archive: {
+    archiveId: 'durable-job',
+    rootEntryId: null,
+    state: 'queued',
+    reason: null,
+    message: null,
+    limitName: null,
+  },
+  nextAttemptAt: null,
+  pollAfterMs: 2000,
+  updatedAt: '2026-10-15T00:00:00Z',
+};
+function archiveResponse(status: DeviceArchiveStatus) {
+  return new Response(JSON.stringify(transformCamelToSnake(status)), {
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+async function renderArchive(selected = zip) {
+  realArchive = true;
+  await act(async () => root.render(<DeviceFileContentPane deviceId="device" file={selected} />));
+}
+
+it('#3778 observes a metadata-only ZIP without requesting bytes or preparation', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      archiveResponse({
+        ...zipStatus,
+        archive: { ...zipStatus.archive, archiveId: null, state: 'missing_content' },
+      }),
+    ),
+  );
+  await renderArchive({ ...zip, hasContent: false });
+  expect(container.textContent).toContain('Контент файлу відсутній');
+  expect(container.querySelector('[aria-label*="каталог bundle.zip"]')).toBeNull();
+  expect(container.textContent).not.toMatch(/Каталог порожній|Готується/);
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(1);
+  expect(String(vi.mocked(fetch).mock.calls[0][0])).toMatch(/\/archive$/);
+  expect(vi.mocked(fetch).mock.calls[0][1]?.method ?? 'GET').toBe('GET');
+});
+
+it.each([
+  ['password_protected', 'Архів захищений паролем', null],
+  ['safety_limit', 'Розпакування зупинено: перевищено ліміти безпеки архіву', 'expanded_bytes'],
+] as const)(
+  '#3778 shows %s with its original and never offers extraction retry',
+  async (reason, message, limitName) => {
+    const state: DeviceArchiveStatus = {
+      ...zipStatus,
+      archive: { ...zipStatus.archive, state: 'failed', reason, message, limitName },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => archiveResponse(state)),
+    );
+    await renderArchive();
+    expect(container.textContent).toContain(message);
+    if (limitName) expect(container.textContent).toContain(limitName);
+    expect(
+      [...container.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('Скачати файл'),
+      )?.disabled,
+    ).toBe(false);
+    expect(
+      [...container.querySelectorAll('button')].some((button) =>
+        /Повторити/.test(button.textContent ?? ''),
+      ),
+    ).toBe(false);
+    await act(async () => root.render(null));
+    await renderArchive();
+    expect(
+      vi.mocked(fetch).mock.calls.every(([, init]) => !init?.method || init.method === 'GET'),
+    ).toBe(true);
+  },
+);
+
+it.each([
+  ['queued', 'Очікує підготовки'],
+  ['running', 'Готується'],
+  ['retry_wait', 'Тимчасова помилка сховища. Очікується повторна спроба'],
+] as const)('#3778 distinguishes %s from an empty archive', async (state, message) => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      archiveResponse({
+        ...zipStatus,
+        nextAttemptAt: state === 'retry_wait' ? '2026-10-15T09:00:00Z' : null,
+        archive: { ...zipStatus.archive, state },
+      }),
+    ),
+  );
+  await renderArchive();
+  expect(container.textContent).toContain(message);
+  expect(container.textContent).not.toContain('Каталог порожній');
+  if (state === 'retry_wait')
+    expect(container.querySelector('time')?.dateTime).toBe('2026-10-15T09:00:00Z');
+});
+
+it('#3778 keeps the last known state and toasts a 503 while respecting Retry-After', async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn(async () => archiveResponse(zipStatus))
+      .mockImplementationOnce(async () => archiveResponse(zipStatus))
+      .mockImplementationOnce(
+        async () =>
+          new Response('{}', {
+            status: 503,
+            headers: { 'Content-Type': 'application/json', 'Retry-After': '8' },
+          }),
+      ),
+  );
+  await renderArchive();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  expect(container.textContent).toContain('Очікує підготовки');
+  expect(notify).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+  expect(fetch).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(7999);
+  });
+  expect(fetch).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1);
+  });
+  expect(fetch).toHaveBeenCalledTimes(3);
+  expect(
+    vi.mocked(fetch).mock.calls.every(([, init]) => !init?.method || init.method === 'GET'),
+  ).toBe(true);
+});
+
+it('#3778 discards a late status after selection changes without ensuring the old source', async () => {
+  let resolve!: (response: Response) => void;
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn(async () =>
+        archiveResponse({
+          ...zipStatus,
+          source: { ...zipStatus.source, fileId: 'other-zip' },
+          archive: {
+            ...zipStatus.archive,
+            state: 'failed',
+            reason: 'password_protected',
+            message: 'Архів захищений паролем',
+          },
+        }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((done) => {
+            resolve = done;
+          }),
+      ),
+  );
+  await renderArchive();
+  await renderArchive({
+    ...zip,
+    fileId: 'other-zip',
+    entryId: 'other-zip',
+    name: 'other.zip',
+    absolutePath: 'C:\\other.zip',
+  });
+  await act(async () =>
+    resolve(
+      archiveResponse({ ...zipStatus, archive: { ...zipStatus.archive, state: 'not_prepared' } }),
+    ),
+  );
+  expect(container.textContent).toContain('Архів захищений паролем');
+  expect(container.querySelector('#device-file-content-title')?.textContent).toContain('other.zip');
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(
+        ([url, init]) => String(url).includes('/archive/revisions/') && init?.method === 'POST',
+      ),
+  ).toBe(false);
 });

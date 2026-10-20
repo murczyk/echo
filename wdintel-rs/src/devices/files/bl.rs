@@ -650,6 +650,7 @@ pub(super) mod mapping {
                 .map(|entry| {
                     let tags = take_tags(&mut tags_by_file, entry.file_id);
                     DeviceFileJournalEntry {
+                        archive: None,
                         file_id: entry.file_id.hyphenated().to_string(),
                         name: entry.name,
                         absolute_path: entry.absolute_path,
@@ -698,6 +699,10 @@ pub(super) mod mapping {
     ) -> DeviceFileTreeEntry {
         match entry {
             TreeEntry::Directory(directory) => DeviceFileTreeEntry {
+                is_archive: false,
+                archive_origin: None,
+                virtual_path: None,
+                archive: None,
                 entry_id: directory.entry_id.hyphenated().to_string(),
                 parent_entry_id: directory
                     .parent_entry_id
@@ -716,18 +721,27 @@ pub(super) mod mapping {
                 created_at: format_datetime(directory.created_at),
                 updated_at: format_datetime(directory.updated_at),
                 tags: Vec::new(),
-                revision: None,
-                sync_id: None,
+                revision: directory.revision,
+                sync_id: directory.sync_id.map(|id| id.to_string()),
                 source_file_state: None,
             },
             TreeEntry::File(file) => DeviceFileTreeEntry {
+                is_archive: super::super::preview::is_archive(
+                    &file.name,
+                    file.extension.as_deref(),
+                    file.mime_type.as_deref(),
+                ),
+                archive_origin: None,
+                virtual_path: None,
+                archive: None,
                 entry_id: file.file_id.hyphenated().to_string(),
                 parent_entry_id: file.parent_entry_id.hyphenated().to_string(),
                 kind: FileEntryKindDto::File,
                 file_id: Some(file.file_id.hyphenated().to_string()),
                 name: file.name,
                 path_components,
-                absolute_path: Some(file.absolute_path),
+                absolute_path: (!file.absolute_path.is_empty())
+                    .then_some(file.absolute_path),
                 has_content: file.has_content,
                 mime_type: file.mime_type,
                 extension: file.extension,
@@ -756,11 +770,20 @@ pub(super) mod mapping {
         tags: Vec<AnalyticsTag>,
     ) -> DeviceFile {
         DeviceFile {
+            is_archive: super::super::preview::is_archive(
+                &file.name,
+                file.extension.as_deref(),
+                file.mime_type.as_deref(),
+            ),
+            archive_origin: None,
+            virtual_path: None,
+            archive: None,
             file_id: file.file_id.hyphenated().to_string(),
             device_id: file.device_id.hyphenated().to_string(),
             parent_entry_id: file.parent_entry_id.hyphenated().to_string(),
             root_entry_id: root_entry_id.hyphenated().to_string(),
-            absolute_path: file.absolute_path,
+            absolute_path: (!file.absolute_path.is_empty())
+                .then_some(file.absolute_path),
             has_content: file.has_content,
             name: file.name,
             path_components,

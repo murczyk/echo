@@ -38,6 +38,7 @@ mod m20261016_165725_device_audio_transcription_pending;
 mod m20261016_172538_retire_device_audio_asr_executor;
 
 mod m20261017_101924_drop_device_audio_transcription_backfill;
+mod m20261019_101619_file_archive_registry;
 
 pub struct Migrator;
 
@@ -94,6 +95,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261016_165725_device_audio_transcription_pending::Migration),
             Box::new(m20261016_172538_retire_device_audio_asr_executor::Migration),
             Box::new(m20261017_101924_drop_device_audio_transcription_backfill::Migration),
+            Box::new(m20261019_101619_file_archive_registry::Migration),
         ]
     }
 }

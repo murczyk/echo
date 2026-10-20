@@ -47,6 +47,12 @@ export function DocumentFilePreview({
         return;
       }
       const details = error instanceof Error ? error.message : null;
+      if (source.maxPreviewBytes != null && details?.endsWith('FILE_TOO_LARGE')) {
+        onError?.(
+          new FilePreviewRenderError(`Файл завеликий для попереднього перегляду. Максимум: 1 ГБ.`),
+        );
+        return;
+      }
       const message =
         kind === 'txt' || kind === 'md'
           ? formatTextPreviewErrorMessage(kind === 'txt' ? 'TXT' : 'Markdown', details)
@@ -65,10 +71,11 @@ export function DocumentFilePreview({
           : message;
       onError?.(new FilePreviewRenderError(copy, /timeout|час|очікування/i.test(details ?? '')));
     },
-    [signal, isCurrent, onError, kind],
+    [signal, isCurrent, onError, kind, source.maxPreviewBytes],
   );
   const props = {
-    href: source.originalHref,
+    href: kind === 'pdf' ? (source.mediaHref ?? source.originalHref) : source.originalHref,
+    maxBytes: source.maxPreviewBytes,
     sizeBytes: source.sizeBytes,
     zoom: getDocumentPreviewCapabilities(kind).zoomable ? zoom : 100,
     signal,

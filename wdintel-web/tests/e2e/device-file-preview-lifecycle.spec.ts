@@ -53,8 +53,8 @@ async function expectViewer(pane: Locator, id: string) {
     await expect(pane.locator('.react-pdf__Page__canvas').first()).toBeVisible();
   } else if (id === 'archive-zip') {
     await expect(
-      pane.getByRole('button', { name: 'Скачати nested/Дані.csv', exact: true }),
-    ).toBeVisible();
+      pane.getByRole('button', { name: /^(Розгорнути|Згорнути) каталог nested$/ }),
+    ).toBeVisible({ timeout: 45_000 });
   } else if (id === 'native-map-kml') {
     await expect(pane.locator('.leaflet-container')).toBeVisible();
     await expect(pane.locator('.leaflet-overlay-pane canvas').first()).toBeAttached();
@@ -96,10 +96,12 @@ test('@regression retained historical text uses session tree/search revision and
       const browse = await previewPost<BrowseDeviceFilesRsp>(reader, '/api/device/files/browse', {
         deviceId: backend.fixtures.deviceId!,
         syncId,
+        archiveRevision: null,
         parentEntryId: entry.file.parentEntryId,
         includeBreadcrumbs: true,
         limit: 100,
         cursor: null,
+        hasContent: null,
         tagIds: null,
         tagMatch: null,
         untagged: null,
@@ -151,17 +153,32 @@ test('@regression retained historical text uses session tree/search revision and
   }
 });
 
-test('@regression ZIP nested member uses safe basename, exact bytes and fresh access HEAD', async ({
+test('#3778 @regression ZIP nested member uses safe basename, exact bytes and native download', async ({
   page,
 }) => {
   const backend = await localFilePreviewBackend();
   try {
     const { pane, entry } = await openDeviceFilePreview(page, backend, 'archive-zip');
-    const member = pane.getByRole('button', { name: 'Скачати nested/Дані.csv', exact: true });
+    const directory = pane.getByRole('button', { name: 'Розгорнути каталог nested', exact: true });
+    await expect(directory).toBeVisible({ timeout: 45_000 });
+    await directory.click();
+    await pane.getByRole('button', { name: 'Дані.csv', exact: true }).click();
+    await expect(pane.locator('#device-file-content-title')).toContainText('Дані.csv');
+    const member = pane.getByRole('button', { name: 'Скачати файл', exact: true });
     await expect(member).toBeEnabled();
+    await expect
+      .poll(() =>
+        member.evaluate(
+          (button) =>
+            button.getBoundingClientRect().bottom <=
+            button.closest('header')!.getBoundingClientRect().bottom,
+        ),
+      )
+      .toBe(true);
     const checked = page.waitForResponse(
       (response) =>
-        response.url().endsWith(entry.originalHref) &&
+        response.url().endsWith('/content') &&
+        !response.url().endsWith(entry.originalHref) &&
         response.request().method() === 'HEAD' &&
         response.status() === 200,
     );
@@ -185,14 +202,10 @@ test('@regression ZIP traversal and absolute names never become member downloads
   try {
     await ensureDeviceFilePreviewFixture(backend, 'unsafe-zip-names');
     const { pane } = await openDeviceFilePreview(page, backend, 'unsafe-zip-names');
-    await expect(pane.getByRole('alert').first()).toContainText('небезпечний');
-    await expect(pane.locator('[data-zip-entry-name]')).toHaveCount(0);
-    await expect(
-      pane.getByRole('button', { name: 'Скачати ../escape.txt', exact: true }),
-    ).toHaveCount(0);
-    await expect(
-      pane.getByRole('button', { name: 'Скачати /absolute.txt', exact: true }),
-    ).toHaveCount(0);
+    await expect(pane.getByRole('status')).toContainText('Архів містить небезпечний шлях');
+    await expect(pane.locator('button[data-testid^="device-file-"]')).toHaveCount(1);
+    await expect(pane.getByRole('button', { name: '../escape.txt', exact: true })).toHaveCount(0);
+    await expect(pane.getByRole('button', { name: '/absolute.txt', exact: true })).toHaveCount(0);
     await expectOriginalBytes(page, pane, 'unsafe-zip-names');
   } finally {
     await backend.dispose();
@@ -204,6 +217,7 @@ test('@regression ZIP cached member is stopped when actual reader access is revo
 }) => {
   const backend = await localFilePreviewBackend();
   const admin = await backend.login('admin');
+  const readerApi = await backend.login('reader');
   let reader: Login | undefined;
   const updateRoles = async (roles: string[]) => {
     if (!reader?.organismId) throw new Error('Missing owned reader organism');
@@ -223,9 +237,19 @@ test('@regression ZIP cached member is stopped when actual reader access is revo
     } satisfies UpdateLoginReq);
   };
   try {
-    const { pane, entry } = await openDeviceFilePreview(page, backend, 'archive-zip');
-    const member = pane.getByRole('button', { name: 'Скачати nested/Дані.csv', exact: true });
+    const { pane } = await openDeviceFilePreview(page, backend, 'archive-zip');
+    const directory = pane.getByRole('button', { name: 'Розгорнути каталог nested', exact: true });
+    await expect(directory).toBeVisible({ timeout: 45_000 });
+    await directory.click();
+    const selectedHead = page.waitForResponse(
+      (response) => response.request().method() === 'HEAD' && response.url().endsWith('/content'),
+    );
+    await pane.getByRole('button', { name: 'Дані.csv', exact: true }).click();
+    await expect(pane.locator('#device-file-content-title')).toContainText('Дані.csv');
+    const member = pane.getByRole('button', { name: 'Скачати файл', exact: true });
     await expect(member).toBeEnabled();
+    const memberUrl = (await selectedHead).url();
+    expect((await readerApi.head(memberUrl)).status()).toBe(200);
     const users = await previewPost<ListLoginsRsp>(admin, '/api/logins', {
       sortBy: null,
       filterByRoles: null,
@@ -233,17 +257,20 @@ test('@regression ZIP cached member is stopped when actual reader access is revo
     reader = users.users.find((user) => user.id === backend.fixtures.actors.reader.id);
     if (!reader) throw new Error('Missing actual reader actor');
     await updateRoles(['Api']);
+    const response = await readerApi.get(memberUrl);
+    expect(response.status()).toBe(403);
+    expect(await response.text()).not.toContain('Дані.csv');
     const downloads: string[] = [];
     page.on('download', (download) => downloads.push(download.suggestedFilename()));
     const denied = page.waitForResponse(
       (response) =>
-        response.url().endsWith(entry.originalHref) &&
+        response.url() === memberUrl &&
         response.request().method() === 'HEAD' &&
         response.status() === 403,
     );
     await member.click();
     await denied;
-    await expect(pane.locator('[data-zip-entry-name]')).toHaveCount(0);
+    await expect(pane.getByRole('alert')).toContainText(/доступ|заборон|forbidden|403/i);
     await expect(pane.getByRole('button', { name: 'Скачати файл', exact: true })).toBeDisabled();
     expect(downloads).toEqual([]);
   } finally {

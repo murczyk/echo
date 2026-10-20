@@ -37,8 +37,8 @@ see the [audio upload and recovery runbook](../wdintel-rs/src/devices/audio/READ
 for its access, nginx, worker and rollback requirements.
 
 The file registry uses an independent, optional PostgreSQL database: `wd_files`
-in live/debug mode. Enable it with a
-`[file_registry]` section in the selected `deploy/config*.toml`:
+in live/debug mode. Configure it with a `[file_registry]` section in the selected
+`deploy/config*.toml` and enable Devices in system settings:
 
 ```toml
 [file_registry]
@@ -49,8 +49,9 @@ pg_password = "..."
 pg_dbname = "wd_files"
 ```
 
-Without this section, the backend skips the file-registry connection and
-migrations, and device file operations return HTTP 503. To enable the file
+With Devices enabled but without this section, the backend skips the
+file-registry connection and migrations, and device file operations return
+HTTP 503. To enable the file
 registry on a deployment host, add the section and create the configured
 database once before restarting the server or background worker.
 Run the one-off command from the installed backend package:
@@ -67,10 +68,18 @@ sudo env ECHO_CONFIG_PATH=/path/to/config.toml \
   /usr/bin/wdintel-rs --mode=live oneoff-create-file-registry-database
 ```
 
-The command creates only the database. When `[file_registry]` is configured,
-the `wdfiles-migration` schema migrator runs automatically during backend
-startup. The configured PostgreSQL user needs `CREATEDB` to provision the
-database and normal DDL permissions to run its migrations.
+The command creates only the database. When Devices are enabled and
+`[file_registry]` is configured, the `wdfiles-migration` schema migrator runs
+automatically during backend startup. The configured PostgreSQL user needs
+`CREATEDB` to provision the database and normal DDL permissions to run its
+migrations.
+
+At startup, `devices_section_enabled` controls the file-registry connection,
+migrations, and all Device background workers. When disabled, the database is
+not required even if its configuration section remains present. Restart the
+API and background worker after enabling Devices so these dependencies are
+initialized. Message audio transcription remains independent: it uses the main
+database and `enable_audio_transcription`.
 
 Device file content uploads become available when `[file_registry]` and their
 storage requirements are configured. Missing or invalid upload storage disables

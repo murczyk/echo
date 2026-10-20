@@ -107,6 +107,7 @@ fn metadata_search_query(
 
 fn candidate_ids_query() -> Select<file_entry::Entity> {
     file_entry::Entity::find()
+        .filter(super::super::archive::query::current_visibility())
         .select_only()
         .column(file_entry::Column::DeviceId)
         .column(file_entry::Column::Id)

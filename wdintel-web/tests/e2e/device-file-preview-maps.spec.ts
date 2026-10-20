@@ -6,8 +6,8 @@ test('@regression lists and saves actual ZIP member bytes', async ({ page }) => 
   const backend = await localFilePreviewBackend();
   try {
     const { pane } = await openDeviceFilePreview(page, backend, 'archive-zip');
-    await expect(pane.locator('[data-zip-entry-name]').first()).toBeVisible();
-    const save = pane.getByRole('button', { name: 'Скачати Звіт.txt', exact: true });
+    await pane.getByRole('button', { name: 'Звіт.txt', exact: true }).click();
+    const save = pane.getByRole('button', { name: 'Скачати файл', exact: true });
     const downloaded = page.waitForEvent('download');
     await save.click();
     const download = await downloaded;

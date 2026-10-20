@@ -16,12 +16,14 @@ export function XlsxDocumentPreview({
   href,
   zoom,
   sizeBytes,
+  maxBytes = MAX_XLSX_FILE_BYTES,
   signal,
   onError,
 }: {
   href: string;
   zoom: number;
   sizeBytes?: number | null;
+  maxBytes?: number;
   signal?: AbortSignal;
   onError?: (error: unknown) => void;
 }) {
@@ -45,13 +47,13 @@ export function XlsxDocumentPreview({
       if (abortController.signal.aborted) return;
 
       try {
-        if (sizeBytes != null && sizeBytes > MAX_XLSX_FILE_BYTES) {
+        if (sizeBytes != null && sizeBytes > maxBytes) {
           throw new Error('XLSX_FILE_TOO_LARGE');
         }
 
         const { buffer, contentLength, contentType } = await fetchCachedDocumentResponse(
           href,
-          MAX_XLSX_FILE_BYTES,
+          maxBytes,
           'XLSX_FILE_TOO_LARGE',
           abortController.signal,
         );
@@ -64,19 +66,22 @@ export function XlsxDocumentPreview({
           bufferByteLength: buffer.byteLength,
         });
 
-        if (contentLength != null && contentLength > MAX_XLSX_FILE_BYTES) {
+        if (contentLength != null && contentLength > maxBytes) {
           throw new Error('XLSX_FILE_TOO_LARGE');
         }
 
-        if (buffer.byteLength > MAX_XLSX_FILE_BYTES) {
+        if (buffer.byteLength > maxBytes) {
           throw new Error('XLSX_FILE_TOO_LARGE');
         }
-        const result = await runWorkerTask<{ buffer: ArrayBuffer }, XlsxPreviewResult>(
+        const result = await runWorkerTask<
+          { buffer: ArrayBuffer; maxBytes: number },
+          XlsxPreviewResult
+        >(
           () =>
             new Worker(new URL('../xlsx/xlsx-preview.worker.ts', import.meta.url), {
               type: 'module',
             }),
-          { buffer },
+          { buffer, maxBytes },
           abortController.signal,
           [buffer],
         );
@@ -113,7 +118,7 @@ export function XlsxDocumentPreview({
       signal?.removeEventListener('abort', abort);
       abortController.abort();
     };
-  }, [href, sizeBytes, signal, onError]);
+  }, [href, sizeBytes, maxBytes, signal, onError]);
 
   const sheet = workbook?.sheets[selectedSheetIndex] ?? null;
   const sheetNames = useMemo(

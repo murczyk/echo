@@ -20,7 +20,7 @@ type CandidateParagraph = {
   runs?: CandidateRun[];
 };
 type CandidateReader = {
-  model?: (input: ArrayBuffer) => { body?: unknown } | null;
+  model?: (input: ArrayBuffer, maxBytes?: number) => { body?: unknown } | null;
 };
 
 function candidateReader(): CandidateReader | null {
@@ -29,11 +29,14 @@ function candidateReader(): CandidateReader | null {
   return typeof candidate === 'function' ? (candidate as CandidateReader) : null;
 }
 
-export function buildDocPreview(buffer: ArrayBuffer): DocPreviewResult {
-  if (buffer.byteLength > LEGACY_OFFICE_MAX_FILE_BYTES) {
+export function buildDocPreview(
+  buffer: ArrayBuffer,
+  maxBytes = LEGACY_OFFICE_MAX_FILE_BYTES,
+): DocPreviewResult {
+  if (buffer.byteLength > maxBytes) {
     throw new LegacyOfficePreviewError(LegacyOfficePreviewErrorCode.FileTooLarge);
   }
-  const cfb = validateCfbContainer(buffer);
+  const cfb = validateCfbContainer(buffer, maxBytes);
   if (
     cfb.directory.some(
       (entry) => entry.type === 1 && /^(?:vba|macros|_vba_project_cur)$/i.test(entry.name),
@@ -61,11 +64,11 @@ export function buildDocPreview(buffer: ArrayBuffer): DocPreviewResult {
         ? '1Table'
         : '0Table',
   );
-  validateWordDocument(wordDocument, table);
+  validateWordDocument(wordDocument, table, maxBytes);
   const reader = candidateReader();
   if (reader == null)
     throw new LegacyOfficePreviewError(LegacyOfficePreviewErrorCode.UnsupportedStructure);
-  const body = reader.model?.(buffer)?.body;
+  const body = reader.model?.(buffer, maxBytes)?.body;
   if (!Array.isArray(body))
     throw new LegacyOfficePreviewError(LegacyOfficePreviewErrorCode.Malformed);
   const blocks: DocPreviewResult['blocks'] = [];

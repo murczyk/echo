@@ -36,18 +36,18 @@ function isSpecialSector(value: number): boolean {
   return value === FREESECT || value === ENDOFCHAIN || value === FATSECT || value === DIFSECT;
 }
 
-function checkedByteLength(count: number, itemSize: number): number {
-  if (
-    !Number.isSafeInteger(count) ||
-    count < 0 ||
-    count > Math.floor(LEGACY_OFFICE_TYPED_BUFFER_BUDGET / itemSize)
-  ) {
+function checkedByteLength(count: number, itemSize: number, budget: number): number {
+  if (!Number.isSafeInteger(count) || count < 0 || count > Math.floor(budget / itemSize)) {
     reject(LegacyOfficePreviewErrorCode.ResourceLimit);
   }
   return count * itemSize;
 }
 
-export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
+export function validateCfbContainer(
+  buffer: ArrayBuffer,
+  maxBytes = LEGACY_OFFICE_TYPED_BUFFER_BUDGET,
+): ValidatedCfb {
+  const budget = Math.max(LEGACY_OFFICE_TYPED_BUFFER_BUDGET, maxBytes);
   if (buffer.byteLength < HEADER_SIZE) reject();
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
@@ -71,11 +71,7 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
   if (sectorCount <= 0) reject();
   let allocatedBytes = 0;
   const reserve = (size: number) => {
-    if (
-      !Number.isSafeInteger(size) ||
-      size < 0 ||
-      allocatedBytes > LEGACY_OFFICE_TYPED_BUFFER_BUDGET - size
-    )
+    if (!Number.isSafeInteger(size) || size < 0 || allocatedBytes > budget - size)
       reject(LegacyOfficePreviewErrorCode.ResourceLimit);
     allocatedBytes += size;
   };
@@ -123,7 +119,7 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
     } else if (sector !== FREESECT) reject();
   }
   const expectedDifatEntries = difatSectorCount * (entriesPerSector - 1);
-  checkedByteLength(expectedDifatEntries, 4);
+  checkedByteLength(expectedDifatEntries, 4, budget);
   let difat = firstDifatSector;
   const seenDifat = new Set<number>();
   for (let index = 0; index < difatSectorCount; index += 1) {
@@ -141,7 +137,7 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
     difat = sector.getUint32(sectorSize - 4, true);
   }
   if (difat !== ENDOFCHAIN || fatSectors.length !== fatSectorCount) reject();
-  const fatByteLength = checkedByteLength(fatSectors.length * entriesPerSector, 4);
+  const fatByteLength = checkedByteLength(fatSectors.length * entriesPerSector, 4, budget);
   reserve(fatByteLength);
   const fat = new Uint32Array(fatSectors.length * entriesPerSector);
   fatSectors.forEach((sector, sectorIndex) => {
@@ -228,10 +224,7 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
       };
       if (type === 2) {
         declaredStreamBytes += entry.size;
-        if (
-          !Number.isSafeInteger(declaredStreamBytes) ||
-          declaredStreamBytes > LEGACY_OFFICE_TYPED_BUFFER_BUDGET
-        )
+        if (!Number.isSafeInteger(declaredStreamBytes) || declaredStreamBytes > budget)
           reject(LegacyOfficePreviewErrorCode.ResourceLimit);
       }
       directory.push(entry);
@@ -299,7 +292,7 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
       ? walkFat(root.startSector, 'root-mini-stream', 0)
       : walkFat(root.startSector, 'root-mini-stream', root.size);
   const miniFatEntries = miniFatChain.length * entriesPerSector;
-  const miniFatByteLength = checkedByteLength(miniFatEntries, 4);
+  const miniFatByteLength = checkedByteLength(miniFatEntries, 4, budget);
   reserve(miniFatByteLength);
   const miniFat = new Uint32Array(miniFatEntries);
   miniFatChain.forEach((sectorId, sectorIndex) => {
@@ -360,7 +353,7 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
       if (entry.parentIndex === rootIndex) streams.set(entry.name, entry);
     }
   const copyRegularChain = (chain: readonly number[], size: number): Uint8Array => {
-    checkedByteLength(size, 1);
+    checkedByteLength(size, 1, budget);
     reserve(size);
     const output = new Uint8Array(size);
     let outputOffset = 0;
@@ -383,7 +376,7 @@ export function validateCfbContainer(buffer: ArrayBuffer): ValidatedCfb {
     if (regularChain != null) return copyRegularChain(regularChain, entry.size);
     const miniChain = miniChains.get(entry.index);
     if (miniChain == null) reject();
-    checkedByteLength(entry.size, 1);
+    checkedByteLength(entry.size, 1, budget);
     reserve(entry.size);
     const output = new Uint8Array(entry.size);
     let outputOffset = 0;

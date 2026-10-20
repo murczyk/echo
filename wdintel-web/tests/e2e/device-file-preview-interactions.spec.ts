@@ -467,9 +467,7 @@ async function viewerReady(owner: Locator, id: string) {
   else if (id === 'document-xlsx')
     await expect(owner.getByRole('cell', { name: 'Київ', exact: true })).toBeVisible();
   else if (id === 'archive-zip')
-    await expect(
-      owner.getByRole('button', { name: 'Скачати nested/Дані.csv', exact: true }),
-    ).toBeEnabled();
+    await expect(owner.getByRole('button', { name: 'Звіт.txt', exact: true })).toBeEnabled();
   else if (id === 'native-map-kml')
     await expect(owner.locator('.leaflet-overlay-pane canvas').first()).toBeAttached();
   else if (id === 'audio-wav')
@@ -575,7 +573,7 @@ for (const width of [390, 1440]) {
   }
 }
 
-function multiPagePdf(): Buffer {
+function multiPagePdf(paddingBytes = 0): Buffer {
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R] /Count 4 >>',
@@ -589,6 +587,8 @@ function multiPagePdf(): Buffer {
     const content = `BT /F1 24 Tf 40 540 Td (Echo acceptance page ${page}) Tj ET`;
     objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
   }
+  if (paddingBytes > 0)
+    objects.push(`<< /Length ${paddingBytes} >>\nstream\n${' '.repeat(paddingBytes)}\nendstream`);
   let output = '%PDF-1.4\n';
   const offsets = [0];
   objects.forEach((object, index) => {
@@ -662,7 +662,7 @@ async function openCustom(page: Page, backend: FilePreviewBackend, source: Sourc
   return page.getByTestId('device-file-content-pane');
 }
 
-test('@regression multipage PDF scroll reaches lazy fourth page and zooms the actual page', async ({
+test('@regression multipage PDF above 10 MiB scrolls and zooms in Device and message previews', async ({
   page,
   context,
 }) => {
@@ -670,11 +670,12 @@ test('@regression multipage PDF scroll reaches lazy fourth page and zooms the ac
   try {
     const source = await customSource(
       backend,
-      'acceptance-multipage',
+      'acceptance-multipage-above-10mib',
       'pdf',
       'application/pdf',
-      multiPagePdf(),
+      multiPagePdf(11 * 1024 * 1024),
     );
+    expect(source.bytes.length).toBeGreaterThan(10 * 1024 * 1024);
     const pane = await openCustom(page, backend, source);
     await pane.getByRole('button', { name: 'На весь екран', exact: true }).click();
     const dialog = page.getByRole('dialog');
@@ -852,15 +853,22 @@ test('@regression same-byte ZIP reference-host listing and nested member downloa
   try {
     const source = await loadDeviceFilePreviewFixture('archive-zip');
     const { pane } = await openDeviceFilePreview(page, backend, source.fixture.id);
-    const names = await zipActions(pane, page);
+    await expect(pane.getByRole('button', { name: 'Звіт.txt', exact: true })).toBeVisible();
+    await pane.getByRole('button', { name: 'Розгорнути каталог nested', exact: true }).click();
+    await pane.getByRole('button', { name: 'Дані.csv', exact: true }).click();
+    const save = pane.getByRole('button', { name: 'Скачати файл', exact: true });
+    await expect(save).toBeEnabled();
+    const pending = page.waitForEvent('download');
+    await save.press('Enter');
+    expect(await readFile((await (await pending).path())!)).toEqual(
+      (await loadDeviceFilePreviewFixture('document-csv')).bytes,
+    );
     for (const host of ['duty', 'analysis'] as const) {
       const referencePage = await context
         .browser()!
         .newPage({ baseURL: process.env.PLAYWRIGHT_BASE_URL, viewport: page.viewportSize()! });
       try {
-        expect(
-          await zipActions(await openReferenceHost(referencePage, host, source), referencePage),
-        ).toEqual(names);
+        await zipActions(await openReferenceHost(referencePage, host, source), referencePage);
       } finally {
         await referencePage.close();
       }
@@ -1179,3 +1187,89 @@ async function touchImageActions(owner: Locator, page: Page) {
   await expect(owner).toBeVisible();
   await client.detach();
 }
+
+function rangeSeparatedPdf(): Buffer {
+  const pages = 8;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    `<< /Type /Pages /Count ${pages} /Kids [${Array.from({ length: pages }, (_, i) => `${3 + i} 0 R`).join(' ')}] >>`,
+  ];
+  for (let i = 0; i < pages; i += 1) {
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> /Contents ${3 + pages + i * 2} 0 R >>`,
+    );
+  }
+  for (let i = 0; i < pages; i += 1) {
+    const text = `BT /F1 20 Tf 30 350 Td (Range page ${i + 1}) Tj ET`;
+    objects.push(`<< /Length ${text.length} >>\nstream\n${text}\nendstream`);
+    const padding = ' '.repeat(256 * 1024);
+    objects.push(`<< /Length ${padding.length} >>\nstream\n${padding}\nendstream`);
+  }
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${offsets.length}\n0000000000 65535 f \n${offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
+    .join('')}trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf);
+}
+
+test('#3830 @regression a denied late PDF range clears rendered pages and shows the access error', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const backend = await localFilePreviewBackend();
+  try {
+    const source = await customSource(
+      backend,
+      `pdf-ranges-${Date.now()}`,
+      'pdf',
+      'application/pdf',
+      rangeSeparatedPdf(),
+    );
+    const entry = backend.fixtures.seeded.find((entry) => entry.fixtureId === source.fixture.id)!;
+    const href = entry.originalHref.replace(/\/content$/, '/preview/media');
+    let deny = false;
+    let denied = 0;
+    const rangeReads: string[] = [];
+    await page.route(`**${href}`, async (route) => {
+      const range = /^bytes=(\d+)-(\d+)$/.exec(route.request().headers().range ?? '');
+      rangeReads.push(`${route.request().method()}:${route.request().headers().range ?? 'full'}`);
+      if (deny && range) {
+        denied += 1;
+        await route.fulfill({ status: 403, body: 'Forbidden' });
+        return;
+      }
+      const start = range ? Number(range[1]) : 0;
+      const end = range ? Math.min(Number(range[2]) + 1, source.bytes.length) : source.bytes.length;
+      await route.fulfill({
+        status: range ? 206 : 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Accept-Ranges': 'bytes',
+          'Content-Length': String(end - start),
+          ...(range ? { 'Content-Range': `bytes ${start}-${end - 1}/${source.bytes.length}` } : {}),
+        },
+        body:
+          route.request().method() === 'HEAD' ? Buffer.alloc(0) : source.bytes.subarray(start, end),
+      });
+    });
+    const pane = await openCustom(page, backend, source);
+    await expect(pane.locator('.react-pdf__Page__canvas')).toHaveCount(3, { timeout: 30_000 });
+    expect(rangeReads.some((request) => request.startsWith('GET:bytes='))).toBe(true);
+    deny = true;
+    await pane.locator('[data-pdf-page-number="4"]').scrollIntoViewIfNeeded();
+    await expect
+      .poll(() => denied, { timeout: 15_000, message: JSON.stringify(rangeReads) })
+      .toBeGreaterThan(0);
+    await expect(pane.locator('.react-pdf__Page__canvas')).toHaveCount(0);
+    await expect(pane.getByRole('alert')).toContainText(/доступ|прав|403/i);
+  } finally {
+    await backend.dispose();
+  }
+});

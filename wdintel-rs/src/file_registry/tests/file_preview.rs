@@ -1,4 +1,5 @@
 use super::*;
+use sea_orm::{ColumnTrait, Iterable, QueryFilter, QuerySelect};
 
 #[tokio::test]
 #[serial_test::serial]
@@ -20,7 +21,29 @@ async fn preview_upgrade_preserves_originals_and_retains_cleanup_ledger() {
             .unwrap();
         let transaction = connection.begin().await.unwrap();
         let tree = insert_file_entry_tree(&transaction).await;
-        let entry = file_entry::Entity::find_by_id(tree.file_id)
+        let entry = file_entry::Entity::find()
+            .select_only()
+            .columns(file_entry::Column::iter().filter(|column| {
+                !matches!(
+                    column,
+                    file_entry::Column::ArchiveFileId
+                        | file_entry::Column::ArchiveRelativePath
+                        | file_entry::Column::IsArchive
+                )
+            }))
+            .expr_as(
+                sea_orm::sea_query::Expr::cust("null::uuid"),
+                file_entry::Column::ArchiveFileId,
+            )
+            .expr_as(
+                sea_orm::sea_query::Expr::cust("null::text"),
+                file_entry::Column::ArchiveRelativePath,
+            )
+            .expr_as(
+                sea_orm::sea_query::Expr::cust("null::boolean"),
+                file_entry::Column::IsArchive,
+            )
+            .filter(file_entry::Column::Id.eq(tree.file_id))
             .one(&transaction)
             .await
             .unwrap()
@@ -89,7 +112,7 @@ from file_revision r join file_content c on c.file_id=r.id and c.revision=r.revi
 async fn snapshot(connection: &DatabaseConnection) -> Vec<String> {
     let mut snapshot = Vec::new();
     for table in ["file_entry", "file_revision", "file_content"] {
-        let rows = connection.query_all_raw(Statement::from_string(DbBackend::Postgres, format!("select row_to_json(t)::text as row from {table} t order by row_to_json(t)::text"))).await.unwrap();
+        let rows = connection.query_all_raw(Statement::from_string(DbBackend::Postgres, format!("select (to_jsonb(t)-'origin_archive_id'-'is_archive'-'archive_file_id'-'archive_relative_path'-'archive_member_index')::text as row from {table} t order by row"))).await.unwrap();
         snapshot.extend(rows.into_iter().map(|row| {
             format!("{table}:{}", row.try_get::<String>("", "row").unwrap())
         }));

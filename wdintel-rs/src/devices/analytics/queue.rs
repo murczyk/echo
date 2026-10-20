@@ -188,6 +188,7 @@ pub(in crate::devices) async fn ensure_sync_run(
         return Ok(Some(run_id));
     }
     let has_new_input = file_revision::Entity::find()
+        .filter(file_revision::Column::OriginArchiveId.is_null())
         .select_only()
         .column(file_revision::Column::Id)
         .filter(file_revision::Column::SyncId.eq(sync_id))
@@ -380,6 +381,7 @@ pub(super) async fn prepare_next_page(
     let cursor = last_file_id.unwrap_or(Uuid::nil());
     let candidates = if let Some(sync_id) = run.sync_id {
         file_revision::Entity::find()
+            .filter(file_revision::Column::OriginArchiveId.is_null())
             .select_only()
             .column_as(file_revision::Column::Id, "file_id")
             .column_as(file_revision::Column::Revision, "metadata_revision")
@@ -406,6 +408,7 @@ pub(super) async fn prepare_next_page(
             })
             .context(h!())?;
         file_revision::Entity::find()
+            .filter(file_revision::Column::OriginArchiveId.is_null())
             .select_only()
             .column_as(file_revision::Column::Id, "file_id")
             .column_as(file_revision::Column::Revision, "metadata_revision")
@@ -570,9 +573,11 @@ pub(super) async fn claim_analysis_batch(
             join file_revision as target
               on target.id = updated.file_id
              and target.revision = updated.metadata_revision
+             and target.origin_archive_id is null
             join file_revision as input
               on input.id = target.id
              and input.revision = target.analysis_input_revision
+             and input.origin_archive_id is null
             order by updated.file_id
         "#,
         [
@@ -704,6 +709,7 @@ pub(super) async fn complete_analysis_batch(
                     from file_entry as file
                     join completed_items as item on item.file_id = file.id
                     cross join result_write_finished
+                    where file.archive_file_id is null
                     order by file.id
                     for update of file
                 ),
@@ -718,6 +724,8 @@ pub(super) async fn complete_analysis_batch(
                       on target.id = item.file_id
                      and target.revision = item.metadata_revision
                     where file.id = item.file_id
+                      and file.archive_file_id is null
+                      and target.origin_archive_id is null
                       and file.analysis_input_revision =
                           target.analysis_input_revision
                       and (

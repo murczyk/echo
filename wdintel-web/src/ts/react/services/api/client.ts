@@ -13,6 +13,7 @@ export type RequestOptions = {
 
 export class HttpRequestError extends Error {
   status: number;
+  retryAfterMs?: number;
 
   constructor(status: number, message: string) {
     super(message);
@@ -124,7 +125,14 @@ async function requestJson<T>(
       emitUnauthorizedEvent();
     }
     const message = await parseErrorMessage(response);
-    throw new HttpRequestError(response.status, message);
+    const error = new HttpRequestError(response.status, message);
+    const retryAfter = response.headers.get('Retry-After');
+    if (retryAfter) {
+      const seconds = Number(retryAfter);
+      const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now();
+      if (Number.isFinite(delay)) error.retryAfterMs = Math.max(0, delay);
+    }
+    throw error;
   }
 
   if (response.status === 204) return undefined as T;

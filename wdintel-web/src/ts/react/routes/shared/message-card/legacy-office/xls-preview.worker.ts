@@ -2,13 +2,13 @@ import { LegacyOfficePreviewError, LegacyOfficePreviewErrorCode } from './legacy
 import { buildXlsPreview } from './xls-preview';
 import type { XlsPreviewResult } from './legacy-office-preview.types';
 
-type Request = { requestId: string; request: { buffer: ArrayBuffer } };
+type Request = { requestId: string; request: { buffer: ArrayBuffer; maxBytes?: number } };
 type Response = { requestId: string; ok: boolean; value?: XlsPreviewResult; error?: string };
 
 self.addEventListener('message', (event: MessageEvent<Request>) => {
   const { requestId, request } = event.data;
   try {
-    const value = buildXlsPreview(request.buffer);
+    const value = buildXlsPreview(request.buffer, request.maxBytes);
     self.postMessage({ requestId, ok: true, value } satisfies Response);
   } catch (error) {
     const code =

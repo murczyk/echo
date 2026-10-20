@@ -1,4 +1,6 @@
 import type {
+  DeviceArchiveStatus,
+  DeviceFileContentRef,
   DeviceAnalyticsSummaryReq,
   LocateDeviceFileReq,
   LocateDeviceFileRsp,
@@ -46,7 +48,7 @@ import type {
   UpdateDeviceReq,
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
-import { getBytes, headResponse, postJson } from './client';
+import { getBytes, getJson, headResponse, postJson } from './client';
 import type { JsonBody, RequestOptions } from './client';
 
 export type CreateDeviceInput = {
@@ -353,4 +355,31 @@ export async function getDeviceSyncSessionSummaries(
 export async function locateDeviceFile(req: LocateDeviceFileReq, options?: RequestOptions) {
   const data = await postJson('/api/device/files/locate', req, options);
   return transformSnakeToCamel<LocateDeviceFileRsp>(data);
+}
+
+function deviceArchiveUrl(deviceId: string, fileId: string, revision: number) {
+  if (!Number.isSafeInteger(revision) || revision <= 0) throw new Error('Некоректна ревізія файлу');
+  return `/api/device/files/${encodeURIComponent(deviceId)}/${encodeURIComponent(fileId)}/revisions/${revision}/archive`;
+}
+
+export async function getDeviceArchive(
+  deviceId: string,
+  fileId: string,
+  revision: number,
+  options?: RequestOptions,
+): Promise<DeviceArchiveStatus> {
+  return transformSnakeToCamel(
+    await getJson(deviceArchiveUrl(deviceId, fileId, revision), options),
+  );
+}
+
+export async function ensureDeviceArchive(
+  deviceId: string,
+  fileId: string,
+  revision: number,
+  options?: RequestOptions,
+): Promise<DeviceArchiveStatus> {
+  return transformSnakeToCamel(
+    await postJson(deviceArchiveUrl(deviceId, fileId, revision), undefined, options),
+  );
 }

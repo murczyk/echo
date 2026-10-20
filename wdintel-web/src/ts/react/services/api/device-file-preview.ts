@@ -57,10 +57,6 @@ export async function preflightDeviceFileMedia(
   source: DeviceFilePreviewSource,
   signal: AbortSignal,
 ) {
-  if (source.archiveMember && source.mediaHref) {
-    await getDeviceFilePreviewContentSize(source.accessHref!, signal);
-    return source.mediaHref;
-  }
   const href = deviceFileMediaPreviewUrl(source);
   await withDevicePreviewDeadline(
     signal,
@@ -95,8 +91,7 @@ export async function preflightDeviceFileMedia(
   return href;
 }
 function geodataUrl(source: DeviceFilePreviewSource, suffix = '') {
-  const members = source.archiveMember?.members.map((entry) => entry.index).join(',');
-  return `${revisionPreviewUrl(source)}/geodata${suffix}${members ? `?archive_members=${members}` : ''}`;
+  return `${revisionPreviewUrl(source)}/geodata${suffix}`;
 }
 export async function getDeviceFileGeodataStatus(
   source: DeviceFilePreviewSource,

@@ -5,6 +5,7 @@ mod query;
 mod tests;
 pub mod types;
 mod worker;
+pub(in crate::devices::files) use archive::is_archive;
 
 pub(crate) use worker::{cleanup_nofail, run_nofail};
 

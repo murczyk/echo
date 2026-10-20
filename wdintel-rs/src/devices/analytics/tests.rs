@@ -17,6 +17,9 @@ use crate::file_registry::entities::{
         FileEntryKind, FileSyncSessionMode, FileSyncSessionStatus,
     },
 };
+use crate::file_registry::test_support::{
+    ARCHIVE_PUBLICATION_SQL, ARCHIVE_SOURCE_SQL,
+};
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::types::Env;
 use chrono::{Duration as ChronoDuration, Utc};
@@ -451,6 +454,9 @@ async fn insert_pending_files(
         let root_id = Uuid::now_v7();
         let root_path = hierarchy_label(root_id);
         file_entry::ActiveModel {
+            is_archive: sea_orm::ActiveValue::NotSet,
+            archive_relative_path: sea_orm::ActiveValue::NotSet,
+            archive_file_id: sea_orm::ActiveValue::NotSet,
             id: Set(root_id),
             device_id: Set(device_id),
             parent_id: Set(None),
@@ -484,6 +490,9 @@ async fn insert_pending_files(
         crate::file_registry::test_support::insert_entry(
             file_db,
             file_entry::ActiveModel {
+                is_archive: sea_orm::ActiveValue::NotSet,
+                archive_relative_path: sea_orm::ActiveValue::NotSet,
+                archive_file_id: sea_orm::ActiveValue::NotSet,
                 id: Set(file_id),
                 device_id: Set(device_id),
                 parent_id: Set(Some(root_id)),
@@ -1586,7 +1595,7 @@ async fn metadata_only_sync_preserves_current_analysis_projection() {
             .unwrap();
     assert_eq!(
         latest_revision.analysis_input_revision,
-        before.analysis_input_revision.unwrap(),
+        before.analysis_input_revision,
     );
     assert_eq!(
         file_analysis_run::Entity::find()
@@ -1688,7 +1697,7 @@ async fn run_items_reject_invalid_results_and_late_targets() {
     let error = file_analysis_run_item::ActiveModel {
         id: Set(run.id),
         file_id: Set(late_file_id),
-        metadata_revision: Set(late_revision.analysis_input_revision),
+        metadata_revision: Set(late_revision.analysis_input_revision.unwrap()),
         lease_token: Set(None),
         lease_expires_at: Set(None),
         result_tag_ids: Set(None),
@@ -1706,3 +1715,74 @@ async fn run_items_reject_invalid_results_and_late_targets() {
 }
 
 mod session_reads;
+
+#[tokio::test]
+#[serial_test::serial]
+async fn archive_tags_do_not_change_physical_totals_or_link_pagination() {
+    use crate::{file_registry, types::Mode};
+    use sea_orm::{ConnectionTrait, TransactionTrait};
+    use sqlx::migrate::MigrateDatabase;
+    let mut config = crate::config::read_config(Mode::Test).unwrap();
+    let registry = config.file_registry.as_mut().unwrap();
+    registry.pg_dbname = Some(format!(
+        "wd_files_test_archive_tags_{}",
+        Uuid::new_v4().simple()
+    ));
+    let url = crate::mk_wdfile_conn_string(registry, Mode::Debug);
+    sqlx::Postgres::create_database(&url).await.unwrap();
+    file_registry::run_migrations(&config, Mode::Debug)
+        .await
+        .unwrap();
+    {
+        let registry = file_registry::connect_runtime(&config, Mode::Debug)
+            .await
+            .unwrap()
+            .unwrap();
+        let db = registry.connection();
+        db.execute_unprepared(ARCHIVE_SOURCE_SQL).await.unwrap();
+        let tx = db.begin().await.unwrap();
+        tx.execute_unprepared("insert into file_archive(id,device_id,source_file_id,source_revision,source_object_key,source_sha256,source_size_bytes,source_is_encrypted,root_id,depth,policy) select '00000000-0000-0000-0000-000000000101',r.device_id,r.id,r.revision,c.object_key,c.source_sha256,c.source_size_bytes,c.is_encrypted,'00000000-0000-0000-0000-000000000101',1,'{}' from file_revision r join file_content c on c.file_id=r.id and c.revision=r.revision where r.revision=2;").await.unwrap();
+        tx.execute_unprepared(ARCHIVE_PUBLICATION_SQL)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        db.execute_unprepared("insert into analytics_tag(id,name,created_at,updated_at) values('00000000-0000-0000-0000-000000000201','archive test',now(),now()); insert into device_file_tag(id,file_entry_id,device_id,file_entry_created_at,tag_id,created_at,updated_at) select gen_random_uuid(),id,device_id,created_at,'00000000-0000-0000-0000-000000000201',now(),now() from file_entry where kind='file';").await.unwrap();
+        let source = file_entry::Entity::find()
+            .filter(file_entry::Column::ArchiveFileId.is_null())
+            .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let tag_id = Uuid::from_u128(0x201);
+        assert!(query::find_active_tag(db, tag_id).await.unwrap().is_some());
+        let summary =
+            query::device_summary(db, source.device_id).await.unwrap();
+        assert_eq!(summary.total_file_count, 1);
+        assert_eq!(summary.items.len(), 1);
+        assert_eq!(summary.items[0].file_count, 1);
+        let links =
+            query::list_file_links(db, source.device_id, tag_id, None, 1)
+                .await
+                .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].file_entry_id, source.id);
+        let derived = file_entry::Entity::find()
+            .filter(file_entry::Column::ArchiveFileId.is_not_null())
+            .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(query::resolve_file_link_cursor(
+            db,
+            source.device_id,
+            tag_id,
+            derived.id
+        )
+        .await
+        .unwrap()
+        .is_none());
+    }
+    sqlx::Postgres::drop_database(&url).await.unwrap();
+}

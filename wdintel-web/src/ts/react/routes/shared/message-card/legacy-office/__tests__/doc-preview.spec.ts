@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { LegacyOfficePreviewError, LegacyOfficePreviewErrorCode } from '../legacy-office-errors';
+import { CFB } from '../vendor/sheetjs/xlsx-0.20.3.mjs';
 import { buildDocPreview } from '../doc-preview';
 import {
   LEGACY_OFFICE_MAX_DOC_TABLE_CELLS,
@@ -450,3 +451,18 @@ describe('legacy Word DOC preview', () => {
     ).toBeNull();
   });
 });
+
+// PR #3830: device DOC input and real WordDocument streams may exceed64MiB.
+it('previews a large WordDocument with the device allowance while retaining the attachment default', async () => {
+  const original = await fixtureBuffer('structured-document.doc');
+  const expected = buildDocPreview(original);
+  const container = CFB.read(new Uint8Array(original), { type: 'array' });
+  const word = CFB.find(container, 'WordDocument');
+  const content = new Uint8Array(65 * 1024 * 1024);
+  content.set(word.content);
+  CFB.utils.cfb_add(container, 'WordDocument', content);
+  const bytes = CFB.write(container, { type: 'array' });
+  const buffer = new Uint8Array(bytes).buffer;
+  expect(() => buildDocPreview(buffer)).toThrowError(LegacyOfficePreviewError);
+  expect(buildDocPreview(buffer, 1_000_000_000)).toEqual(expected);
+}, 20000);

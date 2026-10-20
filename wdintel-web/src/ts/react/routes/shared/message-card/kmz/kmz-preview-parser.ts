@@ -216,7 +216,7 @@ function concat(chunks: Uint8Array[]): Uint8Array {
   }
   return result;
 }
-function kmzKmlTexts(bytes: Uint8Array): string[] {
+function kmzKmlTexts(bytes: Uint8Array, maxExpandedBytes: number): string[] {
   if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) fail('KMZ_MALFORMED');
   let entries = 0;
   let expanded = 0;
@@ -240,7 +240,7 @@ function kmzKmlTexts(bytes: Uint8Array): string[] {
       return;
     }
     if (!/\.kml$/i.test(file.name)) return;
-    const remaining = MAX_KMZ_PREVIEW_EXPANDED_BYTES - expanded;
+    const remaining = maxExpandedBytes - expanded;
     if (file.originalSize != null && file.originalSize > remaining) {
       stop('KMZ_EXPANDED_TOO_LARGE');
       return;
@@ -251,7 +251,7 @@ function kmzKmlTexts(bytes: Uint8Array): string[] {
     file.ondata = (error, data, final) => {
       if (limitError != null) return;
       if (error != null) fail('KMZ_MALFORMED');
-      if (expanded + data.length > MAX_KMZ_PREVIEW_EXPANDED_BYTES) {
+      if (expanded + data.length > maxExpandedBytes) {
         stop('KMZ_EXPANDED_TOO_LARGE');
         return;
       }
@@ -286,12 +286,19 @@ function kmzKmlTexts(bytes: Uint8Array): string[] {
     .map(({ chunks }) => decoder.decode(concat(chunks)));
 }
 
-export function parseKmzPreview(buffer: ArrayBuffer, format: 'kml' | 'kmz'): KmzPreview {
-  if (buffer.byteLength > MAX_KMZ_PREVIEW_SOURCE_BYTES) fail('KMZ_SOURCE_TOO_LARGE');
+export function parseKmzPreview(
+  buffer: ArrayBuffer,
+  format: 'kml' | 'kmz',
+  maxBytes = MAX_KMZ_PREVIEW_SOURCE_BYTES,
+): KmzPreview {
+  if (buffer.byteLength > maxBytes) fail('KMZ_SOURCE_TOO_LARGE');
   const preview: KmzPreview = { points: [], lineStrings: [], polygons: [] };
   const coordinates: KmzPreviewCoords[] = [];
   const pointGroups = new Map<string, PointGroup>();
-  const texts = format === 'kml' ? [decoder.decode(buffer)] : kmzKmlTexts(new Uint8Array(buffer));
+  const texts =
+    format === 'kml'
+      ? [decoder.decode(buffer)]
+      : kmzKmlTexts(new Uint8Array(buffer), Math.max(MAX_KMZ_PREVIEW_EXPANDED_BYTES, maxBytes));
   texts.forEach((text, member) => parseKml(text, preview, coordinates, pointGroups, member));
   if (
     preview.polygons.length === 0 &&

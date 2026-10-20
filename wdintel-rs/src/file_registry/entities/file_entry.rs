@@ -19,6 +19,7 @@ pub struct Model {
     #[sea_orm(unique_key = "file_entry_hierarchy_uidx")]
     pub device_id: Uuid,
     pub parent_id: Option<Uuid>,
+    #[sea_orm(unique_key = "file_entry_archive_identity_key")]
     pub kind: FileEntryKind,
     #[sea_orm(column_type = "Text")]
     pub name: String,
@@ -49,6 +50,15 @@ pub struct Model {
     pub source_file_state_settled_by: Option<String>,
     pub analysis_input_revision: Option<i64>,
     pub current_analysis_run_id: Option<Uuid>,
+    pub is_archive: Option<bool>,
+    #[sea_orm(unique_key = "file_entry_archive_identity_key")]
+    pub archive_file_id: Option<Uuid>,
+    #[sea_orm(
+        column_type = "Text",
+        nullable,
+        unique_key = "file_entry_archive_identity_key"
+    )]
+    pub archive_relative_path: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -73,12 +83,20 @@ pub enum Relation {
     FileContent,
     #[sea_orm(
         belongs_to = "Entity",
+        from = "(Column::DeviceId, Column::ArchiveFileId)",
+        to = "(Column::DeviceId, Column::Id)",
+        on_update = "NoAction",
+        on_delete = "Restrict"
+    )]
+    SelfRef2,
+    #[sea_orm(
+        belongs_to = "Entity",
         from = "(Column::DeviceId, Column::ParentId)",
         to = "(Column::DeviceId, Column::Id)",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]
-    SelfRef,
+    SelfRef1,
     #[sea_orm(
         belongs_to = "super::file_revision::Entity",
         from = "(Column::Id, Column::AnalysisInputRevision)",

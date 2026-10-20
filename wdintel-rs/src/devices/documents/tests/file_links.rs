@@ -15,6 +15,7 @@ async fn file_links_3757_locate_pinned_revision_and_reject_foreign_devices() {
     let now = chrono::Utc::now().naive_utc();
     let hierarchy = format!("n{}.n{}", root_id.simple(), directory_id.simple());
     file_entry::ActiveModel {
+        archive_file_id: sea_orm::ActiveValue::NotSet,
         id: Set(directory_id),
         device_id: Set(device.id),
         parent_id: Set(Some(root_id)),
@@ -36,7 +37,7 @@ async fn file_links_3757_locate_pinned_revision_and_reject_foreign_devices() {
             .unwrap()
             .into_active_model();
     revision.revision = Set(original_revision + 1);
-    revision.source_sequence = Set(100);
+    revision.source_sequence = Set(Some(100));
     revision.name = Set("Новий звіт.txt".into());
     revision.insert(db).await.unwrap();
     let mut updated = file.clone().into_active_model();

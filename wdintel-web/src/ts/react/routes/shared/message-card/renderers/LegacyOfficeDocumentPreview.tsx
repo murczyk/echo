@@ -66,6 +66,7 @@ export function LegacyOfficeDocumentPreview({
   href,
   zoom,
   sizeBytes,
+  maxBytes = LEGACY_OFFICE_MAX_FILE_BYTES,
   kind,
   signal,
   onError,
@@ -73,6 +74,7 @@ export function LegacyOfficeDocumentPreview({
   href: string;
   zoom: number;
   sizeBytes?: number | null;
+  maxBytes?: number;
   kind: LegacyKind;
   signal?: AbortSignal;
   onError?: (error: unknown) => void;
@@ -95,17 +97,17 @@ export function LegacyOfficeDocumentPreview({
     const load = async () => {
       try {
         if (controller.signal.aborted) return;
-        if (sizeBytes != null && sizeBytes > LEGACY_OFFICE_MAX_FILE_BYTES)
+        if (sizeBytes != null && sizeBytes > maxBytes)
           throw new Error('LEGACY_OFFICE_FILE_TOO_LARGE');
         const { buffer } = await fetchCachedDocumentResponse(
           href,
-          LEGACY_OFFICE_MAX_FILE_BYTES,
+          maxBytes,
           'LEGACY_OFFICE_FILE_TOO_LARGE',
           controller.signal,
         );
         window.clearTimeout(downloadTimer);
         const value = await runWorkerTask<
-          { buffer: ArrayBuffer },
+          { buffer: ArrayBuffer; maxBytes: number },
           DocPreviewResult | XlsPreviewResult
         >(
           () =>
@@ -116,7 +118,7 @@ export function LegacyOfficeDocumentPreview({
               : new Worker(new URL('../legacy-office/xls-preview.worker.ts', import.meta.url), {
                   type: 'module',
                 }),
-          { buffer },
+          { buffer, maxBytes },
           controller.signal,
           [buffer],
           LEGACY_OFFICE_WORKER_TIMEOUT_MS,
@@ -156,7 +158,7 @@ export function LegacyOfficeDocumentPreview({
       window.clearTimeout(downloadTimer);
       controller.abort();
     };
-  }, [href, kind, sizeBytes, signal, onError]);
+  }, [href, kind, sizeBytes, maxBytes, signal, onError]);
   const extension = kind.toUpperCase() as 'DOC' | 'XLS';
   if (status === 'loading')
     return (

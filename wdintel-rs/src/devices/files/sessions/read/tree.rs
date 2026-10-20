@@ -102,7 +102,8 @@ pub(in crate::devices) async fn browse(
         .await
         .map_err(bl::map_read_error)
         .c(h!())?;
-    let mut query = SessionQuery::new(device_id, vec![sync_id]);
+    let mut query =
+        SessionQuery::new(device_id, vec![sync_id]).include_archives();
     let parent = query.bind(parent_id);
     let mut predicate = format!("entry.parent_id = {parent}");
     if filter.is_some() || body.has_content.is_some() {
@@ -175,7 +176,8 @@ pub(in crate::devices) async fn search(
     .map_err(bl::map_read_error)
     .c(h!())?;
     let filters = search_filters(&body).c(h!())?;
-    let mut query = SessionQuery::new(device_id, vec![sync_id]);
+    let mut query =
+        SessionQuery::new(device_id, vec![sync_id]).include_archives();
     let path = query.bind(scope.hierarchy_path().to_owned());
     let id = query.bind(scope.entry_id());
     let mut predicate = format!("entry.parent_id is not null and entry.hierarchy_path::ltree <@ {path}::ltree and entry.id <> {id}");

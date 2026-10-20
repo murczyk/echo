@@ -132,7 +132,7 @@ pub(in crate::devices) async fn counts(
     };
     let rows = query.all(files.connection(), &format!(
         "select entry.id, (select count(*) from selected_revisions revision where revision.hierarchy_path <@ entry.hierarchy_path) as file_count
-         from file_entry entry where entry.device_id = $1 and entry.kind = 'directory' and entry.id = any({ids_param}::uuid[]) and {parent}"
+         from file_entry entry where entry.archive_file_id is null and entry.device_id = $1 and entry.kind = 'directory' and entry.id = any({ids_param}::uuid[]) and {parent}"
     )).await.c(h!())?;
     if rows.len() != ids.len() {
         return Err(AppError::NotFound);

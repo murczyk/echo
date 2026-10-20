@@ -18,6 +18,7 @@ let scroll: WindowedFeedScrollHandle;
 let itemHeight = 50;
 let width = 200;
 let viewportHeight = 100;
+let clampScrollHeightToViewport = false;
 let resize: () => void;
 const getId = (id: number) => id;
 const renderMessage = (id: number) => <div data-message-id={id}>message {id}</div>;
@@ -89,6 +90,7 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     itemHeight = 50;
     width = 200;
     viewportHeight = 100;
+    clampScrollHeightToViewport = false;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -110,16 +112,22 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function () {
       const spacer = this.querySelector<HTMLElement>('[data-direct-message-anchor-spacer]');
-      return (
+      const contentHeight =
         this.querySelectorAll('[data-message-id]').length * itemHeight +
         (this.querySelector('[data-test-skeleton]') ? 10 : 0) +
-        Number.parseFloat(spacer?.style.height ?? '0')
-      );
+        Number.parseFloat(spacer?.style.height ?? '0');
+      return clampScrollHeightToViewport ? Math.max(viewportHeight, contentHeight) : contentHeight;
     });
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
       const scroller = this.closest<HTMLElement>('[data-message-feed-scroller]');
-      if (!scroller || this === scroller) return bounds(0, 100);
+      if (!scroller || this === scroller) return bounds(0, viewportHeight);
       const items = Array.from(scroller.querySelectorAll('[data-message-id]'));
+      if (this.classList.contains('message-feed-list')) {
+        return bounds(
+          -scroller.scrollTop,
+          items.length * itemHeight + (scroller.querySelector('[data-test-skeleton]') ? 10 : 0),
+        );
+      }
       const index = items.indexOf(this);
       return bounds(
         index < 0
@@ -1140,6 +1148,36 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(scroll.scrollerRef.current!.scrollTop).toBe(25);
     expect(scroll.bottomSpacerPx).toBe(0);
   });
+
+  it.each([349.8, 347.8])(
+    'centers an underfilled focused feed without recursive updates at viewport height %s',
+    async (height) => {
+      viewportHeight = height;
+      clampScrollHeightToViewport = true;
+      await act(async () =>
+        root.render(<TestFeed ids={[1, 2, 3, 4]} options={{ policy: historyPolicy }} />),
+      );
+      const scroller = scroll.scrollerRef.current!;
+      let scrollTop = 0;
+      Object.defineProperty(scroller, 'scrollTop', {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+          scrollTop = Math.max(0, Math.min(value, scroller.scrollHeight - scroller.clientHeight));
+        },
+      });
+      await act(async () =>
+        root.render(
+          <TestFeed
+            ids={[1, 2, 3, 4]}
+            options={{ policy: historyPolicy, focus: { messageId: 4, active: true } }}
+          />,
+        ),
+      );
+      expect(scroll.bottomSpacerPx).toBe(Math.ceil(175 + height / 2 - 200));
+      expect(scroller.scrollTop).toBeCloseTo(175 - height / 2);
+    },
+  );
 
   it('aligns a loaded page boundary without fetching or retaining the old focus', async () => {
     const onLoadNewer = vi.fn();

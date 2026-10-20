@@ -26,8 +26,8 @@ pub struct Model {
     pub sync_id: Uuid,
     #[sea_orm(column_type = "Text")]
     pub name: String,
-    #[sea_orm(column_type = "Text")]
-    pub absolute_path: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub absolute_path: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub mime_type: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -40,14 +40,25 @@ pub struct Model {
     pub source_file_state_settled_by: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     #[sea_orm(unique_key = "file_metadata_revision_source_sequence_key")]
-    pub source_sequence: i64,
-    pub analysis_input_revision: i64,
+    pub source_sequence: Option<i64>,
+    pub analysis_input_revision: Option<i64>,
+    pub is_archive: Option<bool>,
+    pub origin_archive_id: Option<Uuid>,
+    pub archive_member_index: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::file_analysis_run_item::Entity")]
     FileAnalysisRunItem,
+    #[sea_orm(
+        belongs_to = "super::file_archive::Entity",
+        from = "Column::OriginArchiveId",
+        to = "super::file_archive::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Restrict"
+    )]
+    FileArchive,
     #[sea_orm(has_one = "super::file_content::Entity")]
     FileContent,
     #[sea_orm(has_many = "super::file_content_upload::Entity")]
@@ -85,6 +96,12 @@ pub enum Relation {
 impl Related<super::file_analysis_run_item::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileAnalysisRunItem.def()
+    }
+}
+
+impl Related<super::file_archive::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileArchive.def()
     }
 }
 

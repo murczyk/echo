@@ -5,9 +5,10 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { DeviceFileRoot } from '../../../../../../Bindings';
+import type { DeviceFileRoot, DeviceFileTreeEntry } from '../../../../../../Bindings';
 import type { DeviceFilesState } from '../../use-device-files';
 import { DeviceFileTree } from '.././DeviceFileTree';
+import { transformCamelToSnake } from '../../../../../snake-to-camel';
 
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 const ROOT_ID = '018f0000-0000-7000-8000-000000000001';
@@ -21,6 +22,7 @@ const rootEntry: DeviceFileRoot = {
   name: 'C:\\',
   createdAt: NOW,
   updatedAt: NOW,
+  tags: [],
 };
 
 const retryCounts = vi.fn();
@@ -86,16 +88,136 @@ afterEach(() => {
   root = null;
   container = null;
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('DeviceFileTree counters', () => {
-  it('keeps the tree usable while counts load and exposes a nonblocking retry', () => {
+  it('#3778 remounts archive revision A to B to A and keeps a same-name physical file separate', async () => {
+    const calls: number[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        const revision = body.archive_revision ?? Number(url.match(/revisions\/(\d+)/)?.[1]);
+        if (url.endsWith('/browse')) calls.push(revision);
+        const archiveId = `archive-${revision}`;
+        const response = url.endsWith('/browse')
+          ? {
+              archiveId,
+              rootEntryId: `root-${revision}`,
+              breadcrumbs: [],
+              nextCursor: null,
+              entries: [
+                {
+                  entryId: 'member',
+                  fileId: 'member',
+                  revision,
+                  parentEntryId: 'zip',
+                  name: 'Report.txt',
+                  kind: 'file',
+                  virtualPath: 'C:\\bundle.zip/Report.txt',
+                  hasContent: true,
+                  mimeType: 'text/plain',
+                  extension: 'txt',
+                  sizeBytes: 1,
+                  tags: [],
+                  archive: null,
+                  archiveOrigin: { archiveId, sourceFileId: 'zip', sourceRevision: revision },
+                },
+              ],
+            }
+          : {
+              source: { deviceId: DEVICE_ID, fileId: 'zip', revision },
+              archive: {
+                archiveId,
+                rootEntryId: `root-${revision}`,
+                state: 'ready',
+                reason: null,
+                message: null,
+                limitName: null,
+              },
+              nextAttemptAt: null,
+              pollAfterMs: 2000,
+              updatedAt: NOW,
+            };
+        return new Response(JSON.stringify(transformCamelToSnake(response)), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+    const entry: DeviceFileTreeEntry = {
+      entryId: 'zip',
+      parentEntryId: ROOT_ID,
+      kind: 'file',
+      fileId: 'zip',
+      name: 'bundle.zip',
+      pathComponents: ['bundle.zip'],
+      absolutePath: 'C:\\bundle.zip',
+      hasContent: true,
+      mimeType: 'application/zip',
+      extension: 'zip',
+      revision: 1,
+      syncId: 'A',
+      sourceFileState: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+      fileMetadataCreatedAt: null,
+      fileMetadataModifiedAt: null,
+      tags: [],
+      archive: null,
+    };
+    for (const revision of [1, 2, 1]) {
+      const files = {
+        ...buildFiles({}, [
+          { ...entry, revision },
+          {
+            ...entry,
+            entryId: 'physical',
+            fileId: 'physical',
+            name: 'Report.txt',
+            mimeType: 'text/plain',
+            extension: 'txt',
+          },
+        ]),
+        deviceId: DEVICE_ID,
+        tagFilter: { tagIds: [], tagMatch: 'any' as const, untagged: false },
+        contentFilter: null,
+      };
+      await act(async () => root?.render(<DeviceFileTree files={files} />));
+      expect(container?.querySelectorAll('[aria-label="Report.txt"]')).toHaveLength(0);
+      await act(async () =>
+        container
+          ?.querySelector<HTMLButtonElement>('[aria-label="Розгорнути каталог bundle.zip"]')!
+          .click(),
+      );
+      const member = container?.querySelector<HTMLButtonElement>('[aria-label="Report.txt"]');
+      expect(member).not.toBeNull();
+      expect(container?.querySelector('[data-testid="device-file-physical"]')).not.toBeNull();
+      await act(async () => member!.click());
+      expect(files.selectFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileId: 'member',
+          revision,
+          archiveOrigin: {
+            archiveId: `archive-${revision}`,
+            sourceFileId: 'zip',
+            sourceRevision: revision,
+          },
+          archiveParents: [expect.objectContaining({ fileId: 'zip', revision })],
+        }),
+      );
+    }
+    expect(calls).toEqual([1, 2, 1]);
+  });
+
+  it('keeps the tree usable without status rows while counts load or fail', () => {
     act(() => {
       root?.render(<DeviceFileTree files={buildFiles({ loading: true })} />);
     });
 
     expect(container?.querySelector('[aria-label="Синхронізовані файлові корені"]')).not.toBeNull();
-    expect(container?.querySelector('[aria-label="Завантаження кількості файлів"]')).not.toBeNull();
+    expect(container?.querySelector('[aria-label="Завантаження кількості файлів"]')).toBeNull();
     expect(
       container?.querySelector('[aria-label^="Вибрати каталог"]')?.getAttribute('aria-label'),
     ).toContain('Вибрати каталог C:\\ як область пошуку');
@@ -112,15 +234,9 @@ describe('DeviceFileTree counters', () => {
     });
 
     expect(container?.textContent?.replace(/\s/g, '')).toContain('12345');
-    expect(container?.textContent).toContain('Каунтери недоступні');
+    expect(container?.textContent).not.toContain('Каунтери недоступні');
     expect(
       container?.querySelector('[aria-label^="Вибрати каталог"]')?.getAttribute('aria-label'),
     ).toContain('Вибрати каталог C:\\ як область пошуку');
-
-    const retryButton = Array.from(container?.querySelectorAll('button') ?? []).find(
-      (button) => button.textContent === 'Повторити',
-    );
-    act(() => retryButton?.click());
-    expect(retryCounts).toHaveBeenCalledTimes(1);
   });
 });

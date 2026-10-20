@@ -279,16 +279,20 @@ export function useWindowedFeedScroll({
       const target = id == null ? null : refs.itemRefsRef.current.get(id);
       if (!refs.enabledRef.current || !scroller || !target) return null;
       const viewportRect = scroller.getBoundingClientRect();
-      if (viewportRect.width <= 0 || viewportRect.height <= 0) return null;
+      if (viewportRect.width <= 0 || viewportRect.height <= 0 || scroller.clientHeight <= 0)
+        return null;
 
       const card = focusRef.current?.messageId === id ? getTargetCardElement(target) : target;
       const targetTop = Math.max(0, centeredItemScrollTop(scroller, card));
-      const missingSpace = Math.max(
-        0,
-        Math.ceil(
-          targetTop + scroller.clientHeight - scroller.scrollHeight + bottomSpacerRef.current,
-        ),
-      );
+      const listRect = refs.listRef.current?.getBoundingClientRect();
+      const scale = viewportRect.height / scroller.clientHeight;
+      const contentHeight = listRect
+        ? scroller.scrollTop + (listRect.bottom - viewportRect.top) / scale
+        : scroller.scrollHeight - bottomSpacerRef.current;
+      const missingSpace =
+        targetTop > 0
+          ? Math.max(0, Math.ceil(targetTop + scroller.clientHeight - contentHeight))
+          : 0;
       setBottomSpacerPx((current) => (current === missingSpace ? current : missingSpace));
       scroller.scrollTop = targetTop;
       refs.restoredScrollTopRef.current = scroller.scrollTop;
