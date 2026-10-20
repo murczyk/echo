@@ -871,6 +871,9 @@ mod tests {
             .await
             .unwrap();
             if text != "OBSOLETE" {
+                let mut row = row;
+                row.settlement_id = None;
+                row.is_undefined = None;
                 retained.push(row);
             }
         }
@@ -900,6 +903,15 @@ mod tests {
             assert_eq!(rows[2].is_undefined, None);
             assert_eq!(rows[2].item_uuid, inbox_item.id_uuid);
             retained = rows;
+            if retained[0].settlement_id.is_none() {
+                let mut linked = retained[0].clone().into_active_model();
+                linked.settlement_id = Set(Some(98911));
+                linked.is_undefined = Set(Some(false));
+                retained[0] = linked.update(&env.dbx).await.unwrap();
+                let mut undefined = retained[1].clone().into_active_model();
+                undefined.is_undefined = Set(Some(true));
+                retained[1] = undefined.update(&env.dbx).await.unwrap();
+            }
         }
         let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
             .one(&env.dbx)
