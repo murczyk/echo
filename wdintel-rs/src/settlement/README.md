@@ -34,9 +34,15 @@ For each inbox item, battle-line resolution combines candidates that pass the
 existing catalog, AOR and side-specific distance checks. A single candidate-bearing
 name without resolved context keeps the existing independent behavior. Names
 without eligible candidates remain undefined without blocking the other names.
-The worker preserves processed rows and uses already linked settlements with
-valid coordinates as fixed context. Explicit relinking oneoffs recompute all
-names together; batched requests keep each item's combinations separate.
+Reconciliation compares distinct requested location texts with existing link
+rows. Adding or removing a name requeues every remaining name, including
+previously undefined rows, so earlier joint choices can be reconsidered. Clearing
+linked rows also invalidates group statistics. Unchanged text sets preserve
+processed rows; reordering and repeated names do not requeue them. The worker
+uses already linked settlements with valid coordinates as fixed context when
+processing pending rows of an unchanged item.
+Explicit relinking oneoffs recompute all names together; batched requests keep
+each item's combinations separate.
 
 Candidate groups enter in ascending candidate-count order, then normalized name
 and original row order. The first two groups form all possible pairs; subsequent

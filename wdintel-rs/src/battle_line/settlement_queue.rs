@@ -138,7 +138,7 @@ where
         crate::stats::enqueue_group_stats_recalculation_for_message(
             dbx,
             item_id,
-            format!("removed settlements from inbox message {item_id}"),
+            format!("reconciled settlements for inbox message {item_id}"),
         )
         .await
         .c(h!())?;
@@ -163,14 +163,20 @@ where
         .all(dbx)
         .await
         .c(h!())?;
+    let existing_texts = existing
+        .iter()
+        .map(|row| row.settlement_text.clone())
+        .collect::<BTreeSet<_>>();
+    if desired == existing_texts {
+        return Ok(false);
+    }
     let obsolete_ids = existing
         .iter()
         .filter(|row| !desired.contains(&row.settlement_text))
         .map(|row| row.id)
         .collect::<Vec<_>>();
-    let removes_linked_settlement = existing.iter().any(|row| {
-        !desired.contains(&row.settlement_text) && row.settlement_id.is_some()
-    });
+    let clears_linked_settlement =
+        existing.iter().any(|row| row.settlement_id.is_some());
     if !obsolete_ids.is_empty() {
         sigint_inbox_item_settlement::Entity::delete_many()
             .filter(
@@ -180,10 +186,12 @@ where
             .await
             .c(h!())?;
     }
-    let existing_texts = existing
-        .into_iter()
-        .map(|row| row.settlement_text)
-        .collect::<BTreeSet<_>>();
+    if existing.iter().any(|row| {
+        desired.contains(&row.settlement_text)
+            && (row.settlement_id.is_some() || row.is_undefined.is_some())
+    }) {
+        requeue_item_settlements(dbx, item_id).await.c(h!())?;
+    }
     for settlement_text in desired.difference(&existing_texts) {
         sigint_inbox_item_settlement::Entity::insert(
             sigint_inbox_item_settlement::ActiveModel {
@@ -208,7 +216,7 @@ where
         .await
         .c(h!())?;
     }
-    Ok(removes_linked_settlement)
+    Ok(clears_linked_settlement)
 }
 
 pub async fn requeue_item_settlements<C>(
@@ -1207,6 +1215,136 @@ mod tests {
         txn.rollback().await.unwrap();
     }
 
+    async fn cluster_test_rows(
+        txn: &DatabaseTransaction,
+        item_id: i64,
+    ) -> anyhow::Result<Vec<sigint_inbox_item_settlement::Model>> {
+        sigint_inbox_item_settlement::Entity::find()
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
+            .order_by_asc(sigint_inbox_item_settlement::Column::Id)
+            .all(txn)
+            .await
+            .c(h!())
+    }
+
+    async fn change_cluster_test_locations(
+        txn: &DatabaseTransaction,
+        request: &OneoffItemResolutionRequest,
+        locations: &str,
+    ) -> anyhow::Result<Vec<sigint_inbox_item_settlement::Model>> {
+        sigint_inbox_item::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item::Column::LocationV2,
+                Expr::value(Some(locations)),
+            )
+            .filter(sigint_inbox_item::Column::Id.eq(request.item_id))
+            .exec(txn)
+            .await
+            .c(h!())?;
+        reconcile_item_locations(
+            txn,
+            request.item_id,
+            request.item_uuid,
+            Some(locations),
+        )
+        .await
+        .c(h!())?;
+        cluster_test_rows(txn, request.item_id).await.c(h!())
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn reconsiders_cluster_after_location_edits_2133() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &txn).await;
+        let request = insert_cluster_test_item(
+            &txn,
+            &[("#2133 SHARED", None, None), ("#2133 FOREST", None, None)],
+        )
+        .await
+        .unwrap();
+        let mut cache = SettlementResolutionCache::default();
+        resolve_claimed_item(&env, &txn, request.item_id, version, &mut cache)
+            .await
+            .unwrap();
+        for (locations, expected) in [
+            (
+                "|#2133 A|#2133 SHARED|#2133 FOREST|",
+                vec![Some(2_133_101), Some(2_133_103), None],
+            ),
+            ("|#2133 SHARED|#2133 FOREST|", vec![Some(2_133_104), None]),
+            (
+                "|#2133 A|#2133 B|#2133 SHARED|#2133 FOREST|",
+                vec![None, None, None, None],
+            ),
+            (
+                "|#2133 A|#2133 SHARED|#2133 FOREST|",
+                vec![Some(2_133_101), Some(2_133_103), None],
+            ),
+        ] {
+            let rows = change_cluster_test_locations(&txn, &request, locations)
+                .await
+                .unwrap();
+            assert!(
+                rows.iter().all(|row| {
+                    row.settlement_id.is_none() && row.is_undefined.is_none()
+                }),
+                "all joint decisions must be pending after {locations}"
+            );
+            assert_eq!(
+                resolve_claimed_item(
+                    &env,
+                    &txn,
+                    request.item_id,
+                    version,
+                    &mut cache,
+                )
+                .await
+                .unwrap(),
+                Some(request.item_id)
+            );
+            let rows = cluster_test_rows(&txn, request.item_id).await.unwrap();
+            for (name, expected) in
+                to_location_list(locations).into_iter().zip(expected)
+            {
+                let row = rows
+                    .iter()
+                    .find(|row| row.settlement_text == name)
+                    .unwrap();
+                assert_eq!(row.settlement_id, expected, "{locations}: {name}");
+                assert_eq!(row.is_undefined, Some(expected.is_none()));
+            }
+            reconcile_item_locations(
+                &txn,
+                request.item_id,
+                request.item_uuid,
+                Some(&format!("{locations}{locations}")),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                cluster_test_rows(&txn, request.item_id).await.unwrap(),
+                rows,
+            );
+            assert_eq!(
+                resolve_claimed_item(
+                    &env,
+                    &txn,
+                    request.item_id,
+                    version,
+                    &mut cache,
+                )
+                .await
+                .unwrap(),
+                None,
+                "unchanged names must preserve linked and undefined rows"
+            );
+        }
+        txn.rollback().await.unwrap();
+    }
+
     async fn insert_relink_test_settlement(
         txn: &DatabaseTransaction,
         id: i32,
@@ -1665,7 +1803,7 @@ returning id
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn reconciles_removed_new_and_unchanged_location_texts() {
+    async fn reconciles_removed_new_and_unchanged_location_texts_2133() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
@@ -1720,7 +1858,8 @@ returning id
             .unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].id, preserved_id);
-        assert_eq!(rows[0].is_undefined, Some(true));
+        assert_eq!(rows[0].settlement_id, None);
+        assert_eq!(rows[0].is_undefined, None);
         assert_eq!(rows[1].settlement_text, "C");
         assert_eq!(rows[1].settlement_id, None);
         assert_eq!(rows[1].is_undefined, None);
@@ -1876,7 +2015,7 @@ returning id
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn reconciliation_enqueues_stats_for_removed_linked_settlement() {
+    async fn reconciliation_enqueues_stats_for_cleared_cluster_links_2133() {
         use crate::entities::group_stats_recalculation_task;
 
         let (env, _guard) =
@@ -1891,17 +2030,26 @@ returning id
         row.update(&setup).await.unwrap();
         setup.commit().await.unwrap();
 
-        let removal = env.dbx.begin().await.unwrap();
-        reconcile_item_locations(&removal, item_id, item_uuid, None)
-            .await
-            .unwrap();
-        let task = group_stats_recalculation_task::Entity::find()
-            .one(&removal)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(task.group_master_key, group_master_key);
-        removal.rollback().await.unwrap();
+        for location_v2 in [
+            None,
+            Some("|STATS INVALIDATION|EXTRA|"),
+            Some("|STATS INVALIDATION|"),
+        ] {
+            let txn = env.dbx.begin().await.unwrap();
+            reconcile_item_locations(&txn, item_id, item_uuid, location_v2)
+                .await
+                .unwrap();
+            let task = group_stats_recalculation_task::Entity::find()
+                .one(&txn)
+                .await
+                .unwrap();
+            if location_v2 == Some("|STATS INVALIDATION|") {
+                assert!(task.is_none());
+            } else {
+                assert_eq!(task.unwrap().group_master_key, group_master_key);
+            }
+            txn.rollback().await.unwrap();
+        }
     }
 
     #[tokio::test]
