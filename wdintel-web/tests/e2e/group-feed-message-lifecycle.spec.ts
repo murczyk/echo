@@ -43,6 +43,28 @@ for (const screen of ['analysis', 'duty'] as const) {
     });
   }
 
+  scenario('shows card group metadata only in all-groups feeds', async (fixture, reader) => {
+    fixture.add('user-1', 'Message with group metadata');
+    await reader.page.goto(groupFeedPath(screen, 'all'));
+    const message = row(reader, 101);
+    const groupName = message.getByText('group-1', { exact: true });
+    const groupIcon = message.locator('[data-message-card-metadata-icon-kind="group"]');
+    await expect(groupName).toBeVisible();
+    await expect(groupIcon).toHaveCount(1);
+
+    await selectGroup(reader, 'group-1');
+    await expect(message).toBeVisible();
+    await expect(groupName).toHaveCount(0);
+    await expect(groupIcon).toHaveCount(0);
+    await reader.page.reload();
+    await expect(message).toBeVisible();
+    await expect(groupName).toHaveCount(0);
+
+    await selectGroup(reader, 'all');
+    await expect(groupName).toBeVisible();
+    await expect(groupIcon).toHaveCount(1);
+  });
+
   scenario(
     'persists unread and read state across reload, route changes and another tab',
     async (fixture, reader) => {

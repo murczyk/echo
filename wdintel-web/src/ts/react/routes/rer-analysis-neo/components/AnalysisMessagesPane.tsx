@@ -47,6 +47,7 @@ type Props = {
   copiedFeedbackId: string | null;
   botTagAction?: BotTagAction | null;
   groupInfos: Record<string, SignalGroupEntry>;
+  hideGroupName?: boolean;
   paginationLoading: boolean;
   isLoading?: boolean;
   showLoadingSkeleton?: boolean;
@@ -121,6 +122,7 @@ function AnalysisMessagesPaneComponent({
   copiedFeedbackId: copiedFeedbackIdProp,
   botTagAction,
   groupInfos,
+  hideGroupName = false,
   paginationLoading,
   isLoading = false,
   showLoadingSkeleton = true,
@@ -374,6 +376,7 @@ function AnalysisMessagesPaneComponent({
             copiedFeedbackId={copiedFeedbackId}
             botTagAction={botTagAction}
             groupInfos={groupInfos}
+            hideGroupName={hideGroupName}
             id={id}
             message={message}
             messageComments={messageComments[id] ?? []}

@@ -45,6 +45,7 @@ type AnalysisMessageCardItemProps = {
   currentUserLogin: string | null;
   copiedFeedbackId: string | null;
   groupInfos: Record<string, SignalGroupEntry>;
+  hideGroupName?: boolean;
   id: number;
   message: InboxMessage;
   messageComments: MessageComment[];
@@ -96,6 +97,7 @@ export const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   copiedFeedbackId,
   botTagAction,
   groupInfos,
+  hideGroupName = false,
   id,
   message,
   messageComments,
@@ -150,6 +152,7 @@ export const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       referenceTimeMs={referenceTimeMs}
       authUserName={authUserName}
       groupName={labels.groupName}
+      hideGroupName={hideGroupName}
       reportGroupInfos={groupInfos}
       senderName={labels.senderName}
       copiedFeedbackId={copiedFeedbackId}

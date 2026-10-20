@@ -418,6 +418,7 @@ export function AnalysisCenterPanel({
             currentUser={page.currentUser}
             copiedFeedbackId={page.copiedFeedbackId}
             groupInfos={page.groupInfos}
+            hideGroupName={page.groupNavigation.scope.kind === 'group'}
             paginationLoading={page.messagesPaging}
             showLoadingSkeleton={page.groupScopeTransitionPending || page.showMessagesLoading}
             isLoading={
