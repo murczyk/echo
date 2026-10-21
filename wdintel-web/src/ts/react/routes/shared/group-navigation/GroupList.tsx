@@ -8,6 +8,9 @@ type Props = {
   labelledBy?: string;
   title?: string;
   titleId?: string;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 };
 
 function isSelected(group: GroupNavigationItem, scope: GroupScope): boolean {
@@ -16,16 +19,17 @@ function isSelected(group: GroupNavigationItem, scope: GroupScope): boolean {
     : scope.kind === 'group' && group.masterKey === scope.masterKey;
 }
 
-function unreadLabel(count: number): string {
-  return count > 99 ? '99+' : String(count);
-}
-
-function itemLabel(group: GroupNavigationItem): string {
-  if (group.unreadCount <= 0) return group.name;
-  return `${group.name}, ${group.unreadCount} непрочитаних повідомлень`;
-}
-
-export function GroupList({ groups, scope, onSelect, labelledBy, title, titleId }: Props) {
+export function GroupList({
+  groups,
+  scope,
+  onSelect,
+  labelledBy,
+  title,
+  titleId,
+  loading,
+  error,
+  onRetry,
+}: Props) {
   const orderedGroups = [
     ...groups.filter((group) => group.kind === 'all'),
     ...groups.filter((group) => group.kind === 'group'),
@@ -60,7 +64,7 @@ export function GroupList({ groups, scope, onSelect, labelledBy, title, titleId 
                   data-group-list-item
                   data-selected={selected ? 'true' : 'false'}
                   aria-current={selected ? 'true' : undefined}
-                  aria-label={itemLabel(group)}
+                  aria-label={group.name}
                   onClick={() => onSelect(nextScope)}
                 >
                   <GroupAvatar
@@ -71,17 +75,32 @@ export function GroupList({ groups, scope, onSelect, labelledBy, title, titleId 
                   <span className="group-navigation-name" data-group-name title={group.name}>
                     {group.name}
                   </span>
-                  {group.unreadCount > 0 ? (
-                    <span className="group-navigation-unread" aria-hidden="true" data-group-unread>
-                      {unreadLabel(group.unreadCount)}
-                    </span>
-                  ) : null}
                 </button>
               </li>
             );
           })}
         </ul>
       </nav>
+      {loading ? (
+        <p className="px-3 py-2" role="status">
+          Завантажуємо групи…
+        </p>
+      ) : null}
+      {error ? (
+        <div className="px-3 py-2" role="alert">
+          <p>{error}</p>
+          {onRetry ? (
+            <button type="button" className="group-navigation-list-item" onClick={onRetry}>
+              Повторити
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {!loading && !error && !groups.some((group) => group.kind === 'group') ? (
+        <p className="px-3 py-2" role="status">
+          Груп не знайдено.
+        </p>
+      ) : null}
     </>
   );
 }

@@ -112,7 +112,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     });
   });
 
-  it('restores a persisted group scope before the initial request', async () => {
+  it('#3727 migrates a persisted group scope into the legacy filter before the initial request', async () => {
     persistDutyFilterState({
       messageFeeds: [
         [
@@ -137,15 +137,15 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     });
 
     expect(apiRef.current?.messageFeeds[0]).toMatchObject({
-      groupScopeMasterKey: 'scoped-group',
-      filter: expect.objectContaining({ groupsSelected: ['aggregate-group'] }),
+      groupScopeMasterKey: null,
+      filter: expect.objectContaining({ groupsSelected: ['scoped-group'] }),
     });
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
       expect.objectContaining({ selectedGroups: ['scoped-group'], deniedGroups: null }),
     );
   });
 
-  it('switches only the request group scope and restores the aggregate filter on all-groups', async () => {
+  it('#3727 updates the legacy group filter and clears it when all groups is selected', async () => {
     const { apiRef } = await mountLoadedFeed();
     await act(async () => {
       apiRef.current!.setMessageFeeds((current) =>
@@ -164,14 +164,14 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(hoisted.fetchInboxMessages).toHaveBeenLastCalledWith(
       expect.objectContaining({ selectedGroups: ['group-a'], deniedGroups: null }),
     );
-    expect(apiRef.current?.messageFeeds[0]?.filter.groupsSelected).toEqual(['group-a', 'group-b']);
+    expect(apiRef.current?.messageFeeds[0]?.filter.groupsSelected).toEqual(['group-a']);
 
     await act(async () => {
       apiRef.current!.setGroupScope('mf-0', null);
       await flushMicrotasks();
     });
     expect(hoisted.fetchInboxMessages).toHaveBeenLastCalledWith(
-      expect.objectContaining({ selectedGroups: ['group-a', 'group-b'] }),
+      expect.objectContaining({ selectedGroups: null }),
     );
   });
 

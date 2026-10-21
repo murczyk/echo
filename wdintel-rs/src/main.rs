@@ -1221,6 +1221,8 @@ enum Cmd {
     OneoffBackfillSignalMessageUuid(OneoffBackfillSignalMessageUuidPs),
     OneoffPrepareInboxNetworkUniqueness(OneoffPrepareInboxNetworkUniquenessPs),
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
+    /// Recalculates settlement links, including existing links, in the selected time range (today by default).
+    #[command(visible_alias = "oneoff-recalculate-inbox-settlements")]
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
     OneoffImportBattleLineFromDeltaKml(OneoffImportBattleLineFromDeltaKmlPs),
     OneoffBackfillPelengBattleLineDistance(

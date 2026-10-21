@@ -1,8 +1,11 @@
 import { GroupAvatar } from './GroupAvatar';
-import type { GroupNavigationItem } from './group-navigation.types';
 
 type Props = {
-  group: GroupNavigationItem;
+  group: {
+    kind: 'all' | 'group';
+    name: string;
+    colorKey?: string | null;
+  };
   className?: string;
   avatarSize?: 'small' | 'context' | 'medium';
 };

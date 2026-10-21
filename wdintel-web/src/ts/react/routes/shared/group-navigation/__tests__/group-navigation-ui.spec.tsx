@@ -17,9 +17,6 @@ const allGroups: GroupNavigationItem = {
   kind: 'all',
   masterKey: null,
   name: 'Всі групи',
-  unreadCount: 3,
-  oldestUnreadMessageRef: null,
-  latestCursor: null,
 };
 
 const kitkat: GroupNavigationItem = {
@@ -27,11 +24,6 @@ const kitkat: GroupNavigationItem = {
   masterKey: 'kitkat',
   name: 'KitKat',
   colorKey: 'deep_purple',
-  ignoreOperativny: false,
-  unreadCount: 128,
-  oldestUnreadMessageRef: null,
-  lastActivityAt: null,
-  latestCursor: null,
 };
 
 describe('group navigation UI', () => {
@@ -113,7 +105,7 @@ describe('group navigation UI', () => {
     expect(firstVisibleGrapheme(undefined)).toBe('—');
   });
 
-  it('keeps all groups first and renders 99+ overflow', async () => {
+  it('keeps all groups first', async () => {
     await act(async () => {
       root.render(
         <GroupList groups={[kitkat, allGroups]} scope={{ kind: 'all' }} onSelect={vi.fn()} />,
@@ -122,8 +114,8 @@ describe('group navigation UI', () => {
 
     const buttons = container.querySelectorAll<HTMLButtonElement>('[data-group-list-item]');
     expect(buttons[0].textContent).toContain('Всі групи');
-    expect(buttons[1].textContent).toContain('99+');
-    expect(buttons[1].getAttribute('aria-label')).toContain('128 непрочитаних');
+    expect(buttons[1].getAttribute('aria-label')).toBe('KitKat');
+    expect(container.querySelector('[data-group-unread]')).toBeNull();
   });
 
   it('owns the shared list title and accessible label', async () => {
@@ -147,7 +139,7 @@ describe('group navigation UI', () => {
     );
   });
 
-  it('exposes selected and unread state and delegates selection', async () => {
+  it('exposes selected state and delegates selection', async () => {
     const groups = [allGroups, kitkat];
     const onSelect = vi.fn();
     await act(async () => {
@@ -156,7 +148,7 @@ describe('group navigation UI', () => {
 
     const buttons = container.querySelectorAll<HTMLButtonElement>('[data-group-list-item]');
     expect(buttons[0].getAttribute('aria-current')).toBe('true');
-    expect(buttons[0].getAttribute('aria-label')).toContain('3 непрочитаних');
+    expect(buttons[0].getAttribute('aria-label')).toBe('Всі групи');
     buttons[1].click();
 
     expect(onSelect).toHaveBeenCalledWith({ kind: 'group', masterKey: 'kitkat' });

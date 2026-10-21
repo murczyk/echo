@@ -708,33 +708,6 @@ export type UnreadCountersRsp = {
   newerMsgCount: number;
 };
 
-export type GroupFeedCursorDto = {
-  createdAt: number;
-  messageId: number;
-};
-
-export type GroupFeedState = {
-  masterKey: string;
-  name: string;
-  ignoreOperativny: boolean;
-  unreadCount: number;
-  oldestUnreadMessageRef: string | null;
-  lastReadCreatedAtOrder: number | null;
-  lastReadMessageId: number | null;
-  lastActivityAt: number | null;
-  latestCursor: GroupFeedCursorDto | null;
-  colorKey: SignalGroupColor;
-};
-
-export type GroupFeedStatesRsp = {
-  groups: Array<GroupFeedState>;
-};
-
-export type AcknowledgeGroupFeedReq = {
-  masterKey: string;
-  cursor: GroupFeedCursorDto;
-};
-
 export type SignalGroupReq = {
   masterKey: string;
 };

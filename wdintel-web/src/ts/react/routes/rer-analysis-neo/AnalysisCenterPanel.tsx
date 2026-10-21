@@ -26,7 +26,7 @@ import { analysisCompactTabsSx, analysisNewestFirstLabelSx } from './analysis-ta
 import { getAnalysisActiveFilterCount } from './analysis-active-filter-count';
 import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
 import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
-import { GroupIdentity } from '../shared/group-navigation';
+import { GroupIdentity, groupFilterIdentity } from '../shared/group-navigation';
 import {
   MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
   MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
@@ -96,10 +96,10 @@ export function AnalysisCenterPanel({
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [closeFilterPanel, filterPanelOpen, isNarrowLayout]);
-  const group = page.groupNavigation.selectedGroup;
+  const group = groupFilterIdentity(page.queryState.groupsSelected, page.groupInfos);
   const scopeLabel = `Для: ${group.name}`;
   const activeFilterCount = getAnalysisActiveFilterCount(page.queryState, {
-    hideGroupSelection: page.groupNavigation.scope.kind === 'group',
+    hideGroupSelection: false,
     radioFeaturesAllowed: page.radioFeaturesAllowed,
   });
   const filterButtonLabel = activeFilterCount > 0 ? 'Фільтри (активні)' : 'Фільтри';
@@ -115,11 +115,7 @@ export function AnalysisCenterPanel({
   );
   const filterPanelBody = (
     <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-      <AnalysisFiltersPanel
-        page={page}
-        fullHeight
-        hideGroupSelection={page.groupNavigation.scope.kind === 'group'}
-      />
+      <AnalysisFiltersPanel page={page} fullHeight hideGroupSelection={false} />
     </Box>
   );
 
@@ -412,7 +408,6 @@ export function AnalysisCenterPanel({
           }}
         >
           <AnalysisMessagesPane
-            unreadBoundaryMessageId={page.unreadBoundaryMessageId}
             editorHighlightedMessageId={editorHighlightedMessageId}
             authUserName={page.authUserName}
             currentUser={page.currentUser}
@@ -442,7 +437,6 @@ export function AnalysisCenterPanel({
             onViewportCaptureChange={page.setMessageViewportCapture}
             onVisiblePageChange={page.setVisibleMessagesPageIndex}
             onPageNavigationHandled={page.clearMessagePageNavigationTarget}
-            onVisibleMessages={page.onVisibleGroupMessages}
             scrollResetKey={`${page.queryState.fromDateTimeStr}|${page.queryState.toDateTimeStr}|${
               page.groupNavigation.scope.kind === 'group'
                 ? page.groupNavigation.scope.masterKey

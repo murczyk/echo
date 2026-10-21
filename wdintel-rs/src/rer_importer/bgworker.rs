@@ -14,7 +14,7 @@ pub async fn process_message_to_inbox<'a, 'async_trait, C>(
     m_created_at: Option<(String, String)>,
 ) -> Result<Vec<i64>, AppError>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait + TransactionTrait + 'async_trait,
 {
     let datetime_override = m_created_at.map(|(date, time)| {
         crate::inbox::InboxDatetimeOverride::Fields { date, time }
@@ -33,7 +33,7 @@ where
 }
 
 pub(crate) async fn process_message_to_inbox_with_override<
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionTrait,
 >(
     settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     txn: &C,
@@ -92,7 +92,7 @@ pub async fn process_message_to_inbox_nofail<'a, 'async_trait, C>(
     m_created_at: Option<(String, String)>,
 ) -> Vec<i64>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait + TransactionTrait + 'async_trait,
 {
     let datetime_override = m_created_at.map(|(date, time)| {
         crate::inbox::InboxDatetimeOverride::Fields { date, time }
@@ -122,7 +122,7 @@ pub(crate) async fn process_historical_message_to_inbox_nofail<
     reference_time: chrono::DateTime<chrono_tz::Tz>,
 ) -> Vec<i64>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait + TransactionTrait + 'async_trait,
 {
     process_message_to_inbox_nofail_with_override(
         settlements,
@@ -147,7 +147,7 @@ async fn process_message_to_inbox_nofail_with_override<'a, 'async_trait, C>(
     datetime_override: Option<crate::inbox::InboxDatetimeOverride>,
 ) -> Vec<i64>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait + TransactionTrait + 'async_trait,
 {
     let mut cache = TopKCache::<String, String>::new(CAPACITY);
     let mut recs = vec![message_id];
@@ -199,7 +199,7 @@ async fn process_message_to_inbox_one<'a, 'async_trait, C>(
     datetime_override: Option<crate::inbox::InboxDatetimeOverride>,
 ) -> Result<crate::inbox::ConstructInboxItemResult, AppError>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait + TransactionTrait + 'async_trait,
 {
     Ok(crate::inbox::construct_inbox_item_with_datetime(
         settlements,

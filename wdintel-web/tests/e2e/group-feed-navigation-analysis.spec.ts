@@ -6,8 +6,8 @@ import { minimalInboxMessage } from '../../src/ts/react/routes/rer-duty-neo/inbo
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
 const groups = [
-  { masterKey: 'group-a', name: 'Group Alpha', unreadCount: 2, colorKey: 'blue' },
-  { masterKey: 'group-b', name: 'Group Beta', unreadCount: 3, colorKey: 'deep_purple' },
+  { masterKey: 'group-a', name: 'Group Alpha', colorKey: 'blue' },
+  { masterKey: 'group-b', name: 'Group Beta', colorKey: 'deep_purple' },
 ];
 
 function message(id: number, groupMasterKey: string, text: string): InboxMessage {
@@ -62,25 +62,18 @@ async function installGroupNavigationMocks(
       },
     });
   });
-  let stateRequestCount = 0;
-  await page.route('**/api/rer-importer/group-feed-state', (route) => {
-    stateRequestCount += 1;
-    return route.fulfill({
+  await page.route('**/api/rer-importer/signal-group-batch', (route) =>
+    route.fulfill({
       json: {
-        groups: groups.map((group, index) => ({
+        data: groups.map((group) => ({
           master_key: group.masterKey,
           name: group.name,
           color_key: group.colorKey,
-          ignore_operativny: false,
-          unread_count: group.unreadCount,
-          oldest_unread_message_ref: null,
-          last_activity_at: 1_720_000_100_000 - index,
-          latest_cursor: null,
         })),
       },
-    });
-  });
-  return { inboxRequests, getStateRequestCount: () => stateRequestCount };
+    }),
+  );
+  return { inboxRequests };
 }
 
 test.describe('Analysis group feed navigation', () => {
@@ -93,72 +86,19 @@ test.describe('Analysis group feed navigation', () => {
     await page.getByRole('button', { name: 'Додати повідомлення' }).click();
     const text = page.getByRole('textbox', { name: 'Текст повідомлення' });
     await text.fill('Unsaved Analysis draft');
-    await expect(page.getByRole('combobox', { name: 'Група', exact: true })).toHaveValue('group-a');
+    await expect(page.getByRole('combobox', { name: 'Група', exact: true })).toHaveValue(
+      'Group Alpha',
+    );
     await page
       .locator('[data-analysis-group-list]:visible')
       .first()
-      .getByRole('button', { name: /Group Beta, 3 непрочитаних/ })
+      .getByRole('button', { name: 'Group Beta' })
       .click();
-    await expect(page).toHaveURL(/group=group-b/);
+    await expect(page).toHaveURL(/groups=group-b/);
     await expect(text).toHaveValue('Unsaved Analysis draft');
-    await expect(page.getByRole('combobox', { name: 'Група', exact: true })).toHaveValue('group-a');
-  });
-
-  test('@regression #3727 applies restored scope filters to the unread-message window', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1600, height: 900 });
-    await page.addInitScript(() =>
-      localStorage.setItem(
-        'rer-analysis-neo-scope-filters-v1',
-        JSON.stringify({
-          version: 1,
-          scopes: { 'group:group-b': 'senders=sender-b&search=Target' },
-        }),
-      ),
+    await expect(page.getByRole('combobox', { name: 'Група', exact: true })).toHaveValue(
+      'Group Alpha',
     );
-    const inbox = inboxResponse(['group-b']);
-    await installAnalysisNeoApiMocks(page, {
-      signalGroups: ['group-a', 'group-b'],
-      inboxResponse: inbox,
-    });
-    await page.route('**/api/rer-importer/group-feed-state', (route) =>
-      route.fulfill({
-        json: {
-          groups: groups.map((group) => ({
-            master_key: group.masterKey,
-            name: group.name,
-            color_key: group.colorKey,
-            ignore_operativny: false,
-            unread_count: group.unreadCount,
-            oldest_unread_message_ref:
-              group.masterKey === 'group-b' ? 'analysis-group-feed-201' : null,
-            last_read_created_at_order: null,
-            last_read_message_id: null,
-            last_activity_at: null,
-            latest_cursor: null,
-          })),
-        },
-      }),
-    );
-    const windows: Array<{ selected_senders: string[] | null; search?: string | null }> = [];
-    await page.route('**/api/rer-importer/get-inbox', (route) => {
-      const request = route.request().postDataJSON();
-      if (request.around_message_ref) windows.push(request);
-      return route.fulfill({ json: inbox });
-    });
-    await page.goto(
-      '/rer-analysis-neo?group=group-a&search=Alpha&leftPanelOpen=true&filterPanelOpen=false',
-    );
-    await page
-      .locator('[data-analysis-group-list]:visible')
-      .first()
-      .getByRole('button', { name: /Group Beta, 3 непрочитаних/ })
-      .click();
-    await expect.poll(() => windows.length).toBeGreaterThan(0);
-    await expect(page).toHaveURL(/senders=sender-b/);
-    expect(windows.at(-1)?.selected_senders).toEqual(['sender-b']);
-    expect(windows.at(-1)?.search).toBe('Target');
   });
 
   test('separates the map from the tab bar with the content spacing', async ({ page }) => {
@@ -263,9 +203,9 @@ test.describe('Analysis group feed navigation', () => {
 
     await page
       .locator('[data-analysis-group-list]:visible')
-      .getByRole('button', { name: /Group Beta, 3 непрочитаних/ })
+      .getByRole('button', { name: 'Group Beta' })
       .click();
-    await expect(filterPanel.locator('[data-section-id="Групи"]')).toHaveCount(0);
+    await expect(filterPanel.locator('[data-section-id="Групи"]')).toBeVisible();
 
     await filterToggle.click();
     await expect(filterPanel).toHaveCount(0);
@@ -331,123 +271,7 @@ test.describe('Analysis group feed navigation', () => {
     await expect(page.locator('[data-analysis-current-group] [data-group-name]')).toHaveText(
       'Group Beta',
     );
-    await expect.poll(mocks.getStateRequestCount).toBe(1);
     await page.waitForTimeout(400);
-    expect(mocks.getStateRequestCount()).toBe(1);
-  });
-
-  test('keeps URL scope separate from aggregate filters and prefills create', async ({ page }) => {
-    await page.setViewportSize({ width: 1500, height: 900 });
-    const mocks = await installGroupNavigationMocks(page);
-    await page.goto(
-      '/rer-analysis-neo?groups=group-a&groups=group-b&leftPanelOpen=true&filterPanelOpen=false',
-    );
-
-    const groupList = page.locator('[data-analysis-group-list]:visible').first();
-    await expect(groupList).toBeVisible();
-    await expect(groupList.getByRole('button', { name: 'Всі групи', exact: true })).toBeVisible();
-    await groupList.getByRole('button', { name: /Group Beta, 3 непрочитаних/ }).click();
-    await expect(page).toHaveURL(/(?:\?|&)group=group-b(?:&|$)/);
-    await expect(page.getByText('Analysis Beta message')).toBeVisible();
-    await expect(page.getByText('Analysis Alpha message')).toHaveCount(0);
-    await expect(page.locator('[data-section-id="Групи"]')).toHaveCount(0);
-    const currentGroup = page.locator('[data-analysis-current-group]');
-    await expect(currentGroup.locator('[data-group-name]')).toHaveText('Group Beta');
-    await expect(currentGroup).toHaveCSS('width', '180px');
-    await expect(currentGroup.locator('[data-group-name]')).toHaveCSS('text-overflow', 'ellipsis');
-    await expect(page.locator('[data-group-island]')).toHaveCount(0);
-    await expect(currentGroup.locator('button')).toHaveCount(0);
-    await expect(currentGroup.locator('[data-group-avatar]')).toHaveCSS('width', '36px');
-    await expect(currentGroup.locator('[data-group-name]')).toHaveCSS('font-size', '16px');
-    const groupDivider = page.locator('[data-analysis-group-divider]');
-    await expect(groupDivider).toHaveCSS('width', '1px');
-    await expect(groupDivider).toHaveCSS('height', '24px');
-    expect(
-      await currentGroup.evaluate((element) => {
-        const tabbar = document.querySelector('[role="tablist"]');
-        return tabbar != null && Boolean(element.compareDocumentPosition(tabbar) & 4);
-      }),
-    ).toBe(true);
-
-    for (const tabName of ['Мапа', 'Зведена таблиця']) {
-      await page.getByRole('tab', { name: tabName, exact: true }).click();
-      await expect(currentGroup.locator('[data-group-name]')).toHaveText('Group Beta');
-    }
-    await page.getByRole('tab', { name: 'Повідомлення', exact: true }).click();
-
-    const groupTitleFontSize = await page
-      .locator('#analysis-groups-title')
-      .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
-    const pageTitleFontSize = await page
-      .getByRole('heading', { name: 'Аналіз', exact: true })
-      .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
-    expect(groupTitleFontSize).toBeLessThan(pageTitleFontSize);
-
-    await page.getByRole('button', { name: 'Додати повідомлення' }).click();
-    await expect(page.getByRole('button', { name: 'Закрити ліву панель' })).toHaveCount(0);
-    await expect(page.getByRole('combobox', { name: /Група/ })).toHaveValue('group-b');
-    await expect(page).toHaveURL(/(?:\?|&)group=group-b(?:&|$)/);
-
-    await page.reload();
-    await expect(page).toHaveURL(/(?:\?|&)group=group-b(?:&|$)/);
-    await expect(page.locator('[data-analysis-current-group] [data-group-name]')).toHaveText(
-      'Group Beta',
-    );
-    await expect(page.getByText('Analysis Beta message')).toBeVisible();
-
-    await page
-      .locator('[data-analysis-group-list]:visible')
-      .first()
-      .getByRole('button', { name: 'Всі групи', exact: true })
-      .click();
-    await expect(page).not.toHaveURL(/(?:\?|&)group=/);
-    await page.locator('[data-analysis-filter-toggle]').click();
-    await expect(
-      page.locator('[data-analysis-filter-panel]:visible [data-section-id="Групи"]'),
-    ).toBeVisible();
-    expect(
-      mocks.inboxRequests.some(
-        (request) =>
-          JSON.stringify(request.selected_groups) === JSON.stringify(['group-a', 'group-b']),
-      ),
-    ).toBe(true);
-    expect(mocks.getStateRequestCount()).toBeGreaterThan(0);
-  });
-
-  test('keeps and restores filters independently for every group scope', async ({ page }) => {
-    await page.setViewportSize({ width: 1500, height: 900 });
-    await installGroupNavigationMocks(page);
-    await page.goto('/rer-analysis-neo?leftPanelOpen=true&filterPanelOpen=false');
-
-    await page.locator('[data-analysis-filter-toggle]').click();
-    const filterPanel = page.locator('[data-analysis-filter-panel]:visible');
-    const importantSection = filterPanel.locator('[data-section-id="important"]');
-    await importantSection.getByText('Важливе', { exact: true }).click();
-    await importantSection.getByRole('checkbox', { name: 'Важливі' }).check();
-    await expect(page).toHaveURL(/(?:\?|&)orImportant=true(?:&|$)/);
-
-    const groupList = page.locator('[data-analysis-group-list]:visible').first();
-    await groupList.getByRole('button', { name: /Group Beta, 3 непрочитаних/ }).click();
-    await expect(importantSection.getByRole('checkbox', { name: 'Важливі' })).not.toBeChecked();
-    await importantSection.getByRole('checkbox', { name: 'Збережені' }).check();
-    await expect(page).toHaveURL(/(?:\?|&)orBookmarked=true(?:&|$)/);
-    await expect(page).not.toHaveURL(/(?:\?|&)orImportant=true(?:&|$)/);
-
-    await groupList.getByRole('button', { name: 'Всі групи', exact: true }).click();
-    await expect(importantSection.getByRole('checkbox', { name: 'Важливі' })).toBeChecked();
-    await expect(importantSection.getByRole('checkbox', { name: 'Збережені' })).not.toBeChecked();
-
-    await groupList.getByRole('button', { name: /Group Beta, 3 непрочитаних/ }).click();
-    await expect(importantSection.getByRole('checkbox', { name: 'Збережені' })).toBeChecked();
-    await page.reload();
-    await page.locator('[data-analysis-filter-toggle]').click();
-    const reloadedImportantSection = page
-      .locator('[data-analysis-filter-panel]:visible')
-      .locator('[data-section-id="important"]');
-    await reloadedImportantSection.getByText('Важливе', { exact: true }).click();
-    await expect(
-      reloadedImportantSection.getByRole('checkbox', { name: 'Збережені' }),
-    ).toBeChecked();
   });
 
   test('hides the previous group messages while the selected group loads', async ({ page }) => {
@@ -469,7 +293,7 @@ test.describe('Analysis group feed navigation', () => {
     await page
       .locator('[data-analysis-group-list]:visible')
       .first()
-      .getByRole('button', { name: /Group Beta, 3 непрочитаних/ })
+      .getByRole('button', { name: 'Group Beta' })
       .click();
 
     await expect(page.locator('[data-analysis-current-group] [data-group-name]')).toHaveText(
@@ -566,7 +390,7 @@ test.describe('Analysis group feed navigation', () => {
     await page
       .locator('[data-analysis-group-list]:visible')
       .first()
-      .getByRole('button', { name: /Group Beta, 3 непрочитаних/ })
+      .getByRole('button', { name: 'Group Beta' })
       .click();
     await expect(page.getByText('Analysis Beta message')).toBeVisible();
     await expect(counter).toHaveText('1-3 з 3');
@@ -653,193 +477,5 @@ test.describe('Analysis group feed navigation', () => {
     await page.getByRole('button', { name: 'Розгорнути ліву панель' }).click();
     await expect(page.locator('[data-analysis-group-list]')).toBeVisible();
     await expect(page.locator('[data-analysis-filter-panel]')).toHaveCount(0);
-  });
-
-  for (const newestFirst of [true, false]) {
-    test(`opens the oldest unread message with newestFirst=${newestFirst}`, async ({ page }) => {
-      await page.setViewportSize({ width: 1500, height: 900 });
-      await installGroupNavigationMocks(page);
-      await page.route('**/api/rer-importer/group-feed-state', (route) =>
-        route.fulfill({
-          json: {
-            groups: groups.map((group, index) => ({
-              master_key: group.masterKey,
-              name: group.name,
-              ignore_operativny: false,
-              unread_count: group.unreadCount,
-              oldest_unread_message_ref:
-                group.masterKey === 'group-b' ? 'analysis-group-feed-201' : null,
-              last_activity_at: 1_720_000_100_000 - index,
-              latest_cursor: null,
-            })),
-          },
-        }),
-      );
-      await page.goto('/rer-analysis-neo?leftPanelOpen=true&filterPanelOpen=false');
-      if (!newestFirst) {
-        await page.getByRole('checkbox', { name: 'спочатку нові' }).click();
-      }
-
-      await page
-        .locator('[data-analysis-group-list]:visible')
-        .first()
-        .getByRole('button', { name: /Group Beta, 3 непрочитаних/ })
-        .click();
-
-      const target = page.locator('[data-message-id="201"]');
-      await expect(target).toBeVisible();
-      await expect(target).not.toHaveAttribute('data-message-feed-highlighted', 'true');
-    });
-  }
-
-  for (const failFirst of [false, true]) {
-    test(`clears the unread badge ${failFirst ? 'after a failed read receipt and reload' : 'after the newest group message is viewed'}`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ width: 1500, height: 900 });
-      await installGroupNavigationMocks(page);
-      let unreadCount = 1;
-      let acknowledgeCount = 0;
-      const cursor = { created_at: 1_720_000_201_000, message_id: 201 };
-      const groupState = () => ({
-        master_key: 'group-b',
-        name: 'Group Beta',
-        color_key: 'deep_purple',
-        ignore_operativny: false,
-        unread_count: unreadCount,
-        oldest_unread_message_ref: 'analysis-group-feed-201',
-        last_activity_at: cursor.created_at,
-        latest_cursor: cursor,
-      });
-      await page.route('**/api/rer-importer/group-feed-state/acknowledge', (route) => {
-        acknowledgeCount += 1;
-        if (failFirst && acknowledgeCount === 1) {
-          return route.fulfill({
-            status: 503,
-            json: { message: 'Read receipt temporarily unavailable' },
-          });
-        }
-        unreadCount = 0;
-        return route.fulfill({ json: groupState() });
-      });
-      await page.route('**/api/rer-importer/group-feed-state', (route) =>
-        route.fulfill({ json: { groups: [groupState()] } }),
-      );
-      await page.goto('/rer-analysis-neo?leftPanelOpen=true&filterPanelOpen=false');
-
-      const groupList = page.locator('[data-analysis-group-list]:visible').first();
-      await groupList.getByRole('button', { name: /Group Beta, 1 непрочитаних/ }).click();
-      await expect(page.locator('[data-message-id="201"]')).toBeVisible();
-      await expect.poll(() => acknowledgeCount).toBe(1);
-      if (failFirst) {
-        await expect(
-          groupList.getByRole('button', { name: /Group Beta, 1 непрочитаних/ }),
-        ).toBeVisible();
-        await page.getByRole('button', { name: 'Оновити', exact: true }).click();
-        await expect.poll(() => acknowledgeCount).toBe(2);
-      }
-      await expect(groupList.locator('[data-group-unread]')).toHaveCount(0);
-    });
-  }
-
-  test('clears unread state that arrives after the newest message is already visible', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1500, height: 900 });
-    await installGroupNavigationMocks(page);
-    let releaseState!: () => void;
-    const stateGate = new Promise<void>((resolve) => {
-      releaseState = resolve;
-    });
-    let unreadCount = 1;
-    let acknowledgeCount = 0;
-    const cursor = { created_at: 1_720_000_201_000, message_id: 201 };
-    const groupState = () => ({
-      master_key: 'group-b',
-      name: 'Group Beta',
-      color_key: 'deep_purple',
-      ignore_operativny: false,
-      unread_count: unreadCount,
-      oldest_unread_message_ref: 'analysis-group-feed-201',
-      last_activity_at: cursor.created_at,
-      latest_cursor: cursor,
-    });
-    await page.route('**/api/rer-importer/group-feed-state/acknowledge', (route) => {
-      acknowledgeCount += 1;
-      unreadCount = 0;
-      return route.fulfill({ json: groupState() });
-    });
-    await page.route('**/api/rer-importer/group-feed-state', async (route) => {
-      await stateGate;
-      await route.fulfill({ json: { groups: [groupState()] } });
-    });
-    await page.goto('/rer-analysis-neo?group=group-b&leftPanelOpen=true&filterPanelOpen=false');
-    await expect(page.locator('[data-message-id="201"]')).toBeVisible();
-    await page.waitForTimeout(250);
-    releaseState();
-    await expect(page.locator('[data-analysis-current-group] [data-group-name]')).toHaveText(
-      'Group Beta',
-    );
-    await expect.poll(() => acknowledgeCount).toBeGreaterThan(0);
-    await expect(
-      page.locator('[data-analysis-group-list]:visible [data-group-unread]'),
-    ).toHaveCount(0);
-  });
-
-  test('decreases the unread badge as individual group messages are read', async ({ page }) => {
-    await page.setViewportSize({ width: 1500, height: 420 });
-    const inbox = inboxResponse(['group-b']);
-    inbox.inbox_items = [201, 202, 203].map((id) => [
-      id,
-      message(id, 'group-b', Array(20).fill(`Unread message ${id}`).join('\n')),
-    ]) as InboxMessagesRspRaw['inbox_items'];
-    await installAnalysisNeoApiMocks(page, {
-      signalGroups: ['group-b'],
-      inboxResponse: inbox,
-    });
-    let unreadCount = 3;
-    const acknowledgements: number[] = [];
-    const groupState = () => ({
-      master_key: 'group-b',
-      name: 'Group Beta',
-      color_key: 'deep_purple',
-      ignore_operativny: false,
-      unread_count: unreadCount,
-      oldest_unread_message_ref: 'analysis-group-feed-201',
-      last_activity_at: 1_720_000_203_000,
-      latest_cursor: { created_at: 1_720_000_203_000, message_id: 203 },
-    });
-    await page.route('**/api/rer-importer/group-feed-state', (route) =>
-      route.fulfill({ json: { groups: [groupState()] } }),
-    );
-    await page.route('**/api/rer-importer/group-feed-state/acknowledge', (route) => {
-      const request = route.request().postDataJSON() as {
-        master_key: string;
-        cursor: { message_id: number; created_at: number };
-      };
-      expect(request.master_key).toBe('group-b');
-      expect(request.cursor.created_at).toBe(1_720_000_000_000 + request.cursor.message_id * 1000);
-      acknowledgements.push(request.cursor.message_id);
-      unreadCount = Math.min(unreadCount, 203 - request.cursor.message_id);
-      return route.fulfill({ json: groupState() });
-    });
-    await page.goto(
-      '/rer-analysis-neo?group=group-b&newestFirst=false&leftPanelOpen=true&filterPanelOpen=false',
-    );
-    const groupList = page.locator('[data-analysis-group-list]:visible').first();
-    await expect(
-      groupList.getByRole('button', { name: /Group Beta, 2 непрочитаних/ }),
-    ).toBeVisible();
-    for (const id of [202, 203]) {
-      await page.locator(`[data-message-id="${id}"]`).scrollIntoViewIfNeeded();
-      if (id === 202) {
-        await expect(
-          groupList.getByRole('button', { name: /Group Beta, 1 непрочитаних/ }),
-        ).toBeVisible();
-      } else {
-        await expect(groupList.locator('[data-group-unread]')).toHaveCount(0);
-      }
-    }
-    expect(acknowledgements).toEqual([201, 202, 203]);
   });
 });

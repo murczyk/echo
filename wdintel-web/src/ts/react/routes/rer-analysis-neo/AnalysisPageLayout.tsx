@@ -146,12 +146,9 @@ export function RerAnalysisNeoPage({
   }, [editorOpen, page.hideNetworks, page.networkVisibilityReady]);
   useEffect(() => {
     if (!filterPanelOpen) return;
-    const sections =
-      page.groupNavigation.scope.kind === 'group'
-        ? (['tags', 'senders'] as const)
-        : (['tags', 'groups', 'senders'] as const);
+    const sections = ['tags', 'groups', 'senders'] as const;
     void Promise.all(sections.map((section) => page.loadFilterSection(section)));
-  }, [filterPanelOpen, page.groupNavigation.scope.kind, page.loadFilterSection]);
+  }, [filterPanelOpen, page.loadFilterSection]);
   useEffect(() => {
     if (editorOpen) setFilterPanelOpen(false);
   }, [editorOpen]);
@@ -560,7 +557,6 @@ export function RerAnalysisNeoPage({
                       });
                     }}
                     onCreated={async () => {
-                      if (!page.reportSource) page.dismissUnreadBoundary();
                       page.reload({ preserveMessagePage: true, showMessagesLoading: false });
                       notify({
                         message: page.reportSource

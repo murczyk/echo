@@ -1,8 +1,9 @@
+import type { ComponentProps } from 'react';
+
 import { GroupIdentity } from './GroupIdentity';
-import type { GroupNavigationItem } from './group-navigation.types';
 
 type Props = {
-  group: GroupNavigationItem;
+  group: ComponentProps<typeof GroupIdentity>['group'];
   className?: string;
 };
 

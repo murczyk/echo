@@ -2661,12 +2661,6 @@ async fn ensure_submit_group_aor(
     .insert(txn)
     .await
     .c(h!())?;
-    crate::battle_line::requeue_settlement_links_for_group(
-        txn,
-        group_master_key,
-    )
-    .await
-    .c(h!())?;
     Ok(())
 }
 

@@ -1974,7 +1974,10 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       expect(params.get('state-short')).toBe('short-123');
       expect(params.get('state')).toBeNull();
       expect(hoisted.rerDutyShortStateCreate).toHaveBeenLastCalledWith(
-        expect.objectContaining({ groupScopes: [['mf-0', 'g-2']] }),
+        expect.objectContaining({
+          groupScopes: [],
+          waterfalls: [['mf-0', expect.objectContaining({ groupsSelected: ['g-2'] })]],
+        }),
       );
     });
 

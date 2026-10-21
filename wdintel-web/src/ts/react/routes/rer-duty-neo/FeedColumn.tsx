@@ -30,10 +30,8 @@ import { recordDutyScrollDebugSnapshot, useDutyScrollDebugEnabled } from './duty
 import {
   GroupIsland,
   GroupPanel,
-  isDutyGroupViewAcknowledgeable,
-  useGroupFeedNavigation,
-  useGroupFeedReadReceipts,
-  type GroupNavigationItem,
+  buildGroupFilterItems,
+  groupFilterIdentity,
   type GroupScope,
 } from '../shared/group-navigation';
 import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
@@ -84,47 +82,11 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   const notificationPanelRef = useRef<HTMLDivElement | null>(null);
   const keywordsPanelRef = useRef<HTMLDivElement | null>(null);
   const groupsTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const navigation = useGroupFeedNavigation({
-    enabled: showGroups,
-    resolveSelectedGroupWhenHidden: true,
-    scope: groupNavigation.scope,
-    allUnreadCount: view.bottomUnreadCount ?? 0,
-    onSelect: groupNavigation.onSelect,
-    onError: groupNavigation.onError,
-  });
   const dutyGroups = useMemo(
-    () => navigation.groups.filter((group) => group.kind === 'all' || !group.ignoreOperativny),
-    [navigation.groups],
+    () =>
+      buildGroupFilterItems(filterPanel.sources.groupsList, filterPanel.sources.groupInfos, true),
+    [filterPanel.sources.groupsList, filterPanel.sources.groupInfos],
   );
-  const onVisibleGroupMessages = useGroupFeedReadReceipts({
-    enabled:
-      view.scrollTrackingEnabled !== false &&
-      !feed.loading &&
-      isDutyGroupViewAcknowledgeable(feed.filter) &&
-      feed.adjacentFreqsRange === 0 &&
-      !feed.highlightSignalsEnabled &&
-      !feed.onlyMyUnitTagsEnabled,
-    groups: navigation.groups,
-    messages: feed.items,
-    acknowledge: navigation.acknowledge,
-  });
-  const lastUnavailableGroupRef = useRef<string | null>(null);
-  useEffect(() => {
-    const scope = groupNavigation.scope;
-    if (scope.kind !== 'group') {
-      lastUnavailableGroupRef.current = null;
-      return;
-    }
-    if (!navigation.ready) return;
-    if (dutyGroups.some((group) => group.kind === 'group' && group.masterKey === scope.masterKey)) {
-      lastUnavailableGroupRef.current = null;
-      return;
-    }
-    if (lastUnavailableGroupRef.current === scope.masterKey) return;
-    lastUnavailableGroupRef.current = scope.masterKey;
-    groupNavigation.onError(new Error('Обрана група більше недоступна.'));
-    groupNavigation.onSelect({ kind: 'all' }, null);
-  }, [dutyGroups, groupNavigation, navigation.ready]);
   const [notificationStorageSyncKey, setNotificationStorageSyncKey] = useState(0);
   const [notificationStatusVersion, setNotificationStatusVersion] = useState(0);
   const [notificationStorageError, setNotificationStorageError] = useState<string | null>(null);
@@ -349,43 +311,16 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
 
   useEffect(() => () => clearFeedColumnFab(feed.id), [feed.id]);
 
-  const selectedGroup: GroupNavigationItem =
-    groupNavigation.scope.kind === 'group' &&
-    navigation.selectedGroup.kind === 'group' &&
-    navigation.selectedGroup.name === groupNavigation.scope.masterKey
-      ? {
-          ...navigation.selectedGroup,
-          name: groupNavigation.groupName,
-        }
-      : navigation.selectedGroup;
+  const islandGroup = groupFilterIdentity(
+    feed.filter.groupsSelected ?? [],
+    column.messageCard.groupInfos,
+  );
   const handleGroupSelect = useCallback(
     (scope: GroupScope) => {
       setShowGroups(false);
-      if (
-        scope.kind === groupNavigation.scope.kind &&
-        (scope.kind === 'all' ||
-          (groupNavigation.scope.kind === 'group' &&
-            scope.masterKey === groupNavigation.scope.masterKey))
-      ) {
-        return;
-      }
-      navigation.select(scope);
+      groupNavigation.onSelect(scope);
     },
-    [groupNavigation.scope, navigation.select],
-  );
-  const handleVisibleMessages = useCallback(
-    (ids: readonly number[]) => {
-      actions.onVisibleMessages?.(ids);
-      onVisibleGroupMessages(ids);
-    },
-    [actions.onVisibleMessages, onVisibleGroupMessages],
-  );
-  const contentColumn = useMemo<FeedColumnModel>(
-    () => ({
-      ...column,
-      actions: { ...actions, onVisibleMessages: handleVisibleMessages },
-    }),
-    [actions, column, handleVisibleMessages],
+    [groupNavigation],
   );
 
   return (
@@ -456,14 +391,14 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           transform: 'translateX(-50%)',
         }}
       >
-        <GroupIsland group={selectedGroup} />
+        <GroupIsland group={islandGroup} />
       </Box>
       <Box
         data-duty-feed-body
         className="flex flex-col flex-1 min-h-0"
         sx={{ position: 'relative' }}
       >
-        <FeedColumnContent ref={contentRef} column={contentColumn} />
+        <FeedColumnContent ref={contentRef} column={column} />
         <GroupPanel
           id={`duty-group-panel-${feed.id}`}
           open={showGroups}
@@ -472,6 +407,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           onSelect={handleGroupSelect}
           onClose={() => setShowGroups(false)}
           triggerRef={groupsTriggerRef}
+          loading={filterPanel.toggles.groupCatalogLoading}
+          error={filterPanel.toggles.groupCatalogError?.message}
+          onRetry={filterPanel.actions.onReloadGroupCatalog}
         />
       </Box>
       {actions.onCreateMessage && !panelOpen ? (

@@ -12,6 +12,9 @@ type Props = {
   onClose: () => void;
   triggerRef?: RefObject<HTMLButtonElement | null>;
   title?: string;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 };
 
 export function GroupPanel({
@@ -23,6 +26,9 @@ export function GroupPanel({
   onClose,
   triggerRef,
   title = 'Групи',
+  loading,
+  error,
+  onRetry,
 }: Props) {
   const panelRef = useRef<HTMLElement>(null);
   const titleId = `${id}-title`;
@@ -83,6 +89,9 @@ export function GroupPanel({
           onSelect={onSelect}
           title={title}
           titleId={titleId}
+          loading={loading}
+          error={error}
+          onRetry={onRetry}
         />
       </aside>
     </div>
