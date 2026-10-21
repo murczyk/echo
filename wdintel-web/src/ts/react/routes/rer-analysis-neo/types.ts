@@ -28,7 +28,7 @@ import type { ReportEditLoadState } from '../shared/manage-message/useManageMess
 import type { MessageTimeBasis } from '../../services/api/user-settings';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 import type {
-  GroupFeedNavigationModel,
+  GroupFilterNavigationModel,
   GroupScope,
 } from '../shared/group-navigation/group-navigation.types';
 
@@ -224,9 +224,7 @@ export type AnalysisPageState = {
   isFilterSectionEmptyLoading: (section: AnalysisFilterSectionId, optionCount: number) => boolean;
   isFilterSectionStale: (section: AnalysisFilterSectionId) => boolean;
   groupInfos: Record<string, SignalGroupEntry>;
-  groupNavigation: GroupFeedNavigationModel;
-  unreadBoundaryMessageId: number | null;
-  dismissUnreadBoundary: () => void;
+  groupNavigation: GroupFilterNavigationModel;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   includeOnlyNewFreqs: boolean;
   inboxReq: InboxMessagesReq | null;
@@ -391,8 +389,7 @@ export type AnalysisPageActions = {
   setRightSidebarTab: (tab: AnalysisSidebarTab) => void;
   toggleLeftPanel: () => void;
   openLeftPanel: () => void;
-  selectGroupScope: (scope: GroupScope, oldestUnreadMessageRef?: string | null) => void;
-  onVisibleGroupMessages: (ids: readonly number[]) => void;
+  selectGroupScope: (scope: GroupScope) => void;
   toggleRightPanel: () => void;
   selectOnlyFreq: (freq: string) => void;
   openPointsOnMap: (etalons: string[], message: InboxMessage) => void;

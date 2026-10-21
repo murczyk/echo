@@ -1,17 +1,13 @@
 import { useCallback, useState } from 'react';
-import type { GroupFeedState } from '../../../../Bindings';
 import type { MessageFeedState } from './utils';
-import {
-  resolveGroupUnreadBoundary,
-  type GroupUnreadBoundary as UnreadBoundary,
-} from '../shared/group-navigation/group-unread-boundary';
 
-function resolveUnreadBoundary(
-  feed: MessageFeedState,
-  groups: readonly GroupFeedState[],
-  ready: boolean,
-  previous?: UnreadBoundary,
-): UnreadBoundary {
+type UnreadBoundary = {
+  key: string;
+  messageId: number | null;
+  dismissed?: boolean;
+};
+
+function resolveUnreadBoundary(feed: MessageFeedState, previous?: UnreadBoundary): UnreadBoundary {
   const key = JSON.stringify([
     feed.id,
     feed.groupScopeMasterKey,
@@ -21,28 +17,18 @@ function resolveUnreadBoundary(
     feed.highlightSignalsEnabled,
     feed.onlyMyUnitTagsEnabled,
   ]);
-  return resolveGroupUnreadBoundary(
-    {
-      key,
-      loading: feed.loading,
-      ready,
-      messages: feed.items,
-      groups: groups.filter(
-        (group) =>
-          !group.ignoreOperativny &&
-          (!feed.groupScopeMasterKey || group.masterKey === feed.groupScopeMasterKey),
-      ),
-      isLocallyUnread: (id) => feed.unreadCount > 0 && !feed.readIds.has(id),
-    },
-    previous,
-  );
+  const boundary = previous?.key === key ? previous : { key, messageId: null };
+  if (feed.loading || boundary.dismissed) return boundary;
+  const messageId =
+    boundary.messageId ??
+    feed.items.find(
+      ([id, message]) => message.isOwn !== true && feed.unreadCount > 0 && !feed.readIds.has(id),
+    )?.[0] ??
+    null;
+  return messageId === boundary.messageId ? boundary : { ...boundary, messageId };
 }
 
-export function useDutyUnreadBoundaries(
-  feeds: readonly MessageFeedState[],
-  groups: readonly GroupFeedState[],
-  ready: boolean,
-) {
+export function useDutyUnreadBoundaries(feeds: readonly MessageFeedState[]) {
   const [boundaries, setBoundaries] = useState(new Map<string, UnreadBoundary>());
   const dismissUnreadBoundary = useCallback((feedId: string) => {
     setBoundaries((current) => {
@@ -55,7 +41,7 @@ export function useDutyUnreadBoundaries(
   let changed = boundaries.size !== feeds.length;
   for (const feed of feeds) {
     const previous = boundaries.get(feed.id);
-    const boundary = resolveUnreadBoundary(feed, groups, ready, previous);
+    const boundary = resolveUnreadBoundary(feed, previous);
     next.set(feed.id, boundary);
     changed ||= boundary !== previous;
   }

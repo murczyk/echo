@@ -36,6 +36,9 @@ export function AnalysisLeftPanel({ page, leftPanelVisible, fullHeight = false }
           onSelect={selectGroup}
           title={fullHeight ? undefined : 'Групи'}
           titleId={fullHeight ? undefined : 'analysis-groups-title'}
+          loading={page.groupNavigation.loading}
+          error={typeof page.groupNavigation.error === 'string' ? page.groupNavigation.error : null}
+          onRetry={page.groupNavigation.retry}
         />
       </section>
     </aside>

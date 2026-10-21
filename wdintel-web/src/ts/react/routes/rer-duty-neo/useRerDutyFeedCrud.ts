@@ -70,36 +70,16 @@ export function useRerDutyFeedCrud(
   );
 
   const setGroupScope = useCallback(
-    (feedId: string, groupScopeMasterKey: string | null) => {
-      const currentFeed = messageFeeds.find((feed) => feed.id === feedId);
-      if (!currentFeed || (currentFeed.groupScopeMasterKey ?? null) === groupScopeMasterKey) {
-        return;
-      }
-      markFeedReloadRequested(feedId);
-      setMessageFeeds((previous) => {
-        const next = previous.map((feed) =>
-          feed.id === feedId
-            ? {
-                ...feed,
-                groupScopeMasterKey,
-                items: [],
-                loading: true,
-                loadingOlder: false,
-                hasReachedStart: false,
-                readIds: new Set<number>(),
-                windowedUnreadItems: new Map<number, number>(),
-                unresolvedUnreadIds: undefined,
-                unresolvedUnreadCount: 0,
-                unreadCount: 0,
-                pendingNewerItems: [],
-              }
-            : feed,
-        );
-        persistStateToUrl(next);
-        return next;
+    (feedId: string, groupMasterKey: string | null) => {
+      const feed = messageFeeds.find((candidate) => candidate.id === feedId);
+      if (!feed) return;
+      applyFilter(feedId, {
+        ...feed.filter,
+        groupsSelected: groupMasterKey ? [groupMasterKey] : null,
+        groupsDenied: null,
       });
     },
-    [markFeedReloadRequested, messageFeeds, persistStateToUrl, setMessageFeeds],
+    [applyFilter, messageFeeds],
   );
 
   const createMessageFeed = useCallback(() => {

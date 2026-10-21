@@ -67,6 +67,7 @@ vi.mock('../useRerDutyFilterOptions', () => ({
     freqs: [],
     setProfiles: vi.fn(),
     setGroupInfos: vi.fn(),
+    setRequiredGroupKeys: vi.fn(),
     profiles: {},
     tagsMap: {},
     tagsOrder: [],

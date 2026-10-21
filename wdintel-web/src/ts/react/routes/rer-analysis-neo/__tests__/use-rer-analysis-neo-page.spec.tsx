@@ -5,7 +5,13 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage, InboxWindowRsp, SavedFilter, User } from '../../../../../Bindings';
+import type {
+  InboxMessage,
+  InboxWindowRsp,
+  SavedFilter,
+  SignalGroupEntry,
+  User,
+} from '../../../../../Bindings';
 import type { AnalysisPageViewModel } from '../types';
 import { buildInboxReq, createResetQueryState } from '../helpers';
 import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
@@ -17,6 +23,7 @@ const systemSettingsMock = vi.hoisted(() => ({
   currentSystemSettings: vi.fn(),
 }));
 const currentUserMock = vi.hoisted(() => ({ fetchCurrentUser: vi.fn() }));
+const groupCatalogMock = vi.hoisted(() => ({ groups: vi.fn(), details: vi.fn() }));
 const inboxMessagesMock = vi.hoisted(() => ({
   fetchInboxWindow: vi.fn(),
   fetchInboxItemContext: vi.fn(),
@@ -71,6 +78,11 @@ vi.mock('../../../services/api/system-settings', () => ({
 vi.mock('../../../services/api/inbox-messages', () => ({
   fetchInboxWindow: inboxMessagesMock.fetchInboxWindow,
   fetchInboxItemContext: inboxMessagesMock.fetchInboxItemContext,
+}));
+
+vi.mock('../../../services/api/inbox', () => ({
+  getUserSigintGroups: groupCatalogMock.groups,
+  getGroupInfosBatch: groupCatalogMock.details,
 }));
 
 vi.mock('../use-analysis-data', () => ({
@@ -191,7 +203,7 @@ const baseAnalysisData = {
   tagsOrder: [],
   topCallsigns: [],
   topFreqs: [],
-  groupInfos: {},
+  groupInfos: {} as Record<string, SignalGroupEntry>,
   topLocations: [],
   topUnits: [],
   renameSummaryUnit: vi.fn(),
@@ -377,6 +389,8 @@ describe('useRerAnalysisNeoPage', () => {
     });
     inboxMessagesMock.fetchInboxWindow.mockReset();
     inboxMessagesMock.fetchInboxWindow.mockResolvedValue(null);
+    groupCatalogMock.groups.mockReset().mockResolvedValue([]);
+    groupCatalogMock.details.mockReset().mockResolvedValue([]);
 
     useAnalysisDataMock.mockReset();
     analysisFreqValues = ['111.1'];
@@ -423,24 +437,73 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.radioFeaturesAllowed).toBe(true);
   });
 
-  it('keeps independent filters for all groups and a selected group', async () => {
+  it.each(['catalog', 'details'])('#3727 clears local %s errors after retry', async (failure) => {
+    const alpha = { masterKey: 'a', name: 'Alpha', colorKey: 'cyan' } as SignalGroupEntry;
+    groupCatalogMock.groups.mockResolvedValue(['a']);
+    groupCatalogMock.details.mockResolvedValue([alpha]);
+    const request = failure === 'catalog' ? groupCatalogMock.groups : groupCatalogMock.details;
+    request.mockRejectedValue(new Error('unavailable'));
+
+    renderHook(['Rer']);
+    await flushEffects();
+
+    expect(latest?.groupNavigation.error).toBeTruthy();
+    expect(latest?.error).toBeNull();
+
+    request.mockResolvedValue(failure === 'catalog' ? ['a'] : [alpha]);
+    act(() => latest?.groupNavigation.retry());
+    await flushEffects();
+
+    expect(latest?.groupNavigation.error).toBeNull();
+    expect(latest?.groupNavigation.groups).toContainEqual({ kind: 'group', ...alpha });
+    expect(latest?.error).toBeNull();
+  });
+
+  it('#3727 reconciles catalog refreshes with only changed message metadata', async () => {
+    const alpha = { masterKey: 'a', name: 'Old Alpha', colorKey: 'cyan' } as SignalGroupEntry;
+    const beta = { masterKey: 'b', name: 'Beta', colorKey: 'orange' } as SignalGroupEntry;
+    currentAnalysisData!.groupInfos = { a: alpha };
+    groupCatalogMock.groups.mockResolvedValue(['a']);
+    groupCatalogMock.details.mockResolvedValue([
+      { ...alpha, name: 'Renamed Alpha', colorKey: 'red' },
+    ]);
+    const rerender = renderHook(['Rer']);
+    await flushEffects();
+    expect(latest?.groupInfos.a).toMatchObject({ name: 'Renamed Alpha', colorKey: 'red' });
+
+    currentAnalysisData!.groupInfos = { a: alpha, b: beta };
+    rerender();
+    await flushEffects();
+    expect(latest?.groupInfos.a).toMatchObject({ name: 'Renamed Alpha', colorKey: 'red' });
+    expect(latest?.groupInfos.b).toBe(beta);
+    expect(latest?.groupNavigation.groups).toContainEqual({ kind: 'group', ...beta });
+
+    currentAnalysisData!.groupInfos = { a: { ...alpha, name: 'Latest Alpha' }, b: beta };
+    rerender();
+    await flushEffects();
+    expect(latest?.groupInfos.a?.name).toBe('Latest Alpha');
+  });
+
+  it('#3727 shares the legacy group filter and preserves frequency and AOR filters', async () => {
     renderHook(['Rer']);
     await act(async () => {
       latest?.updateQueryState({
         groupsSelected: ['group-a', 'group-c'],
         freqsSelected: ['111.1'],
+        aorsSelected: ['7'],
       });
     });
     await act(async () => {
       latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
     });
 
-    expect(latest?.queryState.groupsSelected).toEqual([]);
-    expect(latest?.queryState.freqsSelected).toEqual([]);
+    expect(latest?.queryState.groupsSelected).toEqual(['group-b']);
+    expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
+    expect(latest?.queryState.aorsSelected).toEqual(['7']);
     expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.groupsSelected).toEqual([
       'group-b',
     ]);
-    expect(new URL(window.location.href).searchParams.get('group')).toBe('group-b');
+    expect(new URL(window.location.href).searchParams.get('groups')).toBe('group-b');
 
     await act(async () => {
       latest?.updateQueryState({ freqsSelected: ['222.2'] });
@@ -448,18 +511,16 @@ describe('useRerAnalysisNeoPage', () => {
     await act(async () => {
       latest?.selectGroupScope({ kind: 'all' });
     });
-    expect(latest?.queryState.groupsSelected).toEqual(['group-a', 'group-c']);
-    expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
-    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.groupsSelected).toEqual([
-      'group-a',
-      'group-c',
-    ]);
+    expect(latest?.queryState.groupsSelected).toEqual([]);
+    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
+    expect(latest?.queryState.aorsSelected).toEqual(['7']);
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.groupsSelected).toEqual([]);
     expect(new URL(window.location.href).searchParams.has('group')).toBe(false);
 
     await act(async () => {
       latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
     });
-    expect(latest?.queryState.groupsSelected).toEqual([]);
+    expect(latest?.queryState.groupsSelected).toEqual(['group-b']);
     expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
   });
 
@@ -479,7 +540,7 @@ describe('useRerAnalysisNeoPage', () => {
     renderHook(['Rer']);
 
     expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
-    expect(latest?.queryState.groupsSelected).toEqual([]);
+    expect(latest?.queryState.groupsSelected).toEqual(['group-b']);
   });
 
   it('ignores malformed stored group filters', () => {

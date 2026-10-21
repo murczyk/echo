@@ -17,15 +17,13 @@ type Message = {
   sender: string;
   deleted?: boolean;
 };
-type GateKind = 'state' | 'inbox' | 'acknowledge';
+type GateKind = 'inbox';
 type Gate = { entered: () => void; wait: Promise<void> };
 export type Actor = {
   page: Page;
   screen: Screen;
   user: string;
   requests: Array<{ path: string; body: Record<string, unknown> }>;
-  receipts: Array<{ master_key: string; cursor: { message_id: number; created_at: number } }>;
-  failReceipts: number;
   failSubmissions: number;
   gates: Partial<Record<GateKind, Gate>>;
 };
@@ -58,16 +56,6 @@ export async function groupList(actor: Actor) {
   return panel;
 }
 
-export async function expectUnread(actor: Actor, scope: Scope, count: number) {
-  const name = scope === 'all' ? 'Всі групи' : scope;
-  const button = (await groupList(actor)).getByRole('button', {
-    name: count ? `${name}, ${count} непрочитаних повідомлень` : name,
-    exact: true,
-  });
-  await expect(button).toBeVisible();
-  await expect(button.locator('[data-group-unread]')).toHaveCount(count ? 1 : 0);
-}
-
 export async function selectGroup(actor: Actor, scope: Scope) {
   const name = scope === 'all' ? 'Всі групи' : scope;
   await (await groupList(actor)).getByRole('button', { name: new RegExp(`^${name}(,|$)`) }).click();
@@ -91,17 +79,6 @@ export async function createMessage(actor: Actor, text: string, chooseGroup = fa
   const submit = actor.page.getByRole('button', { name: 'Створити', exact: true });
   await expect(submit).toBeEnabled();
   await submit.click();
-}
-
-export function divider(actor: Actor) {
-  return actor.page.getByRole('separator', { name: 'Непрочитані повідомлення' });
-}
-
-export async function expectUnreadDivider(actor: Actor, messageId?: number) {
-  const separator =
-    messageId == null ? divider(actor) : row(actor, messageId).getByRole('separator');
-  if (actor.screen === 'analysis') await expect(separator).toHaveCount(0);
-  else await expect(separator).toBeVisible();
 }
 
 export async function settleResponse(actor: Actor, pending: Promise<Response | null>) {
@@ -144,7 +121,6 @@ export async function viewMessage(actor: Actor, id: number) {
 export async function installGroupFeedActors() {
   const actors: Actor[] = [];
   const messages: Message[] = [];
-  const reads = new Map<string, number>();
   const events: number[] = [];
   const groups = [
     { key: 'group-1', hidden: false, accessible: true },
@@ -172,31 +148,6 @@ export async function installGroupFeedActors() {
     return message;
   };
   const uuid = (id: number) => `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`;
-  const creationOrder = (left: Message, right: Message) => left.at - right.at || left.id - right.id;
-  const state = (user: string, key: string) => {
-    const members = messages
-      .filter((message) => !message.deleted && message.groups.includes(key))
-      .sort(creationOrder);
-    const last = members.at(-1);
-    const read = reads.get(`${user}:${key}`);
-    const readMessage = messages.find((message) => message.id === read);
-    const unread = members.filter(
-      (message) =>
-        message.author !== user && (!readMessage || creationOrder(message, readMessage) > 0),
-    );
-    return {
-      master_key: key,
-      name: key,
-      color_key: 'blue',
-      ignore_operativny: groups.find((group) => group.key === key)?.hidden ?? false,
-      unread_count: unread.length,
-      oldest_unread_message_ref: unread.length ? uuid(unread[0].id) : null,
-      last_read_created_at_order: readMessage ? readMessage.at * 1000 : null,
-      last_read_message_id: read ?? null,
-      last_activity_at: last?.at ?? null,
-      latest_cursor: last ? { created_at: last.at, message_id: last.id } : null,
-    };
-  };
   const accessibleGroups = () => groups.filter((group) => group.accessible);
   const filterMessages = (request: Record<string, unknown>) => {
     const selectedGroups = request.selected_groups as string[] | null | undefined;
@@ -234,8 +185,6 @@ export async function installGroupFeedActors() {
       screen,
       user,
       requests: [],
-      receipts: [],
-      failReceipts: 0,
       failSubmissions: 0,
       gates: {},
     };
@@ -305,38 +254,19 @@ export async function installGroupFeedActors() {
         await route.fulfill({
           json: { ...systemSettingsCurrentResponse(), rer_duty_poll_interval_sec: 1 },
         });
-      } else if (path === '/api/rer-importer/group-feed-state') {
-        const response = { groups: accessibleGroups().map((group) => state(user, group.key)) };
-        await gate('state');
-        await route.fulfill({ json: response });
-      } else if (path === '/api/rer-importer/group-feed-state/acknowledge') {
-        actor.receipts.push(body);
-        if (actor.failReceipts-- > 0) {
-          await route.fulfill({
-            status: 503,
-            json: { message: 'Read receipt temporarily unavailable' },
-          });
-          return;
-        }
-        const message = messages.find(
-          (message) => message.id === body.cursor.message_id && !message.deleted,
-        );
-        if (
-          !accessibleGroups().some((group) => group.key === body.master_key) ||
-          !message?.groups.includes(body.master_key) ||
-          message.at !== body.cursor.created_at
-        ) {
-          await route.fulfill({ status: 400, json: { message: 'Invalid read receipt' } });
-          return;
-        }
-        const previous = messages.find(
-          (item) => item.id === reads.get(`${user}:${body.master_key}`),
-        );
-        if (!previous || creationOrder(message, previous) > 0)
-          reads.set(`${user}:${body.master_key}`, message.id);
-        const response = state(user, body.master_key);
-        await gate('acknowledge');
-        await route.fulfill({ json: response });
+      } else if (path === '/api/user/sigint-groups') {
+        await route.fulfill({ json: accessibleGroups().map((group) => group.key) });
+      } else if (path === '/api/rer-importer/signal-group-batch') {
+        await route.fulfill({
+          json: {
+            data: accessibleGroups().map((group) => ({
+              master_key: group.key,
+              name: group.key,
+              color_key: 'blue',
+              ignore_operativny: group.hidden,
+            })),
+          },
+        });
       } else if (path === '/api/1.1/submit-direct') {
         if (actor.failSubmissions-- > 0) {
           await route.fulfill({
@@ -452,7 +382,6 @@ export async function installGroupFeedActors() {
     add,
     emit,
     messages,
-    reads,
     groups,
     setPageLimit: (limit: number) => {
       pageLimit = limit;
@@ -477,11 +406,10 @@ export async function withGroupFeedActors(
   } catch (error) {
     await test.info().attach('group-feed-requests.json', {
       body: JSON.stringify(
-        fixture.actors.map(({ user, screen, requests, receipts }) => ({
+        fixture.actors.map(({ user, screen, requests }) => ({
           user,
           screen,
           requests: requests.filter(({ path }) => path !== '/api/event-stream/long-poll'),
-          receipts,
         })),
         null,
         2,

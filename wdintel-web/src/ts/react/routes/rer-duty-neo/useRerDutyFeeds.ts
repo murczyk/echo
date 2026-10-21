@@ -480,6 +480,9 @@ export function useRerDutyFeeds(
     ],
   );
   useEffect(() => {
+    filterOpts.setRequiredGroupKeys(availableGroupKeys);
+  }, [availableGroupKeys, filterOpts.setRequiredGroupKeys]);
+  useEffect(() => {
     setKnownGroupKeys((previous) => {
       const next = mergeKnownGroupKeys(
         previous,
