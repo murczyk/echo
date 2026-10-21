@@ -437,6 +437,27 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.radioFeaturesAllowed).toBe(true);
   });
 
+  it.each(['catalog', 'details'])('#3727 clears local %s errors after retry', async (failure) => {
+    const alpha = { masterKey: 'a', name: 'Alpha', colorKey: 'cyan' } as SignalGroupEntry;
+    groupCatalogMock.groups.mockResolvedValue(['a']);
+    groupCatalogMock.details.mockResolvedValue([alpha]);
+    const request = failure === 'catalog' ? groupCatalogMock.groups : groupCatalogMock.details;
+    request.mockRejectedValueOnce(new Error('unavailable'));
+
+    renderHook(['Rer']);
+    await flushEffects();
+
+    expect(latest?.groupNavigation.error).toBeTruthy();
+    expect(latest?.error).toBeNull();
+
+    act(() => latest?.groupNavigation.retry());
+    await flushEffects();
+
+    expect(latest?.groupNavigation.error).toBeNull();
+    expect(latest?.groupNavigation.groups).toContainEqual({ kind: 'group', ...alpha });
+    expect(latest?.error).toBeNull();
+  });
+
   it('#3727 reconciles catalog refreshes with only changed message metadata', async () => {
     const alpha = { masterKey: 'a', name: 'Old Alpha', colorKey: 'cyan' } as SignalGroupEntry;
     const beta = { masterKey: 'b', name: 'Beta', colorKey: 'orange' } as SignalGroupEntry;

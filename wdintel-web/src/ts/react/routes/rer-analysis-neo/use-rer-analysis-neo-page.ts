@@ -731,9 +731,6 @@ export function useRerAnalysisNeoPage(
     groups: catalogGroups,
     select: selectGroupScope,
   };
-  useEffect(() => {
-    if (groupCatalog.groupCatalogError) setPageError(groupCatalog.groupCatalogError.message);
-  }, [groupCatalog.groupCatalogError, setPageError]);
   const groupScopeTransitionPending =
     groupScopeTransitionRequestedRef.current && !data.messagesLoadedForCurrentQuery;
   useEffect(() => {
