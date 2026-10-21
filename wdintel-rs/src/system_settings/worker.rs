@@ -571,7 +571,7 @@ async fn replay_source_message<C>(
     replay_ts: NaiveDateTime,
 ) -> Result<signal_message::Model, AppError>
 where
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionTrait,
 {
     let body = build_replay_body(source.message.body.as_deref(), replay_ts);
     let (date, time) = format_date_time_fields(replay_ts);

@@ -1,5 +1,6 @@
 {
   "migrations": {
+    "echo:m20261021_091705_remove_iggy_settlement_trigger": { "changes": [] },
     "echo:m20261016_144130_signal_group_color_key": {
       "changes": [{ "table": "public.signal_group", "strategy": "cdc_additive" }]
     },

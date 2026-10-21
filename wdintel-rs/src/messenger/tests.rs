@@ -156,7 +156,7 @@ async fn test_bl_group_update_add_second_aor() {
         .await
         .unwrap()
         .expect("settlement link");
-    assert_eq!(settlement_link.settlement_id, None);
+    assert_eq!(settlement_link.settlement_id, Some(settlement_id));
     assert_eq!(settlement_link.is_undefined, None);
     let aor_ids: Vec<i64> = res2.aors.iter().map(|aor| aor.id).collect();
     assert!(aor_ids.contains(&aor1.id));
