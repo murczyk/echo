@@ -119,6 +119,39 @@ describe('useRerDutyFilterOptions', () => {
     expect(current?.groupCatalogLoading).toBe(false);
   });
 
+  it('#3727 clears a details error after automatic required-key hydration succeeds', async () => {
+    const details = deferred<ReturnType<typeof groupInfo>[]>();
+    api.groups.mockResolvedValue(['A']);
+    api.details
+      .mockRejectedValueOnce(new Error('details failed'))
+      .mockReturnValueOnce(details.promise);
+    mount();
+    act(() => current?.setRequiredGroupKeys(['A']));
+    await act(async () => {});
+
+    expect(current?.groupCatalogError?.kind).toBe('details');
+    expect(current?.groupCatalogLoading).toBe(true);
+
+    await act(async () => details.resolve([groupInfo('A', 'Alpha')]));
+
+    expect(current?.groupInfos.A?.name).toBe('Alpha');
+    expect(current?.groupCatalogError).toBeNull();
+    expect(current?.groupCatalogLoading).toBe(false);
+    expect(api.groups).toHaveBeenCalledTimes(1);
+  });
+
+  it('#3727 preserves a catalog error when required-key hydration succeeds', async () => {
+    api.groups.mockRejectedValue(new Error('catalog failed'));
+    api.details.mockResolvedValue([groupInfo('A', 'Alpha')]);
+    mount();
+    act(() => current?.setRequiredGroupKeys(['A']));
+    await act(async () => {});
+
+    expect(current?.groupInfos.A?.name).toBe('Alpha');
+    expect(current?.groupCatalogError?.kind).toBe('catalog');
+    expect(current?.groupCatalogLoading).toBe(false);
+  });
+
   it('merges refreshed details without replacing existing details', async () => {
     api.groups.mockResolvedValueOnce(['A']).mockResolvedValueOnce(['B']);
     api.details.mockResolvedValueOnce([groupInfo('A', 'Alpha')]);

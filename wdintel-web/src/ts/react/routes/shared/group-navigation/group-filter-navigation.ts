@@ -6,7 +6,8 @@ import type { GroupNavigationItem, GroupScope } from './group-navigation.types';
 
 export function groupFilterScope(selectedKeys: readonly string[]): GroupScope {
   const keys = [...new Set(selectedKeys)];
-  return keys.length === 1 ? { kind: 'group', masterKey: keys[0]! } : { kind: 'all' };
+  if (keys.length === 0) return { kind: 'all' };
+  return keys.length === 1 ? { kind: 'group', masterKey: keys[0]! } : { kind: 'multiple' };
 }
 
 export function buildGroupFilterItems(
@@ -55,7 +56,7 @@ export function applyGroupScopeToInboxRequest(
   request: InboxMessagesReq,
   scope: GroupScope,
 ): InboxMessagesReq {
-  if (scope.kind === 'all') return request;
+  if (scope.kind !== 'group') return request;
   return {
     ...request,
     selectedGroups: [scope.masterKey],

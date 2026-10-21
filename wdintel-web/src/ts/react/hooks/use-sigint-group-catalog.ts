@@ -33,6 +33,7 @@ export function useSigintGroupCatalog() {
           ? previous
           : { ...previous, ...Object.fromEntries(updates.map((info) => [info.masterKey, info])) };
       });
+      setGroupCatalogError((previous) => (previous?.kind === 'details' ? null : previous));
     } catch {
       if (!isCurrent()) return;
       setGroupCatalogError({

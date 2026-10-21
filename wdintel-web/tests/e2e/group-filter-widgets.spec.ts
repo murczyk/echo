@@ -89,6 +89,11 @@ for (const analysis of [false, true]) {
           );
         };
         let panel = await openGroups();
+        await expect(panel.locator('[aria-current="true"]')).toHaveCount(0);
+        await expect(panel.locator('[data-selected="true"]')).toHaveCount(0);
+        await expect
+          .poll(() => mocks.inboxRequests.at(-1)?.selected_groups)
+          .toEqual(['group-a', 'group-b', 'group-c']);
         const alphaColor = await panel
           .getByRole('button', { name: 'Group Alpha', exact: true })
           .locator('[data-group-avatar]')

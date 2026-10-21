@@ -1,6 +1,7 @@
 import type { SignalGroupEntry } from '../../../../../Bindings';
 
-export type GroupScope = { kind: 'all' } | { kind: 'group'; masterKey: string };
+export type GroupScope =
+  { kind: 'all' } | { kind: 'group'; masterKey: string } | { kind: 'multiple' };
 
 export type GroupNavigationItem =
   | { kind: 'all'; masterKey: null; name: string }

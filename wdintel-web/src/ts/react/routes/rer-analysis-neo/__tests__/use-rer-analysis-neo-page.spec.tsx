@@ -442,7 +442,7 @@ describe('useRerAnalysisNeoPage', () => {
     groupCatalogMock.groups.mockResolvedValue(['a']);
     groupCatalogMock.details.mockResolvedValue([alpha]);
     const request = failure === 'catalog' ? groupCatalogMock.groups : groupCatalogMock.details;
-    request.mockRejectedValueOnce(new Error('unavailable'));
+    request.mockRejectedValue(new Error('unavailable'));
 
     renderHook(['Rer']);
     await flushEffects();
@@ -450,6 +450,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.groupNavigation.error).toBeTruthy();
     expect(latest?.error).toBeNull();
 
+    request.mockResolvedValue(failure === 'catalog' ? ['a'] : [alpha]);
     act(() => latest?.groupNavigation.retry());
     await flushEffects();
 

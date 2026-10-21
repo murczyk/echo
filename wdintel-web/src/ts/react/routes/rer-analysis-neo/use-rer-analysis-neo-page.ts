@@ -73,7 +73,7 @@ import {
 function groupScopesEqual(left: GroupScope, right: GroupScope): boolean {
   return (
     left.kind === right.kind &&
-    (left.kind === 'all' || (right.kind === 'group' && left.masterKey === right.masterKey))
+    (left.kind !== 'group' || (right.kind === 'group' && left.masterKey === right.masterKey))
   );
 }
 

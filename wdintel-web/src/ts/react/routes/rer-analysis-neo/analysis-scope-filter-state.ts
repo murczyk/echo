@@ -14,7 +14,7 @@ type StoredScopeFilters = {
 };
 
 function scopeKey(scope: GroupScope): string {
-  return scope.kind === 'all' ? 'all' : `group:${scope.masterKey}`;
+  return scope.kind === 'group' ? `group:${scope.masterKey}` : 'all';
 }
 
 function readStoredScopeFilters(): StoredScopeFilters {
