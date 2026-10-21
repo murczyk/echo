@@ -235,20 +235,49 @@ describe('FeedColumnContent', () => {
       '2',
     );
     expect(container.querySelector('[data-message-feed-highlighted]')).toBeNull();
+    const switching = {
+      ...receiving,
+      feed: {
+        ...receiving.feed,
+        filter: { ...receiving.feed.filter, groupsSelected: ['another-group'] },
+        loading: true,
+      },
+    };
+    await act(async () => root.render(<UnreadColumn column={switching} />));
+    expect(divider()).toBeNull();
+    const reloaded = {
+      ...switching,
+      feed: {
+        ...switching.feed,
+        items: [[4, message] as [number, InboxMessage]],
+        readIds: new Set([4]),
+        unreadCount: 0,
+        loading: false,
+        referenceTimeMs: 1,
+      },
+    };
+    await act(async () => root.render(<UnreadColumn column={reloaded} />));
+    expect(divider()).toBeNull();
     await act(async () =>
       root.render(
         <UnreadColumn
           column={{
-            ...reading,
+            ...reloaded,
             feed: {
-              ...reading.feed,
-              groupScopeMasterKey: 'another-group',
+              ...reloaded.feed,
+              items: [
+                [4, message],
+                [5, message],
+              ],
+              unreadCount: 1,
             },
           }}
         />,
       ),
     );
-    expect(divider()).toBeNull();
+    expect(divider()?.closest('[data-duty-message-id]')?.getAttribute('data-duty-message-id')).toBe(
+      '5',
+    );
   });
 
   it('uses feed-owned skeleton cards for initial and available older loading', async () => {

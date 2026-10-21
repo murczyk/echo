@@ -5,7 +5,13 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage, InboxWindowRsp, SavedFilter, User } from '../../../../../Bindings';
+import type {
+  InboxMessage,
+  InboxWindowRsp,
+  SavedFilter,
+  SignalGroupEntry,
+  User,
+} from '../../../../../Bindings';
 import type { AnalysisPageViewModel } from '../types';
 import { buildInboxReq, createResetQueryState } from '../helpers';
 import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
@@ -17,6 +23,7 @@ const systemSettingsMock = vi.hoisted(() => ({
   currentSystemSettings: vi.fn(),
 }));
 const currentUserMock = vi.hoisted(() => ({ fetchCurrentUser: vi.fn() }));
+const groupCatalogMock = vi.hoisted(() => ({ groups: vi.fn(), details: vi.fn() }));
 const inboxMessagesMock = vi.hoisted(() => ({
   fetchInboxWindow: vi.fn(),
   fetchInboxItemContext: vi.fn(),
@@ -74,8 +81,8 @@ vi.mock('../../../services/api/inbox-messages', () => ({
 }));
 
 vi.mock('../../../services/api/inbox', () => ({
-  getUserSigintGroups: vi.fn().mockResolvedValue([]),
-  getGroupInfosBatch: vi.fn().mockResolvedValue([]),
+  getUserSigintGroups: groupCatalogMock.groups,
+  getGroupInfosBatch: groupCatalogMock.details,
 }));
 
 vi.mock('../use-analysis-data', () => ({
@@ -196,7 +203,7 @@ const baseAnalysisData = {
   tagsOrder: [],
   topCallsigns: [],
   topFreqs: [],
-  groupInfos: {},
+  groupInfos: {} as Record<string, SignalGroupEntry>,
   topLocations: [],
   topUnits: [],
   renameSummaryUnit: vi.fn(),
@@ -382,6 +389,8 @@ describe('useRerAnalysisNeoPage', () => {
     });
     inboxMessagesMock.fetchInboxWindow.mockReset();
     inboxMessagesMock.fetchInboxWindow.mockResolvedValue(null);
+    groupCatalogMock.groups.mockReset().mockResolvedValue([]);
+    groupCatalogMock.details.mockReset().mockResolvedValue([]);
 
     useAnalysisDataMock.mockReset();
     analysisFreqValues = ['111.1'];
@@ -426,6 +435,31 @@ describe('useRerAnalysisNeoPage', () => {
     renderHook(['Rer']);
 
     expect(latest?.radioFeaturesAllowed).toBe(true);
+  });
+
+  it('#3727 reconciles catalog refreshes with only changed message metadata', async () => {
+    const alpha = { masterKey: 'a', name: 'Old Alpha', colorKey: 'cyan' } as SignalGroupEntry;
+    const beta = { masterKey: 'b', name: 'Beta', colorKey: 'orange' } as SignalGroupEntry;
+    currentAnalysisData!.groupInfos = { a: alpha };
+    groupCatalogMock.groups.mockResolvedValue(['a']);
+    groupCatalogMock.details.mockResolvedValue([
+      { ...alpha, name: 'Renamed Alpha', colorKey: 'red' },
+    ]);
+    const rerender = renderHook(['Rer']);
+    await flushEffects();
+    expect(latest?.groupInfos.a).toMatchObject({ name: 'Renamed Alpha', colorKey: 'red' });
+
+    currentAnalysisData!.groupInfos = { a: alpha, b: beta };
+    rerender();
+    await flushEffects();
+    expect(latest?.groupInfos.a).toMatchObject({ name: 'Renamed Alpha', colorKey: 'red' });
+    expect(latest?.groupInfos.b).toBe(beta);
+    expect(latest?.groupNavigation.groups).toContainEqual({ kind: 'group', ...beta });
+
+    currentAnalysisData!.groupInfos = { a: { ...alpha, name: 'Latest Alpha' }, b: beta };
+    rerender();
+    await flushEffects();
+    expect(latest?.groupInfos.a?.name).toBe('Latest Alpha');
   });
 
   it('#3727 shares the legacy group filter and preserves frequency and AOR filters', async () => {

@@ -677,10 +677,15 @@ export function useRerAnalysisNeoPage(
     queryState: scopedEffectiveQueryState,
     hideNetworks,
   });
-  const groupInfos = useMemo(
-    () => ({ ...groupCatalog.groupInfos, ...data.groupInfos }),
-    [groupCatalog.groupInfos, data.groupInfos],
-  );
+  const previousMessageGroupInfosRef = useRef<typeof data.groupInfos>({});
+  useEffect(() => {
+    const previous = previousMessageGroupInfosRef.current;
+    previousMessageGroupInfosRef.current = data.groupInfos;
+    const changed = Object.entries(data.groupInfos).filter(([key, info]) => previous[key] !== info);
+    if (changed.length === 0) return;
+    groupCatalog.setGroupInfos((current) => ({ ...current, ...Object.fromEntries(changed) }));
+  }, [data.groupInfos, groupCatalog.setGroupInfos]);
+  const groupInfos = groupCatalog.groupInfos;
   const selectGroupScope = useCallback(
     (scope: GroupScope) => {
       clearTargetMessageContext();
@@ -699,9 +704,25 @@ export function useRerAnalysisNeoPage(
   );
   const catalogGroups = useMemo(
     () =>
-      buildGroupFilterItems([...groupCatalog.groupsList, ...queryState.groupsSelected], groupInfos),
-    [groupCatalog.groupsList, queryState.groupsSelected, groupInfos],
+      buildGroupFilterItems(
+        [
+          ...groupCatalog.groupsList,
+          ...Object.keys(groupInfos),
+          ...queryState.groupsSelected,
+          ...data.messages.flatMap(
+            ([, message]) =>
+              message.groupMasterKeys ?? (message.groupMasterKey ? [message.groupMasterKey] : []),
+          ),
+        ],
+        groupInfos,
+      ),
+    [groupCatalog.groupsList, queryState.groupsSelected, groupInfos, data.messages],
   );
+  useEffect(() => {
+    groupCatalog.setRequiredGroupKeys(
+      catalogGroups.flatMap((group) => (group.kind === 'group' ? [group.masterKey] : [])),
+    );
+  }, [catalogGroups, groupCatalog.setRequiredGroupKeys]);
   const groupNavigation = {
     scope: groupScope,
     loading: groupCatalog.groupCatalogLoading,

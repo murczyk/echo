@@ -46,3 +46,42 @@ for (const screen of ['analysis', 'duty'] as const) {
     });
   });
 }
+
+test('@regression #3727 Analysis discovers and retains a new group from live message reconciliation', async ({
+  browser,
+  baseURL,
+}) => {
+  await withGroupFeedActors(browser, baseURL, async (fixture, [, page]) => {
+    const reader = await fixture.attach(page, 'analysis', 'user-2');
+    fixture.add('user-1', 'Initial message');
+    await page.goto(groupFeedPath('analysis', 'all'));
+    const panel = page.locator('[data-analysis-group-list]:visible');
+    await expect(panel.getByRole('button', { name: 'group-1', exact: true })).toBeVisible();
+
+    fixture.groups.push({ key: 'live-group', hidden: false, accessible: true });
+    const incoming = fixture.add('user-1', 'Message from a new group', { groups: ['live-group'] });
+    await expect(row(reader, incoming.id)).toContainText('Message from a new group');
+    const group = panel.getByRole('button', { name: 'live-group', exact: true });
+    await expect(group).toBeVisible();
+    await expect
+      .poll(() =>
+        reader.requests.some(
+          ({ path, body }) =>
+            path === '/api/rer-importer/signal-group-batch' &&
+            (body.groups as Array<{ master_key: string }>).some(
+              ({ master_key }) => master_key === 'live-group',
+            ),
+        ),
+      )
+      .toBe(true);
+
+    incoming.deleted = true;
+    fixture.emit(incoming.id);
+    await expect(row(reader, incoming.id)).toHaveCount(0);
+    await expect(group).toBeVisible();
+    await group.click();
+    await expect(page.locator('[data-analysis-current-group] [data-group-name]')).toHaveText(
+      'live-group',
+    );
+  });
+});

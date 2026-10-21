@@ -154,6 +154,48 @@ for (const analysis of [false, true]) {
     }
   }
 
+  test(`@regression #3727 ${routeName} hydrates a selected historical group with no messages after retry`, async ({
+    page,
+  }) => {
+    const historical = { master_key: 'historical', name: 'Historical Group', color_key: 'red' };
+    const mocks = await installMocks(page, analysis);
+    await page.route('**/api/user/sigint-groups', (route) => route.fulfill({ json: ['group-a'] }));
+    let failing = true;
+    await page.route('**/api/rer-importer/signal-group-batch', (route) => {
+      const keys = route
+        .request()
+        .postDataJSON()
+        .groups.map((group) => group.master_key);
+      if (keys.includes(historical.master_key) && failing) {
+        return route.fulfill({ status: 500, json: {} });
+      }
+      return route.fulfill({
+        json: { data: [...groups, historical].filter((group) => keys.includes(group.master_key)) },
+      });
+    });
+    await page.goto(url(analysis, [historical.master_key]));
+    if (!analysis) await page.getByRole('button', { name: 'Розгорнути список груп' }).click();
+    const panel = page.locator(
+      analysis ? '[data-analysis-group-list]:visible' : '[data-group-panel]',
+    );
+    await expect(panel.getByRole('alert')).toContainText(
+      'Не вдалося завантажити назви деяких груп.',
+    );
+    failing = false;
+    await panel.getByRole('button', { name: 'Повторити', exact: true }).click();
+    const historicalButton = panel.getByRole('button', { name: historical.name, exact: true });
+    await expect(historicalButton).toHaveAttribute('aria-current', 'true');
+    const identity = page.locator(
+      analysis ? '[data-analysis-current-group]' : '[data-group-island]',
+    );
+    await expect(identity.locator('[data-group-name]')).toHaveText(historical.name);
+    await expect.poll(() => mocks.inboxRequests.at(-1)?.selected_groups).toEqual(['historical']);
+    expect(mocks.detailsRequests.every((request) => request.skip_group_stats === true)).toBe(true);
+    expect(mocks.readStateRequests).toEqual([]);
+    await page.reload();
+    await expect(identity.locator('[data-group-name]')).toHaveText(historical.name);
+  });
+
   test(`@regression #3727 ${routeName} retries a failed legacy catalog without querying group read state`, async ({
     page,
   }) => {
