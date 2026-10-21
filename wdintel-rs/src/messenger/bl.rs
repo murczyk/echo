@@ -907,9 +907,6 @@ pub async fn upsert_group_area_of_responsibility(
         }
     };
     if aor_ids_changed {
-        crate::battle_line::requeue_settlement_links_for_group(txn, master_key)
-            .await
-            .c(h!())?;
         let group = signal_group::Entity::find_by_id(master_key.to_string())
             .one(txn)
             .await

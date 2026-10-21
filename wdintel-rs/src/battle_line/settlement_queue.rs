@@ -17,6 +17,7 @@ use crate::entities::{
     sigint_inbox_item, sigint_inbox_item_settlement, signal_message,
 };
 use crate::error::AppError;
+use crate::iggy::settlement_events::SettlementLinkEvents;
 use crate::location::utils::to_location_list;
 use crate::settlement::normalize_name;
 use crate::types::{info, warn, Env, Mode, ShortContext};
@@ -170,6 +171,7 @@ where
     if desired == existing_texts {
         return Ok(false);
     }
+    let events = SettlementLinkEvents::capture(dbx, item_id).await.c(h!())?;
     let obsolete_ids = existing
         .iter()
         .filter(|row| !desired.contains(&row.settlement_text))
@@ -190,7 +192,7 @@ where
         desired.contains(&row.settlement_text)
             && (row.settlement_id.is_some() || row.is_undefined.is_some())
     }) {
-        requeue_item_settlements(dbx, item_id).await.c(h!())?;
+        reset_item_settlements(dbx, item_id).await.c(h!())?;
     }
     for settlement_text in desired.difference(&existing_texts) {
         sigint_inbox_item_settlement::Entity::insert(
@@ -216,6 +218,7 @@ where
         .await
         .c(h!())?;
     }
+    events.enqueue_changes(dbx).await.c(h!())?;
     Ok(clears_linked_settlement)
 }
 
@@ -223,6 +226,16 @@ pub async fn requeue_item_settlements<C>(
     dbx: &C,
     item_id: i64,
 ) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let events = SettlementLinkEvents::capture(dbx, item_id).await.c(h!())?;
+    reset_item_settlements(dbx, item_id).await.c(h!())?;
+    events.enqueue_changes(dbx).await.c(h!())?;
+    Ok(())
+}
+
+async fn reset_item_settlements<C>(dbx: &C, item_id: i64) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
@@ -591,7 +604,7 @@ where
         .collect()
 }
 
-async fn persist_settlement_resolution<C>(
+pub(crate) async fn persist_settlement_resolution<C>(
     dbx: &C,
     row: sigint_inbox_item_settlement::Model,
     settlement_id: Option<i32>,
@@ -600,11 +613,13 @@ where
     C: ConnectionTrait,
 {
     let item_id = row.item_id;
+    let events = SettlementLinkEvents::capture(dbx, item_id).await.c(h!())?;
     let matched = settlement_id.is_some();
     let mut row = row.into_active_model();
     row.settlement_id = Set(settlement_id);
     row.is_undefined = Set(Some(!matched));
     row.update(dbx).await.c(h!())?;
+    events.enqueue_changes(dbx).await.c(h!())?;
     Ok(item_id)
 }
 
@@ -831,21 +846,10 @@ async fn process_oneoff_item_in_transaction(
     )
     .await
     .c(h!())?;
-    sigint_inbox_item_settlement::Entity::update_many()
-        .col_expr(
-            sigint_inbox_item_settlement::Column::SettlementId,
-            Expr::value(Option::<i32>::None),
-        )
-        .col_expr(
-            sigint_inbox_item_settlement::Column::IsUndefined,
-            Expr::value(Option::<bool>::None),
-        )
-        .filter(
-            sigint_inbox_item_settlement::Column::ItemId.eq(request.item_id),
-        )
-        .exec(txn)
+    let events = SettlementLinkEvents::capture(txn, request.item_id)
         .await
         .c(h!())?;
+    reset_item_settlements(txn, request.item_id).await.c(h!())?;
     for result in resolutions {
         let settlement_id = result.chosen_settlement_id;
         let matched = settlement_id.is_some();
@@ -875,6 +879,7 @@ async fn process_oneoff_item_in_transaction(
             stats.unmatched += 1;
         }
     }
+    events.enqueue_changes(txn).await.c(h!())?;
     stats.processed += 1;
     Ok(request.item_id)
 }
@@ -1887,6 +1892,22 @@ returning id
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
         let txn = dbx.begin().await.unwrap();
+        let integration = crate::entities::api_integration::ActiveModel {
+            api_user_login_id: Set(crate::users::system_login_id(&txn)
+                .await
+                .unwrap()),
+            sync_enabled: Set(true),
+            has_iggy_connection: Set(true),
+            iggy_url: Set(Some("tcp://localhost:8090".to_string())),
+            iggy_login: Set(Some("test".to_string())),
+            iggy_password: Set(Some("test".to_string())),
+            iggy_inbox_topic: Set(Some("test-inbox".to_string())),
+            iggy_analytics_topic: Set(Some("test-analytics".to_string())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
         let old_settlement_id = 2_287_214;
         let new_settlement_id = 2_287_215;
         for (id, name) in [
@@ -1934,6 +1955,40 @@ returning id
             .unwrap();
         assert_eq!(row.settlement_id, Some(new_settlement_id));
         assert_eq!(row.is_undefined, Some(false));
+        let events = crate::entities::api_integration_iggy_event::Entity::find()
+            .filter(
+                crate::entities::api_integration_iggy_event::Column::ApiIntegrationId
+                    .eq(integration.id),
+            )
+            .filter(
+                crate::entities::api_integration_iggy_event::Column::SigintInboxItemId
+                    .eq(item_id),
+            )
+            .order_by_asc(crate::entities::api_integration_iggy_event::Column::Id)
+            .all(&txn)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|event| {
+                event.payload["event_type"].as_str().is_some_and(|kind| {
+                    kind.starts_with("sigint_inbox_item_settlement_")
+                })
+            })
+            .map(|event| event.payload)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            events,
+            vec![
+                serde_json::json!({
+                    "event_type": "sigint_inbox_item_settlement_unlinked",
+                    "settlement_id": old_settlement_id,
+                }),
+                serde_json::json!({
+                    "event_type": "sigint_inbox_item_settlement_linked",
+                    "settlement_id": new_settlement_id,
+                }),
+            ]
+        );
         assert_eq!(
             stats,
             OneoffLinkInboxSettlementsStats {
@@ -1942,6 +1997,46 @@ returning id
                 ..Default::default()
             }
         );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn iggy_settlement_trigger_removal_roundtrips() {
+        use echo_migration::MigratorTrait;
+
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let migration = echo_migration::Migrator::migrations()
+            .into_iter()
+            .find(|migration| {
+                migration.name()
+                    == "m20261021_091705_remove_iggy_settlement_trigger"
+            })
+            .unwrap();
+        let manager = echo_migration::SchemaManager::new(&txn);
+        for (step, restored) in [false, true, false].into_iter().enumerate() {
+            if restored {
+                migration.down(&manager).await.unwrap();
+            } else if step > 0 {
+                migration.up(&manager).await.unwrap();
+            }
+            let installed = txn
+                .query_one_raw(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    r#"select exists (
+                        select 1 from pg_trigger
+                        where tgname = 'sigint_inbox_item_settlement_capture_iggy_link'
+                    ) as installed"#,
+                ))
+                .await
+                .unwrap()
+                .unwrap()
+                .try_get::<bool>("", "installed")
+                .unwrap();
+            assert_eq!(installed, restored);
+        }
         txn.rollback().await.unwrap();
     }
 

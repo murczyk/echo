@@ -585,8 +585,8 @@ async fn has_visible_linked_inbox_item(
     }
 }
 
-async fn load_pending_events_with_batch_size(
-    dbx: &DatabaseConnection,
+async fn load_pending_events_with_batch_size<C: ConnectionTrait>(
+    dbx: &C,
     api_integration_id: i64,
     event_batch_size: u64,
 ) -> Result<Vec<api_integration_iggy_event::Model>, AppError> {
@@ -604,8 +604,8 @@ async fn load_pending_events_with_batch_size(
 }
 
 #[cfg(test)]
-async fn load_pending_events(
-    dbx: &DatabaseConnection,
+async fn load_pending_events<C: ConnectionTrait>(
+    dbx: &C,
     api_integration_id: i64,
 ) -> Result<Vec<api_integration_iggy_event::Model>, AppError> {
     load_pending_events_with_batch_size(
@@ -2958,13 +2958,19 @@ mod tests {
             .unwrap()
             .unwrap()
             .id;
-        sigint_inbox_item_settlement::ActiveModel {
+        let settlement_link = sigint_inbox_item_settlement::ActiveModel {
             item_id: Set(item_id),
             settlement_text: Set("test settlement".to_string()),
-            settlement_id: Set(Some(settlement_id)),
             ..Default::default()
         }
         .insert(&env.dbx)
+        .await
+        .unwrap();
+        crate::battle_line::settlement_queue::persist_settlement_resolution(
+            &env.dbx,
+            settlement_link,
+            Some(settlement_id),
+        )
         .await
         .unwrap();
         crate::battle_line::settlement_queue::requeue_item_settlements(
@@ -3043,6 +3049,131 @@ mod tests {
         assert_frequency_transitions(&env, &fixture).await;
         let item_callsign = link_inbox_callsign(&env, &fixture).await;
         assert_settlement_and_unlinks(&env, &fixture, &item_callsign).await;
+    }
+
+    async fn insert_pending_settlement(
+        env: &Env,
+        item_id: i64,
+        text: &str,
+    ) -> sigint_inbox_item_settlement::Model {
+        sigint_inbox_item_settlement::ActiveModel {
+            item_id: Set(item_id),
+            settlement_text: Set(text.to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap()
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn settlement_events_are_distinct_and_transactional() {
+        use crate::battle_line::settlement_queue::{
+            persist_settlement_resolution, reconcile_item_locations,
+        };
+
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let fixture = create_association_fixture(&env).await;
+        let first =
+            insert_pending_settlement(&env, fixture.item_id, "first").await;
+        let second =
+            insert_pending_settlement(&env, fixture.item_id, "second").await;
+        let settlement_id = settlement::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        clear_iggy_events(&env, fixture.integration.id).await;
+        let txn = env.dbx.begin().await.unwrap();
+        for row in [first.clone(), second] {
+            persist_settlement_resolution(&txn, row, Some(settlement_id))
+                .await
+                .unwrap();
+        }
+        persist_settlement_resolution(&txn, first.clone(), None)
+            .await
+            .unwrap();
+        let events = load_pending_events(&txn, fixture.integration.id)
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].payload["event_type"],
+            "sigint_inbox_item_settlement_linked"
+        );
+        reconcile_item_locations(&txn, fixture.item_id, None, None)
+            .await
+            .unwrap();
+        let events = load_pending_events(&txn, fixture.integration.id)
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(
+            events[1].payload["event_type"],
+            "sigint_inbox_item_settlement_unlinked"
+        );
+        assert_eq!(events[1].payload["settlement_id"], settlement_id);
+        assert!(load_pending_events(&env.dbx, fixture.integration.id)
+            .await
+            .unwrap()
+            .is_empty());
+        txn.rollback().await.unwrap();
+        assert!(load_pending_events(&env.dbx, fixture.integration.id)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            sigint_inbox_item_settlement::Entity::find_by_id(first.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .settlement_id,
+            None
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn disabled_iggy_keeps_settlement_writes_without_outbox_events() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let fixture = create_association_fixture(&env).await;
+        let row =
+            insert_pending_settlement(&env, fixture.item_id, "disabled").await;
+        let settlement_id = settlement::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let mut integration = fixture.integration.clone().into_active_model();
+        integration.sync_enabled = Set(false);
+        integration.update(&env.dbx).await.unwrap();
+        clear_iggy_events(&env, fixture.integration.id).await;
+        let txn = env.dbx.begin().await.unwrap();
+        crate::battle_line::settlement_queue::persist_settlement_resolution(
+            &txn,
+            row.clone(),
+            Some(settlement_id),
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+        assert_eq!(
+            sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .settlement_id,
+            Some(settlement_id)
+        );
+        assert!(load_pending_events(&env.dbx, fixture.integration.id)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     async fn relink_network_callsign_ids(

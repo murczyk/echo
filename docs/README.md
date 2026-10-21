@@ -245,9 +245,9 @@ backoff so they cannot block newer messages.
 reconcile its PostgreSQL queue in the same transaction as `location_v2`;
 workers claim rows with `FOR UPDATE SKIP LOCKED` and rank settlement candidates
 against the active Battle Line or the item's AOR segments. Battle Line uploads
-apply only to newly queued data, while AOR changes retain their existing
-behavior of requeueing affected links. Attempted misses remain available for
-administrator review.
+and AOR changes preserve historical links; explicit recalculation uses the
+[settlement recalculation command](../wdintel-rs/src/battle_line/README.md).
+Attempted misses remain available for administrator review.
 
 `wdintel-rs-bgworker` also owns `ai_settlement_worker`. When enabled by an
 administrator, new or reparsed inbox messages are queued for header-based AI
