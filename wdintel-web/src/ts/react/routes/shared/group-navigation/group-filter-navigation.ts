@@ -16,7 +16,7 @@ export function buildGroupFilterItems(
 ): GroupNavigationItem[] {
   const groups = [...new Set(keys)].flatMap<GroupNavigationItem>((masterKey) => {
     const info = groupInfos[masterKey];
-    if (excludeDutyHidden && info?.ignoreOperativny) return [];
+    if (excludeDutyHidden && (!info || info.ignoreOperativny)) return [];
     return [
       {
         kind: 'group',

@@ -154,6 +154,53 @@ for (const analysis of [false, true]) {
     }
   }
 
+  test(`@regression #3727 ${routeName} handles unknown group visibility during delayed and failed details requests`, async ({
+    page,
+  }) => {
+    const mocks = await installMocks(page, analysis);
+    let releaseDetails!: () => void;
+    const pendingDetails = new Promise<void>((resolve) => {
+      releaseDetails = resolve;
+    });
+    let failing = true;
+    await page.route('**/api/rer-importer/signal-group-batch', async (route) => {
+      if (failing) {
+        await pendingDetails;
+        await route.fulfill({ status: 500, json: {} });
+        return;
+      }
+      await route.fulfill({
+        json: {
+          data: groups.map((group) => ({
+            ...group,
+            ignore_operativny: group.master_key === 'group-b',
+          })),
+        },
+      });
+    });
+    await page.goto(url(analysis, []));
+    if (!analysis) await page.getByRole('button', { name: 'Розгорнути список груп' }).click();
+    const panel = page.locator(
+      analysis ? '[data-analysis-group-list]:visible' : '[data-group-panel]',
+    );
+    await expect.poll(() => mocks.detailsRequests.length).toBeGreaterThan(0);
+    await expect(panel.getByRole('status')).toContainText('Завантажуємо групи');
+    await expect(panel.locator('[data-group-list-item]')).toHaveCount(analysis ? 4 : 1);
+    releaseDetails();
+    await expect(panel.getByRole('alert')).toContainText(
+      'Не вдалося завантажити назви деяких груп.',
+    );
+    await expect(panel.locator('[data-group-list-item]')).toHaveCount(analysis ? 4 : 1);
+    failing = false;
+    await panel.getByRole('button', { name: 'Повторити', exact: true }).click();
+    await expect(panel.getByRole('button', { name: 'Group Alpha', exact: true })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Group Gamma', exact: true })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Group Beta', exact: true })).toHaveCount(
+      analysis ? 1 : 0,
+    );
+    expect(mocks.readStateRequests).toEqual([]);
+  });
+
   test(`@regression #3727 ${routeName} hydrates a selected historical group with no messages after retry`, async ({
     page,
   }) => {
