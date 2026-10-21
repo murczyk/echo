@@ -17,7 +17,9 @@ use crate::entities::{
     sigint_inbox_item, sigint_inbox_item_settlement, signal_message,
 };
 use crate::error::AppError;
-use crate::iggy::settlement_events::SettlementLinkEvents;
+use crate::iggy::settlement_events::{
+    persist_settlement_resolution, SettlementLinkEvents,
+};
 use crate::location::utils::to_location_list;
 use crate::settlement::normalize_name;
 use crate::types::{info, warn, Env, Mode, ShortContext};
@@ -130,20 +132,22 @@ pub async fn reconcile_item_locations<C>(
     location_v2: Option<&str>,
 ) -> anyhow::Result<()>
 where
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionTrait,
 {
-    if reconcile_item_location_rows(dbx, item_id, item_uuid, location_v2)
+    let txn = dbx.begin().await.c(h!())?;
+    if reconcile_item_location_rows(&txn, item_id, item_uuid, location_v2, true)
         .await
         .c(h!())?
     {
         crate::stats::enqueue_group_stats_recalculation_for_message(
-            dbx,
+            &txn,
             item_id,
             format!("reconciled settlements for inbox message {item_id}"),
         )
         .await
         .c(h!())?;
     }
+    txn.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -152,9 +156,10 @@ async fn reconcile_item_location_rows<C>(
     item_id: i64,
     item_uuid: Option<uuid::Uuid>,
     location_v2: Option<&str>,
+    capture_iggy_events: bool,
 ) -> anyhow::Result<bool>
 where
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionSession,
 {
     let desired = location_texts(location_v2);
     let existing = sigint_inbox_item_settlement::Entity::find()
@@ -171,7 +176,11 @@ where
     if desired == existing_texts {
         return Ok(false);
     }
-    let events = SettlementLinkEvents::capture(dbx, item_id).await.c(h!())?;
+    let events = if capture_iggy_events {
+        Some(SettlementLinkEvents::capture(dbx, item_id).await.c(h!())?)
+    } else {
+        None
+    };
     let obsolete_ids = existing
         .iter()
         .filter(|row| !desired.contains(&row.settlement_text))
@@ -218,7 +227,9 @@ where
         .await
         .c(h!())?;
     }
-    events.enqueue_changes(dbx).await.c(h!())?;
+    if let Some(events) = events {
+        events.enqueue_changes(dbx).await.c(h!())?;
+    }
     Ok(clears_linked_settlement)
 }
 
@@ -227,11 +238,13 @@ pub async fn requeue_item_settlements<C>(
     item_id: i64,
 ) -> anyhow::Result<()>
 where
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionTrait,
 {
-    let events = SettlementLinkEvents::capture(dbx, item_id).await.c(h!())?;
-    reset_item_settlements(dbx, item_id).await.c(h!())?;
-    events.enqueue_changes(dbx).await.c(h!())?;
+    let txn = dbx.begin().await.c(h!())?;
+    let events = SettlementLinkEvents::capture(&txn, item_id).await.c(h!())?;
+    reset_item_settlements(&txn, item_id).await.c(h!())?;
+    events.enqueue_changes(&txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -604,25 +617,6 @@ where
         .collect()
 }
 
-pub(crate) async fn persist_settlement_resolution<C>(
-    dbx: &C,
-    row: sigint_inbox_item_settlement::Model,
-    settlement_id: Option<i32>,
-) -> anyhow::Result<i64>
-where
-    C: ConnectionTrait,
-{
-    let item_id = row.item_id;
-    let events = SettlementLinkEvents::capture(dbx, item_id).await.c(h!())?;
-    let matched = settlement_id.is_some();
-    let mut row = row.into_active_model();
-    row.settlement_id = Set(settlement_id);
-    row.is_undefined = Set(Some(!matched));
-    row.update(dbx).await.c(h!())?;
-    events.enqueue_changes(dbx).await.c(h!())?;
-    Ok(item_id)
-}
-
 pub async fn oneoff_link_inbox_settlements(
     mode: Mode,
     ps: &OneoffLinkInboxSettlementsPs,
@@ -838,17 +832,18 @@ async fn process_oneoff_item_in_transaction(
     resolutions: Vec<BattleLineLocationResult>,
     stats: &mut OneoffLinkInboxSettlementsStats,
 ) -> anyhow::Result<i64> {
+    let events = SettlementLinkEvents::capture(txn, request.item_id)
+        .await
+        .c(h!())?;
     reconcile_item_location_rows(
         txn,
         request.item_id,
         request.item_uuid,
         request.location_v2.as_deref(),
+        false,
     )
     .await
     .c(h!())?;
-    let events = SettlementLinkEvents::capture(txn, request.item_id)
-        .await
-        .c(h!())?;
     reset_item_settlements(txn, request.item_id).await.c(h!())?;
     for result in resolutions {
         let settlement_id = result.chosen_settlement_id;
@@ -1923,29 +1918,32 @@ returning id
         )
         .await
         .unwrap();
-        let request = OneoffItemResolutionRequest {
-            item_id,
-            item_uuid,
-            location_v2: Some("|AMBIGUOUS|".to_string()),
-            settlement_texts: vec!["AMBIGUOUS".to_string()],
-        };
-        let resolutions = vec![BattleLineLocationResult {
-            location: "AMBIGUOUS".to_string(),
-            candidates: vec![],
-            chosen_settlement_id: Some(new_settlement_id),
-            distance_m: Some(1.0),
-            invalid_aor_ids: vec![],
-        }];
         let mut stats = OneoffLinkInboxSettlementsStats::default();
-
-        process_oneoff_item_in_transaction(
-            &txn,
-            request,
-            resolutions,
-            &mut stats,
-        )
-        .await
-        .unwrap();
+        for settlement_id in
+            [old_settlement_id, new_settlement_id, new_settlement_id]
+        {
+            let request = OneoffItemResolutionRequest {
+                item_id,
+                item_uuid,
+                location_v2: Some("|RENAMED|".to_string()),
+                settlement_texts: vec!["RENAMED".to_string()],
+            };
+            let resolutions = vec![BattleLineLocationResult {
+                location: "RENAMED".to_string(),
+                candidates: vec![],
+                chosen_settlement_id: Some(settlement_id),
+                distance_m: Some(1.0),
+                invalid_aor_ids: vec![],
+            }];
+            process_oneoff_item_in_transaction(
+                &txn,
+                request,
+                resolutions,
+                &mut stats,
+            )
+            .await
+            .unwrap();
+        }
 
         let row = sigint_inbox_item_settlement::Entity::find()
             .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
@@ -1992,8 +1990,8 @@ returning id
         assert_eq!(
             stats,
             OneoffLinkInboxSettlementsStats {
-                processed: 1,
-                matched: 1,
+                processed: 3,
+                matched: 3,
                 ..Default::default()
             }
         );
@@ -2084,10 +2082,11 @@ returning id
             .await
             .unwrap();
         let removal = env.dbx.begin().await.unwrap();
-        let requires_invalidation =
-            reconcile_item_location_rows(&removal, item_id, item_uuid, None)
-                .await
-                .unwrap();
+        let requires_invalidation = reconcile_item_location_rows(
+            &removal, item_id, item_uuid, None, true,
+        )
+        .await
+        .unwrap();
         assert!(requires_invalidation);
         assert!(group_stats_recalculation_task::Entity::find()
             .one(&removal)

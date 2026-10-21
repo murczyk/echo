@@ -13,8 +13,9 @@ impl SettlementLinkEvents {
         item_id: i64,
     ) -> anyhow::Result<Self>
     where
-        C: ConnectionTrait,
+        C: ConnectionTrait + TransactionSession,
     {
+        let settlement_ids = read_settlement_ids(dbx, item_id).await.c(h!())?;
         let publisher = dbx
             .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
@@ -26,7 +27,7 @@ impl SettlementLinkEvents {
             .try_get::<bool>("", "enabled")
             .c(h!())?;
         let previous_settlement_ids = if publisher {
-            Some(read_settlement_ids(dbx, item_id).await.c(h!())?)
+            Some(settlement_ids)
         } else {
             None
         };
@@ -38,7 +39,7 @@ impl SettlementLinkEvents {
 
     pub(crate) async fn enqueue_changes<C>(self, dbx: &C) -> anyhow::Result<()>
     where
-        C: ConnectionTrait,
+        C: ConnectionTrait + TransactionSession,
     {
         let Some(previous) = self.previous_settlement_ids else {
             return Ok(());
@@ -68,6 +69,27 @@ impl SettlementLinkEvents {
     }
 }
 
+pub(crate) async fn persist_settlement_resolution<C>(
+    dbx: &C,
+    row: sigint_inbox_item_settlement::Model,
+    settlement_id: Option<i32>,
+) -> anyhow::Result<i64>
+where
+    C: ConnectionTrait + TransactionTrait,
+{
+    let txn = dbx.begin().await.c(h!())?;
+    let item_id = row.item_id;
+    let events = SettlementLinkEvents::capture(&txn, item_id).await.c(h!())?;
+    let matched = settlement_id.is_some();
+    let mut row = row.into_active_model();
+    row.settlement_id = Set(settlement_id);
+    row.is_undefined = Set(Some(!matched));
+    row.update(&txn).await.c(h!())?;
+    events.enqueue_changes(&txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(item_id)
+}
+
 async fn read_settlement_ids<C>(
     dbx: &C,
     item_id: i64,
@@ -77,16 +99,15 @@ where
 {
     sigint_inbox_item_settlement::Entity::find()
         .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
-        .filter(
-            sigint_inbox_item_settlement::Column::SettlementId.is_not_null(),
-        )
+        .order_by_asc(sigint_inbox_item_settlement::Column::Id)
+        .lock(sea_orm::sea_query::LockType::Update)
         .select_only()
         .column(sigint_inbox_item_settlement::Column::SettlementId)
-        .into_tuple::<i32>()
+        .into_tuple::<Option<i32>>()
         .all(dbx)
         .await
         .c(h!())
-        .map(|ids| ids.into_iter().collect())
+        .map(|ids| ids.into_iter().flatten().collect())
 }
 
 async fn enqueue_event<C>(
