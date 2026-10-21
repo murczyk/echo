@@ -54,23 +54,21 @@ import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
 import { useAnalysisSavedFilters } from './use-analysis-saved-filters';
 import { useDutySettings } from '../../hooks/use-duty-settings';
+import { useSigintGroupCatalog } from '../../hooks/use-sigint-group-catalog';
 import { uniquePointEtalonsForMapSearch } from '../rer-duty-neo/utils';
 import { getAnalysisSidebarTabs, type AnalysisCenterTab, type AnalysisSidebarTab } from './types';
 import { fetchAnalysisCallsignFrequencyMatches } from '../../services/api/analysis';
 import { toErrorMessage } from './use-analysis-data.shared';
 import { mergeMessageWindow } from '../shared/message-feed/windowing';
 import {
-  isAnalysisGroupViewAcknowledgeable,
-  useGroupFeedNavigation,
-  useGroupFeedReadReceipts,
+  buildGroupFilterItems,
+  groupFilterScope,
   type GroupScope,
 } from '../shared/group-navigation';
 import {
-  extractAnalysisScopeFilters,
   persistAnalysisScopeFilters,
   readAnalysisScopeFilters,
 } from './analysis-scope-filter-state';
-import { useGroupUnreadBoundary } from '../shared/group-navigation/group-unread-boundary';
 
 function groupScopesEqual(left: GroupScope, right: GroupScope): boolean {
   return (
@@ -162,20 +160,21 @@ export function useRerAnalysisNeoPage(
   const [initialHasQueryState] = useState(hasQueryStateInWindow);
   const [initialQueryState] = useState<AnalysisQueryState>(() => {
     const state = initState(initialParsedQueryState, initialNow, initialRadioFeaturesAllowed);
-    if (initialHasQueryState) return state;
-    const storedFilters = readAnalysisScopeFilters(initialGroupScope);
-    if (storedFilters == null) return state;
+    const storedFilters = initialHasQueryState ? null : readAnalysisScopeFilters({ kind: 'all' });
     return normalizeQueryState({
       ...state,
       ...storedFilters,
-      groupsSelected:
-        initialGroupScope.kind === 'group'
-          ? []
-          : (storedFilters.groupsSelected ?? state.groupsSelected),
+      ...(initialGroupScope.kind === 'group'
+        ? { groupsSelected: [initialGroupScope.masterKey] }
+        : {}),
     });
   });
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
-  const [groupScope, setGroupScope] = useState<GroupScope>(initialGroupScope);
+  const groupScope = useMemo(
+    () => groupFilterScope(queryState.groupsSelected),
+    [queryState.groupsSelected],
+  );
+  const groupCatalog = useSigintGroupCatalog();
   const groupScopeTransitionRequestedRef = useRef(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentUserStatus, setCurrentUserStatus] = useState<'loading' | 'success' | 'error'>(
@@ -588,71 +587,9 @@ export function useRerAnalysisNeoPage(
     clearTargetMessageFocus();
   }, [clearTargetMessageFocus]);
 
-  const selectGroupScope = useCallback(
-    (
-      scope: GroupScope,
-      oldestUnreadMessageRef: string | null = null,
-      options: { replace?: boolean } = {},
-    ) => {
-      clearTargetMessageContext();
-      setTargetMessageUid(null);
-      let nextQueryState = queryState;
-      if (!groupScopesEqual(groupScope, scope)) {
-        groupScopeTransitionRequestedRef.current = true;
-        persistAnalysisScopeFilters(groupScope, queryState);
-        const storedFilters = readAnalysisScopeFilters(scope);
-        const defaultFilters = extractAnalysisScopeFilters(
-          createResetQueryState(new Date(), radioFeaturesAllowed),
-        );
-        nextQueryState = normalizeQueryState({
-          ...queryState,
-          ...defaultFilters,
-          ...storedFilters,
-          groupsSelected:
-            scope.kind === 'group'
-              ? []
-              : (storedFilters?.groupsSelected ?? defaultFilters.groupsSelected ?? []),
-        });
-        setQueryState(nextQueryState);
-      }
-      setGroupScope(scope);
-      writeAnalysisGroupScopeToUrl(scope, options);
-      if (scope.kind !== 'group' || oldestUnreadMessageRef == null) return;
-      setTargetMessageQueryState(nextQueryState);
-      directQueryBoundaryRef.current = {
-        fromDateTimeStr: nextQueryState.fromDateTimeStr,
-        toDateTimeStr: nextQueryState.toDateTimeStr,
-        search: nextQueryState.search,
-        searchMode: nextQueryState.searchMode,
-      };
-      setHighlightTargetMessage(false);
-      setTargetMessageUid(oldestUnreadMessageRef);
-      setTargetMessageContextActive(true);
-      setTargetMessageFocusActive(true);
-      setTargetMessageLoading(true);
-    },
-    [clearTargetMessageContext, groupScope, queryState, radioFeaturesAllowed],
-  );
-
   useEffect(() => {
-    persistAnalysisScopeFilters(groupScope, queryState);
-  }, [groupScope, queryState]);
-  const groupNavigation = useGroupFeedNavigation({
-    enabled: leftPanelOpen,
-    resolveSelectedGroupWhenHidden: true,
-    scope: groupScope,
-    onSelect: selectGroupScope,
-    onError: (groupError) => setDirectMessageError(toErrorMessage(groupError)),
-  });
-  useEffect(() => {
-    if (!groupNavigation.ready || groupScope.kind !== 'group') return;
-    const groupIsAvailable = groupNavigation.groups.some(
-      (group) => group.kind === 'group' && group.masterKey === groupScope.masterKey,
-    );
-    if (groupIsAvailable) return;
-    setDirectMessageError('Обрана група більше недоступна.');
-    selectGroupScope({ kind: 'all' }, null, { replace: true });
-  }, [groupNavigation.groups, groupNavigation.ready, groupScope, selectGroupScope]);
+    persistAnalysisScopeFilters({ kind: 'all' }, queryState);
+  }, [queryState]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -662,17 +599,18 @@ export function useRerAnalysisNeoPage(
       if (!groupScopesEqual(groupScope, nextGroupScope)) {
         groupScopeTransitionRequestedRef.current = true;
       }
-      persistAnalysisScopeFilters(groupScope, queryState);
       const historyState = initState(parseQueryStateFromWindow(), new Date(), radioFeaturesAllowed);
       setQueryState((current) =>
         normalizeQueryState({
           ...historyState,
           messageTimeBasis: current.messageTimeBasis,
           radioFeaturesAllowed: current.radioFeaturesAllowed,
-          groupsSelected: nextGroupScope.kind === 'group' ? [] : historyState.groupsSelected,
+          groupsSelected:
+            nextGroupScope.kind === 'group'
+              ? [nextGroupScope.masterKey]
+              : historyState.groupsSelected,
         }),
       );
-      setGroupScope(nextGroupScope);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -739,32 +677,44 @@ export function useRerAnalysisNeoPage(
     queryState: scopedEffectiveQueryState,
     hideNetworks,
   });
+  const groupInfos = useMemo(
+    () => ({ ...groupCatalog.groupInfos, ...data.groupInfos }),
+    [groupCatalog.groupInfos, data.groupInfos],
+  );
+  const selectGroupScope = useCallback(
+    (scope: GroupScope) => {
+      clearTargetMessageContext();
+      setTargetMessageUid(null);
+      groupScopeTransitionRequestedRef.current = true;
+      data.invalidateFilterSectionLoadsForPatch({ groupsSelected: [] });
+      setQueryState((current) =>
+        normalizeQueryState({
+          ...current,
+          groupsSelected: scope.kind === 'group' ? [scope.masterKey] : [],
+        }),
+      );
+      writeAnalysisGroupScopeToUrl({ kind: 'all' });
+    },
+    [clearTargetMessageContext, data.invalidateFilterSectionLoadsForPatch],
+  );
+  const catalogGroups = useMemo(
+    () =>
+      buildGroupFilterItems([...groupCatalog.groupsList, ...queryState.groupsSelected], groupInfos),
+    [groupCatalog.groupsList, queryState.groupsSelected, groupInfos],
+  );
+  const groupNavigation = {
+    scope: groupScope,
+    loading: groupCatalog.groupCatalogLoading,
+    error: groupCatalog.groupCatalogError?.message ?? null,
+    retry: groupCatalog.reloadGroupCatalog,
+    groups: catalogGroups,
+    select: selectGroupScope,
+  };
+  useEffect(() => {
+    if (groupCatalog.groupCatalogError) setPageError(groupCatalog.groupCatalogError.message);
+  }, [groupCatalog.groupCatalogError, setPageError]);
   const groupScopeTransitionPending =
     groupScopeTransitionRequestedRef.current && !data.messagesLoadedForCurrentQuery;
-  const unreadBoundary = useGroupUnreadBoundary({
-    key: JSON.stringify([groupScope, effectiveQueryState]),
-    loading: groupScopeTransitionPending || data.messagesLoading || targetMessageLoading,
-    groups: groupNavigation.groups.flatMap((group) =>
-      group.kind === 'group' &&
-      (groupScope.kind === 'all' || group.masterKey === groupScope.masterKey)
-        ? [group]
-        : [],
-    ),
-    ready: groupNavigation.ready,
-    messages: data.messages,
-  });
-  const onVisibleGroupMessages = useGroupFeedReadReceipts({
-    enabled:
-      centerTab === 'messages' &&
-      !groupScopeTransitionPending &&
-      !data.messagesLoading &&
-      !targetMessageLoading &&
-      !targetMessageContextLoading &&
-      isAnalysisGroupViewAcknowledgeable(effectiveQueryState),
-    groups: groupNavigation.groups,
-    messages: data.messages,
-    acknowledge: groupNavigation.acknowledge,
-  });
   useEffect(() => {
     if (data.messagesLoadedForCurrentQuery) {
       groupScopeTransitionRequestedRef.current = false;
@@ -1394,7 +1344,6 @@ export function useRerAnalysisNeoPage(
     return queryStateKey !== lastResetStateKey;
   }, [lastResetState, queryState]);
 
-  const groupInfos = data.groupInfos;
   const profiles = data.profiles;
 
   useEffect(() => {
@@ -1529,8 +1478,6 @@ export function useRerAnalysisNeoPage(
     isFilterSectionStale: data.isFilterSectionStale,
     groupInfos,
     groupNavigation,
-    unreadBoundaryMessageId: unreadBoundary.messageId,
-    dismissUnreadBoundary: unreadBoundary.dismiss,
     groupsActivityPeriod: data.groupsActivityPeriod,
     groupsActivity: data.groupsActivity,
     groupsActivityLoadedFreq: data.groupsActivityLoadedFreq,
@@ -1671,7 +1618,6 @@ export function useRerAnalysisNeoPage(
     toggleLeftPanel,
     openLeftPanel,
     selectGroupScope,
-    onVisibleGroupMessages,
     toggleRightPanel,
     toggleUnitFromMap,
     saveEditor: editor.saveEditor,

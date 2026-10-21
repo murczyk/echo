@@ -483,33 +483,18 @@ function buildPage() {
     editTargetLoadState: { status: 'idle' },
     filtersLoading: false,
     groupInfos: {},
-    unreadBoundaryMessageId: null,
-    dismissUnreadBoundary: vi.fn(),
     groupNavigation: {
       groups: [
         {
           kind: 'all',
           masterKey: null,
           name: 'Всі групи',
-          unreadCount: 0,
-          oldestUnreadMessageRef: null,
-          latestCursor: null,
         },
       ],
       scope: { kind: 'all' },
-      ready: true,
       loading: false,
       error: null,
       select: vi.fn(),
-      acknowledge: vi.fn(),
-      selectedGroup: {
-        kind: 'all',
-        masterKey: null,
-        name: 'Всі групи',
-        unreadCount: 0,
-        oldestUnreadMessageRef: null,
-        latestCursor: null,
-      },
     },
     includeOnlyNewFreqs: false,
     inboxReq: null,
@@ -641,7 +626,6 @@ function buildPage() {
     toggleLeftPanel: vi.fn(),
     openLeftPanel: vi.fn(),
     selectGroupScope: vi.fn(),
-    onVisibleGroupMessages: vi.fn(),
     toggleReportTaskRunLogs: vi.fn(),
     toggleRightPanel: vi.fn(),
     toggleUnitFromMap: vi.fn(),
@@ -1154,16 +1138,11 @@ describe('RerAnalysisNeoPage', () => {
       masterKey: 'group-b',
       name: 'Bravo',
       ignoreOperativny: false,
-      unreadCount: 2,
-      oldestUnreadMessageRef: 'message-b',
-      lastActivityAt: 1,
-      latestCursor: { createdAt: 1, messageId: 2 },
     };
     page.groupNavigation = {
       ...page.groupNavigation,
       groups: [page.groupNavigation.groups[0], group],
       scope: { kind: 'group', masterKey: 'group-b' },
-      selectedGroup: group,
     };
     useRerAnalysisNeoPageMock.mockReturnValue(page);
     const container = document.createElement('div');
@@ -1183,23 +1162,18 @@ describe('RerAnalysisNeoPage', () => {
     root.unmount();
   });
 
-  it('does not load the hidden group facet for a dedicated group', async () => {
+  it('#3727 keeps the legacy group facet available when the group widget selects one group', async () => {
     const page = buildPage();
     const group = {
       kind: 'group' as const,
       masterKey: 'group-b',
       name: 'Bravo',
       ignoreOperativny: false,
-      unreadCount: 2,
-      oldestUnreadMessageRef: 'message-b',
-      lastActivityAt: 1,
-      latestCursor: { createdAt: 1, messageId: 2 },
     };
     page.groupNavigation = {
       ...page.groupNavigation,
       groups: [page.groupNavigation.groups[0], group],
       scope: { kind: 'group', masterKey: 'group-b' },
-      selectedGroup: group,
     };
     useRerAnalysisNeoPageMock.mockReturnValue(page);
     const container = document.createElement('div');
@@ -1215,7 +1189,7 @@ describe('RerAnalysisNeoPage', () => {
 
     expect(page.loadFilterSection).toHaveBeenCalledWith('tags');
     expect(page.loadFilterSection).toHaveBeenCalledWith('senders');
-    expect(page.loadFilterSection).not.toHaveBeenCalledWith('groups');
+    expect(page.loadFilterSection).toHaveBeenCalledWith('groups');
     root.unmount();
   });
 

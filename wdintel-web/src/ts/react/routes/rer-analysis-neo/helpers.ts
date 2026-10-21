@@ -389,6 +389,7 @@ export function pushQueryStateToUrl(
 ) {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
+  url.searchParams.delete(GROUP_SCOPE_PARAM);
   writeRerAnalysisQueryStateToSearchParams(url.searchParams, state);
   if (state.onlyWithMedia) {
     url.searchParams.set(ONLY_WITH_MEDIA_PARAM, 'true');

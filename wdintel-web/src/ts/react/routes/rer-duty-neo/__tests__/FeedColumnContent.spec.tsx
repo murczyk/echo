@@ -162,7 +162,13 @@ describe('FeedColumnContent', () => {
     await act(async () =>
       root.render(
         <FeedColumnContent
-          column={{ ...column, feed: { ...column.feed, groupScopeMasterKey: 'Group Alpha' } }}
+          column={{
+            ...column,
+            feed: {
+              ...column.feed,
+              filter: { ...column.feed.filter, groupsSelected: ['Group Alpha'] },
+            },
+          }}
         />,
       ),
     );
@@ -179,11 +185,9 @@ describe('FeedColumnContent', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     function UnreadColumn({ column }: { column: FeedColumnModel }) {
-      const unreadBoundaryMessageId = useDutyUnreadBoundaries(
-        [column.feed],
-        [],
-        true,
-      ).boundaries.get(column.feed.id)?.messageId;
+      const unreadBoundaryMessageId = useDutyUnreadBoundaries([column.feed]).boundaries.get(
+        column.feed.id,
+      )?.messageId;
       return (
         <FeedColumnContent
           column={{ ...column, view: { ...column.view, unreadBoundaryMessageId } }}

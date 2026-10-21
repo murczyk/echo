@@ -114,22 +114,6 @@
   background: color-mix(in srgb, var(--echo-color-text, #fff) 10%, transparent);
 }
 
-.group-navigation-unread {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-inline-size: 1.5rem;
-  block-size: 1.5rem;
-  padding-inline: 0.4rem;
-  border-radius: 999px;
-  background: var(--echo-color-primary, var(--color-action));
-  color: var(--echo-color-on-primary, #07131d);
-  font-size: 0.75rem;
-  line-height: 1;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
 .group-navigation-panel-layer {
   position: absolute;
   z-index: 20;

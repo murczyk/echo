@@ -817,7 +817,7 @@ export const FeedColumnContent = memo(
       ) : (
         <DutyMessageList
           items={feed.items}
-          hideGroupName={Boolean(feed.groupScopeMasterKey)}
+          hideGroupName={feed.filter.groupsSelected?.length === 1}
           unreadBoundaryMessageId={view.unreadBoundaryMessageId}
           feedId={feed.id}
           feedCount={feedCount}

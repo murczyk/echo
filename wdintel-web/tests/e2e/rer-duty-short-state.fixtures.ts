@@ -249,24 +249,6 @@ export async function installRerDutyShortStateMocks(
       return;
     }
 
-    if (pathname === '/api/rer-importer/group-feed-state') {
-      await fulfillJson(route, {
-        groups: (options.signalGroups ?? ['group-1']).map((masterKey) => ({
-          master_key: masterKey,
-          name: masterKey,
-          color_key: 'blue',
-          ignore_operativny: false,
-          unread_count: 0,
-          oldest_unread_message_ref: null,
-          last_read_created_at_order: null,
-          last_read_message_id: null,
-          last_activity_at: null,
-          latest_cursor: null,
-        })),
-      });
-      return;
-    }
-
     if (pathname === '/api/tags/tags-list') {
       await fulfillJson(route, options.tagsResponse ?? emptyDutyTagsResponse());
       return;

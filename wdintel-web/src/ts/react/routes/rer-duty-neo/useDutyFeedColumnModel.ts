@@ -1,10 +1,9 @@
-import { useSyncExternalStore } from 'react';
 import type { InboxMessage, User } from '../../../../Bindings';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { FeedColumnModel } from './types';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 import type { GroupScope } from '../shared/group-navigation';
-import { groupFeedStateStore } from '../shared/group-navigation';
+import { groupFilterScope } from '../shared/group-navigation';
 import { useDutyUnreadBoundaries } from './useDutyUnreadBoundaries';
 import { useDutyFeedColumnActions, type RerDutyFeedsBundle } from './useDutyFeedColumnActions';
 import {
@@ -46,11 +45,7 @@ export type DutyFeedColumnModelDeps = {
     },
     focusTarget: HTMLElement,
   ) => void;
-  selectGroupScope: (
-    feedId: string,
-    scope: GroupScope,
-    oldestUnreadMessageRef: string | null,
-  ) => void;
+  selectGroupScope: (feedId: string, scope: GroupScope) => void;
 };
 
 function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
@@ -372,15 +367,8 @@ function buildFeedMessageCard(
 
 /** Assembles the per-column view model consumed by the Duty workspace. */
 export function useDutyFeedColumnModel(deps: DutyFeedColumnModelDeps) {
-  const groupState = useSyncExternalStore(
-    groupFeedStateStore.subscribe,
-    groupFeedStateStore.getSnapshot,
-    groupFeedStateStore.getSnapshot,
-  );
   const { boundaries: unreadBoundaries, dismissUnreadBoundary } = useDutyUnreadBoundaries(
     deps.feeds.messageFeeds,
-    groupState.groups,
-    !groupState.stale,
   );
   const getStableFeedActions = useDutyFeedColumnActions({
     feeds: deps.feeds,
@@ -397,14 +385,11 @@ export function useDutyFeedColumnModel(deps: DutyFeedColumnModelDeps) {
     },
     filterPanel: buildFeedFilterPanel(feed, deps),
     groupNavigation: {
-      scope: feed.groupScopeMasterKey
-        ? { kind: 'group', masterKey: feed.groupScopeMasterKey }
-        : { kind: 'all' },
+      scope: groupFilterScope(feed.filter.groupsSelected ?? []),
       groupName: feed.groupScopeMasterKey
         ? (deps.feeds.groupInfos[feed.groupScopeMasterKey]?.name ?? feed.groupScopeMasterKey)
         : 'Всі групи',
-      onSelect: (scope, oldestUnreadMessageRef) =>
-        deps.selectGroupScope(feed.id, scope, oldestUnreadMessageRef),
+      onSelect: (scope) => deps.selectGroupScope(feed.id, scope),
       onError: (error) =>
         deps.feeds.setError(error instanceof Error ? error.message : String(error)),
     },

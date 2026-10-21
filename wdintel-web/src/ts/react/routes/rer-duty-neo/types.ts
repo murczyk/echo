@@ -57,7 +57,7 @@ export type FeedColumnModel = {
   groupNavigation?: {
     scope: GroupScope;
     groupName: string;
-    onSelect: (scope: GroupScope, oldestUnreadMessageRef: string | null) => void;
+    onSelect: (scope: GroupScope) => void;
     onError: (error: unknown) => void;
   };
   keywordsPanel: {
