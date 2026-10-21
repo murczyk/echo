@@ -38,6 +38,9 @@ entries = {
 strategies_by_table = {}
 for table, strategy in entries:
     strategies_by_table.setdefault(table, set()).add(strategy)
+for strategies in strategies_by_table.values():
+    if "replicated_snapshot" in strategies:
+        strategies.discard("cdc_additive")
 conflicts = {
     table: strategies
     for table, strategies in strategies_by_table.items()
@@ -72,6 +75,8 @@ strategies = {
         )
     )
 }
+if "replicated_snapshot" in strategies:
+    strategies.discard("cdc_additive")
 if len(strategies) != 1:
     raise SystemExit(1)
 print(next(iter(strategies)))

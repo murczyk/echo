@@ -1104,6 +1104,10 @@ rebuild declare `replicated_snapshot` with `"targeted_resnapshot": true`; the
 same helper validates additive-only drift and rebuilds only the preserved table
 mapping. Automatic repairs consider manifest-authorized tables and preserved
 retry state.
+When historical migrations authorize both `cdc_additive` and a targeted
+`replicated_snapshot` for one table, deployment selects `replicated_snapshot`
+to cover both migrations. Matching raw schemas still skip the snapshot; other
+strategy conflicts and mismatched retry strategies remain errors.
 Deployment repairs the complete batch under one analytics reconciliation lock,
 then refreshes current-state views, compares gateway foreign tables and
 compatibility views, including grants and view security options, with the source

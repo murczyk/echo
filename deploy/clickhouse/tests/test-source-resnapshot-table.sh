@@ -32,7 +32,8 @@ cat >"$manifest" <<'JSON'
     },
     "echo:m3515": {
       "changes": [
-        { "table": "public.messages", "strategy": "cdc_additive" }
+        { "table": "public.messages", "strategy": "cdc_additive" },
+        { "table": "public.nonempty", "strategy": "cdc_additive" }
       ]
     },
     "echo:m3": {

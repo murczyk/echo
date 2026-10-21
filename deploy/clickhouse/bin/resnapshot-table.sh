@@ -623,6 +623,9 @@ for section in ("migrations", "dependencies"):
                 strategy == "replicated_snapshot" and change.get("targeted_resnapshot") is True
             ):
                 authorized.setdefault(change["table"], set()).add(strategy)
+for strategies in authorized.values():
+    if "replicated_snapshot" in strategies:
+        strategies.discard("cdc_additive")
 entries = {}
 
 def add_entry(strategy, table):
