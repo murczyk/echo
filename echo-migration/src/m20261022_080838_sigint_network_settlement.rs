@@ -141,6 +141,33 @@ after update of deleted on area_of_responsibility
 for each row when (old.deleted is distinct from new.deleted)
 execute function requeue_sigint_network_settlements_for_aor_state();
 
+create function requeue_sigint_network_settlements_for_aor_config()
+returns trigger language plpgsql as $$
+declare
+    target_aor_ids bigint[];
+begin
+    if tg_op = 'UPDATE'
+        and old.aor_id is not distinct from new.aor_id
+        and old.settlements_configs is not distinct from new.settlements_configs then
+        return new;
+    end if;
+    target_aor_ids := case tg_op
+        when 'INSERT' then array[new.aor_id]
+        when 'DELETE' then array[old.aor_id]
+        else array[old.aor_id, new.aor_id]
+    end;
+    perform requeue_sigint_network_settlements(array(
+        select distinct network_id from sigint_network_aor
+        where aor_id = any(target_aor_ids)
+    ));
+    return coalesce(new, old);
+end;
+$$;
+
+create trigger requeue_sigint_network_settlements_for_aor_config
+after insert or update of aor_id, settlements_configs or delete on aor_location_config
+for each row execute function requeue_sigint_network_settlements_for_aor_config();
+
 insert into sigint_network_settlement (network_id, settlement_text)
 select distinct network.id, upper(translate(btrim(value), chr(39) || 'ʼ`', '’’’'))
 from sigint_network network
@@ -159,6 +186,8 @@ where not network.deleted
             .get_connection()
             .execute_unprepared(
                 r#"
+drop trigger requeue_sigint_network_settlements_for_aor_config on aor_location_config;
+drop function requeue_sigint_network_settlements_for_aor_config();
 drop trigger requeue_sigint_network_settlements_for_aor_state on area_of_responsibility;
 drop function requeue_sigint_network_settlements_for_aor_state();
 drop trigger requeue_sigint_network_aor_settlements on sigint_network_aor;

@@ -55,8 +55,10 @@ tasks also visit messages currently assigned to competing networks. The network
 worker requeues unresolved inbox locations in its existing bounded message
 batches, including after the last anchor disappears. Canonical settlement
 deletion requeues its network links.
-Network AOR link changes and AOR deletion/restoration requeue the affected
-network location sets, with network locks serializing edits against resolution.
+Network AOR link changes, AOR settlement-source configuration changes, and AOR
+deletion/restoration requeue the affected network location sets, with network
+locks serializing edits against resolution. Unchanged source selections preserve
+existing network decisions; removing a selection requeues against the defaults.
 
 Resolved locations of linked, non-deleted networks anchor inbox names. Anchored
 sets maximize matched names, minimize total distance to the nearest anchor, then

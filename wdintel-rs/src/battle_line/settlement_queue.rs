@@ -1474,6 +1474,56 @@ mod tests {
                 vec![1],
             ),
             (
+                r#"insert into aor_location_config (aor_id, settlements_configs) values ($1, '["first"]')"#,
+                vec![aor_ids[1]],
+                vec![1],
+            ),
+            (
+                r"update aor_location_config set settlements_configs = settlements_configs where aor_id = $1",
+                vec![aor_ids[1]],
+                vec![],
+            ),
+            (
+                r"update aor_location_config set updated_at = now() where aor_id = $1",
+                vec![aor_ids[1]],
+                vec![],
+            ),
+            (
+                r#"update aor_location_config set settlements_configs = '["second"]' where aor_id = $1"#,
+                vec![aor_ids[1]],
+                vec![1],
+            ),
+            (
+                r"update aor_location_config set aor_id = $2 where aor_id = $1",
+                vec![aor_ids[1], aor_ids[0]],
+                vec![1],
+            ),
+            (
+                r"update aor_location_config set aor_id = $2 where aor_id = $1",
+                vec![aor_ids[0], aor_ids[1]],
+                vec![1],
+            ),
+            (
+                r"insert into sigint_network_aor (network_id, aor_id) values ($1, $2)",
+                vec![network_ids[0], aor_ids[1]],
+                vec![0],
+            ),
+            (
+                r"update aor_location_config set settlements_configs = '[]' where aor_id = $1",
+                vec![aor_ids[1]],
+                vec![0, 1],
+            ),
+            (
+                r"delete from aor_location_config where aor_id = $1",
+                vec![aor_ids[1]],
+                vec![0, 1],
+            ),
+            (
+                r"delete from sigint_network_aor where network_id = $1",
+                vec![network_ids[0]],
+                vec![0],
+            ),
+            (
                 r"delete from sigint_network_aor where network_id = $1",
                 vec![network_ids[1]],
                 vec![1],
