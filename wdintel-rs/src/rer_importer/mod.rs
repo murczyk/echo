@@ -1842,6 +1842,9 @@ pub async fn oneoff_reprocess_unit_names(
                 .await
                 .c(h!())?;
                 reset_inbox_pelengs(id, &txn).await.c(h!())?;
+                crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+                    vec![item], &txn,
+                ).await.c(h!())?;
                 txn.commit().await.c(h!())?;
             }
         }

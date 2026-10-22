@@ -804,30 +804,44 @@ export function useRerNetworkDetailsNeoPageLoad(
 
         if (!isCurrent()) return;
 
-        setState((current) => ({
-          ...current,
-          pelengPoints: response.points ?? [],
-          networkSettlements: response.settlements ?? [],
-          pelengEnabledFreqs: derivePelengEnabledFreqs(
-            current.pelengEnabledFreqs,
-            response.points ?? [],
-          ),
-          pelengPointsLoaded: true,
-          pelengPointsLoading: false,
-          pelengPointsError: null,
-          pelengPointsRequestedFrom: sinceDateInclusiveMs,
-          pelengPointsRequestedTo: tillDateNoninclusiveMs,
-        }));
+        setState((current) => {
+          if (
+            current.pelengPointsRequestedFrom !== sinceDateInclusiveMs ||
+            current.pelengPointsRequestedTo !== tillDateNoninclusiveMs
+          )
+            return current;
+          return {
+            ...current,
+            pelengPoints: response.points ?? [],
+            networkSettlements: response.settlements ?? [],
+            pelengEnabledFreqs: derivePelengEnabledFreqs(
+              current.pelengEnabledFreqs,
+              response.points ?? [],
+            ),
+            pelengPointsLoaded: true,
+            pelengPointsLoading: false,
+            pelengPointsError: null,
+            pelengPointsRequestedFrom: sinceDateInclusiveMs,
+            pelengPointsRequestedTo: tillDateNoninclusiveMs,
+          };
+        });
       } catch (error) {
         if (!isCurrent()) return;
-        setState((current) => ({
-          ...current,
-          pelengPointsLoading: false,
-          pelengPointsLoaded: false,
-          pelengPointsError: formatErrorMessage(error),
-          pelengPointsRequestedFrom: sinceDateInclusiveMs,
-          pelengPointsRequestedTo: tillDateNoninclusiveMs,
-        }));
+        setState((current) => {
+          if (
+            current.pelengPointsRequestedFrom !== sinceDateInclusiveMs ||
+            current.pelengPointsRequestedTo !== tillDateNoninclusiveMs
+          )
+            return current;
+          return {
+            ...current,
+            pelengPointsLoading: false,
+            pelengPointsLoaded: false,
+            pelengPointsError: formatErrorMessage(error),
+            pelengPointsRequestedFrom: sinceDateInclusiveMs,
+            pelengPointsRequestedTo: tillDateNoninclusiveMs,
+          };
+        });
       }
     },
     [reloadGeneration, setState],

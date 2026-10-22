@@ -13,7 +13,6 @@ use crate::h;
 use crate::types::{warn, Env, ShortContext};
 use sea_orm::sea_query::LockType;
 use sea_orm::*;
-use std::collections::BTreeSet;
 
 pub(super) async fn process_pending_networks(
     env: &Env,
@@ -119,14 +118,6 @@ pub(super) async fn resolve_claimed_network(
             .await
             .c(h!())?
     };
-    let previous = rows
-        .iter()
-        .filter_map(|row| row.settlement_id)
-        .collect::<BTreeSet<_>>();
-    let resolved = results
-        .iter()
-        .filter_map(|result| result.chosen_settlement_id)
-        .collect::<BTreeSet<_>>();
     for (index, row) in rows.into_iter().enumerate() {
         let settlement_id = results
             .get(index)
@@ -136,16 +127,11 @@ pub(super) async fn resolve_claimed_network(
         row.is_undefined = Set(Some(settlement_id.is_none()));
         row.update(txn).await.c(h!())?;
     }
-    if previous != resolved {
-        crate::sigint::network::etalon_calc::invalidate_network_inbox(
-            network,
-            vec![],
-            txn,
-            "resolved network settlements".to_string(),
-        )
-        .await
-        .c(h!())?;
-    }
+    crate::sigint::network::etalon_calc::invalidate_network_settlement_inbox(
+        network, txn,
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -170,6 +156,7 @@ join sigint_network n on n.id = links.sigint_network_id and not n.deleted
 join sigint_network_settlement ns on ns.network_id = n.id
 join settlement s on s.id = ns.settlement_id
 where links.sigint_inbox_item_id = $1
+    and s.lat between -90 and 90 and s.lon between -180 and 180
 order by s.id
         "#,
             [item_id.into()],

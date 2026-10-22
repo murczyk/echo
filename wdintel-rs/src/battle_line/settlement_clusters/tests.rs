@@ -276,6 +276,39 @@ fn anchored_ambiguity_leaves_the_entire_set_unresolved_2133() {
 }
 
 #[test]
+fn chained_millimeter_ties_do_not_depend_on_candidate_ids_2133() {
+    let longitude = |meters: f64| {
+        (meters / crate::config::SETTLEMENT_EARTH_RADIUS_METERS).to_degrees()
+    };
+    for distances in [[1.0012, 1.0008, 1.0], [1.0, 1.0008, 1.0012]] {
+        let candidates = distances
+            .into_iter()
+            .enumerate()
+            .map(|(index, meters)| (index as i32 + 1, longitude(meters), 1.0))
+            .collect::<Vec<_>>();
+        let drafts = vec![draft("A", &candidates)];
+        let anchor = SettlementAnchor {
+            settlement_id: 4,
+            coordinate: BattleLineCoordinate { lat: 0.0, lon: 0.0 },
+        };
+        assert_eq!(elect_settlements(&drafts, &[anchor]), vec![None]);
+        assert_eq!(
+            chosen(vec![draft("A", &candidates), draft("B", &[(4, 0.0, 1.0)])]),
+            vec![None; 2]
+        );
+        let candidates = distances
+            .into_iter()
+            .enumerate()
+            .map(|(index, meters)| (index as i32 + 1, 0.0, meters))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            chosen(vec![draft("A", &candidates), draft("B", &[(4, 0.0, 1.0)])]),
+            vec![None; 2]
+        );
+    }
+}
+
+#[test]
 fn more_votes_beat_a_smaller_tighter_cluster_2133() {
     assert_eq!(
         chosen(vec![

@@ -251,21 +251,14 @@ where
 pub(crate) async fn requeue_unresolved_item_settlements<C: ConnectionTrait>(
     dbx: &C,
     item_ids: &[i64],
-    changed_item_ids: &[i64],
 ) -> anyhow::Result<()> {
     if item_ids.is_empty() {
         return Ok(());
     }
     dbx.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres, r#"
-update sigint_inbox_item_settlement unresolved set is_undefined = null
+update sigint_inbox_item_settlement set is_undefined = null
 where item_id = any($1::bigint[]) and settlement_id is null and is_undefined is true
-    and (item_id = any($2::bigint[]) or exists (
-        select 1 from sigint_inbox_item_network links
-        join sigint_network_settlement anchors on anchors.network_id = links.sigint_network_id
-        where links.sigint_inbox_item_id = unresolved.item_id
-            and anchors.settlement_id is not null
-    ))
-    "#, [item_ids.to_vec().into(), changed_item_ids.to_vec().into()])).await.c(h!())?;
+    "#, [item_ids.to_vec().into()])).await.c(h!())?;
     Ok(())
 }
 
@@ -1218,7 +1211,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn migration_enqueues_all_live_network_location_names_2133() {
+    async fn migration_enqueues_all_non_deleted_network_location_names_2133() {
         use crate::entities::sigint_network;
         use sea_orm_migration::MigratorTrait;
         let (env, _guard) =
@@ -1258,13 +1251,23 @@ mod tests {
         let manager = echo_migration::SchemaManager::new(&txn);
         migration.down(&manager).await.unwrap();
         migration.up(&manager).await.unwrap();
-        for (index, expected) in [2, 1, 0, 0, 0, 0].into_iter().enumerate() {
+        for (index, expected) in [2, 1, 1, 0, 1, 0].into_iter().enumerate() {
             let rows = network_settlement_rows(&txn, networks[index].id).await;
             assert_eq!(rows.len(), expected);
             assert!(rows
                 .iter()
                 .all(|row| row.settlement_id.is_none()
                     && row.is_undefined.is_none()));
+        }
+        for index in [2, 4] {
+            let mut network = networks[index].clone().into_active_model();
+            network.active_from = Set(None);
+            network.active_to = Set(None);
+            let network = network.update(&txn).await.unwrap();
+            let rows = network_settlement_rows(&txn, network.id).await;
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].settlement_id, None);
+            assert_eq!(rows[0].is_undefined, None);
         }
         txn.rollback().await.unwrap();
     }
@@ -1410,7 +1413,9 @@ mod tests {
     #[serial_test::serial]
     async fn network_location_edits_reconcile_and_resolve_the_whole_set_2133() {
         use crate::battle_line::network_settlements::resolve_claimed_network;
-        use crate::entities::sigint_network;
+        use crate::entities::{
+            network_invalidation_task, sigint_network, sigint_network_freq,
+        };
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -1427,6 +1432,16 @@ mod tests {
             )
             .await
             .unwrap();
+        let frequency = crate::functest::tests::mk_sigint_network_freq(
+            &txn,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("213.3".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let rows = network_settlement_rows(&txn, network.id).await;
         assert_eq!(rows.len(), 3);
         assert!(rows.iter().all(
@@ -1436,6 +1451,17 @@ mod tests {
         resolve_claimed_network(&env, &txn, network.id, version, &mut cache)
             .await
             .unwrap();
+        let frequency_task = network_invalidation_task::Entity::find()
+            .filter(
+                network_invalidation_task::Column::Frequency
+                    .eq(&frequency.freq),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(frequency_task.sigint_network_id, None);
+        assert_eq!(frequency_task.since_ts, frequency.active_from);
         let map_settlements =
             crate::sigint::network::bl::get_network_settlements(
                 &txn, network.id,
@@ -1535,7 +1561,34 @@ mod tests {
         resolve_claimed_network(&env, &txn, network.id, version, &mut cache)
             .await
             .unwrap();
-        requeue_unresolved_item_settlements(&txn, &[request.item_id], &[])
+        crate::entities::settlement::Entity::update_many()
+            .col_expr(
+                crate::entities::settlement::Column::Lon,
+                Expr::value(Some(181.0)),
+            )
+            .filter(crate::entities::settlement::Column::Id.eq(2_133_101))
+            .exec(&txn)
+            .await
+            .unwrap();
+        assert!(
+            super::super::network_settlements::load_item_network_anchors(
+                &txn,
+                request.item_id,
+            )
+            .await
+            .unwrap()
+            .is_empty()
+        );
+        crate::entities::settlement::Entity::update_many()
+            .col_expr(
+                crate::entities::settlement::Column::Lon,
+                Expr::value(Some(1.0)),
+            )
+            .filter(crate::entities::settlement::Column::Id.eq(2_133_101))
+            .exec(&txn)
+            .await
+            .unwrap();
+        requeue_unresolved_item_settlements(&txn, &[request.item_id])
             .await
             .unwrap();
         assert_eq!(
@@ -1550,6 +1603,34 @@ mod tests {
             cluster_test_rows(&txn, request.item_id).await.unwrap()[0]
                 .settlement_id,
             Some(2_133_103)
+        );
+        sigint_network::Entity::delete_by_id(network.id)
+            .exec(&txn)
+            .await
+            .unwrap();
+        sigint_inbox_item_settlement::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item_settlement::Column::SettlementId,
+                Expr::value(Option::<i32>::None),
+            )
+            .col_expr(
+                sigint_inbox_item_settlement::Column::IsUndefined,
+                Expr::value(Some(true)),
+            )
+            .filter(
+                sigint_inbox_item_settlement::Column::ItemId
+                    .eq(request.item_id),
+            )
+            .exec(&txn)
+            .await
+            .unwrap();
+        requeue_unresolved_item_settlements(&txn, &[request.item_id])
+            .await
+            .unwrap();
+        assert_eq!(
+            cluster_test_rows(&txn, request.item_id).await.unwrap()[0]
+                .is_undefined,
+            None
         );
         txn.rollback().await.unwrap();
     }
@@ -1584,6 +1665,23 @@ mod tests {
         let rows = network_settlement_rows(&txn, network.id).await;
         assert_eq!(rows[0].settlement_id, None);
         assert_eq!(rows[0].is_undefined, None);
+        crate::entities::network_invalidation_task::Entity::delete_many()
+            .exec(&txn)
+            .await
+            .unwrap();
+        cache = SettlementResolutionCache::default();
+        resolve_claimed_network(&env, &txn, network.id, version, &mut cache)
+            .await
+            .unwrap();
+        assert!(crate::entities::network_invalidation_task::Entity::find()
+            .filter(
+                crate::entities::network_invalidation_task::Column::SigintNetworkId
+                    .eq(network.id),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .is_some());
         let mut network = network.into_active_model();
         network.deleted = Set(true);
         let network = network.update(&txn).await.unwrap();

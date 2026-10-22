@@ -85,7 +85,7 @@ end;
 $$;
 
 create trigger reconcile_sigint_network_settlements
-after insert or update of location, deleted on sigint_network
+after insert or update of location, deleted, active_from, active_to on sigint_network
 for each row execute function reconcile_sigint_network_settlements();
 
 insert into sigint_network_settlement (network_id, settlement_text)
@@ -93,8 +93,6 @@ select distinct network.id, upper(translate(btrim(value), chr(39) || 'ʼ`', '’
 from sigint_network network
 cross join lateral unnest(string_to_array(network.location, '|')) as value
 where not network.deleted
-    and network.active_to is null
-    and (network.active_from is null or network.active_from <= now() at time zone 'utc')
     and btrim(value) <> '';
                 "#,
             )

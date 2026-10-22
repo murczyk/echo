@@ -38,29 +38,33 @@ struct Combination {
 
 impl Combination {
     fn rank(&self, other: &Self, anchored: bool) -> Ordering {
-        let votes = other.choices.len().cmp(&self.choices.len());
+        other
+            .choices
+            .len()
+            .cmp(&self.choices.len())
+            .then_with(|| {
+                self.primary_distance(anchored)
+                    .total_cmp(&other.primary_distance(anchored))
+            })
+            .then_with(|| {
+                self.secondary_distance(anchored)
+                    .total_cmp(&other.secondary_distance(anchored))
+            })
+    }
+
+    fn primary_distance(&self, anchored: bool) -> f64 {
         if anchored {
-            votes
-                .then_with(|| {
-                    compare_distance(
-                        self.anchor_distance_m,
-                        other.anchor_distance_m,
-                    )
-                })
-                .then_with(|| {
-                    compare_distance(self.distance_m, other.distance_m)
-                })
+            self.anchor_distance_m
         } else {
-            votes
-                .then_with(|| {
-                    compare_distance(self.distance_m, other.distance_m)
-                })
-                .then_with(|| {
-                    compare_distance(
-                        self.battle_line_distance_m,
-                        other.battle_line_distance_m,
-                    )
-                })
+            self.distance_m
+        }
+    }
+
+    fn secondary_distance(&self, anchored: bool) -> f64 {
+        if anchored {
+            self.distance_m
+        } else {
+            self.battle_line_distance_m
         }
     }
 
@@ -99,6 +103,7 @@ struct Election {
     exhausted: bool,
     minimum_votes: usize,
     anchored: bool,
+    primary_limit: Option<f64>,
 }
 
 impl Election {
@@ -116,18 +121,14 @@ impl Election {
         let maximum_votes = current.choices.len() + groups.len() - index;
         if maximum_votes < self.minimum_votes
             || maximum_votes < self.best.choices.len()
+            || self.primary_limit.is_some_and(|limit| {
+                current.primary_distance(self.anchored) > limit
+            })
         {
             return;
         }
         if index == groups.len() {
-            match current.rank(&self.best, self.anchored) {
-                Ordering::Less => {
-                    self.best = current.clone();
-                    self.tied = false;
-                }
-                Ordering::Equal => self.tied = true,
-                Ordering::Greater => {}
-            }
+            self.consider(current);
             return;
         }
         for candidate in &groups[index].candidates {
@@ -141,6 +142,31 @@ impl Election {
             }
         }
         self.search(groups, index + 1, current);
+    }
+
+    fn consider(&mut self, current: &Combination) {
+        if self.primary_limit.is_none() {
+            if current.rank(&self.best, self.anchored) == Ordering::Less {
+                self.best = current.clone();
+            }
+            return;
+        }
+        if current.choices.len() != self.minimum_votes {
+            return;
+        }
+        if self.best.choices.is_empty() {
+            self.best = current.clone();
+            return;
+        }
+        let distance = current.secondary_distance(self.anchored);
+        let previous = self.best.secondary_distance(self.anchored);
+        let tied = compare_distance(distance, previous) == Ordering::Equal;
+        if distance < previous {
+            self.best = current.clone();
+            self.tied = tied;
+        } else if tied {
+            self.tied = true;
+        }
     }
 }
 
@@ -169,6 +195,20 @@ pub(super) fn elect_settlements(
     let mut election = Election {
         minimum_votes: if anchored { 1 } else { groups.len() / 2 + 1 },
         anchored,
+        ..Default::default()
+    };
+    election.search(&groups, 0, &Combination::default());
+    if election.exhausted || election.best.choices.is_empty() {
+        return chosen;
+    }
+    let mut election = Election {
+        minimum_votes: election.best.choices.len(),
+        anchored,
+        visited: election.visited,
+        primary_limit: Some(
+            election.best.primary_distance(anchored)
+                + BATTLE_LINE_SETTLEMENT_ELECTION_TIE_METERS,
+        ),
         ..Default::default()
     };
     election.search(&groups, 0, &Combination::default());

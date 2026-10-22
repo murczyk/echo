@@ -844,7 +844,7 @@ fn is_parent_of(
     message_unit_name.ends_with(&format!(" {network_unit_name}"))
 }
 
-pub(super) async fn load_actual_networks_for_messages<'a, 'async_trait, C>(
+async fn load_actual_networks_for_messages<'a, 'async_trait, C>(
     message_ids: &[i64],
     db: &'a C,
 ) -> anyhow::Result<HashMap<i64, BTreeSet<i64>>>

@@ -52,6 +52,7 @@ type HookResult = ReturnType<typeof useRerNetworkDetailsNeoPageActions>;
 
 let root: Root | null = null;
 let latestActions: HookResult | null = null;
+let latestState: NetworkDetailsNeoPageState | null = null;
 
 function buildNetwork(overrides: Partial<Network> = {}): Network {
   return {
@@ -105,7 +106,15 @@ function buildEditForm(overrides: Partial<NetworkEditForm> = {}): NetworkEditFor
   };
 }
 
-function Harness({ network, editForm }: { network: Network; editForm: NetworkEditForm }) {
+function Harness({
+  network,
+  editForm,
+  cachedState = {},
+}: {
+  network: Network;
+  editForm: NetworkEditForm;
+  cachedState?: Partial<NetworkDetailsNeoPageState>;
+}) {
   const [state, setState] = useState<NetworkDetailsNeoPageState>({
     ...EMPTY_STATE,
     network,
@@ -113,7 +122,9 @@ function Harness({ network, editForm }: { network: Network; editForm: NetworkEdi
     editDrawerOpen: true,
     editInProgress: false,
     editError: null,
+    ...cachedState,
   });
+  latestState = state;
 
   latestActions = useRerNetworkDetailsNeoPageActions({
     state,
@@ -127,14 +138,18 @@ function Harness({ network, editForm }: { network: Network; editForm: NetworkEdi
   return null;
 }
 
-function renderHarness(network: Network, editForm: NetworkEditForm) {
+function renderHarness(
+  network: Network,
+  editForm: NetworkEditForm,
+  cachedState?: Partial<NetworkDetailsNeoPageState>,
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const mountedRoot = createRoot(container);
   root = mountedRoot;
 
   act(() => {
-    mountedRoot.render(createElement(Harness, { network, editForm }));
+    mountedRoot.render(createElement(Harness, { network, editForm, cachedState }));
   });
 }
 
@@ -144,10 +159,31 @@ afterEach(() => {
   });
   root = null;
   latestActions = null;
+  latestState = null;
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
 describe('useRerNetworkDetailsNeoPageActions restore guard', () => {
+  it('#2133 invalidates cached settlement geometry after editing network locations', async () => {
+    apiMock.updateNetwork.mockResolvedValue(buildNetwork({ location: 'New location' }));
+    apiMock.updateNetworkPosts.mockResolvedValue(buildNetwork());
+    apiMock.updateNetworkUnits.mockResolvedValue(buildNetwork());
+    renderHarness(buildNetwork(), buildEditForm({ location: 'New location' }), {
+      networkSettlements: [{ id: 1, name: 'Old location', lat: 49, lng: 35 }],
+      pelengPointsLoaded: true,
+      pelengPointsRequestedFrom: 0,
+    });
+
+    await act(async () => {
+      await latestActions?.saveNetworkEdit();
+    });
+
+    expect(latestState?.network?.location).toBe('New location');
+    expect(latestState?.networkSettlements).toEqual([]);
+    expect(latestState?.pelengPointsLoaded).toBe(false);
+    expect(latestState?.pelengPointsRequestedFrom).toBeNull();
+  });
+
   it('requests restore for deleted rows without an active window', async () => {
     apiMock.updateNetwork.mockResolvedValue(buildNetwork({ deleted: true, activeTo: null }));
     apiMock.updateNetworkPosts.mockResolvedValue(buildNetwork());

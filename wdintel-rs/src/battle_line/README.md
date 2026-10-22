@@ -37,21 +37,24 @@ number of names whose candidates are all less than 50 km apart, then minimizes
 their total pairwise distance and total distance to the Battle Line. A result
 requires strictly more than half of all names. Unfitting names remain
 unresolved; tied best results leave the whole set unresolved. Distances within 1
-mm count as tied. One name with several eligible canonical settlements remains
+mm of the minimum at each scoring level count as tied, independently of candidate
+order. One name with several eligible canonical settlements remains
 unresolved. The search examines at most 100,000 states and 64 names; exceeding
 either bound leaves the set unresolved.
 
 `sigint_network_settlement` holds the same pending/resolved/unresolved state for
 network locations. Database triggers reconcile the complete normalized name set
-on network creation and location edits, preserve decisions for unchanged name
-sets, and rebuild it on network restoration. The migration enqueues every
-existing live network with location names (non-deleted, no activity end, and no
-future activity start). This PostgreSQL-only table is excluded from analytics
+on network creation, location edits, and activity changes, preserve decisions for
+unchanged name sets, and rebuild it on network restoration. The migration queues
+every existing non-deleted network with location names, including archived and
+scheduled networks. This PostgreSQL-only table is excluded from analytics
 replication. The settlement worker processes networks before inbox items using
-the same candidate loader and pure election. It queues network recalculation
-after anchor changes; that worker requeues unresolved inbox locations in its
-existing bounded message batches. Canonical settlement deletion requeues its
-network links.
+the same candidate loader and pure election. Every processed pending network
+set queues recalculation, including when all names become unresolved. Frequency
+tasks also visit messages currently assigned to competing networks. The network
+worker requeues unresolved inbox locations in its existing bounded message
+batches, including after the last anchor disappears. Canonical settlement
+deletion requeues its network links.
 
 Resolved locations of linked, non-deleted networks anchor inbox names. Anchored
 sets maximize matched names, minimize total distance to the nearest anchor, then
@@ -68,7 +71,8 @@ location names must have a canonical/alias candidate within 15 km of a resolved
 network settlement. Exactly one matching network narrows the result; zero or
 several matches preserve the earlier candidates. This lookup uses name
 candidates directly, so it does not depend on the inbox settlement worker first
-choosing a location. AI location updates also recalculate network assignments.
+choosing a location. AI and coordinate-derived location updates, as well as the
+unit-parser reprocessing oneoff, also recalculate network assignments.
 
 The network direction-finding map displays a red convex hull of resolved network
 settlements. One location appears as a red point; two or collinear locations
@@ -117,23 +121,37 @@ removed, and new writers duplicate events while the old trigger remains.
    other ingestion processes using the old binaries; wait for their in-flight
    transactions to finish.
 2. Install the matching binaries on all writer hosts while the processes remain
-   stopped. Run `wdintel-rs --mode=live migrate` once with the new binary. This
-   trigger-only migration declares no analytics table changes and requires no
+   stopped. On analytics-enabled sources, install the packaged analytics control
+   bundle and exclusions, then run
+   `/opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes` before
+   migrations. Standard Echo deployment performs this synchronization. Run
+   `wdintel-rs --mode=live migrate` once with the new binary. The Iggy migration
+   changes only triggers; `m20261022_080838_sigint_network_settlement` creates
+   the excluded PostgreSQL-only network settlement queue. Neither requires a
    PeerDB backfill or resnapshot.
 3. Verify that `m20261021_091705_remove_iggy_settlement_trigger` appears in
    `seaql_migrations` and that `pg_trigger` has no
-   `sigint_inbox_item_settlement_capture_iggy_link` trigger. Start the matching
-   API and background workers only after both checks pass.
+   `sigint_inbox_item_settlement_capture_iggy_link` trigger. Verify that
+   `m20261022_080838_sigint_network_settlement` is recorded, its queue and
+   reconciliation triggers exist, and non-deleted network locations were queued.
+   Start the matching API and background workers only after these checks pass.
 4. Verify ingestion, settlement-worker progress, Iggy outbox delivery, and normal
-   analytics health. AOR edits must retain historical links; an approved narrow
+   analytics health; run `/opt/echo-peerdb/bin/source-verify-deploy.sh` on
+   analytics-enabled sources and confirm `public.sigint_network_settlement` is
+   absent from raw/current/gateway tables. Initial network resolution queues
+   frequency reconciliation within the configured network-history window
+   (currently 367 days); monitor queue progress and database load. AOR edits
+   must retain historical links; an approved narrow
    recalculation must deliver only the changed distinct settlement IDs. Stop
    writers if migration state or event delivery is inconsistent.
 
 If migration or activation fails, keep writers stopped and inspect the migration
 record and trigger together before choosing a recovery. To return to older
-binaries, obtain approval for the rollback target and commands, reverse this
-migration using the migration runner while writers remain stopped, verify the
-trigger was restored, then install and start the older API and worker together.
+binaries, obtain approval for the rollback target and commands, reverse these
+migrations in reverse order using the migration runner while writers remain
+stopped: first remove the network settlement queue, then reverse the Iggy-trigger
+migration. Verify the Iggy trigger was restored, then install and start the older
+API and worker together.
 Do not start older writers against the trigger-free schema, or new writers
 against the restored trigger. A binary rollback does not undo recalculated links
 or already queued events; review any additional repair separately.

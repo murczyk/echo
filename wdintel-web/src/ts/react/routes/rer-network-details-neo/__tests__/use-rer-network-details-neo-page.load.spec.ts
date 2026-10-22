@@ -1,12 +1,13 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, createElement, useRef, useState } from 'react';
+import { act, createElement, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   KnownCallsignShortRes,
+  ListNetworkPointsRsp,
   NetworkCallsign,
   NetworkCallsignRes,
   Source,
@@ -91,6 +92,9 @@ const rendered: Root[] = [];
 let latestState: NetworkDetailsNeoPageState | null = null;
 let latestLoadCallsigns:
   ((networkId: number, periods?: CallsignsLoadPeriods) => Promise<void>) | null = null;
+let latestLoadPelengPoints:
+  ReturnType<typeof useRerNetworkDetailsNeoPageLoad>['loadPelengPoints'] | null = null;
+let latestSetState: Dispatch<SetStateAction<NetworkDetailsNeoPageState>> | null = null;
 
 function createKnownCallsign(
   overrides: Partial<KnownCallsignShortRes> = {},
@@ -132,6 +136,8 @@ function HookHarness({ stateSeed = EMPTY_STATE }: { stateSeed?: NetworkDetailsNe
 
   latestState = state;
   latestLoadCallsigns = pageLoad.loadCallsigns;
+  latestLoadPelengPoints = pageLoad.loadPelengPoints;
+  latestSetState = setState;
 
   return null;
 }
@@ -155,6 +161,8 @@ afterEach(() => {
   }
   latestState = null;
   latestLoadCallsigns = null;
+  latestLoadPelengPoints = null;
+  latestSetState = null;
   callsignsApiMock.listNetworkCallsigns.mockReset();
   callsignsApiMock.getNetworkCallsigns.mockReset();
   callsignsApiMock.getNetworkCallsignsActivity.mockReset();
@@ -170,6 +178,44 @@ afterEach(() => {
   otherApiMocks.listPosts.mockReset();
   otherApiMocks.fetchCurrentUser.mockReset();
 });
+
+it.each(['success', 'failure'] as const)(
+  '#2133 ignores an in-flight map %s after location edits invalidate its cache',
+  async (outcome) => {
+    installDefaultApiMocks();
+    const response = createDeferred<ListNetworkPointsRsp>();
+    otherApiMocks.listNetworkPoints.mockReturnValueOnce(response.promise);
+    renderHookHarness();
+    let pending: Promise<void> | undefined;
+    act(() => {
+      pending = latestLoadPelengPoints?.(42, 0, null);
+    });
+    act(() => {
+      latestSetState?.((current) => ({
+        ...current,
+        networkSettlements: [],
+        pelengPointsLoaded: false,
+        pelengPointsLoading: false,
+        pelengPointsRequestedFrom: null,
+        pelengPointsRequestedTo: null,
+      }));
+    });
+    await act(async () => {
+      if (outcome === 'success') {
+        response.resolve({
+          points: [],
+          settlements: [{ id: 1, name: 'Old location', lat: 49, lng: 35 }],
+        });
+      } else {
+        response.reject(new Error('Stale request failed'));
+      }
+      await pending;
+    });
+    expect(latestState?.networkSettlements).toEqual([]);
+    expect(latestState?.pelengPointsLoaded).toBe(false);
+    expect(latestState?.pelengPointsError).toBeNull();
+  },
+);
 
 function installDefaultApiMocks() {
   otherApiMocks.fetchCurrentUser.mockResolvedValue({ roles: ['Rer'] });

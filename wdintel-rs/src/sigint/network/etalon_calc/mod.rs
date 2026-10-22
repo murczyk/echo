@@ -291,6 +291,39 @@ pub async fn invalidate_network_inbox<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    invalidate_network_inbox_with_frequency_scope(
+        network,
+        frequencies,
+        db,
+        context_msg,
+        false,
+    )
+    .await
+    .c(h!())
+}
+
+pub(crate) async fn invalidate_network_settlement_inbox<C: ConnectionTrait>(
+    network: sigint_network::Model,
+    db: &C,
+) -> anyhow::Result<()> {
+    invalidate_network_inbox_with_frequency_scope(
+        network,
+        vec![],
+        db,
+        "resolved network settlements".to_string(),
+        true,
+    )
+    .await
+    .c(h!())
+}
+
+async fn invalidate_network_inbox_with_frequency_scope<C: ConnectionTrait>(
+    network: sigint_network::Model,
+    frequencies: Vec<String>,
+    db: &C,
+    context_msg: String,
+    include_other_networks: bool,
+) -> anyhow::Result<()> {
     let frequencies_desc = if frequencies.is_empty() {
         "all".to_string()
     } else {
@@ -328,7 +361,8 @@ where
             freq.active_to,
             NetworkInvalidationScope {
                 frequency: Some(freq.freq),
-                sigint_network_id: Some(network.id),
+                sigint_network_id: (!include_other_networks)
+                    .then_some(network.id),
                 ..Default::default()
             },
             context_msg.clone(),
@@ -353,12 +387,6 @@ where
     if sigint_inbox_item_ids.is_empty() {
         return Ok(result);
     }
-    let old_networks = consistency::load_actual_networks_for_messages(
-        &sigint_inbox_item_ids,
-        dbx,
-    )
-    .await
-    .c(h!())?;
     let old_freq_ids =
         crate::sigint::network::recalculation::load_freq_ids_for_message_links(
             dbx,
@@ -387,24 +415,9 @@ where
         .await
         .c(h!())?;
     }
-    let changed_items = sigint_inbox_item_ids
-        .iter()
-        .filter(|id| {
-            let previous = old_networks.get(id).cloned().unwrap_or_default();
-            let current = result
-                .get(id)
-                .into_iter()
-                .flatten()
-                .copied()
-                .collect::<BTreeSet<_>>();
-            previous != current
-        })
-        .copied()
-        .collect::<Vec<_>>();
     crate::battle_line::settlement_queue::requeue_unresolved_item_settlements(
         dbx,
         &sigint_inbox_item_ids,
-        &changed_items,
     )
     .await
     .c(h!())?;
