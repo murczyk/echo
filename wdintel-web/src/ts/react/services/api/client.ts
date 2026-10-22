@@ -1,4 +1,5 @@
 import { emitUnauthorizedEvent } from '../../auth-redirect';
+import { requestDiagnostics } from './request-diagnostics';
 
 type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
 type JsonObject = { [key: string]: JsonValue };
@@ -100,6 +101,7 @@ async function requestJson<T>(
     method,
     headers: {
       'Content-Type': 'application/json',
+      ...requestDiagnostics(url),
       ...options?.headers,
     },
     credentials: 'include',
@@ -157,6 +159,7 @@ async function requestResponse(
     method,
     headers: {
       'Content-Type': 'application/json',
+      ...requestDiagnostics(url),
       ...options?.headers,
     },
     credentials: 'include',

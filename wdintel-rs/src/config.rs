@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 pub const APP_BUILD_VERSION: &str = env!("ECHO_BUILD_VERSION");
+pub const HTTP_REDIRECT_MAX_HEADER_BYTES: usize = 2048;
 
 pub const SERVER_ACTIVITY_CONTEXT_HEADERS: &[&str] = &[
     "referer",
@@ -16,7 +17,12 @@ pub const SERVER_ACTIVITY_CONTEXT_HEADERS: &[&str] = &[
     "accept",
     "host",
     "x-request-id",
+    "x-echo-client-asset",
+    "x-echo-tab-id",
+    "x-echo-page-visibility",
+    "x-echo-request-trigger",
 ];
+pub const SERVER_ACTIVITY_DIAGNOSTIC_HEADER_MAX_BYTES: usize = 128;
 
 pub const USER_DISPLAY_NAME_MAX_LENGTH: usize = 100;
 pub const USER_MESSENGER_PROFILE_SEARCH_LIMIT: usize = 50;
@@ -570,6 +576,7 @@ pub const RQ_TIMEOUT_SIGNAL_API: u64 = 600;
 pub const API_INTEGRATION_IGGY_TEST_TIMEOUT_SEC: u64 = 10;
 pub const API_INTEGRATION_IGGY_DEFAULT_STREAM: &str = "echo";
 pub const API_INTEGRATION_IGGY_TOPIC_PARTITIONS_COUNT: u32 = 1;
+pub const API_INTEGRATION_IGGY_MESSAGE_RETENTION_SEC: u64 = 30 * 24 * 60 * 60;
 pub const API_INTEGRATION_IGGY_WORKER_IDLE_SLEEP_SEC: u64 = 60;
 pub const API_INTEGRATION_IGGY_WORKER_ACTIVE_SLEEP_MS: u64 = 100;
 pub const API_INTEGRATION_IGGY_PUBLISH_RETRY_2_MS: u64 = 100;
@@ -579,6 +586,10 @@ pub const API_INTEGRATION_IGGY_ENRICHMENT_ID_BATCH_SIZE: usize = 20_000;
 pub const API_INTEGRATION_IGGY_EVENT_BATCH_SIZE: u64 = 5_000;
 pub const API_INTEGRATION_IGGY_VISIBILITY_ID_BATCH_SIZE: u64 = 5_000;
 pub const API_INTEGRATION_IGGY_LOCK_NAMESPACE: &str = "iggy-integration:";
+pub const API_INTEGRATION_IGGY_UNIT_REFRESH_BATCH_SIZE: u64 = 500;
+pub const API_INTEGRATION_IGGY_UNIT_REFRESH_ACTIVE_SLEEP_MS: u64 = 100;
+pub const API_INTEGRATION_IGGY_UNIT_REFRESH_IDLE_SLEEP_SECS: u64 = 5;
+pub const API_INTEGRATION_IGGY_UNIT_REFRESH_RETRY_SECS: i64 = 30;
 pub const RQ_TIMEOUT_ALPINE_CONVERTER: u64 = 600;
 pub const ALPINE_CONVERSION_TIMEOUT_SECONDS: u64 = 60 * 60;
 pub const ALPINE_CONVERSION_MAX_TIMEOUT_SECONDS: u64 = 7 * 24 * 60 * 60;
@@ -814,7 +825,8 @@ pub const NETWORK_RECALCULATION_TASK_STALE_MINUTES: i64 = 10;
 pub const NETWORK_RECALCULATION_STATEMENT_TIMEOUT_MS: u64 = 5 * 60 * 1_000;
 pub const NETWORK_RECALCULATION_TASK_ENQUEUE_CHUNK_SIZE: usize = 1_000;
 pub const NETWORK_RECALCULATION_TASKS_PER_RUN: usize = 500;
-pub const NETWORK_RECALCULATION_LAST_SEEN_BATCH_SIZE: u64 = 500;
+pub const NETWORK_RECALCULATION_LAST_SEEN_PROBE_LIMIT: i64 = 65;
+pub const NETWORK_RECALCULATION_LAST_SEEN_BATCH_SIZE: u64 = 16;
 pub const NETWORK_RECALCULATION_RUN_BUDGET_SECS: u64 = 50;
 pub const RER_DUTY_POLL_INTERVAL_MIN_SEC: i64 = 5;
 pub const NETWORK_FREQ_LAST_DATETIME_IN_AOR_CACHE_TTL_MINUTES: i64 = 10;
@@ -1223,9 +1235,11 @@ pub const BATTLE_LINE_AOR_ANCHOR_LONGITUDE: f64 = 32.225_445_087_959_685;
 // These temporary limits should be lifted once location parsing is improved.
 pub const BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS: f64 = 75_000.0;
 pub const BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS: f64 = 150_000.0;
-pub const BATTLE_LINE_SETTLEMENT_CLUSTER_BEAM_WIDTH: usize = 5;
 pub const BATTLE_LINE_SETTLEMENT_CLUSTER_MAX_DISTANCE_METERS: f64 = 50_000.0;
-pub const BATTLE_LINE_SETTLEMENT_CLUSTER_DISTANCE_BATCH_SIZE: usize = 1_000;
+pub const BATTLE_LINE_SETTLEMENT_ELECTION_MAX_STATES: usize = 100_000;
+pub const BATTLE_LINE_SETTLEMENT_ELECTION_MAX_NAMES: usize = 64;
+pub const BATTLE_LINE_SETTLEMENT_ELECTION_TIE_METERS: f64 = 0.001;
+pub const SIGINT_NETWORK_SETTLEMENT_MATCH_DISTANCE_METERS: f64 = 15_000.0;
 pub const BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY: i64 = 2_287;
 pub const BATTLE_LINE_SOURCE_KIND_ADMIN_UPLOAD: &str = "admin_upload";
 pub const BATTLE_LINE_SOURCE_KIND_DELTA_KML: &str = "delta_kml";
@@ -1243,6 +1257,8 @@ pub const INBOX_SETTLEMENT_WORKER_ADVISORY_LOCK_NAMESPACE: &str =
 pub const INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE: u64 = 1_000;
 pub const INBOX_SETTLEMENT_ONEOFF_TRANSACTION_BATCH_SIZE: usize = 50;
 pub const INBOX_SETTLEMENT_WORKER_SLEEP_SECS: u64 = 5;
+pub const NETWORK_SETTLEMENT_WORKER_ADVISORY_LOCK_NAMESPACE: &str =
+    "network_settlement_worker:";
 pub const INBOX_MAP_SETTLEMENT_MESSAGES_PAGE_SIZE: u64 = 20;
 pub const UNRESOLVED_UNIT_MESSAGES_PAGE_SIZE: u64 = 5;
 pub const SIGINT_UNIT_AUTO_ACTIVATION_INTERVAL_SECS: u64 = 60 * 60;
@@ -1787,6 +1803,89 @@ pub struct FileRegistryConfig {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
+    /// Optional `[file_registry.content_limits]` overrides; omitted keys keep
+    /// the defaults from `devices::config`.
+    #[serde(default)]
+    pub content_limits: ContentLimitsConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[serde(default, deny_unknown_fields)]
+pub struct ContentLimitsConfig {
+    pub upload_max_bytes: u64,
+    pub max_reserved_bytes: u64,
+    pub max_reserved_per_login: u64,
+    pub max_reserved_count: usize,
+    pub max_count_per_login: usize,
+    pub spool_min_free_bytes: u64,
+    pub probe_size_bytes: usize,
+    pub upload_idle_ttl_secs: u64,
+    pub upload_max_lifetime_secs: u64,
+    pub finalization_max_concurrent: usize,
+    pub cleanup_batch_size: usize,
+    pub cleanup_poll_interval_secs: u64,
+    pub cleanup_retry_delay_secs: u64,
+}
+
+impl Default for ContentLimitsConfig {
+    fn default() -> Self {
+        use crate::devices::config::*;
+        Self {
+            upload_max_bytes: DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES,
+            max_reserved_bytes: DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_BYTES,
+            max_reserved_per_login:
+                DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_PER_LOGIN,
+            max_reserved_count: DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_COUNT,
+            max_count_per_login: DEVICE_FILE_CONTENT_UPLOAD_MAX_COUNT_PER_LOGIN,
+            spool_min_free_bytes: DEVICE_FILE_CONTENT_SPOOL_MIN_FREE_BYTES,
+            probe_size_bytes: DEVICE_FILE_CONTENT_PROBE_SIZE_BYTES,
+            upload_idle_ttl_secs: DEVICE_FILE_CONTENT_UPLOAD_IDLE_TTL_SECS,
+            upload_max_lifetime_secs:
+                DEVICE_FILE_CONTENT_UPLOAD_MAX_LIFETIME_SECS,
+            finalization_max_concurrent:
+                DEVICE_FILE_CONTENT_FINALIZATION_MAX_CONCURRENT,
+            cleanup_batch_size: DEVICE_FILE_CONTENT_CLEANUP_BATCH_SIZE,
+            cleanup_poll_interval_secs:
+                DEVICE_FILE_CONTENT_CLEANUP_POLL_INTERVAL_SECS,
+            cleanup_retry_delay_secs:
+                DEVICE_FILE_CONTENT_CLEANUP_RETRY_DELAY_SECS,
+        }
+    }
+}
+
+impl ContentLimitsConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        let positive = [
+            ("upload_max_bytes", self.upload_max_bytes),
+            ("max_reserved_count", self.max_reserved_count as u64),
+            ("max_count_per_login", self.max_count_per_login as u64),
+            ("probe_size_bytes", self.probe_size_bytes as u64),
+            ("upload_idle_ttl_secs", self.upload_idle_ttl_secs),
+            ("upload_max_lifetime_secs", self.upload_max_lifetime_secs),
+            (
+                "finalization_max_concurrent",
+                self.finalization_max_concurrent as u64,
+            ),
+            ("cleanup_batch_size", self.cleanup_batch_size as u64),
+            (
+                "cleanup_poll_interval_secs",
+                self.cleanup_poll_interval_secs,
+            ),
+            ("cleanup_retry_delay_secs", self.cleanup_retry_delay_secs),
+        ];
+        if let Some((name, _)) = positive.iter().find(|(_, value)| *value == 0)
+        {
+            return Err(format!(
+                "[file_registry.content_limits] {name} must be positive"
+            ));
+        }
+        if self.upload_max_bytes > self.max_reserved_bytes
+            || self.upload_max_bytes > self.max_reserved_per_login
+        {
+            return Err("[file_registry.content_limits] upload_max_bytes must not exceed max_reserved_bytes or max_reserved_per_login".to_string());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

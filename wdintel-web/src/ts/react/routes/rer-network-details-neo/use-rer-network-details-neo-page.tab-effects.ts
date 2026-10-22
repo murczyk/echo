@@ -4,6 +4,7 @@ import type { NetworkGroupActivityPeriod } from '../../../../Bindings';
 import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../utils/misc';
 import type { CallsignsLoadPeriods } from './use-rer-network-details-neo-page.load';
 import type { NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.shared';
+import { NETWORK_SETTLEMENTS_POLL_INTERVAL_MS } from './use-rer-network-details-neo-page.constants';
 
 type TabEffectsParams = {
   state: NetworkDetailsNeoPageState;
@@ -153,6 +154,20 @@ export function useRerNetworkDetailsNeoPageTabEffects({
 
     if (
       pelengWindowMatched &&
+      pelengDateRangeValid &&
+      state.pelengPointsLoaded &&
+      !state.pelengPointsLoading &&
+      state.pelengPointsError === null &&
+      state.networkSettlementsPending
+    ) {
+      const timeout = window.setTimeout(() => {
+        void loadPelengPoints(networkIdValue, pelengSinceMs ?? 0, pelengTillMs);
+      }, NETWORK_SETTLEMENTS_POLL_INTERVAL_MS);
+      return () => window.clearTimeout(timeout);
+    }
+
+    if (
+      pelengWindowMatched &&
       (state.pelengPointsLoaded || state.pelengPointsLoading || state.pelengPointsError !== null)
     )
       return;
@@ -171,5 +186,6 @@ export function useRerNetworkDetailsNeoPageTabEffects({
     state.pelengPointsLoading,
     state.pelengPointsRequestedFrom,
     state.pelengPointsRequestedTo,
+    state.networkSettlementsPending,
   ]);
 }

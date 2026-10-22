@@ -172,7 +172,7 @@ pub async fn load_media_summaries(
     }
     let media_ids = media.iter().map(|media| media.id).collect::<Vec<_>>();
     let jobs = ocr_job::Entity::find()
-        .filter(ocr_job::Column::MediaId.is_in(media_ids))
+        .filter(ocr_job::Column::MediaId.is_in(media_ids.clone()))
         .all(dbx)
         .await
         .c(h!())?;
@@ -187,7 +187,7 @@ pub async fn load_media_summaries(
         });
     let has_active_job = jobs.iter().any(|job| job_is_pending(&job.state));
     let queue_positions = if has_undiscovered || has_active_job {
-        load_queue_positions(dbx).await.c(h!())?
+        load_queue_positions(dbx, &media_ids).await.c(h!())?
     } else {
         HashMap::new()
     };
@@ -321,7 +321,7 @@ pub async fn reprocess_media_ocr(
     )
     .await
     .c(h!())?;
-    let queue_ahead = load_queue_positions(&env.dbx)
+    let queue_ahead = load_queue_positions(&env.dbx, &[media.id])
         .await
         .c(h!())?
         .get(&media.id)
@@ -469,7 +469,7 @@ pub async fn messenger_media_ocr_status(
         .c(h!())?;
     if let Some(job) = job {
         let queue_ahead = if job_is_pending(&job.state) {
-            load_queue_positions(&env.dbx)
+            load_queue_positions(&env.dbx, &[media.id])
                 .await
                 .c(h!())?
                 .get(&job.media_id)
@@ -493,7 +493,7 @@ pub async fn messenger_media_ocr_status(
     {
         return Err(crate::error::AppError::NotFound);
     }
-    let queue_ahead = load_queue_positions(&env.dbx)
+    let queue_ahead = load_queue_positions(&env.dbx, &[media.id])
         .await
         .c(h!())?
         .get(&media.id)
@@ -1044,7 +1044,11 @@ struct OcrQueuePosition {
 
 async fn load_queue_positions(
     dbx: &DatabaseConnection,
+    media_ids: &[Uuid],
 ) -> anyhow::Result<HashMap<Uuid, i64>> {
+    if media_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
     let statement = Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
@@ -1106,8 +1110,9 @@ with active as (
 )
 select media_id, queue_ahead
 from ranked
+where media_id = any($2::uuid[])
         "#,
-        [discovery_cutoff().into()],
+        [discovery_cutoff().into(), media_ids.to_vec().into()],
     );
     Ok(OcrQueuePosition::find_by_statement(statement)
         .all(dbx)
@@ -1299,10 +1304,20 @@ mod tests {
         .await
         .unwrap();
 
-        let positions = load_queue_positions(&env.dbx).await.unwrap();
+        let positions =
+            load_queue_positions(&env.dbx, &media_ids).await.unwrap();
         assert_eq!(positions.get(&media_ids[0]), Some(&0));
         assert_eq!(positions.get(&media_ids[1]), Some(&1));
         assert_eq!(positions.get(&media_ids[2]), Some(&2));
+        let last = load_queue_positions(&env.dbx, &[media_ids[2]])
+            .await
+            .unwrap();
+        assert_eq!(last.len(), 1);
+        assert_eq!(last.get(&media_ids[2]), Some(&2));
+        assert!(load_queue_positions(&env.dbx, &[])
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]

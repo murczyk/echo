@@ -9,6 +9,7 @@ module Config exposing
     , featureEnableTornado
     , featureHideDocuments
     , featureShowCallsignsMetadata
+    , rerUnitsPollingMinIntervalMs
     , thresholdStopCountingDays
     , waterfallLoadEarlierThresholdMs
     , waterfallMessageLimit
@@ -28,6 +29,11 @@ featureEnableTornado =
 eventServicePollTracker : String
 eventServicePollTracker =
     "shared-event-stream"
+
+
+rerUnitsPollingMinIntervalMs : Float
+rerUnitsPollingMinIntervalMs =
+    5000
 
 
 featureShowCallsignsMetadata : Bool

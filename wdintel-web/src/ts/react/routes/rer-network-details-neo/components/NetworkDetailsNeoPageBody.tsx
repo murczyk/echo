@@ -153,6 +153,7 @@ export function NetworkDetailsNeoPageBody({
         page.loadNetworkActivity(networkId, page.networkActivityPeriod)
       }
       pelengPoints={page.pelengPoints}
+      networkSettlements={page.networkSettlements}
       pelengPointsLoaded={page.pelengPointsLoaded}
       pelengPointsLoading={page.pelengPointsLoading}
       pelengPointsError={page.pelengPointsError}

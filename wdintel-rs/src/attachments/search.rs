@@ -14,12 +14,18 @@ fn term_tsquery(
     token: &str,
     prefixes: bool,
     values: &mut Vec<Value>,
+    correlated: bool,
 ) -> String {
     let parameter = bind(values, token);
-    if prefixes {
+    let query = if prefixes {
         format!("(plainto_tsquery('russian',{parameter}) || to_tsquery('russian', quote_literal({parameter}) || ':*'))")
     } else {
         format!("plainto_tsquery('russian',{parameter})")
+    };
+    if correlated {
+        format!("(select {query})")
+    } else {
+        query
     }
 }
 
@@ -48,7 +54,7 @@ pub(crate) fn chunk_terms_predicate_with_mode(
         let token = token.strip_prefix('-').unwrap_or(token);
         if !token.is_empty() {
             if search_mode == AnalysisSearchMode::Fuzzy {
-                let tsquery = term_tsquery(token, prefixes, values);
+                let tsquery = term_tsquery(token, prefixes, values, false);
                 predicates.push(format!("chunk.search_tsv @@ {tsquery}"));
             } else {
                 predicates.push(chunk_literal_predicate(
@@ -137,7 +143,7 @@ fn text_predicate_with_correlation(
             continue;
         }
         let predicate = if search_mode == AnalysisSearchMode::Fuzzy {
-            let tsquery = term_tsquery(token, prefixes, values);
+            let tsquery = term_tsquery(token, prefixes, values, correlated);
             let name_pattern = bind(values, literal_pattern(token));
             exists_term(
                 message,

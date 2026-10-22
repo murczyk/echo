@@ -35,6 +35,7 @@ export type UseAnalysisDataProps = {
   currentUser: User | null;
   deferInitialLoad?: boolean;
   hideNetworks?: boolean;
+  canUseDevices?: boolean;
   focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
   newestFirst: boolean;

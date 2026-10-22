@@ -5,14 +5,67 @@ readonly DEPLOYMENT_MAINTENANCE_REDIS_KEY="echo:deployment:maintenance"
 readonly DEPLOYMENT_MAINTENANCE_TTL_SECONDS=120
 
 if [[ $# -ne 2 ]]; then
-  echo "usage: $0 <start|clear> <server>" >&2
+  echo "usage: $0 <start|renew|keepalive|clear> <server>" >&2
   exit 1
 fi
 
 action="$1"
 server="$2"
 
-ssh "$server" bash -s -- \
+if [[ "$action" == keepalive ]]; then
+  exec python3 - "$server" "${BASH_SOURCE[0]}" "$PPID" <<'PY'
+import os
+import signal
+import subprocess
+import sys
+import time
+
+server, script, deploy_parent = sys.argv[1:]
+deploy_parent = int(deploy_parent)
+if deploy_parent <= 1:
+    sys.exit(0)
+
+def stop(signum, frame):
+    raise SystemExit(0)
+
+signal.signal(signal.SIGTERM, stop)
+signal.signal(signal.SIGINT, stop)
+
+def renew():
+    process = subprocess.Popen(["bash", script, "renew", server], start_new_session=True)
+    try:
+        return process.wait(timeout=20)
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        finally:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+
+while os.getppid() == deploy_parent:
+    try:
+        if renew():
+            print("WARNING: deployment maintenance renewal failed", file=sys.stderr, flush=True)
+    except subprocess.TimeoutExpired:
+        print("WARNING: deployment maintenance renewal timed out", file=sys.stderr, flush=True)
+    for _ in range(30):
+        if os.getppid() != deploy_parent:
+            sys.exit(0)
+        time.sleep(1)
+PY
+fi
+
+ssh -o BatchMode=yes -o ConnectTimeout=10 \
+  -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "$server" bash -s -- \
   "$action" \
   "$DEPLOYMENT_MAINTENANCE_REDIS_KEY" \
   "$DEPLOYMENT_MAINTENANCE_TTL_SECONDS" <<'REMOTE'
@@ -65,6 +118,9 @@ case "$action" in
     "${redis[@]}" DEL "$maintenance_key" >/dev/null
     wake_event_streams
     echo "Deployment maintenance cleared."
+    ;;
+  renew)
+    [[ "$("${redis[@]}" EXPIRE "$maintenance_key" "$maintenance_ttl_seconds")" == "1" ]]
     ;;
   *)
     echo "unknown action: $action" >&2

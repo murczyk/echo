@@ -110,6 +110,7 @@ export type AnalysisFilterOptions = {
   aors: AnalysisFilterOption[];
   groups: AnalysisFilterOption[];
   senders: AnalysisFilterOption[];
+  devices: AnalysisFilterOption[];
   freqs: AnalysisFilterOption[];
   newFreqs: AnalysisFilterOption[];
   callsigns: AnalysisFilterOption[];
@@ -128,6 +129,7 @@ export type AnalysisFilterSectionId =
   | 'aors'
   | 'groups'
   | 'senders'
+  | 'devices'
   | 'callsigns'
   | 'units'
   | 'locations'

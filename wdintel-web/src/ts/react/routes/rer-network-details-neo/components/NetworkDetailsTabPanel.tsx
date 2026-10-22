@@ -11,6 +11,7 @@ import type {
   NetworkGroupActivityPeriod,
   NetworkFreqsRes,
   NetworkPoint,
+  NetworkSettlement,
 } from '../../../../../Bindings';
 import type { NetworkDetailsTab } from '../use-rer-network-details-neo-page.shared';
 import { NetworkDetailsCallsignsPanel } from './NetworkCallsignsTables';
@@ -87,6 +88,7 @@ type Props = {
   onPelengBaseLayerIdChange: (value: BaseLayerId) => void;
   onPelengHeatmapEnabledChange: (value: boolean) => void;
   pelengPoints: NetworkPoint[];
+  networkSettlements: NetworkSettlement[];
   pelengPointsLoaded: boolean;
   pelengPointsLoading: boolean;
   pelengPointsError: string | null;
@@ -172,6 +174,7 @@ export function NetworkDetailsTabPanel({
   onPelengBaseLayerIdChange,
   onPelengHeatmapEnabledChange,
   pelengPoints,
+  networkSettlements,
   pelengPointsLoaded,
   pelengPointsLoading,
   pelengPointsError,
@@ -370,6 +373,7 @@ export function NetworkDetailsTabPanel({
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkDetailsPelengationPanel
                 pelengPoints={pelengPoints}
+                networkSettlements={networkSettlements}
                 pelengPointsLoaded={pelengPointsLoaded}
                 pelengPointsLoading={pelengPointsLoading}
                 pelengPointsError={pelengPointsError}

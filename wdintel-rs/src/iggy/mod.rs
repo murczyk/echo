@@ -3,7 +3,7 @@ use crate::types::*;
 use iggy::prelude::{
     defaults, Client, CompressionAlgorithm, Identifier, IggyClient, IggyError,
     IggyExpiry, MaxTopicSize, Permissions, StreamClient, SystemClient,
-    TopicClient, UserClient,
+    TopicClient, TopicDetails, UserClient,
 };
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -11,6 +11,7 @@ use tokio::time::timeout;
 use url::Url;
 
 pub(crate) mod settlement_events;
+pub(crate) mod unit_refresh;
 pub mod worker;
 
 pub async fn test_connection(
@@ -29,7 +30,7 @@ pub async fn ensure_topics(
     password: &str,
     topics: &[&str],
 ) -> Result<(), AppError> {
-    let client = connect(url, login, password).await?;
+    let client = connect(url, login, password).await.context(h!())?;
     let result = match timeout(
         timeout_duration(),
         ensure_topics_with_client(&client, topics),
@@ -40,7 +41,7 @@ pub async fn ensure_topics(
         Err(_) => Err(timeout_error("створення тем")),
     };
     let shutdown_result = shutdown(&client).await;
-    result?;
+    result.context(h!())?;
     shutdown_result
 }
 
@@ -50,7 +51,7 @@ pub async fn ensure_topics_for_all_users(
     password: &str,
     topics: &[&str],
 ) -> Result<(), AppError> {
-    let client = connect(url, login, password).await?;
+    let client = connect(url, login, password).await.context(h!())?;
     let result = match timeout(
         timeout_duration(),
         ensure_topics_and_user_permissions(&client, topics),
@@ -63,7 +64,7 @@ pub async fn ensure_topics_for_all_users(
         }
     };
     let shutdown_result = shutdown(&client).await;
-    result?;
+    result.context(h!())?;
     shutdown_result
 }
 
@@ -121,8 +122,8 @@ async fn ensure_topics_with_client(
 ) -> Result<(), AppError> {
     for configured_topic in topics {
         let (stream, topic) = stream_and_topic(configured_topic);
-        ensure_stream(client, stream).await?;
-        ensure_topic(client, stream, topic).await?;
+        ensure_stream(client, stream).await.context(h!())?;
+        ensure_topic(client, stream, topic).await.c(h!())?;
     }
     Ok(())
 }
@@ -131,8 +132,11 @@ async fn ensure_topics_and_user_permissions(
     client: &IggyClient,
     topics: &[&str],
 ) -> Result<(), AppError> {
-    ensure_topics_with_client(client, topics).await?;
-    let stream_ids = configured_stream_ids(client, topics).await?;
+    ensure_topics_with_client(client, topics)
+        .await
+        .context(h!())?;
+    let stream_ids =
+        configured_stream_ids(client, topics).await.context(h!())?;
     ensure_user_stream_permissions(client, &stream_ids).await
 }
 
@@ -208,15 +212,15 @@ async fn ensure_topic(
     client: &IggyClient,
     stream: &str,
     topic: &str,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     let stream_id = Identifier::try_from(stream).c(h!())?;
     let topic_id = Identifier::try_from(topic).c(h!())?;
-    if client
-        .get_topic(&stream_id, &topic_id)
-        .await
-        .c(h!())?
-        .is_some()
+    if let Some(topic) =
+        client.get_topic(&stream_id, &topic_id).await.c(h!())?
     {
+        ensure_topic_retention(client, &stream_id, &topic)
+            .await
+            .c(h!())?;
         return Ok(());
     }
     match client
@@ -226,14 +230,57 @@ async fn ensure_topic(
             crate::config::API_INTEGRATION_IGGY_TOPIC_PARTITIONS_COUNT,
             CompressionAlgorithm::None,
             None,
-            IggyExpiry::NeverExpire,
+            topic_message_expiry(),
             MaxTopicSize::ServerDefault,
         )
         .await
     {
-        Ok(_) | Err(IggyError::TopicNameAlreadyExists(_, _)) => Ok(()),
-        Err(err) => Err(err).c(h!())?,
+        Ok(_) => Ok(()),
+        Err(create_error) => {
+            let topic =
+                client.get_topic(&stream_id, &topic_id).await.c(h!())?;
+            let Some(topic) = topic else {
+                return Err(create_error).c(h!());
+            };
+            ensure_topic_retention(client, &stream_id, &topic)
+                .await
+                .c(h!())?;
+            Ok(())
+        }
     }
+}
+
+async fn ensure_topic_retention(
+    client: &IggyClient,
+    stream_id: &Identifier,
+    topic: &TopicDetails,
+) -> anyhow::Result<()> {
+    let message_expiry = topic_message_expiry();
+    if topic.message_expiry == message_expiry {
+        return Ok(());
+    }
+    client
+        .update_topic(
+            stream_id,
+            &Identifier::try_from(topic.id).c(h!())?,
+            &topic.name,
+            topic.compression_algorithm,
+            Some(topic.replication_factor),
+            message_expiry,
+            topic.max_topic_size,
+        )
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+fn topic_message_expiry() -> IggyExpiry {
+    IggyExpiry::ExpireDuration(
+        Duration::from_secs(
+            crate::config::API_INTEGRATION_IGGY_MESSAGE_RETENTION_SEC,
+        )
+        .into(),
+    )
 }
 
 fn timeout_duration() -> Duration {
@@ -260,6 +307,9 @@ fn connection_string(
     })?;
     Ok(url.to_string())
 }
+
+#[cfg(test)]
+mod retention_tests;
 
 #[cfg(test)]
 mod tests {

@@ -1187,15 +1187,13 @@ async fn user_logout(
         user.logout();
     }
     // todo call delta logout here
-    Ok(HttpResponse::Found()
-        .insert_header((
-            "Location",
-            crate::utils::http::login_redirect_url(
-                query.redirect.as_deref(),
-                None,
-            ),
-        ))
-        .body("Success. Redirecting.."))
+    Ok(crate::utils::http::redirect_response(
+        &crate::utils::http::login_redirect_url(
+            query.redirect.as_deref(),
+            None,
+        ),
+        "Success. Redirecting..",
+    ))
 }
 
 /// does not initiate a new session. use this for API integrations only

@@ -1042,6 +1042,11 @@ export type AnalysisStatsPost = {
   count: number;
 };
 
+export type AnalysisStatsDeviceName = {
+  name: string;
+  count: number;
+};
+
 export type InboxDeleteReq = {
   id: number;
 };
@@ -4841,6 +4846,8 @@ export type ListNetworkPointsReq = {
 
 export type ListNetworkPointsRsp = {
   points: Array<NetworkPoint>;
+  settlements: Array<NetworkSettlement>;
+  settlementsPending: boolean;
 };
 
 export type NetworkPoint = {
@@ -4849,6 +4856,13 @@ export type NetworkPoint = {
   body: string;
   id: number;
   freq: string;
+};
+
+export type NetworkSettlement = {
+  id: number;
+  name: string;
+  lat: number;
+  lng: number;
 };
 
 export type NetworkCallsignRelationsReq = {

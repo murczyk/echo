@@ -10795,6 +10795,172 @@ async fn echo_3461_inbox_device_filters_include_exclude_and_keep_nulls() {
     assert_eq!(include_and_exclude, vec![alpha_message.id]);
 }
 
+#[tokio::test]
+#[serial]
+async fn issue_3783_device_facet_counts_accessible_messages_with_other_filters()
+{
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &identity).await;
+    let mut devices = Vec::new();
+    for name in ["3783 Alpha", "3783 Alpha", "3783 Beta"] {
+        devices.push(
+            device_name::ActiveModel {
+                name: Set(Some(name.to_string())),
+                login_id: Set(login_id),
+                created_at: Set(test_dt(2026, 3, 1, 7, 0)),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap(),
+        );
+    }
+    let mut ids = Vec::new();
+    for (index, device) in devices.iter().enumerate() {
+        let datetime = test_dt(2026, 3, 1, 8, index as u32);
+        let message = mk_analysis_message(
+            db,
+            &format!("3783-device-{index}"),
+            if index == 2 { "3783.2" } else { "3783.1" },
+            datetime,
+            &[&fixture.alpha, &fixture.beta],
+            &[],
+            true,
+        )
+        .await
+        .unwrap();
+        assign_message_device_name(db, message.id, Some(device.id), datetime)
+            .await;
+        ids.push(message.id);
+    }
+    for (suffix, group, datetime, deleted) in [
+        (
+            "hidden",
+            &fixture.secret_hidden,
+            test_dt(2026, 3, 1, 8, 4),
+            false,
+        ),
+        ("old", &fixture.alpha, test_dt(2026, 2, 1, 8, 4), false),
+        ("deleted", &fixture.alpha, test_dt(2026, 3, 1, 8, 4), true),
+    ] {
+        let message = mk_analysis_message(
+            db,
+            &format!("3783-{suffix}"),
+            "3783.1",
+            datetime,
+            &[group],
+            &[],
+            true,
+        )
+        .await
+        .unwrap();
+        assign_message_device_name(
+            db,
+            message.id,
+            Some(devices[0].id),
+            datetime,
+        )
+        .await;
+        if deleted {
+            let mut message = message.into_active_model();
+            message.deleted = Set(true);
+            message.update(db).await.unwrap();
+        }
+    }
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_device_names = Some(vec!["3783 Alpha".to_string()]);
+    let groups = vec![
+        fixture.alpha.signal_group.master_key.clone(),
+        fixture.beta.signal_group.master_key.clone(),
+    ];
+    for (scope, time_basis) in [
+        (None, None),
+        (
+            None,
+            Some(crate::user_settings::MessageTimeBasis::MessageCreation),
+        ),
+        (Some(AnalyticsMessageIdScope::From(0)), None),
+    ] {
+        req.message_time_basis = time_basis;
+        let counts = stats::fetch_device_names_with_db(
+            &req,
+            &login_id,
+            db,
+            db,
+            groups.clone(),
+            scope.as_ref(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            counts,
+            vec![
+                AnalysisStatsDeviceName {
+                    name: "3783 Alpha".to_string(),
+                    count: 2
+                },
+                AnalysisStatsDeviceName {
+                    name: "3783 Beta".to_string(),
+                    count: 1
+                },
+            ]
+        );
+        let mut filtered = req.clone();
+        filtered.selected_freqs = Some(vec!["3783.2".to_string()]);
+        assert_eq!(
+            stats::fetch_device_names_with_db(
+                &filtered,
+                &login_id,
+                db,
+                db,
+                groups.clone(),
+                scope.as_ref()
+            )
+            .await
+            .unwrap(),
+            vec![AnalysisStatsDeviceName {
+                name: "3783 Beta".to_string(),
+                count: 1
+            },]
+        );
+        filtered.selected_locations =
+            Some(vec!["no-such-location".to_string()]);
+        assert!(stats::fetch_device_names_with_db(
+            &filtered,
+            &login_id,
+            db,
+            db,
+            groups.clone(),
+            scope.as_ref()
+        )
+        .await
+        .unwrap()
+        .is_empty());
+    }
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: ids[2],
+        max_id: ids[2],
+    };
+    assert_eq!(
+        stats::fetch_device_names_with_db(
+            &req,
+            &login_id,
+            db,
+            db,
+            groups,
+            Some(&scope)
+        )
+        .await
+        .unwrap(),
+        vec![AnalysisStatsDeviceName {
+            name: "3783 Beta".to_string(),
+            count: 1
+        },]
+    );
+}
+
 #[actix_web::test]
 #[serial]
 async fn echo_3461_activity_daily_requires_device_filter_access() {
@@ -10869,6 +11035,7 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
                 web::post().to(activity_daily_test_login),
             )
             .service(activity_daily)
+            .service(device_name_stats)
             .service(edit_freq_unit_name),
     )
     .await;
@@ -10898,6 +11065,16 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
                 .uri("/api/rer/analysis/activity-daily")
                 .cookie(session_cookie.clone())
                 .set_json(req)
+                .to_request(),
+        )
+    };
+    let call_devices = || {
+        actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer/analysis/stats/device-names")
+                .cookie(session_cookie.clone())
+                .set_json(request(None))
                 .to_request(),
         )
     };
@@ -10943,6 +11120,7 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
         destructive_inbox
     );
     assert_ne!(call(request(None)).await.status(), StatusCode::FORBIDDEN);
+    assert_eq!(call_devices().await.status(), StatusCode::FORBIDDEN);
 
     set_login_roles(
         &fixture.env.dbx,
@@ -10995,6 +11173,7 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
         serde_json::json!([ROLE_ADMIN]),
     ] {
         set_login_roles(&fixture.env.dbx, login_id, roles).await;
+        assert_eq!(call_devices().await.status(), StatusCode::OK);
         assert_ne!(
             call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
                 .await
@@ -11009,6 +11188,7 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
         serde_json::json!([ROLE_ADMIN]),
     ] {
         set_login_roles(&fixture.env.dbx, login_id, roles).await;
+        assert_eq!(call_devices().await.status(), StatusCode::FORBIDDEN);
         assert_eq!(
             call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
                 .await

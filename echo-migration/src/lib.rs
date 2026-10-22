@@ -487,6 +487,10 @@ mod m20261016_165725_transcription_source;
 mod m20261016_172232_transcription_source_integration;
 mod m20261017_135230_migrate_transcription_sources;
 mod m20261021_091705_remove_iggy_settlement_trigger;
+mod m20261022_080838_sigint_network_settlement;
+mod m20261022_090303_attachment_job_claim_index;
+
+mod m20261022_151553_iggy_unit_refresh_queue;
 
 pub struct Migrator;
 
@@ -1162,6 +1166,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20261016_172232_transcription_source_integration::Migration),
             Box::new(m20261017_135230_migrate_transcription_sources::Migration),
             Box::new(m20261021_091705_remove_iggy_settlement_trigger::Migration),
+            Box::new(m20261022_090303_attachment_job_claim_index::Migration),
+            Box::new(m20261022_080838_sigint_network_settlement::Migration),
+            Box::new(m20261022_151553_iggy_unit_refresh_queue::Migration),
         ]
     }
 }

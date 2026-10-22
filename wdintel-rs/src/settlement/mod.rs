@@ -9,6 +9,8 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 mod resolution;
 mod scope;
 
+pub(crate) use scope::coordinate_distance_m;
+
 pub(crate) use resolution::resolve_candidates;
 
 #[cfg(test)]

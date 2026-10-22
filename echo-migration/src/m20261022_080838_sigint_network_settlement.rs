@@ -1,0 +1,206 @@
+use sea_orm_migration::prelude::*;
+
+macro_rules! h {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .get_connection()
+            .execute_unprepared(
+                r#"
+create table sigint_network_settlement (
+    id bigserial primary key,
+    created_at timestamp without time zone
+        default (now() at time zone 'utc') not null,
+    network_id bigint not null references sigint_network(id) on delete cascade,
+    settlement_text text not null,
+    settlement_id integer references settlement(id) on delete set null,
+    is_undefined boolean,
+    unique (network_id, settlement_text),
+    check (is_undefined is not true or settlement_id is null)
+);
+
+create index sigint_network_settlement_pending_idx
+    on sigint_network_settlement (id)
+    where settlement_id is null and is_undefined is null;
+
+create index sigint_network_settlement_settlement_network_idx
+    on sigint_network_settlement (settlement_id, network_id)
+    where settlement_id is not null;
+
+create function sigint_network_settlement_requeue_deleted()
+returns trigger language plpgsql as $$
+begin
+    new.is_undefined = null;
+    return new;
+end;
+$$;
+
+create trigger sigint_network_settlement_requeue_deleted
+before update of settlement_id on sigint_network_settlement
+for each row
+when (old.settlement_id is not null and new.settlement_id is null
+      and new.is_undefined is false)
+execute function sigint_network_settlement_requeue_deleted();
+
+create function reconcile_sigint_network_settlements()
+returns trigger language plpgsql as $$
+declare
+    desired text[];
+    existing text[];
+begin
+    if new.deleted then
+        delete from sigint_network_settlement where network_id = new.id;
+        return new;
+    end if;
+    select coalesce(array_agg(distinct name order by name), '{}'::text[])
+    into desired
+    from (
+        select upper(translate(btrim(value), chr(39) || 'ʼ`', '’’’')) as name
+        from unnest(string_to_array(new.location, '|')) as value
+        where btrim(value) <> ''
+    ) names;
+    select coalesce(array_agg(settlement_text order by settlement_text), '{}'::text[])
+    into existing from sigint_network_settlement where network_id = new.id;
+    if desired = existing then
+        return new;
+    end if;
+    delete from sigint_network_settlement
+    where network_id = new.id and not (settlement_text = any(desired));
+    update sigint_network_settlement set settlement_id = null, is_undefined = null
+    where network_id = new.id;
+    insert into sigint_network_settlement (network_id, settlement_text)
+    select new.id, unnest(desired)
+    on conflict (network_id, settlement_text) do nothing;
+    return new;
+end;
+$$;
+
+create trigger reconcile_sigint_network_settlements
+after insert or update of location, deleted, active_from, active_to on sigint_network
+for each row execute function reconcile_sigint_network_settlements();
+
+create function requeue_sigint_network_settlements(target_network_ids bigint[])
+returns void language plpgsql as $$
+begin
+    perform 1 from sigint_network
+    where id = any(target_network_ids)
+    order by id for no key update;
+    update sigint_network_settlement
+    set settlement_id = null, is_undefined = null
+    where network_id = any(target_network_ids)
+        and (settlement_id is not null or is_undefined is not null);
+end;
+$$;
+
+create function requeue_sigint_network_aor_settlements()
+returns trigger language plpgsql as $$
+declare
+    target_network_ids bigint[];
+begin
+    if tg_op = 'UPDATE'
+        and old.network_id is not distinct from new.network_id
+        and old.aor_id is not distinct from new.aor_id then
+        return new;
+    end if;
+    target_network_ids := case tg_op
+        when 'INSERT' then array[new.network_id]
+        when 'DELETE' then array[old.network_id]
+        else array[old.network_id, new.network_id]
+    end;
+    perform requeue_sigint_network_settlements(target_network_ids);
+    return coalesce(new, old);
+end;
+$$;
+
+create trigger requeue_sigint_network_aor_settlements
+after insert or update of network_id, aor_id or delete on sigint_network_aor
+for each row execute function requeue_sigint_network_aor_settlements();
+
+create function requeue_sigint_network_settlements_for_aor_state()
+returns trigger language plpgsql as $$
+begin
+    perform requeue_sigint_network_settlements(array(
+        select distinct network_id from sigint_network_aor
+        where aor_id = new.id
+    ));
+    return new;
+end;
+$$;
+
+create trigger requeue_sigint_network_settlements_for_aor_state
+after update of deleted on area_of_responsibility
+for each row when (old.deleted is distinct from new.deleted)
+execute function requeue_sigint_network_settlements_for_aor_state();
+
+create function requeue_sigint_network_settlements_for_aor_config()
+returns trigger language plpgsql as $$
+declare
+    target_aor_ids bigint[];
+begin
+    if tg_op = 'UPDATE'
+        and old.aor_id is not distinct from new.aor_id
+        and old.settlements_configs is not distinct from new.settlements_configs then
+        return new;
+    end if;
+    target_aor_ids := case tg_op
+        when 'INSERT' then array[new.aor_id]
+        when 'DELETE' then array[old.aor_id]
+        else array[old.aor_id, new.aor_id]
+    end;
+    perform requeue_sigint_network_settlements(array(
+        select distinct network_id from sigint_network_aor
+        where aor_id = any(target_aor_ids)
+    ));
+    return coalesce(new, old);
+end;
+$$;
+
+create trigger requeue_sigint_network_settlements_for_aor_config
+after insert or update of aor_id, settlements_configs or delete on aor_location_config
+for each row execute function requeue_sigint_network_settlements_for_aor_config();
+
+insert into sigint_network_settlement (network_id, settlement_text)
+select distinct network.id, upper(translate(btrim(value), chr(39) || 'ʼ`', '’’’'))
+from sigint_network network
+cross join lateral unnest(string_to_array(network.location, '|')) as value
+where not network.deleted
+    and btrim(value) <> '';
+                "#,
+            )
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .get_connection()
+            .execute_unprepared(
+                r#"
+drop trigger requeue_sigint_network_settlements_for_aor_config on aor_location_config;
+drop function requeue_sigint_network_settlements_for_aor_config();
+drop trigger requeue_sigint_network_settlements_for_aor_state on area_of_responsibility;
+drop function requeue_sigint_network_settlements_for_aor_state();
+drop trigger requeue_sigint_network_aor_settlements on sigint_network_aor;
+drop function requeue_sigint_network_aor_settlements();
+drop function requeue_sigint_network_settlements(bigint[]);
+drop trigger reconcile_sigint_network_settlements on sigint_network;
+drop function reconcile_sigint_network_settlements();
+drop table sigint_network_settlement;
+drop function sigint_network_settlement_requeue_deleted();
+        "#,
+            )
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
+        Ok(())
+    }
+}

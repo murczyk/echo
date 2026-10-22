@@ -1618,6 +1618,9 @@ where
     .await
     .context(h!())?;
     unit_after_insert_update(dbx, unit.id).await.context(h!())?;
+    crate::iggy::unit_refresh::enqueue(dbx, unit.id)
+        .await
+        .c(h!())?;
 
     Ok(unit)
 }
@@ -1963,6 +1966,11 @@ async fn update_unit_for_login(
         }
     }
     let unit = unit.update(&transaction).await.context(h!())?;
+    if previous_unit.active != unit.active {
+        crate::iggy::unit_refresh::enqueue(&transaction, unit.id)
+            .await
+            .c(h!())?;
+    }
     let unit_json_new = unit_json(&transaction, req.id).await?;
     insert_unit_update_changelog(
         &transaction,
@@ -2090,6 +2098,9 @@ where
     let mut unit = unit.clone().into_active_model();
     unit.active = Set(active);
     let unit = unit.update(dbx).await.context(h!())?;
+    crate::iggy::unit_refresh::enqueue(dbx, unit.id)
+        .await
+        .c(h!())?;
     let new_value = unit_json(dbx, unit.id).await?;
     insert_unit_update_changelog(dbx, login, unit.id, old_value, new_value)
         .await?;
@@ -2258,6 +2269,11 @@ where
     let mut unit = unit.into_active_model();
     unit.deleted = Set(true);
     let unit = unit.update(dbx).await.context(h!())?;
+    if !previous_unit.deleted {
+        crate::iggy::unit_refresh::enqueue(dbx, unit.id)
+            .await
+            .c(h!())?;
+    }
     let unit_json_new = unit_json(dbx, unit.id).await.context(h!())?;
     sigint_unit_changelog::ActiveModel {
         id: NotSet,
@@ -2583,6 +2599,9 @@ where
     unit.deleted = Set(true);
     unit.is_deduplicate_candidate = Set(Some(false));
     unit.update(dbx).await.context(h!())?;
+    crate::iggy::unit_refresh::enqueue(dbx, unit_to_delete_id)
+        .await
+        .c(h!())?;
 
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
@@ -3397,6 +3416,7 @@ where
         unit_to_merge,
         name_policy,
     );
+    let visibility_changed = unit_original.deleted != projected.deleted;
     let mut unit = unit_original.into_active_model();
     unit.name.set_if_not_equals(projected.name);
     unit.other.set_if_not_equals(projected.other);
@@ -3419,6 +3439,11 @@ where
     unit.deleted.set_if_not_equals(projected.deleted);
 
     let unit = unit.update(dbx).await.context(h!())?;
+    if visibility_changed {
+        crate::iggy::unit_refresh::enqueue(dbx, unit.id)
+            .await
+            .c(h!())?;
+    }
     unit_after_insert_update(dbx, unit.id).await.context(h!())?;
     Ok(unit)
 }
@@ -6650,6 +6675,84 @@ mod tests {
             .unwrap();
         assert!(!active(&env.dbx, new_battalion.id).await);
         assert!(!active(&env.dbx, new_regiment.id).await);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_writes_enqueue_durable_visibility_refreshes_3858() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        api_integration::ActiveModel {
+            api_user_login_id: Set(login_id),
+            has_iggy_connection: Set(true),
+            iggy_url: Set(Some("tcp://localhost:8090".to_string())),
+            iggy_login: Set(Some("test".to_string())),
+            iggy_password: Set(Some("test".to_string())),
+            iggy_inbox_topic: Set(Some("test-inbox".to_string())),
+            iggy_analytics_topic: Set(Some("test-analytics".to_string())),
+            sync_enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let (unit, _) = create_unit_for_login(
+            &login_id,
+            &env,
+            CreateUnitReq {
+                name: Some("Queued unit".to_string()),
+                active: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            api_integration_iggy_unit_refresh::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+        let mut req = UpdateUnitReq::from(render_unit(&unit).unwrap());
+        req.active = false;
+        update_unit_for_login(&env.dbx, &login_id, &req, true)
+            .await
+            .unwrap();
+        assert_eq!(
+            api_integration_iggy_unit_refresh::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            2
+        );
+        req.comment = "Comment only".to_string();
+        update_unit_for_login(&env.dbx, &login_id, &req, true)
+            .await
+            .unwrap();
+        assert_eq!(
+            api_integration_iggy_unit_refresh::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            2
+        );
+        delete_unit_for_login(&env.dbx, &login_id, unit.id)
+            .await
+            .unwrap();
+        let jobs = api_integration_iggy_unit_refresh::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(jobs.len(), 3);
+        assert!(jobs.iter().all(|job| job.sigint_unit_id == unit.id));
+        assert_eq!(
+            api_integration_iggy_event::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     #[tokio::test]

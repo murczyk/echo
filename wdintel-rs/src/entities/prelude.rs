@@ -51,6 +51,7 @@ pub use super::aor_location_config::Entity as AorLocationConfig;
 pub use super::api_integration::Entity as ApiIntegration;
 pub use super::api_integration_iggy_destination::Entity as ApiIntegrationIggyDestination;
 pub use super::api_integration_iggy_event::Entity as ApiIntegrationIggyEvent;
+pub use super::api_integration_iggy_unit_refresh::Entity as ApiIntegrationIggyUnitRefresh;
 pub use super::area_of_responsibility::Entity as AreaOfResponsibility;
 pub use super::area_of_responsibility_report_order::Entity as AreaOfResponsibilityReportOrder;
 pub use super::attachment_chunk::Entity as AttachmentChunk;
@@ -219,6 +220,7 @@ pub use super::sigint_network_encryption_key_freq::Entity as SigintNetworkEncryp
 pub use super::sigint_network_freq::Entity as SigintNetworkFreq;
 pub use super::sigint_network_freq_changelog::Entity as SigintNetworkFreqChangelog;
 pub use super::sigint_network_post::Entity as SigintNetworkPost;
+pub use super::sigint_network_settlement::Entity as SigintNetworkSettlement;
 pub use super::sigint_network_unit::Entity as SigintNetworkUnit;
 pub use super::sigint_network_unit_changelog::Entity as SigintNetworkUnitChangelog;
 pub use super::sigint_origin::Entity as SigintOrigin;

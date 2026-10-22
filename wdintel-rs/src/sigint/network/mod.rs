@@ -2133,7 +2133,15 @@ pub async fn list_network_points(
         })
         .collect::<Vec<NetworkPoint>>();
 
-    Ok(Json(ListNetworkPointsRsp { points: map_points }))
+    let (settlements, settlements_pending) =
+        bl::get_network_settlements(&env.dbx, req.network_id)
+            .await
+            .c(h!())?;
+    Ok(Json(ListNetworkPointsRsp {
+        points: map_points,
+        settlements,
+        settlements_pending,
+    }))
 }
 
 #[post("/api/sigint/update-freq-networks")]

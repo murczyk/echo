@@ -7,7 +7,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::organism::goi::aor_scope::goi_network_visible_for_organism;
 use crate::organism::goi::goi_api::GoiApiTarget;
-use crate::types::{info, warn, Env, ShortContext};
+use crate::types::{debug, info, warn, Env, ShortContext};
 use crate::utils::string::normalize_optional_trimmed;
 use calamine::{Data, Reader, Xlsx};
 use chrono::{NaiveDateTime, TimeZone, Utc};
@@ -144,7 +144,7 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         current_callsigns.len()
     );
     for callsign in &current_callsigns {
-        info!(
+        debug!(
             "[goi-sync] Expected GOI knowledge row for {integration_label}: {}",
             format_goi_callsign_state_for_log(callsign)
         );
@@ -175,7 +175,7 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         previous_callsigns.len()
     );
     for callsign in &previous_callsigns {
-        info!(
+        debug!(
             "[goi-sync] Existing workbook GOI callsign for {integration_label}: {}",
             format_goi_callsign_state_for_log(callsign)
         );
@@ -286,14 +286,14 @@ async fn load_live_goi_callsigns(
 
     let mut out = Vec::new();
     for callsign in callsigns {
-        info!(
+        debug!(
             "[goi-sync] Evaluating candidate GOI callsign row: {}",
             format_live_callsign_row_for_log(&callsign)
         );
         let Some(frequency) =
             effective_live_callsign_frequency(&callsign, &network_freqs)
         else {
-            info!(
+            debug!(
                 "[goi-sync] Skipping candidate GOI callsign row id={} network_id={} because neither the callsign nor the network has a frequency eligible for GOI sync",
                 callsign.id, callsign.network_id
             );
@@ -301,14 +301,14 @@ async fn load_live_goi_callsigns(
         };
         let callsign_name = callsign.sigint_callsign.trim().to_string();
         if callsign_name.is_empty() {
-            info!(
+            debug!(
                 "[goi-sync] Skipping candidate GOI callsign row id={} network_id={} because callsign is empty after trim",
                 callsign.id, callsign.network_id
             );
             continue;
         }
         if callsign.sc_deleted == Some(true) {
-            info!(
+            debug!(
                 "[goi-sync] Candidate GOI callsign row id={} network_id={} references a deleted sigint_callsign; exporting with network-local fields only",
                 callsign.id, callsign.network_id
             );
@@ -330,7 +330,7 @@ async fn load_live_goi_callsigns(
             source_date_raw: None,
             row_ref: None,
         };
-        info!(
+        debug!(
             "[goi-sync] Selected GOI callsign row: {}",
             format_goi_callsign_state_for_log(&goi_callsign)
         );
