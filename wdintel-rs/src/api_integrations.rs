@@ -269,9 +269,12 @@ pub async fn test_iggy_connection(
     Ok(HttpResponse::Ok().finish())
 }
 
-pub async fn oneoff_ensure_iggy_topics(mode: Mode) -> Result<(), AppError> {
+pub async fn oneoff_ensure_iggy_topics(
+    mode: Mode,
+    topics_only: bool,
+) -> Result<(), AppError> {
     info!("oneoff_ensure_iggy_topics started");
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
     let api_integrations = api_integration::Entity::find()
         .filter(api_integration::Column::HasIggyConnection.eq(true))
         .order_by_asc(api_integration::Column::Id)
@@ -280,7 +283,9 @@ pub async fn oneoff_ensure_iggy_topics(mode: Mode) -> Result<(), AppError> {
         .c(h!())?;
 
     for api_integration in api_integrations {
-        ensure_iggy_topics_for_api_integration(&api_integration).await?;
+        ensure_iggy_topics_for_api_integration(&api_integration, topics_only)
+            .await
+            .c(h!())?;
     }
 
     info!("oneoff_ensure_iggy_topics completed");
@@ -289,7 +294,8 @@ pub async fn oneoff_ensure_iggy_topics(mode: Mode) -> Result<(), AppError> {
 
 async fn ensure_iggy_topics_for_api_integration(
     api_integration: &api_integration::Model,
-) -> Result<(), AppError> {
+    topics_only: bool,
+) -> anyhow::Result<()> {
     if !api_integration.has_iggy_connection {
         return Ok(());
     }
@@ -297,16 +303,23 @@ async fn ensure_iggy_topics_for_api_integration(
         "Ensuring Iggy topics for API integration {}",
         api_integration.id
     );
-    crate::iggy::ensure_topics_for_all_users(
-        api_integration.iggy_url.as_deref().c(h!())?,
-        api_integration.iggy_login.as_deref().c(h!())?,
-        api_integration.iggy_password.as_deref().c(h!())?,
-        &[
-            api_integration.iggy_inbox_topic.as_deref().c(h!())?,
-            api_integration.iggy_analytics_topic.as_deref().c(h!())?,
-        ],
-    )
-    .await
+    let url = api_integration.iggy_url.as_deref().c(h!())?;
+    let login = api_integration.iggy_login.as_deref().c(h!())?;
+    let password = api_integration.iggy_password.as_deref().c(h!())?;
+    let topics = [
+        api_integration.iggy_inbox_topic.as_deref().c(h!())?,
+        api_integration.iggy_analytics_topic.as_deref().c(h!())?,
+    ];
+    if topics_only {
+        crate::iggy::ensure_topics(url, login, password, &topics)
+            .await
+            .context(h!())?;
+    } else {
+        crate::iggy::ensure_topics_for_all_users(url, login, password, &topics)
+            .await
+            .context(h!())?;
+    }
+    Ok(())
 }
 
 async fn ensure_iggy_topics_for_values(

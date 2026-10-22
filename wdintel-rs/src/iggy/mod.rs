@@ -29,7 +29,7 @@ pub async fn ensure_topics(
     password: &str,
     topics: &[&str],
 ) -> Result<(), AppError> {
-    let client = connect(url, login, password).await?;
+    let client = connect(url, login, password).await.context(h!())?;
     let result = match timeout(
         timeout_duration(),
         ensure_topics_with_client(&client, topics),
@@ -40,7 +40,7 @@ pub async fn ensure_topics(
         Err(_) => Err(timeout_error("створення тем")),
     };
     let shutdown_result = shutdown(&client).await;
-    result?;
+    result.context(h!())?;
     shutdown_result
 }
 
@@ -50,7 +50,7 @@ pub async fn ensure_topics_for_all_users(
     password: &str,
     topics: &[&str],
 ) -> Result<(), AppError> {
-    let client = connect(url, login, password).await?;
+    let client = connect(url, login, password).await.context(h!())?;
     let result = match timeout(
         timeout_duration(),
         ensure_topics_and_user_permissions(&client, topics),
@@ -63,7 +63,7 @@ pub async fn ensure_topics_for_all_users(
         }
     };
     let shutdown_result = shutdown(&client).await;
-    result?;
+    result.context(h!())?;
     shutdown_result
 }
 
@@ -121,8 +121,8 @@ async fn ensure_topics_with_client(
 ) -> Result<(), AppError> {
     for configured_topic in topics {
         let (stream, topic) = stream_and_topic(configured_topic);
-        ensure_stream(client, stream).await?;
-        ensure_topic(client, stream, topic).await?;
+        ensure_stream(client, stream).await.context(h!())?;
+        ensure_topic(client, stream, topic).await.c(h!())?;
     }
     Ok(())
 }
@@ -131,8 +131,11 @@ async fn ensure_topics_and_user_permissions(
     client: &IggyClient,
     topics: &[&str],
 ) -> Result<(), AppError> {
-    ensure_topics_with_client(client, topics).await?;
-    let stream_ids = configured_stream_ids(client, topics).await?;
+    ensure_topics_with_client(client, topics)
+        .await
+        .context(h!())?;
+    let stream_ids =
+        configured_stream_ids(client, topics).await.context(h!())?;
     ensure_user_stream_permissions(client, &stream_ids).await
 }
 
@@ -208,7 +211,7 @@ async fn ensure_topic(
     client: &IggyClient,
     stream: &str,
     topic: &str,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     let stream_id = Identifier::try_from(stream).c(h!())?;
     let topic_id = Identifier::try_from(topic).c(h!())?;
     if let Some(topic) =
@@ -232,18 +235,17 @@ async fn ensure_topic(
         .await
     {
         Ok(_) => Ok(()),
-        Err(IggyError::TopicNameAlreadyExists(_, _)) => {
-            let topic = client
-                .get_topic(&stream_id, &topic_id)
-                .await
-                .c(h!())?
-                .c(h!())?;
+        Err(create_error) => {
+            let topic =
+                client.get_topic(&stream_id, &topic_id).await.c(h!())?;
+            let Some(topic) = topic else {
+                return Err(create_error).c(h!());
+            };
             ensure_topic_retention(client, &stream_id, &topic)
                 .await
                 .c(h!())?;
             Ok(())
         }
-        Err(err) => Err(err).c(h!())?,
     }
 }
 
@@ -304,6 +306,9 @@ fn connection_string(
     })?;
     Ok(url.to_string())
 }
+
+#[cfg(test)]
+mod retention_tests;
 
 #[cfg(test)]
 mod tests {
