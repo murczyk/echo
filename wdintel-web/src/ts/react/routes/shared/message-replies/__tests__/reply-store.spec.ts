@@ -77,9 +77,37 @@ describe('reply refresh scheduling and stale deletion protection', () => {
     fetchReplies.mockResolvedValue(response());
     await store.flush();
     expect(store.get(10).messages.get(20)?.preview).toBe('Reply');
+    const edited = response();
+    edited.replyMessages[1].preview = 'Edited reply';
+    fetchReplies.mockResolvedValue(edited);
+    store.invalidate([20]);
+    await store.flush();
+    expect(store.get(10).messages.get(20)?.preview).toBe('Edited reply');
     fetchReplies.mockResolvedValue({ replies: [], replyMessages: [] });
     await store.flush();
     expect(store.get(10).relations).toHaveLength(0);
+    expect(store.get(10).loaded).toBe(true);
+    store.dispose();
+  });
+
+  it('shows the committed reply after saving during an older in-flight refresh', async () => {
+    let resolve!: (value: Response) => void;
+    fetchReplies.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const store = new ReplyStore('Duty', vi.fn());
+    store.attach(10);
+    await settle();
+    store.invalidate([10]);
+    fetchReplies.mockResolvedValue(response());
+    await store.flush();
+    resolve({ replies: [], replyMessages: [] });
+    await settle();
+    await settle();
+    expect(store.get(10).messages.get(20)?.preview).toBe('Reply');
+    expect(store.get(10).relations).toHaveLength(1);
     store.dispose();
   });
 });

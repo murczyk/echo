@@ -75,7 +75,6 @@ begin
         return OLD;
     end if;
     if NEW.deleted is distinct from OLD.deleted then
-        update message_reply_source set deleted = NEW.deleted where signal_message_id = NEW.id;
         update message_reply r set
             original_deleted = case when r.original_signal_message_id = NEW.id then NEW.deleted else r.original_deleted end,
             reply_deleted = case when r.reply_signal_message_id = NEW.id then NEW.deleted else r.reply_deleted end,

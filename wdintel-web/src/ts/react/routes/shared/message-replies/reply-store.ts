@@ -2,11 +2,12 @@ import type { CitedMessage, MessageReply, MessageReplyScreen } from '../../../..
 import { fetchMessageReplies } from '../../../services/api/message-replies';
 
 export type ReplySnapshot = {
+  loaded: boolean;
   relations: MessageReply[];
   messages: ReadonlyMap<number, CitedMessage>;
 };
 
-const EMPTY: ReplySnapshot = { relations: [], messages: new Map() };
+const EMPTY: ReplySnapshot = { loaded: false, relations: [], messages: new Map() };
 const MAX_ANCHORS = 512;
 const MAX_CACHED_ANCHORS = 1_024;
 
@@ -20,6 +21,7 @@ export class ReplyStore {
   private controller: AbortController | null = null;
   private disposed = false;
   private failureNotified = false;
+  private refreshQueued = false;
 
   constructor(
     private screen: MessageReplyScreen,
@@ -80,6 +82,10 @@ export class ReplyStore {
   };
 
   flush = async () => {
+    if (this.controller) {
+      this.refreshQueued = true;
+      return;
+    }
     await this.load(Array.from(this.references.keys()));
   };
 
@@ -87,6 +93,7 @@ export class ReplyStore {
     this.disposed = true;
     this.controller?.abort();
     this.controller = null;
+    this.refreshQueued = false;
   };
 
   private scheduleInitial = () => {
@@ -112,12 +119,19 @@ export class ReplyStore {
         );
         if (controller.signal.aborted || this.disposed) return;
         const projections = new Map(response.replyMessages.map((message) => [message.id, message]));
+        const requestedIds = new Set(ids);
+        const relationsByAnchor = new Map<number, MessageReply[]>();
+        response.replies.forEach((relation) => {
+          [relation.originalSignalMessageId, relation.replySignalMessageId].forEach((id) => {
+            if (id == null || !requestedIds.has(id)) return;
+            const relations = relationsByAnchor.get(id) ?? [];
+            relations.push(relation);
+            relationsByAnchor.set(id, relations);
+          });
+        });
         ids.forEach((id) => {
           if (!this.references.has(id) || versions.get(id) !== (this.versions.get(id) ?? 0)) return;
-          const relations = response.replies.filter(
-            (relation) =>
-              relation.originalSignalMessageId === id || relation.replySignalMessageId === id,
-          );
+          const relations = relationsByAnchor.get(id) ?? [];
           const messages = new Map<number, CitedMessage>();
           const anchor = projections.get(id);
           if (anchor) messages.set(id, anchor);
@@ -138,7 +152,7 @@ export class ReplyStore {
             JSON.stringify(Array.from(previous.messages)) === JSON.stringify(Array.from(messages))
           )
             return;
-          this.entries.set(id, { relations, messages });
+          this.entries.set(id, { loaded: true, relations, messages });
           this.listeners.get(id)?.forEach((listener) => listener());
         });
       }
@@ -150,9 +164,14 @@ export class ReplyStore {
       }
     } finally {
       if (this.controller === controller) this.controller = null;
-      // Only newly mounted anchors may start an immediate follow-up; invalidations wait for polling.
-      const remaining = Array.from(this.initial).filter((id) => !requested.includes(id));
-      if (remaining.length && !this.disposed) queueMicrotask(() => void this.load(remaining));
+      if (this.refreshQueued && !this.disposed) {
+        this.refreshQueued = false;
+        queueMicrotask(() => void this.flush());
+      } else {
+        // Only newly mounted anchors may start an immediate follow-up; invalidations wait for polling.
+        const remaining = Array.from(this.initial).filter((id) => !requested.includes(id));
+        if (remaining.length && !this.disposed) queueMicrotask(() => void this.load(remaining));
+      }
     }
   };
 }

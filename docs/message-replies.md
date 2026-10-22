@@ -36,6 +36,13 @@ timestamp guess. Receipt parsing follows the pinned Echo IM `inbox-id:` and
 `instance:id:` formats; its receipt helper module is private. Outbox-only targets
 without an Echo signal message remain unavailable. Existing history is not
 backfilled automatically.
+When inbox processing splits a native message into several visible messages,
+its citation identity uses the active result with the smallest signal-message
+ID. Provenance is bound after processing so it never points at the deleted
+oversized container when an active result exists. Duplicate promotion updates
+every surviving source mapping. If both native endpoints deduplicate to one
+canonical message, retain an unavailable original until their identities separate;
+never create a self-reference.
 
 ## API and access
 
@@ -60,6 +67,8 @@ group, datasource, ownership, and intelligence-parent access rules. Deleted and
 inaccessible bodies and usable links are not returned. Authenticated readers,
 including viewer roles, can reply to readable sources. Normal creation/editing
 and privileged unit/device/report operations retain their existing authorization.
+Ungrouped ownership follows the preferred sender before `login_id`; inherited
+read access uses direct report/comment parents, matching the inbox read endpoint.
 
 `POST /api/1.1/submit-direct` accepts optional `cited_signal_message_ids` separately
 from intelligence-report parents and copy sources. It validates citations and
@@ -100,6 +109,9 @@ also checks mounted cards on the existing 30-second system interval, recovering
 missed events. Polling refreshes complete anchor snapshots, including empty ones.
 Version guards reject responses invalidated in flight, and failures retry during
 scheduled work. Saving a reply explicitly refreshes the displayed chain.
+If a request is already running, the explicit refresh follows it and rejects its
+older snapshot. An unavailable editor citation ends its loading state while
+preserving the draft.
 
 `message_reply_change` is a database outbox drained by the existing background
 worker process. Source transactions commit before their invalidations become
@@ -112,13 +124,17 @@ mirror resync or manual historical reconciliation is required.
 
 - `wdintel-rs/src/message_reply/tests.rs`: persistence, authorization boundaries,
   multi-citation atomicity, deletion survival, preview limits, source replay,
-  and late original resolution.
+  late original resolution, split processing, and concurrent canonical remapping.
+- `wdintel-rs/src/messenger/reconcile.rs`: duplicate promotion preserves reply
+  links for surviving native sources and tombstones for deleted sources.
 - `wdintel-rs/src/message_reply/tests_api.rs`: viewer reply access with ordinary
   creation still forbidden.
 - `wdintel-web/src/ts/react/routes/shared/message-replies/__tests__/reply-store.spec.ts`:
-  event batching, stale deletion protection, failed-load recovery, and missed events.
+  event batching, stale deletion protection, saved-reply refresh, preview edits,
+  failed-load recovery, and missed events.
 - `wdintel-web/tests/e2e/message-replies.spec.ts`: both screens' citation/chain
-  display, tombstones, confirmed navigation, and standard reply composition.
+  display, tombstones, unavailable citations, confirmed navigation, desktop/mobile
+  composition, viewer permissions, and timestamp preference changes without fetching.
 - `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.polling.spec.tsx`
   and `wdintel-web/tests/e2e/rer-duty-scroll-stability.spec.ts`: existing scheduling,
   scrolling, and unread safeguards remain applicable to the shared card.

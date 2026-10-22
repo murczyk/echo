@@ -12,7 +12,6 @@ pub(super) struct IdRow {
 
 pub(super) struct AccessScope {
     groups: Vec<String>,
-    owners: Vec<Uuid>,
     senders: Vec<String>,
 }
 
@@ -32,11 +31,7 @@ impl AccessScope {
             owners.push(*login);
         }
         let senders = owners.iter().map(ToString::to_string).collect();
-        Ok(Self {
-            groups,
-            owners,
-            senders,
-        })
+        Ok(Self { groups, senders })
     }
 
     pub async fn visible_ids<C: ConnectionTrait>(
@@ -50,22 +45,22 @@ impl AccessScope {
         let rows = IdRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
-with recursive access_messages (requested_id, id) as (
+with access_messages (requested_id, id) as (
     select id, id from unnest($1::bigint[]) id
     union
-    select a.requested_id, p.source_message_id from access_messages a
-        join intel_product p on p.intel_message_id = a.id
+    select p.intel_message_id, p.source_message_id from intel_product p
+        where p.intel_message_id = any($1) and p.relation_kind in ('report', 'comment')
 )
 select distinct a.requested_id as id from access_messages a
 join signal_message anchor on anchor.id = a.requested_id and not anchor.deleted
-join signal_message sm on sm.id = a.id and not sm.deleted
+join signal_message sm on sm.id = a.id
 where exists (select 1 from signal_message_group g where g.signal_message_id = sm.id and g.group_master_key = any($2))
 or exists (select 1 from datasource_group dg where dg.id = sm.datasource_group_id and dg.group_master_key = any($2))
 or (sm.datasource_group_id is null
     and not exists (select 1 from signal_message_group g where g.signal_message_id = sm.id)
-    and (sm.login_id = any($3) or sm.sender = any($4)))
+    and coalesce(sm.sender, sm.login_id::text) = any($3))
             "#,
-            vec![ids.to_vec().into(), self.groups.clone().into(), self.owners.clone().into(), self.senders.clone().into()],
+            vec![ids.to_vec().into(), self.groups.clone().into(), self.senders.clone().into()],
         )).all(db).await.c(h!())?;
         Ok(rows.into_iter().map(|row| row.id).collect())
     }

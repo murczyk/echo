@@ -1,5 +1,6 @@
 mod ingestion;
 mod query;
+mod reconciliation;
 mod relink;
 pub mod types;
 pub mod worker;
@@ -13,6 +14,7 @@ use actix_web::{
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 
 pub use ingestion::{record_source, stage_source};
+pub use reconciliation::{record_processed_source, record_promoted_sources};
 
 #[cfg(test)]
 mod tests;
