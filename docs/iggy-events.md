@@ -172,6 +172,63 @@ integration's API user can see at least one currently linked inbox item:
 Catalog callsign and unit visibility changes refresh network callsign text
 matches with an unlink/link pair.
 
+## Unit visibility refresh queue
+
+Unit creation, activation, deactivation, deletion, merge, and import enqueue
+`api_integration_iggy_unit_refresh` rows in the same transaction as the unit
+write. The unit visibility trigger is removed; interactive requests no longer
+scan message history or expand these changes into the Iggy event outbox.
+Comment-only and hierarchy-only edits do not need a visibility refresh unless
+they also change a parent unit's activity. Direct SQL changes to unit visibility
+must explicitly enqueue the refresh in the same transaction; use the application
+writers for routine changes.
+
+The background process owns `iggy_unit_refresh_worker`, a separate worker from
+the Iggy publisher. It expands each job into the existing transactional event
+outbox in pages of 500 rows. The stages traverse direct unit links, inbox
+callsign matches, and network callsign matches. Each stage uses an indexed
+cursor rather than an offset or a union of the unit's entire history. Repeated
+matches can produce repeated snapshot events, which consumers already handle
+as upserts. The publisher continues applying API-user visibility checks.
+
+Each job retains its integration and destination. Old destination credentials
+remain available while either refresh jobs or outbox events reference them.
+Progress and generated events commit together. A failed batch rolls back both,
+records its error, and becomes eligible again after 30 seconds; successful
+batches reset the error. Row locks with `SKIP LOCKED` allow multiple background
+processes without expanding the same batch concurrently. Refresh jobs do not
+lock unit rows. New unit changes append separate jobs and do not wait for an
+existing refresh job to finish.
+
+The queue's `(next_attempt_at, id)` index serves ready-job selection and retry
+scheduling. Separate integration and destination indexes support integration
+deletion and credential retention. Historical reads reuse the unit-link,
+catalog callsign, inbox callsign match-key, and network callsign match-key
+indexes; see [query plan evidence](query-plans/3858-unit-refresh.md).
+
+Inspect progress without modifying it:
+
+```sql
+select id, api_integration_id, destination_id, sigint_unit_id, created_at,
+    stage, catalog_cursor, after_id, after_network_id, next_attempt_at,
+    attempts, last_error
+from api_integration_iggy_unit_refresh
+order by next_attempt_at, id
+limit 50;
+```
+
+Stages 0, 1, and 2 represent direct links, inbox callsigns, and network callsigns.
+Resolve persistent errors before retrying; deleting a job discards required
+refreshes. Restarting the background process resumes committed cursors.
+Deployment must apply the new migration and the matching API/background binaries
+together, with old writers stopped during the change. Include the excluded
+queue table in the packaged analytics exclusions before migrating. No history
+backfill or outbox deletion is needed. Rollback requires draining the queue
+first; the migration refuses to discard pending jobs. Deployment, retry changes,
+and rollback on a real environment require explicit approval.
+Existing outbox events are preserved, so publication can still be delayed by
+an existing Iggy backlog after unit saves become fast.
+
 ## REST reference dictionaries
 
 Authenticated users with the `Api` role can load the dictionaries referenced

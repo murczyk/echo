@@ -1108,6 +1108,9 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
+        crate::iggy::unit_refresh::enqueue(txn, new_id)
+            .await
+            .c(h!())?;
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
