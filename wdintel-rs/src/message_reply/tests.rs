@@ -1,10 +1,10 @@
 use super::{insert, query, record_source, stage_source, types};
 use crate::entities::{
-    login, signal_group, signal_message, signal_message_group,
+    intel_product, login, signal_group, signal_message, signal_message_group,
 };
 use crate::functest::tests::{
-    cleanup_locked, find_test_login, mk_signal_group, mk_signal_message,
-    mk_signal_message_group,
+    cleanup_locked, find_test_login, mk_datasource, mk_signal_group,
+    mk_signal_message, mk_signal_message_group,
 };
 use sea_orm::sea_query::Expr;
 use sea_orm::*;
@@ -21,6 +21,7 @@ async fn message(
             body: Set(Some(body.to_string())),
             datasource_group_id: Set(None),
             login_id: Set(Some(login)),
+            sender: Set(None),
             ..Default::default()
         },
     )
@@ -52,6 +53,42 @@ async fn set_deleted(db: &DatabaseConnection, id: i64, deleted: bool) {
         .exec(db)
         .await
         .unwrap();
+}
+
+fn native_snapshot(
+    receipt: i64,
+    original: Option<i64>,
+) -> echo_im::types::MessageF1 {
+    echo_im::types::MessageF1 {
+        id: Some(format!("receipt-{receipt}")),
+        text: "Native message".into(),
+        sender: None,
+        sender_phone_number: None,
+        group_id: None,
+        attachments: vec![],
+        message_source: echo_im::types::MessageSource::Signal,
+        timestamp: chrono::Utc::now().naive_utc(),
+        internal_id: receipt.try_into().unwrap(),
+        reply_to: original.map(|id| echo_im::types::ReplyF1 {
+            receipt: format!("inbox-id:{id}"),
+            is_outbox_message: false,
+            timestamp: None,
+            text: String::new(),
+        }),
+        deleted: false,
+    }
+}
+
+async fn stage_native(
+    db: &DatabaseTransaction,
+    receipt: i64,
+    original: Option<i64>,
+    canonical: i64,
+) {
+    stage_source(db, 3612, &native_snapshot(receipt, original))
+        .await
+        .unwrap();
+    record_source(db, 3612, receipt, canonical).await.unwrap();
 }
 
 // https://github.com/echoua/echo/issues/3612
@@ -446,4 +483,251 @@ async fn replies_3612_source_identity_survived_queue_consumption_and_late_origin
     .unwrap();
     assert!(tombstone.replies[0].deleted);
     txn.rollback().await.unwrap();
+}
+
+// https://github.com/echoua/echo/issues/3612
+#[tokio::test]
+#[serial_test::serial]
+async fn replies_3612_kept_collapsed_quotes_and_split_shared_deleted_reply_history(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let login = find_test_login(&env.dbx).await.unwrap();
+    let original = message(&env.dbx, login.id, "Canonical original").await;
+    let reply = message(&env.dbx, login.id, "Canonical reply").await;
+    let promoted = message(&env.dbx, login.id, "Moved original").await;
+    let txn = env.dbx.begin().await.unwrap();
+    stage_native(&txn, 1, None, original.id).await;
+    stage_native(&txn, 2, Some(1), original.id).await;
+    let req = types::MessageRepliesReq {
+        signal_message_ids: vec![original.id],
+        screen: types::MessageReplyScreen::Duty,
+    };
+    let collapsed = query::load(&txn, &login.id, &req).await.unwrap();
+    assert_eq!(collapsed.replies.len(), 1);
+    assert_eq!(collapsed.replies[0].original_signal_message_id, None);
+    assert!(!collapsed.replies[0].deleted);
+    record_source(&txn, 3612, 2, reply.id).await.unwrap();
+    let restored = query::load(&txn, &login.id, &req).await.unwrap();
+    assert_eq!(
+        restored.replies[0].original_signal_message_id,
+        Some(original.id)
+    );
+    assert_eq!(restored.replies[0].reply_signal_message_id, Some(reply.id));
+    stage_native(&txn, 4, None, original.id).await;
+    stage_native(&txn, 5, Some(4), reply.id).await;
+    signal_message::Entity::delete_by_id(reply.id)
+        .exec(&txn)
+        .await
+        .unwrap();
+    record_source(&txn, 3612, 1, promoted.id).await.unwrap();
+    let history = query::load(
+        &txn,
+        &login.id,
+        &types::MessageRepliesReq {
+            signal_message_ids: vec![original.id, promoted.id],
+            screen: types::MessageReplyScreen::Duty,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(history.replies.len(), 2);
+    assert!(history.replies.iter().all(|relation| relation.deleted
+        && relation.reply_signal_message_id.is_none()));
+    assert!(history.replies.iter().any(|relation| relation
+        .original_signal_message_id
+        == Some(original.id)));
+    assert!(history.replies.iter().any(|relation| relation
+        .original_signal_message_id
+        == Some(promoted.id)));
+    txn.rollback().await.unwrap();
+}
+
+// https://github.com/echoua/echo/issues/3612
+#[tokio::test]
+#[serial_test::serial]
+async fn replies_3612_concurrent_canonical_moves_did_not_leave_orphan_relationships(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let login = find_test_login(&env.dbx).await.unwrap();
+    let original = message(&env.dbx, login.id, "Original").await;
+    let reply = message(&env.dbx, login.id, "Shared reply").await;
+    let first = message(&env.dbx, login.id, "First moved original").await;
+    let second = message(&env.dbx, login.id, "Second moved original").await;
+    let setup = env.dbx.begin().await.unwrap();
+    stage_native(&setup, 1, None, original.id).await;
+    stage_native(&setup, 4, None, original.id).await;
+    stage_native(&setup, 2, Some(1), reply.id).await;
+    stage_native(&setup, 3, Some(4), reply.id).await;
+    setup.commit().await.unwrap();
+    let first_move = env.dbx.begin().await.unwrap();
+    record_source(&first_move, 3612, 1, first.id).await.unwrap();
+    let db = env.dbx.clone();
+    let mut second_move = tokio::spawn(async move {
+        let txn = db.begin().await.unwrap();
+        record_source(&txn, 3612, 4, second.id).await.unwrap();
+        txn.commit().await.unwrap();
+    });
+    let finished = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        &mut second_move,
+    )
+    .await;
+    first_move.commit().await.unwrap();
+    if let Ok(result) = finished {
+        result.unwrap();
+    } else {
+        second_move.await.unwrap();
+    }
+    let response = load(&env.dbx, login.id, vec![reply.id]).await;
+    assert_eq!(response.replies.len(), 2);
+    assert!(response.replies.iter().all(|relation| relation
+        .original_signal_message_id
+        != Some(original.id)));
+}
+
+// https://github.com/echoua/echo/issues/3612
+#[tokio::test]
+#[serial_test::serial]
+async fn replies_3612_queue_split_bound_quotes_to_the_first_active_result() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let login = find_test_login(&env.dbx).await.unwrap();
+    let original = message(&env.dbx, login.id, "Quoted original").await;
+    let txn = env.dbx.begin().await.unwrap();
+    let datasource = mk_datasource(&txn, Default::default()).await.unwrap();
+    let mut snapshot = native_snapshot(1, None);
+    stage_source(&txn, datasource.id, &snapshot).await.unwrap();
+    record_source(&txn, datasource.id, 1, original.id)
+        .await
+        .unwrap();
+    let body = (0..12)
+        .map(|index| {
+            format!(
+                "22.10, 10:{index:02}:00\n{}\n{}\n{}\n{}",
+                "plain words ".repeat(15),
+                "more words ".repeat(15),
+                "other words ".repeat(15),
+                "last words ".repeat(15)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    snapshot = native_snapshot(2, Some(1));
+    snapshot.text = body.clone();
+    stage_source(&txn, datasource.id, &snapshot).await.unwrap();
+    let mut changed = vec![];
+    crate::message_queue::process_signal_message_queue_item(
+        crate::messenger::types::Message {
+            body,
+            group_id: "vukho-test-master-key".into(),
+            sender: None,
+            timestamp: snapshot.timestamp,
+            datasource_id: datasource.id,
+            inbox_message_id: Some(2),
+        },
+        vec![],
+        &mut env.redis.clone(),
+        env.settlements.clone(),
+        &env.rq,
+        &env.config,
+        &env.s3,
+        &txn,
+        false,
+        &mut changed,
+    )
+    .await
+    .unwrap();
+    assert!(changed.len() > 1);
+    let first = *changed.iter().min().unwrap();
+    let response = query::load(
+        &txn,
+        &login.id,
+        &types::MessageRepliesReq {
+            signal_message_ids: vec![first],
+            screen: types::MessageReplyScreen::Duty,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.replies.len(), 1);
+    assert_eq!(
+        response.replies[0].original_signal_message_id,
+        Some(original.id)
+    );
+    assert_eq!(response.replies[0].reply_signal_message_id, Some(first));
+    assert!(!response.replies[0].deleted);
+
+    let later = mk_signal_message(
+        &txn,
+        signal_message::ActiveModel {
+            login_id: Set(Some(login.id)),
+            datasource_group_id: Set(None),
+            sender: Set(None),
+            body: Set(Some("Quotes the split source".into())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    stage_source(&txn, datasource.id, &native_snapshot(3, Some(2)))
+        .await
+        .unwrap();
+    record_source(&txn, datasource.id, 3, later.id)
+        .await
+        .unwrap();
+    let response = query::load(
+        &txn,
+        &login.id,
+        &types::MessageRepliesReq {
+            signal_message_ids: vec![later.id],
+            screen: types::MessageReplyScreen::Duty,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.replies.len(), 1);
+    assert_eq!(response.replies[0].original_signal_message_id, Some(first));
+    txn.rollback().await.unwrap();
+}
+
+// https://github.com/echoua/echo/issues/3612
+#[tokio::test]
+#[serial_test::serial]
+async fn replies_3612_did_not_expose_other_senders_or_hidden_nested_reports() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let login = find_test_login(&env.dbx).await.unwrap();
+    let hidden = crate::functest::tests::mk_login(&env.dbx, Default::default())
+        .await
+        .unwrap();
+    let source = message(&env.dbx, login.id, "Readable source").await;
+    let spoofed = message(&env.dbx, login.id, "Other sender's content").await;
+    let mut spoofed = spoofed.into_active_model();
+    spoofed.sender = Set(Some(hidden.id.to_string()));
+    let spoofed = spoofed.update(&env.dbx).await.unwrap();
+    assert!(load(&env.dbx, login.id, vec![spoofed.id])
+        .await
+        .reply_messages
+        .is_empty());
+    let direct =
+        message(&env.dbx, hidden.id, "Readable through its direct source")
+            .await;
+    let nested = message(&env.dbx, hidden.id, "Hidden nested report").await;
+    for (report, parent) in [(direct.id, source.id), (nested.id, direct.id)] {
+        intel_product::ActiveModel {
+            intel_message_id: Set(report), source_message_id: Set(parent),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            relation_kind: Set(crate::entities::sea_orm_active_enums::IntelProductRelationKind::Report),
+            ..Default::default()
+        }.insert(&env.dbx).await.unwrap();
+    }
+    assert_eq!(
+        load(&env.dbx, login.id, vec![direct.id])
+            .await
+            .reply_messages
+            .len(),
+        1
+    );
+    assert!(load(&env.dbx, login.id, vec![nested.id])
+        .await
+        .reply_messages
+        .is_empty());
 }

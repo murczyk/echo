@@ -26,7 +26,7 @@ import { MESSAGE_REPLY_POLL_EVENT } from './events';
 type Target = { id: number; message: InboxMessage; focus: HTMLElement | null };
 type ReplyContext = { store: ReplyStore; open?: (target: Target) => void };
 const Context = createContext<ReplyContext | null>(null);
-const EMPTY = { relations: [], messages: new Map() };
+const EMPTY = { loaded: false, relations: [], messages: new Map() };
 const noop = () => () => {};
 
 export function useMessageReplies(id: number) {
@@ -74,6 +74,7 @@ function ReplyComposer({
       // The action seeds one citation; the editor and API retain collections for future selection.
       citedSignalMessageIds={target ? [target.id] : []}
       citedMessages={citation ? [citation] : []}
+      citationsLoading={!snapshot.loaded}
       citationTimeBasis={timeBasis}
     />
   );
@@ -156,6 +157,7 @@ export function MessageRepliesProvider({
           editorRef={editorRef}
           close={() => setTarget(null)}
           created={async () => {
+            if (targetRef.current) store.invalidate([targetRef.current.id]);
             setTarget(null);
             await store.flush();
           }}

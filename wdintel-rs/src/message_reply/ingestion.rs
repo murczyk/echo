@@ -85,12 +85,13 @@ pub async fn record_source(
         .c(h!())?;
     }
     db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-        r#"insert into message_reply_source (datasource_id, inbox_message_id, signal_message_id, original_inbox_message_id, original_outbox_message_id)
-            values ($1, $2, $3, $4, $5)
+        r#"insert into message_reply_source (datasource_id, inbox_message_id, signal_message_id, original_inbox_message_id, original_outbox_message_id, deleted)
+            values ($1, $2, $3, $4, $5, $6)
             on conflict (datasource_id, inbox_message_id) do update set signal_message_id = excluded.signal_message_id,
                 original_inbox_message_id = coalesce(message_reply_source.original_inbox_message_id, excluded.original_inbox_message_id),
-                original_outbox_message_id = coalesce(message_reply_source.original_outbox_message_id, excluded.original_outbox_message_id)"#,
-        vec![datasource_id.into(), inbox_message_id.into(), signal_message_id.into(), source.original_inbox_message_id.into(), source.original_outbox_message_id.into()]))
+                original_outbox_message_id = coalesce(message_reply_source.original_outbox_message_id, excluded.original_outbox_message_id),
+                deleted = excluded.deleted"#,
+        vec![datasource_id.into(), inbox_message_id.into(), signal_message_id.into(), source.original_inbox_message_id.into(), source.original_outbox_message_id.into(), source.deleted.into()]))
         .await.c(h!())?;
     if source.original_inbox_message_id.is_some()
         || source.original_outbox_message_id.is_some()
@@ -123,6 +124,10 @@ async fn record_reply(
     signal_message_id: i64,
     source: &SourceRow,
 ) -> anyhow::Result<()> {
+    let original =
+        resolve_original(db, datasource_id, source.original_inbox_message_id)
+            .await
+            .c(h!())?;
     let existing = IdRow::find_by_statement(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         r#"select message_reply_id as id from message_reply_source where datasource_id = $1 and message_reply_id is not null
             and (inbox_message_id = $2 or (original_inbox_message_id is not distinct from $3
@@ -142,20 +147,16 @@ async fn record_reply(
         )
         .await
         .c(h!())?;
+        if let (Some(receipt), Some(original)) =
+            (source.original_inbox_message_id, original)
+        {
+            super::relink::original(db, datasource_id, receipt, original)
+                .await
+                .c(h!())?;
+        }
         return Ok(());
     }
-    let original = IdRow::find_by_statement(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-        r#"select signal_message_id as id from message_reply_source
-            where datasource_id = $1 and inbox_message_id = $2 and signal_message_id is not null
-        union all
-        select sm.id from signal_message sm join datasource_group dg on dg.id = sm.datasource_group_id
-            where dg.datasource_id = $1 and sm.echo_inbox_message_id = $2 and not sm.deleted
-        limit 1"#,
-        vec![datasource_id.into(), source.original_inbox_message_id.into()])).one(db).await.c(h!())?;
-    let original_id = original.map(|row| row.id);
-    if original_id == Some(signal_message_id) {
-        return Ok(());
-    }
+    let original_id = original.filter(|id| *id != signal_message_id);
     #[derive(FromQueryResult)]
     struct DeletedRow {
         deleted: bool,
@@ -178,4 +179,21 @@ async fn record_reply(
         "update message_reply_source set message_reply_id = $3 where datasource_id = $1 and inbox_message_id = $2",
         vec![datasource_id.into(), inbox_message_id.into(), id.into()])).await.c(h!())?;
     Ok(())
+}
+
+async fn resolve_original(
+    db: &DatabaseTransaction,
+    datasource: i64,
+    inbox: Option<i64>,
+) -> anyhow::Result<Option<i64>> {
+    let Some(inbox) = inbox else { return Ok(None) };
+    Ok(IdRow::find_by_statement(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        r#"select id from (
+        select signal_message_id as id, 0 as priority from message_reply_source
+            where datasource_id = $1 and inbox_message_id = $2 and signal_message_id is not null
+        union all
+        select sm.id, 1 as priority from signal_message sm join datasource_group dg on dg.id = sm.datasource_group_id
+            where dg.datasource_id = $1 and sm.echo_inbox_message_id = $2 and not sm.deleted
+        ) candidates order by priority, id limit 1"#,
+        vec![datasource.into(), inbox.into()])).one(db).await.c(h!())?.map(|row| row.id))
 }

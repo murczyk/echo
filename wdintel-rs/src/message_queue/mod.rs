@@ -201,18 +201,17 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
     .await
     .c(h!())?;
 
-    if let Some(inbox_id) = m.inbox_message_id {
-        crate::message_reply::record_source(
-            txn,
-            m.datasource_id,
-            inbox_id,
-            res.message.id,
-        )
-        .await
-        .c(h!())?;
-    }
-
     if res.is_duplicate {
+        if let Some(inbox_id) = m.inbox_message_id {
+            crate::message_reply::record_source(
+                txn,
+                m.datasource_id,
+                inbox_id,
+                res.message.id,
+            )
+            .await
+            .c(h!())?;
+        }
         let uploaded_files_ready_for_deletion =
             store_kept_duplicate_trace_media(
                 txn,
@@ -282,7 +281,7 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
         .c(h!())?
     };
 
-    if !skip_process_inbox_item {
+    let processed_inbox_item_ids = if !skip_process_inbox_item {
         let processed_inbox_item_ids =
             crate::rer_importer::bgworker::process_message_to_inbox(
                 settlements.clone(),
@@ -302,7 +301,21 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
             .await
             .c(h!())?;
         }
-        changed_inbox_item_ids.extend(processed_inbox_item_ids);
+        changed_inbox_item_ids.extend(processed_inbox_item_ids.iter().copied());
+        processed_inbox_item_ids
+    } else {
+        vec![]
+    };
+    if let Some(inbox_id) = m.inbox_message_id {
+        crate::message_reply::record_processed_source(
+            txn,
+            m.datasource_id,
+            inbox_id,
+            signal_message.id,
+            &processed_inbox_item_ids,
+        )
+        .await
+        .c(h!())?;
     }
     Ok(ProcessSignalMessageQueueItemResult {
         message_uid,

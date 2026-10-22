@@ -24,24 +24,28 @@ pub(super) async fn original(
     inbox: i64,
     original: i64,
 ) -> anyhow::Result<()> {
-    db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-        r#"update message_reply r set original_signal_message_id = $3,
-                original_deleted = sm.deleted, deleted = sm.deleted or r.reply_deleted
-            from message_reply_source s, signal_message sm
-            where sm.id = $3 and s.datasource_id = $1 and s.original_inbox_message_id = $2
-                and s.message_reply_id = r.id and r.original_signal_message_id is distinct from $3
-                and r.reply_signal_message_id is null"#,
+    let changed = db.query_all_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        r#"select r.id from message_reply_source s join message_reply r on r.id = s.message_reply_id
+            where s.datasource_id = $1 and s.original_inbox_message_id = $2
+                and r.original_signal_message_id is distinct from nullif($3, r.reply_signal_message_id)
+            order by r.id for update of r"#,
         vec![datasource.into(), inbox.into(), original.into()])).await.c(h!())?;
+    if changed.is_empty() {
+        return Ok(());
+    }
+    original_tombstones(db, datasource, inbox, original)
+        .await
+        .c(h!())?;
     let redirected = IdRow::find_by_statement(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         r#"with candidates as (
             select distinct r.id, r.reply_signal_message_id, r.created_at, r.reply_deleted from message_reply_source s
             join message_reply r on r.id = s.message_reply_id
             where s.datasource_id = $1 and s.original_inbox_message_id = $2
-                and r.original_signal_message_id is distinct from $3 and r.reply_signal_message_id is not null
-                and r.reply_signal_message_id <> $3
+                and r.original_signal_message_id is distinct from nullif($3, r.reply_signal_message_id)
+                and r.reply_signal_message_id is not null
         ), replacements as (
             insert into message_reply (original_signal_message_id, reply_signal_message_id, created_at, original_deleted, reply_deleted, deleted)
-                select $3, c.reply_signal_message_id, min(c.created_at), sm.deleted, bool_or(c.reply_deleted), sm.deleted or bool_or(c.reply_deleted)
+                select nullif($3, c.reply_signal_message_id), c.reply_signal_message_id, min(c.created_at), sm.deleted, bool_or(c.reply_deleted), sm.deleted or bool_or(c.reply_deleted)
                 from candidates c, signal_message sm where sm.id = $3 group by c.reply_signal_message_id, sm.deleted
                 on conflict (original_signal_message_id, reply_signal_message_id) do update set
                     original_deleted = excluded.original_deleted,
@@ -58,6 +62,33 @@ pub(super) async fn original(
     Ok(())
 }
 
+async fn original_tombstones(
+    db: &DatabaseTransaction,
+    datasource: i64,
+    inbox: i64,
+    original: i64,
+) -> anyhow::Result<()> {
+    let redirected = IdRow::find_by_statement(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        r#"with candidates as (
+            select r.id as previous, nextval(pg_get_serial_sequence('message_reply', 'id')) as replacement,
+                r.created_at, r.reply_deleted
+            from message_reply r where r.reply_signal_message_id is null
+                and r.original_signal_message_id is distinct from $3
+                and exists(select 1 from message_reply_source s where s.message_reply_id = r.id
+                    and s.datasource_id = $1 and s.original_inbox_message_id = $2)
+        ), replacements as (
+            insert into message_reply (id, original_signal_message_id, created_at, original_deleted, reply_deleted, deleted)
+                select c.replacement, $3, c.created_at, sm.deleted, c.reply_deleted, sm.deleted or c.reply_deleted
+                from candidates c, signal_message sm where sm.id = $3 returning id
+        ) update message_reply_source s set message_reply_id = c.replacement
+            from candidates c join replacements replacement on replacement.id = c.replacement
+            where s.datasource_id = $1 and s.original_inbox_message_id = $2 and s.message_reply_id = c.previous
+            returning c.previous as id"#,
+        vec![datasource.into(), inbox.into(), original.into()])).all(db).await.c(h!())?;
+    delete_redirected(db, redirected).await.c(h!())?;
+    Ok(())
+}
+
 pub(super) async fn reply(
     db: &DatabaseTransaction,
     relation: i64,
@@ -65,12 +96,19 @@ pub(super) async fn reply(
     datasource: i64,
     inbox: i64,
 ) -> anyhow::Result<()> {
+    db.query_one_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select id from message_reply where id = $1 for update",
+        vec![relation.into()],
+    ))
+    .await
+    .c(h!())?;
     let redirected = IdRow::find_by_statement(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         r#"with replacement as (
             insert into message_reply (original_signal_message_id, reply_signal_message_id, created_at, original_deleted, reply_deleted, deleted)
-                select r.original_signal_message_id, $2, r.created_at, r.original_deleted, sm.deleted, r.original_deleted or sm.deleted
+                select nullif(r.original_signal_message_id, $2), $2, r.created_at, r.original_deleted, sm.deleted, r.original_deleted or sm.deleted
                 from message_reply r, signal_message sm where r.id = $1 and sm.id = $2
-                    and r.original_signal_message_id is distinct from $2 and r.reply_signal_message_id is distinct from $2
+                    and r.reply_signal_message_id is distinct from $2
                 on conflict (original_signal_message_id, reply_signal_message_id) do update set
                     original_deleted = message_reply.original_deleted or excluded.original_deleted,
                     reply_deleted = excluded.reply_deleted,

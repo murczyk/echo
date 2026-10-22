@@ -77,6 +77,7 @@ import { resolveManageMessageEmbeddedFormLayout } from './manage-message-editor-
 export type Props = {
   citedSignalMessageIds?: number[];
   citedMessages?: CitedMessage[];
+  citationsLoading?: boolean;
   citationTimeBasis?: MessageTimeBasis;
   open: boolean;
   hideNetworks?: boolean;
@@ -792,16 +793,18 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                         {isReplyMode ? (
                           <section aria-label="Цитоване повідомлення" className="mb-echo-sm">
                             <Typography variant="subtitle2">Відповідь на повідомлення</Typography>
-                            {props.citedMessages?.length ? (
-                              props.citedMessages.map((citation) => (
+                            {props.citationsLoading ? (
+                              <CircularProgress size={20} aria-label="Завантаження цитати" />
+                            ) : (
+                              props.citedSignalMessageIds?.map((id) => (
                                 <CitedMessageCard
-                                  key={citation.id}
-                                  message={citation}
+                                  key={id}
+                                  message={props.citedMessages?.find(
+                                    (citation) => citation.id === id,
+                                  )}
                                   timeBasis={props.citationTimeBasis ?? 'creation'}
                                 />
                               ))
-                            ) : (
-                              <CircularProgress size={20} aria-label="Завантаження цитати" />
                             )}
                           </section>
                         ) : null}

@@ -15,8 +15,10 @@ test.describe('@regression #3612 message replies', () => {
       let created = false;
       let reader = false;
       let replyRequests = 0;
+      let unavailable = false;
       await page.route('**/api/rer-importer/message-replies', (route) => {
         replyRequests += 1;
+        if (unavailable) return route.fulfill({ json: { replies: [], reply_messages: [] } });
         return route.fulfill({
           json: {
             replies: [
@@ -188,6 +190,23 @@ test.describe('@regression #3612 message replies', () => {
       await expect(editor.getByRole('region', { name: 'Цитоване повідомлення' })).toContainText(
         'Цитований оригінал',
       );
+      unavailable = true;
+      await page.evaluate(
+        (detail) => window.dispatchEvent(new CustomEvent('echo-message-replies-poll', { detail })),
+        screen,
+      );
+      await expect(editor.getByRole('region', { name: 'Цитоване повідомлення' })).toContainText(
+        'Повідомлення недоступне',
+      );
+      await expect(editor.getByLabel('Завантаження цитати')).toHaveCount(0);
+      unavailable = false;
+      await page.evaluate(
+        (detail) => window.dispatchEvent(new CustomEvent('echo-message-replies-poll', { detail })),
+        screen,
+      );
+      await expect(editor.getByRole('region', { name: 'Цитоване повідомлення' })).toContainText(
+        'Цитований оригінал',
+      );
       await editor
         .getByRole('textbox', { name: 'Текст повідомлення', exact: true })
         .fill('Моя нова відповідь');
@@ -202,12 +221,23 @@ test.describe('@regression #3612 message replies', () => {
         route.fulfill({ json: { ...user, roles: ['CyberViewerRestricted'] } }),
       );
       reader = true;
+      await page.setViewportSize({ width: 390, height: 844 });
       await page.reload();
+      if (host === 'analysis')
+        await page.getByRole('button', { name: 'Закрити фільтри', exact: true }).click();
       await expect(
         page.getByRole('button', { name: 'Додати повідомлення', exact: true }),
       ).toHaveCount(0);
-      await card.getByRole('button', { name: 'Відповісти', exact: true }).click();
+      await card.getByRole('button', { name: 'Більше дій', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Відповісти', exact: true }).click();
       await expect(editor).toBeVisible();
+      await page.evaluate(() =>
+        window.dispatchEvent(
+          new CustomEvent('user-settings-updated', {
+            detail: { messageSortBy: 'creation', messageAutoParseEnabled: false },
+          }),
+        ),
+      );
       await editor
         .getByRole('textbox', { name: 'Текст повідомлення', exact: true })
         .fill('Відповідь читача');
