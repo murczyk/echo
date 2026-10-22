@@ -274,3 +274,73 @@ pub struct MessengerIngestAttachmentItem {
 pub struct MessengerIngestAttachmentsSubmitRsp {
     pub results: Vec<MessengerIngestAttachmentItem>,
 }
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct MessengerIngestTelegramAvatar {
+    pub photo_id: String,
+}
+
+/// One avatar of an owner. `upload_url` is the `Location` of a completed
+/// ingest TUS upload; `file_name` and `content_type` override the TUS
+/// `filename` / `filetype` metadata. `set_at` is when the avatar was set in
+/// the messenger, in epoch milliseconds. `is_current` makes it the owner's
+/// current avatar.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct MessengerIngestAvatarInput {
+    pub external_id: String,
+    pub upload_url: String,
+    pub file_name: Option<String>,
+    pub content_type: Option<String>,
+    pub set_at: Option<i64>,
+    pub is_current: bool,
+    pub telegram: Option<MessengerIngestTelegramAvatar>,
+}
+
+/// `status` is `created` for a newly stored avatar and `existing` for an
+/// avatar already submitted under the same owner and `external_id`.
+/// `id` is the Echo avatar uuid; `is_current` tells whether it is the
+/// owner's current avatar after the request.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct MessengerIngestAvatarItem {
+    pub id: String,
+    pub external_id: String,
+    pub status: String,
+    pub is_current: bool,
+}
+
+/// Avatar submit of one account. An absent or `null` `avatar` removes the
+/// owner's current avatar and keeps its history. The same holds for the
+/// chat, chat member and contact submits below.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct MessengerIngestAccountAvatarSubmitReq {
+    pub account: crate::messenger_ingest::refs::MessengerIngestAccountRef,
+    pub avatar: Option<MessengerIngestAvatarInput>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct MessengerIngestChatAvatarSubmitReq {
+    pub account: crate::messenger_ingest::refs::MessengerIngestAccountRef,
+    pub chat: crate::messenger_ingest::refs::MessengerIngestChatRef,
+    pub avatar: Option<MessengerIngestAvatarInput>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct MessengerIngestChatMemberAvatarSubmitReq {
+    pub account: crate::messenger_ingest::refs::MessengerIngestAccountRef,
+    pub chat: crate::messenger_ingest::refs::MessengerIngestChatRef,
+    pub member: crate::messenger_ingest::refs::MessengerIngestChatMemberRef,
+    pub avatar: Option<MessengerIngestAvatarInput>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct MessengerIngestContactAvatarSubmitReq {
+    pub account: crate::messenger_ingest::refs::MessengerIngestAccountRef,
+    pub contact: crate::messenger_ingest::refs::MessengerIngestContactRef,
+    pub avatar: Option<MessengerIngestAvatarInput>,
+}
+
+/// The stored avatar; `null` when the request removed the current avatar.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct MessengerIngestAvatarSubmitRsp {
+    pub avatar: Option<MessengerIngestAvatarItem>,
+}

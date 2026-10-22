@@ -22,9 +22,9 @@ pub struct Model {
     pub disable_network_assignment: bool,
     pub interseption_kind: InterseptionKind,
     pub is_aviation_group: Option<bool>,
+    pub fetch_new_messages: Option<bool>,
     #[sea_orm(column_type = "Text", nullable)]
     pub color_key: Option<String>,
-    pub fetch_new_messages: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -59,6 +59,8 @@ pub enum Relation {
     SignalGroupAor,
     #[sea_orm(has_many = "super::signal_message_group::Entity")]
     SignalMessageGroup,
+    #[sea_orm(has_many = "super::user_group_feed_read_state::Entity")]
+    UserGroupFeedReadState,
 }
 
 impl Related<super::datasource::Entity> for Entity {
@@ -133,12 +135,9 @@ impl Related<super::signal_message_group::Entity> for Entity {
     }
 }
 
-impl Related<super::login::Entity> for Entity {
+impl Related<super::user_group_feed_read_state::Entity> for Entity {
     fn to() -> RelationDef {
-        super::signal_group_admin::Relation::Login.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::signal_group_admin::Relation::SignalGroup.def().rev())
+        Relation::UserGroupFeedReadState.def()
     }
 }
 

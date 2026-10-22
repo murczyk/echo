@@ -148,6 +148,7 @@ public.device_document_settings
 
 # messengers ingest
 public.messenger_account
+public.messenger_avatar
 public.messenger_chat
 public.messenger_chat_member
 public.messenger_contact

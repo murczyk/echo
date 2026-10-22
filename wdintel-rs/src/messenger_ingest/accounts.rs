@@ -188,6 +188,8 @@ pub(crate) async fn create_or_restore_account(
         deleted: Set(false),
         created_at: Set(now),
         updated_at: Set(now),
+        // Sync never touches `avatar_id`; the avatar submit owns it.
+        ..Default::default()
     }
     .insert(txn)
     .await
@@ -277,6 +279,8 @@ async fn restore_and_update_account(
         deleted: Set(false),
         created_at: Set(account.created_at),
         updated_at: Set(now),
+        // Sync never touches `avatar_id`; the avatar submit owns it.
+        ..Default::default()
     }
     .update(txn)
     .await
@@ -349,6 +353,8 @@ async fn update_account(
         deleted: Set(false),
         created_at: Set(account.created_at),
         updated_at: Set(now),
+        // Sync never touches `avatar_id`; the avatar submit owns it.
+        ..Default::default()
     }
     .update(txn)
     .await

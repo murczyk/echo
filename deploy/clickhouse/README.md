@@ -1246,6 +1246,7 @@ for tables too large to resnapshot cheaply.
 | `m20261014_000001_messenger_ingest_messages` | `public.messenger_chat_member`, `public.sigint_chat_message` | new tables | `excluded` |
 | `m20261015_000000_messenger_ingest_attachments` | `public.messenger_media_meta` | new table | `excluded` |
 | `m20261016_000000_messenger_ingest_contacts` | `public.messenger_contact` | new table | `excluded` |
+| `m20261022_000000_messenger_ingest_avatars` | `public.messenger_avatar` | new table; `avatar_id` added to the excluded `messenger_account`, `messenger_chat`, `messenger_chat_member` and `messenger_contact` | `excluded` |
 
 Ingest messages themselves are ordinary `signal_message` and
 `sigint_inbox_item` rows, so they replicate without any declaration. The

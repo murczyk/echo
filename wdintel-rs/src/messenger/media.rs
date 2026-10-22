@@ -405,13 +405,18 @@ fn resolve_attachment_content_type(
     detected_content_type
 }
 
-fn content_type_describes_media(content_type: &str) -> bool {
-    let content_type = content_type
+/// The media type of a `Content-Type` value: no parameters, lowercase.
+fn media_type_essence(content_type: &str) -> String {
+    content_type
         .split(';')
         .next()
         .unwrap_or(content_type)
         .trim()
-        .to_ascii_lowercase();
+        .to_ascii_lowercase()
+}
+
+fn content_type_describes_media(content_type: &str) -> bool {
+    let content_type = media_type_essence(content_type);
     content_type.starts_with("audio/")
         || content_type.starts_with("image/")
         || content_type.starts_with("video/")
@@ -420,13 +425,7 @@ fn content_type_describes_media(content_type: &str) -> bool {
 
 fn content_type_is_generic(content_type: &str) -> bool {
     matches!(
-        content_type
-            .split(';')
-            .next()
-            .unwrap_or(content_type)
-            .trim()
-            .to_ascii_lowercase()
-            .as_str(),
+        media_type_essence(content_type).as_str(),
         "application/octet-stream"
             | "application/binary"
             | "binary/octet-stream"
@@ -434,14 +433,7 @@ fn content_type_is_generic(content_type: &str) -> bool {
 }
 
 fn replacement_image_format(content_type: &str) -> Option<&'static str> {
-    match content_type
-        .split(';')
-        .next()
-        .unwrap_or(content_type)
-        .trim()
-        .to_ascii_lowercase()
-        .as_str()
-    {
+    match media_type_essence(content_type).as_str() {
         "image/jpeg" | "image/jpg" => Some("jpeg"),
         "image/png" => Some("png"),
         "image/webp" => Some("webp"),
@@ -483,12 +475,7 @@ fn validate_replacement_image(
 }
 
 fn content_type_is_explicit_non_video_media(content_type: &str) -> bool {
-    let content_type = content_type
-        .split(';')
-        .next()
-        .unwrap_or(content_type)
-        .trim()
-        .to_ascii_lowercase();
+    let content_type = media_type_essence(content_type);
     content_type.starts_with("audio/") || content_type.starts_with("image/")
 }
 
@@ -744,6 +731,122 @@ pub async fn stage_media_attachments(
         }
     }
     Ok(staged)
+}
+
+/// A stored avatar object that is not recorded in the database yet.
+pub struct StagedAvatar {
+    pub content_type: String,
+    pub file_ext: Option<String>,
+    pub file_name: Option<String>,
+    pub size_bytes: i64,
+    pub is_encrypted: bool,
+    pub storage_key: String,
+}
+
+/// Copies an avatar upload to S3. Unlike media attachments, avatars get no
+/// thumbnails and no local cache entry. The upload must be an image or a
+/// video of at most `max_size_bytes`; nothing is stored otherwise.
+pub async fn stage_avatar(
+    upload: &MediaUploadInput,
+    config: &Config,
+    s3: &Option<Operator>,
+    max_size_bytes: i64,
+) -> Result<StagedAvatar, AppError> {
+    let s3_config = config.s3_config.as_ref().ok_or(AppError::BL {
+        msg: "S3 is not configured".to_string(),
+    })?;
+    let storage_config = storage::S3Config::from(s3_config);
+    let _source_lease = crate::sigint::file_upload::lock_uploaded_source(
+        Path::new(&upload.path),
+    )
+    .await
+    .c(h!())?;
+    // Reject an oversized file before it is read.
+    if let Ok(metadata) = fs::symlink_metadata(&upload.path).await {
+        ensure_avatar_size(
+            i64::try_from(metadata.len()).unwrap_or(i64::MAX),
+            max_size_bytes,
+        )
+        .c(h!())?;
+    }
+    let ext = guess_extension(upload.name.as_deref(), Path::new(&upload.path));
+    let force_plaintext =
+        media_upload_is_excluded_from_encryption(upload, &ext);
+    let prepared = prepare_attachment(&upload.path, force_plaintext, true)
+        .await
+        .c(h!())?
+        .ok_or_else(|| AppError::BL {
+            msg: "upload not found or incomplete".to_string(),
+        })?;
+    ensure_avatar_size(prepared.size_bytes, max_size_bytes).c(h!())?;
+    let content_type =
+        resolve_attachment_content_type(upload, prepared.probed_content_type);
+    if !content_type_is_image_or_video(&content_type) {
+        return Err(AppError::BL {
+            msg: format!("avatar content type not allowed: {content_type}"),
+        });
+    }
+    let storage_id = Uuid::now_v7();
+    let storage_key = if prepared.is_encrypted {
+        storage::nested_object_key(&storage_id)
+    } else {
+        storage::plaintext_media_object_key(&storage_id)
+    };
+    let size_bytes = prepared.size_bytes;
+    let is_encrypted = prepared.is_encrypted;
+    if let Err(err) = upload_prepared_attachment(
+        s3,
+        &storage_config,
+        &s3_config.strongbox_key,
+        &storage_key,
+        prepared.data,
+        size_bytes,
+    )
+    .await
+    {
+        delete_staged_storage_key_best_effort(config, s3, &storage_key).await;
+        return Err(err);
+    }
+    Ok(StagedAvatar {
+        content_type,
+        file_ext: (!ext.is_empty()).then_some(ext),
+        file_name: fallback_file_name(
+            upload.name.as_deref(),
+            Path::new(&upload.path),
+        ),
+        size_bytes,
+        is_encrypted,
+        storage_key,
+    })
+}
+
+fn ensure_avatar_size(
+    size_bytes: i64,
+    max_size_bytes: i64,
+) -> Result<(), AppError> {
+    if size_bytes > max_size_bytes {
+        return Err(AppError::BL {
+            msg: format!(
+                "avatar too large: {size_bytes} bytes, max {max_size_bytes}"
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Removes the stored object of an avatar that was not recorded.
+pub async fn discard_staged_avatar(
+    config: &Config,
+    s3: &Option<Operator>,
+    avatar: &StagedAvatar,
+) {
+    delete_staged_storage_key_best_effort(config, s3, &avatar.storage_key)
+        .await;
+}
+
+fn content_type_is_image_or_video(content_type: &str) -> bool {
+    let content_type = media_type_essence(content_type);
+    content_type.starts_with("image/") || content_type.starts_with("video/")
 }
 
 async fn stage_media_attachment(

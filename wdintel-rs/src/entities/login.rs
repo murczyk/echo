@@ -209,6 +209,8 @@ pub enum Relation {
     TagsOrdering,
     #[sea_orm(has_many = "super::url_visit_notification::Entity")]
     UrlVisitNotification,
+    #[sea_orm(has_many = "super::user_group_feed_read_state::Entity")]
+    UserGroupFeedReadState,
     #[sea_orm(has_one = "super::user_settings::Entity")]
     UserSettings,
 }
@@ -645,6 +647,12 @@ impl Related<super::url_visit_notification::Entity> for Entity {
     }
 }
 
+impl Related<super::user_group_feed_read_state::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UserGroupFeedReadState.def()
+    }
+}
+
 impl Related<super::user_settings::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::UserSettings.def()
@@ -671,15 +679,6 @@ impl Related<super::sigint_network_freq::Entity> for Entity {
                 .def()
                 .rev(),
         )
-    }
-}
-
-impl Related<super::signal_group::Entity> for Entity {
-    fn to() -> RelationDef {
-        super::signal_group_admin::Relation::SignalGroup.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::signal_group_admin::Relation::Login.def().rev())
     }
 }
 

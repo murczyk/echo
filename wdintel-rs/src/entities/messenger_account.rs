@@ -14,6 +14,8 @@ pub struct Model {
     pub datasource_id: i64,
     #[sea_orm(unique)]
     pub datasource_group_id: i64,
+    #[sea_orm(column_type = "Text")]
+    pub messenger_type: String,
     #[sea_orm(
         column_type = "Text",
         unique_key = "messenger_account_datasource_id_external_id_key"
@@ -44,8 +46,7 @@ pub struct Model {
     pub deleted: bool,
     pub created_at: DateTime,
     pub updated_at: DateTime,
-    #[sea_orm(column_type = "Text")]
-    pub messenger_type: String,
+    pub avatar_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -66,6 +67,14 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     DatasourceGroup,
+    #[sea_orm(
+        belongs_to = "super::messenger_avatar::Entity",
+        from = "Column::AvatarId",
+        to = "super::messenger_avatar::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    MessengerAvatar,
     #[sea_orm(has_many = "super::messenger_chat::Entity")]
     MessengerChat,
     #[sea_orm(has_many = "super::messenger_contact::Entity")]
@@ -81,6 +90,12 @@ impl Related<super::datasource::Entity> for Entity {
 impl Related<super::datasource_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::DatasourceGroup.def()
+    }
+}
+
+impl Related<super::messenger_avatar::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerAvatar.def()
     }
 }
 

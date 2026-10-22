@@ -1,6 +1,7 @@
 pub mod access;
 pub mod accounts;
 pub mod attachments;
+pub mod avatars;
 pub mod chats;
 pub mod contacts;
 pub mod datasource;
@@ -16,12 +17,16 @@ use crate::messenger_ingest::access::{
     ensure_messenger_ingest_access, IngestScope,
 };
 use crate::messenger_ingest::types::{
-    MessengerIngestAccountsSyncReq, MessengerIngestAccountsSyncRsp,
-    MessengerIngestAttachmentsSubmitReq, MessengerIngestAttachmentsSubmitRsp,
+    MessengerIngestAccountAvatarSubmitReq, MessengerIngestAccountsSyncReq,
+    MessengerIngestAccountsSyncRsp, MessengerIngestAttachmentsSubmitReq,
+    MessengerIngestAttachmentsSubmitRsp, MessengerIngestAvatarSubmitRsp,
+    MessengerIngestChatAvatarSubmitReq,
+    MessengerIngestChatMemberAvatarSubmitReq,
     MessengerIngestChatMembersSyncReq, MessengerIngestChatMembersSyncRsp,
     MessengerIngestChatsSyncReq, MessengerIngestChatsSyncRsp,
-    MessengerIngestContactsSyncReq, MessengerIngestContactsSyncRsp,
-    MessengerIngestMessagesSubmitReq, MessengerIngestMessagesSubmitRsp,
+    MessengerIngestContactAvatarSubmitReq, MessengerIngestContactsSyncReq,
+    MessengerIngestContactsSyncRsp, MessengerIngestMessagesSubmitReq,
+    MessengerIngestMessagesSubmitRsp,
 };
 use crate::types::Env;
 use crate::types::ShortContext;
@@ -118,6 +123,58 @@ pub async fn attachments_submit(
 ) -> Result<Json<MessengerIngestAttachmentsSubmitRsp>, AppError> {
     let scope = enabled_scope(&env, &user).await.c(h!())?;
     let rsp = attachments::submit_attachments(&env, &scope, req.into_inner())
+        .await
+        .c(h!())?;
+    Ok(Json(rsp))
+}
+
+#[post("/api/messenger-ingest/v1/accounts/avatar/submit")]
+pub async fn account_avatar_submit(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<MessengerIngestAccountAvatarSubmitReq>,
+) -> Result<Json<MessengerIngestAvatarSubmitRsp>, AppError> {
+    let scope = enabled_scope(&env, &user).await.c(h!())?;
+    let rsp = avatars::submit_account_avatar(&env, &scope, req.into_inner())
+        .await
+        .c(h!())?;
+    Ok(Json(rsp))
+}
+
+#[post("/api/messenger-ingest/v1/chats/avatar/submit")]
+pub async fn chat_avatar_submit(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<MessengerIngestChatAvatarSubmitReq>,
+) -> Result<Json<MessengerIngestAvatarSubmitRsp>, AppError> {
+    let scope = enabled_scope(&env, &user).await.c(h!())?;
+    let rsp = avatars::submit_chat_avatar(&env, &scope, req.into_inner())
+        .await
+        .c(h!())?;
+    Ok(Json(rsp))
+}
+
+#[post("/api/messenger-ingest/v1/chats/members/avatar/submit")]
+pub async fn chat_member_avatar_submit(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<MessengerIngestChatMemberAvatarSubmitReq>,
+) -> Result<Json<MessengerIngestAvatarSubmitRsp>, AppError> {
+    let scope = enabled_scope(&env, &user).await.c(h!())?;
+    let rsp = avatars::submit_chat_member_avatar(&env, &scope, req.into_inner())
+        .await
+        .c(h!())?;
+    Ok(Json(rsp))
+}
+
+#[post("/api/messenger-ingest/v1/contacts/avatar/submit")]
+pub async fn contact_avatar_submit(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<MessengerIngestContactAvatarSubmitReq>,
+) -> Result<Json<MessengerIngestAvatarSubmitRsp>, AppError> {
+    let scope = enabled_scope(&env, &user).await.c(h!())?;
+    let rsp = avatars::submit_contact_avatar(&env, &scope, req.into_inner())
         .await
         .c(h!())?;
     Ok(Json(rsp))

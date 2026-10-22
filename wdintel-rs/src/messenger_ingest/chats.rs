@@ -604,6 +604,7 @@ mod tests {
             deleted: false,
             created_at: Utc::now().naive_utc(),
             updated_at: Utc::now().naive_utc(),
+            avatar_id: None,
         };
         let item = chat_item(&chat);
         assert_eq!(item.id, id.to_string());

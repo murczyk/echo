@@ -619,6 +619,11 @@ pub const MESSENGER_INGEST_CONCURRENT_ATTACH_CODE: &str =
     "messenger_ingest_concurrent_attach";
 pub const MESSENGER_INGEST_SUBMIT_MAX_ATTACHMENTS: usize =
     SIGINT_MESSAGE_MAX_ATTACHMENTS;
+pub const MESSENGER_INGEST_AVATAR_MAX_SIZE_BYTES: i64 = 20 * 1024 * 1024;
+/// `409` code of an avatar batch that lost a race with a concurrent
+/// submission of the same avatars; the collector retries the batch.
+pub const MESSENGER_INGEST_CONCURRENT_AVATAR_CODE: &str =
+    "messenger_ingest_concurrent_avatar";
 pub const MESSENGER_INGEST_UPLOAD_PATH_BASE: &str =
     "/api/messenger-ingest/v1/uploads";
 /// Subdirectory of `storage_dir` holding the ingest TUS uploads, apart from
@@ -1426,6 +1431,11 @@ DELETE FROM sigint_important;
 DELETE FROM ai_intel_report_attempt;
 DELETE FROM messenger_media_meta;
 DELETE FROM sigint_chat_message;
+UPDATE messenger_account SET avatar_id = NULL;
+UPDATE messenger_chat SET avatar_id = NULL;
+UPDATE messenger_chat_member SET avatar_id = NULL;
+UPDATE messenger_contact SET avatar_id = NULL;
+DELETE FROM messenger_avatar;
 DELETE FROM messenger_chat_member;
 DELETE FROM messenger_contact;
 DELETE FROM messenger_chat;

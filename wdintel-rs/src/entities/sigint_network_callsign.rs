@@ -27,8 +27,8 @@ pub struct Model {
     pub developing: bool,
     pub unit_developing: bool,
     pub unit_id: Option<i64>,
-    pub main_radio_station: bool,
     pub original_id: Option<i64>,
+    pub main_radio_station: bool,
     pub command_control: bool,
     #[sea_orm(column_type = "Text", nullable)]
     pub full_name: Option<String>,

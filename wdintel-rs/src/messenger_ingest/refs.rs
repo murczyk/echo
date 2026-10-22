@@ -2,7 +2,7 @@ use crate::config::{
     MESSENGER_INGEST_MESSENGER_TYPES, MESSENGER_TYPE_TELEGRAM,
 };
 use crate::entities::{
-    messenger_account, messenger_chat, messenger_chat_member,
+    messenger_account, messenger_chat, messenger_chat_member, messenger_contact,
 };
 use crate::error::AppError;
 use crate::h;
@@ -56,6 +56,15 @@ pub struct MessengerIngestChatRef {
 /// collector learned the ids from the chat members sync response.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct MessengerIngestChatMemberRef {
+    pub id: String,
+    pub external_id: String,
+    pub telegram: Option<MessengerIngestTelegramAccountId>,
+}
+
+/// A reference to a contact of an account (an avatar owner, ...). The
+/// collector learned the ids from the contacts sync response.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+pub struct MessengerIngestContactRef {
     pub id: String,
     pub external_id: String,
     pub telegram: Option<MessengerIngestTelegramAccountId>,
@@ -253,6 +262,45 @@ pub(crate) async fn find_chat_member_by_id(
         .filter(messenger_chat_member::Column::Id.eq(id))
         .filter(messenger_chat_member::Column::MessengerChatId.eq(chat_id))
         .filter(messenger_chat_member::Column::Deleted.eq(false))
+        .one(txn)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+}
+
+/// Resolves a contact ref under an already resolved account, with the same
+/// not-found semantics as `resolve_chat_member_ref`.
+pub(crate) async fn resolve_contact_ref(
+    txn: &impl ConnectionTrait,
+    account: &messenger_account::Model,
+    r: &MessengerIngestContactRef,
+) -> Result<messenger_contact::Model, AppError> {
+    let id = parse_echo_uuid(&r.id).c(h!())?;
+    let contact = find_contact_by_id(txn, account.id, id).await.c(h!())?;
+    if contact.external_id != r.external_id {
+        return Err(AppError::NotFound);
+    }
+    if let Some(telegram) = &r.telegram {
+        let user_id = parse_i64_decimal("telegram user_id", &telegram.user_id)
+            .map_err(|_| AppError::NotFound)
+            .c(h!())?;
+        if contact.telegram_user_id != Some(user_id) {
+            return Err(AppError::NotFound);
+        }
+    }
+    Ok(contact)
+}
+
+/// A live contact of the given account, or `NotFound`.
+pub(crate) async fn find_contact_by_id(
+    txn: &impl ConnectionTrait,
+    account_id: Uuid,
+    id: Uuid,
+) -> Result<messenger_contact::Model, AppError> {
+    messenger_contact::Entity::find()
+        .filter(messenger_contact::Column::Id.eq(id))
+        .filter(messenger_contact::Column::MessengerAccountId.eq(account_id))
+        .filter(messenger_contact::Column::Deleted.eq(false))
         .one(txn)
         .await
         .c(h!())?

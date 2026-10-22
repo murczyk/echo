@@ -5,7 +5,8 @@ use crate::h;
 use crate::messenger_ingest::access::IngestScope;
 use crate::messenger_ingest::refs::{
     ensure_provider_fields, ensure_unique_created_external_ids,
-    parse_echo_uuid, parse_i64_decimal, resolve_account_ref,
+    find_contact_by_id, parse_echo_uuid, parse_i64_decimal,
+    resolve_account_ref,
 };
 use crate::messenger_ingest::types::{
     MessengerIngestContactInput, MessengerIngestContactItem,
@@ -185,23 +186,6 @@ async fn delete_contact(
     contact.updated_at = Set(now);
     contact.update(txn).await.c(h!())?;
     Ok(Some(id.to_string()))
-}
-
-/// A live contact of the given account, or `NotFound`. The account was
-/// resolved within the caller's scope, so the contact is too.
-async fn find_contact_by_id(
-    txn: &DatabaseTransaction,
-    account_id: Uuid,
-    id: Uuid,
-) -> Result<messenger_contact::Model, AppError> {
-    messenger_contact::Entity::find()
-        .filter(messenger_contact::Column::Id.eq(id))
-        .filter(messenger_contact::Column::MessengerAccountId.eq(account_id))
-        .filter(messenger_contact::Column::Deleted.eq(false))
-        .one(txn)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
 }
 
 /// A stored Telegram user id never changes, and a contact without one

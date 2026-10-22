@@ -110,6 +110,11 @@
         { "table": "public.messenger_contact", "strategy": "excluded" }
       ]
     },
+    "echo:m20261022_000000_messenger_ingest_avatars": {
+      "changes": [
+        { "table": "public.messenger_avatar", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261008_113430_sigint_unit_orbit_combat_type": {
       "changes": [
         { "table": "public.sigint_unit_orbit_combat_type", "strategy": "replicated_snapshot" },

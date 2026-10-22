@@ -35,6 +35,7 @@ pub struct Model {
     pub deleted: bool,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    pub avatar_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -47,6 +48,14 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     MessengerAccount,
+    #[sea_orm(
+        belongs_to = "super::messenger_avatar::Entity",
+        from = "Column::AvatarId",
+        to = "super::messenger_avatar::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    MessengerAvatar,
     #[sea_orm(has_many = "super::messenger_chat_member::Entity")]
     MessengerChatMember,
     #[sea_orm(has_many = "super::sigint_chat_message::Entity")]
@@ -56,6 +65,12 @@ pub enum Relation {
 impl Related<super::messenger_account::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::MessengerAccount.def()
+    }
+}
+
+impl Related<super::messenger_avatar::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerAvatar.def()
     }
 }
 
