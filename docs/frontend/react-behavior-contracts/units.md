@@ -1,5 +1,12 @@
 # Units
 
+## Unit event polling
+
+- **Affected route/component:** `/rer-units-neo`, shared Elm event service.
+- **Expected observable result:** the first long-poll starts immediately; subsequent requests wait at least five seconds after the previous response, including temporary failures. Requests remain sequential, and successful responses retain their event cursor. Other routes retain their existing polling interval.
+- **Existing test(s):** `wdintel-web/tests/e2e/units-polling.spec.ts`.
+- **Original Echo issue/PR:** [#3858](https://github.com/echoua/echo/issues/3858).
+
 ## Unit API response normalization
 
 - **Status:** operational compatibility

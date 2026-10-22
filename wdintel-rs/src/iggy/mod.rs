@@ -11,6 +11,7 @@ use tokio::time::timeout;
 use url::Url;
 
 pub(crate) mod settlement_events;
+pub(crate) mod unit_refresh;
 pub mod worker;
 
 pub async fn test_connection(

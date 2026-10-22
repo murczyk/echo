@@ -51,6 +51,7 @@ pub use super::aor_location_config::Entity as AorLocationConfig;
 pub use super::api_integration::Entity as ApiIntegration;
 pub use super::api_integration_iggy_destination::Entity as ApiIntegrationIggyDestination;
 pub use super::api_integration_iggy_event::Entity as ApiIntegrationIggyEvent;
+pub use super::api_integration_iggy_unit_refresh::Entity as ApiIntegrationIggyUnitRefresh;
 pub use super::area_of_responsibility::Entity as AreaOfResponsibility;
 pub use super::area_of_responsibility_report_order::Entity as AreaOfResponsibilityReportOrder;
 pub use super::attachment_chunk::Entity as AttachmentChunk;
