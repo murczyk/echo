@@ -19,6 +19,16 @@
 - **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility coverage.
 
+## Device filter counts
+
+- **Behavior ID:** `react-analysis-device-counts`
+- **Expected observable result:** opening Devices loads message counts by device name for the selected period, time basis, accessible groups, and other filters. The current device selection does not restrict its own options. Each message counts once even when it belongs to several groups; identical device names share one count.
+- **Loading/empty/error/success behavior:** counts use the shared lazy filter loading, refresh, retry, and error notification flow. Device options with no matching messages are absent; selected values remain removable.
+- **User role or permission:** device message access is required on the server. Disabled devices hide the filter, clear restored device selections, and send no device statistics requests.
+- **API endpoint and compatibility requirements:** `POST /api/rer/analysis/stats/device-names` uses the configured analytics gateway with PostgreSQL fallback; creation-time requests use PostgreSQL.
+- **Existing test(s):** `wdintel-web/tests/e2e/analysis-device-counts.spec.ts`, `wdintel-rs/src/rer_importer/analysis/tests.rs`.
+- **Original Echo issue/PR:** #3783.
+
 ## AI-agent API compatibility
 
 - **Status:** operational compatibility

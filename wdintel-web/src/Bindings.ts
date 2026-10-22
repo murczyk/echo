@@ -1042,6 +1042,11 @@ export type AnalysisStatsPost = {
   count: number;
 };
 
+export type AnalysisStatsDeviceName = {
+  name: string;
+  count: number;
+};
+
 export type InboxDeleteReq = {
   id: number;
 };
