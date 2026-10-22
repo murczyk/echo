@@ -28,42 +28,28 @@ unsuccessful resolution. Deleting a linked canonical settlement clears both
 `settlement_id` and `is_undefined`, returning the link to the pending queue.
 An explicit unsuccessful resolution keeps `true` when clearing an existing link.
 
-## Joint inbox resolution
+## Joint settlement resolution
 
-For each inbox item, battle-line resolution combines candidates that pass the
-existing catalog, AOR and side-specific distance checks. A single candidate-bearing
-name without resolved context keeps the existing independent behavior. Names
-without eligible candidates remain undefined without blocking the other names.
-Reconciliation compares distinct requested location texts with existing link
-rows. Adding or removing a name requeues every remaining name, including
+Inbox items and networks use the same pure election after loading names, aliases,
+coordinates and Battle Line/AOR distances. The
+[election contract](../battle_line/README.md#settlement-election) defines strict
+majorities, anchor scoring, unresolved ties, single-name ambiguity and search
+limits. Geographic comparisons use great-circle distances in Rust; election does
+not query PostgreSQL. Different aliases may select the same canonical ID.
+
+Adding or removing an inbox location requeues the remaining names, including
 previously undefined rows, so earlier joint choices can be reconsidered. Clearing
 linked rows also invalidates group statistics. Unchanged text sets preserve
-processed rows; reordering and repeated names do not requeue them. The worker
-uses already linked settlements with valid coordinates as fixed context when
-processing pending rows of an unchanged item.
-Explicit relinking oneoffs recompute all names together; batched requests keep
-each item's combinations separate.
+processed rows; reordering and repeated names do not requeue them. Already linked
+settlements provide context when no resolved network anchors are available.
+Explicit relinking oneoffs recompute all names together. Per-name caches contain
+independent candidate drafts; each item's election runs separately.
 
-Candidate groups enter in ascending candidate-count order, then normalized name
-and original row order. The first two groups form all possible pairs; subsequent
-groups extend the best five combinations. Every pair in a combination must be
-strictly less than 50,000 meters apart, measured with PostGIS geography. Rank by
-the sum of all pairwise distances, then total distance to the battle line, then
-canonical settlement IDs in original row order. Select the first complete
-combination even when scores tie. Different aliases may select the same ID.
-If no complete combination survives, pending names become undefined together;
-incomplete combinations are never persisted.
-
-This width-five beam search is approximate and order-dependent: pruning can
-discard a combination needed by a later name. Width, maximum distance and
-distance-query batch size are constants in `config.rs`. Distance queries use
-bounded coordinate arrays without scanning settlement tables. Per-name caches
-hold independent candidate drafts; joint choices are computed separately for
-each item. Existing historical undefined rows are not automatically requeued.
-
-Joint-resolution coverage: `wdintel-rs/src/battle_line/settlement_clusters.rs`,
-`wdintel-rs/src/battle_line/mod.rs`, and
-`wdintel-rs/src/battle_line/settlement_queue.rs`.
+Network location edits reconcile `sigint_network_settlement` through database
+triggers. The migration queues existing live networks. Network resolution and
+network membership changes requeue unresolved inbox locations through bounded
+network-recalculation batches. Alias edits affect subsequent lookups; they do not
+reprocess historical links automatically.
 
 Regression coverage: `wdintel-rs/src/settlement/tests.rs`,
 `wdintel-rs/src/ai_settlement/aliases/tests.rs`,

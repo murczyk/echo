@@ -5,6 +5,7 @@ import type {
   NetworkDescrType,
   NetworkCallsignRelationsRsp,
   NetworkPoint,
+  NetworkSettlement,
   NetworkStatus,
   NetworkFreqsRes,
   NetworkFreqCallsignsPeriod,
@@ -126,6 +127,7 @@ export type NetworkDetailsNeoPageState = {
   networkActivityError: string | null;
   supportNonRerInterceptions: boolean;
   pelengPoints: NetworkPoint[];
+  networkSettlements: NetworkSettlement[];
   pelengPointsLoaded: boolean;
   pelengPointsLoading: boolean;
   pelengPointsError: string | null;
@@ -273,6 +275,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   networkActivityError: null,
   supportNonRerInterceptions: false,
   pelengPoints: [],
+  networkSettlements: [],
   pelengPointsLoaded: false,
   pelengPointsLoading: false,
   pelengPointsError: null,

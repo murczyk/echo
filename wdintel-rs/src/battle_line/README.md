@@ -24,6 +24,64 @@ Completed batches remain committed if it stops; rerun the same range to finish.
 Run it on a deployed environment only after obtaining approval for the target and
 time range.
 
+## Settlement election
+
+Candidate loading reads canonical settlements, aliases, coordinates, and
+distances from the active Battle Line/AOR segment before calling the pure
+election in `settlement_clusters.rs`. Candidates retain the existing west/east
+distance limits.
+
+Without an anchor, each distinct normalized location name has one vote,
+including names with no eligible candidates. The election first maximizes the
+number of names whose candidates are all less than 50 km apart, then minimizes
+their total pairwise distance and total distance to the Battle Line. A result
+requires strictly more than half of all names. Unfitting names remain
+unresolved; tied best results leave the whole set unresolved. Distances within 1
+mm count as tied. One name with several eligible canonical settlements remains
+unresolved. The search examines at most 100,000 states and 64 names; exceeding
+either bound leaves the set unresolved.
+
+`sigint_network_settlement` holds the same pending/resolved/unresolved state for
+network locations. Database triggers reconcile the complete normalized name set
+on network creation and location edits, preserve decisions for unchanged name
+sets, and rebuild it on network restoration. The migration enqueues every
+existing live network with location names (non-deleted, no activity end, and no
+future activity start). This PostgreSQL-only table is excluded from analytics
+replication. The settlement worker processes networks before inbox items using
+the same candidate loader and pure election. It queues network recalculation
+after anchor changes; that worker requeues unresolved inbox locations in its
+existing bounded message batches. Canonical settlement deletion requeues its
+network links.
+
+Resolved locations of linked, non-deleted networks anchor inbox names. Anchored
+sets maximize matched names, minimize total distance to the nearest anchor, then
+minimize pairwise distances. Trusted anchors replace the majority and 50 km
+requirements; ties leave the entire set unresolved. Previously resolved inbox
+locations also provide context for pending names when there are no network
+anchors. Explicit inbox recalculation uses network anchors too. Historical
+resolved inbox links remain intact until locations change or an explicit
+recalculation runs.
+
+Network matching uses location evidence only after frequency, activity, AOR,
+post, and unit filtering still leave several candidates. All distinct message
+location names must have a canonical/alias candidate within 15 km of a resolved
+network settlement. Exactly one matching network narrows the result; zero or
+several matches preserve the earlier candidates. This lookup uses name
+candidates directly, so it does not depend on the inbox settlement worker first
+choosing a location. AI location updates also recalculate network assignments.
+
+The network direction-finding map displays a red convex hull of resolved network
+settlements. One location appears as a red point; two or collinear locations
+form a red line. The overlay remains visible without direction-finding
+observations and is independent of their date/frequency filters. The
+PostgreSQL-backed `network-points` response includes only distinct resolved
+settlements with valid coordinates; unresolved names do not create map geometry.
+
+Coverage: `wdintel-rs/src/battle_line/settlement_clusters/tests.rs`,
+`wdintel-rs/src/battle_line/settlement_queue.rs`,
+`wdintel-rs/src/sigint/network/etalon_calc/settlements/tests.rs`, and
+`wdintel-rs/src/sigint/network/etalon_calc/consistency.rs`.
+
 ## Iggy settlement events
 
 Settlement writers explicitly queue link/unlink changes in the same PostgreSQL

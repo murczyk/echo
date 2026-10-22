@@ -1057,6 +1057,22 @@ pub async fn fetch_count(
     Ok(result.map_or(0, |r| r.count))
 }
 
+pub(crate) async fn get_network_settlements<C: ConnectionTrait>(
+    dbx: &C,
+    network_id: i64,
+) -> anyhow::Result<Vec<NetworkSettlement>> {
+    NetworkSettlement::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres, r#"
+select distinct s.id, s.name, s.lat, s.lon as lng
+from sigint_network_settlement links
+join sigint_network network on network.id = links.network_id and not network.deleted
+join settlement s on s.id = links.settlement_id
+where links.network_id = $1 and s.lat between -90 and 90 and s.lon between -180 and 180
+order by s.id
+        "#, [network_id.into()],
+    )).all(dbx).await.c(h!())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

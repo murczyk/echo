@@ -8,6 +8,7 @@ use sea_orm::*;
 
 mod consistency;
 pub mod oneoff;
+mod settlements;
 pub mod tui;
 pub mod worker;
 
@@ -352,6 +353,12 @@ where
     if sigint_inbox_item_ids.is_empty() {
         return Ok(result);
     }
+    let old_networks = consistency::load_actual_networks_for_messages(
+        &sigint_inbox_item_ids,
+        dbx,
+    )
+    .await
+    .c(h!())?;
     let old_freq_ids =
         crate::sigint::network::recalculation::load_freq_ids_for_message_links(
             dbx,
@@ -380,6 +387,27 @@ where
         .await
         .c(h!())?;
     }
+    let changed_items = sigint_inbox_item_ids
+        .iter()
+        .filter(|id| {
+            let previous = old_networks.get(id).cloned().unwrap_or_default();
+            let current = result
+                .get(id)
+                .into_iter()
+                .flatten()
+                .copied()
+                .collect::<BTreeSet<_>>();
+            previous != current
+        })
+        .copied()
+        .collect::<Vec<_>>();
+    crate::battle_line::settlement_queue::requeue_unresolved_item_settlements(
+        dbx,
+        &sigint_inbox_item_ids,
+        &changed_items,
+    )
+    .await
+    .c(h!())?;
     let new_freq_ids =
         crate::sigint::network::recalculation::load_freq_ids_for_message_links(
             dbx,

@@ -219,6 +219,7 @@ pub use super::sigint_network_encryption_key_freq::Entity as SigintNetworkEncryp
 pub use super::sigint_network_freq::Entity as SigintNetworkFreq;
 pub use super::sigint_network_freq_changelog::Entity as SigintNetworkFreqChangelog;
 pub use super::sigint_network_post::Entity as SigintNetworkPost;
+pub use super::sigint_network_settlement::Entity as SigintNetworkSettlement;
 pub use super::sigint_network_unit::Entity as SigintNetworkUnit;
 pub use super::sigint_network_unit_changelog::Entity as SigintNetworkUnitChangelog;
 pub use super::sigint_origin::Entity as SigintOrigin;

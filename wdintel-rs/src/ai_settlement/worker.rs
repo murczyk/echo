@@ -406,6 +406,15 @@ async fn complete_job(
     .await
     .c(h!())?;
     if changed {
+        let inbox_item =
+            sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
+                .one(&transaction)
+                .await
+                .c(h!())?
+                .c(h!())?;
+        crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+            vec![inbox_item], &transaction,
+        ).await.c(h!())?;
         crate::stats::enqueue_group_stats_recalculation_for_message(
             &transaction,
             sigint_inbox_item_id,

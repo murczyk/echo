@@ -1,0 +1,77 @@
+import { expect, test } from '@playwright/test';
+import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
+
+for (const [count, collinear] of [
+  [1, false],
+  [2, false],
+  [3, false],
+  [3, true],
+] as const) {
+  test(`@regression #2133 direction finding displays ${count}${collinear ? ' collinear' : ''} resolved network settlements without observations`, async ({
+    page,
+  }) => {
+    await installAnalysisNeoApiMocks(page);
+    const network = {
+      id: 42,
+      name: 'Settlement network',
+      location: '|ALPHA|BETA|GAMMA|',
+      freqs: [],
+      unit_ids: [],
+      aor_ids: [],
+      post_ids: [],
+      descriptions: [],
+      created_at: Date.now(),
+      radio_station: null,
+      purpose: null,
+      operation_mode: null,
+      operation_type: null,
+      operation_period: null,
+      last_activity_at: null,
+      last_updated_at: Date.now(),
+      last_updated_by: null,
+      active_from: null,
+      active_to: null,
+      deleted: false,
+      do_not_archive: false,
+      unit_mask: [],
+      status: 'NetworkActive',
+    };
+    const settlements = [
+      { id: 1, name: 'ALPHA', lat: 49.0, lng: 35.0 },
+      { id: 2, name: 'BETA', lat: 49.1, lng: 35.2 },
+      { id: 3, name: 'GAMMA', lat: 49.2, lng: 35.0 },
+    ].slice(0, count);
+    if (collinear)
+      settlements.forEach((settlement) => {
+        settlement.lng = 35.0;
+      });
+    await page.route('**/api/**', async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === '/api/sigint/network-info-one') {
+        await route.fulfill({ json: network });
+      } else if (path === '/api/sigint/network-points') {
+        await route.fulfill({ json: { points: [], settlements } });
+      } else if (
+        ['/api/sigint/posts', '/api/sigint/aor', '/api/sigint/encryptions-list'].includes(path)
+      ) {
+        await route.fulfill({ json: [] });
+      } else {
+        await route.fallback();
+      }
+    });
+    await page.goto('/rer-networks-neo/42?tab=direction-finding');
+    await expect(page.locator('.network-settlement-point')).toHaveCount(count);
+    const polygon = page.locator('.network-settlement-polygon');
+    await expect(polygon).toHaveCount(count === 1 ? 0 : 1);
+    if (count > 1) {
+      await expect(polygon).toHaveAttribute('stroke', '#dc2626');
+      await expect(polygon).toHaveAttribute('d', /M/);
+      await expect(polygon).toHaveAttribute('fill', count === 3 && !collinear ? '#dc2626' : 'none');
+    }
+    await page.getByRole('button', { name: 'Розгорнути мапу', exact: true }).click();
+    await expect(page.locator('.network-settlement-point')).toHaveCount(count);
+    await expect(page.locator('.network-settlement-polygon')).toHaveCount(count === 1 ? 0 : 1);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: 'Розгорнути мапу', exact: true })).toBeVisible();
+  });
+}

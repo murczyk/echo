@@ -779,6 +779,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           pelengPointsRequestedFrom: null,
           pelengPointsRequestedTo: null,
           pelengPoints: [],
+          networkSettlements: [],
         }));
         return;
       }
@@ -789,6 +790,7 @@ export function useRerNetworkDetailsNeoPageLoad(
         pelengPointsError: null,
         pelengPointsLoaded: false,
         pelengPoints: [],
+        networkSettlements: [],
         pelengPointsRequestedFrom: sinceDateInclusiveMs,
         pelengPointsRequestedTo: tillDateNoninclusiveMs,
       }));
@@ -805,6 +807,7 @@ export function useRerNetworkDetailsNeoPageLoad(
         setState((current) => ({
           ...current,
           pelengPoints: response.points ?? [],
+          networkSettlements: response.settlements ?? [],
           pelengEnabledFreqs: derivePelengEnabledFreqs(
             current.pelengEnabledFreqs,
             response.points ?? [],

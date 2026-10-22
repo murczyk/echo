@@ -51,7 +51,7 @@ fn valid_coordinate(lat: f64, lon: f64) -> bool {
     (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)
 }
 
-fn coordinate_distance_m(
+pub(crate) fn coordinate_distance_m(
     lat: f64,
     lon: f64,
     latitude: f64,
