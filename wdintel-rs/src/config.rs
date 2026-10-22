@@ -1787,6 +1787,89 @@ pub struct FileRegistryConfig {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
+    /// Optional `[file_registry.content_limits]` overrides; omitted keys keep
+    /// the defaults from `devices::config`.
+    #[serde(default)]
+    pub content_limits: ContentLimitsConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[serde(default, deny_unknown_fields)]
+pub struct ContentLimitsConfig {
+    pub upload_max_bytes: u64,
+    pub max_reserved_bytes: u64,
+    pub max_reserved_per_login: u64,
+    pub max_reserved_count: usize,
+    pub max_count_per_login: usize,
+    pub spool_min_free_bytes: u64,
+    pub probe_size_bytes: usize,
+    pub upload_idle_ttl_secs: u64,
+    pub upload_max_lifetime_secs: u64,
+    pub finalization_max_concurrent: usize,
+    pub cleanup_batch_size: usize,
+    pub cleanup_poll_interval_secs: u64,
+    pub cleanup_retry_delay_secs: u64,
+}
+
+impl Default for ContentLimitsConfig {
+    fn default() -> Self {
+        use crate::devices::config::*;
+        Self {
+            upload_max_bytes: DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES,
+            max_reserved_bytes: DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_BYTES,
+            max_reserved_per_login:
+                DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_PER_LOGIN,
+            max_reserved_count: DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_COUNT,
+            max_count_per_login: DEVICE_FILE_CONTENT_UPLOAD_MAX_COUNT_PER_LOGIN,
+            spool_min_free_bytes: DEVICE_FILE_CONTENT_SPOOL_MIN_FREE_BYTES,
+            probe_size_bytes: DEVICE_FILE_CONTENT_PROBE_SIZE_BYTES,
+            upload_idle_ttl_secs: DEVICE_FILE_CONTENT_UPLOAD_IDLE_TTL_SECS,
+            upload_max_lifetime_secs:
+                DEVICE_FILE_CONTENT_UPLOAD_MAX_LIFETIME_SECS,
+            finalization_max_concurrent:
+                DEVICE_FILE_CONTENT_FINALIZATION_MAX_CONCURRENT,
+            cleanup_batch_size: DEVICE_FILE_CONTENT_CLEANUP_BATCH_SIZE,
+            cleanup_poll_interval_secs:
+                DEVICE_FILE_CONTENT_CLEANUP_POLL_INTERVAL_SECS,
+            cleanup_retry_delay_secs:
+                DEVICE_FILE_CONTENT_CLEANUP_RETRY_DELAY_SECS,
+        }
+    }
+}
+
+impl ContentLimitsConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        let positive = [
+            ("upload_max_bytes", self.upload_max_bytes),
+            ("max_reserved_count", self.max_reserved_count as u64),
+            ("max_count_per_login", self.max_count_per_login as u64),
+            ("probe_size_bytes", self.probe_size_bytes as u64),
+            ("upload_idle_ttl_secs", self.upload_idle_ttl_secs),
+            ("upload_max_lifetime_secs", self.upload_max_lifetime_secs),
+            (
+                "finalization_max_concurrent",
+                self.finalization_max_concurrent as u64,
+            ),
+            ("cleanup_batch_size", self.cleanup_batch_size as u64),
+            (
+                "cleanup_poll_interval_secs",
+                self.cleanup_poll_interval_secs,
+            ),
+            ("cleanup_retry_delay_secs", self.cleanup_retry_delay_secs),
+        ];
+        if let Some((name, _)) = positive.iter().find(|(_, value)| *value == 0)
+        {
+            return Err(format!(
+                "[file_registry.content_limits] {name} must be positive"
+            ));
+        }
+        if self.upload_max_bytes > self.max_reserved_bytes
+            || self.upload_max_bytes > self.max_reserved_per_login
+        {
+            return Err("[file_registry.content_limits] upload_max_bytes must not exceed max_reserved_bytes or max_reserved_per_login".to_string());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

@@ -48,6 +48,23 @@ pg_user = "wd"
 pg_password = "fee_-_-_-FnoeKFBeebu87bf"
 pg_dbname = "wd_files"
 
+# Optional device file content upload limits. Omitted keys keep the defaults
+# shown here; uncomment only the ones you want to override.
+# [file_registry.content_limits]
+# upload_max_bytes = 21474836480              # 20 GiB, max size of one upload
+# max_reserved_bytes = 85899345920            # 80 GiB, all open uploads combined
+# max_reserved_per_login = 107374182400       # 100 GiB, per login
+# max_reserved_count = 512                    # open uploads, all logins
+# max_count_per_login = 32                    # open uploads per login
+# spool_min_free_bytes = 2147483648           # 2 GiB must stay free on the spool disk
+# probe_size_bytes = 32768
+# upload_idle_ttl_secs = 172800               # 2 days without activity
+# upload_max_lifetime_secs = 1209600          # 14 days hard limit
+# finalization_max_concurrent = 4
+# cleanup_batch_size = 200
+# cleanup_poll_interval_secs = 60
+# cleanup_retry_delay_secs = 600
+
 [secret_config]
 token_endpoint = ""
 userinfo_endpoint = ""

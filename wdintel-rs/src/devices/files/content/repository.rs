@@ -7,8 +7,9 @@ use sea_orm::{
 use std::time::Instant;
 use uuid::Uuid;
 
-use super::ContentLimits;
+use crate::config::ContentLimitsConfig;
 use crate::h;
+use log::warn;
 
 const RESERVATION_LOCK_SQL: &str =
     "select pg_advisory_xact_lock(hashtextextended('echo:device-file-content-reservation', 0))";
@@ -167,7 +168,7 @@ pub(crate) async fn load_upload(
 pub(super) async fn create_or_replay(
     db: &DatabaseConnection,
     request: NewUpload,
-    config: &ContentLimits,
+    config: &ContentLimitsConfig,
 ) -> Result<CreateOutcome> {
     let started = Instant::now();
     let transaction = db
@@ -196,7 +197,7 @@ pub(super) async fn create_or_replay(
 async fn create_or_replay_in(
     transaction: &DatabaseTransaction,
     mut request: NewUpload,
-    config: &ContentLimits,
+    config: &ContentLimitsConfig,
     started: Instant,
 ) -> Result<CreateOutcome> {
     let requested_at = request.now;
@@ -259,7 +260,25 @@ async fn create_or_replay_in(
     let quota = load_quota(transaction, request.created_by_login_id)
         .await
         .context(h!())?;
-    if !quota_accepts(&quota, &request, config) {
+    if let Some(reason) = quota_rejection(&quota, &request, config) {
+        warn!(
+            "device content upload rejected by quota ({reason}): device={} file={} revision={} login={} upload_length={} reserved_bytes={} creator_reserved_bytes={} reserved_count={} creator_reserved_count={} available_spool_bytes={} limits=[max_reserved_bytes={} max_reserved_per_login={} max_reserved_count={} max_count_per_login={} spool_min_free_bytes={}]",
+            request.device_id,
+            request.file_id,
+            request.revision,
+            request.created_by_login_id,
+            request.upload_length,
+            quota.reserved_bytes,
+            quota.creator_reserved_bytes,
+            quota.reserved_count,
+            quota.creator_reserved_count,
+            request.available_spool_bytes,
+            config.max_reserved_bytes,
+            config.max_reserved_per_login,
+            config.max_reserved_count,
+            config.max_count_per_login,
+            config.spool_min_free_bytes,
+        );
         return Ok(CreateOutcome::CapacityUnavailable);
     }
     request.now = time_after_wait(requested_at, started).context(h!())?;
@@ -428,7 +447,7 @@ pub(super) async fn refresh_open(
     known: &Upload,
     now: DateTime<FixedOffset>,
     touch_activity: bool,
-    config: &ContentLimits,
+    config: &ContentLimitsConfig,
     metrics: Option<&crate::telemetry::Metrics>,
 ) -> Result<RevalidateOutcome> {
     let started = Instant::now();
@@ -1076,32 +1095,40 @@ where spool_removed_at is null or status <> 'completed'
     })
 }
 
-fn quota_accepts(
+fn quota_rejection(
     quota: &QuotaUsage,
     request: &NewUpload,
-    config: &ContentLimits,
-) -> bool {
+    config: &ContentLimitsConfig,
+) -> Option<&'static str> {
     let Some(reserved_bytes) =
         quota.reserved_bytes.checked_add(request.upload_length)
     else {
-        return false;
+        return Some("reserved bytes overflow");
     };
     let Some(creator_bytes) = quota
         .creator_reserved_bytes
         .checked_add(request.upload_length)
     else {
-        return false;
+        return Some("creator reserved bytes overflow");
     };
     let Some(required_available) =
         reserved_bytes.checked_add(config.spool_min_free_bytes)
     else {
-        return false;
+        return Some("required spool space overflow");
     };
-    reserved_bytes <= config.max_reserved_bytes
-        && creator_bytes <= config.max_reserved_per_login
-        && quota.reserved_count < config.max_reserved_count
-        && quota.creator_reserved_count < config.max_count_per_login
-        && request.available_spool_bytes >= required_available
+    if reserved_bytes > config.max_reserved_bytes {
+        Some("global reserved bytes")
+    } else if creator_bytes > config.max_reserved_per_login {
+        Some("per-login reserved bytes")
+    } else if quota.reserved_count >= config.max_reserved_count {
+        Some("global reserved count")
+    } else if quota.creator_reserved_count >= config.max_count_per_login {
+        Some("per-login reserved count")
+    } else if request.available_spool_bytes < required_available {
+        Some("spool free space")
+    } else {
+        None
+    }
 }
 
 fn replay_outcome(upload: Upload, request: &NewUpload) -> CreateOutcome {
