@@ -13,22 +13,54 @@ action="$1"
 server="$2"
 
 if [[ "$action" == keepalive ]]; then
-  exec python3 - "$server" "${BASH_SOURCE[0]}" <<'PY'
+  exec python3 - "$server" "${BASH_SOURCE[0]}" "$PPID" <<'PY'
 import os
+import signal
 import subprocess
 import sys
 import time
 
-server, script = sys.argv[1:]
-deploy_parent = os.getppid()
+server, script, deploy_parent = sys.argv[1:]
+deploy_parent = int(deploy_parent)
+if deploy_parent <= 1:
+    sys.exit(0)
+
+def stop(signum, frame):
+    raise SystemExit(0)
+
+signal.signal(signal.SIGTERM, stop)
+signal.signal(signal.SIGINT, stop)
+
+def renew():
+    process = subprocess.Popen(["bash", script, "renew", server], start_new_session=True)
+    try:
+        return process.wait(timeout=20)
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        finally:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+
 while os.getppid() == deploy_parent:
     try:
-        result = subprocess.run(["bash", script, "renew", server], timeout=20)
-        if result.returncode:
+        if renew():
             print("WARNING: deployment maintenance renewal failed", file=sys.stderr, flush=True)
     except subprocess.TimeoutExpired:
         print("WARNING: deployment maintenance renewal timed out", file=sys.stderr, flush=True)
-    time.sleep(30)
+    for _ in range(30):
+        if os.getppid() != deploy_parent:
+            sys.exit(0)
+        time.sleep(1)
 PY
 fi
 

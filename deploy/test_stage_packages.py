@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import tempfile
 import time
@@ -131,6 +132,46 @@ print('0' if os.environ.get('STAGE_TEST_MARKER_MISSING') else '1')
             if process.poll() is None:
                 process.kill()
                 process.wait(timeout=2)
+
+    def test_stopping_keepalive_also_stops_inflight_ssh_3780(self):
+        self.command("ssh", """
+import os, signal, time
+from pathlib import Path
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+Path(os.environ['STAGE_TEST_LOG']).write_text(str(os.getpid()))
+time.sleep(60)
+""")
+        process = subprocess.Popen(
+            ["bash", str(ROOT / "deploy/deployment-maintenance.sh"), "keepalive", "fixture"],
+            env=self.environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        ssh_pid = None
+        try:
+            for _ in range(100):
+                if self.log.exists() and self.log.read_text():
+                    ssh_pid = int(self.log.read_text())
+                    break
+                time.sleep(0.02)
+            self.assertIsNotNone(ssh_pid)
+            process.terminate()
+            process.wait(timeout=3)
+            for _ in range(100):
+                status = Path(f"/proc/{ssh_pid}/stat")
+                if not status.exists() or status.read_text().split()[2] == "Z":
+                    break
+                time.sleep(0.02)
+            else:
+                self.fail("SSH renewal survived keepalive termination")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=2)
+            if ssh_pid is not None:
+                try:
+                    os.kill(ssh_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
 
 if __name__ == "__main__":

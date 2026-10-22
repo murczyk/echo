@@ -850,14 +850,18 @@ deploy _server_pos="" server silent="false":
     MAINTENANCE_STARTED=0
     MAINTENANCE_KEEPALIVE_PID=""
 
-    cleanup() {
-      local status=$?
-      trap - EXIT
-
+    stop_maintenance_keepalive() {
       if [[ -n "$MAINTENANCE_KEEPALIVE_PID" ]]; then
         kill "$MAINTENANCE_KEEPALIVE_PID" 2>/dev/null || true
         wait "$MAINTENANCE_KEEPALIVE_PID" 2>/dev/null || true
+        MAINTENANCE_KEEPALIVE_PID=""
       fi
+    }
+
+    cleanup() {
+      local status=$?
+      trap - EXIT
+      stop_maintenance_keepalive
 
       if [[ $status -ne 0 && $UNMASK_RUNTIME_SERVICES_ON_FAILURE -eq 1 ]]; then
         echo "Deployment failed; restoring runtime services..." >&2
@@ -1173,6 +1177,7 @@ deploy _server_pos="" server silent="false":
     '
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
     ssh "$SERVER" 'if sudo -n test -f /etc/echo-peerdb/source.env; then /opt/echo-peerdb/current/bin/source-verify-deploy.sh; fi'
+    stop_maintenance_keepalive
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi
@@ -1239,14 +1244,18 @@ deploy-from-local _server_pos="" server silent="false":
     MAINTENANCE_STARTED=0
     MAINTENANCE_KEEPALIVE_PID=""
 
-    cleanup() {
-      local status=$?
-      trap - EXIT
-
+    stop_maintenance_keepalive() {
       if [[ -n "$MAINTENANCE_KEEPALIVE_PID" ]]; then
         kill "$MAINTENANCE_KEEPALIVE_PID" 2>/dev/null || true
         wait "$MAINTENANCE_KEEPALIVE_PID" 2>/dev/null || true
+        MAINTENANCE_KEEPALIVE_PID=""
       fi
+    }
+
+    cleanup() {
+      local status=$?
+      trap - EXIT
+      stop_maintenance_keepalive
 
       if [[ -n "$REMOTE_DEB_PATH" ]]; then
         ssh "$SERVER" "rm -f -- '$REMOTE_DEB_PATH'" >/dev/null 2>&1 || true
@@ -1472,6 +1481,7 @@ deploy-from-local _server_pos="" server silent="false":
     '
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
     ssh "$SERVER" 'if sudo -n test -f /etc/echo-peerdb/source.env; then /opt/echo-peerdb/current/bin/source-verify-deploy.sh; fi'
+    stop_maintenance_keepalive
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi
