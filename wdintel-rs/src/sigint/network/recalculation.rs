@@ -1807,6 +1807,8 @@ mod tests {
                 .unwrap(),
             1
         );
+        assert!(run_once(&env.dbx).await.unwrap());
+        assert!(!run_once(&env.dbx).await.unwrap());
     }
 
     #[tokio::test]
