@@ -27,6 +27,8 @@ import { MAX_MESSAGE_ATTACHMENTS } from './useMessageUppy';
 import { fallbackFailedMessageUploads, messageUploadFailure } from './message-upload-fallback';
 
 type SubmitOptions = {
+  citedSignalMessageIds?: number[];
+  replyGroupMasterKey?: string | null;
   busy: boolean;
   radioFeaturesAllowed: boolean;
   cyberEchoEnabled: boolean;
@@ -58,6 +60,8 @@ export function useMessageSubmit({
   isReportCreateMode,
   editTarget,
   reportSource,
+  citedSignalMessageIds = [],
+  replyGroupMasterKey,
   existingMedia,
   onSubmitEdit,
   tagsLoaded,
@@ -224,9 +228,11 @@ export function useMessageSubmit({
         text: shortBodyForSubmit(data, isEditMode ? editTarget : null),
         comment: data.comment?.trim() || undefined,
         signal_group_master_key:
-          data.signalGroupMasterKey === DO_NOT_SEND_GROUP_VALUE
-            ? null
-            : data.signalGroupMasterKey?.trim() || (isReportMode ? null : ''),
+          citedSignalMessageIds.length > 0 && replyGroupMasterKey
+            ? replyGroupMasterKey
+            : data.signalGroupMasterKey === DO_NOT_SEND_GROUP_VALUE
+              ? null
+              : data.signalGroupMasterKey?.trim() || (isReportMode ? null : ''),
         device_name_id: deviceNameId,
         upload_urls: uploadUrls.length ? uploadUrls : null,
         attachment_updates: buildAttachmentUpdates(
@@ -276,6 +282,7 @@ export function useMessageSubmit({
             })),
         deleted_media_ids: isEditMode ? (data.deleted_media_ids ?? []) : [],
         retained_media_ids: isReportCreateMode ? retainedMediaIds : undefined,
+        cited_signal_message_ids: !isEditMode ? citedSignalMessageIds : undefined,
         parent_signal_message_ids: isReportCreateMode ? [reportSource!.id] : undefined,
         copy_source_signal_message_ids: isReportCreateMode ? [reportSource!.id] : undefined,
       };

@@ -984,13 +984,19 @@ async fn upsert_signal_message_queue_snapshot(
     )
     .await
     .c(h!())?;
+    let reply_metadata_changed =
+        crate::message_reply::stage_source(txn, datasource_id, item)
+            .await
+            .c(h!())?;
     if let Some((existing_item, existing_attachments)) = existing_snapshot {
-        if queue_snapshot_matches(
-            &existing_item,
-            &existing_attachments,
-            item,
-            &effective_attachments,
-        ) {
+        if !reply_metadata_changed
+            && queue_snapshot_matches(
+                &existing_item,
+                &existing_attachments,
+                item,
+                &effective_attachments,
+            )
+        {
             trace!(
                 "skipped unchanged inbox snapshot: queue_id={} datasource_id={} inbox_message_id={}",
                 existing_item.id, datasource_id, item.internal_id

@@ -586,6 +586,37 @@ export type TagPresenceFilter =
   | 'WithoutTags'
 ;
 
+export type MessageReplyScreen =
+  | 'Duty'
+  | 'Analysis'
+;
+
+export type MessageRepliesReq = {
+  signalMessageIds: Array<number>;
+  screen: MessageReplyScreen;
+};
+
+export type MessageReply = {
+  id: number;
+  originalSignalMessageId: number | null;
+  replySignalMessageId: number | null;
+  createdAt: number;
+  deleted: boolean;
+};
+
+export type CitedMessage = {
+  id: number;
+  timestamp: number | null;
+  createdAt: number;
+  preview: string;
+  href: string;
+};
+
+export type MessageRepliesRsp = {
+  replies: Array<MessageReply>;
+  replyMessages: Array<CitedMessage>;
+};
+
 export type InboxMessagesReq = {
   sinceIdNoninclusive: number | null;
   beforeIdNoninclusive: number | null;
@@ -4131,6 +4162,7 @@ export type DirectSubmitPayload = {
   retainedMediaIds: Array<string> | null;
   parentSignalMessageIds: Array<number>;
   copySourceSignalMessageIds: Array<number>;
+  citedSignalMessageIds: Array<number>;
 };
 
 export type DirectSubmitAttachmentUpdates = {

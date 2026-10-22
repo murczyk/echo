@@ -201,6 +201,17 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
     .await
     .c(h!())?;
 
+    if let Some(inbox_id) = m.inbox_message_id {
+        crate::message_reply::record_source(
+            txn,
+            m.datasource_id,
+            inbox_id,
+            res.message.id,
+        )
+        .await
+        .c(h!())?;
+    }
+
     if res.is_duplicate {
         let uploaded_files_ready_for_deletion =
             store_kept_duplicate_trace_media(

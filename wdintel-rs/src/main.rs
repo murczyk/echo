@@ -53,6 +53,7 @@ pub mod logging;
 pub mod mattermost;
 pub mod media_summary;
 pub mod message_queue;
+pub mod message_reply;
 pub mod messenger;
 pub mod migration;
 pub mod ml;

@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 pub const APP_BUILD_VERSION: &str = env!("ECHO_BUILD_VERSION");
+pub const MESSAGE_REPLY_MAX_ANCHORS: usize = 512;
+pub const MESSAGE_REPLY_PREVIEW_CHARS: usize = 256;
+pub const MESSAGE_REPLY_EVENT_BATCH: usize = 200;
+pub const MESSAGE_REPLY_EVENT_INTERVAL_MS: u64 = 2_000;
 pub const HTTP_REDIRECT_MAX_HEADER_BYTES: usize = 2048;
 
 pub const SERVER_ACTIVITY_CONTEXT_HEADERS: &[&str] = &[
@@ -1292,6 +1296,9 @@ pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
 LOCK TABLE signal_message IN SHARE MODE;
+DELETE FROM message_reply_source;
+DELETE FROM message_reply;
+DELETE FROM message_reply_change;
 DELETE FROM group_stats_recalculation_day;
 DELETE FROM ai_callsign_reparse_run;
 DELETE FROM ai_callsign_feedback;

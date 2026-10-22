@@ -1072,6 +1072,7 @@ pub async fn reconcile_active_message_with_staged_media(
         )
         .await
         .c(h!())?;
+        crate::message_reply::record_source(txn, datasource_id, snapshot.internal_id as i64, unstage_result.message.id).await.c(h!())?;
 
         if unstage_result.is_duplicate {
             copy_manual_annotations_to_promoted_message(

@@ -1,74 +1,25 @@
-**База користувачів**
-- [ ] Зареєстровані всього
-- [ ] Активні / неактивні
-- [ ] Неактивні за давністю: до 30 днів / 30–90 / понад 90 / жодного входу
-- [ ] Жива база: активні + неактивні до 90 днів
-- [ ] Видалені за період
-- [ ] Кандидати на видалення: понад 90 днів без входу
-- [ ] Активність за посадами
-- [ ] невдалих спроб зайти від видалених чи неіснуючих юзерів
+we have signal_message entries, we want to be able to reply to them.
+when I reply to a signal_message - I create a signal message that has link to an original message, but it's just a nullable foreign key: if original message is deleted - we still persist the reply, we just keep the info in db that it's in fact a response to a message that is currently unavailable. same goes for a reply - we might delete it but we would like to keep a knowledge in the system that it was in fact present at some point.
 
-**Активність**
-- [ ] DAU, WAU, MAU
-- [ ] DAU/MAU
-- [ ] WAU/MAU (краще для змінних підрозділів)
-- [ ] Активні учасники за тиждень, включно з тими, хто працює через бота
-- [ ] Частотні групи: щодня / 2–4 рази на тиждень / раз на тиждень / рідше
-- [ ] Активність за підрозділами
-- [ ] Кількість сесій на людину за тиждень
-- [ ] Тривалість сесії
-- [ ] кількість згенерованих звітів
-- [ ] активність взаємодії з UI (скільки кліків, натискань кнопок, натискань мишки)
-- [ ] кількість міскліків + повернень назад
-- [ ] метрика які кнопки натискають а які ні, які юзери натискають ці кнопки а які ігнорують (бо якщо 1 юзер тільки юзає кнопку то це не краще ніж ніхто не юзає)
+such requirement points us towards a reply as dedicated table. we have db table message_reply, with attributes original_signal_message_id (nullable foreign key to a signal_message table) , reply_signal_message_id (nullable foreign key to a signal_message table) , created_at (utc timezone non null), deleted (bool not null default false).
 
-**Вхід і проблеми**
-- [ ] Успішність входу
-- [ ] Причини невдалих входів
-- [ ] Час до входу: від першої невдалої спроби до успішної
-- [ ] Загублені після невдалого входу
-- [ ] Від реєстрації до першого входу
-- [ ] Звернення до бекендерів щодо входу за тиждень
-- [ ] Топ причин звернень: VPN, сертифікат, браузер, пароль, пристрій, на лініїї фронту
-- [ ] Час вирішення звернення 
-- [ ] Повторні звернення від тих самих людей
-- [ ] Невдалі підключення, надіслані з пристрою пізніше
-- [ ] рейджклік (шось не виходить і починає довбити клавіші)
+from web UI in both rer-duty-neo and rer-analysis-neo you have a reply button among common actions like copy a link to a message, delete a message etc (anybody can reply). when you press it - we open our standard New Message popup, with readonly block 'citedMessage' (we expect to be able to cite multiple messages, when we do so - we create multiple message_reply entries, one per cited message, with new message_id as reply_id). on confirm we send a new message to the same group, so we create a regular signal_message entry (that's bein processed as always) and 1 or more message_reply entries.
 
-**Перші кроки новачків**
-- [ ] Активація: % нових, хто за 7 днів зробив ключову дію
-- [ ] Час до першої ключової дії
-- [ ] Нові, які жодного разу не зайшли після реєстрації
-- [ ] На якому кроці новачки зупиняються
+now loading messages on rer-analysis-neo and rer-duty-neo is different: once you've loaded new portion of messages - you run async query that loads reply data for these messages. also, we push to Redis (I guess?) updates on messages to refresh visible mssages, make sure the message_reply hits that Redis live updates feed too.
+we also have periodical updates we poll on those pages, they should also include latest reply_message entries, so we refresh the web ui correspondingly for relevant messages if some present. make sure we don't fetch this data proactively on each redis tick, but do it only when our planned polling mechanism decides it's time. 
 
-**Де пробують (функції)**
-- [ ] Визначетись який функціонал перевіряти (то мені Рада)
+when we pulled in new replies data, it is structured thuis way: it has replies list and reply_messages content.
+we pull replies for a set of signal_message IDs.
+1) replies is just a straight list of all message_reply entries that have either original_signal_message_id or reply_signal_message_id in the list of signal_message_ids.
+2) reply_messages is a list of narrowly queried signal_message-related data: all fields of citedMessage data frame and a link to a signal_message (link to rer-duty-neo if we fetch this for rer-duty-neo screen, link to rer-analysis-neo for rer-analysis-neo screen).
 
-**Чого затримуються (швидкість)**
-- [ ] Від появи сирих даних до донесення в Ехо
-- [ ] Від появи донесення до першого перегляду адресатом: медіана і 90-й перцентиль
-- [ ] Донесення, які ніхто з адресатів не відкрив
-- [ ] Важливе без реакції: не відкрили, не відповіли, не переслали
-- [ ] Час завантаження сторінок
+citedMessage dataframe (rendered both in message lists and create message screen) is bare minimum info about the message: signal_message.timestamp and first 2 rows (or first 256 chars) of signal_message.body. please document that if we want to show other info (like sender's login etc) - we need to update this endpoint as well.
 
-**Чого йдуть (відтік)**
-- [ ] Відтік: були активні минулого місяця, неактивні цього
-- [ ] Утримання когорт: % нових, активних через 30 і 90 днів
-- [ ] Повернення: були неактивні, знову активні
-- [ ] Остання дія перед тим, як людина зникла (стала не активною)
-- [ ] Остання дія перед тим, як користувач перестав заходити
+once we've fetched replies data - we enrich related visible signal_message entries (below the tags block): 
+1) if signal message is a reply to other message - we write 'Оригінальне повідомлення' text in our 'active text' theme (when you press it - we show a pop-up Do You Want To Open Original Message?, if yes - follow the link to a message in new tab), and below it - citedMessage card.
+structure of citedMessage card: quote of the message: 1st row is timestamp (small font size, the same active font: date in format dd.mm followed by space + middledot + space, followed by time in format hh:MM), 2nd row is our preview text, in regular font; pressing timestamp also prompts the dialog to open the link to a message in new tab.
+2) if signal message has replies - we write (below the  'Оригінальне повідомлення'  from pt.1 if we have it, otherwise insteadof it) Ланцюжок, followed by circular chip with number of replies to this message (inside the chip); below this we show all the replies, each as a separate row,  oldest to newest; format of a row: number of the row (starting from 1) in a circular outline, then to the right - cited message card.
+between rows we show thin vertical lines from number 1 to number 2 etc, so they indeed look like a chain. focusing on a message highlight circle with a number so its theme changes to 'selected', it's a visual aid.
 
-**Канали і бот**
-- [ ] Розподіл донесень за каналами: напряму / бот Signal / бот WhatsApp
-- [ ] Автори через бота і скільки з них рахуються неактивними (Скільки таких людей за тиждень або місяць.
-Скільки з них у самій Ехо мають статус «неактивний», тобто мають акаунт, але в систему не заходять.)
-- [ ] Затримка бота: від месенджера до Ехо
-- [ ] Повідомлення, які бот не забрав
 
-**Радять**
-- [ ] Нові люди, яких додали колеги (якщо система записує, хто додав)
-
-**Технічна якість**
-- [ ] Доступність системи
-- [ ] % запитів з помилкою
-- [ ] Доставка сповіщень: дійшли чи ні і за скільки
+for messages that come from signal and whatsapp datasources we also have info what message is a reply to a different message, echo_im should be providing this info (update it in ../echo_im if it doesn't). worker that process datasources should start created message_reply entries for new incoming messages so we show that too.

@@ -1,3 +1,4 @@
+import { notifyMessageReplyPoll } from '../shared/message-replies/events';
 import { useCallback, useEffect, useRef } from 'react';
 import { ANALYSIS_MESSAGE_RECONCILIATION_INTERVAL_MS } from './config';
 
@@ -67,6 +68,7 @@ export function useTargetedInboxReconciliation(reconcileBatch: ReconcileBatch, s
           const abortController = new AbortController();
           abortControllerRef.current = abortController;
           lastStartedAtRef.current = performance.now();
+          notifyMessageReplyPoll('Analysis');
 
           try {
             await reconcileBatchRef.current(

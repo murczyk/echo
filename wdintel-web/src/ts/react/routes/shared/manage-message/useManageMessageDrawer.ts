@@ -1,4 +1,4 @@
-import { canUseRadioFeatures } from '../../../utils/roles';
+import { canUseRadioFeatures, canWriteMessages } from '../../../utils/roles';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -75,6 +75,7 @@ export type ManageMessageIntentChange = {
 };
 
 export type UseManageMessageDrawerProps = {
+  citedSignalMessageIds?: number[];
   open: boolean;
   hideNetworks?: boolean;
   cyberEchoEnabled: boolean;
@@ -113,6 +114,7 @@ export function useManageMessageDrawer({
   onEditSuccess,
   editTarget = null,
   reportSource = null,
+  citedSignalMessageIds = [],
   editAsReport = false,
   editTargetLoadState = { status: 'idle' },
   editSaveInFlight,
@@ -124,6 +126,8 @@ export function useManageMessageDrawer({
 }: UseManageMessageDrawerProps) {
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
+  const isReplyMode = !isEditMode && !reportSource && citedSignalMessageIds.length > 0;
+  const unitFeaturesAllowed = !isReplyMode || canWriteMessages(currentUser?.roles);
   const isReportCreateMode = isPresent(reportSource) && !isEditMode;
   const isReportEditMode = (isEditMode && editAsReport) || editTargetLoadState.status !== 'idle';
   const reportParents = isPresent(reportSource)
@@ -384,8 +388,9 @@ export function useManageMessageDrawer({
   ]);
 
   const resolver = useMemo(
-    () => zodResolver(makeMessageSchema(isEditMode, false, isReportMode, radioFeaturesAllowed)),
-    [isEditMode, isReportMode, radioFeaturesAllowed],
+    () =>
+      zodResolver(makeMessageSchema(isEditMode, isReplyMode, isReportMode, radioFeaturesAllowed)),
+    [isEditMode, isReportMode, isReplyMode, radioFeaturesAllowed],
   );
 
   const methods = useForm<MessageFormData>({
@@ -406,7 +411,7 @@ export function useManageMessageDrawer({
   const formValues = useWatch({ control });
   const { unitOptions, unitLoading, unitAllowCreate, unitSearchResults, defaultRecentUnit } =
     useMessageUnitOptions({
-      active: formReady,
+      active: formReady && unitFeaturesAllowed,
       search: formValues.unit ?? '',
       recentNames: recentValues.unit,
       replaceRecentNames: replaceUnitValues,
@@ -667,6 +672,7 @@ export function useManageMessageDrawer({
     isEditMode,
     isReportMode,
     radioFeaturesAllowed,
+    unitFeaturesAllowed,
     onPristineSourceCleared: resetPristineCreateFields,
   });
   const handleAcceptParsedField = useCallback(
@@ -699,7 +705,7 @@ export function useManageMessageDrawer({
           formValues.unitNetworkSelection,
         ),
       isEditMode,
-      allowMissingGroup: isReportMode,
+      allowMissingGroup: isReportMode || isReplyMode,
       reportTextRequired: isReportMode,
       groupsLoading,
       selectedGroupKey,
@@ -729,6 +735,7 @@ export function useManageMessageDrawer({
     isEditMode,
     isReportCreateMode,
     isReportMode,
+    isReplyMode,
     parseStatus,
     parsing,
     reportCopyLoaded,
@@ -757,7 +764,7 @@ export function useManageMessageDrawer({
             resetField('signalGroupMasterKey', { defaultValue: initialGroupMasterKey });
           } else {
             resetField('signalGroupMasterKey', { defaultValue: '' });
-            setReferenceDataError('Обрана група більше недоступна.');
+            if (!isReplyMode) setReferenceDataError('Обрана група більше недоступна.');
           }
           return;
         }
@@ -803,6 +810,7 @@ export function useManageMessageDrawer({
     formReady,
     handleReferenceDataError,
     initialGroupMasterKey,
+    isReplyMode,
     intentKey,
     isEditMode,
     isReportMode,
@@ -1206,6 +1214,8 @@ export function useManageMessageDrawer({
     isReportCreateMode,
     editTarget,
     reportSource,
+    citedSignalMessageIds,
+    replyGroupMasterKey: initialGroupMasterKey,
     existingMedia,
     onSubmitEdit,
     tagsLoaded,

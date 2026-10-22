@@ -218,6 +218,11 @@ export async function installAnalysisNeoApiMocks(
     const url = new URL(request.url());
     const { pathname } = url;
 
+    if (pathname === '/api/rer-importer/message-replies') {
+      await fulfillJson(route, { replies: [], reply_messages: [] });
+      return;
+    }
+
     if (pathname === '/api/user') {
       await fulfillJson(route, {
         id: 'analysis-tester',

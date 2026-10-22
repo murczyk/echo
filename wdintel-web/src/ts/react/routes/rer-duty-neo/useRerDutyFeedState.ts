@@ -1,3 +1,4 @@
+import { notifyMessageReplyPoll } from '../shared/message-replies/events';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -901,6 +902,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         automatic,
       );
       if (!eligibleFeeds.length) return;
+      notifyMessageReplyPoll('Duty');
       const cycle = beginDutyNotificationPollCycle();
       pollNotificationCyclesRef.current.add(cycle);
       const countTasks = eligibleFeeds.map(async (feed) => {

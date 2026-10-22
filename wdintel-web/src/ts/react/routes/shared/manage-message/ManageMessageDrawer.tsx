@@ -1,4 +1,6 @@
-import { canWriteMessages, hasRole } from '../../../utils/roles';
+import { CitedMessageCard } from '../message-replies/CitedMessageCard';
+import type { MessageTimeBasis } from '../../../services/api/user-settings';
+import { canReplyToMessages, canWriteMessages, hasRole } from '../../../utils/roles';
 import { RadioFeaturesProvider } from '../RadioFeatures';
 import {
   forwardRef,
@@ -34,7 +36,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 
-import type { User, InboxMessage } from '../../../../../Bindings';
+import type { User, InboxMessage, CitedMessage } from '../../../../../Bindings';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerForm } from '../../../components/PowerForm';
@@ -73,6 +75,9 @@ import { useObservedWidth } from '../../../hooks/use-observed-width';
 import { resolveManageMessageEmbeddedFormLayout } from './manage-message-editor-layout';
 
 export type Props = {
+  citedSignalMessageIds?: number[];
+  citedMessages?: CitedMessage[];
+  citationTimeBasis?: MessageTimeBasis;
   open: boolean;
   hideNetworks?: boolean;
   cyberEchoEnabled: boolean;
@@ -426,7 +431,11 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
     const wideMessageBody = adaptiveEmbeddedForm && embeddedFormLayout.density === 'wide';
     const messageBodyRows = compactMessageBody ? 6 : wideMessageBody ? 4 : 12;
     const messageBodyMinHeight = compactMessageBody ? 162 : wideMessageBody ? 130 : null;
-    const canWrite = canWriteMessages(props.currentUser?.roles);
+    const isReplyMode =
+      !props.editTarget && !props.reportSource && (props.citedSignalMessageIds?.length ?? 0) > 0;
+    const canWrite =
+      canWriteMessages(props.currentUser?.roles) ||
+      (isReplyMode && canReplyToMessages(props.currentUser?.roles));
     const returnFocusRef = useRef<HTMLElement | null>(null);
     const wasOpenRef = useRef(false);
     if (props.open && !wasOpenRef.current) {
@@ -780,6 +789,22 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                           },
                         }}
                       >
+                        {isReplyMode ? (
+                          <section aria-label="Цитоване повідомлення" className="mb-echo-sm">
+                            <Typography variant="subtitle2">Відповідь на повідомлення</Typography>
+                            {props.citedMessages?.length ? (
+                              props.citedMessages.map((citation) => (
+                                <CitedMessageCard
+                                  key={citation.id}
+                                  message={citation}
+                                  timeBasis={props.citationTimeBasis ?? 'creation'}
+                                />
+                              ))
+                            ) : (
+                              <CircularProgress size={20} aria-label="Завантаження цитати" />
+                            )}
+                          </section>
+                        ) : null}
                         {isReportMode ? (
                           <ReportTextRow
                             originalText={originalReportText}
@@ -946,6 +971,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             isEditMode={isEditMode}
                             isReportMode={isReportMode}
                             groupEditable={isReportMode}
+                            groupLocked={isReplyMode}
                             cyberEchoEnabled={props.cyberEchoEnabled}
                             deviceNameOptions={deviceNameOptions}
                             deviceNamesLoading={deviceNamesLoading}
@@ -970,7 +996,10 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                               'UnitsEditor',
                             )}
                             onUnitFocus={drawerState.onUnitFocus}
-                            unitLocked={drawerState.unitLocked}
+                            unitLocked={
+                              drawerState.unitLocked ||
+                              (isReplyMode && !canWriteMessages(props.currentUser?.roles))
+                            }
                             callsignOptions={drawerState.callsignOptions}
                             callsignLoading={drawerState.callsignLoading}
                             callsignInput={drawerState.callsignInput}

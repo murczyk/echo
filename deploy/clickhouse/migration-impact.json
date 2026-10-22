@@ -1,5 +1,12 @@
 {
   "migrations": {
+    "echo:m20261022_161645_message_reply": {
+      "changes": [
+        { "table": "public.message_reply", "strategy": "replicated_snapshot" },
+        { "table": "public.message_reply_source", "strategy": "excluded" },
+        { "table": "public.message_reply_change", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261022_151553_iggy_unit_refresh_queue": {
       "changes": [{ "table": "public.api_integration_iggy_unit_refresh", "strategy": "excluded" }]
     },
