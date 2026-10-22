@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 pub const APP_BUILD_VERSION: &str = env!("ECHO_BUILD_VERSION");
+pub const HTTP_REDIRECT_MAX_HEADER_BYTES: usize = 2048;
 
 pub const SERVER_ACTIVITY_CONTEXT_HEADERS: &[&str] = &[
     "referer",
@@ -16,7 +17,12 @@ pub const SERVER_ACTIVITY_CONTEXT_HEADERS: &[&str] = &[
     "accept",
     "host",
     "x-request-id",
+    "x-echo-client-asset",
+    "x-echo-tab-id",
+    "x-echo-page-visibility",
+    "x-echo-request-trigger",
 ];
+pub const SERVER_ACTIVITY_DIAGNOSTIC_HEADER_MAX_BYTES: usize = 128;
 
 pub const USER_DISPLAY_NAME_MAX_LENGTH: usize = 100;
 pub const USER_MESSENGER_PROFILE_SEARCH_LIMIT: usize = 50;
@@ -814,6 +820,7 @@ pub const NETWORK_RECALCULATION_TASK_STALE_MINUTES: i64 = 10;
 pub const NETWORK_RECALCULATION_STATEMENT_TIMEOUT_MS: u64 = 5 * 60 * 1_000;
 pub const NETWORK_RECALCULATION_TASK_ENQUEUE_CHUNK_SIZE: usize = 1_000;
 pub const NETWORK_RECALCULATION_TASKS_PER_RUN: usize = 500;
+pub const NETWORK_RECALCULATION_LAST_SEEN_PROBE_LIMIT: i64 = 65;
 pub const NETWORK_RECALCULATION_LAST_SEEN_BATCH_SIZE: u64 = 500;
 pub const NETWORK_RECALCULATION_RUN_BUDGET_SECS: u64 = 50;
 pub const RER_DUTY_POLL_INTERVAL_MIN_SEC: i64 = 5;

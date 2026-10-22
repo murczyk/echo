@@ -847,10 +847,21 @@ deploy _server_pos="" server silent="false":
       just _print-servers; exit 1;
     fi
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
+    MAINTENANCE_STARTED=0
+    MAINTENANCE_KEEPALIVE_PID=""
+
+    stop_maintenance_keepalive() {
+      if [[ -n "$MAINTENANCE_KEEPALIVE_PID" ]]; then
+        kill "$MAINTENANCE_KEEPALIVE_PID" 2>/dev/null || true
+        wait "$MAINTENANCE_KEEPALIVE_PID" 2>/dev/null || true
+        MAINTENANCE_KEEPALIVE_PID=""
+      fi
+    }
 
     cleanup() {
       local status=$?
       trap - EXIT
+      stop_maintenance_keepalive
 
       if [[ $status -ne 0 && $UNMASK_RUNTIME_SERVICES_ON_FAILURE -eq 1 ]]; then
         echo "Deployment failed; restoring runtime services..." >&2
@@ -868,6 +879,10 @@ deploy _server_pos="" server silent="false":
         '; then
           echo "Failed to restore runtime services after deployment failure." >&2
         fi
+      fi
+
+      if [[ $status -ne 0 && $MAINTENANCE_STARTED -eq 1 ]]; then
+        bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER" || true
       fi
 
       exit "$status"
@@ -959,7 +974,11 @@ deploy _server_pos="" server silent="false":
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
     bash "{{ justfile_directory() }}/deploy/prepare-sigint-inbox-callsign-iggy-index.sh" "$SERVER"
+    bash "{{ justfile_directory() }}/deploy/stage-packages.sh" "$SERVER"
+    MAINTENANCE_STARTED=1
     bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" start "$SERVER"
+    bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" keepalive "$SERVER" &
+    MAINTENANCE_KEEPALIVE_PID=$!
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=1
     ssh "$SERVER" 'set -euo pipefail
       for service in wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
@@ -1012,11 +1031,9 @@ deploy _server_pos="" server silent="false":
         return "$status"
       }
 
-      run_logged 600 "sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update" \
-        sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
-      run_logged 1200 "sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install echo-install wdintel-rs" \
+      run_logged 1200 "Installing staged Echo packages without downloads" \
         sudo env DEBIAN_FRONTEND=noninteractive \
-          apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install echo-install wdintel-rs'
+          apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew --no-download -y -qq install echo-install wdintel-rs'
 
     ssh "$SERVER" 'set -euo pipefail
       if sudo -n test -f /etc/echo-peerdb/source.env; then
@@ -1160,6 +1177,7 @@ deploy _server_pos="" server silent="false":
     '
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
     ssh "$SERVER" 'if sudo -n test -f /etc/echo-peerdb/source.env; then /opt/echo-peerdb/current/bin/source-verify-deploy.sh; fi'
+    stop_maintenance_keepalive
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi
@@ -1223,10 +1241,21 @@ deploy-from-local _server_pos="" server silent="false":
     REMOTE_DEB_NAME="${DEB_NAME%.deb}-local-$(date -u +%Y%m%d%H%M%S)-$$.deb"
     REMOTE_DEB_PATH="/var/tmp/${REMOTE_DEB_NAME}"
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
+    MAINTENANCE_STARTED=0
+    MAINTENANCE_KEEPALIVE_PID=""
+
+    stop_maintenance_keepalive() {
+      if [[ -n "$MAINTENANCE_KEEPALIVE_PID" ]]; then
+        kill "$MAINTENANCE_KEEPALIVE_PID" 2>/dev/null || true
+        wait "$MAINTENANCE_KEEPALIVE_PID" 2>/dev/null || true
+        MAINTENANCE_KEEPALIVE_PID=""
+      fi
+    }
 
     cleanup() {
       local status=$?
       trap - EXIT
+      stop_maintenance_keepalive
 
       if [[ -n "$REMOTE_DEB_PATH" ]]; then
         ssh "$SERVER" "rm -f -- '$REMOTE_DEB_PATH'" >/dev/null 2>&1 || true
@@ -1241,6 +1270,10 @@ deploy-from-local _server_pos="" server silent="false":
         '; then
           echo "Failed to stop or unmask runtime services after deployment failure." >&2
         fi
+      fi
+
+      if [[ $status -ne 0 && $MAINTENANCE_STARTED -eq 1 ]]; then
+        bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER" || true
       fi
 
       exit "$status"
@@ -1264,7 +1297,11 @@ deploy-from-local _server_pos="" server silent="false":
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
     bash "{{ justfile_directory() }}/deploy/prepare-sigint-inbox-callsign-iggy-index.sh" "$SERVER"
+    bash "{{ justfile_directory() }}/deploy/stage-packages.sh" "$SERVER" "$REMOTE_DEB_PATH"
+    MAINTENANCE_STARTED=1
     bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" start "$SERVER"
+    bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" keepalive "$SERVER" &
+    MAINTENANCE_KEEPALIVE_PID=$!
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=1
     ssh "$SERVER" 'set -euo pipefail
       for service in wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
@@ -1296,11 +1333,8 @@ deploy-from-local _server_pos="" server silent="false":
     ssh "$SERVER" "set -euo pipefail
       export DEBIAN_FRONTEND=noninteractive
       cd /var/tmp
-      if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'; then
-        echo 'Initial local package install failed; updating APT indexes and retrying...'
-        sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
-        sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'
-      fi
+      timeout --foreground 1200s sudo env DEBIAN_FRONTEND=noninteractive \
+        apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew --no-download -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'
       rm -f './${REMOTE_DEB_NAME}'
     "
     REMOTE_DEB_PATH=""
@@ -1447,6 +1481,7 @@ deploy-from-local _server_pos="" server silent="false":
     '
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
     ssh "$SERVER" 'if sudo -n test -f /etc/echo-peerdb/source.env; then /opt/echo-peerdb/current/bin/source-verify-deploy.sh; fi'
+    stop_maintenance_keepalive
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi

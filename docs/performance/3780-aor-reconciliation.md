@@ -30,11 +30,9 @@ the affected original message inside the existing transaction.
 ## Migration and release
 
 This batch was transferred into the main-based `3780-aor-perf` branch after
-validation on stable. For immediate deployment, integrate only this batch into
-a branch based on the current `stable`, then rerun the functional and
-catalog-aware migration checks with `GITHUB_BASE_REF=stable`. Review the other
-main-to-stable differences separately before including them in this performance
-rollout.
+validation on stable. Review and validate the current branch against `main`,
+including the catalog-aware migration check with `GITHUB_BASE_REF=main`.
+Do not rebase or change its base without an explicit user instruction.
 
 Migration:
 `m20261012_082021_signal_message_group_duplicate_lookup_index`.

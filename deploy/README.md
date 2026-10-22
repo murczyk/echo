@@ -403,3 +403,6 @@ sudo security add-trusted-cert \
 ```
 
 2. test log rotation: run `sudo logrotate /etc/logrotate.d/nginx` and  check `/var/log/nginx` to make sure it worked.
+
+Package download, maintenance-marker lifetime, nginx updates, and release scope:
+[package staging and temporary API unavailability](package-staging.md).

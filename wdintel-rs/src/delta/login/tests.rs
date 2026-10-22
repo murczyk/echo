@@ -109,3 +109,58 @@ async fn issue_3665_delta_callbacks_restore_and_consume_their_own_destination()
         );
     }
 }
+
+#[actix_web::test]
+async fn oversized_login_redirects_preserve_destination_without_large_headers_3780(
+) {
+    let destination = format!("/rer-analysis-neo?filter={}&tail=\"</script><script>globalThis.injected=true</script>", "a".repeat(12_000));
+    for error in [None, Some("err_delta_login_4536")] {
+        let response = login_response(Some(&destination), error);
+        assert_eq!(response.status(), actix_web::http::StatusCode::OK);
+        assert!(!response.headers().contains_key("Location"));
+        let header_bytes: usize = response
+            .headers()
+            .iter()
+            .map(|(name, value)| {
+                name.as_str().len() + value.as_bytes().len() + 4
+            })
+            .sum();
+        assert!(header_bytes < crate::config::HTTP_REDIRECT_MAX_HEADER_BYTES);
+        let csp = response
+            .headers()
+            .get("Content-Security-Policy")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let nonce = csp
+            .split("'nonce-")
+            .nth(1)
+            .unwrap()
+            .split('\'')
+            .next()
+            .unwrap();
+        let body = actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap();
+        let body = std::str::from_utf8(&body).unwrap();
+        assert!(body.contains(&format!("nonce=\"{nonce}\"")));
+        assert!(!body.contains("</script><script>"));
+        let encoded = body
+            .split("location.replace(")
+            .nth(1)
+            .unwrap()
+            .split(")</script>")
+            .next()
+            .unwrap();
+        let actual: String = serde_json::from_str(encoded).unwrap();
+        assert_eq!(
+            actual,
+            match error {
+                Some(error) =>
+                    login_redirect_url(Some(&destination), Some(error)),
+                None => destination.clone(),
+            }
+        );
+    }
+}

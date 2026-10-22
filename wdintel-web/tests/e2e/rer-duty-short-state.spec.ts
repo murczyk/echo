@@ -52,7 +52,7 @@ test.describe('@smoke @regression', () => {
     blocked = true;
     releaseLongPoll();
     await expect(page).toHaveURL(/\/login(?:\?|$)/);
-    await expect(page.getByRole('button', { name: 'увійти' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'увійти', exact: true })).toBeVisible();
     const requestsAfterLogout = backgroundRequests;
     await page.clock.runFor(5000);
 
