@@ -1462,6 +1462,7 @@ DELETE FROM ai_agent_conversation;
 DELETE FROM ai_agent_user_link;
 DELETE FROM rer_report_access_login;
 DELETE FROM login WHERE login <> 'system';
+UPDATE login SET sigint_zone_id = NULL, organism_id = NULL WHERE login = 'system';
 DELETE FROM delta_login;
 DELETE FROM sigint_zone;
 DELETE FROM organism_aor;
