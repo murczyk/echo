@@ -5,14 +5,35 @@ readonly DEPLOYMENT_MAINTENANCE_REDIS_KEY="echo:deployment:maintenance"
 readonly DEPLOYMENT_MAINTENANCE_TTL_SECONDS=120
 
 if [[ $# -ne 2 ]]; then
-  echo "usage: $0 <start|clear> <server>" >&2
+  echo "usage: $0 <start|renew|keepalive|clear> <server>" >&2
   exit 1
 fi
 
 action="$1"
 server="$2"
 
-ssh "$server" bash -s -- \
+if [[ "$action" == keepalive ]]; then
+  exec python3 - "$server" "${BASH_SOURCE[0]}" <<'PY'
+import os
+import subprocess
+import sys
+import time
+
+server, script = sys.argv[1:]
+deploy_parent = os.getppid()
+while os.getppid() == deploy_parent:
+    try:
+        result = subprocess.run(["bash", script, "renew", server], timeout=20)
+        if result.returncode:
+            print("WARNING: deployment maintenance renewal failed", file=sys.stderr, flush=True)
+    except subprocess.TimeoutExpired:
+        print("WARNING: deployment maintenance renewal timed out", file=sys.stderr, flush=True)
+    time.sleep(30)
+PY
+fi
+
+ssh -o BatchMode=yes -o ConnectTimeout=10 \
+  -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "$server" bash -s -- \
   "$action" \
   "$DEPLOYMENT_MAINTENANCE_REDIS_KEY" \
   "$DEPLOYMENT_MAINTENANCE_TTL_SECONDS" <<'REMOTE'
@@ -65,6 +86,9 @@ case "$action" in
     "${redis[@]}" DEL "$maintenance_key" >/dev/null
     wake_event_streams
     echo "Deployment maintenance cleared."
+    ;;
+  renew)
+    [[ "$("${redis[@]}" EXPIRE "$maintenance_key" "$maintenance_ttl_seconds")" == "1" ]]
     ;;
   *)
     echo "unknown action: $action" >&2

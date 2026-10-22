@@ -35,6 +35,15 @@ Jobs use leases, bounded retries and generation checks. Source replacements
 invalidate old chunks; explicit reprocessing preserves the last readable
 revision until its replacement is ready. Read requests can pin a revision.
 
+Job pickup uses `attachment_job_claim_idx(kind, created_at DESC, id)` for queued,
+retrying and running jobs, then checks due time, lease expiry, current document
+generation and message deletion before claiming one row with `SKIP LOCKED`.
+Migration `m20261022_090303_attachment_job_claim_index` builds the source-only
+index concurrently. Check free space and long-running transactions before
+deployment; inspect `pg_stat_progress_create_index` and index validity afterward.
+No analytics resnapshot is required. An application rollback can retain the
+index; remove it only through the migration rollback after reverting the app.
+
 Every source chunk gets its own summary; large documents are reduced through
 successive summary batches rather than a first-N-character cutoff. Coordinates
 come from original text. Position matching also reads original chunks, including

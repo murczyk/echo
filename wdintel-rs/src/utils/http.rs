@@ -56,6 +56,41 @@ pub fn login_redirect_url(
     }
 }
 
+pub fn redirect_response(
+    location: &str,
+    message: &str,
+) -> actix_web::HttpResponse {
+    if location.len() <= crate::config::HTTP_REDIRECT_MAX_HEADER_BYTES {
+        return actix_web::HttpResponse::Found()
+            .insert_header(("Location", location))
+            .body(message.to_owned());
+    }
+    let nonce = uuid::Uuid::now_v7().simple().to_string();
+    let destination = serde_json::to_string(location)
+        .expect("string serialization cannot fail")
+        .replace('<', "\\u003c")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029");
+    let link = location
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    actix_web::HttpResponse::Ok()
+        .insert_header(("Content-Type", "text/html; charset=utf-8"))
+        .insert_header(("Cache-Control", "no-store"))
+        .insert_header(("Referrer-Policy", "no-referrer"))
+        .insert_header((
+            "Content-Security-Policy",
+            format!("default-src 'none'; script-src 'nonce-{nonce}'; base-uri 'none'"),
+        ))
+        .body(format!(
+            "<!doctype html><meta charset=\"utf-8\"><title>Redirecting</title>\
+             <script nonce=\"{nonce}\">location.replace({destination})</script>\
+             <noscript><a href=\"{link}\">Continue</a></noscript>"
+        ))
+}
+
 pub fn extract_authority_header(req: &HttpRequest) -> Option<String> {
     if let Some(authority_header) =
         req.headers().get(HeaderName::from_static("authority"))

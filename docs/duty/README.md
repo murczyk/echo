@@ -113,6 +113,17 @@ transport, including updates to buffered messages. Browser regressions are in
 | Window limit, badge formula, prefetch min        | [`utils.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/utils.ts)                                                       |
 | Arrow catch-up                                   | [`useRerDutyFeedInteractionActions.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedInteractionActions.ts) |
 
+## Count-request diagnostics
+
+React inbox and Analysis requests carry a loaded asset identifier, an ephemeral
+ID for the current browser document and its visibility state. Duty Neo's unread
+count requests also identify automatic, manual and validation triggers. These
+headers are retained in request activity; diagnostic values over 128 bytes are
+ignored. They contain no filter contents or credentials, are not authentication
+inputs, and do not persist across document reloads. Use them to attribute repeat
+counts before changing the configured polling interval; preserve unread discovery
+and notifications for hidden tabs.
+
 ## Full doc
 
 - Spec (complete): [Duty scroll improvements archive README](../../archive/2026-08-09-duty-scroll-improvements/README.md)

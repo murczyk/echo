@@ -141,9 +141,10 @@ fn login_response(
             .unwrap_or("/")
             .to_owned(),
     };
-    HttpResponse::Found()
-        .insert_header(("Location", location))
-        .body(api_error.unwrap_or("Success. Redirecting.."))
+    crate::utils::http::redirect_response(
+        &location,
+        api_error.unwrap_or("Success. Redirecting.."),
+    )
 }
 
 async fn perform_login(

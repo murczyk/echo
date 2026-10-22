@@ -810,11 +810,22 @@ async fn load_networks_message_id_bounds(
     }
     let bounds = sqlx::query_as::<_, NetworkMessageIdBounds>(
         r#"
-        SELECT
-            min(sigint_inbox_item_id) AS min_id,
-            max(sigint_inbox_item_id) AS max_id
-        FROM sigint_inbox_item_network
-        WHERE sigint_network_id = ANY($1)
+        SELECT min(first_message.id) AS min_id, max(last_message.id) AS max_id
+        FROM (SELECT DISTINCT unnest($1::bigint[]) AS id) networks
+        LEFT JOIN LATERAL (
+            SELECT sigint_inbox_item_id AS id
+            FROM sigint_inbox_item_network
+            WHERE sigint_network_id = networks.id
+            ORDER BY sigint_inbox_item_id
+            LIMIT 1
+        ) first_message ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT sigint_inbox_item_id AS id
+            FROM sigint_inbox_item_network
+            WHERE sigint_network_id = networks.id
+            ORDER BY sigint_inbox_item_id DESC
+            LIMIT 1
+        ) last_message ON TRUE
         "#,
     )
     .bind(network_ids)
@@ -1257,6 +1268,59 @@ fn finalize_network_freq_callsigns(
 mod tests {
     use super::*;
     use crate::entities::sea_orm_active_enums::SigintNetworkKind;
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn network_bounds_seek_empty_and_mixed_networks_3780() {
+        use crate::entities::sigint_inbox_item_network;
+        use crate::functest::tests::{
+            cleanup, mk_sigint_inbox_item, mk_sigint_inbox_item_network,
+            mk_sigint_network,
+        };
+        let env = cleanup().await.unwrap();
+        let empty = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let populated = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let mut ids = Vec::new();
+        for _ in 0..3 {
+            let item = mk_sigint_inbox_item(&env.dbx, Default::default())
+                .await
+                .unwrap();
+            mk_sigint_inbox_item_network(
+                &env.dbx,
+                sigint_inbox_item_network::ActiveModel {
+                    sigint_network_id: Set(populated.id),
+                    sigint_inbox_item_id: Set(item.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            ids.push(item.id);
+        }
+        for keys in [vec![], vec![empty.id], vec![i64::MAX]] {
+            assert_eq!(
+                load_networks_message_id_bounds(&env.dbx, &keys)
+                    .await
+                    .unwrap(),
+                None
+            );
+        }
+        for keys in [
+            vec![populated.id],
+            vec![empty.id, populated.id, populated.id, i64::MAX],
+        ] {
+            assert_eq!(
+                load_networks_message_id_bounds(&env.dbx, &keys)
+                    .await
+                    .unwrap(),
+                Some((ids[0], ids[2]))
+            );
+        }
+    }
 
     fn dt(month: u32, day: u32) -> NaiveDateTime {
         chrono::NaiveDate::from_ymd_opt(2026, month, day)
