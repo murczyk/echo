@@ -260,6 +260,12 @@ export const aiAgentAdminSubs: Menu[] = [
 export const adminDatabaseSubs: Menu[] = [
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/kpi' },
+    activeName: 'kpi',
+    label: 'KPI',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/transcription-settings' },
     activeName: 'transcription-settings',
     label: 'Транскрибація',

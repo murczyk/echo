@@ -1,5 +1,18 @@
 # Admin page contracts
 
+## KPI dashboard
+
+- **Issue:** [#3826](https://github.com/echoua/echo/issues/3826).
+- **Route and access:** `/admin/kpi`, in `Адмін → База знань → KPI`, requires Admin. The Elm page checks the role before mounting its React host, including while the shared identity is the anonymous placeholder. Existing `/api/logins` and `/api/admin/report-history/list` retain backend admin enforcement.
+- **Account scope:** unique current account IDs from `/api/logins`, including technical accounts but excluding the permanently deleted/managed accounts omitted by that API. Role and organism filters affect every account metric, distribution, and review row. Role membership can contribute to multiple bars; repeated identical roles contribute once. Organisms and directions are grouped by IDs.
+- **Status and recency:** account deactivation and reason take precedence over a disabled organism; otherwise the account is active. Recency uses one successful-response timestamp and elapsed UTC milliseconds: less than 30 days, 30–90 inclusive, over 90, no recorded timestamp, or invalid/future timestamp. Recency defaults to deactivated/blocked accounts, with an explicit switch to include active accounts. A recorded timestamp does not establish a login or deliberate human activity.
+- **Reports:** a separate system-wide card uses the `done` filter and `total` returned with `limit: 1`; it counts retained successful history records, independently of account filters. It does not count downloads or every generation attempt. Analytics replication can affect freshness.
+- **Loading/errors:** sources load and retry independently; failures produce Ukrainian toasts and persistent section errors. Previously loaded values retain their original update timestamps and are explicitly labelled as previous data after refresh failure. Stale or unmounted requests cannot overwrite snapshots. Shared API 401 handling preserves the login redirect.
+- **Charts and review:** existing ECharts loads lazily, follows light/dark semantic colors, resizes with its host, and is disposed on cleanup. Accessible tables expose every exact count, even if a chart fails; charts show at most ten groups. Stale accounts are shown in batches of twenty with links to existing user details; KPI provides no account mutation controls.
+- **Iteration scope:** [Iteration 1](../../../archive/2026-10-22-kpis/iteration1.md) and [Iteration 2](../../../archive/2026-10-22-kpis/iteration2.md) record supported definitions and deferred metrics. Estimated live base, verified never-login counts, DAU/WAU/MAU, and other historical/unsupported metrics are deferred.
+- **Source:** `wdintel-web/src/Pages/Admin/Kpi.elm`, `wdintel-web/src/ts/react/routes/admin-kpi/`.
+- **Tests:** `wdintel-web/tests/e2e/admin-kpi.spec.ts`.
+
 ## Admin Unparsed Units
 
 - **Status:** inferred characterization
