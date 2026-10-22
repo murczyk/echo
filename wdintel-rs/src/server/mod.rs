@@ -746,6 +746,11 @@ fn spawn_background_workers(
         )
         .await;
     });
+    let reply_env = env.clone();
+    let reply_cancel = cancel_token.clone();
+    spawn_named_worker("message_reply_worker", bg_set, async move {
+        crate::message_reply::worker::run(reply_env, reply_cancel).await;
+    });
     let messenger_alert_env = env.clone();
     let messenger_alert_cancel = cancel_token.clone();
     spawn_named_worker("messenger_alert_worker", bg_set, async move {
@@ -1157,6 +1162,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::inbox_cursor)
             .service(crate::rer_importer::inbox::update_inbox_cursor)
             .service(crate::rer_importer::inbox::inbox_item_context)
+            .service(crate::message_reply::message_replies)
             .service(crate::rer_importer::inbox::messages_by_id)
             .service(
                 crate::rer_importer::inbox::messages_by_id_matching_filters,

@@ -1,3 +1,4 @@
+import { MessageRepliesProvider } from '../shared/message-replies/MessageRepliesProvider';
 import {
   MessageDeleteAccessContext,
   MessageWriteAccessContext,
@@ -643,7 +644,14 @@ export function RerAnalysisNeoPage({
   return (
     <MessageWriteAccessContext.Provider value={canWriteMessages(page.currentUser?.roles)}>
       <MessageDeleteAccessContext.Provider value={hasRole(page.currentUser?.roles, 'DeleteMsg')}>
-        {content}
+        <MessageRepliesProvider
+          screen="Analysis"
+          currentUser={page.currentUser}
+          cyberEchoEnabled={page.cyberEchoEnabled}
+          timeBasis={page.queryState.messageTimeBasis ?? 'interception'}
+        >
+          {content}
+        </MessageRepliesProvider>
       </MessageDeleteAccessContext.Provider>
     </MessageWriteAccessContext.Provider>
   );

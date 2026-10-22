@@ -274,6 +274,7 @@ export function MessageCardMessageBody({
   tagContributionsOrganismId,
   hideBotTags = false,
   hideNetworks = false,
+  replyContent,
   tagsLoading = false,
   onToggleTag,
   readOnly = false,
@@ -309,6 +310,7 @@ export function MessageCardMessageBody({
   tagContributionsOrganismId?: number;
   hideBotTags?: boolean;
   hideNetworks?: boolean;
+  replyContent?: ReactNode;
   tagsLoading?: boolean;
   readOnly?: boolean;
   onToggleTag?: (tagId: number) => void;
@@ -777,7 +779,8 @@ export function MessageCardMessageBody({
   const parents = getParentMessages(msg);
   const hasCallsignControls = !readOnly && isPresent(analysisCallsignActions);
   const hasVisibleReports = hasVisibleMessageCardIntelligenceReports(reports, parents);
-  const hasSidebarContent = tagsLoading || hasTags || hasCallsignControls || hasVisibleReports;
+  const hasSidebarContent =
+    tagsLoading || hasTags || hasCallsignControls || hasVisibleReports || replyContent != null;
   const textPrimary = useMemoText(
     msg,
     messageId,
@@ -1150,6 +1153,7 @@ export function MessageCardMessageBody({
         {hasSidebarContent ? (
           <div className="message-card-sidebar">
             {tagsSection}
+            {replyContent}
             {hasCallsignControls ? (
               <MessageCardCallsignsSection
                 msg={msg}

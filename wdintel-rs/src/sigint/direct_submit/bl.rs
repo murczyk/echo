@@ -249,6 +249,7 @@ where
         ),
         parent_signal_message_ids,
         copy_source_signal_message_ids: vec![source.id],
+        cited_signal_message_ids: vec![],
     })
 }
 
@@ -407,6 +408,17 @@ async fn save_signal_message(
     mut payload: DirectSubmitPayload,
 ) -> Result<DirectSubmitRsp, AppError> {
     let is_new_message = signal_message_id.is_none();
+    if !payload.cited_signal_message_ids.is_empty()
+        && (!is_new_message
+            || !payload.parent_signal_message_ids.is_empty()
+            || !payload.copy_source_signal_message_ids.is_empty())
+    {
+        return Err(AppError::BL {
+            msg:
+                "Відповідь не можна поєднувати з редагуванням або копіюванням."
+                    .to_string(),
+        });
+    }
     let upload_urls = payload.upload_urls.clone().unwrap_or_default();
     let attachment_updates = payload.attachment_updates.clone().unwrap_or(
         DirectSubmitAttachmentUpdates {
@@ -478,17 +490,32 @@ async fn save_signal_message(
         .as_deref()
         .map(str::trim)
         .filter(|key| !key.is_empty());
-    let signal_group = match signal_group_master_key {
-        Some(signal_group_master_key) => Some(
-            query::find_available_signal_group(
+    let signal_group = if signal_message_id.is_none()
+        && !payload.cited_signal_message_ids.is_empty()
+    {
+        Some(
+            crate::message_reply::prepare_submission(
                 &txn,
                 login,
+                &payload.cited_signal_message_ids,
                 signal_group_master_key,
             )
             .await
             .c(h!())?,
-        ),
-        None => None,
+        )
+    } else {
+        match signal_group_master_key {
+            Some(signal_group_master_key) => Some(
+                query::find_available_signal_group(
+                    &txn,
+                    login,
+                    signal_group_master_key,
+                )
+                .await
+                .c(h!())?,
+            ),
+            None => None,
+        }
     };
     let logins = crate::users::get_organism_login_ids_by_id(&txn, login)
         .await
@@ -662,6 +689,24 @@ async fn save_signal_message(
     )
     .await
     .c(h!())?;
+    if is_new_message {
+        for id in payload
+            .cited_signal_message_ids
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            crate::message_reply::insert(
+                &txn,
+                Some(id),
+                submitted.signal_message_id,
+                false,
+                false,
+            )
+            .await
+            .c(h!())?;
+        }
+    }
     if let Some(unit) = &selected_unit {
         super::units::attach_unit(&txn, submitted.inbox_id, unit)
             .await
@@ -743,7 +788,7 @@ fn validate_direct_submit_payload(
     let upload_urls = payload.upload_urls.as_deref().unwrap_or_default();
     validate_signal_group_master_key(
         payload.signal_group_master_key.as_deref(),
-        is_intelligence_report,
+        is_intelligence_report || !payload.cited_signal_message_ids.is_empty(),
     )?;
     if !upload_urls.is_empty()
         && (env.config.s3_config.is_none() || env.s3.is_none())
@@ -1760,6 +1805,7 @@ mod tests {
             retained_media_ids: None,
             parent_signal_message_ids: vec![],
             copy_source_signal_message_ids: vec![],
+            cited_signal_message_ids: vec![],
         }
     }
 

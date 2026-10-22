@@ -64,10 +64,22 @@ pub async fn submit_direct(
     payload: web::Json<DirectSubmitPayload>,
 ) -> Result<web::Json<DirectSubmitRsp>, DirectSubmitApiError> {
     let action = DirectSubmitAction::Save;
-    crate::users::ensure_message_write(&env.dbx, &user)
-        .await
-        .c(h!())
-        .map_err(|err| DirectSubmitApiError::new(err, action))?;
+    if payload.cited_signal_message_ids.is_empty()
+        || payload.create_unit
+        || payload.unit_id.is_some()
+        || payload
+            .unit
+            .as_ref()
+            .is_some_and(|unit| !unit.trim().is_empty())
+        || !payload.parent_signal_message_ids.is_empty()
+        || !payload.copy_source_signal_message_ids.is_empty()
+    {
+        crate::users::ensure_message_write(&env.dbx, &user).await
+    } else {
+        crate::users::ensure_base_role(&env.dbx, &user).await
+    }
+    .c(h!())
+    .map_err(|err| DirectSubmitApiError::new(err, action))?;
     let login = login_id_from_identity(&user)
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
     if create_message_device_access_required(payload.device_name_id) {

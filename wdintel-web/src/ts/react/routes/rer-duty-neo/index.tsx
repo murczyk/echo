@@ -1,3 +1,4 @@
+import { MessageRepliesProvider } from '../shared/message-replies/MessageRepliesProvider';
 import {
   MessageDeleteAccessContext,
   MessageWriteAccessContext,
@@ -750,7 +751,14 @@ export function RerDutyNeoPage({
   return (
     <MessageWriteAccessContext.Provider value={canWriteMessages(currentUser?.roles)}>
       <MessageDeleteAccessContext.Provider value={hasRole(currentUser?.roles, 'DeleteMsg')}>
-        {content}
+        <MessageRepliesProvider
+          screen="Duty"
+          currentUser={currentUser}
+          cyberEchoEnabled={cyberEchoEnabled}
+          timeBasis="creation"
+        >
+          {content}
+        </MessageRepliesProvider>
       </MessageDeleteAccessContext.Provider>
     </MessageWriteAccessContext.Provider>
   );
