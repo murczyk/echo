@@ -291,8 +291,11 @@ async fn create_or_replay_in(
     let hard_expires_at =
         deadline_after(request.now, config.upload_max_lifetime_secs)
             .context(h!())?;
-    let expires_at = deadline_after(request.now, config.upload_idle_ttl_secs)
-        .context(h!())?;
+    let expires_at = std::cmp::min(
+        deadline_after(request.now, config.upload_idle_ttl_secs)
+            .context(h!())?,
+        hard_expires_at,
+    );
     let upload_length = i64::try_from(request.upload_length)
         .context("convert upload length")
         .context(h!())?;

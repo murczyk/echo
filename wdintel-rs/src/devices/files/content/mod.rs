@@ -208,7 +208,7 @@ async fn collection(
     payload: web::Payload,
 ) -> HttpResponse {
     if request.method() == Method::OPTIONS {
-        return protocol::options(DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES);
+        return protocol::options(advertised_upload_max_bytes(&env));
     }
     let response =
         collection_inner(env, identity, request, path, payload).await;
@@ -298,7 +298,7 @@ async fn resource(
     payload: web::Payload,
 ) -> HttpResponse {
     if request.method() == Method::OPTIONS {
-        return protocol::options(DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES);
+        return protocol::options(advertised_upload_max_bytes(&env));
     }
     let is_head = request.method() == Method::HEAD;
     let response = resource_inner(env, identity, request, path, payload).await;
@@ -715,6 +715,13 @@ async fn completed_replay(
     .map_err(|error| repository_unavailable(error.context(h!())))?
     .ok_or_else(|| ContentError::conflict("content_already_committed"))?;
     Ok(HttpResponse::Ok().json(content))
+}
+
+fn advertised_upload_max_bytes(env: &Env) -> u64 {
+    env.device_file_content
+        .as_deref()
+        .map(|runtime| runtime.config.upload_max_bytes)
+        .unwrap_or(DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES)
 }
 
 fn runtime(env: &Env) -> Result<&DeviceFileContentRuntime, ContentError> {
