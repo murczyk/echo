@@ -1,0 +1,589 @@
+Production Posts query plans, captured 2026-10-22.
+Source: echo-pivnich, PostgreSQL 18.4.
+Gateway: configured analytics gateway, PostgreSQL 18.4, application role echo_analytics.
+G001..G100 redact the diagnostic group scope; narrow scope is G098.
+Current inclusive bounds: 2026-10-21 00:00:00 .. 2026-10-22 00:00:00 UTC.
+Previous inclusive bounds: 2026-10-20 00:00:00 .. 2026-10-21 00:00:00 UTC.
+Plain: EXPLAIN (VERBOSE, SETTINGS).
+Actual: EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMARY ON, VERBOSE, SETTINGS).
+All sessions: default_transaction_read_only=on, lock_timeout=500ms.
+See 3864-posts-anti-join.md for query capture, all narrow timings, and limitations.
+
+
+=== PostgreSQL / G098 / current / OLD / actual / median run 2 / timeout 5000 ms ===
+
+Nested Loop Left Join  (cost=32525.92..86804.40 rows=1 width=52) (actual rows=515.00 loops=1)
+  Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+  Inner Unique: true
+  Buffers: shared hit=88605 read=15324
+  ->  Nested Loop  (cost=32525.64..86803.12 rows=1 width=51) (actual rows=515.00 loops=1)
+        Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.post_id
+        Inner Unique: true
+        Buffers: shared hit=88596 read=15324
+        ->  Hash Join  (cost=5353.38..59628.85 rows=1 width=67) (actual rows=516.00 loops=1)
+              Output: sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, signal_message_group.signal_message_id, signal_message_group_1.signal_message_id
+              Hash Cond: (sigint_inbox_item.id = signal_message_group_1.signal_message_id)
+              Buffers: shared hit=85947
+              ->  Hash Join  (cost=2676.91..56951.93 rows=118 width=59) (actual rows=516.00 loops=1)
+                    Output: sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, signal_message_group.signal_message_id
+                    Hash Cond: (sigint_inbox_item.id = signal_message_group.signal_message_id)
+                    Buffers: shared hit=82031
+                    ->  Index Scan using sigint_inbox_item_datetime_idx on public.sigint_inbox_item  (cost=0.44..54024.78 rows=66542 width=59) (actual rows=78239.00 loops=1)
+                          Output: sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, sigint_inbox_item.device_name_id
+                          Index Cond: ((sigint_inbox_item.datetime >= '2026-10-21 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime <= '2026-10-22 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime >= '2026-10-21 00:00:00+00'::timestamp with time zone) AND (sigint_inbox_item.datetime <= '2026-10-22 00:00:00+00'::timestamp with time zone))
+                          Index Searches: 1
+                          Buffers: shared hit=78115
+                    ->  Hash  (cost=2239.27..2239.27 rows=34976 width=8) (actual rows=36821.00 loops=1)
+                          Output: signal_message_group.signal_message_id
+                          Buckets: 65536  Batches: 1  Memory Usage: 1951kB
+                          Buffers: shared hit=3916
+                          ->  HashAggregate  (cost=1889.51..2239.27 rows=34976 width=8) (actual rows=36821.00 loops=1)
+                                Output: signal_message_group.signal_message_id
+                                Group Key: signal_message_group.signal_message_id
+                                Batches: 1  Memory Usage: 2073kB
+                                Buffers: shared hit=3916
+                                ->  Index Only Scan using signal_message_group_group_master_key_signal_message_id_idx on public.signal_message_group  (cost=0.56..1799.55 rows=35984 width=8) (actual rows=36855.00 loops=1)
+                                      Output: signal_message_group.signal_message_id
+                                      Index Cond: (signal_message_group.group_master_key = ANY ('{G098}'::text[]))
+                                      Heap Fetches: 2101
+                                      Index Searches: 1
+                                      Buffers: shared hit=3916
+              ->  Hash  (cost=2239.27..2239.27 rows=34976 width=8) (actual rows=36821.00 loops=1)
+                    Output: signal_message_group_1.signal_message_id
+                    Buckets: 65536  Batches: 1  Memory Usage: 1951kB
+                    Buffers: shared hit=3916
+                    ->  HashAggregate  (cost=1889.51..2239.27 rows=34976 width=8) (actual rows=36821.00 loops=1)
+                          Output: signal_message_group_1.signal_message_id
+                          Group Key: signal_message_group_1.signal_message_id
+                          Batches: 1  Memory Usage: 2073kB
+                          Buffers: shared hit=3916
+                          ->  Index Only Scan using signal_message_group_group_master_key_signal_message_id_idx on public.signal_message_group signal_message_group_1  (cost=0.56..1799.55 rows=35984 width=8) (actual rows=36855.00 loops=1)
+                                Output: signal_message_group_1.signal_message_id
+                                Index Cond: (signal_message_group_1.group_master_key = ANY ('{G098}'::text[]))
+                                Heap Fetches: 2101
+                                Index Searches: 1
+                                Buffers: shared hit=3916
+        ->  Index Scan using signal_message_pkey on public.signal_message  (cost=27172.26..27174.26 rows=1 width=16) (actual rows=1.00 loops=516)
+              Output: signal_message.id, signal_message.datasource_group_id
+              Index Cond: (signal_message.id = sigint_inbox_item.id)
+              Filter: ((NOT signal_message.deleted) AND (NOT (ANY (signal_message.id = (hashed SubPlan 1).col1))))
+              Rows Removed by Filter: 0
+              Index Searches: 516
+              Buffers: shared hit=2649 read=15324
+              SubPlan 1
+                ->  Gather  (cost=1000.00..27139.15 rows=13022 width=8) (actual rows=1334661.00 loops=1)
+                      Output: intel_product.intel_message_id
+                      Workers Planned: 2
+                      Workers Launched: 2
+                      Buffers: shared hit=69 read=15324
+                      ->  Parallel Seq Scan on public.intel_product  (cost=0.00..24836.95 rows=5426 width=8) (actual rows=444887.00 loops=3)
+                            Output: intel_product.intel_message_id
+                            Filter: ((intel_product.relation_kind)::text = ANY ('{comment,report}'::text[]))
+                            Buffers: shared hit=69 read=15324
+                            Worker 0:  actual rows=501990.00 loops=1
+                              Buffers: shared hit=27 read=5731
+                            Worker 1:  actual rows=519195.00 loops=1
+                              Buffers: shared hit=38 read=6008
+  ->  Index Scan using sigint_post_pkey on public.sigint_post  (cost=0.28..1.28 rows=1 width=17) (actual rows=0.01 loops=515)
+        Output: sigint_post.name, sigint_post.id
+        Index Cond: (sigint_post.id = sigint_inbox_item.post_id)
+        Index Searches: 3
+        Buffers: shared hit=9
+Settings: random_page_cost = '1.1', effective_io_concurrency = '200', effective_cache_size = '24GB', work_mem = '8MB'
+Query Identifier: -4330353021716283681
+Planning:
+  Buffers: shared hit=1303
+Planning Time: 5.066 ms
+Execution Time: 571.375 ms
+
+
+=== PostgreSQL / G098 / current / NEW / actual / median run 1 / timeout 5000 ms ===
+
+Nested Loop Anti Join  (cost=2678.74..57335.08 rows=1 width=52) (actual rows=515.00 loops=1)
+  Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+  Buffers: shared hit=88353 read=367
+  ->  Nested Loop Left Join  (cost=2678.31..57332.24 rows=1 width=52) (actual rows=515.00 loops=1)
+        Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+        Inner Unique: true
+        Buffers: shared hit=86863 read=312
+        ->  Nested Loop Semi Join  (cost=2678.04..57330.96 rows=1 width=51) (actual rows=515.00 loops=1)
+              Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.post_id
+              Buffers: shared hit=86854 read=312
+              ->  Nested Loop  (cost=2677.47..57254.02 rows=63 width=67) (actual rows=515.00 loops=1)
+                    Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, signal_message_group.signal_message_id
+                    Inner Unique: true
+                    Buffers: shared hit=84611
+                    ->  Hash Join  (cost=2676.91..56951.93 rows=118 width=59) (actual rows=516.00 loops=1)
+                          Output: sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, signal_message_group.signal_message_id
+                          Hash Cond: (sigint_inbox_item.id = signal_message_group.signal_message_id)
+                          Buffers: shared hit=82031
+                          ->  Index Scan using sigint_inbox_item_datetime_idx on public.sigint_inbox_item  (cost=0.44..54024.78 rows=66542 width=59) (actual rows=78239.00 loops=1)
+                                Output: sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, sigint_inbox_item.device_name_id
+                                Index Cond: ((sigint_inbox_item.datetime >= '2026-10-21 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime <= '2026-10-22 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime >= '2026-10-21 00:00:00+00'::timestamp with time zone) AND (sigint_inbox_item.datetime <= '2026-10-22 00:00:00+00'::timestamp with time zone))
+                                Index Searches: 1
+                                Buffers: shared hit=78115
+                          ->  Hash  (cost=2239.27..2239.27 rows=34976 width=8) (actual rows=36821.00 loops=1)
+                                Output: signal_message_group.signal_message_id
+                                Buckets: 65536  Batches: 1  Memory Usage: 1951kB
+                                Buffers: shared hit=3916
+                                ->  HashAggregate  (cost=1889.51..2239.27 rows=34976 width=8) (actual rows=36821.00 loops=1)
+                                      Output: signal_message_group.signal_message_id
+                                      Group Key: signal_message_group.signal_message_id
+                                      Batches: 1  Memory Usage: 2073kB
+                                      Buffers: shared hit=3916
+                                      ->  Index Only Scan using signal_message_group_group_master_key_signal_message_id_idx on public.signal_message_group  (cost=0.56..1799.55 rows=35984 width=8) (actual rows=36855.00 loops=1)
+                                            Output: signal_message_group.signal_message_id
+                                            Index Cond: (signal_message_group.group_master_key = ANY ('{G098}'::text[]))
+                                            Heap Fetches: 2101
+                                            Index Searches: 1
+                                            Buffers: shared hit=3916
+                    ->  Index Scan using signal_message_pkey on public.signal_message  (cost=0.56..2.56 rows=1 width=16) (actual rows=1.00 loops=516)
+                          Output: signal_message.id, signal_message.datasource_group_id
+                          Index Cond: (signal_message.id = sigint_inbox_item.id)
+                          Filter: (NOT signal_message.deleted)
+                          Rows Removed by Filter: 0
+                          Index Searches: 516
+                          Buffers: shared hit=2580
+              ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on public.signal_message_group signal_message_group_1  (cost=0.56..1.21 rows=1 width=8) (actual rows=1.00 loops=515)
+                    Output: signal_message_group_1.signal_message_id, signal_message_group_1.group_master_key
+                    Index Cond: ((signal_message_group_1.signal_message_id = signal_message.id) AND (signal_message_group_1.group_master_key = ANY ('{G098}'::text[])))
+                    Heap Fetches: 486
+                    Index Searches: 515
+                    Buffers: shared hit=2243 read=312
+        ->  Index Scan using sigint_post_pkey on public.sigint_post  (cost=0.28..1.28 rows=1 width=17) (actual rows=0.01 loops=515)
+              Output: sigint_post.name, sigint_post.id
+              Index Cond: (sigint_post.id = sigint_inbox_item.post_id)
+              Index Searches: 3
+              Buffers: shared hit=9
+  ->  Index Scan using intel_product_pkey on public.intel_product  (cost=0.43..1.63 rows=1 width=8) (actual rows=0.00 loops=515)
+        Output: intel_product.intel_message_id, intel_product.source_message_id, intel_product.created_at, intel_product.relation_kind, intel_product.intel_message_uuid, intel_product.source_message_uuid
+        Index Cond: (intel_product.intel_message_id = signal_message.id)
+        Filter: ((intel_product.relation_kind)::text = ANY ('{comment,report}'::text[]))
+        Index Searches: 515
+        Buffers: shared hit=1490 read=55
+Settings: random_page_cost = '1.1', effective_io_concurrency = '200', effective_cache_size = '24GB', work_mem = '8MB'
+Query Identifier: 5536425859778105072
+Planning:
+  Buffers: shared hit=1328 read=3
+Planning Time: 5.997 ms
+Execution Time: 195.066 ms
+
+
+=== PostgreSQL / 100 groups / current / OLD / PLAIN, no actual metrics ===
+
+Nested Loop Left Join  (cost=82107.51..909916.96 rows=13 width=52)
+  Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+  Inner Unique: true
+  ->  Nested Loop Semi Join  (cost=82107.23..909900.28 rows=13 width=51)
+        Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.post_id
+        ->  Nested Loop Semi Join  (cost=82106.67..908357.11 rows=539 width=67)
+              Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, signal_message_group.signal_message_id
+              ->  Hash Join  (cost=82106.10..841977.35 rows=23201 width=59)
+                    Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id
+                    Inner Unique: true
+                    Hash Cond: (signal_message.id = sigint_inbox_item.id)
+                    ->  Index Only Scan using signal_message_babak_candidate_stream_idx on public.signal_message  (cost=27172.26..762662.73 rows=9287917 width=16)
+                          Output: signal_message.datasource_group_id, signal_message.created_at, signal_message.id
+                          Filter: (NOT (ANY (signal_message.id = (hashed SubPlan 1).col1)))
+                          SubPlan 1
+                            ->  Gather  (cost=1000.00..27139.15 rows=13022 width=8)
+                                  Output: intel_product.intel_message_id
+                                  Workers Planned: 2
+                                  ->  Parallel Seq Scan on public.intel_product  (cost=0.00..24836.95 rows=5426 width=8)
+                                        Output: intel_product.intel_message_id
+                                        Filter: ((intel_product.relation_kind)::text = ANY ('{comment,report}'::text[]))
+                    ->  Hash  (cost=54100.88..54100.88 rows=66637 width=59)
+                          Output: sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, sigint_inbox_item.device_name_id
+                          ->  Index Scan using sigint_inbox_item_datetime_idx on public.sigint_inbox_item  (cost=0.44..54100.88 rows=66637 width=59)
+                                Output: sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, sigint_inbox_item.device_name_id
+                                Index Cond: ((sigint_inbox_item.datetime >= '2026-10-21 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime <= '2026-10-22 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime >= '2026-10-21 00:00:00+00'::timestamp with time zone) AND (sigint_inbox_item.datetime <= '2026-10-22 00:00:00+00'::timestamp with time zone))
+              ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on public.signal_message_group  (cost=0.56..119.55 rows=53 width=8)
+                    Output: signal_message_group.signal_message_id, signal_message_group.group_master_key
+                    Index Cond: ((signal_message_group.signal_message_id = signal_message.id) AND (signal_message_group.group_master_key = ANY ('{G001,G002,G003,G004,G005,G006,G007,G008,G009,G010,G011,G012,G013,G014,G015,G016,G017,G018,G019,G020,G021,G022,G023,G024,G025,G026,G027,G028,G029,G030,G031,G032,G033,G034,G035,G036,G037,G038,G039,G040,G041,G042,G043,G044,G045,G046,G047,G048,G049,G050,G051,G052,G053,G054,G055,G056,G057,G058,G059,G060,G061,G062,G063,G064,G065,G066,G067,G068,G069,G070,G071,G072,G073,G074,G075,G076,G077,G078,G079,G080,G081,G082,G083,G084,G085,G086,G087,G088,G089,G090,G091,G092,G093,G094,G095,G096,G097,G098,G099,G100}'::text[])))
+        ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on public.signal_message_group signal_message_group_1  (cost=0.56..119.55 rows=53 width=8)
+              Output: signal_message_group_1.signal_message_id, signal_message_group_1.group_master_key
+              Index Cond: ((signal_message_group_1.signal_message_id = signal_message.id) AND (signal_message_group_1.group_master_key = ANY ('{G001,G002,G003,G004,G005,G006,G007,G008,G009,G010,G011,G012,G013,G014,G015,G016,G017,G018,G019,G020,G021,G022,G023,G024,G025,G026,G027,G028,G029,G030,G031,G032,G033,G034,G035,G036,G037,G038,G039,G040,G041,G042,G043,G044,G045,G046,G047,G048,G049,G050,G051,G052,G053,G054,G055,G056,G057,G058,G059,G060,G061,G062,G063,G064,G065,G066,G067,G068,G069,G070,G071,G072,G073,G074,G075,G076,G077,G078,G079,G080,G081,G082,G083,G084,G085,G086,G087,G088,G089,G090,G091,G092,G093,G094,G095,G096,G097,G098,G099,G100}'::text[])))
+  ->  Index Scan using sigint_post_pkey on public.sigint_post  (cost=0.28..1.28 rows=1 width=17)
+        Output: sigint_post.name, sigint_post.id
+        Index Cond: (sigint_post.id = sigint_inbox_item.post_id)
+Settings: random_page_cost = '1.1', effective_io_concurrency = '200', effective_cache_size = '24GB', work_mem = '8MB'
+Query Identifier: -8664560051433675896
+JIT:
+  Functions: 30
+  Options: Inlining true, Optimization true, Expressions true, Deforming true
+
+
+=== PostgreSQL / 100 groups / current / NEW / PLAIN ===
+
+Gather  (cost=1002.83..182456.96 rows=25 width=52)
+  Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+  Workers Planned: 2
+  ->  Nested Loop Anti Join  (cost=2.83..181454.46 rows=10 width=52)
+        Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+        ->  Nested Loop Left Join  (cost=2.40..181436.93 rows=10 width=52)
+              Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+              Inner Unique: true
+              ->  Nested Loop Semi Join  (cost=2.13..181424.11 rows=10 width=51)
+                    Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.post_id
+                    ->  Nested Loop Semi Join  (cost=1.56..180139.53 rows=449 width=67)
+                          Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, signal_message_group.signal_message_id
+                          ->  Nested Loop  (cost=1.00..124784.79 rows=19334 width=59)
+                                Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id
+                                Inner Unique: true
+                                ->  Parallel Index Scan using sigint_inbox_item_datetime_idx on public.sigint_inbox_item  (cost=0.44..53712.16 rows=27765 width=59)
+                                      Output: sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, sigint_inbox_item.device_name_id
+                                      Index Cond: ((sigint_inbox_item.datetime >= '2026-10-21 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime <= '2026-10-22 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime >= '2026-10-21 00:00:00+00'::timestamp with time zone) AND (sigint_inbox_item.datetime <= '2026-10-22 00:00:00+00'::timestamp with time zone))
+                                ->  Index Scan using signal_message_pkey on public.signal_message  (cost=0.56..2.56 rows=1 width=16)
+                                      Output: signal_message.id, signal_message.datasource_group_id
+                                      Index Cond: (signal_message.id = sigint_inbox_item.id)
+                                      Filter: (NOT signal_message.deleted)
+                          ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on public.signal_message_group  (cost=0.56..119.65 rows=53 width=8)
+                                Output: signal_message_group.signal_message_id, signal_message_group.group_master_key
+                                Index Cond: ((signal_message_group.signal_message_id = signal_message.id) AND (signal_message_group.group_master_key = ANY ('{G001,G002,G003,G004,G005,G006,G007,G008,G009,G010,G011,G012,G013,G014,G015,G016,G017,G018,G019,G020,G021,G022,G023,G024,G025,G026,G027,G028,G029,G030,G031,G032,G033,G034,G035,G036,G037,G038,G039,G040,G041,G042,G043,G044,G045,G046,G047,G048,G049,G050,G051,G052,G053,G054,G055,G056,G057,G058,G059,G060,G061,G062,G063,G064,G065,G066,G067,G068,G069,G070,G071,G072,G073,G074,G075,G076,G077,G078,G079,G080,G081,G082,G083,G084,G085,G086,G087,G088,G089,G090,G091,G092,G093,G094,G095,G096,G097,G098,G099,G100}'::text[])))
+                    ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on public.signal_message_group signal_message_group_1  (cost=0.56..119.65 rows=53 width=8)
+                          Output: signal_message_group_1.signal_message_id, signal_message_group_1.group_master_key
+                          Index Cond: ((signal_message_group_1.signal_message_id = signal_message.id) AND (signal_message_group_1.group_master_key = ANY ('{G001,G002,G003,G004,G005,G006,G007,G008,G009,G010,G011,G012,G013,G014,G015,G016,G017,G018,G019,G020,G021,G022,G023,G024,G025,G026,G027,G028,G029,G030,G031,G032,G033,G034,G035,G036,G037,G038,G039,G040,G041,G042,G043,G044,G045,G046,G047,G048,G049,G050,G051,G052,G053,G054,G055,G056,G057,G058,G059,G060,G061,G062,G063,G064,G065,G066,G067,G068,G069,G070,G071,G072,G073,G074,G075,G076,G077,G078,G079,G080,G081,G082,G083,G084,G085,G086,G087,G088,G089,G090,G091,G092,G093,G094,G095,G096,G097,G098,G099,G100}'::text[])))
+              ->  Index Scan using sigint_post_pkey on public.sigint_post  (cost=0.28..1.28 rows=1 width=17)
+                    Output: sigint_post.name, sigint_post.id
+                    Index Cond: (sigint_post.id = sigint_inbox_item.post_id)
+        ->  Index Scan using intel_product_pkey on public.intel_product  (cost=0.43..1.63 rows=1 width=8)
+              Output: intel_product.intel_message_id, intel_product.source_message_id, intel_product.created_at, intel_product.relation_kind, intel_product.intel_message_uuid, intel_product.source_message_uuid
+              Index Cond: (intel_product.intel_message_id = signal_message.id)
+              Filter: ((intel_product.relation_kind)::text = ANY ('{comment,report}'::text[]))
+Settings: random_page_cost = '1.1', effective_io_concurrency = '200', effective_cache_size = '24GB', work_mem = '8MB'
+Query Identifier: -1007220788683822837
+JIT:
+  Functions: 25
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+
+
+=== PostgreSQL / 100 groups / previous / OLD / PLAIN, no actual metrics ===
+
+Nested Loop Left Join  (cost=82101.74..909894.27 rows=12 width=52)
+  Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+  Inner Unique: true
+  ->  Nested Loop Semi Join  (cost=82101.46..909878.88 rows=12 width=51)
+        Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.post_id
+        ->  Nested Loop Semi Join  (cost=82100.90..908340.72 rows=538 width=67)
+              Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, signal_message_group.signal_message_id
+              ->  Hash Join  (cost=82100.33..841971.58 rows=23198 width=59)
+                    Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id
+                    Inner Unique: true
+                    Hash Cond: (signal_message.id = sigint_inbox_item.id)
+                    ->  Index Only Scan using signal_message_babak_candidate_stream_idx on public.signal_message  (cost=27172.26..762662.73 rows=9287917 width=16)
+                          Output: signal_message.datasource_group_id, signal_message.created_at, signal_message.id
+                          Filter: (NOT (ANY (signal_message.id = (hashed SubPlan 1).col1)))
+                          SubPlan 1
+                            ->  Gather  (cost=1000.00..27139.15 rows=13022 width=8)
+                                  Output: intel_product.intel_message_id
+                                  Workers Planned: 2
+                                  ->  Parallel Seq Scan on public.intel_product  (cost=0.00..24836.95 rows=5426 width=8)
+                                        Output: intel_product.intel_message_id
+                                        Filter: ((intel_product.relation_kind)::text = ANY ('{comment,report}'::text[]))
+                    ->  Hash  (cost=54095.20..54095.20 rows=66630 width=59)
+                          Output: sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, sigint_inbox_item.device_name_id
+                          ->  Index Scan using sigint_inbox_item_datetime_idx on public.sigint_inbox_item  (cost=0.44..54095.20 rows=66630 width=59)
+                                Output: sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, sigint_inbox_item.device_name_id
+                                Index Cond: ((sigint_inbox_item.datetime >= '2026-10-20 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime <= '2026-10-21 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime >= '2026-10-20 00:00:00+00'::timestamp with time zone) AND (sigint_inbox_item.datetime <= '2026-10-21 00:00:00+00'::timestamp with time zone))
+              ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on public.signal_message_group  (cost=0.56..119.55 rows=53 width=8)
+                    Output: signal_message_group.signal_message_id, signal_message_group.group_master_key
+                    Index Cond: ((signal_message_group.signal_message_id = signal_message.id) AND (signal_message_group.group_master_key = ANY ('{G001,G002,G003,G004,G005,G006,G007,G008,G009,G010,G011,G012,G013,G014,G015,G016,G017,G018,G019,G020,G021,G022,G023,G024,G025,G026,G027,G028,G029,G030,G031,G032,G033,G034,G035,G036,G037,G038,G039,G040,G041,G042,G043,G044,G045,G046,G047,G048,G049,G050,G051,G052,G053,G054,G055,G056,G057,G058,G059,G060,G061,G062,G063,G064,G065,G066,G067,G068,G069,G070,G071,G072,G073,G074,G075,G076,G077,G078,G079,G080,G081,G082,G083,G084,G085,G086,G087,G088,G089,G090,G091,G092,G093,G094,G095,G096,G097,G098,G099,G100}'::text[])))
+        ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on public.signal_message_group signal_message_group_1  (cost=0.56..119.55 rows=53 width=8)
+              Output: signal_message_group_1.signal_message_id, signal_message_group_1.group_master_key
+              Index Cond: ((signal_message_group_1.signal_message_id = signal_message.id) AND (signal_message_group_1.group_master_key = ANY ('{G001,G002,G003,G004,G005,G006,G007,G008,G009,G010,G011,G012,G013,G014,G015,G016,G017,G018,G019,G020,G021,G022,G023,G024,G025,G026,G027,G028,G029,G030,G031,G032,G033,G034,G035,G036,G037,G038,G039,G040,G041,G042,G043,G044,G045,G046,G047,G048,G049,G050,G051,G052,G053,G054,G055,G056,G057,G058,G059,G060,G061,G062,G063,G064,G065,G066,G067,G068,G069,G070,G071,G072,G073,G074,G075,G076,G077,G078,G079,G080,G081,G082,G083,G084,G085,G086,G087,G088,G089,G090,G091,G092,G093,G094,G095,G096,G097,G098,G099,G100}'::text[])))
+  ->  Index Scan using sigint_post_pkey on public.sigint_post  (cost=0.28..1.28 rows=1 width=17)
+        Output: sigint_post.name, sigint_post.id
+        Index Cond: (sigint_post.id = sigint_inbox_item.post_id)
+Settings: random_page_cost = '1.1', effective_io_concurrency = '200', effective_cache_size = '24GB', work_mem = '8MB'
+Query Identifier: -8664560051433675896
+JIT:
+  Functions: 30
+  Options: Inlining true, Optimization true, Expressions true, Deforming true
+
+
+=== PostgreSQL / 100 groups / current / OLD / actual attempt / timeout 30000 ms ===
+
+ERROR:  canceling statement due to statement timeout
+
+
+=== PostgreSQL / 100 groups / previous / OLD / actual attempt / timeout 5000 ms ===
+
+ERROR:  canceling statement due to statement timeout
+
+
+=== PostgreSQL / 100 groups / current / NEW / actual / timeout 15000 ms ===
+
+Gather  (cost=1002.83..182379.65 rows=25 width=52) (actual rows=67554.00 loops=1)
+  Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+  Workers Planned: 2
+  Workers Launched: 2
+  Buffers: shared hit=1505602 read=11176 written=6
+  ->  Nested Loop Anti Join  (cost=2.83..181377.15 rows=10 width=52) (actual rows=22518.00 loops=3)
+        Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+        Buffers: shared hit=1505602 read=11176 written=6
+        Worker 0:  actual rows=22734.00 loops=1
+          JIT:
+            Functions: 30
+            Options: Inlining false, Optimization false, Expressions true, Deforming true
+          Buffers: shared hit=505914 read=3916 written=1
+        Worker 1:  actual rows=21752.00 loops=1
+          JIT:
+            Functions: 30
+            Options: Inlining false, Optimization false, Expressions true, Deforming true
+          Buffers: shared hit=485452 read=3637 written=2
+        ->  Nested Loop Left Join  (cost=2.40..181359.61 rows=10 width=52) (actual rows=22518.00 loops=3)
+              Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+              Inner Unique: true
+              Buffers: shared hit=1303013 read=11101 written=6
+              Worker 0:  actual rows=22734.00 loops=1
+                Buffers: shared hit=437734 read=3893 written=1
+              Worker 1:  actual rows=21752.00 loops=1
+                Buffers: shared hit=420222 read=3610 written=2
+              ->  Nested Loop Semi Join  (cost=2.13..181346.79 rows=10 width=51) (actual rows=22518.00 loops=3)
+                    Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.post_id
+                    Buffers: shared hit=1169820 read=11101 written=6
+                    Worker 0:  actual rows=22734.00 loops=1
+                      Buffers: shared hit=392814 read=3893 written=1
+                    Worker 1:  actual rows=21752.00 loops=1
+                      Buffers: shared hit=377390 read=3610 written=2
+                    ->  Nested Loop Semi Join  (cost=1.56..180062.20 rows=449 width=67) (actual rows=22518.00 loops=3)
+                          Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, signal_message_group.signal_message_id
+                          Buffers: shared hit=835385 read=11101 written=6
+                          Worker 0:  actual rows=22734.00 loops=1
+                            Buffers: shared hit=280316 read=3893 written=1
+                          Worker 1:  actual rows=21752.00 loops=1
+                            Buffers: shared hit=269686 read=3610 written=2
+                          ->  Nested Loop  (cost=1.00..124732.69 rows=19325 width=59) (actual rows=26042.33 loops=3)
+                                Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id
+                                Inner Unique: true
+                                Buffers: shared hit=459054 read=10703 written=6
+                                Worker 0:  actual rows=26231.00 loops=1
+                                  Buffers: shared hit=154009 read=3713 written=1
+                                Worker 1:  actual rows=25227.00 loops=1
+                                  Buffers: shared hit=148189 read=3502 written=2
+                                ->  Parallel Index Scan using sigint_inbox_item_datetime_idx on public.sigint_inbox_item  (cost=0.44..53688.49 rows=27753 width=59) (actual rows=26079.33 loops=3)
+                                      Output: sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, sigint_inbox_item.device_name_id
+                                      Index Cond: ((sigint_inbox_item.datetime >= '2026-10-21 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime <= '2026-10-22 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime >= '2026-10-21 00:00:00+00'::timestamp with time zone) AND (sigint_inbox_item.datetime <= '2026-10-22 00:00:00+00'::timestamp with time zone))
+                                      Index Searches: 1
+                                      Buffers: shared hit=76941 read=1282
+                                      Worker 0:  actual rows=26273.00 loops=1
+                                        Buffers: shared hit=25819 read=434
+                                      Worker 1:  actual rows=25258.00 loops=1
+                                        Buffers: shared hit=24861 read=412
+                                ->  Index Scan using signal_message_pkey on public.signal_message  (cost=0.56..2.56 rows=1 width=16) (actual rows=1.00 loops=78238)
+                                      Output: signal_message.id, signal_message.datasource_group_id
+                                      Index Cond: (signal_message.id = sigint_inbox_item.id)
+                                      Filter: (NOT signal_message.deleted)
+                                      Rows Removed by Filter: 0
+                                      Index Searches: 78238
+                                      Buffers: shared hit=381938 read=9421 written=6
+                                      Worker 0:  actual rows=1.00 loops=26273
+                                        Buffers: shared hit=128136 read=3279 written=1
+                                      Worker 1:  actual rows=1.00 loops=25258
+                                        Buffers: shared hit=123264 read=3090 written=2
+                          ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on public.signal_message_group  (cost=0.56..119.65 rows=53 width=8) (actual rows=0.86 loops=78127)
+                                Output: signal_message_group.signal_message_id, signal_message_group.group_master_key
+                                Index Cond: ((signal_message_group.signal_message_id = signal_message.id) AND (signal_message_group.group_master_key = ANY ('{G001,G002,G003,G004,G005,G006,G007,G008,G009,G010,G011,G012,G013,G014,G015,G016,G017,G018,G019,G020,G021,G022,G023,G024,G025,G026,G027,G028,G029,G030,G031,G032,G033,G034,G035,G036,G037,G038,G039,G040,G041,G042,G043,G044,G045,G046,G047,G048,G049,G050,G051,G052,G053,G054,G055,G056,G057,G058,G059,G060,G061,G062,G063,G064,G065,G066,G067,G068,G069,G070,G071,G072,G073,G074,G075,G076,G077,G078,G079,G080,G081,G082,G083,G084,G085,G086,G087,G088,G089,G090,G091,G092,G093,G094,G095,G096,G097,G098,G099,G100}'::text[])))
+                                Heap Fetches: 63952
+                                Index Searches: 78127
+                                Buffers: shared hit=376331 read=398
+                                Worker 0:  actual rows=0.87 loops=26231
+                                  Buffers: shared hit=126307 read=180
+                                Worker 1:  actual rows=0.86 loops=25227
+                                  Buffers: shared hit=121497 read=108
+                    ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on public.signal_message_group signal_message_group_1  (cost=0.56..119.65 rows=53 width=8) (actual rows=1.00 loops=67554)
+                          Output: signal_message_group_1.signal_message_id, signal_message_group_1.group_master_key
+                          Index Cond: ((signal_message_group_1.signal_message_id = signal_message.id) AND (signal_message_group_1.group_master_key = ANY ('{G001,G002,G003,G004,G005,G006,G007,G008,G009,G010,G011,G012,G013,G014,G015,G016,G017,G018,G019,G020,G021,G022,G023,G024,G025,G026,G027,G028,G029,G030,G031,G032,G033,G034,G035,G036,G037,G038,G039,G040,G041,G042,G043,G044,G045,G046,G047,G048,G049,G050,G051,G052,G053,G054,G055,G056,G057,G058,G059,G060,G061,G062,G063,G064,G065,G066,G067,G068,G069,G070,G071,G072,G073,G074,G075,G076,G077,G078,G079,G080,G081,G082,G083,G084,G085,G086,G087,G088,G089,G090,G091,G092,G093,G094,G095,G096,G097,G098,G099,G100}'::text[])))
+                          Heap Fetches: 63952
+                          Index Searches: 67554
+                          Buffers: shared hit=334435
+                          Worker 0:  actual rows=1.00 loops=22734
+                            Buffers: shared hit=112498
+                          Worker 1:  actual rows=1.00 loops=21752
+                            Buffers: shared hit=107704
+              ->  Index Scan using sigint_post_pkey on public.sigint_post  (cost=0.28..1.28 rows=1 width=17) (actual rows=0.66 loops=67554)
+                    Output: sigint_post.name, sigint_post.id
+                    Index Cond: (sigint_post.id = sigint_inbox_item.post_id)
+                    Index Searches: 44397
+                    Buffers: shared hit=133193
+                    Worker 0:  actual rows=0.66 loops=22734
+                      Buffers: shared hit=44920
+                    Worker 1:  actual rows=0.66 loops=21752
+                      Buffers: shared hit=42832
+        ->  Index Scan using intel_product_pkey on public.intel_product  (cost=0.43..1.63 rows=1 width=8) (actual rows=0.00 loops=67554)
+              Output: intel_product.intel_message_id, intel_product.source_message_id, intel_product.created_at, intel_product.relation_kind, intel_product.intel_message_uuid, intel_product.source_message_uuid
+              Index Cond: (intel_product.intel_message_id = signal_message.id)
+              Filter: ((intel_product.relation_kind)::text = ANY ('{comment,report}'::text[]))
+              Index Searches: 67554
+              Buffers: shared hit=202589 read=75
+              Worker 0:  actual rows=0.00 loops=22734
+                Buffers: shared hit=68180 read=23
+              Worker 1:  actual rows=0.00 loops=21752
+                Buffers: shared hit=65230 read=27
+Settings: random_page_cost = '1.1', effective_io_concurrency = '200', effective_cache_size = '24GB', work_mem = '8MB'
+Query Identifier: -1007220788683822837
+Planning:
+  Buffers: shared hit=1291 read=43 dirtied=1
+Planning Time: 13.622 ms
+JIT:
+  Functions: 90
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+Execution Time: 5315.279 ms
+
+
+=== PostgreSQL / 100 groups / previous / NEW / actual / timeout 5000 ms ===
+
+Gather  (cost=1002.83..182376.62 rows=25 width=52) (actual rows=63642.00 loops=1)
+  Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+  Workers Planned: 2
+  Workers Launched: 2
+  Buffers: shared hit=1414354 read=8520
+  ->  Nested Loop Anti Join  (cost=2.83..181374.12 rows=10 width=52) (actual rows=21214.00 loops=3)
+        Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+        Buffers: shared hit=1414354 read=8520
+        Worker 0:  actual rows=21305.00 loops=1
+          JIT:
+            Functions: 30
+            Options: Inlining false, Optimization false, Expressions true, Deforming true
+          Buffers: shared hit=473374 read=2717
+        Worker 1:  actual rows=20877.00 loops=1
+          JIT:
+            Functions: 30
+            Options: Inlining false, Optimization false, Expressions true, Deforming true
+          Buffers: shared hit=463351 read=2860
+        ->  Nested Loop Left Join  (cost=2.40..181356.59 rows=10 width=52) (actual rows=21214.00 loops=3)
+              Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_post.name
+              Inner Unique: true
+              Buffers: shared hit=1223426 read=8520
+              Worker 0:  actual rows=21305.00 loops=1
+                Buffers: shared hit=409458 read=2717
+              Worker 1:  actual rows=20877.00 loops=1
+                Buffers: shared hit=400719 read=2860
+              ->  Nested Loop Semi Join  (cost=2.13..181343.76 rows=10 width=51) (actual rows=21214.00 loops=3)
+                    Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.post_id
+                    Buffers: shared hit=1103793 read=8520
+                    Worker 0:  actual rows=21305.00 loops=1
+                      Buffers: shared hit=369482 read=2717
+                    Worker 1:  actual rows=20877.00 loops=1
+                      Buffers: shared hit=361529 read=2860
+                    ->  Nested Loop Semi Join  (cost=1.56..180059.18 rows=449 width=67) (actual rows=21214.00 loops=3)
+                          Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, signal_message_group.signal_message_id
+                          Buffers: shared hit=792146 read=8520
+                          Worker 0:  actual rows=21305.00 loops=1
+                            Buffers: shared hit=265225 read=2717
+                          Worker 1:  actual rows=20877.00 loops=1
+                            Buffers: shared hit=259276 read=2860
+                          ->  Nested Loop  (cost=1.00..124729.74 rows=19325 width=59) (actual rows=24756.00 loops=3)
+                                Output: signal_message.id, sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id
+                                Inner Unique: true
+                                Buffers: shared hit=438226 read=8287
+                                Worker 0:  actual rows=24865.00 loops=1
+                                  Buffers: shared hit=146803 read=2641
+                                Worker 1:  actual rows=24308.00 loops=1
+                                  Buffers: shared hit=143360 read=2798
+                                ->  Parallel Index Scan using sigint_inbox_item_datetime_idx on public.sigint_inbox_item  (cost=0.44..53687.73 rows=27752 width=59) (actual rows=24801.33 loops=3)
+                                      Output: sigint_inbox_item.freq, sigint_inbox_item.unit_v2, sigint_inbox_item.id, sigint_inbox_item.post_id, sigint_inbox_item.device_name_id
+                                      Index Cond: ((sigint_inbox_item.datetime >= '2026-10-20 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime <= '2026-10-21 00:00:00'::timestamp without time zone) AND (sigint_inbox_item.datetime >= '2026-10-20 00:00:00+00'::timestamp with time zone) AND (sigint_inbox_item.datetime <= '2026-10-21 00:00:00+00'::timestamp with time zone))
+                                      Index Searches: 1
+                                      Buffers: shared hit=70365 read=4126
+                                      Worker 0:  actual rows=24900.00 loops=1
+                                        Buffers: shared hit=23613 read=1330
+                                      Worker 1:  actual rows=24352.00 loops=1
+                                        Buffers: shared hit=23047 read=1350
+                                ->  Index Scan using signal_message_pkey on public.signal_message  (cost=0.56..2.56 rows=1 width=16) (actual rows=1.00 loops=74404)
+                                      Output: signal_message.id, signal_message.datasource_group_id
+                                      Index Cond: (signal_message.id = sigint_inbox_item.id)
+                                      Filter: (NOT signal_message.deleted)
+                                      Rows Removed by Filter: 0
+                                      Index Searches: 74404
+                                      Buffers: shared hit=367861 read=4161
+                                      Worker 0:  actual rows=1.00 loops=24900
+                                        Buffers: shared hit=123190 read=1311
+                                      Worker 1:  actual rows=1.00 loops=24352
+                                        Buffers: shared hit=120313 read=1448
+                          ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on public.signal_message_group  (cost=0.56..119.65 rows=53 width=8) (actual rows=0.86 loops=74268)
+                                Output: signal_message_group.signal_message_id, signal_message_group.group_master_key
+                                Index Cond: ((signal_message_group.signal_message_id = signal_message.id) AND (signal_message_group.group_master_key = ANY ('{G001,G002,G003,G004,G005,G006,G007,G008,G009,G010,G011,G012,G013,G014,G015,G016,G017,G018,G019,G020,G021,G022,G023,G024,G025,G026,G027,G028,G029,G030,G031,G032,G033,G034,G035,G036,G037,G038,G039,G040,G041,G042,G043,G044,G045,G046,G047,G048,G049,G050,G051,G052,G053,G054,G055,G056,G057,G058,G059,G060,G061,G062,G063,G064,G065,G066,G067,G068,G069,G070,G071,G072,G073,G074,G075,G076,G077,G078,G079,G080,G081,G082,G083,G084,G085,G086,G087,G088,G089,G090,G091,G092,G093,G094,G095,G096,G097,G098,G099,G100}'::text[])))
+                                Heap Fetches: 56886
+                                Index Searches: 74268
+                                Buffers: shared hit=353920 read=233
+                                Worker 0:  actual rows=0.86 loops=24865
+                                  Buffers: shared hit=118422 read=76
+                                Worker 1:  actual rows=0.86 loops=24308
+                                  Buffers: shared hit=115916 read=62
+                    ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on public.signal_message_group signal_message_group_1  (cost=0.56..119.65 rows=53 width=8) (actual rows=1.00 loops=63642)
+                          Output: signal_message_group_1.signal_message_id, signal_message_group_1.group_master_key
+                          Index Cond: ((signal_message_group_1.signal_message_id = signal_message.id) AND (signal_message_group_1.group_master_key = ANY ('{G001,G002,G003,G004,G005,G006,G007,G008,G009,G010,G011,G012,G013,G014,G015,G016,G017,G018,G019,G020,G021,G022,G023,G024,G025,G026,G027,G028,G029,G030,G031,G032,G033,G034,G035,G036,G037,G038,G039,G040,G041,G042,G043,G044,G045,G046,G047,G048,G049,G050,G051,G052,G053,G054,G055,G056,G057,G058,G059,G060,G061,G062,G063,G064,G065,G066,G067,G068,G069,G070,G071,G072,G073,G074,G075,G076,G077,G078,G079,G080,G081,G082,G083,G084,G085,G086,G087,G088,G089,G090,G091,G092,G093,G094,G095,G096,G097,G098,G099,G100}'::text[])))
+                          Heap Fetches: 56886
+                          Index Searches: 63642
+                          Buffers: shared hit=311647
+                          Worker 0:  actual rows=1.00 loops=21305
+                            Buffers: shared hit=104257
+                          Worker 1:  actual rows=1.00 loops=20877
+                            Buffers: shared hit=102253
+              ->  Index Scan using sigint_post_pkey on public.sigint_post  (cost=0.28..1.28 rows=1 width=17) (actual rows=0.63 loops=63642)
+                    Output: sigint_post.name, sigint_post.id
+                    Index Cond: (sigint_post.id = sigint_inbox_item.post_id)
+                    Index Searches: 39877
+                    Buffers: shared hit=119633
+                    Worker 0:  actual rows=0.63 loops=21305
+                      Buffers: shared hit=39976
+                    Worker 1:  actual rows=0.63 loops=20877
+                      Buffers: shared hit=39190
+        ->  Index Scan using intel_product_pkey on public.intel_product  (cost=0.43..1.63 rows=1 width=8) (actual rows=0.00 loops=63642)
+              Output: intel_product.intel_message_id, intel_product.source_message_id, intel_product.created_at, intel_product.relation_kind, intel_product.intel_message_uuid, intel_product.source_message_uuid
+              Index Cond: (intel_product.intel_message_id = signal_message.id)
+              Filter: ((intel_product.relation_kind)::text = ANY ('{comment,report}'::text[]))
+              Index Searches: 63642
+              Buffers: shared hit=190928
+              Worker 0:  actual rows=0.00 loops=21305
+                Buffers: shared hit=63916
+              Worker 1:  actual rows=0.00 loops=20877
+                Buffers: shared hit=62632
+Settings: random_page_cost = '1.1', effective_io_concurrency = '200', effective_cache_size = '24GB', work_mem = '8MB'
+Query Identifier: -1007220788683822837
+Planning:
+  Buffers: shared hit=1334
+Planning Time: 6.723 ms
+JIT:
+  Functions: 90
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+Execution Time: 4954.559 ms
+
+
+=== Gateway / 100 groups / current / OLD / PLAIN ===
+
+Foreign Scan  (cost=1.00..0.10 rows=1000 width=32)
+  Output: foreign_row.id, foreign_row_1.freq, foreign_row_1.unit_v2, foreign_row_4.name
+  Relations: (((((((signal_message foreign_row) INNER JOIN (sigint_inbox_item foreign_row)) LEFT JOIN (datasource_group foreign_row)) LEFT JOIN (signal_group foreign_row)) LEFT JOIN (sigint_post foreign_row)) LEFT JOIN (device_name foreign_row)) LEFT SEMI JOIN (signal_message_group foreign_row)) LEFT SEMI JOIN (signal_message_group foreign_row)
+  Remote SQL: SELECT s91.c1, s91.c2, s91.c3, s91.c5 FROM  (SELECT s80.c1, s80.c2, s80.c3, s80.c4, s80.c5, s80.c1 FROM  (SELECT r14.id, r15.freq, r15.unit_v2, r15.id, r18.name FROM      echo_analytics.signal_message r14 ALL INNER JOIN echo_analytics.sigint_inbox_item r15 ON (((r14.id = r15.id))) ALL LEFT JOIN echo_analytics.datasource_group r16 ON (((r14.datasource_group_id = r16.id))) ALL LEFT JOIN echo_analytics.signal_group r17 ON (((r16.group_master_key = r17.master_key))) ALL LEFT JOIN echo_analytics.sigint_post r18 ON (((r15.post_id = r18.id))) ALL LEFT JOIN echo_analytics.device_name r19 ON (((r15.device_name_id = r19.id))) WHERE ((r15.datetime >= cast('2026-10-21 00:00:00' as DateTime64(6, 'UTC')))) AND ((r15.datetime <= cast('2026-10-22 00:00:00' as DateTime64(6, 'UTC')))) AND ((r15.datetime >= cast('2026-10-21 00:00:00' as DateTime64(6, 'UTC')))) AND ((r15.datetime <= cast('2026-10-22 00:00:00' as DateTime64(6, 'UTC')))) AND ((NOT r14.deleted)) AND ((NOT (r14.id IN (SELECT q1_2.intel_message_id FROM echo_analytics.intel_product q1_2 WHERE ((q1_2.relation_kind IN ('comment','report')))))))) s80(c1, c2, c3, c4, c5) LEFT SEMI JOIN echo_analytics.signal_message_group r20 ON (((r20.group_master_key IN ('G001','G002','G003','G004','G005','G006','G007','G008','G009','G010','G011','G012','G013','G014','G015','G016','G017','G018','G019','G020','G021','G022','G023','G024','G025','G026','G027','G028','G029','G030','G031','G032','G033','G034','G035','G036','G037','G038','G039','G040','G041','G042','G043','G044','G045','G046','G047','G048','G049','G050','G051','G052','G053','G054','G055','G056','G057','G058','G059','G060','G061','G062','G063','G064','G065','G066','G067','G068','G069','G070','G071','G072','G073','G074','G075','G076','G077','G078','G079','G080','G081','G082','G083','G084','G085','G086','G087','G088','G089','G090','G091','G092','G093','G094','G095','G096','G097','G098','G099','G100'))) AND ((s80.c1 = r20.signal_message_id)))) s91(c1, c2, c3, c4, c5, c6) LEFT SEMI JOIN echo_analytics.signal_message_group r21 ON (((r21.group_master_key IN ('G001','G002','G003','G004','G005','G006','G007','G008','G009','G010','G011','G012','G013','G014','G015','G016','G017','G018','G019','G020','G021','G022','G023','G024','G025','G026','G027','G028','G029','G030','G031','G032','G033','G034','G035','G036','G037','G038','G039','G040','G041','G042','G043','G044','G045','G046','G047','G048','G049','G050','G051','G052','G053','G054','G055','G056','G057','G058','G059','G060','G061','G062','G063','G064','G065','G066','G067','G068','G069','G070','G071','G072','G073','G074','G075','G076','G077','G078','G079','G080','G081','G082','G083','G084','G085','G086','G087','G088','G089','G090','G091','G092','G093','G094','G095','G096','G097','G098','G099','G100'))) AND ((s91.c1 = r21.signal_message_id)))
+Settings: enable_mergejoin = 'off'
+Query Identifier: 5651139996720291843
+
+
+=== Gateway / 100 groups / current / NEW / actual / timeout 5000 ms ===
+
+Foreign Scan  (cost=1.00..0.10 rows=1000 width=32) (actual rows=67554.00 loops=1)
+  Output: foreign_row.id, foreign_row_1.freq, foreign_row_1.unit_v2, foreign_row_4.name
+  Relations: ((((((((signal_message foreign_row) INNER JOIN (sigint_inbox_item foreign_row)) LEFT JOIN (datasource_group foreign_row)) LEFT JOIN (signal_group foreign_row)) LEFT JOIN (sigint_post foreign_row)) LEFT JOIN (device_name foreign_row)) LEFT SEMI JOIN (signal_message_group foreign_row)) LEFT SEMI JOIN (signal_message_group foreign_row)) LEFT ANTI JOIN (intel_product foreign_row)
+  Remote SQL: SELECT s98.c1, s98.c2, s98.c3, s98.c4 FROM  (SELECT s93.c1, s93.c2, s93.c3, s93.c5 FROM  (SELECT s82.c1, s82.c2, s82.c3, s82.c4, s82.c5, s82.c1 FROM  (SELECT r15.id, r16.freq, r16.unit_v2, r16.id, r19.name FROM      echo_analytics.signal_message r15 ALL INNER JOIN echo_analytics.sigint_inbox_item r16 ON (((r15.id = r16.id))) ALL LEFT JOIN echo_analytics.datasource_group r17 ON (((r15.datasource_group_id = r17.id))) ALL LEFT JOIN echo_analytics.signal_group r18 ON (((r17.group_master_key = r18.master_key))) ALL LEFT JOIN echo_analytics.sigint_post r19 ON (((r16.post_id = r19.id))) ALL LEFT JOIN echo_analytics.device_name r20 ON (((r16.device_name_id = r20.id))) WHERE ((r16.datetime >= cast('2026-10-21 00:00:00' as DateTime64(6, 'UTC')))) AND ((r16.datetime <= cast('2026-10-22 00:00:00' as DateTime64(6, 'UTC')))) AND ((r16.datetime >= cast('2026-10-21 00:00:00' as DateTime64(6, 'UTC')))) AND ((r16.datetime <= cast('2026-10-22 00:00:00' as DateTime64(6, 'UTC')))) AND ((NOT r15.deleted))) s82(c1, c2, c3, c4, c5) LEFT SEMI JOIN echo_analytics.signal_message_group r21 ON (((r21.group_master_key IN ('G001','G002','G003','G004','G005','G006','G007','G008','G009','G010','G011','G012','G013','G014','G015','G016','G017','G018','G019','G020','G021','G022','G023','G024','G025','G026','G027','G028','G029','G030','G031','G032','G033','G034','G035','G036','G037','G038','G039','G040','G041','G042','G043','G044','G045','G046','G047','G048','G049','G050','G051','G052','G053','G054','G055','G056','G057','G058','G059','G060','G061','G062','G063','G064','G065','G066','G067','G068','G069','G070','G071','G072','G073','G074','G075','G076','G077','G078','G079','G080','G081','G082','G083','G084','G085','G086','G087','G088','G089','G090','G091','G092','G093','G094','G095','G096','G097','G098','G099','G100'))) AND ((s82.c1 = r21.signal_message_id)))) s93(c1, c2, c3, c4, c5, c6) LEFT SEMI JOIN echo_analytics.signal_message_group r22 ON (((r22.group_master_key IN ('G001','G002','G003','G004','G005','G006','G007','G008','G009','G010','G011','G012','G013','G014','G015','G016','G017','G018','G019','G020','G021','G022','G023','G024','G025','G026','G027','G028','G029','G030','G031','G032','G033','G034','G035','G036','G037','G038','G039','G040','G041','G042','G043','G044','G045','G046','G047','G048','G049','G050','G051','G052','G053','G054','G055','G056','G057','G058','G059','G060','G061','G062','G063','G064','G065','G066','G067','G068','G069','G070','G071','G072','G073','G074','G075','G076','G077','G078','G079','G080','G081','G082','G083','G084','G085','G086','G087','G088','G089','G090','G091','G092','G093','G094','G095','G096','G097','G098','G099','G100'))) AND ((s93.c1 = r22.signal_message_id)))) s98(c1, c2, c3, c4) LEFT ANTI JOIN echo_analytics.intel_product r23 ON (((r23.intel_message_id = s98.c1)) AND ((r23.relation_kind IN ('comment','report'))))
+Settings: enable_mergejoin = 'off'
+Query Identifier: -3766090945397777036
+Planning:
+  Buffers: shared hit=642
+Planning Time: 6.822 ms
+Execution Time: 1592.973 ms
+
+
+=== Gateway / 100 groups / previous / NEW / actual / timeout 5000 ms ===
+
+Foreign Scan  (cost=1.00..0.10 rows=1000 width=32) (actual rows=63642.00 loops=1)
+  Output: foreign_row.id, foreign_row_1.freq, foreign_row_1.unit_v2, foreign_row_4.name
+  Relations: ((((((((signal_message foreign_row) INNER JOIN (sigint_inbox_item foreign_row)) LEFT JOIN (datasource_group foreign_row)) LEFT JOIN (signal_group foreign_row)) LEFT JOIN (sigint_post foreign_row)) LEFT JOIN (device_name foreign_row)) LEFT SEMI JOIN (signal_message_group foreign_row)) LEFT SEMI JOIN (signal_message_group foreign_row)) LEFT ANTI JOIN (intel_product foreign_row)
+  Remote SQL: SELECT s98.c1, s98.c2, s98.c3, s98.c4 FROM  (SELECT s93.c1, s93.c2, s93.c3, s93.c5 FROM  (SELECT s82.c1, s82.c2, s82.c3, s82.c4, s82.c5, s82.c1 FROM  (SELECT r15.id, r16.freq, r16.unit_v2, r16.id, r19.name FROM      echo_analytics.signal_message r15 ALL INNER JOIN echo_analytics.sigint_inbox_item r16 ON (((r15.id = r16.id))) ALL LEFT JOIN echo_analytics.datasource_group r17 ON (((r15.datasource_group_id = r17.id))) ALL LEFT JOIN echo_analytics.signal_group r18 ON (((r17.group_master_key = r18.master_key))) ALL LEFT JOIN echo_analytics.sigint_post r19 ON (((r16.post_id = r19.id))) ALL LEFT JOIN echo_analytics.device_name r20 ON (((r16.device_name_id = r20.id))) WHERE ((r16.datetime >= cast('2026-10-20 00:00:00' as DateTime64(6, 'UTC')))) AND ((r16.datetime <= cast('2026-10-21 00:00:00' as DateTime64(6, 'UTC')))) AND ((r16.datetime >= cast('2026-10-20 00:00:00' as DateTime64(6, 'UTC')))) AND ((r16.datetime <= cast('2026-10-21 00:00:00' as DateTime64(6, 'UTC')))) AND ((NOT r15.deleted))) s82(c1, c2, c3, c4, c5) LEFT SEMI JOIN echo_analytics.signal_message_group r21 ON (((r21.group_master_key IN ('G001','G002','G003','G004','G005','G006','G007','G008','G009','G010','G011','G012','G013','G014','G015','G016','G017','G018','G019','G020','G021','G022','G023','G024','G025','G026','G027','G028','G029','G030','G031','G032','G033','G034','G035','G036','G037','G038','G039','G040','G041','G042','G043','G044','G045','G046','G047','G048','G049','G050','G051','G052','G053','G054','G055','G056','G057','G058','G059','G060','G061','G062','G063','G064','G065','G066','G067','G068','G069','G070','G071','G072','G073','G074','G075','G076','G077','G078','G079','G080','G081','G082','G083','G084','G085','G086','G087','G088','G089','G090','G091','G092','G093','G094','G095','G096','G097','G098','G099','G100'))) AND ((s82.c1 = r21.signal_message_id)))) s93(c1, c2, c3, c4, c5, c6) LEFT SEMI JOIN echo_analytics.signal_message_group r22 ON (((r22.group_master_key IN ('G001','G002','G003','G004','G005','G006','G007','G008','G009','G010','G011','G012','G013','G014','G015','G016','G017','G018','G019','G020','G021','G022','G023','G024','G025','G026','G027','G028','G029','G030','G031','G032','G033','G034','G035','G036','G037','G038','G039','G040','G041','G042','G043','G044','G045','G046','G047','G048','G049','G050','G051','G052','G053','G054','G055','G056','G057','G058','G059','G060','G061','G062','G063','G064','G065','G066','G067','G068','G069','G070','G071','G072','G073','G074','G075','G076','G077','G078','G079','G080','G081','G082','G083','G084','G085','G086','G087','G088','G089','G090','G091','G092','G093','G094','G095','G096','G097','G098','G099','G100'))) AND ((s93.c1 = r22.signal_message_id)))) s98(c1, c2, c3, c4) LEFT ANTI JOIN echo_analytics.intel_product r23 ON (((r23.intel_message_id = s98.c1)) AND ((r23.relation_kind IN ('comment','report'))))
+Settings: enable_mergejoin = 'off'
+Query Identifier: -3766090945397777036
+Planning:
+  Buffers: shared hit=642
+Planning Time: 6.539 ms
+Execution Time: 1405.756 ms
