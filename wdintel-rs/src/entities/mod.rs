@@ -230,6 +230,7 @@ pub mod sigint_network_encryption_key_freq;
 pub mod sigint_network_freq;
 pub mod sigint_network_freq_changelog;
 pub mod sigint_network_post;
+pub mod sigint_network_settlement;
 pub mod sigint_network_unit;
 pub mod sigint_network_unit_changelog;
 pub mod sigint_origin;

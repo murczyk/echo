@@ -1064,6 +1064,13 @@ pub struct OneoffReprocessMediaSummariesPs {
     pub yes: bool,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct OneoffEnsureApiIntegrationIggyTopicsPs {
+    /// Reconcile topics without changing Iggy user permissions.
+    #[arg(long)]
+    pub topics_only: bool,
+}
+
 #[derive(clap::Args, Debug, Clone)]
 pub struct BackupPs {
     /// Skip the configured sleep_before_backup_mins delay.
@@ -1255,7 +1262,9 @@ enum Cmd {
     OneoffReindexStoredOcr(OneoffReindexStoredOcrPs),
     OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
     OneoffCompactDatasourceGroup,
-    OneoffEnsureApiIntegrationIggyTopics,
+    OneoffEnsureApiIntegrationIggyTopics(
+        OneoffEnsureApiIntegrationIggyTopicsPs,
+    ),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -2192,8 +2201,8 @@ async fn async_main(
         Cmd::OneoffCompactDatasourceGroup => {
             operator::oneoff::oneoff_compact_datasource_group(mode).await
         }
-        Cmd::OneoffEnsureApiIntegrationIggyTopics => {
-            api_integrations::oneoff_ensure_iggy_topics(mode).await
+        Cmd::OneoffEnsureApiIntegrationIggyTopics(ps) => {
+            api_integrations::oneoff_ensure_iggy_topics(mode, ps.topics_only).await
         }
     }
 }

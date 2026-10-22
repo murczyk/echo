@@ -1,5 +1,94 @@
 # Inbox Iggy events
 
+## Retention
+
+Echo explicitly configures inbox and analytics topics with 30-day message
+expiry. Creating an API integration or changing its Iggy connection settings
+reconciles its topics, preserving their other settings. Saving an existing
+integration without changing those settings does not reconcile retention.
+
+Run the updated Echo binary with:
+
+```sh
+wdintel-rs --mode=live oneoff-ensure-api-integration-iggy-topics --topics-only
+```
+
+The command processes the current inbox and analytics destinations of every
+integration with an Iggy connection, including disabled integrations. It creates
+missing streams/topics and updates existing topics. `--topics-only` leaves Iggy
+user permissions unchanged. Without this flag, the command also grants every
+non-root Iggy user read/send access to the configured streams.
+Historical destinations retained for queued events and topics no longer
+registered by an integration are outside this command's scope; inventory them
+separately and keep old destinations available until their backlog drains.
+
+### Deployment and verification
+
+Obtain deployment approval naming the Echo and Iggy targets and the operations
+below before applying them. Integration URLs can refer to other Iggy servers;
+include those destinations in the approved scope. Apply the updated Echo binary
+before running its topic command. Serialize this work with integration edits
+and other topic configuration changes, because Iggy's update API sends the full
+set of topic settings.
+
+1. Inventory current and historical destinations, existing topic settings,
+   cleaner state, size limits, and consumer/group committed offsets. Confirm
+   consumers have processed any backlog that must be preserved. The cleaner
+   also enforces existing size limits, which may delete data younger than
+   30 days. The credentials stored on each integration must be allowed to read
+   its streams/topics, create them when missing, and update topic settings;
+   `--topics-only` does not grant those rights. Any required permission changes
+   need approval before reconciliation.
+2. With cleanup disabled, run the topic command above. If cleanup is already
+   enabled, disabling it requires approval for the affected server's config
+   change and restart first. Read both topics through Iggy's topic API for
+   every integration: `message_expiry` must be `2592000000000` microseconds.
+   Verify names, partition counts, compression, replication factors, size limits,
+   and user permissions against the inventory before continuing.
+3. For Apache Iggy `0.10.3-edge.3`, merge the following values into the existing
+   sections of the `iggy-config-<server>` Bitwarden note, following the
+   [pinned server configuration](https://github.com/apache/iggy/blob/iggy-0.10.3-edge.3/core/server/config.toml):
+
+   ```toml
+   [data_maintenance.messages]
+   cleaner_enabled = true
+   interval = "1 m"
+   ```
+
+   Echo supplies explicit topic expiry, so changing the server-wide
+   `[system.topic].message_expiry` default is unnecessary. The debug template
+   sets that default to `"30 days"`; copying it to another server also affects
+   newly created topics that use the server default.
+4. Deploy the approved note with `just deploy-config-iggy --server <server>`
+   (this recipe also updates the target firewall), then restart `echo-iggy` on
+   that server. Confirm the service is healthy, its startup log reports the
+   message cleaner is enabled, and both topic settings survived the restart.
+   Monitor cleanup logs, disk use, and consumer progress before the next target.
+
+The topic command stops on the first error. Earlier topics may already have
+been reconciled, including the first topic of a failed integration. Stop rollout,
+inspect the error and actual topic state, and obtain approval for recovery
+outside the original scope. Repeating the command is idempotent: topics already
+at 30 days are not updated. Keep cleanup disabled until all intended topics
+have passed verification; a successful topic update alone does not prove that
+cleanup is running.
+
+Iggy removes expired sealed segments on the cleanup interval and preserves the
+active segment. A consumer or consumer group's committed offset can also block
+expiry-based deletion of a segment it has not passed; stale offsets can retain
+data indefinitely. Check for `blocked from expiry-based deletion` warnings and
+resolve the consumer backlog before approving any offset reset or consumer
+removal. These are destructive operations, not automatic reconciliation steps.
+See the [pinned cleaner implementation](https://github.com/apache/iggy/blob/iggy-0.10.3-edge.3/core/server/src/shard/system/segments.rs).
+
+Expiry uses Iggy's message timestamps, rather than the interception timestamps
+inside event payloads. Segment boundaries and consumer offsets mean this policy
+is not a hard disk-usage bound. Once enabled, existing expired segments become
+eligible for deletion. Disabling the cleaner and restarting the server prevents
+further cleanup but cannot recover deleted data.
+
+## Event format
+
 The configured inbox topic carries the existing creation record as a JSON pair
 `[sigint_inbox_item_id, inbox_message]`. The message includes the existing
 `aor_ids`, `sigint_callsign_ids`, `sigint_unit_ids`, `sigint_signal_ids`, and

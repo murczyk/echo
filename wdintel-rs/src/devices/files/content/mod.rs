@@ -32,7 +32,7 @@ use self::repository::{
     CreateOutcome, NewUpload, RevalidateOutcome, Upload, UploadStatus,
 };
 use self::spool::{AcquireError, AppendError, LockedSpool, Spool};
-use crate::config::Config;
+use crate::config::{Config, ContentLimitsConfig};
 use crate::devices::config::*;
 use crate::error::AppError;
 use crate::file_registry::FileRegistryDb;
@@ -48,50 +48,8 @@ pub(crate) const COMPLETE_PATH: &str =
     "/api/device/file-content-uploads/{upload_id}/complete";
 
 #[derive(Clone)]
-struct ContentLimits {
-    upload_max_bytes: u64,
-    max_reserved_bytes: u64,
-    max_reserved_per_login: u64,
-    max_reserved_count: usize,
-    max_count_per_login: usize,
-    spool_min_free_bytes: u64,
-    probe_size_bytes: usize,
-    upload_idle_ttl_secs: u64,
-    upload_max_lifetime_secs: u64,
-    finalization_max_concurrent: usize,
-    cleanup_batch_size: usize,
-    cleanup_poll_interval_secs: u64,
-    cleanup_retry_delay_secs: u64,
-}
-
-impl Default for ContentLimits {
-    fn default() -> Self {
-        Self {
-            upload_max_bytes: DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES,
-            max_reserved_bytes: DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_BYTES,
-            max_reserved_per_login:
-                DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_PER_LOGIN,
-            max_reserved_count: DEVICE_FILE_CONTENT_UPLOAD_MAX_RESERVED_COUNT,
-            max_count_per_login: DEVICE_FILE_CONTENT_UPLOAD_MAX_COUNT_PER_LOGIN,
-            spool_min_free_bytes: DEVICE_FILE_CONTENT_SPOOL_MIN_FREE_BYTES,
-            probe_size_bytes: DEVICE_FILE_CONTENT_PROBE_SIZE_BYTES,
-            upload_idle_ttl_secs: DEVICE_FILE_CONTENT_UPLOAD_IDLE_TTL_SECS,
-            upload_max_lifetime_secs:
-                DEVICE_FILE_CONTENT_UPLOAD_MAX_LIFETIME_SECS,
-            finalization_max_concurrent:
-                DEVICE_FILE_CONTENT_FINALIZATION_MAX_CONCURRENT,
-            cleanup_batch_size: DEVICE_FILE_CONTENT_CLEANUP_BATCH_SIZE,
-            cleanup_poll_interval_secs:
-                DEVICE_FILE_CONTENT_CLEANUP_POLL_INTERVAL_SECS,
-            cleanup_retry_delay_secs:
-                DEVICE_FILE_CONTENT_CLEANUP_RETRY_DELAY_SECS,
-        }
-    }
-}
-
-#[derive(Clone)]
 pub(crate) struct DeviceFileContentRuntime {
-    config: ContentLimits,
+    config: ContentLimitsConfig,
     spool: Spool,
     storage: Operator,
     storage_config: S3Config,
@@ -125,7 +83,15 @@ async fn try_build_runtime(
     metrics: Option<crate::telemetry::Metrics>,
     mode: Mode,
 ) -> Result<Option<Arc<DeviceFileContentRuntime>>, AppError> {
-    let limits = ContentLimits::default();
+    let limits = config
+        .file_registry
+        .as_ref()
+        .map(|registry| registry.content_limits.clone())
+        .unwrap_or_default();
+    limits
+        .validate()
+        .map_err(|msg| AppError::BL { msg })
+        .map_err(|error| error.c(h!()))?;
     let Some(file_registry_db) = file_registry_db else {
         return Ok(None);
     };
@@ -200,7 +166,7 @@ pub(crate) async fn runtime_for_test(
     metrics: Option<crate::telemetry::Metrics>,
 ) -> Arc<DeviceFileContentRuntime> {
     Arc::new(DeviceFileContentRuntime {
-        config: ContentLimits::default(),
+        config: ContentLimitsConfig::default(),
         spool: Spool::for_test(spool_root).await.unwrap(),
         storage,
         storage_config: S3Config {
@@ -242,7 +208,7 @@ async fn collection(
     payload: web::Payload,
 ) -> HttpResponse {
     if request.method() == Method::OPTIONS {
-        return protocol::options(DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES);
+        return protocol::options(advertised_upload_max_bytes(&env));
     }
     let response =
         collection_inner(env, identity, request, path, payload).await;
@@ -332,7 +298,7 @@ async fn resource(
     payload: web::Payload,
 ) -> HttpResponse {
     if request.method() == Method::OPTIONS {
-        return protocol::options(DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES);
+        return protocol::options(advertised_upload_max_bytes(&env));
     }
     let is_head = request.method() == Method::HEAD;
     let response = resource_inner(env, identity, request, path, payload).await;
@@ -749,6 +715,13 @@ async fn completed_replay(
     .map_err(|error| repository_unavailable(error.context(h!())))?
     .ok_or_else(|| ContentError::conflict("content_already_committed"))?;
     Ok(HttpResponse::Ok().json(content))
+}
+
+fn advertised_upload_max_bytes(env: &Env) -> u64 {
+    env.device_file_content
+        .as_deref()
+        .map(|runtime| runtime.config.upload_max_bytes)
+        .unwrap_or(DEVICE_FILE_CONTENT_UPLOAD_MAX_BYTES)
 }
 
 fn runtime(env: &Env) -> Result<&DeviceFileContentRuntime, ContentError> {

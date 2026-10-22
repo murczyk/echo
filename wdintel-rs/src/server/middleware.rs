@@ -251,6 +251,11 @@ where
                 value
                     .to_str()
                     .ok()
+                    .filter(|value| {
+                        !name.as_str().starts_with("x-echo-")
+                            || value.len()
+                                <= crate::config::SERVER_ACTIVITY_DIAGNOSTIC_HEADER_MAX_BYTES
+                    })
                     .map(|v| (name.to_string(), v.to_string()))
             })
             .collect::<HashMap<String, String>>(),
@@ -734,6 +739,16 @@ mod tests {
             .insert_header(("authorization", "Bearer test-secret"))
             .insert_header(("cookie", "session=test-secret"))
             .insert_header(("x-api-key", "test-secret"))
+            .insert_header(("x-echo-tab-id", "ephemeral-tab"))
+            .insert_header(("x-echo-page-visibility", "hidden"))
+            .insert_header(("x-echo-request-trigger", "automatic"))
+            .insert_header((
+                "x-echo-client-asset",
+                "a".repeat(
+                    crate::config::SERVER_ACTIVITY_DIAGNOSTIC_HEADER_MAX_BYTES
+                        + 1,
+                ),
+            ))
             .to_request();
         assert!(test::call_service(&app, request)
             .await
@@ -767,6 +782,19 @@ mod tests {
         assert!(!headers.contains_key("authorization"));
         assert!(!headers.contains_key("cookie"));
         assert!(!headers.contains_key("x-api-key"));
+        assert_eq!(
+            headers.get("x-echo-tab-id").map(String::as_str),
+            Some("ephemeral-tab")
+        );
+        assert_eq!(
+            headers.get("x-echo-page-visibility").map(String::as_str),
+            Some("hidden")
+        );
+        assert_eq!(
+            headers.get("x-echo-request-trigger").map(String::as_str),
+            Some("automatic")
+        );
+        assert!(!headers.contains_key("x-echo-client-asset"));
         assert!(request.request_body.is_none());
         assert!(records
             .iter()

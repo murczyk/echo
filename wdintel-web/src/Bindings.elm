@@ -12511,6 +12511,8 @@ listNetworkPointsReqEncoder struct =
 
 type alias ListNetworkPointsRsp =
     { points : List (NetworkPoint)
+    , settlements : List (NetworkSettlement)
+    , settlementsPending : Bool
     }
 
 
@@ -12518,6 +12520,8 @@ listNetworkPointsRspEncoder : ListNetworkPointsRsp -> Json.Encode.Value
 listNetworkPointsRspEncoder struct =
     Json.Encode.object
         [ ( "points", (Json.Encode.list (networkPointEncoder)) struct.points )
+        , ( "settlements", (Json.Encode.list (networkSettlementEncoder)) struct.settlements )
+        , ( "settlements_pending", (Json.Encode.bool) struct.settlementsPending )
         ]
 
 
@@ -12538,6 +12542,24 @@ networkPointEncoder struct =
         , ( "body", (Json.Encode.string) struct.body )
         , ( "id", (Json.Encode.int) struct.id )
         , ( "freq", (Json.Encode.string) struct.freq )
+        ]
+
+
+type alias NetworkSettlement =
+    { id : Int
+    , name : String
+    , lat : Float
+    , lng : Float
+    }
+
+
+networkSettlementEncoder : NetworkSettlement -> Json.Encode.Value
+networkSettlementEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "lat", (Json.Encode.float) struct.lat )
+        , ( "lng", (Json.Encode.float) struct.lng )
         ]
 
 
@@ -26952,6 +26974,8 @@ listNetworkPointsRspDecoder : Json.Decode.Decoder ListNetworkPointsRsp
 listNetworkPointsRspDecoder =
     Json.Decode.succeed ListNetworkPointsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list (networkPointDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlements" (Json.Decode.list (networkSettlementDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlements_pending" (Json.Decode.bool)))
 
 
 networkPointDecoder : Json.Decode.Decoder NetworkPoint
@@ -26962,6 +26986,15 @@ networkPointDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "body" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.string)))
+
+
+networkSettlementDecoder : Json.Decode.Decoder NetworkSettlement
+networkSettlementDecoder =
+    Json.Decode.succeed NetworkSettlement
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lng" (Json.Decode.float)))
 
 
 networkCallsignRelationsReqDecoder : Json.Decode.Decoder NetworkCallsignRelationsReq

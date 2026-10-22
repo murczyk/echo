@@ -31,6 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, RwLock};
 
 pub mod cleanup;
+mod network_settlements;
 pub mod oneoff;
 pub mod peleng_distance;
 mod settlement_clusters;
@@ -1517,9 +1518,7 @@ where
     let mut results = Vec::with_capacity(group_lengths.len());
     for group_length in group_lengths {
         let mut drafts = drafts.by_ref().take(group_length).collect::<Vec<_>>();
-        settlement_clusters::resolve_cluster(dbx, &mut drafts, &[])
-            .await
-            .c(h!())?;
+        settlement_clusters::resolve_cluster(&mut drafts, &[]);
         results
             .push(drafts.into_iter().map(location_result_from_draft).collect());
     }
@@ -1673,7 +1672,7 @@ fn location_result_from_draft(
             }
             Some((Some(candidate.settlement_id), Some(matched.distance_m)))
         })
-        .unwrap_or((None, None));
+        .unwrap_or_else(|| (None, closest_rejected_distance(&draft)));
     BattleLineLocationResult {
         location: draft.location,
         candidates: draft.candidates,
@@ -1681,6 +1680,25 @@ fn location_result_from_draft(
         distance_m,
         invalid_aor_ids: draft.invalid_aor_ids,
     }
+}
+
+fn closest_rejected_distance(draft: &LocationResolutionDraft) -> Option<f64> {
+    let distances = draft
+        .battle_line_distances
+        .values()
+        .filter(|distance| {
+            distance.distance_m.is_finite() && distance.distance_m >= 0.0
+        })
+        .collect::<Vec<_>>();
+    if distances.iter().any(|distance| {
+        distance.distance_m <= settlement_max_distance_m(distance.is_west)
+    }) {
+        return None;
+    }
+    distances
+        .into_iter()
+        .map(|distance| distance.distance_m)
+        .min_by(f64::total_cmp)
 }
 
 fn settlement_max_distance_m(is_west: bool) -> f64 {
@@ -3035,14 +3053,17 @@ values (
                 .collect(),
         );
 
-        let results = resolve_locations_to_settlements_with_db(
+        let results = resolve_location_groups_to_settlements_with_db(
             &txn,
             settlements,
-            vec![west_name, east_name, far_east_name],
+            vec![vec![west_name], vec![east_name], vec![far_east_name]],
             &[aor_id],
         )
         .await
-        .unwrap();
+        .unwrap()
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
 
         assert_eq!(results[0].chosen_settlement_id, None);
         assert!(

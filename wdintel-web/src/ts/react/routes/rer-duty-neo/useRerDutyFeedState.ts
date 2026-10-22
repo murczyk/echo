@@ -4,6 +4,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 import type { SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import { fetchInboxCount, fetchInboxMessages } from '../../services/api/inbox';
+import { ClientRequestTrigger } from '../../services/api/request-diagnostics';
 import type { FeedColumnHandle } from './FeedColumn';
 import {
   buildInboxReq,
@@ -646,7 +647,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     });
   }, [deviceAccess.status]);
   const requestValidatedInboxCount = useCallback(
-    (feedId: string) => {
+    (feedId: string, trigger = ClientRequestTrigger.Validation) => {
       const existingPromise = countRequestPromiseByFeedIdRef.current[feedId];
       if (existingPromise) return existingPromise;
       const feed = messageFeedsRef.current.find((x) => x.id === feedId);
@@ -671,7 +672,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             (signal) =>
               fetchInboxCount(
                 buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
-                { signal },
+                { signal, headers: { 'x-echo-request-trigger': trigger } },
               ),
           ));
           finishDebugActivity(`ok; quantity=${quantity}`);
@@ -907,7 +908,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         let feedId: string | null = null;
         let currentFeed: (typeof messageFeedsRef.current)[number] | undefined;
         try {
-          entry = await requestValidatedInboxCount(feed.id);
+          entry = await requestValidatedInboxCount(
+            feed.id,
+            automatic ? ClientRequestTrigger.Automatic : ClientRequestTrigger.Manual,
+          );
           if (!isLifecycleCurrent()) return;
           clearPollingFailure(`${feed.id}:count`);
         } catch (error) {

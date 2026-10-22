@@ -228,6 +228,19 @@ export function useRerNetworkDetailsNeoPageActions({
 
       setState((current) => ({
         ...current,
+        ...(current.network?.location !== updatedNetwork.location ||
+        current.network?.aorIds.length !== editForm.aorIds.length ||
+        editForm.aorIds.some((aorId) => !current.network?.aorIds.includes(aorId))
+          ? {
+              networkSettlements: [],
+              networkSettlementsPending: false,
+              pelengPointsLoaded: false,
+              pelengPointsLoading: false,
+              pelengPointsError: null,
+              pelengPointsRequestedFrom: null,
+              pelengPointsRequestedTo: null,
+            }
+          : {}),
         network: {
           ...updatedNetwork,
           aorIds: [...editForm.aorIds],

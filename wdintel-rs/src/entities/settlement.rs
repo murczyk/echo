@@ -34,6 +34,8 @@ pub enum Relation {
     SettlementAlias,
     #[sea_orm(has_many = "super::sigint_inbox_item_settlement::Entity")]
     SigintInboxItemSettlement,
+    #[sea_orm(has_many = "super::sigint_network_settlement::Entity")]
+    SigintNetworkSettlement,
 }
 
 impl Related<super::settlement_alias::Entity> for Entity {
@@ -45,6 +47,12 @@ impl Related<super::settlement_alias::Entity> for Entity {
 impl Related<super::sigint_inbox_item_settlement::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemSettlement.def()
+    }
+}
+
+impl Related<super::sigint_network_settlement::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkSettlement.def()
     }
 }
 

@@ -55,6 +55,10 @@ async fn attachment_search_correlated_terms_preserve_mixed_source_matches_3780()
         "звичайне -Невідомий",
         "-\"зміна позиції\"",
         "звичайне -\"немає тексту\"",
+        "и",
+        "9",
+        "Береза or и",
+        "Береза -и",
     ] {
         let expected = signal_message::Entity::find()
             .filter(super::search::message_filter(query, "all").unwrap())
@@ -176,7 +180,7 @@ async fn attachment_search_modes_respect_word_boundaries_and_case_3780() {
         .is_some());
 }
 
-async fn fixture() -> (Env, String, i64) {
+pub(super) async fn fixture() -> (Env, String, i64) {
     let env = cleanup().await.unwrap();
     let mut env = env.as_ref().clone();
     let config = crate::config::S3Config {
@@ -214,7 +218,7 @@ async fn fixture() -> (Env, String, i64) {
     (env, group.master_key, message.id)
 }
 
-async fn attachment(env: &Env, message: i64, name: &str) -> Job {
+pub(super) async fn attachment(env: &Env, message: i64, name: &str) -> Job {
     let media = signal_message_media::ActiveModel {
         id: Set(Uuid::now_v7()),
         signal_message_id: Set(message),

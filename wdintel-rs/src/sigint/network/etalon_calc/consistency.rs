@@ -404,7 +404,7 @@ where
     // Step 6: Match messages to networks
     let parsed_units_by_item =
         load_parsed_unit_ids_by_item(db, messages).await.c(h!())?;
-    let res = match_network_ids_for_messages(
+    let mut res = match_network_ids_for_messages(
         messages,
         groups_map,
         &group_bounds_map,
@@ -417,6 +417,9 @@ where
     )
     .context(h!())?;
 
+    super::settlements::narrow_by_settlements(db, &mut res)
+        .await
+        .c(h!())?;
     Ok(res)
 }
 
@@ -1312,6 +1315,131 @@ mod tests {
             .all(db)
             .await
             .unwrap()
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn settlement_fallback_disambiguates_networks_after_stronger_evidence_2133(
+    ) {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let db = &env.dbx;
+        let (units, networks, inbox_item) =
+            parsed_unit_reconciliation_fixture(db).await;
+        let txn = db.begin().await.unwrap();
+        for (id, name, lon) in [
+            (2_133_201, "#2133 NETWORK A", 1.0),
+            (2_133_202, "#2133 NETWORK B", 9.0),
+            (2_133_203, "#2133 MESSAGE", 1.01),
+        ] {
+            settlement::ActiveModel {
+                id: Set(id),
+                name: Set(name.to_string()),
+                kind: Set(sea_orm_active_enums::SettlementKind::Village),
+                lat: Set(Some(0.0)),
+                lon: Set(Some(lon)),
+                ..Default::default()
+            }
+            .insert(&txn)
+            .await
+            .unwrap();
+        }
+        for (network, id, name) in [
+            (&networks[0], 2_133_201, "#2133 NETWORK A"),
+            (&networks[1], 2_133_202, "#2133 NETWORK B"),
+        ] {
+            let mut network = network.clone().into_active_model();
+            network.location = Set(format!("|{name}|"));
+            let network = network.update(&txn).await.unwrap();
+            sigint_network_settlement::Entity::update_many()
+                .col_expr(
+                    sigint_network_settlement::Column::SettlementId,
+                    Expr::value(Some(id)),
+                )
+                .col_expr(
+                    sigint_network_settlement::Column::IsUndefined,
+                    Expr::value(Some(false)),
+                )
+                .filter(
+                    sigint_network_settlement::Column::NetworkId.eq(network.id),
+                )
+                .exec(&txn)
+                .await
+                .unwrap();
+        }
+        let mut inbox_item = inbox_item.into_active_model();
+        inbox_item.location_v2 = Set(Some("|#2133 MESSAGE|".to_string()));
+        let inbox_item = inbox_item.update(&txn).await.unwrap();
+        super::super::calculate_sigint_inbox_item_networks(
+            vec![inbox_item.clone()],
+            &txn,
+        )
+        .await
+        .unwrap();
+        assert_reconciled_networks(&txn, &inbox_item, &[0], &networks, &units)
+            .await;
+        settlement_alias::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            settlement_id: Set(2_133_203),
+            text: Set("#2133 MESSAGE ALIAS".to_string()),
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let mut inbox_item = inbox_item.into_active_model();
+        inbox_item.location_v2 = Set(Some("|#2133 MESSAGE ALIAS|".to_string()));
+        let inbox_item = inbox_item.update(&txn).await.unwrap();
+        super::super::calculate_sigint_inbox_item_networks(
+            vec![inbox_item.clone()],
+            &txn,
+        )
+        .await
+        .unwrap();
+        assert_reconciled_networks(&txn, &inbox_item, &[0], &networks, &units)
+            .await;
+        let mut anchor = settlement::Entity::find_by_id(2_133_202)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        anchor.lon = Set(Some(1.02));
+        let anchor = anchor.update(&txn).await.unwrap();
+        super::super::calculate_sigint_inbox_item_networks(
+            vec![inbox_item.clone()],
+            &txn,
+        )
+        .await
+        .unwrap();
+        assert_reconciled_networks(
+            &txn,
+            &inbox_item,
+            &[0, 1],
+            &networks,
+            &units,
+        )
+        .await;
+        let mut anchor = anchor.into_active_model();
+        anchor.lon = Set(Some(9.0));
+        anchor.update(&txn).await.unwrap();
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(inbox_item.id),
+            item_uuid: Set(inbox_item.id_uuid),
+            unit_id: Set(units[1].id),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        super::super::calculate_sigint_inbox_item_networks(
+            vec![inbox_item.clone()],
+            &txn,
+        )
+        .await
+        .unwrap();
+        assert_reconciled_networks(&txn, &inbox_item, &[1], &networks, &units)
+            .await;
+        txn.rollback().await.unwrap();
     }
 
     async fn parsed_unit_reconciliation_fixture(

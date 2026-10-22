@@ -1,7 +1,7 @@
 import * as L from 'leaflet';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import type { NetworkPoint } from '../../../../../Bindings';
+import type { NetworkPoint, NetworkSettlement } from '../../../../../Bindings';
 import { BASE_LAYER_IDS, type BaseLayerId } from '../../../../maps/base-layers';
 import {
   getTileLayers,
@@ -15,11 +15,14 @@ import {
   getPelengationHeatmapRadius,
 } from './NetworkDetailsPelengationMap.shared';
 
+import { createNetworkSettlementLayer } from './network-settlement-layer';
+
 export function useNetworkDetailsPelengationMap(
   pelengPoints: NetworkPoint[],
   showLabels: boolean,
   baseLayerId: BaseLayerId,
   heatmapEnabled: boolean,
+  networkSettlements: NetworkSettlement[],
 ) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -402,12 +405,21 @@ export function useNetworkDetailsPelengationMap(
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!mapReady || !map) return;
+    const layer = createNetworkSettlementLayer(networkSettlements).addTo(map);
+    return () => {
+      map.removeLayer(layer);
+    };
+  }, [mapReady, networkSettlements]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     const markersLayer = markersLayerRef.current;
     if (!map || !markersLayer || !mapReady) return;
 
     markersLayer.clearLayers();
 
-    if (pelengPoints.length === 0) {
+    if (pelengPoints.length === 0 && networkSettlements.length === 0) {
       return;
     }
 
@@ -432,6 +444,8 @@ export function useNetworkDetailsPelengationMap(
       bounds.extend([point.lat, point.lng]);
     });
 
+    networkSettlements.forEach((settlement) => bounds.extend([settlement.lat, settlement.lng]));
+
     if (viewTransitionRef.current) {
       const restoredView = viewTransitionRef.current;
       map.setView(restoredView.center, restoredView.zoom, { animate: false });
@@ -443,9 +457,8 @@ export function useNetworkDetailsPelengationMap(
       return;
     }
 
-    if (pelengPoints.length === 1) {
-      const point = pelengPoints[0];
-      map.setView([point.lat, point.lng], 16, { animate: false });
+    if (pelengPoints.length + networkSettlements.length === 1) {
+      map.setView(bounds.getCenter(), 16, { animate: false });
       return;
     }
 
@@ -454,7 +467,7 @@ export function useNetworkDetailsPelengationMap(
       maxZoom: 16,
     });
     redrawHeatmapRef.current?.();
-  }, [mapReady, pelengPoints]);
+  }, [mapReady, pelengPoints, networkSettlements]);
 
   useEffect(() => {
     if (!mapRef.current) return;

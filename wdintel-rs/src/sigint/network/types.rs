@@ -287,10 +287,30 @@ pub struct NetworkPoint {
 }
 
 #[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    FromQueryResult,
+)]
+pub struct NetworkSettlement {
+    pub id: i32,
+    pub name: String,
+    pub lat: f64,
+    pub lng: f64,
+}
+
+#[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct ListNetworkPointsRsp {
     pub points: Vec<NetworkPoint>,
+    pub settlements: Vec<NetworkSettlement>,
+    pub settlements_pending: bool,
 }
 
 #[derive(

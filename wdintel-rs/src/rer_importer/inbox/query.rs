@@ -424,12 +424,26 @@ fn apply_flat_analytics_group_filters(
                 .is_in(selected_senders.clone()),
         );
     }
-    QueryTrait::query(&mut query).join_as(
-        JoinType::InnerJoin,
-        signal_message_group::Entity,
-        access_alias,
-        access_condition,
-    );
+    let membership = Query::select()
+        .column((
+            access_alias.clone(),
+            signal_message_group::Column::SignalMessageId,
+        ))
+        .from_as(signal_message_group::Entity, access_alias)
+        .cond_where(access_condition)
+        .to_owned();
+    query = query
+        .filter(
+            Expr::col((signal_message::Entity, signal_message::Column::Id))
+                .in_subquery(membership.clone()),
+        )
+        .filter(
+            Expr::col((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Id,
+            ))
+            .in_subquery(membership),
+        );
 
     let denied_groups = req
         .denied_groups
@@ -493,21 +507,9 @@ fn analytics_message_group_join_condition(
         Expr::col((alias.clone(), signal_message_group::Column::GroupMasterKey))
             .is_in(groups.to_vec())
     };
-    Condition::all()
-        .add(
-            Expr::col((
-                alias.clone(),
-                signal_message_group::Column::SignalMessageId,
-            ))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
-        )
-        .add(group_condition)
-        .add(
-            scope.condition((
-                alias,
-                signal_message_group::Column::SignalMessageId,
-            )),
-        )
+    Condition::all().add(group_condition).add(
+        scope.condition((alias, signal_message_group::Column::SignalMessageId)),
+    )
 }
 
 fn left_join_denied_analytics_message_groups(
@@ -2978,6 +2980,124 @@ pub fn build_inbox_metadata_lateral_query() -> SelectStatement {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn analytics_membership_keeps_access_sender_and_duplicate_semantics_3780(
+    ) {
+        use crate::functest::tests::{
+            cleanup, mk_sigint_inbox_item, mk_signal_group,
+            mk_signal_message_group,
+        };
+        let env = cleanup().await.unwrap();
+        let allowed = mk_signal_group(&env.dbx, Default::default())
+            .await
+            .unwrap()
+            .master_key;
+        let other = mk_signal_group(&env.dbx, Default::default())
+            .await
+            .unwrap()
+            .master_key;
+        let mut ids = Vec::new();
+        for links in [
+            vec![
+                (allowed.clone(), "first"),
+                (allowed.clone(), "first"),
+                (other.clone(), "second"),
+            ],
+            vec![(allowed.clone(), "second")],
+            vec![(other.clone(), "first")],
+        ] {
+            let item = mk_sigint_inbox_item(&env.dbx, Default::default())
+                .await
+                .unwrap();
+            for (key, sender) in links {
+                mk_signal_message_group(
+                    &env.dbx,
+                    signal_message_group::ActiveModel {
+                        signal_message_id: Set(item.id),
+                        group_master_key: Set(Some(key)),
+                        datasource_group_id: Set(None),
+                        sender: Set(Some(sender.into())),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            ids.push(item.id);
+        }
+        for (keys, request, scope, expected) in [
+            (
+                vec![allowed.clone()],
+                InboxMessagesReq::default(),
+                AnalyticsMessageIdScope::From(ids[0]),
+                vec![ids[0], ids[1]],
+            ),
+            (
+                vec![allowed.clone()],
+                InboxMessagesReq {
+                    selected_senders: Some(vec!["second".into()]),
+                    ..Default::default()
+                },
+                AnalyticsMessageIdScope::From(ids[0]),
+                vec![ids[1]],
+            ),
+            (
+                vec![allowed.clone(), other.clone()],
+                InboxMessagesReq {
+                    selected_groups: Some(vec![other.clone()]),
+                    ..Default::default()
+                },
+                AnalyticsMessageIdScope::From(ids[0]),
+                vec![ids[0], ids[2]],
+            ),
+            (
+                vec![allowed.clone(), other.clone()],
+                InboxMessagesReq {
+                    denied_groups: Some(vec![other.clone()]),
+                    ..Default::default()
+                },
+                AnalyticsMessageIdScope::From(ids[0]),
+                vec![ids[1]],
+            ),
+            (
+                vec![allowed.clone()],
+                InboxMessagesReq::default(),
+                AnalyticsMessageIdScope::Inclusive {
+                    min_id: ids[1],
+                    max_id: ids[1],
+                },
+                vec![ids[1]],
+            ),
+            (
+                vec![allowed.clone()],
+                InboxMessagesReq::default(),
+                AnalyticsMessageIdScope::Empty,
+                vec![],
+            ),
+            (
+                vec![],
+                InboxMessagesReq::default(),
+                AnalyticsMessageIdScope::From(ids[0]),
+                vec![],
+            ),
+        ] {
+            let query =
+                build_inbox_query_base(&request, InboxQueryPurpose::Analytics);
+            let actual = apply_flat_analytics_group_filters(
+                query, &request, &keys, &scope,
+            )
+            .select_only()
+            .column(signal_message::Column::Id)
+            .order_by_asc(signal_message::Column::Id)
+            .into_tuple::<i64>()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
 
     #[tokio::test]
     async fn analytics_inbox_bounds_cache_coalesces_and_reuses_success() {

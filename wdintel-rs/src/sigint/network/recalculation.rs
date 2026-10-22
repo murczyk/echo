@@ -1,3 +1,5 @@
+mod last_seen;
+
 use super::primitive_to_naive_datetime;
 use crate::config::{
     NETWORK_FREQ_LAST_DATETIME_IN_AOR_CACHE_TTL_MINUTES,
@@ -1012,6 +1014,9 @@ async fn calculate_last_seen_task_batch(
     ))
     .await
     .c(h!())?;
+    txn.execute_unprepared("set local jit = off")
+        .await
+        .c(h!())?;
     lock_network_last_seen_recalculation(&txn, batch.network_id)
         .await
         .c(h!())?;
@@ -1106,55 +1111,17 @@ async fn recalculate_last_seen(
     txn: &DatabaseTransaction,
     network_freq_ids: &[i64],
 ) -> anyhow::Result<()> {
-    let parameters = (1..=network_freq_ids.len())
-        .map(|index| format!("${index}"))
-        .collect::<Vec<_>>()
-        .join(", ");
     let sql = format!(
-        r#"
-        with target as materialized (
-            select id, network_id, freq, active_from, active_to
-            from sigint_network_freq
-            where id in ({parameters})
-              and deleted = false
-        ), activity as (
-            select target.id,
-                   max(coalesce(ii.datetime, sm.timestamp, sm.created_at)) as last_seen_dt
-            from target
-            join sigint_network network
-              on network.id = target.network_id
-             and network.deleted = false
-            join sigint_inbox_item_network iin
-              on iin.sigint_network_id = target.network_id
-            join sigint_inbox_item ii
-              on ii.id = iin.sigint_inbox_item_id
-             and ii.freq = target.freq
-            join signal_message sm
-              on sm.id = ii.id
-             and sm.deleted = false
-            where coalesce(ii.datetime, sm.timestamp, sm.created_at) >= target.active_from
-              and coalesce(ii.datetime, sm.timestamp, sm.created_at)
-                    <= coalesce(target.active_to, current_timestamp at time zone 'utc')
-              and coalesce(ii.datetime, sm.timestamp, sm.created_at)
-                    >= coalesce(network.active_from, '-infinity'::timestamp)
-              and coalesce(ii.datetime, sm.timestamp, sm.created_at)
-                    <= coalesce(network.active_to, current_timestamp at time zone 'utc')
-            group by target.id
-        ), next_value as (
-            select target.id, activity.last_seen_dt
-            from target
-            left join activity on activity.id = target.id
-        )
-        update sigint_network_freq as nf
-        set last_seen_dt = next_value.last_seen_dt
-        from next_value
-        where nf.id = next_value.id
-    "#
+        "with next_value as materialized ({}) \
+         update sigint_network_freq nf \
+         set last_seen_dt = next_value.last_seen_dt \
+         from next_value where nf.id = next_value.id",
+        last_seen::values_query()
     );
     txn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         sql,
-        network_freq_ids.iter().copied().map(Into::into),
+        [network_freq_ids.to_vec().into()],
     ))
     .await
     .c(h!())?;
@@ -1420,6 +1387,150 @@ mod tests {
     };
     use chrono::Timelike;
     use serial_test::serial;
+
+    async fn create_last_seen_probe_fixture(
+        db: &DatabaseConnection,
+    ) -> Vec<i64> {
+        let now = Utc::now().naive_utc().with_nanosecond(0).unwrap();
+        let mut targets = Vec::new();
+        let probe_limit =
+            crate::config::NETWORK_RECALCULATION_LAST_SEEN_PROBE_LIMIT;
+        for links in [0, 3, probe_limit - 1, probe_limit, probe_limit + 1] {
+            let network =
+                mk_sigint_network(db, Default::default()).await.unwrap();
+            let frequency = mk_sigint_network_freq(
+                db,
+                sigint_network_freq::ActiveModel {
+                    network_id: Set(network.id),
+                    freq: Set("146.5000".into()),
+                    active_from: Set(now - Duration::days(10)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            targets.push(frequency.id);
+            for index in 0..links {
+                let item = mk_sigint_inbox_item(
+                    db,
+                    sigint_inbox_item::ActiveModel {
+                        freq: Set(Some(frequency.freq.clone())),
+                        datetime: Set((index > 1).then_some(
+                            now - Duration::hours(5) - Duration::minutes(index),
+                        )),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+                signal_message::Entity::update_many()
+                    .col_expr(
+                        signal_message::Column::Timestamp,
+                        Expr::value(
+                            (index != 0).then_some(now - Duration::hours(3)),
+                        ),
+                    )
+                    .col_expr(
+                        signal_message::Column::CreatedAt,
+                        Expr::value(now - Duration::hours(1)),
+                    )
+                    .filter(signal_message::Column::Id.eq(item.id))
+                    .exec(db)
+                    .await
+                    .unwrap();
+                mk_sigint_inbox_item_network(
+                    db,
+                    sigint_inbox_item_network::ActiveModel {
+                        sigint_network_id: Set(network.id),
+                        sigint_inbox_item_id: Set(item.id),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            }
+        }
+        for _ in 0..probe_limit + 1 {
+            mk_sigint_inbox_item(
+                db,
+                sigint_inbox_item::ActiveModel {
+                    freq: Set(Some("146.5000".into())),
+                    datetime: Set(Some(now)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        targets
+    }
+
+    async fn assert_last_seen_matches_history(
+        db: &DatabaseConnection,
+        targets: &[i64],
+    ) {
+        let txn = db.begin().await.unwrap();
+        txn.execute_unprepared("set local jit=off").await.unwrap();
+        recalculate_last_seen(&txn, targets).await.unwrap();
+        let differences = txn.query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select count(*) as differences from sigint_network_freq nf
+            where nf.id=any($1::bigint[]) and not nf.deleted
+              and nf.last_seen_dt is distinct from (
+                select max(coalesce(ii.datetime, sm.timestamp, sm.created_at))
+                from sigint_network network
+                join sigint_inbox_item_network member on member.sigint_network_id=network.id
+                join sigint_inbox_item ii on ii.id=member.sigint_inbox_item_id and ii.freq=nf.freq
+                join signal_message sm on sm.id=ii.id and not sm.deleted
+                where network.id=nf.network_id and not network.deleted
+                  and coalesce(ii.datetime, sm.timestamp, sm.created_at)>=nf.active_from
+                  and coalesce(ii.datetime, sm.timestamp, sm.created_at)<=coalesce(nf.active_to,current_timestamp at time zone 'utc')
+                  and coalesce(ii.datetime, sm.timestamp, sm.created_at)>=coalesce(network.active_from,'-infinity'::timestamp)
+                  and coalesce(ii.datetime, sm.timestamp, sm.created_at)<=coalesce(network.active_to,current_timestamp at time zone 'utc')
+              )
+            "#,
+            [targets.to_vec().into()],
+        )).await.unwrap().unwrap().try_get::<i64>("", "differences").unwrap();
+        assert_eq!(differences, 0);
+        txn.commit().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn last_seen_index_probes_match_history_after_corrections_3780() {
+        let env = cleanup().await.unwrap();
+        let targets = create_last_seen_probe_fixture(&env.dbx).await;
+        assert_last_seen_matches_history(&env.dbx, &targets).await;
+        for sql in [
+            r#"update signal_message set deleted=true where id in (select id from sigint_inbox_item where datetime is null and id in (select sigint_inbox_item_id from sigint_inbox_item_network where sigint_network_id in (select network_id from sigint_network_freq where id=any($1::bigint[]))))"#,
+            r#"update sigint_network_freq set active_to=(now() at time zone 'utc')-interval '6 hours' where id=any($1::bigint[])"#,
+            r#"update sigint_network_freq set active_to=null where id=any($1::bigint[])"#,
+            r#"update sigint_network set deleted=true where id in (select network_id from sigint_network_freq where id=any($1::bigint[]))"#,
+            r#"update sigint_network set deleted=false where id in (select network_id from sigint_network_freq where id=any($1::bigint[]))"#,
+            r#"update sigint_inbox_item set datetime=(now() at time zone 'utc')-interval '30 minutes' where id=(select member.sigint_inbox_item_id from sigint_inbox_item_network member join sigint_inbox_item ii on ii.id=member.sigint_inbox_item_id where ii.datetime is not null and member.sigint_network_id=(select network_id from sigint_network_freq where id=($1::bigint[])[5]) order by ii.id desc limit 1)"#,
+            r#"update sigint_inbox_item set datetime=(now() at time zone 'utc')-interval '4 hours' where datetime is not null and id in (select sigint_inbox_item_id from sigint_inbox_item_network where sigint_network_id in (select network_id from sigint_network_freq where id=any($1::bigint[])))"#,
+            r#"update sigint_network set active_to=(now() at time zone 'utc')-interval '8 hours' where id in (select network_id from sigint_network_freq where id=any($1::bigint[]))"#,
+            r#"update sigint_network set active_to=null,active_from=(now() at time zone 'utc')-interval '2 hours' where id in (select network_id from sigint_network_freq where id=any($1::bigint[]))"#,
+            r#"update sigint_network set active_from=null where id in (select network_id from sigint_network_freq where id=any($1::bigint[]))"#,
+            r#"update signal_message set deleted=false,timestamp=(now() at time zone 'utc')-interval '2 hours' where id in (select sigint_inbox_item_id from sigint_inbox_item_network where sigint_network_id in (select network_id from sigint_network_freq where id=any($1::bigint[])))"#,
+            r#"update signal_message set timestamp=null where id in (select id from sigint_inbox_item where datetime is null and id in (select sigint_inbox_item_id from sigint_inbox_item_network where sigint_network_id in (select network_id from sigint_network_freq where id=any($1::bigint[]))))"#,
+            r#"update sigint_inbox_item_network set sigint_network_id=(select network_id from sigint_network_freq where id=($1::bigint[])[1]) where id=(select id from sigint_inbox_item_network where sigint_network_id=(select network_id from sigint_network_freq where id=($1::bigint[])[5]) order by sigint_inbox_item_id limit 1)"#,
+            r#"update sigint_inbox_item set freq='999.0000' where id in (select sigint_inbox_item_id from sigint_inbox_item_network where sigint_network_id in (select network_id from sigint_network_freq where id=any($1::bigint[])))"#,
+            r#"update sigint_inbox_item set freq='146.5000' where id in (select sigint_inbox_item_id from sigint_inbox_item_network where sigint_network_id in (select network_id from sigint_network_freq where id=any($1::bigint[])))"#,
+            r#"delete from sigint_inbox_item_network where sigint_network_id in (select network_id from sigint_network_freq where id=any($1::bigint[]))"#,
+        ] {
+            env.dbx
+                .execute_raw(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    sql,
+                    [targets.clone().into()],
+                ))
+                .await
+                .unwrap();
+            assert_last_seen_matches_history(&env.dbx, &targets).await;
+        }
+    }
 
     #[tokio::test]
     #[serial]
@@ -1696,6 +1807,8 @@ mod tests {
                 .unwrap(),
             1
         );
+        assert!(run_once(&env.dbx).await.unwrap());
+        assert!(!run_once(&env.dbx).await.unwrap());
     }
 
     #[tokio::test]

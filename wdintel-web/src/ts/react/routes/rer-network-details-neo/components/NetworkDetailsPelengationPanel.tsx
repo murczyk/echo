@@ -24,7 +24,7 @@ import type { Dayjs } from 'dayjs';
 import { useId, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
-import type { NetworkPoint } from '../../../../../Bindings';
+import type { NetworkPoint, NetworkSettlement } from '../../../../../Bindings';
 import { APP_DATETIME_INPUT_MIN } from '../../../utils/misc';
 import { NetworkDatePickerField } from './NetworkDatePickerField';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -39,6 +39,7 @@ import { BASE_LAYER_IDS, BASE_LAYER_LABELS, type BaseLayerId } from '../../../..
 
 type Props = {
   pelengPoints: NetworkPoint[];
+  networkSettlements: NetworkSettlement[];
   pelengPointsLoaded: boolean;
   pelengPointsLoading: boolean;
   pelengPointsError: string | null;
@@ -387,6 +388,7 @@ function PelengationShell({ children, toolbar }: { children: ReactNode; toolbar:
 
 export function NetworkDetailsPelengationPanel({
   pelengPoints,
+  networkSettlements,
   pelengPointsLoaded,
   pelengPointsLoading,
   pelengPointsError,
@@ -510,7 +512,7 @@ export function NetworkDetailsPelengationPanel({
     );
   }
 
-  if (pelengPoints.length === 0) {
+  if (pelengPoints.length === 0 && networkSettlements.length === 0) {
     return (
       <PelengationShell toolbar={toolbar}>
         <NetworkDetailsEmptyState
@@ -523,7 +525,7 @@ export function NetworkDetailsPelengationPanel({
     );
   }
 
-  if (!pelengHasVisiblePoints) {
+  if (!pelengHasVisiblePoints && networkSettlements.length === 0) {
     return (
       <PelengationShell toolbar={toolbar}>
         <NetworkDetailsEmptyState
@@ -540,6 +542,7 @@ export function NetworkDetailsPelengationPanel({
     <PelengationShell toolbar={toolbar}>
       <NetworkDetailsPelengationMap
         pelengPoints={filteredPoints}
+        networkSettlements={networkSettlements}
         showLabels={pelengShowLabels}
         baseLayerId={pelengBaseLayerId}
         heatmapEnabled={pelengHeatmapEnabled}
