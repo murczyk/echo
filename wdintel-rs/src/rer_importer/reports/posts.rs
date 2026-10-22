@@ -17,12 +17,16 @@ use docx_rs::*;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use sea_orm::prelude::Expr;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 const TITLE: &str = "ЗАГАЛЬНИЙ ЗВІТ ПРО РОБОТУ ПОСТІВ РАДІОПЕРЕХОПЛЕННЯ";
 const DAY_MS: i64 = 86_400_000;
+
+#[cfg(test)]
+mod tests;
 
 static FREQ_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(\d+(?:[.,]\d+)?)").unwrap());
@@ -284,9 +288,16 @@ async fn load_post_report_messages(
     req: &crate::rer_importer::types::InboxMessagesReq,
     period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let linked_message_ids = intel_product::Entity::find()
+    let linked_products = intel_product::Entity::find()
         .select_only()
-        .column(intel_product::Column::IntelMessageId)
+        .expr(Expr::value(1))
+        .filter(
+            Expr::col((
+                intel_product::Entity,
+                intel_product::Column::IntelMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
         .filter(crate::rer_importer::intel_product_filter::relation_kind_is_in([
             crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
             crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
@@ -297,7 +308,7 @@ async fn load_post_report_messages(
     )
     .await
     .c(h!())?
-    .filter(signal_message::Column::Id.not_in_subquery(linked_message_ids))
+    .filter(Expr::exists(linked_products).not())
     .select_only()
     .column_as(signal_message::Column::Id, "id")
     .column_as(sigint_inbox_item::Column::Freq, "freq")
