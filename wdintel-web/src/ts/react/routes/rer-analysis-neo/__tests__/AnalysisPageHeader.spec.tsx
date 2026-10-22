@@ -44,14 +44,16 @@ vi.mock('@mui/material', () => ({
   ),
   IconButton: ({
     children,
+    disabled,
     onClick,
     'aria-label': ariaLabel,
   }: {
     children: ReactNode;
+    disabled?: boolean;
     onClick?: () => void;
     'aria-label'?: string;
   }) => (
-    <button type="button" aria-label={ariaLabel} onClick={onClick}>
+    <button type="button" aria-label={ariaLabel} disabled={disabled} onClick={onClick}>
       {children}
     </button>
   ),
@@ -83,6 +85,7 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Skeleton: () => <span data-testid="loading-placeholder" />,
   Switch: (props: {
     checked?: boolean;
     onChange?: (_event: Event, checked: boolean) => void;
@@ -104,7 +107,9 @@ vi.mock('@mui/material/styles', () => ({}));
 vi.mock('@mui/icons-material/DescriptionOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/KeyboardArrowDown', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/KeyboardArrowUp', () => ({ default: () => <span /> }));
-vi.mock('@mui/icons-material/RefreshOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/RefreshOutlined', () => ({
+  default: () => <span data-testid="refresh-icon" />,
+}));
 vi.mock('@mui/icons-material/SettingsOutlined', () => ({ default: () => <span /> }));
 
 vi.mock('../../../components/PageHeader', () => ({
@@ -174,6 +179,8 @@ function buildPage(): AnalysisPageViewModel {
     messages: [],
     messagesTotalCount: 0,
     messagesTotalLoading: false,
+    messageViewportPreserving: false,
+    groupScopeTransitionPending: false,
     pageIndex: 0,
     noMoreToLoad: false,
     messagesPaging: false,
@@ -297,6 +304,59 @@ describe('AnalysisPageHeader', () => {
     ).find((button) => button.textContent?.includes('Звіти'));
     act(() => reportButton?.click());
     expect(page.openReport).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { layout: 'desktop', isNarrowLayout: false },
+    { layout: 'narrow', isNarrowLayout: true },
+  ])('disables refresh throughout group navigation in the $layout layout', (layout) => {
+    const page = buildPage();
+    page.groupScopeTransitionPending = true;
+    const view = renderHeader(page, false, false, 'messages', layout.isNarrowLayout);
+    rendered.push(view);
+
+    if (layout.isNarrowLayout) {
+      const settingsButton = view.container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Налаштування аналізу"]',
+      );
+      act(() => settingsButton?.click());
+    }
+
+    const refreshButton = layout.isNarrowLayout
+      ? Array.from(view.container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+          (button) => button.textContent?.includes('Оновити'),
+        )
+      : view.container.querySelector<HTMLButtonElement>('button[aria-label="Оновити"]');
+
+    expect(refreshButton?.disabled).toBe(true);
+    expect(refreshButton?.querySelector('[data-testid="refresh-icon"]')).not.toBeNull();
+  });
+
+  it.each([
+    { layout: 'desktop', isNarrowLayout: false },
+    { layout: 'narrow', isNarrowLayout: true },
+  ])('disables refresh only during a manual reload in the $layout layout', (layout) => {
+    const page = buildPage();
+    page.messageViewportPreserving = true;
+    const view = renderHeader(page, false, false, 'messages', layout.isNarrowLayout);
+    rendered.push(view);
+
+    if (layout.isNarrowLayout) {
+      const settingsButton = view.container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Налаштування аналізу"]',
+      );
+      act(() => settingsButton?.click());
+    }
+
+    const refreshButton = layout.isNarrowLayout
+      ? Array.from(view.container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+          (button) => button.textContent?.includes('Оновити'),
+        )
+      : view.container.querySelector<HTMLButtonElement>('button[aria-label="Оновити"]');
+
+    expect(refreshButton?.disabled).toBe(true);
+    expect(refreshButton?.querySelector('[data-testid="refresh-icon"]')).not.toBeNull();
+    expect(refreshButton?.querySelector('[data-testid="loading-placeholder"]')).toBeNull();
   });
 
   it('captures the desktop launcher and narrow settings trigger for report focus return', () => {

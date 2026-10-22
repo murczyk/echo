@@ -14,6 +14,25 @@
   box-sizing: border-box;
 }
 
+.message-feed-unread-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-block: 12px;
+  color: var(--color-primary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.message-feed-unread-divider::before,
+.message-feed-unread-divider::after {
+  content: '';
+  flex: 1;
+  min-width: 12px;
+  border-top: 1px solid currentColor;
+}
+
 .message-feed-list [data-message-feed-highlighted='true'] [data-message-card-root],
 .message-feed-list [data-message-feed-highlighted='true'][data-message-card-root] {
   outline: 2px solid var(--color-primary, #3b82f6);

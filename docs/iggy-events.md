@@ -62,6 +62,12 @@ the same list.
 
 All activity and frequency interval times use UTC.
 
+Settlement link changes are captured explicitly by the Rust settlement writers
+in the same transaction as each change, including manual recalculation. AOR
+configuration changes preserve existing settlement links. Direct SQL writes to
+settlement links do not emit these events; see
+[settlement recalculation](../wdintel-rs/src/battle_line/README.md).
+
 Deleting a network emits frequency-unlink events for its retained frequency
 rows; restoring it emits the corresponding link events.
 

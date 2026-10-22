@@ -16,6 +16,7 @@ import type {
   MessageMediaInfo,
   MessageIdsRsp,
   SignalGroupEntry,
+  SignalGroupColor,
   SignalGroupStats,
   SignalProfilesRsp,
 } from '../../../../Bindings';
@@ -279,6 +280,7 @@ function normalizeInboxMessage(
   const raw = m as Record<string, unknown>;
   const messageUuid = (m.messageUuid ?? raw.message_uuid ?? null) as string | null;
   const groupMasterKey = (m.groupMasterKey ?? raw.group_master_key ?? null) as string | null;
+  const groupMasterKeys = (m.groupMasterKeys ?? raw.group_master_keys ?? null) as string[] | null;
   const networkIds = (m.networkIds ?? raw.network_ids ?? null) as number[] | null;
   const networkName = (m.networkName ?? raw.network_name ?? null) as string | null;
   const deviceName = (m.deviceName ?? raw.device_name ?? null) as string | null;
@@ -317,6 +319,7 @@ function normalizeInboxMessage(
     messageUuid,
     isTimeNull: m.isTimeNull ?? null,
     groupMasterKey,
+    groupMasterKeys,
     networkIds,
     networkName,
     deviceName,
@@ -359,6 +362,7 @@ function normalizeSignalGroupEntry(
   return {
     masterKey: (g.masterKey ?? g.master_key ?? '') as string,
     name: (g.name ?? '') as string,
+    colorKey: (raw.colorKey ?? raw.color_key ?? '') as SignalGroupColor,
     ignoreOperativny: (raw.ignoreOperativny ?? raw.ignore_operativny ?? false) as boolean,
     interseptionKind: normalizeInterseptionKind(raw),
     disableNetworkAssignment: (raw.disableNetworkAssignment ??

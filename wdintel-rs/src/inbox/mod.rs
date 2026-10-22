@@ -75,7 +75,7 @@ pub async fn construct_inbox_item<'a, 'async_trait, C>(
     m_created_at: Option<(String, String)>,
 ) -> Result<ConstructInboxItemResult, AppError>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait + TransactionTrait + 'async_trait,
 {
     let datetime_override = m_created_at
         .map(|(date, time)| InboxDatetimeOverride::Fields { date, time });
@@ -102,7 +102,7 @@ pub(crate) async fn construct_inbox_item_with_datetime<'a, 'async_trait, C>(
     datetime_override: Option<InboxDatetimeOverride>,
 ) -> Result<ConstructInboxItemResult, AppError>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait + TransactionTrait + 'async_trait,
 {
     let message = signal_message::Entity::find_by_id(message_id)
         .filter(signal_message::Column::Deleted.eq(false))

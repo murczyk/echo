@@ -37,6 +37,7 @@ pub enum InboxLocationSubmitMode {
 #[derive(Debug, FromQueryResult)]
 pub struct InboxMessageDesc {
     pub id: i64,
+    pub login_id: Option<uuid::Uuid>,
     pub id_uuid: Option<uuid::Uuid>,
     pub message_uid: Option<String>,
     pub body: Option<String>,
@@ -841,6 +842,24 @@ pub async fn aggregate_to_inbox_messages(
             signal_message_group::Column::GroupMasterKey
                 .eq_any(sigint_groups.clone()),
         );
+    let membership_rows = group_query
+        .clone()
+        .select_only()
+        .column(signal_message_group::Column::SignalMessageId)
+        .column(signal_message_group::Column::GroupMasterKey)
+        .into_tuple::<(i64, Option<String>)>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let mut group_memberships: HashMap<i64, BTreeSet<String>> = HashMap::new();
+    for (message_id, group_master_key) in membership_rows {
+        if let Some(group_master_key) = group_master_key {
+            group_memberships
+                .entry(message_id)
+                .or_default()
+                .insert(group_master_key);
+        }
+    }
     if let Some(selected_groups) = req.selected_groups.as_ref() {
         if !selected_groups.is_empty() {
             group_query = group_query.filter(
@@ -1178,10 +1197,18 @@ pub async fn aggregate_to_inbox_messages(
                 created_at_order: Some(
                     message.created_at.and_utc().timestamp_micros(),
                 ),
+                is_own: Some(message.login_id == Some(*login)),
                 has_date_in_header: crate::rer_importer::body_noheader::leading_header_has_calendar_date(&body),
                 group_master_key: group_entry
                     .as_ref()
                     .and_then(|(entry, _)| entry.group_master_key.clone()),
+                group_master_keys: Some(
+                    group_memberships
+                        .remove(&message.id)
+                        .into_iter()
+                        .flatten()
+                        .collect(),
+                ),
                 sender,
                 extended_form: m_comment.as_ref().map(|x| x.comment.clone()),
                 message_comments: message_comments_by_id

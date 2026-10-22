@@ -1061,67 +1061,6 @@ where
         .c(h!())
 }
 
-pub(crate) async fn requeue_settlement_links<C>(dbx: &C) -> anyhow::Result<()>
-where
-    C: ConnectionTrait,
-{
-    sigint_inbox_item_settlement::Entity::update_many()
-        .col_expr(
-            sigint_inbox_item_settlement::Column::SettlementId,
-            Expr::value(Option::<i32>::None),
-        )
-        .col_expr(
-            sigint_inbox_item_settlement::Column::IsUndefined,
-            Expr::value(Option::<bool>::None),
-        )
-        .exec(dbx)
-        .await
-        .c(h!())?;
-    Ok(())
-}
-
-pub(crate) async fn requeue_settlement_links_for_group<C>(
-    dbx: &C,
-    group_master_key: &str,
-) -> anyhow::Result<()>
-where
-    C: ConnectionTrait,
-{
-    sigint_inbox_item_settlement::Entity::update_many()
-        .col_expr(
-            sigint_inbox_item_settlement::Column::SettlementId,
-            Expr::value(Option::<i32>::None),
-        )
-        .col_expr(
-            sigint_inbox_item_settlement::Column::IsUndefined,
-            Expr::value(Option::<bool>::None),
-        )
-        .filter(Expr::exists(
-            signal_message_group::Entity::find()
-                .filter(
-                    Expr::col((
-                        signal_message_group::Entity,
-                        signal_message_group::Column::SignalMessageId,
-                    ))
-                    .equals((
-                        sigint_inbox_item_settlement::Entity,
-                        sigint_inbox_item_settlement::Column::ItemId,
-                    )),
-                )
-                .filter(
-                    signal_message_group::Column::GroupMasterKey
-                        .eq(group_master_key),
-                )
-                .select_only()
-                .column(signal_message_group::Column::Id)
-                .into_query(),
-        ))
-        .exec(dbx)
-        .await
-        .c(h!())?;
-    Ok(())
-}
-
 pub async fn lock_updates<C>(dbx: &C) -> anyhow::Result<()>
 where
     C: ConnectionTrait,

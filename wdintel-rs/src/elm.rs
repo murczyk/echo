@@ -20,6 +20,8 @@ const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT: &str =
 const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT_ROW: &str =
     r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.int)"#;
 const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT: &str = r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)"#;
+const RER_DUTY_GROUP_SCOPES_STRICT_DECODER: &str = r#"Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string)))))"#;
+const RER_DUTY_GROUP_SCOPES_COMPAT_DECODER: &str = r#"Json.Decode.oneOf [ Json.Decode.field "group_scopes" (Json.Decode.nullable (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string))))), Json.Decode.succeed Nothing ]"#;
 const RER_DUTY_WF_COMPAT_FIELDS: &[(&str, &str)] = &[
     ("units_selected", "Json.Decode.list (Json.Decode.string)"),
     ("units_denied", "Json.Decode.list (Json.Decode.string)"),
@@ -115,6 +117,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::UnreadCountersRsp,
             crate::rer_importer::types::SignalGroupReq,
             crate::messenger::group::types::SignalGroupStats,
+            crate::messenger::group::types::SignalGroupColor,
             crate::messenger::group::types::SignalGroupStatsTimelineReq,
             crate::messenger::group::types::SignalGroupStatsTimelinePoint,
             crate::messenger::group::types::SignalGroupStatsTimelineEntry,
@@ -1082,6 +1085,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::UnreadCountersRsp,
             crate::rer_importer::types::SignalGroupReq,
             crate::messenger::group::types::SignalGroupStats,
+            crate::messenger::group::types::SignalGroupColor,
             crate::messenger::group::types::SignalGroupStatsTimelineReq,
             crate::messenger::group::types::SignalGroupStatsTimelinePoint,
             crate::messenger::group::types::SignalGroupStatsTimelineEntry,
@@ -2182,6 +2186,10 @@ fn patch_backward_compatible_decoders(
             RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT,
         )
         .replace(
+            RER_DUTY_GROUP_SCOPES_STRICT_DECODER,
+            RER_DUTY_GROUP_SCOPES_COMPAT_DECODER,
+        )
+        .replace(
             EVENT_MSG_INTELLIGENCE_REPORT_STRICT_DECODER,
             EVENT_MSG_INTELLIGENCE_REPORT_COMPAT_DECODER,
         )
@@ -2206,7 +2214,10 @@ fn patch_backward_compatible_decoders(
 #[cfg(test)]
 mod tests {
     use super::{
-        patch_rer_duty_query_state_wf_decoder, RER_DUTY_WF_COMPAT_FIELDS,
+        patch_backward_compatible_decoders,
+        patch_rer_duty_query_state_wf_decoder,
+        RER_DUTY_GROUP_SCOPES_COMPAT_DECODER,
+        RER_DUTY_GROUP_SCOPES_STRICT_DECODER, RER_DUTY_WF_COMPAT_FIELDS,
     };
 
     fn strict_field(field: &str, decoder: &str) -> String {
@@ -2250,5 +2261,20 @@ mod tests {
             1,
         ))
         .is_err());
+    }
+
+    #[test]
+    fn duty_group_scopes_decoder_allows_legacy_state() {
+        let source = format!(
+            "{}\n{}",
+            synthetic_decoder(),
+            RER_DUTY_GROUP_SCOPES_STRICT_DECODER
+        );
+        let patched = patch_backward_compatible_decoders(source).unwrap();
+
+        assert!(patched.contains(RER_DUTY_GROUP_SCOPES_COMPAT_DECODER));
+        assert!(!patched
+            .lines()
+            .any(|line| line == RER_DUTY_GROUP_SCOPES_STRICT_DECODER));
     }
 }

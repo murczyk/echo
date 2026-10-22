@@ -31,6 +31,7 @@ import {
   ManageMessageDrawer,
   type ManageMessageEditorHandle,
 } from '../shared/manage-message/ManageMessageDrawer';
+import { focusAfterEditorSurfacesClose } from '../shared/manage-message/focus-restoration';
 import {
   MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
   MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
@@ -50,6 +51,7 @@ import {
   messageNavigationErrorText,
   type MessageNavigationHost,
 } from '../shared/message-navigation';
+import { groupFilterScope, type GroupScope } from '../shared/group-navigation';
 
 type DutyLinkedMessageLanding = { feedId: string; targetIds: number[] };
 
@@ -81,6 +83,9 @@ export function RerDutyNeoPage({
   const [editorSourceFeedId, setEditorSourceFeedId] = useState<string | null>(null);
   const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const [createMessageGroupMasterKey, setCreateMessageGroupMasterKey] = useState<string | null>(
+    null,
+  );
   const [editTarget, setEditTarget] = useState<{ id: number; message: InboxMessage } | null>(null);
   const [editAsReport, setEditAsReport] = useState(false);
   const [editTargetLoadState, setEditTargetLoadState] = useState<ReportEditLoadState>({
@@ -88,7 +93,7 @@ export function RerDutyNeoPage({
   });
   const editorRef = useRef<ManageMessageEditorHandle>(null);
   const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
-  const createMessageFabRef = useRef<HTMLButtonElement | null>(null);
+  const createMessageFabRef = useRef<HTMLElement | null>(null);
   const reportLoadControllerRef = useRef<AbortController | null>(null);
   const cancelReportEditLoad = useCallback(() => {
     reportLoadControllerRef.current?.abort();
@@ -266,6 +271,7 @@ export function RerDutyNeoPage({
     setDeleteConfirmFeedId,
     deleteConfirmId,
     applyFilter,
+    setGroupScope,
     setFeedInitialTarget,
     setWatchModeByFeedId,
     cancelFollowTail,
@@ -410,7 +416,13 @@ export function RerDutyNeoPage({
   }, [messageFeeds, targetFeedId, error, errorNotificationVersion]);
 
   const editorHighlightedMessageId = createMessageOpen ? null : editorSourceMessageId;
-  const buildFeedColumnModel = useDutyFeedColumnModel({
+  const selectGroupScope = useCallback(
+    (feedId: string, scope: GroupScope) => {
+      setGroupScope(feedId, scope.kind === 'group' ? scope.masterKey : null);
+    },
+    [setGroupScope],
+  );
+  const { buildFeedColumnModel, dismissUnreadBoundary } = useDutyFeedColumnModel({
     feeds,
     editorSourceFeedId,
     editorHighlightedMessageId,
@@ -427,6 +439,7 @@ export function RerDutyNeoPage({
     openReportEditor,
     openMessageEditor,
     openReportComposer,
+    selectGroupScope,
   });
 
   const activeFeedIdSafe = messageFeeds.some((feed) => feed.id === activeFeedId)
@@ -441,26 +454,38 @@ export function RerDutyNeoPage({
     flushPendingNewerMessages(activeFeedIdSafe, { urgent: true });
   }, [activeFeedIdSafe, flushPendingNewerMessages]);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
-  const openCreateMessageComposer = useCallback(() => {
-    requestEditorIntent('create-message', activeFeedIdSafe, () => {
-      cancelReportEditLoad();
-      setEditTarget(null);
-      setEditAsReport(false);
-      setReportSource(null);
-      setCreateMessageOpen(true);
-    });
-  }, [activeFeedIdSafe, cancelReportEditLoad, requestEditorIntent]);
+  const openCreateMessageComposer = useCallback(
+    (feedId: string, focusTarget?: HTMLElement) => {
+      const sourceFeed = messageFeeds.find((feed) => feed.id === feedId);
+      const scope = groupFilterScope(sourceFeed?.filter.groupsSelected ?? []);
+      const scopeKey = scope.kind === 'group' ? scope.masterKey : 'all';
+      createMessageFabRef.current = focusTarget ?? null;
+      requestEditorIntent(
+        `create-message:${feedId}:${scopeKey}`,
+        feedId,
+        () => {
+          cancelReportEditLoad();
+          setEditTarget(null);
+          setEditAsReport(false);
+          setReportSource(null);
+          setCreateMessageGroupMasterKey(scope.kind === 'group' ? scope.masterKey : null);
+          setCreateMessageOpen(true);
+        },
+        focusTarget,
+      );
+    },
+    [cancelReportEditLoad, messageFeeds, requestEditorIntent],
+  );
   const closeMessageEditor = useCallback(() => {
     cancelReportEditLoad();
     setCreateMessageOpen(false);
     setEditTarget(null);
     setEditAsReport(false);
     setReportSource(null);
-    setEditorSourceFeedId(null);
     setEditorSourceMessageId(null);
   }, [cancelReportEditLoad]);
   const editorIntentKey = createMessageOpen
-    ? 'create-message'
+    ? `create-message:${editorSourceFeedId ?? 'unknown'}:${createMessageGroupMasterKey ?? 'all'}`
     : reportSource
       ? `create-report:${reportSource.id}`
       : editTarget
@@ -473,6 +498,19 @@ export function RerDutyNeoPage({
   const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const editorEmbeddedOpen = editorOpen && editorPresentation === 'embedded';
   const previousCanWriteRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    if (editorOpen || editorSourceFeedId == null) return;
+    return focusAfterEditorSurfacesClose(() => {
+      const sourceColumn = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-duty-feed-column]'),
+      ).find((column) => column.dataset.dutyFeedId === editorSourceFeedId);
+      const createMessageButton =
+        sourceColumn?.querySelector<HTMLElement>('[aria-label="Додати повідомлення"]') ?? null;
+      createMessageFabRef.current = createMessageButton;
+      return document.activeElement === document.body ? createMessageButton : null;
+    });
+  }, [editorOpen, editorSourceFeedId]);
 
   useEffect(() => {
     if (deviceAccess.status === 'loading') return;
@@ -498,6 +536,7 @@ export function RerDutyNeoPage({
 
   useEffect(() => () => cancelReportEditLoad(), [cancelReportEditLoad]);
   const handleCreatedMessage = useCallback(() => {
+    if (createMessageOpen && editorSourceFeedId) dismissUnreadBoundary(editorSourceFeedId);
     // Do not reloadFeeds(): that re-pins the scroller to the bottom.
     reloadEmptyFeeds();
     notify({
@@ -506,7 +545,14 @@ export function RerDutyNeoPage({
         : 'Повідомлення успішно створено.',
       severity: 'success',
     });
-  }, [notify, reloadEmptyFeeds, reportSource]);
+  }, [
+    createMessageOpen,
+    dismissUnreadBoundary,
+    editorSourceFeedId,
+    notify,
+    reloadEmptyFeeds,
+    reportSource,
+  ]);
 
   useEffect(() => {
     if (
@@ -609,7 +655,6 @@ export function RerDutyNeoPage({
                     buildFeedColumnModel={buildFeedColumnModel}
                     columnRefsRef={columnRefsRef}
                     createMessageFeed={createMessageFeed}
-                    createMessageFabRef={createMessageFabRef}
                     openCreateMessageComposer={openCreateMessageComposer}
                     isInitialLoading={isInitialLoading}
                     messageFeeds={messageFeeds}
@@ -660,6 +705,7 @@ export function RerDutyNeoPage({
             hideNetworks={hideNetworks || !networkVisibilityReady}
             open={editorOpen}
             intentKey={editorIntentKey ?? 'closed'}
+            initialGroupMasterKey={createMessageOpen ? createMessageGroupMasterKey : null}
             presentation={editorPresentation}
             adaptiveEmbeddedForm
             fillEmbeddedSurface

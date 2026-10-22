@@ -585,8 +585,8 @@ async fn has_visible_linked_inbox_item(
     }
 }
 
-async fn load_pending_events_with_batch_size(
-    dbx: &DatabaseConnection,
+async fn load_pending_events_with_batch_size<C: ConnectionTrait>(
+    dbx: &C,
     api_integration_id: i64,
     event_batch_size: u64,
 ) -> Result<Vec<api_integration_iggy_event::Model>, AppError> {
@@ -604,8 +604,8 @@ async fn load_pending_events_with_batch_size(
 }
 
 #[cfg(test)]
-async fn load_pending_events(
-    dbx: &DatabaseConnection,
+async fn load_pending_events<C: ConnectionTrait>(
+    dbx: &C,
     api_integration_id: i64,
 ) -> Result<Vec<api_integration_iggy_event::Model>, AppError> {
     load_pending_events_with_batch_size(
@@ -2958,13 +2958,19 @@ mod tests {
             .unwrap()
             .unwrap()
             .id;
-        sigint_inbox_item_settlement::ActiveModel {
+        let settlement_link = sigint_inbox_item_settlement::ActiveModel {
             item_id: Set(item_id),
             settlement_text: Set("test settlement".to_string()),
-            settlement_id: Set(Some(settlement_id)),
             ..Default::default()
         }
         .insert(&env.dbx)
+        .await
+        .unwrap();
+        crate::iggy::settlement_events::persist_settlement_resolution(
+            &env.dbx,
+            settlement_link,
+            Some(settlement_id),
+        )
         .await
         .unwrap();
         crate::battle_line::settlement_queue::requeue_item_settlements(
@@ -3043,6 +3049,274 @@ mod tests {
         assert_frequency_transitions(&env, &fixture).await;
         let item_callsign = link_inbox_callsign(&env, &fixture).await;
         assert_settlement_and_unlinks(&env, &fixture, &item_callsign).await;
+    }
+
+    async fn insert_pending_settlement(
+        env: &Env,
+        item_id: i64,
+        text: &str,
+    ) -> sigint_inbox_item_settlement::Model {
+        sigint_inbox_item_settlement::ActiveModel {
+            item_id: Set(item_id),
+            settlement_text: Set(text.to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap()
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn settlement_events_are_distinct_and_transactional() {
+        use crate::battle_line::settlement_queue::reconcile_item_locations;
+        use crate::iggy::settlement_events::persist_settlement_resolution;
+
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let fixture = create_association_fixture(&env).await;
+        let first =
+            insert_pending_settlement(&env, fixture.item_id, "first").await;
+        let second =
+            insert_pending_settlement(&env, fixture.item_id, "second").await;
+        let settlement_id = settlement::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        clear_iggy_events(&env, fixture.integration.id).await;
+        let txn = env.dbx.begin().await.unwrap();
+        for row in [first.clone(), second] {
+            persist_settlement_resolution(&txn, row, Some(settlement_id))
+                .await
+                .unwrap();
+        }
+        persist_settlement_resolution(&txn, first.clone(), None)
+            .await
+            .unwrap();
+        let events = load_pending_events(&txn, fixture.integration.id)
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].payload["event_type"],
+            "sigint_inbox_item_settlement_linked"
+        );
+        reconcile_item_locations(&txn, fixture.item_id, None, None)
+            .await
+            .unwrap();
+        let events = load_pending_events(&txn, fixture.integration.id)
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(
+            events[1].payload["event_type"],
+            "sigint_inbox_item_settlement_unlinked"
+        );
+        assert_eq!(events[1].payload["settlement_id"], settlement_id);
+        assert!(load_pending_events(&env.dbx, fixture.integration.id)
+            .await
+            .unwrap()
+            .is_empty());
+        txn.rollback().await.unwrap();
+        assert!(load_pending_events(&env.dbx, fixture.integration.id)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            sigint_inbox_item_settlement::Entity::find_by_id(first.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .settlement_id,
+            None
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn concurrent_settlement_writers_emit_distinct_changes_2133() {
+        use crate::iggy::settlement_events::persist_settlement_resolution;
+
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let fixture = create_association_fixture(&env).await;
+        let first =
+            insert_pending_settlement(&env, fixture.item_id, "first").await;
+        let second =
+            insert_pending_settlement(&env, fixture.item_id, "second").await;
+        let settlement_id = settlement::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        clear_iggy_events(&env, fixture.integration.id).await;
+        for settlement_id in [Some(settlement_id), None] {
+            let txn = env.dbx.begin().await.unwrap();
+            persist_settlement_resolution(&txn, first.clone(), settlement_id)
+                .await
+                .unwrap();
+            let (pid_tx, pid_rx) = tokio::sync::oneshot::channel();
+            let concurrent_env = env.clone();
+            let second = second.clone();
+            let writer = tokio::spawn(async move {
+                let txn = concurrent_env.dbx.begin().await.unwrap();
+                let backend = txn
+                    .query_one_raw(Statement::from_string(
+                        DatabaseBackend::Postgres,
+                        "select pg_backend_pid() as pid",
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                pid_tx
+                    .send(backend.try_get::<i32>("", "pid").unwrap())
+                    .unwrap();
+                persist_settlement_resolution(&txn, second, settlement_id)
+                    .await
+                    .unwrap();
+                txn.commit().await.unwrap();
+            });
+            wait_for_settlement_writer_lock(&env, pid_rx.await.unwrap()).await;
+            txn.commit().await.unwrap();
+            writer.await.unwrap();
+        }
+        let events = load_pending_events(&env.dbx, fixture.integration.id)
+            .await
+            .unwrap();
+        let changes = events
+            .iter()
+            .map(|event| event.payload["event_type"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            changes,
+            [
+                "sigint_inbox_item_settlement_linked",
+                "sigint_inbox_item_settlement_unlinked",
+            ]
+        );
+    }
+
+    async fn wait_for_settlement_writer_lock(env: &Env, pid: i32) {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let blocked = env.dbx
+                    .query_one_raw(Statement::from_sql_and_values(
+                        DatabaseBackend::Postgres,
+                        "select exists(select 1 from pg_stat_activity where pid = $1 and wait_event_type = 'Lock') as blocked",
+                        [pid.into()],
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .try_get::<bool>("", "blocked")
+                    .unwrap();
+                if blocked {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("settlement writer must wait for the other writer");
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn settlement_outbox_failure_rolls_back_link_2133() {
+        use crate::iggy::settlement_events::persist_settlement_resolution;
+
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let fixture = create_association_fixture(&env).await;
+        let row =
+            insert_pending_settlement(&env, fixture.item_id, "outbox failure")
+                .await;
+        let settlement_id = settlement::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        clear_iggy_events(&env, fixture.integration.id).await;
+        let txn = env.dbx.begin().await.unwrap();
+        txn.execute_unprepared(
+            r#"
+create function pg_temp.reject_settlement_event()
+returns trigger language plpgsql as $$
+begin
+    raise exception 'settlement outbox unavailable';
+end;
+$$;
+create trigger reject_settlement_event
+before insert on api_integration_iggy_event
+for each row execute function pg_temp.reject_settlement_event();
+            "#,
+        )
+        .await
+        .unwrap();
+        assert!(persist_settlement_resolution(
+            &txn,
+            row.clone(),
+            Some(settlement_id),
+        )
+        .await
+        .is_err());
+        assert_eq!(
+            sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap()
+                .settlement_id,
+            None
+        );
+        assert!(load_pending_events(&txn, fixture.integration.id)
+            .await
+            .unwrap()
+            .is_empty());
+        txn.rollback().await.unwrap();
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn disabled_iggy_keeps_settlement_writes_without_outbox_events() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let fixture = create_association_fixture(&env).await;
+        let row =
+            insert_pending_settlement(&env, fixture.item_id, "disabled").await;
+        let settlement_id = settlement::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let mut integration = fixture.integration.clone().into_active_model();
+        integration.sync_enabled = Set(false);
+        integration.update(&env.dbx).await.unwrap();
+        clear_iggy_events(&env, fixture.integration.id).await;
+        let txn = env.dbx.begin().await.unwrap();
+        crate::iggy::settlement_events::persist_settlement_resolution(
+            &txn,
+            row.clone(),
+            Some(settlement_id),
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+        assert_eq!(
+            sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .settlement_id,
+            Some(settlement_id)
+        );
+        assert!(load_pending_events(&env.dbx, fixture.integration.id)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     async fn relink_network_callsign_ids(

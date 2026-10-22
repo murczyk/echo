@@ -47,6 +47,7 @@ export type WindowedFeedScrollCallbacks = {
   onPhysicalBottomChange?: (atBottom: boolean) => void;
   onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
   onFirstVisibleMessage?: (id: number, index: number) => void;
+  onVisibleMessages?: (ids: readonly number[]) => void;
 };
 
 export type WindowedFeedScrollRefs = {

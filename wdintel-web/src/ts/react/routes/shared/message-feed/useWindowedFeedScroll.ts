@@ -39,6 +39,7 @@ export function useWindowedFeedScroll({
   viewportPreservationKey,
   onViewportCaptureChange,
   onFirstVisibleMessage,
+  onVisibleMessages,
   loadEdgesOnLayout = false,
   edgeLoadRetryKey,
   positionResetKey,
@@ -123,6 +124,7 @@ export function useWindowedFeedScroll({
       onPhysicalBottomChange,
       onVisibleMessageIds,
       onFirstVisibleMessage,
+      onVisibleMessages,
     };
   });
 

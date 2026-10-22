@@ -33,6 +33,7 @@ type Options = {
   loadingBeforeWindow: boolean;
   loadingAfterWindow: boolean;
   isLoading: boolean;
+  newestFirst: boolean;
   pageNavigationTarget: number | null;
   viewportPreservationKey: number;
   edgeLoadRetryKey: number;
@@ -53,6 +54,7 @@ export function useAnalysisMessageFeed({
   loadingBeforeWindow,
   loadingAfterWindow,
   isLoading,
+  newestFirst,
   pageNavigationTarget,
   viewportPreservationKey,
   edgeLoadRetryKey,

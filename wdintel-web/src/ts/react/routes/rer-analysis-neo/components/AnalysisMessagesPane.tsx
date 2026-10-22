@@ -44,8 +44,11 @@ type Props = {
   copiedFeedbackId: string | null;
   botTagAction?: BotTagAction | null;
   groupInfos: Record<string, SignalGroupEntry>;
+  hideGroupName?: boolean;
   paginationLoading: boolean;
   isLoading?: boolean;
+  showLoadingSkeleton?: boolean;
+  newestFirst: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   firstLoadedMessageIndex: number;
@@ -113,8 +116,11 @@ function AnalysisMessagesPaneComponent({
   copiedFeedbackId: copiedFeedbackIdProp,
   botTagAction,
   groupInfos,
+  hideGroupName = false,
   paginationLoading,
   isLoading = false,
+  showLoadingSkeleton = true,
+  newestFirst,
   messageComments,
   messages,
   firstLoadedMessageIndex,
@@ -174,8 +180,8 @@ function AnalysisMessagesPaneComponent({
   const referenceTimeMsRef = useRef<number | null>(Date.now());
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const debugSnapshotTimerRef = useRef<number | null>(null);
-  const highlightedTargetIdRef = useRef<number | null>(null);
   const feedRef = useRef<MessageFeedHandle>(null);
+  const highlightedNavigationTargetRef = useRef<number | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
   const {
@@ -194,6 +200,7 @@ function AnalysisMessagesPaneComponent({
     loadingBeforeWindow,
     loadingAfterWindow,
     isLoading,
+    newestFirst,
     pageNavigationTarget,
     viewportPreservationKey,
     edgeLoadRetryKey,
@@ -251,15 +258,18 @@ function AnalysisMessagesPaneComponent({
 
   useEffect(() => {
     if (directMessageNavigation == null) {
-      highlightedTargetIdRef.current = null;
+      highlightedNavigationTargetRef.current = null;
       return;
     }
     if (messages.length === 0) return;
     const targetId = directMessageNavigation.targetMessageId;
     if (feedRef.current?.getItemElement(targetId)) {
-      if (highlightedTargetIdRef.current !== targetId) {
-        highlightedTargetIdRef.current = directMessageNavigation.targetMessageId;
-        feedRef.current?.highlightLinkedMessage(targetId);
+      if (
+        directMessageNavigation.highlightTarget !== false &&
+        (directMessageNavigation.focusActive || highlightedNavigationTargetRef.current !== targetId)
+      ) {
+        feedRef.current.highlightLinkedMessage(targetId);
+        highlightedNavigationTargetRef.current = targetId;
       }
       if (directMessageNavigation.focusActive) onLinkedMessageMounted?.(targetId);
     }
@@ -327,6 +337,7 @@ function AnalysisMessagesPaneComponent({
         getMessageId={getMessageId}
         editorHighlightedMessageId={editorHighlightedMessageId}
         isLoading={isLoading}
+        showLoadingSkeleton={showLoadingSkeleton}
         loadingAbove={feedLoadingAbove || Boolean(directMessageNavigation?.contextLoading)}
         loadingBelow={
           feedLoadingBelow ||
@@ -356,6 +367,7 @@ function AnalysisMessagesPaneComponent({
             copiedFeedbackId={copiedFeedbackId}
             botTagAction={botTagAction}
             groupInfos={groupInfos}
+            hideGroupName={hideGroupName}
             id={id}
             message={message}
             messageComments={messageComments[id] ?? []}

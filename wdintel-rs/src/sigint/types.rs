@@ -1,6 +1,7 @@
 use crate::types::*;
 
 use crate::entities::sea_orm_active_enums as db_enums;
+use crate::messenger::group::types::SignalGroupColor;
 use crate::organism::types::MyOrganism;
 use crate::sigint::aor::types::AreaOfResponsibility;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
@@ -78,6 +79,7 @@ pub struct ZoneDatasourceGroup {
     pub short_note: Option<String>,
     pub long_note: Option<String>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
+    pub color_key: SignalGroupColor,
 }
 
 #[derive(
@@ -92,6 +94,7 @@ pub struct ZoneDatasourceGroupListRsp {
 )]
 pub struct ZoneDatasourceGroupUpdateReq {
     pub id: i64,
+    pub color_key: Option<SignalGroupColor>,
     pub is_secret: bool,
     pub interseption_kind: Option<InterseptionKind>,
     pub disable_network_assignment: Option<bool>,

@@ -27,6 +27,7 @@ import { isNullOrUndefined, isPresent } from '../../utils/misc';
 import type { FeedColumnModel } from './types';
 import { resolveDutyScrollFabPosition } from './duty-scroll-fab-position';
 import { PowerChip } from '../../components/PowerChip';
+import { UnreadMessagesDivider } from '../shared/group-navigation/UnreadMessagesDivider';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
@@ -123,6 +124,7 @@ type FeedColumnContentProps = {
 type DutyMessageCardItemProps = {
   id: number;
   msg: InboxMessage;
+  hideGroupName: boolean;
   feedId: string;
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
@@ -169,6 +171,7 @@ type DutyMessageCardItemProps = {
 const DutyMessageCardItem = memo(function DutyMessageCardItem({
   id,
   msg,
+  hideGroupName,
   feedId,
   feedCount,
   tagsLayout,
@@ -239,6 +242,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       authUserName={authUserName}
       tagContributionsOrganismId={tagContributionsOrganismId}
       groupName={labels.groupName}
+      hideGroupName={hideGroupName}
       reportGroupInfos={groupInfos}
       senderName={labels.senderName}
       copiedFeedbackId={copiedFeedbackId}
@@ -309,6 +313,8 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
 // See ./AGENTS.md before adding structural component abstractions.
 type DutyMessageListProps = {
   items: [number, InboxMessage][];
+  hideGroupName: boolean;
+  unreadBoundaryMessageId?: number | null;
   feedId: string;
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
@@ -358,6 +364,8 @@ type DutyMessageListProps = {
 const DutyMessageList = memo(
   function DutyMessageList({
     items,
+    hideGroupName,
+    unreadBoundaryMessageId,
     feedId,
     feedCount,
     tagsLayout,
@@ -405,10 +413,12 @@ const DutyMessageList = memo(
           const mountCard = mountedItemIds == null || mountedItemIds.has(id);
           return (
             <MessageFeedItem id={id} data-duty-message-id={id}>
+              {mountCard && id === unreadBoundaryMessageId ? <UnreadMessagesDivider duty /> : null}
               {mountCard ? (
                 <DutyMessageCardItem
                   id={id}
                   msg={msg}
+                  hideGroupName={hideGroupName}
                   feedId={feedId}
                   feedCount={feedCount}
                   tagsLayout={tagsLayout}
@@ -461,6 +471,8 @@ const DutyMessageList = memo(
   },
   (prev, next) =>
     prev.items === next.items &&
+    prev.hideGroupName === next.hideGroupName &&
+    prev.unreadBoundaryMessageId === next.unreadBoundaryMessageId &&
     prev.feedId === next.feedId &&
     prev.feedCount === next.feedCount &&
     prev.tagsLayout === next.tagsLayout &&
@@ -552,6 +564,7 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
         alignItems: 'center',
         gap: 1,
         zIndex: 1,
+        transition: 'transform 180ms cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
       {!loadingNewer && isPresent(arrowResultMessage) && (
@@ -703,6 +716,7 @@ export const FeedColumnContent = memo(
       onPhysicalBottomChange,
       onArrowClick,
       onVisibleMessageIds,
+      onVisibleMessages,
     } = actions;
     const networks = useMemo(
       () => (networkMap ? Object.values(networkMap) : undefined),
@@ -742,6 +756,7 @@ export const FeedColumnContent = memo(
       onAtBottomChange,
       onPhysicalBottomChange,
       onVisibleMessageIds,
+      onVisibleMessages,
       resetKey: feed.referenceTimeMs ?? feed.id,
       unreadPrefetchNeeded,
       pendingNewerFlushNeeded,
@@ -802,6 +817,8 @@ export const FeedColumnContent = memo(
       ) : (
         <DutyMessageList
           items={feed.items}
+          hideGroupName={feed.filter.groupsSelected?.length === 1}
+          unreadBoundaryMessageId={view.unreadBoundaryMessageId}
           feedId={feed.id}
           feedCount={feedCount}
           tagsLayout={tagsLayout}
@@ -949,6 +966,7 @@ export const FeedColumnContent = memo(
       prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||
       prevView.pendingNewerFlushNeeded !== nextView.pendingNewerFlushNeeded ||
       prevView.editorHighlightedMessageId !== nextView.editorHighlightedMessageId ||
+      prevView.unreadBoundaryMessageId !== nextView.unreadBoundaryMessageId ||
       prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
     ) {
       return false;
@@ -1003,7 +1021,8 @@ export const FeedColumnContent = memo(
       prevActions.onAtBottomChange !== nextActions.onAtBottomChange ||
       prevActions.onPhysicalBottomChange !== nextActions.onPhysicalBottomChange ||
       prevActions.onArrowClick !== nextActions.onArrowClick ||
-      prevActions.onVisibleMessageIds !== nextActions.onVisibleMessageIds
+      prevActions.onVisibleMessageIds !== nextActions.onVisibleMessageIds ||
+      prevActions.onVisibleMessages !== nextActions.onVisibleMessages
     ) {
       return false;
     }

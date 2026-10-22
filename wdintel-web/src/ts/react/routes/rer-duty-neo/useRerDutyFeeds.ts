@@ -480,6 +480,9 @@ export function useRerDutyFeeds(
     ],
   );
   useEffect(() => {
+    filterOpts.setRequiredGroupKeys(availableGroupKeys);
+  }, [availableGroupKeys, filterOpts.setRequiredGroupKeys]);
+  useEffect(() => {
     setKnownGroupKeys((previous) => {
       const next = mergeKnownGroupKeys(
         previous,
@@ -502,6 +505,7 @@ export function useRerDutyFeeds(
     setMessageFeeds: feedState.setMessageFeeds,
     error: feedState.error,
     errorNotificationVersion: feedState.errorNotificationVersion,
+    setError: feedState.setError,
     clearDutyError: () => feedState.setError(null),
     authUserName,
     columnRefsRef: feedState.columnRefsRef,
@@ -525,6 +529,7 @@ export function useRerDutyFeeds(
     loadFeedNewerMessages: feedState.loadFeedNewerMessages,
     flushPendingNewerMessages: feedState.flushPendingNewerMessages,
     applyFilter: feedState.applyFilter,
+    setGroupScope: feedState.setGroupScope,
     toggleGroup: feedState.toggleGroup,
     selectAllGroups: feedState.selectAllGroups,
     handleSaveFilter: actions.handleSaveFilter,

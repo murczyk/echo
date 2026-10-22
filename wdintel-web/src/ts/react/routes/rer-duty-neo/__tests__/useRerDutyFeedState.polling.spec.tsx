@@ -1965,10 +1965,20 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       await act(async () => {
         await flushMicrotasks();
       });
+      await act(async () => {
+        apiRef.current!.setGroupScope('mf-0', 'g-2');
+        await flushMicrotasks();
+      });
 
       const params = new URLSearchParams(window.location.search);
       expect(params.get('state-short')).toBe('short-123');
       expect(params.get('state')).toBeNull();
+      expect(hoisted.rerDutyShortStateCreate).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          groupScopes: [],
+          waterfalls: [['mf-0', expect.objectContaining({ groupsSelected: ['g-2'] })]],
+        }),
+      );
     });
 
     it('falls back to long state url when short state create fails', async () => {

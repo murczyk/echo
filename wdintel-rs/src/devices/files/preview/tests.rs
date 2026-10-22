@@ -852,7 +852,7 @@ async fn delete_source(db: &sea_orm::DatabaseConnection, file: Uuid) {
 #[serial_test::serial]
 async fn ready_result_routes_enforce_generation_and_current_read_access() {
     use crate::entities::{device, login, organism, system_settings};
-    use crate::functest::tests::{mk_login, mk_organism};
+    use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
     use actix_identity::{Identity, IdentityMiddleware};
     use actix_session::{storage::RedisSessionStore, SessionMiddleware};
     use actix_web::{
@@ -860,7 +860,7 @@ async fn ready_result_routes_enforce_generation_and_current_read_access() {
         test, web, App, HttpMessage, HttpRequest, HttpResponse,
     };
     use sha2::{Digest, Sha256};
-    let mut env = crate::server::new_env(Mode::Test).await.unwrap();
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
     std::sync::Arc::get_mut(&mut env)
         .unwrap()
         .config

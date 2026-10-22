@@ -314,9 +314,6 @@ pub async fn save_aor_location_config(
     let settlements_aor_map = build_settlements_aor_map(&txn, &env.settlements)
         .await
         .c(h!())?;
-    crate::battle_line::requeue_settlement_links(&txn)
-        .await
-        .c(h!())?;
     txn.commit().await.c(h!())?;
     publish_settlements_aor_map(&env.settlements, settlements_aor_map)
         .c(h!())?;

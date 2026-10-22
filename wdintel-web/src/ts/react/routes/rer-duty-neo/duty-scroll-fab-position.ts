@@ -1,13 +1,10 @@
 import {
-  DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET,
-  POWER_FLOATING_CONTROL_DESKTOP_RIGHT_INSET,
   POWER_FLOATING_CONTROL_EDGE_INSET,
   POWER_FLOATING_CONTROL_GAP,
-  POWER_FLOATING_CONTROL_RIGHT_CLEARANCE,
   POWER_FLOATING_CONTROL_SIZE,
 } from '../shared/manage-message/floating-control-geometry';
 
-export type DutyWorkspaceFabAvoidance = 'none' | 'above' | 'left';
+export type DutyWorkspaceFabAvoidance = 'none' | 'above';
 
 export const DUTY_SCROLL_FAB_SIZE = POWER_FLOATING_CONTROL_SIZE;
 export const DUTY_SCROLL_FAB_GAP = POWER_FLOATING_CONTROL_GAP;
@@ -15,7 +12,6 @@ export const DUTY_SCROLL_FAB_STACK_OFFSET = DUTY_SCROLL_FAB_SIZE + DUTY_SCROLL_F
 
 const DUTY_SAFE_BOTTOM = `max(${POWER_FLOATING_CONTROL_EDGE_INSET}px, env(safe-area-inset-bottom, 0px))`;
 const DUTY_SAFE_RIGHT = `max(${POWER_FLOATING_CONTROL_EDGE_INSET}px, env(safe-area-inset-right, 0px))`;
-const DUTY_WORKSPACE_FAB_RIGHT = `max(${DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET}px, env(safe-area-inset-right, 0px))`;
 
 export function resolveDutyScrollFabPosition({
   narrowScreen,
@@ -27,14 +23,7 @@ export function resolveDutyScrollFabPosition({
   if (workspaceFabAvoidance === 'above') {
     return {
       bottom: `calc(${DUTY_SAFE_BOTTOM} + ${DUTY_SCROLL_FAB_STACK_OFFSET}px)`,
-      right: DUTY_WORKSPACE_FAB_RIGHT,
-    };
-  }
-
-  if (workspaceFabAvoidance === 'left') {
-    return {
-      bottom: `${POWER_FLOATING_CONTROL_EDGE_INSET}px`,
-      right: `${POWER_FLOATING_CONTROL_RIGHT_CLEARANCE}px`,
+      right: DUTY_SAFE_RIGHT,
     };
   }
 
@@ -42,6 +31,6 @@ export function resolveDutyScrollFabPosition({
     ? { bottom: DUTY_SAFE_BOTTOM, right: DUTY_SAFE_RIGHT }
     : {
         bottom: `${POWER_FLOATING_CONTROL_EDGE_INSET}px`,
-        right: `${POWER_FLOATING_CONTROL_DESKTOP_RIGHT_INSET}px`,
+        right: `${POWER_FLOATING_CONTROL_EDGE_INSET}px`,
       };
 }

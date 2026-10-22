@@ -857,11 +857,6 @@ where
         }
         result.insert(rec.id, new_id);
     }
-    if has_active_battle_line && (num_created > 0 || num_updated > 0) {
-        crate::battle_line::requeue_settlement_links(txn)
-            .await
-            .context(h!())?;
-    }
     Ok(ImportResult {
         ids_map: result,
         num_created,

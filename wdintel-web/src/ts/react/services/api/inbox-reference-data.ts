@@ -5,6 +5,7 @@ import type {
   InterseptionKind,
   PostStatsRsp,
   SignalGroupEntry,
+  SignalGroupColor,
   SignalGroupStats,
   SignalProfilesRsp,
   Tag,
@@ -185,6 +186,7 @@ export async function getGroupInfosBatch(
   return arr.map((r: Record<string, unknown>) => ({
     masterKey: (r.master_key ?? r.masterKey) as string,
     name: (r.name ?? '') as string,
+    colorKey: (r.color_key ?? r.colorKey ?? '') as SignalGroupColor,
     ignoreOperativny: (r.ignore_operativny ?? r.ignoreOperativny ?? false) as boolean,
     interseptionKind: normalizeInterseptionKind(r),
     disableNetworkAssignment: (r.disable_network_assignment ??

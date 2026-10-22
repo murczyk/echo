@@ -26,7 +26,10 @@ export function createEmptyFeedState(
 ): MessageFeedState {
   return {
     id,
-    filter,
+    filter: options.groupScopeMasterKey
+      ? { ...filter, groupsSelected: [options.groupScopeMasterKey], groupsDenied: null }
+      : filter,
+    groupScopeMasterKey: null,
     items: [],
     loading: true,
     loadingOlder: false,

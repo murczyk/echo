@@ -2,6 +2,9 @@ import type { InboxMessage, User } from '../../../../Bindings';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { FeedColumnModel } from './types';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
+import type { GroupScope } from '../shared/group-navigation';
+import { groupFilterScope } from '../shared/group-navigation';
+import { useDutyUnreadBoundaries } from './useDutyUnreadBoundaries';
 import { useDutyFeedColumnActions, type RerDutyFeedsBundle } from './useDutyFeedColumnActions';
 import {
   clearActiveFeedFilter,
@@ -42,6 +45,7 @@ export type DutyFeedColumnModelDeps = {
     },
     focusTarget: HTMLElement,
   ) => void;
+  selectGroupScope: (feedId: string, scope: GroupScope) => void;
 };
 
 function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
@@ -128,8 +132,13 @@ function buildFeedFilterPanel(
 
   return {
     feedId: feed.id,
+    hideGroupSelection: Boolean(feed.groupScopeMasterKey),
     hasActiveFilter:
-      hasActiveFeedFilter(feed.filter) ||
+      hasActiveFeedFilter(
+        feed.groupScopeMasterKey
+          ? { ...feed.filter, groupsSelected: null, groupsDenied: null }
+          : feed.filter,
+      ) ||
       feed.adjacentFreqsRange !== 0 ||
       feed.highlightSignalsEnabled ||
       feed.onlyMyUnitTagsEnabled,
@@ -275,7 +284,15 @@ function buildFeedFilterPanel(
       onDiscardCurrentFilter: () => {
         setSelectedSavedIdByFeedId((prev) => ({ ...prev, [feed.id]: null }));
         setSaveFilterNameByFeedId((prev) => ({ ...prev, [feed.id]: '' }));
-        const clearedFilter = clearActiveFeedFilter(feed.filter);
+        const clearedFilter = {
+          ...clearActiveFeedFilter(feed.filter),
+          ...(feed.groupScopeMasterKey
+            ? {
+                groupsSelected: feed.filter.groupsSelected,
+                groupsDenied: feed.filter.groupsDenied,
+              }
+            : {}),
+        };
         if (feed.highlightSignalsEnabled) {
           applyFilter(feed.id, clearedFilter, true);
         } else {
@@ -349,9 +366,10 @@ function buildFeedMessageCard(
 }
 
 /** Assembles the per-column view model consumed by the Duty workspace. */
-export function useDutyFeedColumnModel(
-  deps: DutyFeedColumnModelDeps,
-): (feed: MessageFeedState) => FeedColumnModel {
+export function useDutyFeedColumnModel(deps: DutyFeedColumnModelDeps) {
+  const { boundaries: unreadBoundaries, dismissUnreadBoundary } = useDutyUnreadBoundaries(
+    deps.feeds.messageFeeds,
+  );
   const getStableFeedActions = useDutyFeedColumnActions({
     feeds: deps.feeds,
     openReportEditor: deps.openReportEditor,
@@ -359,10 +377,22 @@ export function useDutyFeedColumnModel(
     openReportComposer: deps.openReportComposer,
   });
 
-  return (feed: MessageFeedState) => ({
+  const buildFeedColumnModel = (feed: MessageFeedState): FeedColumnModel => ({
     feed,
-    view: buildFeedColumnView(feed, deps),
+    view: {
+      ...buildFeedColumnView(feed, deps),
+      unreadBoundaryMessageId: unreadBoundaries.get(feed.id)?.messageId ?? null,
+    },
     filterPanel: buildFeedFilterPanel(feed, deps),
+    groupNavigation: {
+      scope: groupFilterScope(feed.filter.groupsSelected ?? []),
+      groupName: feed.groupScopeMasterKey
+        ? (deps.feeds.groupInfos[feed.groupScopeMasterKey]?.name ?? feed.groupScopeMasterKey)
+        : 'Всі групи',
+      onSelect: (scope) => deps.selectGroupScope(feed.id, scope),
+      onError: (error) =>
+        deps.feeds.setError(error instanceof Error ? error.message : String(error)),
+    },
     keywordsPanel: {
       keywordSets: deps.feeds.keywordSets,
       onFilterChange: deps.feeds.applyFilter,
@@ -371,4 +401,5 @@ export function useDutyFeedColumnModel(
     messageCard: buildFeedMessageCard(feed, deps),
     actions: getStableFeedActions(feed),
   });
+  return { buildFeedColumnModel, dismissUnreadBoundary };
 }

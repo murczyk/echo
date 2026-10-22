@@ -117,7 +117,6 @@ type BuildReloadParamsInput = {
   hideNetworks: boolean;
   focusedWindow: InboxWindowRsp | null;
   focusedMessageActive: boolean;
-  leftPanelOpen: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -199,7 +198,6 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     hideNetworks: input.hideNetworks,
     focusedWindow: input.focusedWindow,
     focusedMessageActive: input.focusedMessageActive,
-    leftPanelOpen: input.leftPanelOpen,
     newestFirst: input.newestFirst,
     onError: input.onError,
     onUnauthorized: input.onUnauthorized,

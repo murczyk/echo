@@ -96,9 +96,6 @@ pub async fn update_aor(
     crate::battle_line::refresh_aor_geometry(&txn, aor.id)
         .await
         .c(h!())?;
-    crate::battle_line::requeue_settlement_links(&txn)
-        .await
-        .c(h!())?;
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
         &txn,
         &aor,
@@ -203,11 +200,6 @@ pub async fn update_aor_battle_line_boundaries(
         save_battle_line_boundaries(&txn, resolved, battle_line_active)
             .await
             .c(h!())?;
-    if battle_line_active && !updated.is_empty() {
-        crate::battle_line::requeue_settlement_links(&txn)
-            .await
-            .c(h!())?;
-    }
     if battle_line_active {
         for aor in &updated {
             crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
@@ -244,9 +236,6 @@ pub async fn delete_aor(
     aor_model.deleted = Set(true);
     let aor = aor_model.update(&txn).await.c(h!())?;
     crate::battle_line::refresh_aor_geometry(&txn, aor.id)
-        .await
-        .c(h!())?;
-    crate::battle_line::requeue_settlement_links(&txn)
         .await
         .c(h!())?;
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(

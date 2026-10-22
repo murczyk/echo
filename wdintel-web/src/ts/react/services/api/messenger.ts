@@ -14,6 +14,7 @@ import {
   GroupEntryF1,
   GroupUpdateReq,
   InterseptionKind,
+  SignalGroupColor,
   QrCodeReq,
   QrCodeRsp,
 } from '../../../../Bindings';
@@ -79,6 +80,7 @@ type LinkEchoOperatorReqBody = {
 
 type GroupUpdateReqBody = {
   master_key: string;
+  color_key: GroupUpdateReq['colorKey'];
   short_note: string | null;
   long_note: string | null;
   area_of_responsibility_id: number | null;
@@ -202,6 +204,8 @@ type GroupEntryF1Like = {
         created_at?: number;
       }[]
     | null;
+  colorKey?: SignalGroupColor | string;
+  color_key?: SignalGroupColor | string;
 };
 function toQrCodeReqBody(req: QrCodeReq): QrCodeReqBody {
   return { account_id: req.accountId };
@@ -284,6 +288,7 @@ function toLinkEchoOperatorReqBody(req: LinkEchoOperatorReq): LinkEchoOperatorRe
 function toGroupUpdateReqBody(req: GroupUpdateReq): GroupUpdateReqBody {
   return {
     master_key: req.masterKey,
+    color_key: req.colorKey,
     short_note: req.shortNote ?? null,
     long_note: req.longNote ?? null,
     area_of_responsibility_id: req.areaOfResponsibilityId ?? null,
@@ -346,6 +351,7 @@ function normalizeGroupEntry(raw: GroupEntryF1Like): GroupEntryF1 {
         rightCoordinates: normalizeCoordinates(aor.rightCoordinates ?? aor.right_coordinates),
         createdAt: aor.createdAt ?? aor.created_at ?? 0,
       })) ?? null,
+    colorKey: (raw.colorKey ?? raw.color_key ?? '') as SignalGroupColor,
   };
 }
 

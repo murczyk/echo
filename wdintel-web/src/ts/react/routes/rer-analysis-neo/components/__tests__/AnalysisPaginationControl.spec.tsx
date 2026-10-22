@@ -206,6 +206,27 @@ describe('AnalysisPaginationControl', () => {
     expect(view.container.textContent).toContain('— з —');
   });
 
+  it('preserves the last rendered range while replacement data is loading', async () => {
+    const view = await renderComponent({ ...baseProps(), preserveRangeWhileLoading: true });
+    rendered.push(view);
+
+    await act(async () => {
+      view.root.render(
+        <AnalysisPaginationControl
+          {...baseProps()}
+          messagesCount={0}
+          totalCount={null}
+          totalLoading
+          loading
+          preserveRangeWhileLoading
+        />,
+      );
+    });
+
+    expect(view.container.textContent).toContain('1-20 з 137');
+    expect(view.container.textContent).not.toContain('— з —');
+  });
+
   it('always renders a loaded total count', async () => {
     const view = await renderComponent({ ...baseProps(), totalCount: 0, noMoreToLoad: false });
     rendered.push(view);

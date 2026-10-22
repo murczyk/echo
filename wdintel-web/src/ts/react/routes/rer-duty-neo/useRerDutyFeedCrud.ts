@@ -69,11 +69,25 @@ export function useRerDutyFeedCrud(
     [messageFeeds, applyFilter],
   );
 
+  const setGroupScope = useCallback(
+    (feedId: string, groupMasterKey: string | null) => {
+      const feed = messageFeeds.find((candidate) => candidate.id === feedId);
+      if (!feed) return;
+      applyFilter(feedId, {
+        ...feed.filter,
+        groupsSelected: groupMasterKey ? [groupMasterKey] : null,
+        groupsDenied: null,
+      });
+    },
+    [applyFilter, messageFeeds],
+  );
+
   const createMessageFeed = useCallback(() => {
     const id = generateMessageFeedId();
     const newFeed: MessageFeedState = {
       id,
       filter: emptyFilter(),
+      groupScopeMasterKey: null,
       items: [],
       loading: true,
       loadingOlder: false,
@@ -108,5 +122,12 @@ export function useRerDutyFeedCrud(
     [messageFeeds, onFeedRemoved, setMessageFeeds, persistStateToUrl],
   );
 
-  return { applyFilter, toggleGroup, selectAllGroups, createMessageFeed, removeMessageFeed };
+  return {
+    applyFilter,
+    toggleGroup,
+    selectAllGroups,
+    setGroupScope,
+    createMessageFeed,
+    removeMessageFeed,
+  };
 }

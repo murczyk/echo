@@ -5,7 +5,13 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage, InboxWindowRsp, SavedFilter, User } from '../../../../../Bindings';
+import type {
+  InboxMessage,
+  InboxWindowRsp,
+  SavedFilter,
+  SignalGroupEntry,
+  User,
+} from '../../../../../Bindings';
 import type { AnalysisPageViewModel } from '../types';
 import { buildInboxReq, createResetQueryState } from '../helpers';
 import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
@@ -17,6 +23,7 @@ const systemSettingsMock = vi.hoisted(() => ({
   currentSystemSettings: vi.fn(),
 }));
 const currentUserMock = vi.hoisted(() => ({ fetchCurrentUser: vi.fn() }));
+const groupCatalogMock = vi.hoisted(() => ({ groups: vi.fn(), details: vi.fn() }));
 const inboxMessagesMock = vi.hoisted(() => ({
   fetchInboxWindow: vi.fn(),
   fetchInboxItemContext: vi.fn(),
@@ -73,6 +80,11 @@ vi.mock('../../../services/api/inbox-messages', () => ({
   fetchInboxItemContext: inboxMessagesMock.fetchInboxItemContext,
 }));
 
+vi.mock('../../../services/api/inbox', () => ({
+  getUserSigintGroups: groupCatalogMock.groups,
+  getGroupInfosBatch: groupCatalogMock.details,
+}));
+
 vi.mock('../use-analysis-data', () => ({
   useAnalysisData: useAnalysisDataMock,
 }));
@@ -110,6 +122,7 @@ const baseAnalysisData = {
   groupsActivityLoadedPeriod: null,
   groupsActivityLoading: false,
   hasLoadedInitialMessages: true,
+  messagesLoadedForCurrentQuery: true,
   inboxReq: null,
   botTagAction: null,
   loadCallsignGraph: vi.fn(),
@@ -190,7 +203,7 @@ const baseAnalysisData = {
   tagsOrder: [],
   topCallsigns: [],
   topFreqs: [],
-  groupInfos: {},
+  groupInfos: {} as Record<string, SignalGroupEntry>,
   topLocations: [],
   topUnits: [],
   renameSummaryUnit: vi.fn(),
@@ -296,18 +309,25 @@ function buildEditor() {
   };
 }
 
-function renderHook(authUserRoles: string[] = []) {
+function renderHook(authUserRoles: string[] = [], onRender?: () => void) {
   if (container == null) throw new Error('container not initialized');
 
   root = createRoot(container);
   const Harness = () => {
     latest = useRerAnalysisNeoPage(null, authUserRoles);
+    onRender?.();
     return null;
   };
 
   act(() => {
     root?.render(createElement(Harness));
   });
+
+  return () => {
+    act(() => {
+      root?.render(createElement(Harness));
+    });
+  };
 }
 
 async function flushEffects() {
@@ -323,7 +343,18 @@ let latest: AnalysisPageViewModel | null = null;
 
 describe('useRerAnalysisNeoPage', () => {
   beforeEach(() => {
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        clear: () => storage.clear(),
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
     window.history.replaceState({}, '', window.location.pathname);
+    window.localStorage.clear();
     container = document.createElement('div');
     document.body.appendChild(container);
     latest = null;
@@ -358,6 +389,8 @@ describe('useRerAnalysisNeoPage', () => {
     });
     inboxMessagesMock.fetchInboxWindow.mockReset();
     inboxMessagesMock.fetchInboxWindow.mockResolvedValue(null);
+    groupCatalogMock.groups.mockReset().mockResolvedValue([]);
+    groupCatalogMock.details.mockReset().mockResolvedValue([]);
 
     useAnalysisDataMock.mockReset();
     analysisFreqValues = ['111.1'];
@@ -402,6 +435,194 @@ describe('useRerAnalysisNeoPage', () => {
     renderHook(['Rer']);
 
     expect(latest?.radioFeaturesAllowed).toBe(true);
+  });
+
+  it.each(['catalog', 'details'])('#3727 clears local %s errors after retry', async (failure) => {
+    const alpha = { masterKey: 'a', name: 'Alpha', colorKey: 'cyan' } as SignalGroupEntry;
+    groupCatalogMock.groups.mockResolvedValue(['a']);
+    groupCatalogMock.details.mockResolvedValue([alpha]);
+    const request = failure === 'catalog' ? groupCatalogMock.groups : groupCatalogMock.details;
+    request.mockRejectedValue(new Error('unavailable'));
+
+    renderHook(['Rer']);
+    await flushEffects();
+
+    expect(latest?.groupNavigation.error).toBeTruthy();
+    expect(latest?.error).toBeNull();
+
+    request.mockResolvedValue(failure === 'catalog' ? ['a'] : [alpha]);
+    act(() => latest?.groupNavigation.retry());
+    await flushEffects();
+
+    expect(latest?.groupNavigation.error).toBeNull();
+    expect(latest?.groupNavigation.groups).toContainEqual({ kind: 'group', ...alpha });
+    expect(latest?.error).toBeNull();
+  });
+
+  it('#3727 reconciles catalog refreshes with only changed message metadata', async () => {
+    const alpha = { masterKey: 'a', name: 'Old Alpha', colorKey: 'cyan' } as SignalGroupEntry;
+    const beta = { masterKey: 'b', name: 'Beta', colorKey: 'orange' } as SignalGroupEntry;
+    currentAnalysisData!.groupInfos = { a: alpha };
+    groupCatalogMock.groups.mockResolvedValue(['a']);
+    groupCatalogMock.details.mockResolvedValue([
+      { ...alpha, name: 'Renamed Alpha', colorKey: 'red' },
+    ]);
+    const rerender = renderHook(['Rer']);
+    await flushEffects();
+    expect(latest?.groupInfos.a).toMatchObject({ name: 'Renamed Alpha', colorKey: 'red' });
+
+    currentAnalysisData!.groupInfos = { a: alpha, b: beta };
+    rerender();
+    await flushEffects();
+    expect(latest?.groupInfos.a).toMatchObject({ name: 'Renamed Alpha', colorKey: 'red' });
+    expect(latest?.groupInfos.b).toBe(beta);
+    expect(latest?.groupNavigation.groups).toContainEqual({ kind: 'group', ...beta });
+
+    currentAnalysisData!.groupInfos = { a: { ...alpha, name: 'Latest Alpha' }, b: beta };
+    rerender();
+    await flushEffects();
+    expect(latest?.groupInfos.a?.name).toBe('Latest Alpha');
+  });
+
+  it('#3727 shares the legacy group filter and preserves frequency and AOR filters', async () => {
+    renderHook(['Rer']);
+    await act(async () => {
+      latest?.updateQueryState({
+        groupsSelected: ['group-a', 'group-c'],
+        freqsSelected: ['111.1'],
+        aorsSelected: ['7'],
+      });
+    });
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+
+    expect(latest?.queryState.groupsSelected).toEqual(['group-b']);
+    expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
+    expect(latest?.queryState.aorsSelected).toEqual(['7']);
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.groupsSelected).toEqual([
+      'group-b',
+    ]);
+    expect(new URL(window.location.href).searchParams.get('groups')).toBe('group-b');
+
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'all' });
+    });
+    expect(latest?.queryState.groupsSelected).toEqual([]);
+    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
+    expect(latest?.queryState.aorsSelected).toEqual(['7']);
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.groupsSelected).toEqual([]);
+    expect(new URL(window.location.href).searchParams.has('group')).toBe(false);
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+    expect(latest?.queryState.groupsSelected).toEqual(['group-b']);
+    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
+  });
+
+  it('restores a selected group filter from browser storage', async () => {
+    renderHook(['Rer']);
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+
+    act(() => root?.unmount());
+    root = null;
+    latest = null;
+    window.history.replaceState({}, '', '/rer-analysis-neo?group=group-b');
+    renderHook(['Rer']);
+
+    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
+    expect(latest?.queryState.groupsSelected).toEqual(['group-b']);
+  });
+
+  it('ignores malformed stored group filters', () => {
+    window.localStorage.setItem(
+      'rer-analysis-neo-scope-filters-v1',
+      JSON.stringify({
+        version: 1,
+        scopes: { 'group:group-b': { callsignsSelected: 'not-an-array' } },
+      }),
+    );
+    window.history.replaceState({}, '', '/rer-analysis-neo?group=group-b');
+
+    renderHook(['Rer']);
+
+    expect(latest?.queryState.callsignsSelected).toEqual([]);
+  });
+
+  it('restores the group scope filter from browser history', async () => {
+    renderHook(['Rer']);
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['111.1'] });
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+
+    window.history.replaceState({}, '', '/rer-analysis-neo?freqs=111.1');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+
+    expect(latest?.groupNavigation.scope).toEqual({ kind: 'all' });
+    expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
+  });
+
+  it('keeps a group scope transition pending until that scope commits its messages', async () => {
+    renderHook(['Rer']);
+    if (currentAnalysisData == null) throw new Error('analysis data not initialized');
+    currentAnalysisData.messagesLoadedForCurrentQuery = false;
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+
+    expect(latest?.groupScopeTransitionPending).toBe(true);
+
+    currentAnalysisData.messagesLoadedForCurrentQuery = true;
+    await act(async () => {
+      latest?.toggleRightPanel();
+    });
+
+    expect(latest?.groupScopeTransitionPending).toBe(false);
+  });
+
+  it('does not render again after a group scope commits its messages', async () => {
+    let renderCount = 0;
+    const rerender = renderHook(['Rer'], () => {
+      renderCount += 1;
+    });
+    if (currentAnalysisData == null) throw new Error('analysis data not initialized');
+    currentAnalysisData.messagesLoadedForCurrentQuery = false;
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+    const renderCountBeforeCommit = renderCount;
+
+    currentAnalysisData.messagesLoadedForCurrentQuery = true;
+    rerender();
+
+    expect(renderCount).toBe(renderCountBeforeCommit + 1);
+  });
+
+  it('does not treat a later filter reload as a group transition when the scope query was unchanged', async () => {
+    const rerender = renderHook(['Rer']);
+    if (currentAnalysisData == null) throw new Error('analysis data not initialized');
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+
+    currentAnalysisData.messagesLoadedForCurrentQuery = false;
+    rerender();
+
+    expect(latest?.groupScopeTransitionPending).toBe(false);
   });
 
   // Regression: https://github.com/echoua/echo/issues/3568
@@ -794,7 +1015,7 @@ describe('useRerAnalysisNeoPage', () => {
     renderHook();
     await flushEffects();
 
-    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('true');
+    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('false');
     expect(new URL(window.location.href).searchParams.get('rightPanelOpen')).toBe('false');
 
     await act(async () => {
@@ -803,7 +1024,7 @@ describe('useRerAnalysisNeoPage', () => {
     });
     await flushEffects();
 
-    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('false');
+    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('true');
     expect(new URL(window.location.href).searchParams.get('rightPanelOpen')).toBe('true');
     window.history.replaceState({}, '', originalUrl);
   });

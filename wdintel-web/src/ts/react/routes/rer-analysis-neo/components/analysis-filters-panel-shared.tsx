@@ -57,6 +57,7 @@ export type AnalysisFiltersPanelProps = {
   page: AnalysisFiltersPanelPage;
   isCompactLayout?: boolean;
   fullHeight?: boolean;
+  hideGroupSelection?: boolean;
 };
 
 export type FilterSectionId =

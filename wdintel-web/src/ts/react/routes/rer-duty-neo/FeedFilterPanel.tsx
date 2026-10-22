@@ -12,6 +12,7 @@ import { useFeedFilterPanelViewModel } from './useFeedFilterPanelViewModel';
 export type FeedFilterPanelModel = {
   feedId: string;
   hasActiveFilter: boolean;
+  hideGroupSelection?: boolean;
   filterState: {
     groupsSelected: string[];
     deniedGroups: string[];
