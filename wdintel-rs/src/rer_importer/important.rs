@@ -826,6 +826,10 @@ mod tests {
         assert_eq!(
             notification_receipt::Entity::find()
                 .filter(notification_receipt::Column::EventId.eq(event.id))
+                .filter(
+                    notification_receipt::Column::RecipientLoginId
+                        .is_in([first.id, second.id])
+                )
                 .count(&env.dbx)
                 .await
                 .unwrap(),
