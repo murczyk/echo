@@ -582,7 +582,7 @@ async fn resolve_claimed_item(
     };
     let results = resolve_settlement_names(
         txn,
-        env,
+        env.settlements.clone(),
         locations,
         &aor_context.aor_ids,
         active_battle_line_version_id,
@@ -608,7 +608,7 @@ async fn resolve_claimed_item(
 
 pub(super) async fn resolve_settlement_names<C: ConnectionTrait>(
     dbx: &C,
-    env: &Env,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     locations: Vec<String>,
     aor_ids: &[i64],
     version: i64,
@@ -617,7 +617,7 @@ pub(super) async fn resolve_settlement_names<C: ConnectionTrait>(
 ) -> anyhow::Result<Vec<BattleLineLocationResult>> {
     let mut drafts = load_location_drafts_with_cache(
         dbx,
-        env.settlements.clone(),
+        settlements,
         locations,
         aor_ids,
         version,
@@ -1588,6 +1588,135 @@ set settlement_id = case settlement_text
         txn.rollback().await.unwrap();
     }
 
+    async fn insert_network_catalog_test_config(
+        env: &Env,
+        txn: &DatabaseTransaction,
+        version: i64,
+    ) -> crate::entities::aor_location_config::Model {
+        use crate::entities::aor_location_config;
+        let aor = crate::functest::tests::mk_aor(txn, Default::default())
+            .await
+            .unwrap();
+        txn.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+insert into battle_line_aor_geometry
+    (version_id, aor_id, geometry, snapped_start, snapped_end)
+select id, $1, geometry, ST_SetSRID(ST_MakePoint(0, 0), 4326),
+    ST_SetSRID(ST_MakePoint(10, 0), 4326)
+from battle_line_version where id = $2
+            "#,
+            [aor.id.into(), version.into()],
+        ))
+        .await
+        .unwrap();
+        {
+            let mut settlements = env.settlements.write().unwrap();
+            for (name, id) in [("first", 2_133_103), ("second", 2_133_104)] {
+                let details =
+                    settlements.default_settlements_data.3[&id].clone();
+                let data = Arc::new((
+                    vec![],
+                    vec![],
+                    crate::location::trie::Trie::new(),
+                    BTreeMap::from([(id, details.clone())]),
+                    BTreeMap::from([(details.name.clone(), vec![details])]),
+                ));
+                settlements.available_settlements_configs.push(name.into());
+                settlements
+                    .settlements_data_by_config
+                    .insert(name.into(), data);
+            }
+        }
+        aor_location_config::ActiveModel {
+            aor_id: Set(aor.id),
+            settlements_configs: Set(serde_json::json!(["first"])),
+            ..Default::default()
+        }
+        .insert(txn)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn network_resolution_reloads_catalog_between_claims_2133() {
+        use crate::battle_line::network_settlements::resolve_claimed_network;
+        use crate::entities::{
+            area_of_responsibility, settlement, sigint_network,
+            sigint_network_aor,
+        };
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let setup = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &setup).await;
+        let config =
+            insert_network_catalog_test_config(&env, &setup, version).await;
+        let mut networks = Vec::new();
+        for _ in 0..2 {
+            let network = crate::functest::tests::mk_sigint_network(
+                &setup,
+                crate::entities::sigint_network::ActiveModel {
+                    location: Set("|#2133 SHARED|".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            sigint_network_aor::ActiveModel {
+                network_id: Set(network.id),
+                aor_id: Set(config.aor_id),
+                ..Default::default()
+            }
+            .insert(&setup)
+            .await
+            .unwrap();
+            networks.push(network);
+        }
+        setup.commit().await.unwrap();
+        crate::location::aor_config::refresh_settlements_aor_map(
+            &env.dbx,
+            env.settlements.clone(),
+        )
+        .await
+        .unwrap();
+        for (network, expected) in networks.iter().zip([2_133_103, 2_133_104]) {
+            let txn = env.dbx.begin().await.unwrap();
+            resolve_claimed_network(&env, &txn, network.id, version)
+                .await
+                .unwrap();
+            let rows = network_settlement_rows(&txn, network.id).await;
+            assert_eq!(rows[0].settlement_id, Some(expected));
+            assert_eq!(rows[0].is_undefined, Some(false));
+            txn.commit().await.unwrap();
+            if expected == 2_133_103 {
+                let mut config = config.clone().into_active_model();
+                config.settlements_configs = Set(serde_json::json!(["second"]));
+                config.update(&env.dbx).await.unwrap();
+            }
+        }
+        sigint_network::Entity::delete_many()
+            .filter(
+                sigint_network::Column::Id
+                    .is_in(networks.iter().map(|network| network.id)),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        area_of_responsibility::Entity::delete_by_id(config.aor_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        settlement::Entity::delete_many()
+            .filter(
+                settlement::Column::Id
+                    .is_in([2_133_101, 2_133_102, 2_133_103, 2_133_104]),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn network_location_edits_reconcile_and_resolve_the_whole_set_2133() {
@@ -1634,8 +1763,7 @@ set settlement_id = case settlement_text
             .unwrap();
         assert!(map_settlements.is_empty());
         assert!(settlements_pending);
-        let mut cache = SettlementResolutionCache::default();
-        resolve_claimed_network(&env, &txn, network.id, version, &mut cache)
+        resolve_claimed_network(&env, &txn, network.id, version)
             .await
             .unwrap();
         let frequency_task = network_invalidation_task::Entity::find()
@@ -1681,7 +1809,7 @@ set settlement_id = case settlement_text
         assert!(rows.iter().all(
             |row| row.settlement_id.is_none() && row.is_undefined.is_none()
         ));
-        resolve_claimed_network(&env, &txn, network.id, version, &mut cache)
+        resolve_claimed_network(&env, &txn, network.id, version)
             .await
             .unwrap();
         let rows = network_settlement_rows(&txn, network.id).await;
@@ -1692,7 +1820,7 @@ set settlement_id = case settlement_text
         let mut network = network.into_active_model();
         network.location = Set("|#2133 SHARED|".to_string());
         let network = network.update(&txn).await.unwrap();
-        resolve_claimed_network(&env, &txn, network.id, version, &mut cache)
+        resolve_claimed_network(&env, &txn, network.id, version)
             .await
             .unwrap();
         let rows = network_settlement_rows(&txn, network.id).await;
@@ -1746,7 +1874,7 @@ set settlement_id = case settlement_text
         .insert(&txn)
         .await
         .unwrap();
-        resolve_claimed_network(&env, &txn, network.id, version, &mut cache)
+        resolve_claimed_network(&env, &txn, network.id, version)
             .await
             .unwrap();
         crate::entities::settlement::Entity::update_many()
@@ -1842,8 +1970,7 @@ set settlement_id = case settlement_text
         )
         .await
         .unwrap();
-        let mut cache = SettlementResolutionCache::default();
-        resolve_claimed_network(&env, &txn, network.id, version, &mut cache)
+        resolve_claimed_network(&env, &txn, network.id, version)
             .await
             .unwrap();
         settlement::Entity::delete_by_id(2_133_101)
@@ -1857,8 +1984,7 @@ set settlement_id = case settlement_text
             .exec(&txn)
             .await
             .unwrap();
-        cache = SettlementResolutionCache::default();
-        resolve_claimed_network(&env, &txn, network.id, version, &mut cache)
+        resolve_claimed_network(&env, &txn, network.id, version)
             .await
             .unwrap();
         assert!(crate::entities::network_invalidation_task::Entity::find()

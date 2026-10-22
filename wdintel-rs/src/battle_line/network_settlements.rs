@@ -13,6 +13,7 @@ use crate::h;
 use crate::types::{warn, Env, ShortContext};
 use sea_orm::sea_query::LockType;
 use sea_orm::*;
+use std::sync::{Arc, RwLock};
 
 pub(super) async fn process_pending_networks(
     env: &Env,
@@ -30,7 +31,6 @@ pub(super) async fn process_pending_networks(
         return Ok(false);
     }
     let version = refresh_settlement_catalog(env).await.c(h!())?;
-    let mut cache = SettlementResolutionCache::default();
     let mut processed = false;
     for _ in 0..INBOX_SETTLEMENT_WORKER_BATCH_SIZE {
         let txn = env.dbx.begin().await.c(h!())?;
@@ -44,14 +44,7 @@ pub(super) async fn process_pending_networks(
             break;
         };
         *cursor = Some(claim.first_row_id);
-        match resolve_claimed_network(
-            env,
-            &txn,
-            claim.owner_id,
-            version,
-            &mut cache,
-        )
-        .await
+        match resolve_claimed_network(env, &txn, claim.owner_id, version).await
         {
             Ok(()) => {
                 txn.commit().await.c(h!())?;
@@ -74,7 +67,6 @@ pub(super) async fn resolve_claimed_network(
     txn: &DatabaseTransaction,
     network_id: i64,
     version: i64,
-    cache: &mut SettlementResolutionCache,
 ) -> anyhow::Result<()> {
     let Some(network) = sigint_network::Entity::find_by_id(network_id)
         .lock(LockType::Update)
@@ -114,9 +106,30 @@ pub(super) async fn resolve_claimed_network(
     let results = if network.deleted {
         vec![]
     } else {
-        resolve_settlement_names(txn, env, names, &aor_ids, version, cache, &[])
-            .await
+        let settlements = env
+            .settlements
+            .read()
+            .map_err(|error| anyhow::anyhow!("{error:?}"))
             .c(h!())?
+            .clone();
+        let settlements = Arc::new(RwLock::new(settlements));
+        crate::location::aor_config::refresh_settlements_aor_map(
+            txn,
+            settlements.clone(),
+        )
+        .await
+        .c(h!())?;
+        resolve_settlement_names(
+            txn,
+            settlements,
+            names,
+            &aor_ids,
+            version,
+            &mut SettlementResolutionCache::default(),
+            &[],
+        )
+        .await
+        .c(h!())?
     };
     for (index, row) in rows.into_iter().enumerate() {
         let settlement_id = results
