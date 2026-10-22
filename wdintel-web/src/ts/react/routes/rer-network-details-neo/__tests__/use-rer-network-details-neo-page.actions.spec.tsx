@@ -164,25 +164,30 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe('useRerNetworkDetailsNeoPageActions restore guard', () => {
-  it('#2133 invalidates cached settlement geometry after editing network locations', async () => {
-    apiMock.updateNetwork.mockResolvedValue(buildNetwork({ location: 'New location' }));
-    apiMock.updateNetworkPosts.mockResolvedValue(buildNetwork());
-    apiMock.updateNetworkUnits.mockResolvedValue(buildNetwork());
-    renderHarness(buildNetwork(), buildEditForm({ location: 'New location' }), {
-      networkSettlements: [{ id: 1, name: 'Old location', lat: 49, lng: 35 }],
-      pelengPointsLoaded: true,
-      pelengPointsRequestedFrom: 0,
-    });
+  it.each([{ location: 'New location' }, { aorIds: [2] }])(
+    '#2133 invalidates cached settlement geometry after editing resolution context: %j',
+    async (changes) => {
+      apiMock.updateNetwork.mockResolvedValue(buildNetwork({ aorIds: [1], ...changes }));
+      apiMock.updateNetworkPosts.mockResolvedValue(buildNetwork());
+      apiMock.updateNetworkUnits.mockResolvedValue(buildNetwork());
+      renderHarness(buildNetwork({ aorIds: [1] }), buildEditForm(changes), {
+        networkSettlements: [{ id: 1, name: 'Old location', lat: 49, lng: 35 }],
+        networkSettlementsPending: true,
+        pelengPointsLoaded: true,
+        pelengPointsRequestedFrom: 0,
+      });
 
-    await act(async () => {
-      await latestActions?.saveNetworkEdit();
-    });
+      await act(async () => {
+        await latestActions?.saveNetworkEdit();
+      });
 
-    expect(latestState?.network?.location).toBe('New location');
-    expect(latestState?.networkSettlements).toEqual([]);
-    expect(latestState?.pelengPointsLoaded).toBe(false);
-    expect(latestState?.pelengPointsRequestedFrom).toBeNull();
-  });
+      expect(latestState?.network).toMatchObject(changes);
+      expect(latestState?.networkSettlements).toEqual([]);
+      expect(latestState?.networkSettlementsPending).toBe(false);
+      expect(latestState?.pelengPointsLoaded).toBe(false);
+      expect(latestState?.pelengPointsRequestedFrom).toBeNull();
+    },
+  );
 
   it('requests restore for deleted rows without an active window', async () => {
     apiMock.updateNetwork.mockResolvedValue(buildNetwork({ deleted: true, activeTo: null }));

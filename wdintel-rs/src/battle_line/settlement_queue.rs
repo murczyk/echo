@@ -1411,6 +1411,135 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
+    async fn network_aor_changes_requeue_only_affected_settlement_sets_2133() {
+        use crate::entities::sigint_network;
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        setup_cluster_test_catalog(&env, &txn).await;
+        let mut network_ids = Vec::new();
+        let mut aor_ids = Vec::new();
+        for name in ["#2133 A", "#2133 B"] {
+            let network = crate::functest::tests::mk_sigint_network(
+                &txn,
+                sigint_network::ActiveModel {
+                    location: Set(format!(
+                        "|{name}|#2133 SHARED|#2133 FOREST|"
+                    )),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            network_ids.push(network.id);
+            let aor = crate::functest::tests::mk_aor(&txn, Default::default())
+                .await
+                .unwrap();
+            aor_ids.push(aor.id);
+        }
+        for (sql, values, pending_networks) in [
+            (
+                r"insert into sigint_network_aor (network_id, aor_id) values ($1, $2)",
+                vec![network_ids[0], aor_ids[0]],
+                vec![0],
+            ),
+            (
+                r"update sigint_network_aor set aor_id = aor_id where network_id = $1",
+                vec![network_ids[0]],
+                vec![],
+            ),
+            (
+                r"update sigint_network_aor set aor_id = $2 where network_id = $1",
+                vec![network_ids[0], aor_ids[1]],
+                vec![0],
+            ),
+            (
+                r"update sigint_network_aor set network_id = $2 where network_id = $1",
+                vec![network_ids[0], network_ids[1]],
+                vec![0, 1],
+            ),
+            (
+                r"update area_of_responsibility set deleted = true where id = $1",
+                vec![aor_ids[1]],
+                vec![1],
+            ),
+            (
+                r"update area_of_responsibility set deleted = true where id = $1",
+                vec![aor_ids[1]],
+                vec![],
+            ),
+            (
+                r"update area_of_responsibility set deleted = false where id = $1",
+                vec![aor_ids[1]],
+                vec![1],
+            ),
+            (
+                r"delete from sigint_network_aor where network_id = $1",
+                vec![network_ids[1]],
+                vec![1],
+            ),
+            (
+                r"insert into sigint_network_aor (network_id, aor_id) values ($1, $2)",
+                vec![network_ids[0], aor_ids[1]],
+                vec![0],
+            ),
+            (
+                r"delete from area_of_responsibility where id = $1",
+                vec![aor_ids[1]],
+                vec![0],
+            ),
+            (
+                r"delete from area_of_responsibility where id = $1",
+                vec![aor_ids[0]],
+                vec![],
+            ),
+        ] {
+            txn.execute_unprepared(
+                r#"
+update sigint_network_settlement
+set settlement_id = case settlement_text
+        when '#2133 A' then 2133101
+        when '#2133 B' then 2133102
+        when '#2133 SHARED' then 2133103
+        else null end,
+    is_undefined = settlement_text = '#2133 FOREST';
+            "#,
+            )
+            .await
+            .unwrap();
+            let before = [
+                network_settlement_rows(&txn, network_ids[0]).await,
+                network_settlement_rows(&txn, network_ids[1]).await,
+            ];
+            txn.execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                sql,
+                values
+                    .into_iter()
+                    .map(sea_orm::Value::from)
+                    .collect::<Vec<_>>(),
+            ))
+            .await
+            .unwrap();
+            for (index, network_id) in network_ids.iter().enumerate() {
+                let rows = network_settlement_rows(&txn, *network_id).await;
+                if pending_networks.contains(&index) {
+                    assert_eq!(rows.len(), 3, "{sql}");
+                    assert!(
+                        rows.iter().all(|row| row.settlement_id.is_none()
+                            && row.is_undefined.is_none()),
+                        "{sql}"
+                    );
+                } else {
+                    assert_eq!(rows, before[index], "{sql}");
+                }
+            }
+        }
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
     async fn network_location_edits_reconcile_and_resolve_the_whole_set_2133() {
         use crate::battle_line::network_settlements::resolve_claimed_network;
         use crate::entities::{
@@ -1447,6 +1576,14 @@ mod tests {
         assert!(rows.iter().all(
             |row| row.settlement_id.is_none() && row.is_undefined.is_none()
         ));
+        let (map_settlements, settlements_pending) =
+            crate::sigint::network::bl::get_network_settlements(
+                &txn, network.id,
+            )
+            .await
+            .unwrap();
+        assert!(map_settlements.is_empty());
+        assert!(settlements_pending);
         let mut cache = SettlementResolutionCache::default();
         resolve_claimed_network(&env, &txn, network.id, version, &mut cache)
             .await
@@ -1462,12 +1599,13 @@ mod tests {
             .unwrap();
         assert_eq!(frequency_task.sigint_network_id, None);
         assert_eq!(frequency_task.since_ts, frequency.active_from);
-        let map_settlements =
+        let (map_settlements, settlements_pending) =
             crate::sigint::network::bl::get_network_settlements(
                 &txn, network.id,
             )
             .await
             .unwrap();
+        assert!(!settlements_pending);
         assert_eq!(
             map_settlements
                 .iter()

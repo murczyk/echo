@@ -205,6 +205,7 @@ it.each(['success', 'failure'] as const)(
         response.resolve({
           points: [],
           settlements: [{ id: 1, name: 'Old location', lat: 49, lng: 35 }],
+          settlementsPending: false,
         });
       } else {
         response.reject(new Error('Stale request failed'));

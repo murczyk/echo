@@ -88,6 +88,59 @@ create trigger reconcile_sigint_network_settlements
 after insert or update of location, deleted, active_from, active_to on sigint_network
 for each row execute function reconcile_sigint_network_settlements();
 
+create function requeue_sigint_network_settlements(target_network_ids bigint[])
+returns void language plpgsql as $$
+begin
+    perform 1 from sigint_network
+    where id = any(target_network_ids)
+    order by id for no key update;
+    update sigint_network_settlement
+    set settlement_id = null, is_undefined = null
+    where network_id = any(target_network_ids)
+        and (settlement_id is not null or is_undefined is not null);
+end;
+$$;
+
+create function requeue_sigint_network_aor_settlements()
+returns trigger language plpgsql as $$
+declare
+    target_network_ids bigint[];
+begin
+    if tg_op = 'UPDATE'
+        and old.network_id is not distinct from new.network_id
+        and old.aor_id is not distinct from new.aor_id then
+        return new;
+    end if;
+    target_network_ids := case tg_op
+        when 'INSERT' then array[new.network_id]
+        when 'DELETE' then array[old.network_id]
+        else array[old.network_id, new.network_id]
+    end;
+    perform requeue_sigint_network_settlements(target_network_ids);
+    return coalesce(new, old);
+end;
+$$;
+
+create trigger requeue_sigint_network_aor_settlements
+after insert or update of network_id, aor_id or delete on sigint_network_aor
+for each row execute function requeue_sigint_network_aor_settlements();
+
+create function requeue_sigint_network_settlements_for_aor_state()
+returns trigger language plpgsql as $$
+begin
+    perform requeue_sigint_network_settlements(array(
+        select distinct network_id from sigint_network_aor
+        where aor_id = new.id
+    ));
+    return new;
+end;
+$$;
+
+create trigger requeue_sigint_network_settlements_for_aor_state
+after update of deleted on area_of_responsibility
+for each row when (old.deleted is distinct from new.deleted)
+execute function requeue_sigint_network_settlements_for_aor_state();
+
 insert into sigint_network_settlement (network_id, settlement_text)
 select distinct network.id, upper(translate(btrim(value), chr(39) || 'ʼ`', '’’’'))
 from sigint_network network
@@ -106,6 +159,11 @@ where not network.deleted
             .get_connection()
             .execute_unprepared(
                 r#"
+drop trigger requeue_sigint_network_settlements_for_aor_state on area_of_responsibility;
+drop function requeue_sigint_network_settlements_for_aor_state();
+drop trigger requeue_sigint_network_aor_settlements on sigint_network_aor;
+drop function requeue_sigint_network_aor_settlements();
+drop function requeue_sigint_network_settlements(bigint[]);
 drop trigger reconcile_sigint_network_settlements on sigint_network;
 drop function reconcile_sigint_network_settlements();
 drop table sigint_network_settlement;

@@ -780,6 +780,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           pelengPointsRequestedTo: null,
           pelengPoints: [],
           networkSettlements: [],
+          networkSettlementsPending: false,
         }));
         return;
       }
@@ -814,6 +815,7 @@ export function useRerNetworkDetailsNeoPageLoad(
             ...current,
             pelengPoints: response.points ?? [],
             networkSettlements: response.settlements ?? [],
+            networkSettlementsPending: response.settlementsPending ?? false,
             pelengEnabledFreqs: derivePelengEnabledFreqs(
               current.pelengEnabledFreqs,
               response.points ?? [],

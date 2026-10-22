@@ -55,6 +55,8 @@ tasks also visit messages currently assigned to competing networks. The network
 worker requeues unresolved inbox locations in its existing bounded message
 batches, including after the last anchor disappears. Canonical settlement
 deletion requeues its network links.
+Network AOR link changes and AOR deletion/restoration requeue the affected
+network location sets, with network locks serializing edits against resolution.
 
 Resolved locations of linked, non-deleted networks anchor inbox names. Anchored
 sets maximize matched names, minimize total distance to the nearest anchor, then
@@ -80,6 +82,8 @@ form a red line. The overlay remains visible without direction-finding
 observations and is independent of their date/frequency filters. The
 PostgreSQL-backed `network-points` response includes only distinct resolved
 settlements with valid coordinates; unresolved names do not create map geometry.
+The response also reports pending resolution. The active map retries every five
+seconds while settlements remain pending, including after location or AOR edits.
 
 Coverage: `wdintel-rs/src/battle_line/settlement_clusters/tests.rs`,
 `wdintel-rs/src/battle_line/settlement_queue.rs`,

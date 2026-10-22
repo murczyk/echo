@@ -4842,6 +4842,7 @@ export type ListNetworkPointsReq = {
 export type ListNetworkPointsRsp = {
   points: Array<NetworkPoint>;
   settlements: Array<NetworkSettlement>;
+  settlementsPending: boolean;
 };
 
 export type NetworkPoint = {

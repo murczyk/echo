@@ -310,6 +310,7 @@ pub struct NetworkSettlement {
 pub struct ListNetworkPointsRsp {
     pub points: Vec<NetworkPoint>,
     pub settlements: Vec<NetworkSettlement>,
+    pub settlements_pending: bool,
 }
 
 #[derive(

@@ -12512,6 +12512,7 @@ listNetworkPointsReqEncoder struct =
 type alias ListNetworkPointsRsp =
     { points : List (NetworkPoint)
     , settlements : List (NetworkSettlement)
+    , settlementsPending : Bool
     }
 
 
@@ -12520,6 +12521,7 @@ listNetworkPointsRspEncoder struct =
     Json.Encode.object
         [ ( "points", (Json.Encode.list (networkPointEncoder)) struct.points )
         , ( "settlements", (Json.Encode.list (networkSettlementEncoder)) struct.settlements )
+        , ( "settlements_pending", (Json.Encode.bool) struct.settlementsPending )
         ]
 
 
@@ -26973,6 +26975,7 @@ listNetworkPointsRspDecoder =
     Json.Decode.succeed ListNetworkPointsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list (networkPointDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlements" (Json.Decode.list (networkSettlementDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlements_pending" (Json.Decode.bool)))
 
 
 networkPointDecoder : Json.Decode.Decoder NetworkPoint
