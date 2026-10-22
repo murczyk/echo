@@ -528,6 +528,7 @@ export function useAnalysisData({
   currentUser,
   deferInitialLoad = false,
   hideNetworks = false,
+  canUseDevices = false,
   focusedWindow = null,
   focusedMessageActive = false,
   centerTab,
@@ -640,6 +641,7 @@ export function useAnalysisData({
     refreshTagFacet,
   } = useAnalysisFilterSections({
     queryState,
+    canUseDevices,
     hideNetworks,
     optionsFreqValues,
     unitsMapRef: referenceState.unitsMapRef,

@@ -26,7 +26,6 @@ import {
 import { NO_DATA_LABEL } from '../../../utils/misc';
 import { isCanonicalUnitIdValue } from '../../../utils/unit-search';
 import { AnalysisFilterField } from './AnalysisFilterField';
-import { AnalysisDeviceNamesFilter } from './AnalysisDeviceNamesFilter';
 import { buildAnalysisReq } from '../helpers';
 import { useCallsignPage } from '../use-callsign-page';
 import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
@@ -542,9 +541,15 @@ export function AnalysisFiltersPanelSections({
           countLabel={sectionCountLabel(queryState.deviceNamesSelected.length, undefined)}
           expanded={expandedSections.devices}
           onToggle={() => toggleSection('devices')}
+          onLoad={loadSection('devices')}
         >
           {expandedSections.devices ? (
-            <AnalysisDeviceNamesFilter
+            <AnalysisFilterField
+              label="Назва пристрою"
+              options={options.devices}
+              loading={isFilterSectionLoading('devices') || isFilterSectionStale('devices')}
+              emptyLoading={isFilterSectionEmptyLoading('devices', options.devices.length)}
+              deferredCommit
               value={queryState.deviceNamesSelected}
               onChange={(deviceNamesSelected) => updateQueryState({ deviceNamesSelected })}
             />

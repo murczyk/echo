@@ -655,6 +655,7 @@ export function useRerAnalysisNeoPage(
   }, []);
 
   const data = useAnalysisData({
+    canUseDevices,
     authUserName,
     currentUser,
     deferInitialLoad:

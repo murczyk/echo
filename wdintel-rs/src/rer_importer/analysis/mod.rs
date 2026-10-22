@@ -7866,6 +7866,72 @@ async fn sender_stats(
     }))
 }
 
+#[post("/api/rer/analysis/stats/device-names")]
+async fn device_name_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<Vec<AnalysisStatsDeviceName>>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    crate::devices::access::require_message_devices(&env.dbx, &login)
+        .await
+        .c(h!())?;
+    let master_keys =
+        get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req.0;
+    let postgres_req = &req.0;
+    let source_db = &env.dbx;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let devices = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats device names",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            let scope = stats::resolve_analytics_message_id_scope(
+                analytics_req,
+                &db,
+                source_db,
+                freshness_max_age_ms,
+                &analytics_master_keys,
+            )
+            .await
+            .c(h!())?;
+            Ok(stats::fetch_device_names_with_db(
+                analytics_req,
+                &login,
+                &db,
+                source_db,
+                analytics_master_keys,
+                Some(&scope),
+            )
+            .await
+            .c(h!())?)
+        },
+        |db| async move {
+            Ok(stats::fetch_device_names_with_db(
+                postgres_req,
+                &login,
+                &db,
+                source_db,
+                master_keys,
+                None,
+            )
+            .await
+            .c(h!())?)
+        },
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(devices))
+}
+
 #[post("/api/rer/analysis/stats/posts")]
 async fn post_stats(
     user: Identity,

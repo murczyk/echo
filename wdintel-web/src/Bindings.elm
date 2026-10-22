@@ -2709,6 +2709,20 @@ analysisStatsPostEncoder struct =
         ]
 
 
+type alias AnalysisStatsDeviceName =
+    { name : String
+    , count : Int
+    }
+
+
+analysisStatsDeviceNameEncoder : AnalysisStatsDeviceName -> Json.Encode.Value
+analysisStatsDeviceNameEncoder struct =
+    Json.Encode.object
+        [ ( "name", (Json.Encode.string) struct.name )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
 type alias InboxDeleteReq =
     { id : Int
     }
@@ -20412,6 +20426,13 @@ analysisStatsPostDecoder : Json.Decode.Decoder AnalysisStatsPost
 analysisStatsPostDecoder =
     Json.Decode.succeed AnalysisStatsPost
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+
+
+analysisStatsDeviceNameDecoder : Json.Decode.Decoder AnalysisStatsDeviceName
+analysisStatsDeviceNameDecoder =
+    Json.Decode.succeed AnalysisStatsDeviceName
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
 
 

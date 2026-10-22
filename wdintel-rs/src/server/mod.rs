@@ -1178,6 +1178,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::analysis::metadata_stats)
             .service(crate::rer_importer::analysis::freq_stats)
             .service(crate::rer_importer::analysis::post_stats)
+            .service(crate::rer_importer::analysis::device_name_stats)
             .service(crate::rer_importer::analysis::sender_stats)
             .service(crate::rer_importer::analysis::group_stats)
             .service(crate::rer_importer::analysis::activity_daily)

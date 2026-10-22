@@ -177,6 +177,7 @@ const baseAnalysisData = {
     aors: [],
     groups: [],
     senders: [],
+    devices: [],
     freqs: [],
     newFreqs: [],
     callsigns: [],
