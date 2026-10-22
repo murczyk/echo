@@ -1,4 +1,5 @@
 use crate::config::MESSENGER_INGEST_SYNC_MAX_ITEMS;
+use crate::entities::sea_orm_active_enums::InterseptionKind;
 use crate::entities::{datasource_group, messenger_account, signal_group};
 use crate::error::AppError;
 use crate::h;
@@ -421,6 +422,11 @@ async fn create_account_group(
     )
     .await
     .c(h!())?;
+
+    // Messenger messages are attributed by unit mask, not by frequency.
+    let mut signal_group = signal_group.into_active_model();
+    signal_group.interseption_kind = Set(InterseptionKind::Other);
+    let signal_group = signal_group.update(txn).await.c(h!())?;
 
     let datasource_group = datasource_group::ActiveModel {
         datasource_id: Set(scope.datasource_id()),
