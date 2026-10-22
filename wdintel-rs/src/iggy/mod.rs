@@ -3,7 +3,7 @@ use crate::types::*;
 use iggy::prelude::{
     defaults, Client, CompressionAlgorithm, Identifier, IggyClient, IggyError,
     IggyExpiry, MaxTopicSize, Permissions, StreamClient, SystemClient,
-    TopicClient, UserClient,
+    TopicClient, TopicDetails, UserClient,
 };
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -211,12 +211,12 @@ async fn ensure_topic(
 ) -> Result<(), AppError> {
     let stream_id = Identifier::try_from(stream).c(h!())?;
     let topic_id = Identifier::try_from(topic).c(h!())?;
-    if client
-        .get_topic(&stream_id, &topic_id)
-        .await
-        .c(h!())?
-        .is_some()
+    if let Some(topic) =
+        client.get_topic(&stream_id, &topic_id).await.c(h!())?
     {
+        ensure_topic_retention(client, &stream_id, &topic)
+            .await
+            .c(h!())?;
         return Ok(());
     }
     match client
@@ -226,14 +226,58 @@ async fn ensure_topic(
             crate::config::API_INTEGRATION_IGGY_TOPIC_PARTITIONS_COUNT,
             CompressionAlgorithm::None,
             None,
-            IggyExpiry::NeverExpire,
+            topic_message_expiry(),
             MaxTopicSize::ServerDefault,
         )
         .await
     {
-        Ok(_) | Err(IggyError::TopicNameAlreadyExists(_, _)) => Ok(()),
+        Ok(_) => Ok(()),
+        Err(IggyError::TopicNameAlreadyExists(_, _)) => {
+            let topic = client
+                .get_topic(&stream_id, &topic_id)
+                .await
+                .c(h!())?
+                .c(h!())?;
+            ensure_topic_retention(client, &stream_id, &topic)
+                .await
+                .c(h!())?;
+            Ok(())
+        }
         Err(err) => Err(err).c(h!())?,
     }
+}
+
+async fn ensure_topic_retention(
+    client: &IggyClient,
+    stream_id: &Identifier,
+    topic: &TopicDetails,
+) -> anyhow::Result<()> {
+    let message_expiry = topic_message_expiry();
+    if topic.message_expiry == message_expiry {
+        return Ok(());
+    }
+    client
+        .update_topic(
+            stream_id,
+            &Identifier::try_from(topic.id).c(h!())?,
+            &topic.name,
+            topic.compression_algorithm,
+            Some(topic.replication_factor),
+            message_expiry,
+            topic.max_topic_size,
+        )
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+fn topic_message_expiry() -> IggyExpiry {
+    IggyExpiry::ExpireDuration(
+        Duration::from_secs(
+            crate::config::API_INTEGRATION_IGGY_MESSAGE_RETENTION_SEC,
+        )
+        .into(),
+    )
 }
 
 fn timeout_duration() -> Duration {

@@ -1,5 +1,43 @@
 # Inbox Iggy events
 
+## Retention
+
+Echo configures both inbox and analytics topics with 30-day message retention.
+Saving an API integration or running
+`wdintel-rs --mode=live oneoff-ensure-api-integration-iggy-topics` also updates
+existing topics, preserving their other settings. The command processes all
+integrations with Iggy connections and also reconciles user stream permissions.
+
+For Apache Iggy `0.10.3-edge.3`, enable the cleaner in the server configuration
+stored in the `iggy-config-<server>` Bitwarden note, following the
+[version's configuration](https://github.com/apache/iggy/blob/iggy-0.10.3-edge.3/core/server/config.toml):
+
+```toml
+[data_maintenance.messages]
+cleaner_enabled = true
+interval = "1 m"
+
+[system.topic]
+message_expiry = "30 days"
+```
+
+Merge these values into existing sections. After deployment approval for the
+specific target, deploy the configuration with
+`just deploy-config-iggy --server <server>`, restart `echo-iggy` on that server,
+and run the topic command above using the updated Echo binary on that server.
+The server default applies to newly created topics; existing topics require the
+topic command or saving each integration. Check both topics through Iggy's
+topic API: `message_expiry` must be `2592000000000` microseconds. Verify the Iggy
+startup log reports that the message cleaner is enabled.
+
+Iggy removes expired sealed segments on the cleanup interval; the active
+segment is protected, so physical deletion can lag behind 30 days. Consumers
+must process events within the retention window. Existing expired segments
+become eligible for deletion when retention and cleanup are enabled. Disabling
+the cleaner prevents further cleanup but cannot recover deleted data.
+
+## Event format
+
 The configured inbox topic carries the existing creation record as a JSON pair
 `[sigint_inbox_item_id, inbox_message]`. The message includes the existing
 `aor_ids`, `sigint_callsign_ids`, `sigint_unit_ids`, `sigint_signal_ids`, and
