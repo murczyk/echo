@@ -46,6 +46,7 @@ import './ts/react/messenger-neo-element';
 import './ts/react/organisms-neo-element';
 import './ts/react/organisms-neo-edit-element';
 import './ts/react/admin-all-reports-element';
+import './ts/react/admin-kpi-element';
 import './ts/react/admin-report-details-element';
 import './ts/react/admin-unit-duplicates-element';
 import './ts/react/admin-unit-inconsistent-element';
