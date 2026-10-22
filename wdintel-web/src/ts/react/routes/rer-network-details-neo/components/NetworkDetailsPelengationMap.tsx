@@ -2,12 +2,13 @@ import { Box, IconButton } from '@mui/material';
 import { alpha, type Theme } from '@mui/material/styles';
 import { createPortal } from 'react-dom';
 
-import type { NetworkPoint } from '../../../../../Bindings';
+import type { NetworkPoint, NetworkSettlement } from '../../../../../Bindings';
 import type { BaseLayerId } from '../../../../maps/base-layers';
 import { useNetworkDetailsPelengationMap } from './useNetworkDetailsPelengationMap';
 
 type Props = {
   pelengPoints: NetworkPoint[];
+  networkSettlements: NetworkSettlement[];
   showLabels: boolean;
   baseLayerId: BaseLayerId;
   heatmapEnabled: boolean;
@@ -87,6 +88,7 @@ function getMapControlSx(theme: Theme) {
 
 export function NetworkDetailsPelengationMap({
   pelengPoints,
+  networkSettlements,
   showLabels,
   baseLayerId,
   heatmapEnabled,
@@ -96,6 +98,7 @@ export function NetworkDetailsPelengationMap({
     showLabels,
     baseLayerId,
     heatmapEnabled,
+    networkSettlements,
   );
 
   const mapPanel = (

@@ -209,6 +209,15 @@ intentionally excluded from analytics. Before applying
 `m20260818_130237_battle_line_and_inbox_settlement`, deploy and reconcile the
 updated exclusion file so these tables never enter the PeerDB mirror.
 
+`sigint_network_settlement` is PostgreSQL-only resolution and queue state.
+Before applying `m20261022_080838_sigint_network_settlement`, deploy the packaged
+analytics control bundle and exclusion file, then run
+`/opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes`. Standard Echo
+deployment does this before migrations. Afterward, run
+`/opt/echo-peerdb/bin/source-verify-deploy.sh` and verify the table is absent
+from raw/current/gateway. No backfill or resnapshot is required; see the
+[settlement deployment procedure](../../wdintel-rs/src/battle_line/README.md#deployment-and-recovery).
+
 Failed unit labels and their inbox-item links are PostgreSQL-only operational
 state and are intentionally excluded from analytics. Before applying
 `m20260827_154846_normalize_failed_unit_labels`, deploy and reconcile the

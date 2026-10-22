@@ -148,6 +148,7 @@ export function buildRerNetworkDetailsNeoPageViewModel({
     networkActivityLoading: state.networkActivityLoading,
     networkActivityError: state.networkActivityError,
     pelengPoints: state.pelengPoints,
+    networkSettlements: state.networkSettlements,
     pelengPointsLoaded: state.pelengPointsLoaded,
     pelengPointsLoading: state.pelengPointsLoading,
     pelengPointsError: state.pelengPointsError,
